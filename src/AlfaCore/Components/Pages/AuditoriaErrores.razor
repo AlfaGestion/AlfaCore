@@ -3,6 +3,8 @@
 @page "/{idweb}/{idbase:int}/auditoria/errores"
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
 <PageTitle>Errores | Alfa Gestión</PageTitle>
 
@@ -15,13 +17,6 @@
 else
 {
     <div class="page-grid">
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">Errores</h2>
-                <p class="page-intro__text">Filtrá `AUX_ERR` por fecha, usuario, proceso, equipo y texto técnico para investigar incidentes.</p>
-            </div>
-        </section>
-
         @if (_feedback is not null)
         {
             <div class="conversations-inline @GetFeedbackClass(_feedback)">
@@ -38,77 +33,9 @@ else
             </div>
         }
 
-        <section class="panel-card" @onkeydown="HandleApplyKeyDownAsync">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Filtros</h3>
-                    <p class="panel-card__subtitle">Aplicá combinaciones para encontrar incidentes rápido.</p>
-                </div>
-                <div class="actions">
-                    <button class="btn btn--ghost" @onclick="LimpiarFiltros">
-                        <i class="bi bi-eraser"></i>
-                        <span>Limpiar</span>
-                    </button>
-                    <button class="btn btn--primary" @onclick="BuscarAsync">
-                        <i class="bi bi-search"></i>
-                        <span>Aplicar</span>
-                    </button>
-                </div>
-            </div>
-
-            <div class="filters-grid filters-grid--wide">
-                <div class="field">
-                    <label class="field__label">Desde</label>
-                    <InputDate class="field__control" @bind-Value="_desde" />
-                </div>
-                <div class="field">
-                    <label class="field__label">Hasta</label>
-                    <InputDate class="field__control" @bind-Value="_hasta" />
-                </div>
-                <div class="field">
-                    <label class="field__label">Usuario</label>
-                    <select class="field__control" @bind="_usuario">
-                        <option value="">Todos</option>
-                        @foreach (var item in _usuarios)
-                        {
-                            <option value="@item">@item</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label class="field__label">Proceso</label>
-                    <select class="field__control" @bind="_proceso">
-                        <option value="">Todos</option>
-                        @foreach (var item in _procesos)
-                        {
-                            <option value="@item">@item</option>
-                        }
-                    </select>
-                </div>
-                <div class="field">
-                    <label class="field__label">PC</label>
-                    <input class="field__control" @bind="_pc" placeholder="Equipo o IP..." />
-                </div>
-                <div class="field">
-                    <label class="field__label">Código error</label>
-                    <input class="field__control" type="number" @bind="_errorCodigoText" placeholder="Ej: 208" />
-                </div>
-                <div class="field field--full">
-                    <label class="field__label">Texto</label>
-                    <input class="field__control" @bind="_texto" @bind:event="oninput" placeholder="Buscar en descripción, SQL, proceso o usuario..." />
-                </div>
-            </div>
-        </section>
-
         <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Resultados</h3>
-                    <p class="panel-card__subtitle">@_rows.Count error(es) cargado(s).</p>
-                </div>
-            </div>
             <div class="table-wrap">
-                <table class="data-table">
+                <table class="data-table" data-sticky-list-header>
                     <thead>
                         <tr>
                             <th>Fecha</th>
@@ -158,9 +85,121 @@ else
     private string _pc = string.Empty;
     private string _errorCodigoText = string.Empty;
     private string _texto = string.Empty;
+    private bool _showFilters;
+    private bool _searching;
+
+    private RenderFragment RenderErrorSearch() => @<div class="smart-search" @onclick:stopPropagation>
+        <div class="smart-search__bar">
+            <i class="bi bi-search"></i>
+            <input type="search"
+                   placeholder="Buscar en descripción, SQL, proceso o usuario..."
+                   @bind="_texto"
+                   @bind:event="oninput"
+                   @onfocus="OpenFilters"
+                   @onkeydown="HandleApplyKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleFilters" aria-label="Mostrar filtros">
+                <i class="bi @(_showFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_showFilters)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseFilters"></button>
+            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-calendar-range"></i> Período</h4>
+                    <div class="smart-search__inline">
+                        <label>Desde</label>
+                        <InputDate @bind-Value="_desde" />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Hasta</label>
+                        <InputDate @bind-Value="_hasta" />
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-person-gear"></i> Origen</h4>
+                    <div class="smart-search__inline">
+                        <label>Usuario</label>
+                        <select @bind="_usuario">
+                            <option value="">Todos</option>
+                            @foreach (var item in _usuarios)
+                            {
+                                <option value="@item">@item</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Proceso</label>
+                        <select @bind="_proceso">
+                            <option value="">Todos</option>
+                            @foreach (var item in _procesos)
+                            {
+                                <option value="@item">@item</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-sliders"></i> Detalle</h4>
+                    <div class="smart-search__inline">
+                        <label>PC</label>
+                        <input @bind="_pc" placeholder="Equipo o IP..." />
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>Código error</label>
+                        <input type="number" @bind="_errorCodigoText" placeholder="Ej: 208" />
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="BuscarAsync" disabled="@_searching">
+                            <i class="bi bi-search"></i> Aplicar
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_searching">
+                            <i class="bi bi-eraser"></i> Limpiar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = "Errores",
+            Breadcrumb = ["Auditoría", "Errores"],
+            State = _loading || _searching ? PageHeaderState.Loading : PageHeaderState.List,
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderErrorSearch(),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "aplicar",
+                    Label = "Aplicar",
+                    Icon = "bi-search",
+                    Style = PageHeaderActionStyle.Primary,
+                    Disabled = _loading || _searching,
+                    OnClick = BuscarAsync
+                },
+                new PageHeaderAction
+                {
+                    Key = "limpiar",
+                    Label = "Limpiar",
+                    Icon = "bi-eraser",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _loading || _searching,
+                    OnClick = LimpiarFiltros
+                }
+            ]
+        });
+    }
 
     protected override async Task OnInitializedAsync()
     {
+        UpdatePageHeader();
         var result = await UiOps.RunAsync(async () =>
         {
             _usuarios = await AuditoriaSvc.GetUsuariosAsync();
@@ -170,10 +209,14 @@ else
 
         _feedback = result.Success ? null : result.Feedback;
         _loading = false;
+        UpdatePageHeader();
     }
 
     private async Task BuscarAsync()
     {
+        _showFilters = false;
+        _searching = true;
+        UpdatePageHeader();
         _feedback = null;
         var result = await UiOps.RunAsync(async () =>
         {
@@ -191,6 +234,8 @@ else
         }, "No se pudieron cargar los errores filtrados.");
 
         _feedback = result.Feedback;
+        _searching = false;
+        UpdatePageHeader();
     }
 
     private async Task LimpiarFiltros()
@@ -203,6 +248,33 @@ else
         _errorCodigoText = string.Empty;
         _texto = string.Empty;
         await BuscarAsync();
+    }
+
+    private void OpenFilters()
+    {
+        if (_showFilters || _loading)
+            return;
+
+        _showFilters = true;
+        UpdatePageHeader();
+    }
+
+    private void ToggleFilters()
+    {
+        if (_loading)
+            return;
+
+        _showFilters = !_showFilters;
+        UpdatePageHeader();
+    }
+
+    private void CloseFilters()
+    {
+        if (!_showFilters)
+            return;
+
+        _showFilters = false;
+        UpdatePageHeader();
     }
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
@@ -221,4 +293,7 @@ else
             AlfaCore.Models.AppUiFeedbackSeverity.Error => "conversations-inline--error",
             _ => "conversations-inline--ok"
         };
+
+    public void Dispose()
+        => PageHeader.Clear();
 }

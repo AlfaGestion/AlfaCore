@@ -1,0 +1,493 @@
+@page "/ventas/puntos-venta"
+@page "/{idweb}/{idbase:int}/ventas/puntos-venta"
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IPuntoVentaConfigService PosConfigSvc
+@inject IAppUiOperationService UiOps
+@inject IAppUserSessionService AppUserSession
+
+<PageTitle>Puntos de Venta | Configuración</PageTitle>
+
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Puntos de Venta</h2>
+            <p class="page-intro__text">Administrá los puntos de venta (Mostrador, Salón, Delivery) y, para Salón, sus sectores y mesas.</p>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="editor-msg @GetFeedbackClass(_feedback)">
+            <strong>@_feedback.Title</strong>
+            <span>@_feedback.Message</span>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading">Cargando puntos de venta...</div>
+    }
+    else
+    {
+        <div class="split-grid">
+            <DataTable Titulo="Puntos de venta" Subtitulo="Cada punto de venta define un modo de operación.">
+                <Toolbar>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoPuntoVentaAsync">+ Nuevo</button>
+                </Toolbar>
+                <Header>
+                    <tr>
+                        <th>Código</th>
+                        <th>Nombre</th>
+                        <th>Modo</th>
+                        <th>Activo</th>
+                        <th></th>
+                    </tr>
+                </Header>
+                <Rows>
+                    @if (_puntosVenta.Count == 0)
+                    {
+                        <tr><td colspan="5">No hay puntos de venta cargados todavía.</td></tr>
+                    }
+                    @foreach (var pv in _puntosVenta)
+                    {
+                        <tr class="@(pv.Id == _selectedPuntoVenta?.Id ? "row--selected" : string.Empty)">
+                            <td>@pv.Codigo</td>
+                            <td>@pv.Nombre</td>
+                            <td>@GetModoTexto(pv.Modo)</td>
+                            <td>@(pv.Activo ? "Sí" : "No")</td>
+                            <td><button type="button" class="btn btn--ghost btn--sm" @onclick="() => SeleccionarPuntoVentaAsync(pv)">Editar</button></td>
+                        </tr>
+                    }
+                </Rows>
+            </DataTable>
+
+            @if (_showPuntoVentaForm)
+            {
+                <DetailCard Titulo="@(_puntoVentaForm.Id.HasValue ? "Editar punto de venta" : "Nuevo punto de venta")" Subtitulo="Código, nombre y modo de operación.">
+                    <div class="field">
+                        <label>Código</label>
+                        <input maxlength="4" @bind="_puntoVentaForm.Codigo" placeholder="Ej: 001" />
+                    </div>
+                    <div class="field">
+                        <label>Nombre</label>
+                        <input @bind="_puntoVentaForm.Nombre" placeholder="Ej: Salón principal" />
+                    </div>
+                    <div class="field">
+                        <label>Modo</label>
+                        <select @bind="_puntoVentaForm.Modo">
+                            <option value="@PuntoVentaModoKeys.Mostrador">Mostrador</option>
+                            <option value="@PuntoVentaModoKeys.Salon">Salón</option>
+                            <option value="@PuntoVentaModoKeys.Delivery">Delivery / Take Away</option>
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>Unidad de negocio</label>
+                        <input maxlength="4" @bind="_puntoVentaForm.Unegocio" placeholder="Opcional" />
+                    </div>
+                    <div class="field">
+                        <label>Caja</label>
+                        <input maxlength="4" @bind="_puntoVentaForm.IdCaja" placeholder="Opcional" />
+                    </div>
+                    <div class="field">
+                        <label>Sucursal</label>
+                        <input maxlength="4" @bind="_puntoVentaForm.Sucursal" placeholder="Opcional" />
+                    </div>
+                    <label class="carga-viajes-check">
+                        <input class="carga-viajes-check__input" type="checkbox" checked="@_puntoVentaForm.Activo" @onchange="args => _puntoVentaForm.Activo = args.Value is bool flag && flag" />
+                        <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                        <span class="carga-viajes-check__text">Activo</span>
+                    </label>
+
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarPuntoVentaAsync">Guardar</button>
+                        <button type="button" class="btn btn--ghost" @onclick="CancelarPuntoVentaForm">Cancelar</button>
+                    </div>
+                </DetailCard>
+            }
+        </div>
+    }
+
+    @if (_selectedPuntoVenta is not null && string.Equals(_selectedPuntoVenta.Modo, PuntoVentaModoKeys.Salon, StringComparison.OrdinalIgnoreCase))
+    {
+        <div class="split-grid">
+            <DataTable Titulo="@($"Sectores de {_selectedPuntoVenta.Nombre}")" Subtitulo="Ej: Terraza, Planta baja, Planta alta.">
+                <Toolbar>
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevoSectorAsync">+ Nuevo sector</button>
+                </Toolbar>
+                <Header>
+                    <tr>
+                        <th>Código</th>
+                        <th>Nombre</th>
+                        <th>Orden</th>
+                        <th>Activo</th>
+                        <th></th>
+                    </tr>
+                </Header>
+                <Rows>
+                    @if (_sectores.Count == 0)
+                    {
+                        <tr><td colspan="5">Este punto de venta todavía no tiene sectores.</td></tr>
+                    }
+                    @foreach (var sector in _sectores)
+                    {
+                        <tr class="@(sector.Id == _selectedSector?.Id ? "row--selected" : string.Empty)">
+                            <td>@sector.Codigo</td>
+                            <td>@sector.Nombre</td>
+                            <td>@sector.Orden</td>
+                            <td>@(sector.Activo ? "Sí" : "No")</td>
+                            <td><button type="button" class="btn btn--ghost btn--sm" @onclick="() => SeleccionarSectorAsync(sector)">Editar</button></td>
+                        </tr>
+                    }
+                </Rows>
+            </DataTable>
+
+            @if (_showSectorForm)
+            {
+                <DetailCard Titulo="@(_sectorForm.Id.HasValue ? "Editar sector" : "Nuevo sector")" Subtitulo="Terraza, planta baja, planta alta, etc.">
+                    <div class="field">
+                        <label>Código</label>
+                        <input maxlength="4" @bind="_sectorForm.Codigo" placeholder="Ej: TERR" />
+                    </div>
+                    <div class="field">
+                        <label>Nombre</label>
+                        <input @bind="_sectorForm.Nombre" placeholder="Ej: Terraza" />
+                    </div>
+                    <div class="field">
+                        <label>Ícono (clase, ej. bi-tree)</label>
+                        <input @bind="_sectorForm.Icono" placeholder="Opcional" />
+                    </div>
+                    <div class="field">
+                        <label>Imagen (ruta o URL)</label>
+                        <input @bind="_sectorForm.Imagen" placeholder="Opcional" />
+                    </div>
+                    <div class="field">
+                        <label>Orden</label>
+                        <input type="number" @bind="_sectorForm.Orden" />
+                    </div>
+                    <label class="carga-viajes-check">
+                        <input class="carga-viajes-check__input" type="checkbox" checked="@_sectorForm.Activo" @onchange="args => _sectorForm.Activo = args.Value is bool flag && flag" />
+                        <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                        <span class="carga-viajes-check__text">Activo</span>
+                    </label>
+
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarSectorAsync">Guardar</button>
+                        <button type="button" class="btn btn--ghost" @onclick="CancelarSectorForm">Cancelar</button>
+                    </div>
+                </DetailCard>
+            }
+        </div>
+
+        @if (_selectedSector is not null)
+        {
+            <div class="split-grid">
+                <DataTable Titulo="@($"Mesas de {_selectedSector.Nombre}")" Subtitulo="Ubicación, capacidad e ícono de cada mesa.">
+                    <Toolbar>
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="NuevaMesaAsync">+ Nueva mesa</button>
+                    </Toolbar>
+                    <Header>
+                        <tr>
+                            <th>Código</th>
+                            <th>Nombre</th>
+                            <th>Capacidad</th>
+                            <th>Activa</th>
+                            <th></th>
+                        </tr>
+                    </Header>
+                    <Rows>
+                        @if (_mesas.Count == 0)
+                        {
+                            <tr><td colspan="5">Este sector todavía no tiene mesas.</td></tr>
+                        }
+                        @foreach (var mesa in _mesas)
+                        {
+                            <tr>
+                                <td>@mesa.Codigo</td>
+                                <td>@mesa.Nombre</td>
+                                <td>@(mesa.Capacidad?.ToString() ?? "-")</td>
+                                <td>@(mesa.Activo ? "Sí" : "No")</td>
+                                <td><button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarMesaAsync(mesa)">Editar</button></td>
+                            </tr>
+                        }
+                    </Rows>
+                </DataTable>
+
+                @if (_showMesaForm)
+                {
+                    <DetailCard Titulo="@(_mesaForm.Id.HasValue ? "Editar mesa" : "Nueva mesa")" Subtitulo="Datos de la mesa dentro del sector.">
+                        <div class="field">
+                            <label>Código</label>
+                            <input maxlength="4" @bind="_mesaForm.Codigo" placeholder="Ej: M01" />
+                        </div>
+                        <div class="field">
+                            <label>Nombre</label>
+                            <input @bind="_mesaForm.Nombre" placeholder="Ej: Mesa 1" />
+                        </div>
+                        <div class="field">
+                            <label>Capacidad</label>
+                            <input type="number" @bind="_mesaForm.Capacidad" placeholder="Opcional" />
+                        </div>
+                        <div class="field">
+                            <label>Posición X</label>
+                            <input type="number" @bind="_mesaForm.PosX" placeholder="Opcional" />
+                        </div>
+                        <div class="field">
+                            <label>Posición Y</label>
+                            <input type="number" @bind="_mesaForm.PosY" placeholder="Opcional" />
+                        </div>
+                        <div class="field">
+                            <label>Ancho</label>
+                            <input type="number" @bind="_mesaForm.Width" placeholder="Opcional" />
+                        </div>
+                        <div class="field">
+                            <label>Alto</label>
+                            <input type="number" @bind="_mesaForm.Height" placeholder="Opcional" />
+                        </div>
+                        <div class="field">
+                            <label>Ícono (clase, ej. bi-circle)</label>
+                            <input @bind="_mesaForm.Icono" placeholder="Opcional" />
+                        </div>
+                        <div class="field">
+                            <label>Imagen (ruta o URL)</label>
+                            <input @bind="_mesaForm.Imagen" placeholder="Opcional" />
+                        </div>
+                        <label class="carga-viajes-check">
+                            <input class="carga-viajes-check__input" type="checkbox" checked="@_mesaForm.Activo" @onchange="args => _mesaForm.Activo = args.Value is bool flag && flag" />
+                            <span class="carga-viajes-check__box" aria-hidden="true"></span>
+                            <span class="carga-viajes-check__text">Activa</span>
+                        </label>
+
+                        <div class="actions">
+                            <button type="button" class="btn btn--primary" @onclick="GuardarMesaAsync">Guardar</button>
+                            <button type="button" class="btn btn--ghost" @onclick="CancelarMesaForm">Cancelar</button>
+                        </div>
+                    </DetailCard>
+                }
+            </div>
+        }
+    }
+</section>
+
+@code {
+    private bool _loading = true;
+    private List<PuntoVentaEntidadDto> _puntosVenta = [];
+    private PuntoVentaEntidadDto? _selectedPuntoVenta;
+    private bool _showPuntoVentaForm;
+    private PuntoVentaEntidadSaveRequest _puntoVentaForm = new();
+
+    private List<PuntoVentaSectorDto> _sectores = [];
+    private PuntoVentaSectorDto? _selectedSector;
+    private bool _showSectorForm;
+    private PuntoVentaSectorSaveRequest _sectorForm = new();
+
+    private List<PuntoVentaMesaDto> _mesas = [];
+    private bool _showMesaForm;
+    private PuntoVentaMesaSaveRequest _mesaForm = new();
+
+    private AppUiMessage? _feedback;
+
+    protected override async Task OnInitializedAsync() => await LoadPuntosVentaAsync();
+
+    private async Task LoadPuntosVentaAsync()
+    {
+        _loading = true;
+        var result = await UiOps.RunAsync(() => PosConfigSvc.GetPuntosVentaAsync(), "No se pudieron cargar los puntos de venta.");
+        _puntosVenta = result.Success && result.Value is not null ? result.Value.ToList() : [];
+        if (!result.Success)
+            _feedback = result.Feedback;
+        _loading = false;
+    }
+
+    private Task NuevoPuntoVentaAsync()
+    {
+        _puntoVentaForm = new PuntoVentaEntidadSaveRequest { Activo = true, Modo = PuntoVentaModoKeys.Mostrador };
+        _showPuntoVentaForm = true;
+        return Task.CompletedTask;
+    }
+
+    private async Task SeleccionarPuntoVentaAsync(PuntoVentaEntidadDto pv)
+    {
+        _selectedPuntoVenta = pv;
+        _selectedSector = null;
+        _sectores = [];
+        _mesas = [];
+        _showSectorForm = false;
+        _showMesaForm = false;
+
+        _puntoVentaForm = new PuntoVentaEntidadSaveRequest
+        {
+            Id = pv.Id,
+            Codigo = pv.Codigo,
+            Nombre = pv.Nombre,
+            Modo = pv.Modo,
+            Unegocio = pv.Unegocio,
+            IdCaja = pv.IdCaja,
+            Sucursal = pv.Sucursal,
+            Activo = pv.Activo
+        };
+        _showPuntoVentaForm = true;
+
+        if (string.Equals(pv.Modo, PuntoVentaModoKeys.Salon, StringComparison.OrdinalIgnoreCase))
+            await LoadSectoresAsync(pv.Id);
+    }
+
+    private void CancelarPuntoVentaForm()
+    {
+        _showPuntoVentaForm = false;
+        _puntoVentaForm = new PuntoVentaEntidadSaveRequest();
+    }
+
+    private async Task GuardarPuntoVentaAsync()
+    {
+        _feedback = null;
+        _puntoVentaForm.UsuarioAccion = AppUserSession.GetCurrentUserName(string.Empty);
+        var result = await UiOps.RunAsync(() => PosConfigSvc.SavePuntoVentaAsync(_puntoVentaForm), "No se pudo guardar el punto de venta.");
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _feedback = AppUiMessage.Success("Guardado", "El punto de venta se guardó correctamente.");
+        _showPuntoVentaForm = false;
+        await LoadPuntosVentaAsync();
+    }
+
+    private async Task LoadSectoresAsync(int idPuntoVenta)
+    {
+        var result = await UiOps.RunAsync(() => PosConfigSvc.GetSectoresAsync(idPuntoVenta), "No se pudieron cargar los sectores.");
+        _sectores = result.Success && result.Value is not null ? result.Value.ToList() : [];
+        if (!result.Success)
+            _feedback = result.Feedback;
+    }
+
+    private Task NuevoSectorAsync()
+    {
+        if (_selectedPuntoVenta is null)
+            return Task.CompletedTask;
+
+        _sectorForm = new PuntoVentaSectorSaveRequest { IdPuntoVenta = _selectedPuntoVenta.Id, Activo = true, Orden = _sectores.Count };
+        _showSectorForm = true;
+        return Task.CompletedTask;
+    }
+
+    private async Task SeleccionarSectorAsync(PuntoVentaSectorDto sector)
+    {
+        _selectedSector = sector;
+        _sectorForm = new PuntoVentaSectorSaveRequest
+        {
+            Id = sector.Id,
+            Codigo = sector.Codigo,
+            IdPuntoVenta = sector.IdPuntoVenta,
+            Nombre = sector.Nombre,
+            Icono = sector.Icono,
+            Imagen = sector.Imagen,
+            Orden = sector.Orden,
+            Activo = sector.Activo
+        };
+        _showSectorForm = true;
+        _showMesaForm = false;
+        await LoadMesasAsync(sector.Id);
+    }
+
+    private void CancelarSectorForm()
+    {
+        _showSectorForm = false;
+        _sectorForm = new PuntoVentaSectorSaveRequest();
+    }
+
+    private async Task GuardarSectorAsync()
+    {
+        _feedback = null;
+        _sectorForm.UsuarioAccion = AppUserSession.GetCurrentUserName(string.Empty);
+        var result = await UiOps.RunAsync(() => PosConfigSvc.SaveSectorAsync(_sectorForm), "No se pudo guardar el sector.");
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _feedback = AppUiMessage.Success("Guardado", "El sector se guardó correctamente.");
+        _showSectorForm = false;
+        if (_selectedPuntoVenta is not null)
+            await LoadSectoresAsync(_selectedPuntoVenta.Id);
+    }
+
+    private async Task LoadMesasAsync(int idSector)
+    {
+        var result = await UiOps.RunAsync(() => PosConfigSvc.GetMesasAsync(idSector), "No se pudieron cargar las mesas.");
+        _mesas = result.Success && result.Value is not null ? result.Value.ToList() : [];
+        if (!result.Success)
+            _feedback = result.Feedback;
+    }
+
+    private Task NuevaMesaAsync()
+    {
+        if (_selectedSector is null)
+            return Task.CompletedTask;
+
+        _mesaForm = new PuntoVentaMesaSaveRequest { IdSector = _selectedSector.Id, Activo = true };
+        _showMesaForm = true;
+        return Task.CompletedTask;
+    }
+
+    private Task EditarMesaAsync(PuntoVentaMesaDto mesa)
+    {
+        _mesaForm = new PuntoVentaMesaSaveRequest
+        {
+            Id = mesa.Id,
+            Codigo = mesa.Codigo,
+            IdSector = mesa.IdSector,
+            Nombre = mesa.Nombre,
+            Capacidad = mesa.Capacidad,
+            PosX = mesa.PosX,
+            PosY = mesa.PosY,
+            Width = mesa.Width,
+            Height = mesa.Height,
+            Icono = mesa.Icono,
+            Imagen = mesa.Imagen,
+            Activo = mesa.Activo
+        };
+        _showMesaForm = true;
+        return Task.CompletedTask;
+    }
+
+    private void CancelarMesaForm()
+    {
+        _showMesaForm = false;
+        _mesaForm = new PuntoVentaMesaSaveRequest();
+    }
+
+    private async Task GuardarMesaAsync()
+    {
+        _feedback = null;
+        _mesaForm.UsuarioAccion = AppUserSession.GetCurrentUserName(string.Empty);
+        var result = await UiOps.RunAsync(() => PosConfigSvc.SaveMesaAsync(_mesaForm), "No se pudo guardar la mesa.");
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _feedback = AppUiMessage.Success("Guardado", "La mesa se guardó correctamente.");
+        _showMesaForm = false;
+        if (_selectedSector is not null)
+            await LoadMesasAsync(_selectedSector.Id);
+    }
+
+    private static string GetModoTexto(string modo) => modo switch
+    {
+        PuntoVentaModoKeys.Salon => "Salón",
+        PuntoVentaModoKeys.Delivery => "Delivery / Take Away",
+        _ => "Mostrador"
+    };
+
+    private static string GetFeedbackClass(AppUiMessage message) => message.Severity switch
+    {
+        AppUiFeedbackSeverity.Success => "editor-msg--success",
+        AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+        AppUiFeedbackSeverity.Info => "editor-msg--info",
+        _ => "editor-msg--error"
+    };
+}

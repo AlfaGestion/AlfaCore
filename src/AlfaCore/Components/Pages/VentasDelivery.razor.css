@@ -1,0 +1,84 @@
+.pedido-autocomplete {
+    position: relative;
+}
+
+.pedido-autocomplete__panel {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 0.25rem;
+    padding: 0.4rem;
+    background: var(--color-panel);
+    border: 1px solid var(--color-border);
+    border-radius: 0.6rem;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+    z-index: 30;
+    max-height: 16rem;
+    overflow-y: auto;
+}
+
+.pedido-horario-row {
+    display: flex;
+    gap: 0.6rem;
+}
+
+.pedido-horario-row input[type="date"],
+.pedido-horario-row input[type="time"] {
+    flex: 1;
+    min-width: 0;
+}
+
+.pedido-estado {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.pedido-estado--pendiente {
+    background: rgba(245, 158, 11, 0.18);
+    color: #b45309;
+}
+
+.pedido-estado--preparacion {
+    background: rgba(14, 165, 233, 0.18);
+    color: #0369a1;
+}
+
+.pedido-estado--listo {
+    background: rgba(20, 184, 166, 0.18);
+    color: #0f766e;
+}
+
+.pedido-estado--camino {
+    background: rgba(139, 92, 246, 0.18);
+    color: #6d28d9;
+}
+
+.pedido-estado--entregado {
+    background: rgba(16, 185, 129, 0.18);
+    color: #047857;
+}
+
+.pedido-estado--anulado {
+    background: rgba(239, 68, 68, 0.18);
+    color: #b91c1c;
+}
+
+.pedido-estado--default {
+    background: rgba(138, 160, 186, 0.18);
+    color: #64748b;
+}
+
+@media (prefers-color-scheme: dark) {
+    .pedido-estado--pendiente { color: #fbbf24; }
+    .pedido-estado--preparacion { color: #38bdf8; }
+    .pedido-estado--listo { color: #2dd4bf; }
+    .pedido-estado--camino { color: #a78bfa; }
+    .pedido-estado--entregado { color: #34d399; }
+    .pedido-estado--anulado { color: #f87171; }
+    .pedido-estado--default { color: #94a3b8; }
+}

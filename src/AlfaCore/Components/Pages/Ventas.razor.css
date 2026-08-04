@@ -1,0 +1,23 @@
+.kpi-card__compare {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    margin-top: 0.35rem;
+}
+
+.kpi-card__compare-item {
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.kpi-card__compare-item--up {
+    color: var(--color-success, #10b981);
+}
+
+.kpi-card__compare-item--down {
+    color: var(--color-danger, #ef4444);
+}
+
+.kpi-card__compare-item--neutral {
+    color: var(--color-muted);
+}

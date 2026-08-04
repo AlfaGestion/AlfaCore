@@ -1,0 +1,64 @@
+.public-verify {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background:
+        radial-gradient(circle at top right, rgba(11, 116, 201, 0.18), transparent 28%),
+        linear-gradient(140deg, #0f2138 0%, #123d64 48%, #eff5fb 48%, #edf3f9 100%);
+}
+
+.public-verify__card {
+    width: min(680px, 100%);
+    background: rgba(255, 255, 255, 0.96);
+    border-radius: 28px;
+    border: 1px solid rgba(15, 33, 56, 0.1);
+    box-shadow: 0 30px 70px rgba(15, 33, 56, 0.18);
+    padding: 38px 30px;
+}
+
+.public-verify__state {
+    display: grid;
+    justify-items: center;
+    text-align: center;
+    gap: 14px;
+}
+
+.public-verify__icon {
+    width: 76px;
+    height: 76px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    font-size: 2rem;
+}
+
+.public-verify__icon.is-success {
+    background: rgba(19, 154, 89, 0.14);
+    color: #11844e;
+}
+
+.public-verify__icon.is-error {
+    background: rgba(181, 49, 49, 0.14);
+    color: #a12a2a;
+}
+
+.public-verify__state strong {
+    font-size: clamp(1.7rem, 4vw, 2.3rem);
+    color: #10233d;
+}
+
+.public-verify__state p,
+.public-verify__state small,
+.public-verify__db {
+    color: #5d7185;
+    margin: 0;
+}
+
+.public-verify__actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 10px;
+}

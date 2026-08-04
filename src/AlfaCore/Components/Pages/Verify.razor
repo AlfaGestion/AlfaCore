@@ -1,0 +1,65 @@
+@page "/verify/{Code}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using Microsoft.AspNetCore.Components
+@inject ICentralRegistrationService RegistrationService
+
+<PageTitle>Verificación | AlfaCore</PageTitle>
+
+<section class="public-verify">
+    <div class="public-verify__card">
+        @if (_loading)
+        {
+            <div class="public-verify__state">
+                <span class="spinner-border spinner-border-sm"></span>
+                <strong>Confirmando tu cuenta...</strong>
+                <p>Estamos validando el enlace y preparando el alta.</p>
+            </div>
+        }
+        else
+        {
+            <div class="public-verify__state">
+                <span class="public-verify__icon @(_result?.Success == true ? "is-success" : "is-error")">
+                    <i class="bi @(_result?.Success == true ? "bi-check2-circle" : "bi-exclamation-triangle")"></i>
+                </span>
+                <strong>@GetTitle()</strong>
+                <p>@(_result?.Message ?? "No se pudo validar la cuenta.")</p>
+
+                @if (!string.IsNullOrWhiteSpace(_result?.DatabaseName))
+                {
+                    <div class="public-verify__db">Base asignada: <strong>@_result!.DatabaseName</strong></div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_result?.IncidentId))
+                {
+                    <small>Incidente: @_result!.IncidentId</small>
+                }
+
+                <div class="public-verify__actions">
+                    <a href="/login" class="btn btn--primary">Ir al login</a>
+                    <a href="/registrarme" class="btn btn--ghost">Nuevo registro</a>
+                </div>
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter] public string Code { get; set; } = string.Empty;
+
+    private bool _loading = true;
+    private PublicVerificationResult? _result;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _result = await RegistrationService.VerifyAsync(Code);
+        _loading = false;
+    }
+
+    private string GetTitle()
+        => _result?.Success == true
+            ? "Cuenta confirmada"
+            : "No se pudo completar la confirmación";
+}

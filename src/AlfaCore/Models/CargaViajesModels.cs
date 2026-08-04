@@ -60,21 +60,32 @@ public sealed class CargaViajesDetailDto : CargaViajesGridItemDto
     public decimal PorcentajeAdic2 { get; set; }
     public decimal PorcentajeAdic3 { get; set; }
     public decimal PorcentajeAdic4 { get; set; }
+    public decimal PorcentajeAdic5 { get; set; }
     public decimal TotalAdic { get; set; }
     public decimal TotalAdic1 { get; set; }
     public decimal TotalAdic2 { get; set; }
     public decimal TotalAdic3 { get; set; }
     public decimal TotalAdic4 { get; set; }
+    public decimal TotalAdic5 { get; set; }
     public decimal TotalAdicionales { get; set; }
     public string AdicionalFijo1Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo1Importe { get; set; }
     public bool AdicionalFijo1Aplicado { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
+    public decimal AdicionalFijo1Cantidad { get; set; } = 1m;
     public string AdicionalFijo2Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo2Importe { get; set; }
     public bool AdicionalFijo2Aplicado { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
+    public decimal AdicionalFijo2Cantidad { get; set; } = 1m;
     public string AdicionalFijo3Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo3Importe { get; set; }
     public bool AdicionalFijo3Aplicado { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
+    public decimal AdicionalFijo3Cantidad { get; set; } = 1m;
+    public decimal AdicionalFijo1ImporteFletero { get; set; }
+    public decimal AdicionalFijo2ImporteFletero { get; set; }
+    public decimal AdicionalFijo3ImporteFletero { get; set; }
     public decimal TotalAdicionalesFijos { get; set; }
     public string Observaciones { get; set; } = string.Empty;
     public decimal IdListaRMTRF { get; set; }
@@ -82,6 +93,8 @@ public sealed class CargaViajesDetailDto : CargaViajesGridItemDto
     public decimal TotalFlete { get; set; }
     public decimal TotalTarifadoCliente { get; set; }
     public decimal TotalTarifadoFlete { get; set; }
+    public decimal ImporteCliente { get; set; }
+    public decimal ImporteFletero { get; set; }
 }
 
 public sealed class CargaViajeSaveRequest
@@ -109,15 +122,25 @@ public sealed class CargaViajeSaveRequest
     public decimal PorcentajeAdic2 { get; set; }
     public decimal PorcentajeAdic3 { get; set; }
     public decimal PorcentajeAdic4 { get; set; }
+    public decimal PorcentajeAdic5 { get; set; }
     public string AdicionalFijo1Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo1Importe { get; set; }
     public bool AdicionalFijo1Aplicado { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
+    public decimal AdicionalFijo1Cantidad { get; set; } = 1m;
     public string AdicionalFijo2Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo2Importe { get; set; }
     public bool AdicionalFijo2Aplicado { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
+    public decimal AdicionalFijo2Cantidad { get; set; } = 1m;
     public string AdicionalFijo3Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo3Importe { get; set; }
     public bool AdicionalFijo3Aplicado { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
+    public decimal AdicionalFijo3Cantidad { get; set; } = 1m;
+    public decimal AdicionalFijo1ImporteFletero { get; set; }
+    public decimal AdicionalFijo2ImporteFletero { get; set; }
+    public decimal AdicionalFijo3ImporteFletero { get; set; }
     public decimal TotalAdicionalesFijos { get; set; }
     public string Observaciones { get; set; } = string.Empty;
     public string Estado { get; set; } = CargaViajeEstadoKeys.Pendiente;
@@ -159,10 +182,13 @@ public sealed class CargaViajeTarifaGridItemDto
     public decimal PorcentajeAdic4 { get; set; }
     public string AdicionalFijo1Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo1Importe { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
     public string AdicionalFijo2Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo2Importe { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
     public string AdicionalFijo3Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo3Importe { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
     public bool Activo { get; set; } = true;
     public DateTime? FechaHoraModificacion { get; set; }
     public string UsuarioModificacion { get; set; } = string.Empty;
@@ -184,8 +210,15 @@ public sealed class CargaViajeTarifaClienteResumenDto
     public string FleteroCodigoSugerido { get; set; } = string.Empty;
     public string FleteroNombreSugerido { get; set; } = string.Empty;
     public int FleteroCoincidencias { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
+    public decimal AdicionalFijo1ImporteFletero { get; set; }
+    public decimal AdicionalFijo2ImporteFletero { get; set; }
+    public decimal AdicionalFijo3ImporteFletero { get; set; }
     public bool Activo { get; set; } = true;
     public bool TarifaFletero { get; set; }
+    public bool EsTarifaGeneral { get; set; }
 }
 
 public sealed class CargaViajeTarifaSaveRequest
@@ -207,10 +240,13 @@ public sealed class CargaViajeTarifaSaveRequest
     public decimal PorcentajeAdic4 { get; set; }
     public string AdicionalFijo1Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo1Importe { get; set; }
+    public bool AdicionalFijo1PideCantidad { get; set; }
     public string AdicionalFijo2Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo2Importe { get; set; }
+    public bool AdicionalFijo2PideCantidad { get; set; }
     public string AdicionalFijo3Descripcion { get; set; } = string.Empty;
     public decimal AdicionalFijo3Importe { get; set; }
+    public bool AdicionalFijo3PideCantidad { get; set; }
     public bool Activo { get; set; } = true;
 }
 
@@ -309,15 +345,35 @@ public sealed class CargaViajesConfigDto
     public string Sucursal { get; set; } = "0001";
     public string Letra { get; set; } = "X";
     public string ChoferGeneral { get; set; } = string.Empty;
+    public string? CodigoTarifaGeneral { get; set; }
     public int PorcentajesAdicionalesHabilitados { get; set; } = 3;
-    public List<string> NombresAdicionales { get; set; } = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5"];
-    public List<decimal> PorcentajesAdicionales { get; set; } = [0m, 0m, 0m, 0m, 0m];
+    public List<string> NombresAdicionales { get; set; } = ["Adicional 1", "Adicional 2", "Adicional 3", "Adicional 4", "Adicional 5", "Comisión"];
+    public List<decimal> PorcentajesAdicionales { get; set; } = [0m, 0m, 0m, 0m, 0m, 0m];
+    public bool[] AdicionalesHabilitados { get; set; } = [false, false, false, false, false, false];
+    public bool[] AdicionalesSumarFletero { get; set; } = [false, false, false, false, false, false];
+    public bool[] EsPorcentajeAdicionales { get; set; } = [true, true, true, true, true, true];
 }
 
 public sealed class CargaViajePreviewDto
 {
     public CargaViajesDetailDto Viaje { get; set; } = new();
     public CargaViajesConfigDto Configuracion { get; set; } = new();
+}
+
+public sealed class ViajeConceptoTotalDto
+{
+    public int? Indice { get; set; }
+    public string Descripcion { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+    public bool AportaAlTotal { get; set; } = true;
+}
+
+public sealed class ViajeTotalesDto
+{
+    public List<ViajeConceptoTotalDto> ConceptosCliente { get; set; } = [];
+    public List<ViajeConceptoTotalDto> ConceptosFletero { get; set; } = [];
+    public decimal TotalCliente { get; set; }
+    public decimal TotalFletero { get; set; }
 }
 
 public sealed class CargaViajesViewColumnDto
@@ -371,6 +427,8 @@ public sealed class CargaViajesReporteLiquidacionFilters
     public DateTime? FechaHasta { get; set; }
     public bool IncluirChoferes { get; set; } = true;
     public bool IncluirFleteros { get; set; } = false;
+    public bool IncluirClientes { get; set; } = false;
+    public bool IncluirTodoJunto { get; set; } = false;
     public string AgruparPor { get; set; } = CargaViajesViewGroupKeys.None;
     public string RangoRapido { get; set; } = CargaViajesReporteRangoRapidoKeys.MesActual;
     public string TipoPersona { get; set; } = CargaViajesReporteTipoPersonaKeys.ChoferesYFleteros;
@@ -383,6 +441,18 @@ public sealed class CargaViajesReporteLiquidacionFilters
     public string DestinoTexto { get; set; } = string.Empty;
     public string Estado { get; set; } = CargaViajesReporteEstadoKeys.Todos;
     public string EstadoPago { get; set; } = CargaViajesLiquidacionEstadoPagoKeys.Todos;
+}
+
+public sealed class CargaViajeReporteClienteConceptoDto
+{
+    public string Descripcion { get; set; } = string.Empty;
+    public decimal Importe { get; set; }
+}
+
+public sealed class CargaViajeReporteClienteRowDto
+{
+    public CargaViajesDetailDto Viaje { get; set; } = new();
+    public IReadOnlyList<CargaViajeReporteClienteConceptoDto> Conceptos { get; set; } = [];
 }
 
 public sealed class CargaViajesLiquidacionFilters
@@ -428,6 +498,7 @@ public sealed class CargaViajeReporteLiquidacionRowDto
     public bool FletePagado { get; set; }
     public string Estado { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;
+    public IReadOnlyList<CargaViajeReporteClienteConceptoDto> ConceptosFletero { get; set; } = [];
     public string Observaciones { get; set; } = string.Empty;
 }
 

@@ -1,0 +1,126 @@
+.alfacore-sticky-list-header {
+    position: fixed;
+    display: none;
+    overflow: hidden;
+    z-index: 1700;
+    pointer-events: auto;
+}
+
+.alfacore-sticky-list-header.is-visible {
+    display: block;
+}
+
+.alfacore-sticky-list-header__table {
+    position: absolute;
+    top: 0;
+    left: 0;
+    margin: 0 !important;
+}
+
+table[data-sticky-list-header] > thead,
+.alfacore-sticky-list-header table > thead {
+    background: rgba(7, 18, 34, 0.98) !important;
+}
+
+table[data-sticky-list-header] > thead > tr > th,
+.alfacore-sticky-list-header table > thead > tr > th {
+    box-sizing: border-box !important;
+    height: 38px !important;
+    padding: 0.5rem 0.65rem !important;
+    border-top: 1px solid rgba(56, 189, 248, 0.18) !important;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2) !important;
+    background: rgba(7, 18, 34, 0.98) !important;
+    color: rgba(210, 223, 245, 0.9) !important;
+    font-size: 0.7rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.05em !important;
+    line-height: 1.15 !important;
+    text-transform: uppercase !important;
+    vertical-align: middle !important;
+    white-space: nowrap !important;
+}
+
+table[data-sticky-list-header] > thead > tr > th {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 6 !important;
+}
+
+table[data-sticky-list-header] > thead > tr > th:first-child,
+.alfacore-sticky-list-header table > thead > tr > th:first-child {
+    border-left: 1px solid rgba(56, 189, 248, 0.18) !important;
+}
+
+table[data-sticky-list-header] > thead > tr > th:last-child,
+.alfacore-sticky-list-header table > thead > tr > th:last-child {
+    border-right: 1px solid rgba(56, 189, 248, 0.18) !important;
+}
+
+table[data-sticky-list-header] > thead button.table-sort,
+.alfacore-sticky-list-header table > thead button.table-sort {
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 0.4rem !important;
+    width: 100% !important;
+    min-height: 1.8rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: inherit !important;
+    font: inherit !important;
+    letter-spacing: inherit !important;
+    text-align: left !important;
+    text-transform: inherit !important;
+    cursor: pointer !important;
+}
+
+table[data-sticky-list-header] > thead .table-sort__label,
+.alfacore-sticky-list-header table > thead .table-sort__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+table[data-sticky-list-header] > thead .table-sort__icon,
+.alfacore-sticky-list-header table > thead .table-sort__icon {
+    flex: 0 0 auto;
+    color: rgba(148, 163, 184, 0.72);
+    font-size: 0.72rem;
+}
+
+table[data-sticky-list-header] > thead button.table-sort:hover,
+table[data-sticky-list-header] > thead button.table-sort:focus-visible,
+table[data-sticky-list-header] > thead button.table-sort.is-active,
+.alfacore-sticky-list-header table > thead button.table-sort:hover,
+.alfacore-sticky-list-header table > thead button.table-sort:focus-visible,
+.alfacore-sticky-list-header table > thead button.table-sort.is-active {
+    color: var(--accent, #35c2ff) !important;
+}
+
+table[data-sticky-list-header] > thead button.table-sort:hover .table-sort__icon,
+table[data-sticky-list-header] > thead button.table-sort:focus-visible .table-sort__icon,
+table[data-sticky-list-header] > thead button.table-sort.is-active .table-sort__icon,
+.alfacore-sticky-list-header table > thead button.table-sort:hover .table-sort__icon,
+.alfacore-sticky-list-header table > thead button.table-sort:focus-visible .table-sort__icon,
+.alfacore-sticky-list-header table > thead button.table-sort.is-active .table-sort__icon {
+    color: currentColor;
+}
+
+html[data-theme="light"] table[data-sticky-list-header] > thead,
+html[data-theme="light"] .alfacore-sticky-list-header table > thead,
+html[data-theme="light"] table[data-sticky-list-header] > thead > tr > th,
+html[data-theme="light"] .alfacore-sticky-list-header table > thead > tr > th {
+    border-color: rgba(15, 23, 42, 0.14) !important;
+    background: #f1f5f9 !important;
+    color: #334155 !important;
+}
+
+@media print {
+    .alfacore-sticky-list-header {
+        display: none !important;
+    }
+}

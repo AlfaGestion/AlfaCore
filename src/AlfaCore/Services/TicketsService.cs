@@ -117,11 +117,12 @@ public sealed class TicketsService(
             var pageSize = Math.Clamp(filters.PageSize, 1, 200);
             var pageNumber = Math.Max(1, filters.PageNumber);
             var skip = (pageNumber - 1) * pageSize;
+            var orderBy = BuildTicketOrderBy(filters.OrdenarPor, filters.OrdenDescendente);
 
             var sql = $"""
                 {TicketListSelectSql()}
                 {TicketWhereSql()}
-                ORDER BY t.FechaHoraAlta DESC, t.IdTicket DESC
+                ORDER BY {orderBy}, t.IdTicket DESC
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
 
                 SELECT COUNT(*)
@@ -157,6 +158,25 @@ public sealed class TicketsService(
                 PageSize = pageSize
             };
         }, "No se pudieron cargar los tickets.", ct);
+
+    private static string BuildTicketOrderBy(string? columnKey, bool descending)
+    {
+        var expression = columnKey switch
+        {
+            TicketViewColumnKeys.Numero => "t.Numero",
+            TicketViewColumnKeys.Titulo => "ISNULL(t.Titulo, '')",
+            TicketViewColumnKeys.Prioridad => "ISNULL(t.Prioridad, 0)",
+            TicketViewColumnKeys.Estado => "ISNULL(e.Orden, 0)",
+            TicketViewColumnKeys.Asignado => "ISNULL(tec.Nombre, '')",
+            TicketViewColumnKeys.Cliente => "ISNULL(COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), contactoCuenta.RazonSocial), '')",
+            TicketViewColumnKeys.Contacto => "ISNULL(mc.Nombre_y_Apellido, '')",
+            TicketViewColumnKeys.Etiquetas => "(SELECT MIN(eOrden.Nombre) FROM dbo.TICK_TICKET_ETIQUETAS teOrden INNER JOIN dbo.TICK_ETIQUETAS eOrden ON eOrden.IdEtiqueta = teOrden.IdEtiqueta WHERE teOrden.IdTicket = t.IdTicket AND ISNULL(eOrden.Activa, 1) = 1)",
+            TicketViewColumnKeys.Mensajes => "ISNULL(msg.CantidadMensajes, 0)",
+            _ => "t.FechaHoraAlta"
+        };
+
+        return $"{expression} {(descending ? "DESC" : "ASC")}";
+    }
 
     public Task<IReadOnlyList<TicketGridItemDto>> GetKanbanAsync(TicketsFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetKanban", async token =>
@@ -584,6 +604,65 @@ public sealed class TicketsService(
             await InsertActivityAsync(cn, (SqlTransaction)tx, request.IdTicket, "CAMBIO", "Ticket actualizado desde acción rápida.", NormalizeUser(request.UsuarioAccion), token);
             await tx.CommitAsync(token);
         }, "No se pudo actualizar el ticket.", ct);
+
+    public Task BulkUpdateAsync(TicketBulkUpdateRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "BulkUpdate", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var ticketIds = request.IdTickets.Where(id => id > 0).Distinct().ToList();
+            if (ticketIds.Count == 0)
+                throw new InvalidOperationException("No se recibieron tickets para actualizar.");
+            if (ticketIds.Count > 100)
+                throw new InvalidOperationException("La actualización masiva admite hasta 100 tickets por operación.");
+
+            var updates = new List<string>();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+            await using var cmd = new SqlCommand { Connection = cn, Transaction = (SqlTransaction)tx };
+
+            if (!string.IsNullOrWhiteSpace(request.CodigoEstado))
+            {
+                updates.Add("CodigoEstado = @CodigoEstado");
+                updates.Add("FechaHoraCierre = CASE WHEN EXISTS (SELECT 1 FROM dbo.TICK_ESTADOS WHERE CodigoEstado = @CodigoEstado AND ISNULL(EsCerrado, 0) = 1) THEN ISNULL(FechaHoraCierre, GETDATE()) ELSE NULL END");
+                cmd.Parameters.AddWithValue("@CodigoEstado", request.CodigoEstado.Trim().ToUpperInvariant());
+            }
+
+            if (request.ActualizarTecnico)
+            {
+                updates.Add("IdTecnico = @IdTecnico");
+                cmd.Parameters.AddWithValue("@IdTecnico", DbNullable(request.IdTecnico));
+            }
+
+            if (request.Prioridad.HasValue)
+            {
+                updates.Add("Prioridad = @Prioridad");
+                cmd.Parameters.AddWithValue("@Prioridad", Math.Clamp(request.Prioridad.Value, 0, 3));
+            }
+
+            if (updates.Count == 0)
+                throw new InvalidOperationException("No se recibió una acción masiva válida.");
+
+            var idParameters = new List<string>(ticketIds.Count);
+            for (var index = 0; index < ticketIds.Count; index++)
+            {
+                var parameterName = $"@IdTicket{index}";
+                idParameters.Add(parameterName);
+                cmd.Parameters.AddWithValue(parameterName, ticketIds[index]);
+            }
+
+            updates.Add("FechaHoraModificacion = GETDATE()");
+            cmd.CommandText = $"UPDATE dbo.TICK_TICKETS SET {string.Join(", ", updates)} WHERE IdTicket IN ({string.Join(", ", idParameters)});";
+            var affected = await cmd.ExecuteNonQueryAsync(token);
+            if (affected != ticketIds.Count)
+                throw new InvalidOperationException("Uno o más tickets seleccionados ya no existen en la base activa.");
+
+            var user = NormalizeUser(request.UsuarioAccion);
+            foreach (var ticketId in ticketIds)
+                await InsertActivityAsync(cn, (SqlTransaction)tx, ticketId, "CAMBIO", "Ticket actualizado desde acción masiva.", user, token);
+
+            await tx.CommitAsync(token);
+        }, "No se pudieron actualizar los tickets seleccionados.", ct);
 
     public Task AddNoteAsync(TicketNotaRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "AddNote", async token =>

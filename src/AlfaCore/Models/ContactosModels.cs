@@ -11,6 +11,8 @@ public sealed class ContactosFilters
     public string Localidad { get; set; } = string.Empty;
     public string Cargo { get; set; } = string.Empty;
     public List<SearchRuleDto> Reglas { get; set; } = [];
+    public string OrdenarPor { get; set; } = ContactosViewColumnKeys.Nombre;
+    public bool OrdenDescendente { get; set; }
     public int    PageNumber { get; set; } = 1;
     public int    PageSize   { get; set; } = 50;
 }

@@ -22,11 +22,33 @@ public sealed class CargaViajesValidator(
         ValidateMoney(request.ImporteCliente, "importe-cliente", result);
         ValidateMoney(request.ImporteFletero, "importe-fletero", result);
         ValidateMoney(request.Peaje, "peaje", result);
-        ValidatePercent(request.PorcentajeAdic, "porcentaje-adic", result);
-        ValidatePercent(request.PorcentajeAdic1, "porcentaje-adic1", result);
-        ValidatePercent(request.PorcentajeAdic2, "porcentaje-adic2", result);
-        ValidatePercent(request.PorcentajeAdic3, "porcentaje-adic3", result);
-        ValidatePercent(request.PorcentajeAdic4, "porcentaje-adic4", result);
+
+        await using (var configCn = new SqlConnection(ConnectionString))
+        {
+            await configCn.OpenAsync(ct);
+            var config = CargaViajesService.BuildConfiguracion(await CargaViajesService.LoadConfiguracionAsync(configCn, ct));
+            var valoresAdicionales = new[]
+            {
+                request.PorcentajeAdic,
+                request.PorcentajeAdic1,
+                request.PorcentajeAdic2,
+                request.PorcentajeAdic3,
+                request.PorcentajeAdic4
+            };
+            var fieldKeys = new[] { "porcentaje-adic", "porcentaje-adic1", "porcentaje-adic2", "porcentaje-adic3", "porcentaje-adic4" };
+            for (var i = 0; i < valoresAdicionales.Length; i++)
+            {
+                // Cada adicional general puede configurarse como Porcentaje (0-100) o
+                // como Importe fijo: validar siempre en rango 0-100 rompía el guardado
+                // cuando el adicional estaba configurado como Importe (ej. $35.000).
+                var esPorcentaje = i >= config.EsPorcentajeAdicionales.Length || config.EsPorcentajeAdicionales[i];
+                if (esPorcentaje)
+                    ValidatePercent(valoresAdicionales[i], fieldKeys[i], result);
+                else
+                    ValidateMoney(valoresAdicionales[i], fieldKeys[i], result);
+            }
+        }
+
         ValidateTarifaAdicionalFijo(request.AdicionalFijo1Descripcion, request.AdicionalFijo1Importe, "adicional-fijo-1", result);
         ValidateTarifaAdicionalFijo(request.AdicionalFijo2Descripcion, request.AdicionalFijo2Importe, "adicional-fijo-2", result);
         ValidateTarifaAdicionalFijo(request.AdicionalFijo3Descripcion, request.AdicionalFijo3Importe, "adicional-fijo-3", result);
@@ -129,6 +151,47 @@ public sealed class CargaViajesValidator(
         return result;
     }
 
+    public async Task<ValidationResult> ValidateConfiguracionForSaveAsync(CargaViajesConfigDto request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var result = new ValidationResult();
+        ValidateCommonTextField(request.Sucursal, "sucursal", "La sucursal es obligatoria.", result);
+        ValidateCommonTextField(request.Letra, "letra", "La letra es obligatoria.", result);
+
+        for (var i = 0; i < 6; i++)
+        {
+            var enabled = GetArrayValue(request.AdicionalesHabilitados, i);
+            var sumarFletero = GetArrayValue(request.AdicionalesSumarFletero, i);
+            var nombre = GetText(request.NombresAdicionales, i);
+            var porcentaje = GetDecimal(request.PorcentajesAdicionales, i);
+            var etiqueta = i == 5 ? "La comisión" : $"El adicional {i + 1}";
+
+            if (enabled)
+            {
+                if (string.IsNullOrWhiteSpace(nombre))
+                    result.Add($"adicional-{i + 1}-nombre", $"{etiqueta} habilitado debe tener nombre.");
+                if (porcentaje < 0m)
+                    result.Add($"adicional-{i + 1}-porcentaje", $"El porcentaje de {(i == 5 ? "la comisión" : $"el adicional {i + 1}")} no puede ser negativo.");
+            }
+
+            if (i != 5 && !enabled && sumarFletero)
+                result.Add($"adicional-{i + 1}-sumar-fletero", $"{etiqueta} no puede sumar a fleteros si está deshabilitado.");
+        }
+
+        var codigoTarifaGeneral = (request.CodigoTarifaGeneral ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(codigoTarifaGeneral))
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            var idListaColumn = await ResolveExistingColumnAsync(cn, ct, "TA_TARIFA", "IDLISTA", "ID_LISTA");
+            if (!await ExistsAsync(cn, "TA_TARIFA", idListaColumn, codigoTarifaGeneral, ct))
+                result.Add("codigo-tarifa-general", "El código de tarifa general seleccionado no existe.");
+        }
+
+        return result;
+    }
+
     public Task<ValidationResult> ValidateChoferForSaveAsync(CargaViajeChoferSaveRequest request, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -186,6 +249,21 @@ public sealed class CargaViajesValidator(
         if (importe > 0m && string.IsNullOrWhiteSpace(text))
             result.Add(fieldKey, "Debe indicar la descripción del adicional fijo.");
     }
+
+    private static void ValidateCommonTextField(string? value, string fieldKey, string message, ValidationResult result)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            result.Add(fieldKey, message);
+    }
+
+    private static string GetText(IReadOnlyList<string> values, int index)
+        => index >= 0 && index < values.Count ? (values[index] ?? string.Empty).Trim() : string.Empty;
+
+    private static decimal GetDecimal(IReadOnlyList<decimal> values, int index)
+        => index >= 0 && index < values.Count ? values[index] : 0m;
+
+    private static bool GetArrayValue(IReadOnlyList<bool> values, int index)
+        => index >= 0 && index < values.Count && values[index];
 
     private static async Task<bool> ExistsAsync(SqlConnection cn, string tableName, string columnName, string value, CancellationToken ct)
     {

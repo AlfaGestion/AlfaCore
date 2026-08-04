@@ -43,9 +43,12 @@ public sealed class GestionDashboardService(
                       AND ISNULL(LTRIM(RTRIM(c.Usuario)), '') <> ''
                     ORDER BY LTRIM(RTRIM(c.Usuario))
                     """, cn, token),
-                Sucursales = await QueryDistinctAsync("""
-                    SELECT DISTINCT TOP (100) CONVERT(varchar(50), c.UNEGOCIO)
+                UnidadesNegocio = await QueryUnidadesNegocioAsync("""
+                    SELECT DISTINCT TOP (100)
+                        LTRIM(RTRIM(CONVERT(varchar(50), c.UNEGOCIO))) AS Codigo,
+                        ISNULL(NULLIF(LTRIM(RTRIM(u.Descripcion)), ''), LTRIM(RTRIM(CONVERT(varchar(50), c.UNEGOCIO)))) AS Descripcion
                     FROM dbo.V_MV_Cpte c
+                    LEFT JOIN dbo.V_TA_UnidadNegocio u ON LTRIM(RTRIM(u.Codigo)) = LTRIM(RTRIM(CONVERT(varchar(50), c.UNEGOCIO)))
                     WHERE (
                           c.TC LIKE 'FC%'
                           OR c.TC LIKE 'NC%'
@@ -53,7 +56,7 @@ public sealed class GestionDashboardService(
                           OR c.TC LIKE 'FP%'
                       )
                       AND c.UNEGOCIO IS NOT NULL
-                    ORDER BY CONVERT(varchar(50), c.UNEGOCIO)
+                    ORDER BY Descripcion
                     """, cn, token),
                 Depositos = await QueryDistinctAsync("""
                     SELECT DISTINCT TOP (100) CONVERT(varchar(50), c.IdDeposito)
@@ -195,7 +198,7 @@ public sealed class GestionDashboardService(
                   AND (@FechaHastaExclusive IS NULL OR c.FECHA < @FechaHastaExclusive)
                   AND (@ClienteLike IS NULL OR c.CUENTA LIKE @ClienteLike OR c.NOMBRE LIKE @ClienteLike)
                   AND (@Usuario IS NULL OR c.Usuario = @Usuario)
-                  AND (@Sucursal IS NULL OR CONVERT(varchar(50), c.UNEGOCIO) = @Sucursal)
+                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), c.UNEGOCIO))) + ',%')
                   AND (@Deposito IS NULL OR CONVERT(varchar(50), c.IdDeposito) = @Deposito)
                   AND (@TipoComprobante IS NULL OR c.TC = @TipoComprobante)
                 """;
@@ -212,7 +215,7 @@ public sealed class GestionDashboardService(
                   AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
                   AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                   AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                  AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
+                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
                   AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 """, cn, r => new VentasDashboardDto
                 {
@@ -239,7 +242,7 @@ public sealed class GestionDashboardService(
                       AND l.FECHA < ISNULL(@FechaHastaExclusive, DATEADD(day, 1, GETDATE()))
                       AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                       AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                      AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
+                      AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
                       AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                     GROUP BY DATEADD(day, 1 - DAY(l.FECHA), CAST(l.FECHA AS date))
                 )
@@ -262,7 +265,7 @@ public sealed class GestionDashboardService(
                   AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
                   AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                   AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                  AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
+                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
                   AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 GROUP BY l.CUENTA, l.CABNOMBRE
                 ORDER BY SUM(l.IMPORTE) DESC
@@ -441,7 +444,7 @@ public sealed class GestionDashboardService(
                   AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
                   AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                   AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                  AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
+                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
                   AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 """;
 
@@ -518,14 +521,14 @@ public sealed class GestionDashboardService(
                       AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
                       AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                       AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                      AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
+                      AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
                       AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 )
                 """;
 
             var kpis = await QuerySingleAsync($"""
                 SELECT
-                    ISNULL(SUM(d.ValorVtaCIVA), 0),
+                    ISNULL(SUM(d.ValorVenta), 0),
                     COUNT(DISTINCT d.IDRUBRO)
                 FROM dbo.VT_DETALLEIVAPROFORMA d
                 {detWhere}
@@ -537,25 +540,25 @@ public sealed class GestionDashboardService(
 
             var top = await QueryCategoryAsync($"""
                 SELECT TOP (10)
-                    CONVERT(varchar(50), d.IDRUBRO) AS Categoria,
+                    ISNULL(NULLIF(LTRIM(RTRIM(d.DescRubro)), ''), CONVERT(varchar(50), d.IDRUBRO)) AS Categoria,
                     CONVERT(varchar(50), d.IDRUBRO) AS Codigo,
-                    SUM(d.ValorVtaCIVA) AS Total
+                    SUM(d.ValorVenta) AS Total
                 FROM dbo.VT_DETALLEIVAPROFORMA d
                 {detWhere}
-                GROUP BY d.IDRUBRO
-                ORDER BY SUM(d.ValorVtaCIVA) DESC
+                GROUP BY d.IDRUBRO, d.DescRubro
+                ORDER BY SUM(d.ValorVenta) DESC
                 """, cn, cmd => BindVentasFilters(cmd, filters), token);
 
             var rubros = await QueryVentasRubrosAsync($"""
                 SELECT
-                    CONVERT(varchar(50), d.IDRUBRO) AS Rubro,
-                    SUM(d.ValorVtaCIVA) AS TotalVendido,
+                    ISNULL(NULLIF(LTRIM(RTRIM(d.DescRubro)), ''), CONVERT(varchar(50), d.IDRUBRO)) AS Rubro,
+                    SUM(d.ValorVenta) AS TotalVendido,
                     COUNT(DISTINCT d.Articulo) AS CantidadArticulos,
                     COUNT(DISTINCT d.TC + d.IDCOMPROBANTE) AS CantidadComprobantes
                 FROM dbo.VT_DETALLEIVAPROFORMA d
                 {detWhere}
-                GROUP BY d.IDRUBRO
-                ORDER BY SUM(d.ValorVtaCIVA) DESC
+                GROUP BY d.IDRUBRO, d.DescRubro
+                ORDER BY SUM(d.ValorVenta) DESC
                 """, cn, cmd => BindVentasFilters(cmd, filters), token);
 
             var total = rubros.Sum(x => x.TotalVendido);
@@ -589,14 +592,14 @@ public sealed class GestionDashboardService(
                       AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
                       AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                       AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                      AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
+                      AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
                       AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 )
                 """;
 
             var kpis = await QuerySingleAsync($"""
                 SELECT
-                    ISNULL(SUM(d.ValorVtaCIVA), 0),
+                    ISNULL(SUM(d.ValorVenta), 0),
                     COUNT(DISTINCT a.IdFamilia)
                 FROM dbo.VT_DETALLEIVAPROFORMA d
                 INNER JOIN dbo.V_MA_ARTICULOS a ON a.IDARTICULO = d.Articulo
@@ -611,19 +614,19 @@ public sealed class GestionDashboardService(
                 SELECT TOP (10)
                     COALESCE(NULLIF(fj.Descripcion, ''), CONVERT(varchar(50), a.IdFamilia)) AS Categoria,
                     CONVERT(varchar(50), a.IdFamilia) AS Codigo,
-                    SUM(d.ValorVtaCIVA) AS Total
+                    SUM(d.ValorVenta) AS Total
                 FROM dbo.VT_DETALLEIVAPROFORMA d
                 INNER JOIN dbo.V_MA_ARTICULOS a ON a.IDARTICULO = d.Articulo
                 LEFT JOIN dbo.vw_familias_jerarquia fj ON fj.IdFamilia = CONVERT(varchar(50), a.IdFamilia)
                 {detWhereFam}
                 GROUP BY a.IdFamilia, fj.Descripcion
-                ORDER BY SUM(d.ValorVtaCIVA) DESC
+                ORDER BY SUM(d.ValorVenta) DESC
                 """, cn, cmd => BindVentasFilters(cmd, filters), token);
 
             var familias = await QueryVentasFamiliasAsync($"""
                 SELECT
                     CONVERT(varchar(50), a.IdFamilia) AS Familia,
-                    SUM(d.ValorVtaCIVA) AS TotalVendido,
+                    SUM(d.ValorVenta) AS TotalVendido,
                     COUNT(DISTINCT d.Articulo) AS CantidadArticulos,
                     COUNT(DISTINCT d.TC + d.IDCOMPROBANTE) AS CantidadComprobantes,
                     ISNULL(fj.Descripcion, '') AS DescripcionFamilia
@@ -632,7 +635,7 @@ public sealed class GestionDashboardService(
                 LEFT JOIN dbo.vw_familias_jerarquia fj ON fj.IdFamilia = CONVERT(varchar(50), a.IdFamilia)
                 {detWhereFam}
                 GROUP BY a.IdFamilia, fj.Descripcion
-                ORDER BY SUM(d.ValorVtaCIVA) DESC
+                ORDER BY SUM(d.ValorVenta) DESC
                 """, cn, cmd => BindVentasFilters(cmd, filters), token);
 
             var total = familias.Sum(x => x.TotalVendido);
@@ -666,14 +669,14 @@ public sealed class GestionDashboardService(
                       AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
                       AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                       AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                      AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
+                      AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
                       AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 )
                 """;
 
             var kpis = await QuerySingleAsync($"""
                 SELECT
-                    ISNULL(SUM(d.ValorVtaCIVA), 0),
+                    ISNULL(SUM(d.ValorVenta), 0),
                     COUNT(DISTINCT d.Articulo),
                     ISNULL(SUM(d.Consumo), 0)
                 FROM dbo.VT_DETALLEIVAPROFORMA d
@@ -689,11 +692,11 @@ public sealed class GestionDashboardService(
                 SELECT TOP (10)
                     d.DESCRIPCION AS Categoria,
                     CONVERT(varchar(50), d.Articulo) AS Codigo,
-                    SUM(d.ValorVtaCIVA) AS Total
+                    SUM(d.ValorVenta) AS Total
                 FROM dbo.VT_DETALLEIVAPROFORMA d
                 {detWhereArt}
                 GROUP BY d.Articulo, d.DESCRIPCION
-                ORDER BY SUM(d.ValorVtaCIVA) DESC
+                ORDER BY SUM(d.ValorVenta) DESC
                 """, cn, cmd => BindVentasFilters(cmd, filters), token);
 
             var topCantidad = await QueryCategoryAsync($"""
@@ -712,13 +715,13 @@ public sealed class GestionDashboardService(
                     CONVERT(varchar(50), d.Articulo) AS IdArticulo,
                     d.DESCRIPCION,
                     SUM(d.Consumo) AS CantidadVendida,
-                    SUM(d.ValorVtaCIVA) AS TotalVendido,
+                    SUM(d.ValorVenta) AS TotalVendido,
                     COUNT(DISTINCT d.TC + d.IDCOMPROBANTE) AS CantidadComprobantes,
                     MAX(d.FECHA) AS UltimaVenta
                 FROM dbo.VT_DETALLEIVAPROFORMA d
                 {detWhereArt}
                 GROUP BY d.Articulo, d.DESCRIPCION
-                ORDER BY SUM(d.ValorVtaCIVA) DESC
+                ORDER BY SUM(d.ValorVenta) DESC
                 """, cn, cmd => BindVentasFilters(cmd, filters), token);
 
             return new VentasArticulosPageDto
@@ -747,7 +750,7 @@ public sealed class GestionDashboardService(
                   AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
                   AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                   AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                  AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
+                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
                   AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 """;
 
@@ -834,7 +837,7 @@ public sealed class GestionDashboardService(
                   AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
                   AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                   AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                  AND (@Sucursal IS NULL OR CONVERT(varchar(50), l.UNEGOCIO) = @Sucursal)
+                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
                   AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 """;
 
@@ -893,6 +896,131 @@ public sealed class GestionDashboardService(
                 Filas             = filas
             };
         }, "No se pudo cargar el resumen por tipo de comprobante.", ct);
+
+    public async Task<VentasComparativoPeriodoDto> GetVentasComparativoPeriodoAsync(VentasDashboardFilters filters, CancellationToken ct = default)
+    {
+        filters ??= new VentasDashboardFilters();
+
+        return await ExecuteLoggedAsync("Ventas", "GetComparativoPeriodo", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var desde = filters.FechaDesde ?? DateTime.Today;
+            var hasta = filters.FechaHasta ?? DateTime.Today;
+            var dias = Math.Max(0, (hasta.Date - desde.Date).Days);
+
+            var periodoAnteriorHasta = desde.Date.AddDays(-1);
+            var periodoAnteriorDesde = periodoAnteriorHasta.AddDays(-dias);
+
+            var anioAnteriorDesde = desde.Date.AddYears(-1);
+            var anioAnteriorHasta = hasta.Date.AddYears(-1);
+
+            var actual = await GetPeriodoKpiAsync(cn, filters, desde.Date, hasta.Date, token);
+            var periodoAnterior = await GetPeriodoKpiAsync(cn, filters, periodoAnteriorDesde, periodoAnteriorHasta, token);
+            var anioAnterior = await GetPeriodoKpiAsync(cn, filters, anioAnteriorDesde, anioAnteriorHasta, token);
+
+            return new VentasComparativoPeriodoDto
+            {
+                Actual = actual,
+                PeriodoAnterior = periodoAnterior,
+                AnioAnterior = anioAnterior
+            };
+        }, "No se pudo cargar el comparativo por período.", ct);
+    }
+
+    private async Task<VentasPeriodoKpiDto> GetPeriodoKpiAsync(SqlConnection cn, VentasDashboardFilters filters, DateTime fechaDesde, DateTime fechaHasta, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                ISNULL(SUM(l.IMPORTE), 0) AS TotalFacturado,
+                COUNT(DISTINCT l.TC + l.IdComprobante) AS Comprobantes,
+                ISNULL(CASE WHEN COUNT(DISTINCT l.TC + l.IdComprobante) = 0 THEN 0
+                            ELSE SUM(l.IMPORTE) / COUNT(DISTINCT l.TC + l.IdComprobante) END, 0) AS TicketPromedio
+            FROM dbo.Libro_VentasConFP l
+            WHERE l.FECHA >= @FechaDesde
+              AND l.FECHA < @FechaHastaExclusive
+              AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
+              AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
+              AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
+              AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@FechaDesde", fechaDesde);
+        cmd.Parameters.AddWithValue("@FechaHastaExclusive", fechaHasta.Date.AddDays(1));
+        AddNullableString(cmd, "@ClienteLike", Like(filters.Cliente));
+        AddNullableString(cmd, "@Usuario", filters.Usuario);
+        AddNullableString(cmd, "@Sucursales", JoinCodes(filters.UnidadesNegocio));
+        AddNullableString(cmd, "@TipoComprobante", filters.TipoComprobante);
+
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (await rd.ReadAsync(ct))
+        {
+            return new VentasPeriodoKpiDto
+            {
+                FechaDesde = fechaDesde,
+                FechaHasta = fechaHasta,
+                TotalFacturado = GetDecimal(rd, 0),
+                Comprobantes = GetInt(rd, 1),
+                TicketPromedio = GetDecimal(rd, 2)
+            };
+        }
+
+        return new VentasPeriodoKpiDto { FechaDesde = fechaDesde, FechaHasta = fechaHasta };
+    }
+
+    public async Task<IReadOnlyList<VentasUnidadNegocioResumenDto>> GetVentasPorUnidadNegocioAsync(VentasDashboardFilters filters, CancellationToken ct = default)
+    {
+        filters ??= new VentasDashboardFilters();
+
+        return await ExecuteLoggedAsync("Ventas", "GetPorUnidadNegocio", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            const string sql = """
+                SELECT
+                    LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) AS Codigo,
+                    ISNULL(NULLIF(LTRIM(RTRIM(u.Descripcion)), ''), LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO)))) AS Descripcion,
+                    ISNULL(SUM(l.IMPORTE), 0) AS TotalFacturado,
+                    COUNT(DISTINCT l.TC + l.IdComprobante) AS Comprobantes,
+                    ISNULL(CASE WHEN COUNT(DISTINCT l.TC + l.IdComprobante) = 0 THEN 0
+                                ELSE SUM(l.IMPORTE) / COUNT(DISTINCT l.TC + l.IdComprobante) END, 0) AS TicketPromedio,
+                    COUNT(DISTINCT l.CUENTA) AS ClientesActivos
+                FROM dbo.Libro_VentasConFP l
+                LEFT JOIN dbo.V_TA_UnidadNegocio u ON LTRIM(RTRIM(u.Codigo)) = LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO)))
+                WHERE (@FechaDesde IS NULL OR l.FECHA >= @FechaDesde)
+                  AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
+                  AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
+                  AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
+                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
+                  AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
+                  AND l.UNEGOCIO IS NOT NULL
+                GROUP BY l.UNEGOCIO, u.Descripcion
+                ORDER BY SUM(l.IMPORTE) DESC
+                """;
+
+            var items = new List<VentasUnidadNegocioResumenDto>();
+            await using var cmd = new SqlCommand(sql, cn);
+            BindVentasFilters(cmd, filters);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                items.Add(new VentasUnidadNegocioResumenDto
+                {
+                    Codigo = GetStringValue(rd, 0),
+                    Descripcion = GetStringValue(rd, 1),
+                    TotalFacturado = GetDecimal(rd, 2),
+                    Comprobantes = GetInt(rd, 3),
+                    TicketPromedio = GetDecimal(rd, 4),
+                    ClientesActivos = GetInt(rd, 5)
+                });
+            }
+
+            return (IReadOnlyList<VentasUnidadNegocioResumenDto>)items;
+        }, "No se pudo cargar la comparativa por unidad de negocio.", ct);
+    }
 
     public async Task<StockDashboardDto> GetStockAsync(StockDashboardFilters filters, CancellationToken ct = default)
     {
@@ -1567,6 +1695,30 @@ public sealed class GestionDashboardService(
         return items.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
     }
 
+    private async Task<IReadOnlyList<UnidadNegocioOptionDto>> QueryUnidadesNegocioAsync(string sql, SqlConnection cn, CancellationToken ct)
+    {
+        var items = new List<UnidadNegocioOptionDto>();
+        await using var cmd = new SqlCommand(sql, cn);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            var codigo = GetStringValue(rd, 0);
+            if (string.IsNullOrWhiteSpace(codigo))
+                continue;
+
+            items.Add(new UnidadNegocioOptionDto
+            {
+                Codigo = codigo,
+                Descripcion = GetStringValue(rd, 1)
+            });
+        }
+
+        return items
+            .GroupBy(x => x.Codigo, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+    }
+
     private async Task<IReadOnlyList<MonthlyPointDto>> QueryMonthlyAsync(string sql, SqlConnection cn, Action<SqlCommand>? bind, CancellationToken ct)
     {
         var items = new List<MonthlyPointDto>();
@@ -1842,10 +1994,18 @@ public sealed class GestionDashboardService(
         BindDateRange(cmd, filters.FechaDesde, filters.FechaHasta);
         AddNullableString(cmd, "@ClienteLike", Like(filters.Cliente));
         AddNullableString(cmd, "@Usuario", filters.Usuario);
-        AddNullableString(cmd, "@Sucursal", filters.Sucursal);
+        AddNullableString(cmd, "@Sucursales", JoinCodes(filters.UnidadesNegocio));
         AddNullableString(cmd, "@Deposito", filters.Deposito);
         AddNullableString(cmd, "@TipoComprobante", filters.TipoComprobante);
     }
+
+    /// <summary>
+    /// Junta códigos de unidad de negocio en un string separado por comas. No se usa STRING_SPLIT porque
+    /// la base activa (ALFANET) tiene compatibility_level 100 (SQL 2008) aunque el motor sea más nuevo;
+    /// el filtro compara con el patrón ',@Sucursales,' LIKE '%,codigo,%' en cada WHERE, portable a 2008+.
+    /// </summary>
+    private static string? JoinCodes(List<string>? codigos)
+        => codigos is { Count: > 0 } ? string.Join(",", codigos.Where(c => !string.IsNullOrWhiteSpace(c)).Select(c => c.Trim())) : null;
 
     private static void BindStockFilters(SqlCommand cmd, StockDashboardFilters filters)
     {

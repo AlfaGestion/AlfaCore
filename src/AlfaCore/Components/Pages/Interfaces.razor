@@ -1,4 +1,4 @@
-﻿@page "/interfaces"
+@page "/interfaces"
 @page "/{idweb}/{idbase:int}/interfaces"
 @using AlfaCore.Models
 @inject AlfaCore.Services.IInterfacesService InterfacesSvc
@@ -301,7 +301,7 @@
             </div>
 
             <div class="usuarios-table-wrap interfaces-docs-table-wrap">
-                <table class="data-table usuarios-table">
+                <table class="data-table usuarios-table" data-sticky-list-header>
                     <thead>
                         <tr>
                             <th class="interfaces-table__selector">
@@ -543,7 +543,7 @@
             @if (_colaIaExpandida && _queueSnapshot.Items.Count > 0)
             {
                 <div class="usuarios-table-wrap interfaces-docs-table-wrap">
-                    <table class="data-table usuarios-table">
+                    <table class="data-table usuarios-table" data-sticky-list-header>
                         <thead>
                             <tr>
                                 <th>Doc.</th>
@@ -694,7 +694,7 @@
                         @if (_detalleLectura.Items.Count > 0)
                         {
                             <div class="usuarios-table-wrap interfaces-docs-table-wrap" data-sticky-x-scroll="off">
-                                <table class="data-table usuarios-table">
+                                <table class="data-table usuarios-table" data-sticky-list-header>
                                     <thead>
                                         <tr>
                                             <th>Renglón</th>

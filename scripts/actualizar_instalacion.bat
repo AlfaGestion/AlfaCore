@@ -4,6 +4,8 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0.."
 
 set "SOURCE_DIR=.\publish\AlfaCoreLAN"
+set "DEFAULT_DEST_1=\\10.8.0.32\c\Program Files\Alfa Gestion\AlfaCore"
+set "DEFAULT_DEST_2=\\10.8.0.53\c\inetpub\wwwroot\AlfaCore"
 for %%I in ("%SOURCE_DIR%") do set "SOURCE_DIR_FULL=%%~fI"
 set "ROOT_COPY_EXIT=0"
 set "UPDATES_COPY_EXIT=0"
@@ -23,13 +25,16 @@ echo Uso:
 echo   scripts\actualizar_instalacion.bat "C:\Ruta\De\Instalacion"
 echo.
 echo Si no informas destino, el script lo pide por pantalla.
+echo Destinos sugeridos:
+echo   1^) %DEFAULT_DEST_1% ^(SERVER-ALFAWEB^)
+echo   2^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL^)
 echo.
 echo Este script:
 echo   - toma el publish de .\publish\AlfaCoreLAN
 echo   - actualiza una instalacion existente sin reinstalar
-echo   - preserva appsettings.json (actual), appsettings.Production.json (legacy) y .env
+echo   - preserva appsettings.json (actual), appsettings.Production.json (legacy), .env y web.config
 echo   - preserva App_Data local y wwwroot\uploads
-echo   - copia App_Data\updates para habilitar actualizaciones SQL pendientes
+echo   - sincroniza App_Data\updates como espejo exacto del origen (borra scripts viejos/renumerados que ya no esten)
 echo.
 echo Recomendaciones:
 echo   - ejecutar scripts\publicar_release.bat antes de usarlo
@@ -66,6 +71,7 @@ echo Preserva en el servidor:
 echo   - appsettings.json
 echo   - appsettings.Production.json ^(legacy^)
 echo   - .env
+echo   - web.config ^(bindings/puerto propios de esta instalacion^)
 echo   - App_Data local ^(uploads, sesiones, historicos, diagnosticos, etc.^)
 echo   - wwwroot\uploads
 echo.
@@ -77,11 +83,28 @@ echo.
 set "DEST_DIR_FULL=%~1"
 if defined DEST_DIR_FULL goto :got_destination
 
-set /p "DEST_DIR_FULL=Destino de instalacion: "
-set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
+echo Destinos sugeridos:
+echo   1^) %DEFAULT_DEST_1% ^(SERVER-ALFAWEB^)
+echo   2^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL^)
+echo   3^) Otra ruta
+echo.
+set /p "DEST_OPTION=Elige destino [1/2/3]: "
+set "DEST_OPTION=%DEST_OPTION:"=%"
+
+if /i "%DEST_OPTION%"=="1" (
+  set "DEST_DIR_FULL=%DEFAULT_DEST_1%"
+) else if /i "%DEST_OPTION%"=="2" (
+  set "DEST_DIR_FULL=%DEFAULT_DEST_2%"
+) else (
+  set /p "DEST_DIR_FULL=Destino de instalacion: "
+  set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
+)
 
 :got_destination
 set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
+
+rem quita la barra final (si la hay) para evitar que "%DEST_DIR_FULL%" escape la comilla de cierre en robocopy
+if "%DEST_DIR_FULL:~-1%"=="\" if not "%DEST_DIR_FULL:~-2,1%"==":" set "DEST_DIR_FULL=%DEST_DIR_FULL:~0,-1%"
 
 if not defined DEST_DIR_FULL (
   echo.
@@ -103,8 +126,8 @@ if not exist "%DEST_DIR_FULL%" (
 )
 
 set "REMOTE_HOST="
-for /f "tokens=1,2,3 delims=\" %%A in ("%DEST_DIR_FULL%") do (
-  if "%%A"=="" if "%%B"=="" set "REMOTE_HOST=%%C"
+if "%DEST_DIR_FULL:~0,2%"=="\\" (
+  for /f "tokens=1 delims=\" %%C in ("%DEST_DIR_FULL:~2%") do set "REMOTE_HOST=%%C"
 )
 
 if defined REMOTE_HOST (
@@ -134,7 +157,7 @@ if /i not "%CONFIRM%"=="S" if /i not "%CONFIRM%"=="SI" (
 
 echo.
 echo Copiando archivos necesarios...
-echo - Se preservan appsettings.json ^(actual^), appsettings.Production.json ^(legacy^) y .env
+echo - Se preservan appsettings.json ^(actual^), appsettings.Production.json ^(legacy^), .env y web.config
 echo - Se preservan App_Data y wwwroot\uploads del servidor
 echo - Se actualizan los binarios y JSON del runtime
 echo - Se actualiza App_Data\updates
@@ -142,7 +165,7 @@ echo.
 echo Destino detectado: %DEST_DIR_FULL%
 echo.
 
-robocopy "%SOURCE_DIR_FULL%" "%DEST_DIR_FULL%" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XD "App_Data" "wwwroot\uploads" /XF "appsettings.json" "appsettings.Production.json" ".env" "*.log"
+robocopy "%SOURCE_DIR_FULL%" "%DEST_DIR_FULL%" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP /XD "App_Data" "wwwroot\uploads" /XF "appsettings.json" "appsettings.Production.json" ".env" "web.config" "*.log"
 set "ROOT_COPY_EXIT=%ERRORLEVEL%"
 
 if %ROOT_COPY_EXIT% GEQ 8 (
@@ -156,7 +179,7 @@ if %ROOT_COPY_EXIT% GEQ 8 (
 )
 
 if exist "%SOURCE_DIR_FULL%\App_Data\updates" (
-  robocopy "%SOURCE_DIR_FULL%\App_Data\updates" "%DEST_DIR_FULL%\App_Data\updates" /E /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
+  robocopy "%SOURCE_DIR_FULL%\App_Data\updates" "%DEST_DIR_FULL%\App_Data\updates" /E /PURGE /COPY:DAT /DCOPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS /NP
   set "UPDATES_COPY_EXIT=%ERRORLEVEL%"
 )
 
@@ -178,7 +201,7 @@ echo Actualizacion completada.
 echo.
 echo Resumen:
 echo   - Binarios actualizados desde publish\AlfaCoreLAN
-echo   - Configuracion local preservada ^(appsettings.json actual / appsettings.Production.json legacy / .env^)
+echo   - Configuracion local preservada ^(appsettings.json actual / appsettings.Production.json legacy / .env / web.config^)
 echo   - Datos locales preservados ^(App_Data y wwwroot\uploads^)
 echo   - Scripts SQL publicados en App_Data\updates
 echo   - Launcher actualizado a iniciar_AlfaCore.bat

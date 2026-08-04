@@ -6,14 +6,6 @@
             <h3 class="panel-card__title">@Titulo</h3>
             <p class="panel-card__subtitle">@Subtitulo</p>
         </div>
-        <div class="quick-range">
-            <button class="btn btn--ghost" @onclick="HoyAsync">Hoy</button>
-            <button class="btn btn--ghost" @onclick="SemanaAsync">Esta semana</button>
-            <button class="btn btn--ghost" @onclick="MesAsync">Este mes</button>
-            <button class="btn btn--ghost" @onclick="MesAnteriorAsync">Mes anterior</button>
-            <button class="btn btn--ghost" @onclick="UltimosTresAsync">Últimos 3 meses</button>
-            <button class="btn btn--ghost" @onclick="AnioAsync">Año actual</button>
-        </div>
     </div>
 
     <div class="filters-grid filters-grid--dates">
@@ -30,6 +22,22 @@
                 @(_showAdvanced ? "Ocultar filtros" : "Mostrar filtros")
             </button>
         </div>
+    </div>
+
+    <div class="quick-range">
+        @foreach (var opt in QuickRangeOptions)
+        {
+            <button type="button"
+                    class="btn btn--sm @(_activeQuickRange == opt.Key ? "btn--primary" : "btn--ghost")"
+                    @onclick="() => ApplyQuickRangeAsync(opt.Key)">
+                @opt.Label
+            </button>
+        }
+        <button type="button"
+                class="btn btn--sm @(_activeQuickRange is null ? "btn--primary" : "btn--ghost")"
+                @onclick="MarcarRangoPersonalizado">
+            Rango personalizado
+        </button>
     </div>
 
     <div class="filters-summary" aria-live="polite">
@@ -54,15 +62,23 @@
                     }
                 </InputSelect>
             </div>
-            <div class="field">
-                <label>Sucursal</label>
-                <InputSelect @bind-Value="Model.Sucursal">
-                    <option value="">Todas</option>
-                    @foreach (var item in Options.Sucursales)
+            <div class="field field--wide">
+                <label>Unidad de negocio</label>
+                <div class="uneg-checklist">
+                    @foreach (var item in Options.UnidadesNegocio)
                     {
-                        <option value="@item">@item</option>
+                        <label class="uneg-checklist__item">
+                            <input type="checkbox"
+                                   checked="@Model.UnidadesNegocio.Contains(item.Codigo)"
+                                   @onchange="e => ToggleUnidadNegocio(item.Codigo, e.Value)" />
+                            <span>@item.Descripcion</span>
+                        </label>
                     }
-                </InputSelect>
+                    @if (Options.UnidadesNegocio.Count == 0)
+                    {
+                        <span class="uneg-checklist__empty">No hay unidades de negocio con datos.</span>
+                    }
+                </div>
             </div>
             <div class="field">
                 <label>Depósito</label>
@@ -101,6 +117,19 @@
     [Parameter] public EventCallback OnApply { get; set; }
 
     private bool _showAdvanced;
+    private string? _activeQuickRange;
+
+    private static readonly (string Key, string Label)[] QuickRangeOptions =
+    [
+        ("ayer", "Ayer"),
+        ("ultimos-7", "Últimos 7 días"),
+        ("ultimos-15", "Últimos 15 días"),
+        ("ultimos-30", "Últimos 30 días"),
+        ("mes", "Este mes"),
+        ("mes-anterior", "Mes pasado"),
+        ("anio", "Este año"),
+        ("anio-anterior", "Año pasado")
+    ];
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
     {
@@ -110,13 +139,18 @@
         await OnApply.InvokeAsync();
     }
 
-    private Task HoyAsync() => ApplyQuickRangeAsync("hoy");
-    private Task SemanaAsync() => ApplyQuickRangeAsync("semana");
-    private Task MesAsync() => ApplyQuickRangeAsync("mes");
-    private Task MesAnteriorAsync() => ApplyQuickRangeAsync("mes-anterior");
-    private Task UltimosTresAsync() => ApplyQuickRangeAsync("ultimos-3");
-    private Task AnioAsync() => ApplyQuickRangeAsync("anio");
     private void ToggleAdvanced() => _showAdvanced = !_showAdvanced;
+
+    private void ToggleUnidadNegocio(string codigo, object? isChecked)
+    {
+        var marcado = isChecked is bool b && b;
+        if (marcado && !Model.UnidadesNegocio.Contains(codigo))
+            Model.UnidadesNegocio.Add(codigo);
+        else if (!marcado)
+            Model.UnidadesNegocio.Remove(codigo);
+    }
+
+    private void MarcarRangoPersonalizado() => _activeQuickRange = null;
 
     private async Task ClearAsync()
     {
@@ -125,9 +159,10 @@
         Model.FechaHasta = today;
         Model.Cliente = null;
         Model.Usuario = null;
-        Model.Sucursal = null;
+        Model.UnidadesNegocio = [];
         Model.Deposito = null;
         Model.TipoComprobante = null;
+        _activeQuickRange = null;
         await OnApply.InvokeAsync();
     }
 
@@ -136,13 +171,20 @@
         var today = DateTime.Today;
         switch (key)
         {
-            case "hoy":
-                Model.FechaDesde = today;
+            case "ayer":
+                Model.FechaDesde = today.AddDays(-1);
+                Model.FechaHasta = today.AddDays(-1);
+                break;
+            case "ultimos-7":
+                Model.FechaDesde = today.AddDays(-6);
                 Model.FechaHasta = today;
                 break;
-            case "semana":
-                var diff = ((int)today.DayOfWeek + 6) % 7;
-                Model.FechaDesde = today.AddDays(-diff);
+            case "ultimos-15":
+                Model.FechaDesde = today.AddDays(-14);
+                Model.FechaHasta = today;
+                break;
+            case "ultimos-30":
+                Model.FechaDesde = today.AddDays(-29);
                 Model.FechaHasta = today;
                 break;
             case "mes":
@@ -154,16 +196,17 @@
                 Model.FechaDesde = firstThisMonth.AddMonths(-1);
                 Model.FechaHasta = firstThisMonth.AddDays(-1);
                 break;
-            case "ultimos-3":
-                Model.FechaDesde = today.AddMonths(-3);
-                Model.FechaHasta = today;
-                break;
             case "anio":
                 Model.FechaDesde = new DateTime(today.Year, 1, 1);
                 Model.FechaHasta = today;
                 break;
+            case "anio-anterior":
+                Model.FechaDesde = new DateTime(today.Year - 1, 1, 1);
+                Model.FechaHasta = new DateTime(today.Year - 1, 12, 31);
+                break;
         }
 
+        _activeQuickRange = key;
         await OnApply.InvokeAsync();
     }
 
@@ -175,7 +218,15 @@
 
         AddIfPresent(parts, "Cliente", Model.Cliente);
         AddIfPresent(parts, "Usuario", Model.Usuario);
-        AddIfPresent(parts, "Sucursal", Model.Sucursal);
+
+        if (Model.UnidadesNegocio.Count > 0)
+        {
+            var nombres = Options.UnidadesNegocio
+                .Where(u => Model.UnidadesNegocio.Contains(u.Codigo))
+                .Select(u => u.Descripcion);
+            parts.Add($"Unidad de negocio: {string.Join(", ", nombres)}");
+        }
+
         AddIfPresent(parts, "Depósito", Model.Deposito);
         AddIfPresent(parts, "TC", Model.TipoComprobante);
 

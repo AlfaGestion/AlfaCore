@@ -7,19 +7,21 @@
     <base href="/" />
     <title>AlfaCore - Alfa Gestión</title>
     <link rel="stylesheet" href="/bootstrap/bootstrap.min.css?v=20260703-cssfix" />
-    <link rel="stylesheet" href="/app.css?v=20260708-lightbox-stableframe" />
+    <link rel="stylesheet" href="/app.css?v=20260729-alfaknowledge-spacing-ai-suggestion-panel" />
     <link rel="stylesheet" href="/css/informes.css?v=20260703-cssfix" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
-    <link rel="stylesheet" href="/AlfaCore.styles.css?v=20260707-loginfix21" />
+    <link rel="stylesheet" href="/AlfaCore.styles.css?v=20260803-module-list-toolbar" />
     <link rel="stylesheet" href="/css/auth.css?v=20260708-loginlocal2" />
     <link rel="stylesheet" href="/theme-overrides.css?v=20260703-themefix3" />
     <link rel="stylesheet" href="/css/carga-viajes.css?v=20260703-cssfix2" />
+    <link rel="stylesheet" href="/css/sticky-list-headers.css?v=20260715b" />
     <link rel="icon" type="image/png" href="/logos/icono.png?v=20260703-cssfix" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <meta name="theme-color" content="#1f2937" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="AlfaCore" />
+    <script src="https://www.google.com/recaptcha/api.js?render=explicit" async defer></script>
     <script>
         (function () {
             var t = localStorage.getItem('dashboard.theme') || 'light';
@@ -99,6 +101,57 @@
                 window.history.back();
             }
         };
+        window.alfaCorePublicRegistration = {
+            renderRecaptcha: function (elementId, siteKey) {
+                return new Promise(function (resolve, reject) {
+                    var attempts = 0;
+
+                    function render() {
+                        var element = document.getElementById(elementId);
+                        if (!element) {
+                            reject(new Error('No se encontro el contenedor de reCAPTCHA.'));
+                            return;
+                        }
+
+                        if (element.dataset.widgetId) {
+                            resolve(parseInt(element.dataset.widgetId, 10));
+                            return;
+                        }
+
+                        if (window.grecaptcha && typeof window.grecaptcha.render === 'function') {
+                            var widgetId = window.grecaptcha.render(elementId, { sitekey: siteKey });
+                            element.dataset.widgetId = String(widgetId);
+                            resolve(widgetId);
+                            return;
+                        }
+
+                        attempts += 1;
+                        if (attempts > 100) {
+                            reject(new Error('reCAPTCHA no termino de cargar.'));
+                            return;
+                        }
+
+                        window.setTimeout(render, 150);
+                    }
+
+                    render();
+                });
+            },
+            getRecaptchaResponse: function (elementId) {
+                var element = document.getElementById(elementId);
+                if (!element || !element.dataset.widgetId || !window.grecaptcha)
+                    return '';
+
+                return window.grecaptcha.getResponse(parseInt(element.dataset.widgetId, 10)) || '';
+            },
+            resetRecaptcha: function (elementId) {
+                var element = document.getElementById(elementId);
+                if (!element || !element.dataset.widgetId || !window.grecaptcha)
+                    return;
+
+                window.grecaptcha.reset(parseInt(element.dataset.widgetId, 10));
+            }
+        };
     </script>
     <HeadOutlet />
 </head>
@@ -108,10 +161,11 @@
     <script src="_framework/blazor.web.js"></script>
     <script src="js/dashboard-export.js?v=20260417"></script>
     <script src="js/auth-tree.js?v=20260526a"></script>
-    <script src="js/conversaciones.js?v=20260708j"></script>
+    <script src="js/conversaciones.js?v=20260722a"></script>
     <script src="js/interfaces-upload.js?v=20260526b"></script>
     <script src="js/pwa.js?v=20260521e"></script>
     <script src="js/sticky-table-scroll.js?v=20260525a"></script>
+    <script src="js/sticky-list-headers.js?v=20260715c"></script>
     <script src="js/sidebar-hover-state.js?v=20260611a"></script>
 </body>
 

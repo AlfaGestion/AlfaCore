@@ -76,7 +76,8 @@ public sealed class FavoritesService(
                         ISNULL(w.Observacion, '') AS Observacion
                     FROM dbo.ALFACORE_MENU_WEB w
                     {legacyJoin}
-                    WHERE ISNULL(w.HabilitadoWeb, 1) = 1
+                    WHERE UPPER(LTRIM(RTRIM(ISNULL(w.Menu, '')))) = N'ALFA'
+                      AND ISNULL(w.HabilitadoWeb, 1) = 1
                       AND ISNULL(w.EsFavoritoDefault, 0) = 1
                       AND ISNULL(w.RutaWeb, '') <> ''
                     ORDER BY ISNULL(w.OrdenWeb, 0), {nameExpr};
@@ -105,7 +106,8 @@ public sealed class FavoritesService(
                         ON UPPER(LTRIM(RTRIM(fx.Clave))) = @ClaveExcluida + UPPER(LTRIM(RTRIM(w.Clave)))
                        AND UPPER(LTRIM(RTRIM(fx.Usuario))) = @Usuario
                        AND UPPER(LTRIM(RTRIM(fx.Sistema))) = @Sistema
-                    WHERE ISNULL(w.HabilitadoWeb, 1) = 1
+                    WHERE UPPER(LTRIM(RTRIM(ISNULL(w.Menu, '')))) = N'ALFA'
+                      AND ISNULL(w.HabilitadoWeb, 1) = 1
                       AND ISNULL(w.RutaWeb, '') <> ''
                       AND (f.Clave IS NOT NULL OR (ISNULL(w.EsFavoritoDefault, 0) = 1 AND fx.Clave IS NULL))
                     ORDER BY ISNULL(f.Orden, ISNULL(w.OrdenWeb, 0)), {nameExpr};

@@ -27,6 +27,54 @@ Se trabajó sobre la base actual del proyecto.
 
 ---
 
+## Actualización 2026-07-29: copiloto AlfaKnowledge
+
+Se completó la integración asistida entre Conversaciones y el repositorio separado
+`C:\dev\AlfaKnowledge`.
+
+Estado:
+
+- AlfaKnowledge productivo publicado en `http://10.8.0.32:5000`;
+- endpoint `POST /api/external/suggest-reply` protegido con API key;
+- migración SQL `012` verificada en `kb.QueryInteractions`;
+- AlfaCore productivo actualizado mediante despliegue paralelo en
+  `C:\Program Files\Alfa Gestion\AlfaCore-20260729`;
+- servicio Windows `AlfaCore` ejecutando el backend nuevo en puerto `5056`;
+- IIS público derivando `https://alfanetweb.ddns.net/` hacia `5056`;
+- backend anterior conservado temporalmente en `5055` para rollback;
+- prueba productiva de sugerencia y feedback completada correctamente;
+- fallos de integración registrados mediante `IAppEventService` en `AUX_ERR`.
+- configuración de AlfaKnowledge fijada también en el entorno del servicio Windows, porque la
+  primera prueba visual mostró que el proceso no estaba tomando esos valores desde `.env`.
+- panel ajustado para diferenciar falta de configuración, conversación sin texto entrante y fallo
+  real del servicio, en lugar de mostrar el mismo mensaje genérico para todos los casos.
+- binding de `AlfaKnowledgeOptions` endurecido con lectura explícita de variables de entorno luego
+  de confirmar visualmente que `IOptions` recibía la sección vacía.
+- asistente ampliado con tres alcances (`tramo actual`, `toda la conversación` y `mensaje
+  marcado`) y chat técnico/IA dentro del panel;
+- el tramo actual se delimita con los eventos internos de cierre ya existentes, sin agregar
+  tablas ni duplicar el historial;
+- el botón de estrellas de cada mensaje permite usarlo como foco explícito;
+- las respuestas de la IA siguen siendo borradores: solo pasan al compositor mediante
+  `Llevar a respuesta`.
+- el panel IA reserva una franja fija del viewport, permanece abierto hasta cierre explícito y
+  cancela la petición activa al cerrarse;
+- las fuentes son enlaces en pestaña nueva y existe acceso directo a AlfaKnowledge completo;
+- las preguntas escritas por el técnico recuperan documentación por la pregunta actual, dejando
+  el historial del cliente como contexto secundario. Esto corrigió respuestas contaminadas por
+  temas anteriores del mismo hilo.
+
+Documentación técnica:
+
+- `docs/modulos/integraciones/alfaknowledge.md`
+
+Próximo paso funcional:
+
+- validar con un técnico los tres alcances y el chat contextual en una conversación real;
+- empezar a reunir feedback antes de evaluar cualquier automatización.
+
+---
+
 ## Decisiones importantes ya tomadas
 
 ### 1. Manuales

@@ -6,27 +6,13 @@
 @using System.Text.RegularExpressions
 @inject AlfaCore.Services.IAuditoriaService AuditoriaSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Auditoría de usuarios | Alfa Gestión</PageTitle>
 
 <div class="page-grid contactos-page" @onclick="HandlePageClickAsync">
-        <section class="page-intro">
-            <div>
-                <h2 class="page-intro__title">Auditoría de usuarios</h2>
-                <p class="page-intro__text">Detectá actividad sospechosa sobre comprobantes comerciales, remitos, accesos sensibles y patrones anómalos de operación.</p>
-                @if (_loading)
-                {
-                    <p class="page-intro__text"><i class="bi bi-hourglass-split"></i> Preparando pantalla de auditoría...</p>
-                }
-            </div>
-            <div class="actions">
-                <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" @onclick:stopPropagation disabled="@_loadingRows">
-                    <i class="bi bi-arrow-clockwise"></i> Recargar
-                </button>
-            </div>
-        </section>
-
         @if (_feedback is not null)
         {
             <section class="panel-card">
@@ -136,21 +122,8 @@
             </section>
         }
 
-        <section class="panel-card smart-search-card" @onclick:stopPropagation>
+        <section class="panel-card smart-search-card audit-users-search-options" @onclick:stopPropagation>
             <div class="smart-search">
-                <div class="smart-search__bar">
-                    <i class="bi bi-search"></i>
-                    <input type="search"
-                           placeholder="Buscar por usuario, PC, comprobante, cliente, motivo..."
-                           @bind="_texto"
-                           @bind:event="oninput"
-                           @onfocus="OpenSearchPanelAsync"
-                           @onkeydown="HandleApplyKeyDownAsync" />
-                    <button type="button" class="smart-search__toggle" @onclick="ToggleSearchPanel" aria-label="Mostrar filtros">
-                        <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
-                    </button>
-                </div>
-
                 <div class="smart-search__chips" aria-live="polite">
                     @foreach (var chip in BuildFilterChips())
                     {
@@ -718,7 +691,7 @@
                 }
 
                 <div class="table-wrap">
-                    <table class="data-table usuarios-table audit-users-table">
+                    <table class="data-table usuarios-table audit-users-table" data-sticky-list-header>
                         <thead>
                             @if (IsActivityMode)
                             {
@@ -1016,7 +989,10 @@
     ];
 
     protected override Task OnInitializedAsync()
-        => Task.CompletedTask;
+    {
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -1025,7 +1001,51 @@
 
         _initialLoadDone = true;
         await InicializarAsync();
+        UpdatePageHeader();
     }
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = "Auditoría de usuarios",
+            Breadcrumb = ["Auditoría", "Usuarios"],
+            State = _loading || _loadingRows ? PageHeaderState.Loading : PageHeaderState.List,
+            Search = new PageHeaderSearchConfig
+            {
+                Placeholder = "Buscar por usuario, PC, comprobante, cliente, motivo...",
+                Text = _texto,
+                Disabled = _loading,
+                ShowFiltersToggle = true,
+                FiltersOpen = _showSearchPanel,
+                OnTextChanged = OnHeaderSearchTextChangedAsync,
+                OnSearch = ApplyFiltersAsync,
+                OnToggleFilters = ToggleSearchPanel
+            },
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Disabled = _loading || _loadingRows,
+                    OnClick = RecargarAsync
+                }
+            ]
+        });
+    }
+
+    private Task OnHeaderSearchTextChangedAsync(string text)
+    {
+        _texto = text;
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    public void Dispose()
+        => PageHeader.Clear();
 
     private int TotalPaginas => Math.Max(1, (int)Math.Ceiling((_result.TotalRegistros <= 0 ? 1m : _result.TotalRegistros) / (decimal)Math.Max(1, _tamanioPagina)));
     private bool IsActivityMode => string.Equals(_tipoControl, "ACTIVIDAD_USUARIO", StringComparison.OrdinalIgnoreCase);
@@ -1059,6 +1079,7 @@
     private async Task BuscarAsync()
     {
         _loadingRows = true;
+        UpdatePageHeader();
         _feedback = null;
         var result = await UiOps.RunAsync(async () =>
         {
@@ -1080,6 +1101,7 @@
         _feedback = result.Success ? null : result.Feedback;
         _hasSearched = result.Success;
         _loadingRows = false;
+        UpdatePageHeader();
     }
 
     private async Task RecargarAsync()
@@ -1088,6 +1110,7 @@
         await CargarConfiguracionAsync(force: true);
         if (_hasSearched)
             await BuscarAsync();
+        UpdatePageHeader();
     }
 
     private async Task LimpiarAsync()
@@ -1111,6 +1134,7 @@
         _hasSearched = false;
         _rows.Clear();
         _selected = null;
+        UpdatePageHeader();
     }
 
     private async Task HandleApplyKeyDownAsync(KeyboardEventArgs args)
@@ -1135,6 +1159,7 @@
         _showSearchPanel = !_showSearchPanel;
         if (_showSearchPanel)
             await EnsureLookupsLoadedAsync();
+        UpdatePageHeader();
     }
 
     private async Task ToggleSettingsPanelAsync()
@@ -1154,7 +1179,13 @@
     }
 
     private void CloseSearchPanel()
-        => _showSearchPanel = false;
+    {
+        if (!_showSearchPanel)
+            return;
+
+        _showSearchPanel = false;
+        UpdatePageHeader();
+    }
 
     private void CerrarConfiguracion()
         => _showSettingsPanel = false;

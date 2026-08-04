@@ -1,0 +1,217 @@
+.public-register {
+    min-height: 100vh;
+    padding: 32px 20px;
+    background:
+        radial-gradient(circle at top left, rgba(11, 116, 201, 0.18), transparent 34%),
+        linear-gradient(135deg, #eff5fb 0%, #dbe7f5 48%, #edf4fb 100%);
+}
+
+.public-register__shell {
+    max-width: 1180px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+    gap: 28px;
+    align-items: stretch;
+}
+
+.public-register__info,
+.public-register__card {
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid rgba(15, 33, 56, 0.09);
+    border-radius: 28px;
+    box-shadow: 0 30px 80px rgba(15, 33, 56, 0.12);
+}
+
+.public-register__info {
+    padding: 34px;
+}
+
+.public-register__brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 12px;
+    text-decoration: none;
+    color: #0f2138;
+    font-weight: 700;
+    margin-bottom: 24px;
+}
+
+.public-register__brand img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+}
+
+.public-register__eyebrow,
+.public-register__pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 12px;
+    border-radius: 999px;
+    background: rgba(11, 116, 201, 0.12);
+    color: #0b74c9;
+    font-size: 0.85rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}
+
+.public-register__info h1 {
+    margin: 18px 0 12px;
+    color: #10233d;
+    font-size: clamp(2rem, 3vw, 3.25rem);
+    line-height: 1.02;
+}
+
+.public-register__info p {
+    margin: 0;
+    color: #516275;
+    font-size: 1.05rem;
+    max-width: 48ch;
+}
+
+.public-register__features {
+    margin-top: 30px;
+    display: grid;
+    gap: 14px;
+}
+
+.public-register__features article {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 14px;
+    padding: 16px 18px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(11, 116, 201, 0.08), rgba(16, 35, 61, 0.03));
+}
+
+.public-register__features i {
+    font-size: 1.4rem;
+    color: #0b74c9;
+}
+
+.public-register__features strong,
+.public-register__card-head h2 {
+    display: block;
+    color: #10233d;
+}
+
+.public-register__features span,
+.public-register__card-head p {
+    color: #607386;
+}
+
+.public-register__card {
+    padding: 30px;
+}
+
+.public-register__card-head h2 {
+    margin: 16px 0 8px;
+    font-size: 2rem;
+}
+
+.public-register__card-head p {
+    margin: 0;
+}
+
+.public-register__alert {
+    margin-top: 20px;
+    padding: 14px 16px;
+    border-radius: 16px;
+    display: grid;
+    gap: 4px;
+    font-size: 0.96rem;
+}
+
+.public-register__alert.is-success {
+    background: rgba(19, 154, 89, 0.12);
+    color: #0b5f34;
+}
+
+.public-register__alert.is-error {
+    background: rgba(181, 49, 49, 0.12);
+    color: #8a2323;
+}
+
+.public-register__form {
+    margin-top: 24px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 16px;
+}
+
+.public-register__form label {
+    display: grid;
+    gap: 8px;
+    color: #24384f;
+    font-weight: 600;
+}
+
+.public-register__form input,
+.public-register__form select {
+    width: 100%;
+    min-height: 50px;
+    padding: 0 15px;
+    border-radius: 14px;
+    border: 1px solid rgba(15, 33, 56, 0.14);
+    background: #fff;
+    color: #10233d;
+}
+
+.public-register__form input:focus,
+.public-register__form select:focus {
+    outline: none;
+    border-color: #0b74c9;
+    box-shadow: 0 0 0 4px rgba(11, 116, 201, 0.14);
+}
+
+.public-register__form .is-wide,
+.public-register__captcha,
+.public-register__actions {
+    grid-column: 1 / -1;
+}
+
+.public-register__captcha {
+    min-height: 78px;
+}
+
+.public-register__captcha-warning {
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: rgba(181, 49, 49, 0.1);
+    color: #8a2323;
+}
+
+.public-register__actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.public-register__actions .btn {
+    min-width: 190px;
+}
+
+@media (max-width: 980px) {
+    .public-register__shell {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 640px) {
+    .public-register {
+        padding: 18px 12px;
+    }
+
+    .public-register__info,
+    .public-register__card {
+        padding: 22px;
+        border-radius: 22px;
+    }
+
+    .public-register__form {
+        grid-template-columns: 1fr;
+    }
+}

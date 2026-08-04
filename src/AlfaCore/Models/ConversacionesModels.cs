@@ -2,6 +2,15 @@ using System.Text.Json;
 
 namespace AlfaCore.Models;
 
+public static class ConversacionCanales
+{
+    public const string WhatsApp = "WHATSAPP";
+    public const string Instagram = "INSTAGRAM";
+    public const string Facebook = "FACEBOOK";
+    public const string MercadoLibre = "MERCADOLIBRE";
+    public const string Interno = "INTERNO";
+}
+
 public sealed class ConversacionesInboxFilters
 {
     public const string EstadoSinFinalizar = "__SIN_FINALIZAR__";
@@ -146,8 +155,12 @@ public sealed class ConversacionesEstadisticaConversacionDto
 public sealed class ConversacionInboxItemDto
 {
     public long IdConversacion { get; set; }
+    public string Canal { get; set; } = string.Empty;
     public string TelefonoWhatsApp { get; set; } = string.Empty;
     public string NombreVisible { get; set; } = string.Empty;
+    public string UsuarioExterno { get; set; } = string.Empty;
+    public string FotoPerfilUrl { get; set; } = string.Empty;
+    public bool PerfilExternoVerificado { get; set; }
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
     public int? IdContacto { get; set; }
@@ -157,6 +170,9 @@ public sealed class ConversacionInboxItemDto
     public string IdTecnico { get; set; } = string.Empty;
     public string TecnicoNombre { get; set; } = string.Empty;
     public string ResumenUltimoMensaje { get; set; } = string.Empty;
+    public string DireccionUltimoMensaje { get; set; } = string.Empty;
+    public string EstadoUltimoMensaje { get; set; } = string.Empty;
+    public string TipoUltimoMensaje { get; set; } = string.Empty;
     public DateTime FechaHoraUltimoMensaje { get; set; }
     public DateTime? FechaHoraUltimoMensajeCliente { get; set; }
     public long? IdUltimoMensajeCliente { get; set; }
@@ -168,6 +184,8 @@ public sealed class ConversacionInboxItemDto
     public bool Bloqueada { get; set; }
     public bool FijadaPorUsuario { get; set; }
     public DateTime? FechaHoraFijada { get; set; }
+    public string MercadoLibreQuestionStatus { get; set; } = string.Empty;
+    public string MercadoLibreItemStatus { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionDetalleDto
@@ -176,6 +194,17 @@ public sealed class ConversacionDetalleDto
     public string Canal { get; set; } = string.Empty;
     public string TelefonoWhatsApp { get; set; } = string.Empty;
     public string NombreVisible { get; set; } = string.Empty;
+    public string IdentificadorExternoContacto { get; set; } = string.Empty;
+    public string UsuarioExterno { get; set; } = string.Empty;
+    public string FotoPerfilUrl { get; set; } = string.Empty;
+    public int? SeguidoresExterno { get; set; }
+    public bool PerfilExternoVerificado { get; set; }
+    public bool? UsuarioSigueCuenta { get; set; }
+    public bool? CuentaSigueUsuario { get; set; }
+    public DateTime? FechaHoraPerfilExterno { get; set; }
+    public string MercadoLibreQuestionStatus { get; set; } = string.Empty;
+    public string MercadoLibreItemStatus { get; set; } = string.Empty;
+    public string MercadoLibreItemPermalink { get; set; } = string.Empty;
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
     public int? IdContacto { get; set; }
@@ -287,6 +316,8 @@ public sealed class ConversacionAdjuntoDto
     public string RutaLocal { get; set; } = string.Empty;
     public long TamanoBytes { get; set; }
     public bool ArchivoDisponible { get; set; }
+    public bool PuedeRecuperarse { get; set; }
+    public string EstadoAlmacenamiento { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionStickerFavoritoDto
@@ -364,6 +395,7 @@ public sealed class ConversacionMessageResultDto
     public long IdMensaje { get; set; }
     public string EstadoEnvio { get; set; } = string.Empty;
     public string WhatsAppMessageId { get; set; } = string.Empty;
+    public string MessageIdExterno { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionWebhookResultDto
@@ -371,6 +403,7 @@ public sealed class ConversacionWebhookResultDto
     public long IdWebhookLog { get; set; }
     public int MensajesDetectados { get; set; }
     public int MensajesProcesados { get; set; }
+    public string Detalle { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionUploadAdjuntoRequest
@@ -393,6 +426,8 @@ public sealed class ConversacionAdjuntoServeDto
     public string MimeType { get; set; } = string.Empty;
     public string NombreArchivo { get; set; } = string.Empty;
     public string NombreDescarga { get; set; } = string.Empty;
+    public byte[] Contenido { get; set; } = [];
+    public DateTime? FechaHoraModificacion { get; set; }
 }
 
 public sealed class ConversacionAdjuntosRecoveryResultDto
@@ -439,6 +474,7 @@ public sealed class ConversacionCrearWhatsAppResultDto
 public sealed class ConversacionWebhookRequest
 {
     public JsonDocument Payload { get; set; } = JsonDocument.Parse("{}");
+    public string RawPayload { get; set; } = string.Empty;
     public IDictionary<string, string> Headers { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
 

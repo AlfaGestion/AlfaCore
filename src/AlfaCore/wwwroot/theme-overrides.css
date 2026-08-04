@@ -702,8 +702,18 @@ html[data-theme="light"] .conversations-page--odoo .message-card--outgoing {
 }
 
 html[data-theme="light"] .conversations-page--odoo .message-card--internal {
-    background: #f5f3ff !important;
-    border: 1px dashed rgba(124, 58, 237, .28) !important;
+    background: #facc15 !important;
+    border: 1px solid rgba(202, 138, 4, .38) !important;
+    color: #3f2f02 !important;
+    box-shadow: 0 10px 24px rgba(202, 138, 4, .16) !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .message-card--internal .message-card__meta {
+    color: #6b4e00 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .message-card--internal .message-card__text {
+    color: #3f2f02 !important;
 }
 
 html[data-theme="light"] .conversations-page--odoo .message-card__delivery,

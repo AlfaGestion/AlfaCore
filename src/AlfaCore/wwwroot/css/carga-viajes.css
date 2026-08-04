@@ -642,6 +642,9 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-liquidaciones__separat
     margin: 0;
     accent-color: #06b6d4;
     cursor: pointer;
+    display: block;
+    align-self: center;
+    justify-self: center;
 }
 
 .carga-viajes-adicionales__simple-main {

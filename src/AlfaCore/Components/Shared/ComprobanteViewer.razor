@@ -432,7 +432,7 @@
         };
 
     private RenderFragment RenderInsumos() => @<div class="table-wrap">
-        <table class="data-table usuarios-table">
+        <table class="data-table usuarios-table" data-sticky-list-header>
             <thead>
                 <tr>
                     <th>Código</th>
@@ -481,7 +481,7 @@
     </div>;
 
     private RenderFragment RenderTareas() => @<div class="table-wrap">
-        <table class="data-table usuarios-table">
+        <table class="data-table usuarios-table" data-sticky-list-header>
             <thead>
                 <tr>
                     <th>Código</th>
@@ -530,7 +530,7 @@
     </div>;
 
     private RenderFragment RenderObservaciones() => @<div class="table-wrap">
-        <table class="data-table usuarios-table">
+        <table class="data-table usuarios-table" data-sticky-list-header>
             <thead>
                 <tr>
                     <th>Tipo</th>
@@ -582,7 +582,7 @@
     </div>;
 
     private RenderFragment RenderRelacionadasTable(IReadOnlyList<ComprobanteAplicacionDto> rows, bool usarRelacionado) => @<div class="table-wrap">
-        <table class="data-table usuarios-table">
+        <table class="data-table usuarios-table" data-sticky-list-header>
             <thead>
                 <tr>
                     <th>TC origen</th>
@@ -639,7 +639,7 @@
     </div>;
 
     private RenderFragment RenderDocumentos() => @<div class="table-wrap">
-        <table class="data-table usuarios-table">
+        <table class="data-table usuarios-table" data-sticky-list-header>
             <thead>
                 <tr>
                     <th>Documento</th>
@@ -690,7 +690,7 @@
     </div>;
 
     private RenderFragment RenderAcciones() => @<div class="table-wrap">
-        <table class="data-table usuarios-table">
+        <table class="data-table usuarios-table" data-sticky-list-header>
             <thead>
                 <tr>
                     <th>Tipo acción</th>

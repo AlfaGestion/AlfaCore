@@ -851,6 +851,27 @@
     padding-bottom: .08rem !important;
 }
 
+.conversations-page--odoo .conversation-row__delivery {
+    display: inline-flex;
+    align-items: center;
+    margin-right: .28rem;
+    color: #94a3b8;
+    font-size: .9em;
+    vertical-align: -.05em;
+}
+
+.conversations-page--odoo .conversation-row__delivery.is-read {
+    color: #38bdf8;
+}
+
+.conversations-page--odoo .conversation-row__delivery.is-pending {
+    color: #fbbf24;
+}
+
+.conversations-page--odoo .conversation-row__delivery.is-error {
+    color: #fb7185;
+}
+
 .conversations-page--odoo .conversation-row:hover {
     background: #15293a !important;
 }
@@ -861,6 +882,59 @@
 
 .conversations-page--odoo .conversation-row__avatar {
     background: linear-gradient(135deg, #0ea5e9, #38bdf8) !important;
+    overflow: hidden !important;
+}
+
+.conversations-page--odoo .conversation-row__avatar img,
+.conversations-page--odoo .conversation-profile-avatar img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.conversations-page--odoo .conversation-profile-avatar {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid rgba(236, 72, 153, .48);
+    border-radius: 999px;
+    background: linear-gradient(135deg, #2563eb, #ec4899, #f59e0b);
+    color: #fff;
+    font-size: .82rem;
+    font-weight: 900;
+}
+
+.conversations-page--odoo .conversation-social-profile {
+    display: flex;
+    align-items: center;
+    gap: .48rem;
+    min-width: 0;
+    color: #94a3b8;
+    font-size: .76rem;
+}
+
+.conversations-page--odoo .conversation-social-profile a {
+    display: inline-flex;
+    align-items: center;
+    gap: .28rem;
+    min-width: 0;
+    color: #f9a8d4;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.conversations-page--odoo .conversation-social-profile a:hover,
+.conversations-page--odoo .conversation-social-profile a:focus-visible {
+    color: #fbcfe8;
+    text-decoration: underline;
+}
+
+.conversations-page--odoo .conversation-social-profile .bi-patch-check-fill {
+    color: #38bdf8;
 }
 
 .conversations-page--odoo .conversation-badge {
@@ -893,6 +967,290 @@
     min-width: 0 !important;
 }
 
+.conversations-page--instagram .conversations-chat__identity {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: .65rem !important;
+    padding-left: 0 !important;
+}
+
+.conversations-page--instagram .conversations-chat__identity::before {
+    display: none !important;
+}
+
+.conversations-page--instagram .conversation-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+}
+
+.conversations-page--instagram .conversation-profile-avatar + div,
+.conversations-page--instagram .conversations-chat__chips {
+    grid-column: 2;
+}
+
+.conversations-page--facebook .conversations-chat__identity {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: .65rem !important;
+    padding-left: 0 !important;
+}
+
+.conversations-page--facebook .conversations-chat__identity::before {
+    display: none !important;
+}
+
+.conversations-page--facebook .conversation-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    border-color: rgba(59, 130, 246, .74);
+    background: linear-gradient(135deg, #1d4ed8, #2563eb, #60a5fa);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .18);
+}
+
+.conversations-page--facebook .conversation-profile-avatar + div,
+.conversations-page--facebook .conversations-chat__chips {
+    grid-column: 2;
+}
+
+.conversations-page--facebook .conversation-social-profile a {
+    color: #93c5fd;
+}
+
+.conversations-page--facebook .conversation-social-profile a:hover,
+.conversations-page--facebook .conversation-social-profile a:focus-visible {
+    color: #dbeafe;
+}
+
+.conversations-page--mercadolibre .conversations-chat__identity {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: .65rem !important;
+    padding-left: 0 !important;
+}
+
+.conversations-page--mercadolibre .conversations-chat__identity::before {
+    display: none !important;
+}
+
+.conversations-page--mercadolibre .conversation-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+    border-color: rgba(250, 204, 21, .78);
+    background: linear-gradient(135deg, #facc15, #f59e0b);
+    color: #1f2937;
+    box-shadow: 0 0 0 3px rgba(250, 204, 21, .18);
+}
+
+.conversation-row__avatar--mercadolibre,
+.conversations-page--mercadolibre .conversation-profile-avatar--mercadolibre {
+    border-radius: 12px;
+    border-color: rgba(250, 204, 21, .78);
+    background: linear-gradient(135deg, #fde047, #f59e0b);
+    color: #111827;
+    box-shadow: 0 0 0 3px rgba(250, 204, 21, .14);
+}
+
+.conversation-row__avatar--mercadolibre img,
+.conversations-page--mercadolibre .conversation-profile-avatar--mercadolibre img {
+    border-radius: 10px;
+    object-fit: cover;
+}
+
+.conversation-badge--mercadolibre-buyer {
+    border-color: rgba(250, 204, 21, .42);
+    background: rgba(250, 204, 21, .1);
+    color: #fde68a;
+}
+
+.conversation-badge--mercadolibre-count {
+    border-color: rgba(14, 165, 233, .34);
+    background: rgba(14, 165, 233, .1);
+    color: #bae6fd;
+}
+
+.mercadolibre-group-chevron {
+    display: inline-grid;
+    width: 20px;
+    height: 20px;
+    place-items: center;
+    border: 1px solid rgba(250, 204, 21, .36);
+    border-radius: 999px;
+    color: #fde047;
+    font-size: .72rem;
+    background: rgba(250, 204, 21, .08);
+}
+
+.mercadolibre-inbox-children {
+    display: grid;
+    gap: .34rem;
+    margin: -.35rem .6rem .72rem 3.05rem;
+    padding: .12rem 0 0;
+}
+
+.mercadolibre-inbox-child {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: .12rem .55rem;
+    position: relative;
+    min-height: 40px;
+    border: 1px solid rgba(56, 189, 248, .18);
+    border-radius: 8px;
+    padding: .48rem .6rem .46rem;
+    background: rgba(10, 25, 40, .72);
+    color: #eaf6ff;
+    text-align: left;
+    cursor: pointer;
+    box-shadow: none;
+}
+
+.mercadolibre-inbox-child:hover,
+.mercadolibre-inbox-child:focus-visible {
+    border-color: rgba(56, 189, 248, .34);
+    background: rgba(14, 42, 63, .82);
+    outline: none;
+}
+
+.mercadolibre-inbox-child.is-active {
+    border-color: rgba(250, 204, 21, .72);
+    background: rgba(37, 46, 39, .86);
+    box-shadow: inset 3px 0 0 #facc15;
+}
+
+.mercadolibre-inbox-child__buyer {
+    grid-column: 1;
+    overflow: hidden;
+    color: #9ac7e8;
+    font-size: .67rem;
+    font-weight: 800;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.mercadolibre-inbox-child strong {
+    grid-column: 1;
+    min-width: 0;
+    overflow: hidden;
+    color: #f4faff;
+    font-size: .8rem;
+    font-weight: 750;
+    line-height: 1.22;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mercadolibre-inbox-child__side {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: .32rem;
+    min-width: 0;
+}
+
+.mercadolibre-inbox-child small {
+    color: #93c5fd;
+    font-size: .68rem;
+    white-space: nowrap;
+}
+
+.mercadolibre-inbox-child__new {
+    display: inline-grid;
+    min-width: 18px;
+    height: 18px;
+    place-items: center;
+    border-radius: 999px;
+    padding: 0 .28rem;
+    background: #ef4444;
+    color: white;
+    font-size: .64rem;
+    font-weight: 900;
+    line-height: 1;
+    box-shadow: 0 0 0 2px rgba(239, 68, 68, .22);
+}
+
+.mercadolibre-thread-picker {
+    display: grid;
+    gap: .45rem;
+    padding: .65rem .75rem;
+    border-bottom: 1px solid rgba(250, 204, 21, .16);
+    background: linear-gradient(90deg, rgba(250, 204, 21, .08), rgba(15, 23, 42, .28));
+}
+
+.mercadolibre-thread-picker__item {
+    display: grid;
+    grid-template-columns: minmax(8rem, auto) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: .55rem;
+    width: 100%;
+    min-height: 40px;
+    border: 1px solid rgba(148, 163, 184, .16);
+    border-radius: 8px;
+    padding: .45rem .6rem;
+    background: rgba(15, 23, 42, .62);
+    color: #dbeafe;
+    text-align: left;
+    cursor: pointer;
+}
+
+.mercadolibre-thread-picker__item:hover,
+.mercadolibre-thread-picker__item:focus-visible {
+    border-color: rgba(250, 204, 21, .46);
+    background: rgba(250, 204, 21, .1);
+}
+
+.mercadolibre-thread-picker__item.is-active {
+    border-color: rgba(250, 204, 21, .72);
+    background: rgba(250, 204, 21, .16);
+    color: #fffbeb;
+}
+
+.mercadolibre-thread-picker__buyer {
+    overflow: hidden;
+    color: #fde68a;
+    font-size: .76rem;
+    font-weight: 800;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mercadolibre-thread-picker__item strong {
+    min-width: 0;
+    overflow: hidden;
+    font-size: .82rem;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.mercadolibre-thread-picker__item small {
+    color: #93c5fd;
+    font-size: .72rem;
+    white-space: nowrap;
+}
+
+.conversations-page--mercadolibre .conversation-profile-avatar + div,
+.conversations-page--mercadolibre .conversations-chat__chips {
+    grid-column: 2;
+}
+
+.conversations-page--mercadolibre .conversation-social-profile a {
+    border-color: rgba(250, 204, 21, .34);
+    background: rgba(250, 204, 21, .08);
+    color: #fde68a;
+}
+
+.conversations-page--mercadolibre .conversation-social-profile a:hover,
+.conversations-page--mercadolibre .conversation-social-profile a:focus-visible {
+    color: #fef3c7;
+}
+
 .conversations-page--odoo .conversations-chat__header .panel-card__title,
 .conversations-page--odoo .conversations-chat__header .panel-card__subtitle {
     max-width: 100% !important;
@@ -923,6 +1281,72 @@
     overflow-x: hidden !important;
 }
 
+/* Ese clamp(.9rem, 5vw, 4.5rem) llega a 4.5rem de aire a la derecha en pantallas
+   anchas. Pensado para el hilo a pantalla completa: con el panel de AlfaKnowledge
+   abierto, sumado al ancho propio del panel, deja una franja vacía enorme entre
+   los mensajes y el panel de IA. Esta es la regla que realmente gana (viene del
+   CSS aislado de este componente, con más especificidad que app.css). */
+.conversations-page--odoo.conversations-page--ai-open .conversations-thread {
+    padding-right: 1.3rem !important;
+}
+
+/* MainLayout.razor.css define ::deep .page-grid { gap: 0.85rem } para el layout
+   general de la app. Esta página no lo quiere: el chat y el panel de AlfaKnowledge
+   deben quedar pegados. Se fuerza acá porque este archivo gana la cascada. */
+.conversations-page--odoo {
+    gap: 0 !important;
+    column-gap: 0 !important;
+    row-gap: 0 !important;
+}
+
+.conversations-page--odoo .conversations-chat,
+.conversations-page--odoo .conversations-core-workspace,
+.conversations-page--odoo > .conversations-ai-suggestion-drawer {
+    box-shadow: none !important;
+    margin: 0 !important;
+}
+
+/* Panel de AlfaKnowledge más ancho: pedido explícito de correr su contenido
+   más a la izquierda y que quede pegado al chat, en vez de angosto contra el
+   borde derecho. */
+@media (min-width: 1181px) {
+    .conversations-page--odoo.conversations-page--ai-open {
+        grid-template-columns: minmax(0, 1fr) minmax(500px, 560px) !important;
+    }
+}
+
+@media (min-width: 1401px) {
+    .conversations-page--odoo.conversations-page--ai-open {
+        grid-template-columns: minmax(0, 1fr) minmax(560px, 650px) !important;
+    }
+}
+
+/* La causa real del ancho angosto: el <aside> de AlfaKnowledge tiene a la vez
+   las clases .conversations-context-drawer y .conversations-ai-suggestion-drawer.
+   La regla genérica del drawer "Contexto" flotante (.conversations-context-drawer.is-open,
+   position:fixed, width:min(340px, calc(100vw - 1rem))) también lo agarra a él,
+   y por tener más clases en el selector le ganaba a todas las reglas de grid de
+   más arriba. Se apunta acá exactamente a esa combinación de clases para ganar
+   por especificidad real, no por !important a ciegas. */
+@media (min-width: 901px) {
+    .conversations-page--odoo .conversations-context-drawer.conversations-ai-suggestion-drawer.is-open {
+        position: relative !important;
+        inset: auto !important;
+        transform: none !important;
+        z-index: auto !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        box-shadow: none !important;
+    }
+}
+
+.conversations-page--odoo .conversations-thread.is-bottom-anchoring {
+    opacity: 0 !important;
+}
+
 .conversations-page--odoo .message-row {
     width: 100% !important;
     min-width: 0 !important;
@@ -940,6 +1364,11 @@
     justify-content: flex-end !important;
 }
 
+.conversations-page--odoo .message-row--internal {
+    justify-content: center !important;
+    align-items: center !important;
+}
+
 .conversations-page--odoo .message-bubble-shell,
 .conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
     width: fit-content !important;
@@ -952,6 +1381,11 @@
     align-items: flex-end !important;
 }
 
+.conversations-page--odoo .message-row--internal .message-bubble-shell {
+    align-items: center !important;
+    max-width: min(58ch, 68%) !important;
+}
+
 .conversations-page--odoo .message-card,
 .conversations-page--odoo .message-row--incoming .message-card,
 .conversations-page--odoo .message-row--internal .message-card,
@@ -960,9 +1394,11 @@
     width: fit-content !important;
     min-width: 0 !important;
     max-width: 100% !important;
-    padding: .42rem .58rem .38rem !important;
+    padding: .5rem .68rem .46rem !important;
     overflow-wrap: break-word !important;
     word-break: normal !important;
+    border: 1px solid rgba(148, 163, 184, .18) !important;
+    box-shadow: 0 12px 24px rgba(2, 8, 23, .2), inset 0 1px 0 rgba(255, 255, 255, .05) !important;
 }
 
 .conversations-page--odoo .message-card__meta {
@@ -977,6 +1413,9 @@
     width: fit-content !important;
     max-width: 100% !important;
     margin: .08rem 0 0 !important;
+    color: inherit !important;
+    font-weight: 700 !important;
+    line-height: 1.32 !important;
     white-space: pre-wrap !important;
 }
 
@@ -990,18 +1429,35 @@
 }
 
 .conversations-page--odoo .message-card--outgoing {
-    background: #075985 !important;
-    color: #f0f9ff !important;
+    border-color: rgba(14, 165, 233, .35) !important;
+    background: linear-gradient(135deg, #0369a1, #075985) !important;
+    color: #f8fcff !important;
 }
 
 .conversations-page--odoo .message-card--incoming {
-    background: #1c2f3f !important;
-    color: #e7f4ff !important;
+    border-color: rgba(125, 211, 252, .24) !important;
+    background: linear-gradient(135deg, #21384c, #162838) !important;
+    color: #f3f9ff !important;
+}
+
+.conversations-page--odoo .message-card--incoming .message-card__meta,
+.conversations-page--odoo .message-card--outgoing .message-card__meta {
+    color: rgba(226, 242, 255, .78) !important;
 }
 
 .conversations-page--odoo .message-card--internal {
-    background: #263b5c !important;
-    color: #dbeafe !important;
+    background: #facc15 !important;
+    color: #3f2f02 !important;
+    border: 1px solid rgba(250, 204, 21, .35) !important;
+    box-shadow: 0 10px 24px rgba(250, 204, 21, .16) !important;
+}
+
+.conversations-page--odoo .message-card--internal .message-card__meta {
+    color: #6b4e00 !important;
+}
+
+.conversations-page--odoo .message-card--internal .message-card__text {
+    color: #3f2f02 !important;
 }
 
 .conversations-page--odoo .message-card__delivery i {
@@ -1079,6 +1535,27 @@
     color: rgba(125, 211, 252, .8) !important;
 }
 
+.conversations-page--odoo .attachment-unavailable.is-loading {
+    border-color: rgba(56, 189, 248, .62) !important;
+    color: #dff7ff !important;
+    background: rgba(14, 116, 144, .28) !important;
+}
+
+.conversations-page--odoo .attachment-unavailable.is-loading i {
+    color: #67e8f9 !important;
+    animation: attachment-recovery-spin .9s linear infinite;
+}
+
+@keyframes attachment-recovery-spin {
+    from {
+        transform: rotate(0deg);
+    }
+
+    to {
+        transform: rotate(360deg);
+    }
+}
+
 .conversations-page--odoo .message-attachment--audio,
 .conversations-page--odoo .wa-audio-player {
     width: min(370px, 100%) !important;
@@ -1134,6 +1611,286 @@
     .conversations-page--odoo .message-bubble-shell,
     .conversations-page--odoo .message-row:has(.message-actions) .message-bubble-shell {
         max-width: 88% !important;
+    }
+}
+
+/*
+ * AlfaKnowledge no usa el drawer flotante genérico de Contexto. En escritorio es la segunda
+ * columna del módulo y debe ocupar todo el ancho que la grilla le asigna.
+ */
+@media (min-width: 901px) {
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer {
+        position: relative !important;
+        inset: auto !important;
+        grid-column: 2 !important;
+        grid-row: 1 !important;
+        justify-self: stretch !important;
+        align-self: stretch !important;
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        height: 100% !important;
+        max-height: 100% !important;
+        padding: 0 !important;
+        transform: none !important;
+        display: none !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+    }
+
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open {
+        display: flex !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+    }
+
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open *,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open input,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open select,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open textarea,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open button,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open a {
+        pointer-events: auto !important;
+    }
+
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer textarea,
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer input {
+        user-select: text !important;
+        cursor: text !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer {
+        display: none !important;
+        pointer-events: none !important;
+        visibility: hidden !important;
+    }
+
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.is-open {
+        display: flex !important;
+        pointer-events: auto !important;
+        visibility: visible !important;
+    }
+}
+
+/*
+ * AlfaKnowledge es una segunda conversación, no una continuación del chat del cliente.
+ * El contorno y el pequeño margen suavizan la separación sin convertirlo en un modal.
+ */
+@media (min-width: 901px) {
+    .conversations-page--odoo > .conversations-ai-suggestion-drawer.conversations-ai-suggestion-drawer.is-open {
+        align-self: stretch !important;
+        width: calc(100% - .75rem) !important;
+        height: calc(100% - .75rem) !important;
+        margin: .375rem !important;
+        border: 1px solid rgba(148, 163, 184, .24) !important;
+        border-radius: 14px !important;
+        box-shadow:
+            0 14px 36px rgba(2, 8, 23, .28),
+            inset 0 1px 0 rgba(255, 255, 255, .035) !important;
+        overflow: hidden !important;
+    }
+}
+
+/* Encabezado en dos filas: identidad y cierre arriba; acceso completo debajo. */
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-header {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-rows: auto auto !important;
+    align-items: center !important;
+    gap: .45rem .65rem !important;
+    min-height: 0 !important;
+    padding: .72rem .78rem !important;
+}
+
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-header__identity {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+}
+
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-full-link {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    justify-self: start !important;
+    margin: 0 0 0 2.8rem !important;
+}
+
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-header > .conversations-drawer-close {
+    position: static !important;
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    align-self: start !important;
+    margin: 0 !important;
+}
+
+/* El contexto, las respuestas y el editor aprovechan el ancho real de la columna. */
+.conversations-page--odoo .conversations-ai-body > :not(.conversations-ai-composer),
+.conversations-page--odoo .conversations-ai-body > .context-card,
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-composer label,
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-composer textarea {
+    width: 100% !important;
+    max-width: none !important;
+    margin-inline: 0 !important;
+}
+
+.conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-composer textarea {
+    justify-self: stretch !important;
+}
+
+.conversations-ai-sources__toggle {
+    width: 100%;
+    min-height: 2rem;
+    padding: .15rem 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .75rem;
+    font: inherit;
+    font-weight: 700;
+    text-transform: uppercase;
+    cursor: pointer;
+}
+
+.conversations-ai-image-context {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    color: var(--color-muted);
+}
+
+.conversations-ai-image-context i {
+    color: var(--color-primary);
+}
+
+.conversations-ai-sources__toggle i {
+    color: var(--color-text-muted);
+    transition: color .16s ease;
+}
+
+.conversations-ai-sources__toggle:hover i {
+    color: var(--color-primary);
+}
+
+.conversations-ai-sources__list {
+    display: grid;
+    gap: .45rem;
+    padding-top: .45rem;
+}
+
+.conversations-ai-sources.is-collapsed {
+    padding-block: .45rem !important;
+}
+
+.conversations-ai-correction-overlay {
+    z-index: 1400;
+    padding: 1rem;
+    background: rgba(2, 6, 23, .78);
+    backdrop-filter: blur(3px);
+}
+
+.conversations-ai-correction-modal {
+    width: min(620px, calc(100vw - 2rem));
+    max-width: 620px;
+    max-height: calc(100vh - 2rem);
+    overflow-y: auto;
+    padding: 1.2rem;
+    background: var(--surface-2);
+    color: var(--color-text);
+    border-color: var(--color-border);
+    box-shadow: var(--shadow-soft);
+    gap: .8rem;
+}
+
+.conversations-ai-correction-modal__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.conversations-ai-correction-modal__header small {
+    display: block;
+    margin-top: .25rem;
+    color: var(--color-muted);
+}
+
+.conversations-ai-correction-modal .conversations-drawer-close {
+    color: var(--color-muted);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+}
+
+.conversations-ai-correction-modal .conversations-drawer-close:hover {
+    color: var(--color-text);
+    background: var(--hover-bg);
+}
+
+.conversations-ai-correction-modal .field {
+    display: grid;
+    gap: .35rem;
+    font-weight: 700;
+}
+
+.conversations-ai-correction-modal input,
+.conversations-ai-correction-modal textarea {
+    width: 100%;
+    padding: .72rem .8rem;
+    color: var(--color-text);
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 12px;
+    font: inherit;
+    font-weight: 400;
+    resize: vertical;
+}
+
+.conversations-ai-correction-modal input:focus,
+.conversations-ai-correction-modal textarea:focus {
+    outline: 2px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+    border-color: var(--color-primary);
+}
+
+.conversations-ai-correction-modal__answer {
+    min-height: 9rem;
+}
+
+.conversations-ai-correction-modal__hint,
+.conversations-ai-correction-modal__error {
+    margin: 0;
+    padding: .65rem .75rem;
+    border-radius: 9px;
+}
+
+.conversations-ai-correction-modal__hint {
+    color: var(--color-muted);
+    background: var(--surface-3);
+    font-size: .85rem;
+    font-weight: 600;
+}
+
+.conversations-ai-correction-modal__error {
+    color: var(--color-danger);
+    background: color-mix(in srgb, var(--color-danger) 14%, var(--surface-2));
+}
+
+@media (max-width: 640px) {
+    .conversations-ai-correction-overlay {
+        padding: .5rem;
+    }
+
+    .conversations-ai-correction-modal {
+        width: calc(100vw - 1rem);
+        max-height: calc(100vh - 1rem);
+        padding: .9rem;
     }
 }
 
@@ -1530,4 +2287,354 @@
         overflow-y: auto !important;
         z-index: 60 !important;
     }
+}
+
+.conversations-page--instagram .conversations-filter-pill.is-active,
+.conversations-page--instagram .conversations-mobile-action.is-active,
+.conversations-page--instagram .conversations-mobile-chip.is-active {
+    border-color: rgba(236, 72, 153, .58) !important;
+    background: linear-gradient(135deg, rgba(236, 72, 153, .22), rgba(245, 158, 11, .16), rgba(124, 58, 237, .2)) !important;
+    color: #fff7ed !important;
+}
+
+.conversations-page--instagram .message-card--outgoing {
+    background: linear-gradient(135deg, #be185d, #7c3aed) !important;
+}
+
+.conversations-page--facebook .conversations-filter-pill.is-active,
+.conversations-page--facebook .conversations-mobile-action.is-active,
+.conversations-page--facebook .conversations-mobile-chip.is-active {
+    border-color: rgba(59, 130, 246, .58) !important;
+    background: linear-gradient(135deg, rgba(29, 78, 216, .34), rgba(37, 99, 235, .22), rgba(96, 165, 250, .16)) !important;
+    color: #eff6ff !important;
+}
+
+.conversations-page--facebook .message-card--outgoing {
+    background: linear-gradient(135deg, #1d4ed8, #0284c7) !important;
+}
+
+.conversations-page--mercadolibre .conversations-filter-pill.is-active,
+.conversations-page--mercadolibre .conversations-mobile-action.is-active,
+.conversations-page--mercadolibre .conversations-mobile-chip.is-active,
+.conversations-filter-pill--mercadolibre.is-active,
+.conversations-mobile-action--mercadolibre.is-active,
+.conversations-mobile-chip--mercadolibre.is-active {
+    border-color: rgba(250, 204, 21, .64) !important;
+    background: linear-gradient(135deg, rgba(250, 204, 21, .28), rgba(245, 158, 11, .2), rgba(14, 165, 233, .12)) !important;
+    color: #fffbeb !important;
+}
+
+.conversations-page--mercadolibre .message-card--outgoing {
+    border-color: rgba(253, 224, 71, .58) !important;
+    background: linear-gradient(135deg, #fde047, #f59e0b) !important;
+    color: #281a03 !important;
+    box-shadow: 0 14px 28px rgba(245, 158, 11, .2), inset 0 1px 0 rgba(255, 255, 255, .28) !important;
+}
+
+.conversations-page--mercadolibre .message-card--outgoing .message-card__meta,
+.conversations-page--mercadolibre .message-card--outgoing .message-card__footer,
+.conversations-page--mercadolibre .message-card--outgoing .message-card__delivery {
+    color: rgba(55, 37, 4, .82) !important;
+}
+
+.conversations-page--mercadolibre .message-card--outgoing .message-card__text {
+    color: #201403 !important;
+}
+
+.conversations-page--mercadolibre .message-card--incoming {
+    border-color: rgba(56, 189, 248, .3) !important;
+    background: linear-gradient(135deg, #244056, #172b3c) !important;
+    color: #f4fbff !important;
+}
+
+.conversations-window-banner--provider {
+    border-color: rgba(236, 72, 153, .28) !important;
+    background: linear-gradient(90deg, rgba(236, 72, 153, .14), rgba(124, 58, 237, .12)) !important;
+    color: #fce7f3 !important;
+}
+
+/* Separadores ajustables del inbox y de AlfaKnowledge. */
+@media (min-width: 901px) {
+    .conversations-page--odoo {
+        --conversations-inbox-width: 410px;
+        --conversations-ai-width: 390px;
+        position: relative !important;
+    }
+
+    .conversations-page--odoo.conversations-page--ai-open {
+        grid-template-columns: minmax(0, 1fr) var(--conversations-ai-width) !important;
+    }
+
+    .conversations-page--odoo .conversations-layout {
+        position: relative !important;
+        grid-template-columns: var(--conversations-inbox-width) minmax(0, 1fr) !important;
+    }
+
+    .conversations-column-resizer {
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        z-index: 30;
+        width: 11px;
+        padding: 0;
+        border: 0;
+        cursor: col-resize;
+        touch-action: none;
+        user-select: none;
+        outline: none;
+    }
+
+    .conversations-column-resizer::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        left: 5px;
+        width: 1px;
+        background: rgba(148, 163, 184, .16);
+        transition: width .15s ease, left .15s ease, background-color .15s ease, box-shadow .15s ease;
+    }
+
+    .conversations-column-resizer:hover::before,
+    .conversations-column-resizer:focus-visible::before,
+    .conversations-column-resizer.is-dragging::before {
+        left: 4px;
+        width: 3px;
+        background: rgba(34, 211, 238, .88);
+        box-shadow: 0 0 12px rgba(34, 211, 238, .5);
+    }
+
+    .conversations-column-resizer--inbox {
+        left: calc(var(--conversations-inbox-width) - 5px);
+    }
+
+    .conversations-column-resizer--ai {
+        right: calc(var(--conversations-ai-width) - 5px);
+        display: none;
+    }
+
+    .conversations-column-resizer--ai.is-visible {
+        display: block;
+    }
+
+    .conversations-page--odoo.conversations-is-resizing,
+    .conversations-page--odoo.conversations-is-resizing * {
+        cursor: col-resize !important;
+        user-select: none !important;
+    }
+}
+
+@media (max-width: 900px) {
+    .conversations-column-resizer {
+        display: none !important;
+    }
+}
+
+/* Abrir Contexto no debe reemplazar el ancho elegido para el inbox. */
+@media (min-width: 901px) {
+    .conversations-page--odoo .conversations-layout:has(.conversations-context-drawer.is-open) {
+        grid-template-columns: var(--conversations-inbox-width) minmax(0, 1fr) !important;
+    }
+
+    .conversations-page--odoo.conversations-page--ai-open .conversations-thread {
+        padding-left: .65rem !important;
+        padding-right: .65rem !important;
+    }
+}
+
+/* Las acciones secundarias no agregan una columna vertical entre mensajes. */
+@media (min-width: 769px) {
+    .conversations-page--odoo .message-actions {
+        position: relative !important;
+        display: block !important;
+        width: 1.75rem !important;
+        height: 1.75rem !important;
+        overflow: visible !important;
+    }
+
+    .conversations-page--odoo .message-actions > summary {
+        list-style: none !important;
+    }
+
+    .conversations-page--odoo .message-actions > summary::-webkit-details-marker {
+        display: none !important;
+    }
+
+    .conversations-page--odoo .message-actions__trigger {
+        display: inline-grid !important;
+        place-items: center !important;
+        width: 1.75rem !important;
+        height: 1.75rem !important;
+        padding: 0 !important;
+        border: 1px solid rgba(148, 163, 184, .2) !important;
+        border-radius: 999px !important;
+        color: #b8c7d3 !important;
+        background: rgba(15, 23, 42, .82) !important;
+        cursor: pointer !important;
+    }
+
+    .conversations-page--odoo .message-actions__trigger:hover,
+    .conversations-page--odoo .message-actions__trigger:focus-visible,
+    .conversations-page--odoo .message-actions[open] .message-actions__trigger {
+        border-color: rgba(34, 211, 238, .48) !important;
+        color: #e6fbff !important;
+        background: rgba(14, 116, 144, .3) !important;
+        outline: none !important;
+    }
+
+    .conversations-page--odoo .message-actions__menu {
+        position: absolute !important;
+        top: 50% !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: .28rem !important;
+        padding: .24rem !important;
+        border: 1px solid rgba(148, 163, 184, .2) !important;
+        border-radius: 999px !important;
+        background: rgba(8, 20, 34, .96) !important;
+        box-shadow: 0 10px 24px rgba(2, 8, 23, .38) !important;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
+        transform: translateY(-50%) scale(.94) !important;
+        transition: opacity .14s ease, transform .14s ease, visibility .14s ease !important;
+        white-space: nowrap !important;
+    }
+
+    .conversations-page--odoo .message-row--incoming .message-actions__menu,
+    .conversations-page--odoo .message-row--internal .message-actions__menu {
+        left: calc(100% + .3rem) !important;
+        transform-origin: left center !important;
+    }
+
+    .conversations-page--odoo .message-row--outgoing .message-actions__menu {
+        right: calc(100% + .3rem) !important;
+        transform-origin: right center !important;
+    }
+
+    .conversations-page--odoo .message-actions[open] .message-actions__menu {
+        opacity: 1 !important;
+        visibility: visible !important;
+        pointer-events: auto !important;
+        transform: translateY(-50%) scale(1) !important;
+    }
+}
+
+/* Identidad visual compartida con Calendario para conversaciones asignadas. */
+.conversations-page--odoo .conversation-row.has-technician {
+    border-left: 3px solid var(--technician-color) !important;
+    background:
+        linear-gradient(
+            90deg,
+            color-mix(in srgb, var(--technician-color) 27%, #0b1822),
+            color-mix(in srgb, var(--technician-color) 13%, #0b1822) 78%
+        ) !important;
+    box-shadow:
+        inset 3px 0 0 var(--technician-color),
+        inset 0 1px 0 color-mix(in srgb, var(--technician-color) 20%, transparent) !important;
+}
+
+.conversations-page--odoo .conversation-row.has-technician:hover {
+    background:
+        linear-gradient(
+            90deg,
+            color-mix(in srgb, var(--technician-color) 34%, #102431),
+            color-mix(in srgb, var(--technician-color) 18%, #102431) 78%
+        ) !important;
+}
+
+.conversations-page--odoo .conversation-row.has-technician.is-selected {
+    background:
+        linear-gradient(
+            90deg,
+            color-mix(in srgb, var(--technician-color) 38%, #173247),
+            color-mix(in srgb, var(--technician-color) 21%, #173247) 82%
+        ) !important;
+    box-shadow:
+        inset 4px 0 0 var(--technician-color),
+        inset 0 0 0 1px color-mix(in srgb, var(--technician-color) 24%, transparent) !important;
+}
+
+.conversations-page--odoo .conversation-badge--technician {
+    flex: 0 1 auto !important;
+    gap: .22rem !important;
+    border-color: color-mix(in srgb, var(--technician-color) 65%, transparent) !important;
+    background: color-mix(in srgb, var(--technician-color) 18%, rgba(15, 23, 42, .85)) !important;
+    color: color-mix(in srgb, var(--technician-color) 72%, white) !important;
+}
+
+.conversations-page--odoo .conversation-badge--technician i {
+    flex: 0 0 auto;
+    font-size: .68rem;
+}
+
+.conversations-page--odoo .conversation-assign-to-me {
+    min-width: 9rem;
+    justify-content: center;
+    border-color: rgba(45, 212, 191, .48) !important;
+    background: linear-gradient(135deg, #0891b2, #0d9488) !important;
+    box-shadow: 0 8px 20px rgba(13, 148, 136, .18) !important;
+}
+
+.conversations-page--odoo .conversation-assign-to-me:hover {
+    background: linear-gradient(135deg, #06b6d4, #14b8a6) !important;
+}
+
+.conversations-page--odoo .conversation-header-state.has-assign-to-me {
+    display: grid;
+    grid-template-columns: auto auto;
+    grid-template-rows: auto auto;
+    align-items: center;
+    justify-items: end;
+    gap: .34rem .45rem;
+}
+
+.conversations-page--odoo .conversation-header-state.has-assign-to-me .conversation-assign-to-me {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.conversations-page--odoo .conversation-header-state.has-assign-to-me .conversation-header-state__row {
+    grid-column: 2;
+    grid-row: 1;
+}
+
+.conversations-page--odoo .conversation-header-state.has-assign-to-me .conversation-header-state__close,
+.conversations-page--odoo .conversation-header-state.has-assign-to-me .conversation-header-state__closed {
+    grid-column: 2;
+    grid-row: 2;
+}
+
+.conversations-page--odoo .conversations-improve-ai {
+    display: inline-grid !important;
+    flex: 0 0 auto;
+    place-items: center !important;
+    width: 34px !important;
+    min-width: 34px !important;
+    height: 34px !important;
+    min-height: 34px !important;
+    padding: 0 !important;
+    border: 1px solid rgba(167, 139, 250, .5) !important;
+    border-radius: 999px !important;
+    background: linear-gradient(135deg, rgba(124, 58, 237, .3), rgba(14, 116, 144, .22)) !important;
+    color: #ddd6fe !important;
+    box-shadow: 0 5px 14px rgba(76, 29, 149, .2) !important;
+}
+
+.conversations-page--odoo .conversations-improve-ai:hover:not(:disabled) {
+    border-color: rgba(196, 181, 253, .72);
+    background: linear-gradient(135deg, rgba(124, 58, 237, .34), rgba(8, 145, 178, .28));
+    color: #f5f3ff;
+    transform: translateY(-1px);
+}
+
+.conversations-page--odoo .conversations-improve-ai:disabled {
+    cursor: default;
+    opacity: .46;
+}
+
+.conversations-page--odoo .conversations-improve-ai i {
+    margin: 0 !important;
+    font-size: .82rem;
 }

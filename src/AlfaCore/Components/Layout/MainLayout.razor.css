@@ -867,6 +867,40 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover > span:not(.menu__i
     grid-template-columns: minmax(0, 1fr);
 }
 
+.shell--top-only {
+    grid-template-columns: minmax(0, 1fr);
+}
+
+.shell--top-only .shell__main {
+    grid-column: 1;
+}
+
+.shell--top-only ::deep .main-page-header {
+    left: 0;
+}
+
+.shell--top-only ::deep .main-page-header--no-search {
+    grid-template-columns: auto minmax(8.5rem, max-content) minmax(0, 1fr) auto !important;
+    grid-template-areas: "nav context views actions" !important;
+    min-height: 3.45rem !important;
+    padding-block: .38rem !important;
+    column-gap: .45rem !important;
+}
+
+.shell--top-only ::deep .main-page-header--no-search .main-page-header__view {
+    grid-area: views !important;
+    justify-content: flex-start !important;
+}
+
+.shell--top-only ::deep .main-page-header--no-search .main-page-header__context {
+    grid-area: context !important;
+    max-width: 9.5rem !important;
+}
+
+.shell--top-only ::deep .main-page-header--no-search + .main-page-header__spacer {
+    height: 3.7rem !important;
+}
+
 .shell__main--pos {
     padding: 0;
     overflow: hidden;

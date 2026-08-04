@@ -38,7 +38,7 @@ else if (IsPosFullscreenRoute)
 else
 {
 <div class="@ShellClass" @onclick="CloseFloatingWindowsAsync">
-    @if (_mobileSidebarOpen)
+    @if (_mobileSidebarOpen && ShowSidebar)
     {
         <button type="button"
                 class="shell__overlay no-print"
@@ -46,6 +46,8 @@ else
                 @onclick="CloseMobileSidebar"></button>
     }
 
+    @if (ShowSidebar)
+    {
     <aside class="shell__sidebar" aria-label="Menú principal">
         <div class="brand" @onmouseleave="ReleaseSidebarToggleHover">
             <div class="brand__top">
@@ -661,7 +663,7 @@ else
             <div class="menu__footer">
                 @if (string.IsNullOrWhiteSpace(_currentModule))
                 {
-                    @if (_pwaCanInstall)
+                    @if (_pwaCanInstall || (AppMode.IsSaaSMode && !_pwaInstalled))
                     {
                         <button type="button" class="menu__link menu__button" @onclick="InstallPwaAsync">
                             <span class="menu__icon"><i class="bi bi-download"></i></span>
@@ -698,14 +700,18 @@ else
             }
         </div>
     </aside>
+    }
 
-    <button type="button"
-            class="shell__mobile-floating-toggle no-print"
-            @onclick="ToggleMobileSidebar"
-            aria-label="Abrir menú"
-            aria-expanded="@_mobileSidebarOpen">
-        <i class="bi bi-list"></i>
-    </button>
+    @if (ShowSidebar)
+    {
+        <button type="button"
+                class="shell__mobile-floating-toggle no-print"
+                @onclick="ToggleMobileSidebar"
+                aria-label="Abrir menú"
+                aria-expanded="@_mobileSidebarOpen">
+            <i class="bi bi-list"></i>
+        </button>
+    }
 
     <main class="shell__main">
         <header class="@(ShowLauncherContext ? "shell__header" : "shell__header shell__header--hidden")">
@@ -1208,6 +1214,7 @@ else
     private int? _loginUsersBaseId;
     private bool _loginUsersLoaded;
     private bool _loginUsersLoading;
+    private bool _internalLoginDraftPrimed;
     private bool _loginUseUserList = true;
     private DotNetObjectReference<MainLayout>? _pwaRef;
     private bool _pwaCanInstall;
@@ -1231,17 +1238,19 @@ else
     private string CurrentPageTitle => GetCurrentPageTitle();
     private RenderFragment? ModuleBackLink => null;
     private string ShellClass
-        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)}";
+        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)} {(UseTopOnlyNavigation ? "shell--top-only" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
     private bool CanShowLauncherAccess => !IsDirectMode;
+    private bool UseTopOnlyNavigation => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase);
+    private bool ShowSidebar => !UseTopOnlyNavigation;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
     private string SidebarToggleTitle => IsSidebarCollapsed ? "Desplegar menú principal" : "Plegar menú principal";
     private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
     private bool IsLauncherRoute => IsLauncherContextRoute(GetEffectiveCurrentPath());
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
-    private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta", StringComparison.OrdinalIgnoreCase);
+    private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta/mostrador", StringComparison.OrdinalIgnoreCase);
     private bool IsLoginRoute => string.Equals(GetNormalizedCurrentPath(), "login", StringComparison.OrdinalIgnoreCase);
     private bool IsInternalSqlLoginContext
     {
@@ -1344,8 +1353,7 @@ else
         ResetMenuSearchCatalog();
         var wasAuthenticated = AppUserSession.IsAuthenticated;
         AppUserSession.HandleSqlSessionChanged();
-        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
-            ResetLoginDraftForInternalContext();
+        EnsureLoginDraftPrimedForInternalContext();
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
             _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (wasAuthenticated && !AppUserSession.IsAuthenticated)
@@ -1368,8 +1376,7 @@ else
     private void OnAppUserStateChanged()
     {
         ResetMenuSearchCatalog();
-        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
-            ResetLoginDraftForInternalContext();
+        EnsureLoginDraftPrimedForInternalContext();
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
             _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (!AppUserSession.IsAuthenticated)
@@ -1420,8 +1427,7 @@ else
     {
         UpdateCurrentModule();
         EnforceDirectMode();
-        if (IsInternalSqlLoginContext && ShowLoginOverlay)
-            ResetLoginDraftForInternalContext();
+        EnsureLoginDraftPrimedForInternalContext();
         if (ShowLoginOverlay && IsInternalSqlLoginContext)
             _ = InvokeAsync(EnsureInternalLoginUsersAsync);
     }
@@ -1520,8 +1526,7 @@ else
             await EnsureActiveSessionFromRouteAsync();
             await EnsureInternalLoginUsersAsync();
 
-            if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
-                ResetLoginDraftForInternalContext();
+            EnsureLoginDraftPrimedForInternalContext();
 
             if (!AppUserSession.IsAuthenticated)
             {
@@ -2447,7 +2452,10 @@ else
         _manualLoginOverlayOpen = true;
 
         if (IsInternalSqlLoginContext || AppUserSession.IsAuthenticated)
+        {
             ResetLoginDraftForInternalContext();
+            _internalLoginDraftPrimed = true;
+        }
 
         await InvokeAsync(StateHasChanged);
     }
@@ -3178,6 +3186,29 @@ else
             ResetLoginDraftForInternalContext();
     }
 
+    /// <summary>
+    /// Igual que ResetLoginDraftForInternalContext, pero solo limpia el borrador una vez por
+    /// "episodio" de login interno. Antes se llamaba desde 4 lugares distintos (OnSessionChanged,
+    /// OnAppUserStateChanged, OnParametersSet, OnAfterRenderAsync) sin ninguna protección, así que
+    /// cualquiera de esos eventos podía vaciar lo que el usuario ya había tipeado a mitad de carga,
+    /// dando la sensación de que el login se pedía varias veces.
+    /// </summary>
+    private void EnsureLoginDraftPrimedForInternalContext()
+    {
+        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+        {
+            if (_internalLoginDraftPrimed)
+                return;
+
+            ResetLoginDraftForInternalContext();
+            _internalLoginDraftPrimed = true;
+        }
+        else
+        {
+            _internalLoginDraftPrimed = false;
+        }
+    }
+
     private void ResetLoginDraftForInternalContext()
     {
         _loginRememberCredentials = false;
@@ -3211,6 +3242,8 @@ else
             "ventas/comprobantes" => "Comprobantes",
             "ventas/comparativo" => "Comparativo",
             "ventas/punto-venta" => "Punto de Venta",
+            "ventas/punto-venta/mostrador" => "Punto de Venta - Mostrador",
+            "ventas/delivery" => "Delivery / Take Away",
             "stock" => "Stock",
             "caja-bancos" => "Caja y Bancos",
             "contabilidad" => "Contabilidad",

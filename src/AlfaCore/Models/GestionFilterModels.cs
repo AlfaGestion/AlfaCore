@@ -17,15 +17,30 @@ public sealed class VentasDashboardFilters : GestionDateFilterBase
 {
     public string? Cliente { get; set; }
     public string? Usuario { get; set; }
-    public string? Sucursal { get; set; }
+    public List<string> UnidadesNegocio { get; set; } = [];
     public string? Deposito { get; set; }
     public string? TipoComprobante { get; set; }
+
+    /// <summary>Agrupación para el tablero de ventas: "junto" (consolidado) o "separado" (una fila por unidad de negocio).</summary>
+    public string Agrupacion { get; set; } = VentasAgrupacionKeys.Junto;
+}
+
+public static class VentasAgrupacionKeys
+{
+    public const string Junto = "junto";
+    public const string Separado = "separado";
+}
+
+public sealed class UnidadNegocioOptionDto
+{
+    public string Codigo { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
 }
 
 public sealed class VentasFilterOptionsDto
 {
     public IReadOnlyList<string> Usuarios { get; init; } = [];
-    public IReadOnlyList<string> Sucursales { get; init; } = [];
+    public IReadOnlyList<UnidadNegocioOptionDto> UnidadesNegocio { get; init; } = [];
     public IReadOnlyList<string> Depositos { get; init; } = [];
     public IReadOnlyList<string> TiposComprobante { get; init; } = [];
 }

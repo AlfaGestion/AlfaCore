@@ -1,0 +1,127 @@
+@page "/ventas/punto-venta"
+@page "/{idweb}/{idbase:int}/ventas/punto-venta"
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IPuntoVentaConfigService PosConfigSvc
+@inject IAppUiOperationService UiOps
+@inject IRouteContextService RouteCtx
+@inject NavigationManager Nav
+
+<PageTitle>Punto de Venta | Ventas</PageTitle>
+
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Punto de Venta</h2>
+            <p class="page-intro__text">Elegí en qué punto de venta querés trabajar.</p>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="editor-msg @GetFeedbackClass(_feedback)">
+            <strong>@_feedback.Title</strong>
+            <span>@_feedback.Message</span>
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="loading">Cargando puntos de venta...</div>
+    }
+    else if (_puntosVenta.Count == 0)
+    {
+        <div class="panel-card empty-state">
+            <p>Todavía no hay ningún punto de venta configurado.</p>
+            <a class="btn btn--primary btn--sm" href="@RouteCtx.BuildRoute("/ventas/puntos-venta")">Crear punto de venta</a>
+        </div>
+    }
+    else
+    {
+        <section class="panel-card">
+            <div class="launcher__grid">
+                @foreach (var pv in _puntosVenta)
+                {
+                    var disponible = EstaDisponible(pv.Modo);
+                    <article class="app-card @(disponible ? "app-card--button" : "app-card--disabled")"
+                              role="button"
+                              tabindex="0"
+                              @onclick="() => AbrirAsync(pv)">
+                        <div class="app-card__icon">
+                            <i class="bi @GetModoIcono(pv.Modo)"></i>
+                        </div>
+                        <span class="app-card__name">@pv.Nombre</span>
+                        <span class="panel-card__subtitle">@GetModoTexto(pv.Modo)@(disponible ? string.Empty : " · Próximamente")</span>
+                    </article>
+                }
+            </div>
+        </section>
+    }
+</section>
+
+@code {
+    private bool _loading = true;
+    private List<PuntoVentaEntidadDto> _puntosVenta = [];
+    private AppUiMessage? _feedback;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        var result = await UiOps.RunAsync(() => PosConfigSvc.GetPuntosVentaAsync(soloActivos: true), "No se pudieron cargar los puntos de venta.");
+        if (result.Success && result.Value is not null)
+        {
+            _puntosVenta = result.Value
+                .OrderBy(pv => pv.Nombre)
+                .ToList();
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        _loading = false;
+    }
+
+    private static bool EstaDisponible(string modo)
+        => modo == PuntoVentaModoKeys.Mostrador || modo == PuntoVentaModoKeys.Delivery;
+
+    private Task AbrirAsync(PuntoVentaEntidadDto pv)
+    {
+        if (!EstaDisponible(pv.Modo))
+        {
+            _feedback = AppUiMessage.Success("Próximamente", $"El modo Salón todavía no está disponible para \"{pv.Nombre}\".");
+            return Task.CompletedTask;
+        }
+
+        var ruta = pv.Modo switch
+        {
+            PuntoVentaModoKeys.Delivery => $"/ventas/delivery?idPuntoVenta={pv.Id}",
+            _ => $"/ventas/punto-venta/mostrador?idPuntoVenta={pv.Id}"
+        };
+
+        Nav.NavigateTo(RouteCtx.BuildRoute(ruta));
+        return Task.CompletedTask;
+    }
+
+    private static string GetModoTexto(string modo) => modo switch
+    {
+        PuntoVentaModoKeys.Salon => "Salón",
+        PuntoVentaModoKeys.Delivery => "Delivery / Take Away",
+        _ => "Mostrador"
+    };
+
+    private static string GetModoIcono(string modo) => modo switch
+    {
+        PuntoVentaModoKeys.Salon => "bi-door-open",
+        PuntoVentaModoKeys.Delivery => "bi-bicycle",
+        _ => "bi-upc-scan"
+    };
+
+    private static string GetFeedbackClass(AppUiMessage message) => message.Severity switch
+    {
+        AppUiFeedbackSeverity.Success => "editor-msg--success",
+        AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+        AppUiFeedbackSeverity.Info => "editor-msg--info",
+        _ => "editor-msg--error"
+    };
+}

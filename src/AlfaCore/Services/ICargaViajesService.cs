@@ -16,6 +16,7 @@ public interface ICargaViajesService
     Task<CargaViajeTarifaGridItemDto?> GetTarifaByIdAsync(int id, CancellationToken ct = default);
     Task ActualizarTarifaImporteAsync(int id, string idLista, decimal importe, CancellationToken ct = default);
     Task<string> SaveTarifaAsync(CargaViajeTarifaSaveRequest request, CancellationToken ct = default);
+    Task ActualizarAdicionalesTarifasClienteAsync(string clienteCodigo, IReadOnlyCollection<string> listasSeleccionadas, CargaViajeTarifaSaveRequest source, CancellationToken ct = default);
     Task BajaTarifaAsync(string idLista, CancellationToken ct = default);
     Task BajaTarifaAsync(int id, string idLista, CancellationToken ct = default);
 
@@ -51,8 +52,10 @@ public interface ICargaViajesService
     Task<IReadOnlyList<CargaViajeTarifaClienteResumenDto>> GetTarifasPorClienteAsync(string clienteCodigo, string? texto = null, CancellationToken ct = default);
     Task<CargaViajeTarifaGridItemDto?> GetTarifaClienteAsync(string cliente, string destino, string tipoVehiculo, CancellationToken ct = default);
     Task<decimal> GetTarifaFleteroAsync(string chofer, string destino, string tipoVehiculo, CancellationToken ct = default);
+    Task<CargaViajeTarifaGridItemDto?> GetTarifaFleteroDetalleAsync(string chofer, string destino, string tipoVehiculo, CancellationToken ct = default);
     Task<CargaViajeTarifaGridItemDto?> ClonarTarifaParaViajeAsync(string idListaBase, CargaViajeSaveRequest viaje, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeReporteLiquidacionRowDto>> SearchLiquidacionChoferesAsync(CargaViajesReporteLiquidacionFilters filters, CancellationToken ct = default);
+    Task<IReadOnlyList<CargaViajeReporteClienteRowDto>> SearchReporteClientesAsync(CargaViajesReporteLiquidacionFilters filters, CancellationToken ct = default);
     Task<IReadOnlyList<CargaViajeLiquidacionRowDto>> SearchLiquidacionesFletesAsync(CargaViajesLiquidacionFilters filters, CancellationToken ct = default);
     Task<int> MarcarFletesPagadosAsync(CargaViajesMarcarPagadoRequest request, CancellationToken ct = default);
     Task<CargaViajesLookupDto> GetLookupsAsync(CancellationToken ct = default);

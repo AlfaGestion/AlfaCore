@@ -13,6 +13,7 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
+@inject AlfaCore.Services.IAlfaKnowledgeSuggestionService AlfaKnowledgeSvc
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IAsyncDisposable
@@ -150,7 +151,9 @@
     }
 </style>
 
-<section class="page-grid conversations-page conversations-page--odoo @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty)" @onclick="DismissConversationNoticesAsync">
+<section id="conversations-page"
+         class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty) @(_showAiSuggestionPanel ? "conversations-page--ai-open" : string.Empty)"
+         @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
     {
         <div class="panel-card empty-state">
@@ -165,6 +168,7 @@
     }
     else
     {
+        <div class="conversations-core-workspace">
         <section class="panel-card conversations-filters conversations-mobile-filters mobile-only" @onclick:stopPropagation>
             <div class="conversations-mobile-header">
                 <div>
@@ -182,6 +186,24 @@
                         @onclick='() => ChangeCanalAsync("WHATSAPP")'>
                     <i class="bi bi-whatsapp"></i>
                     <span>WhatsApp</span>
+                </button>
+                <button type="button"
+                        class="conversations-mobile-action conversations-mobile-action--instagram @(_canalActivo == "INSTAGRAM" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("INSTAGRAM")'>
+                    <i class="bi bi-instagram"></i>
+                    <span>Instagram</span>
+                </button>
+                <button type="button"
+                        class="conversations-mobile-action @(_canalActivo == "FACEBOOK" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("FACEBOOK")'>
+                    <i class="bi bi-facebook"></i>
+                    <span>Facebook</span>
+                </button>
+                <button type="button"
+                        class="conversations-mobile-action conversations-mobile-action--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
+                    <i class="bi bi-bag-fill"></i>
+                    <span>Mercado Libre</span>
                 </button>
                 <button type="button"
                         class="conversations-mobile-action @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
@@ -291,6 +313,21 @@
                     <i class="bi bi-whatsapp"></i> WhatsApp
                 </button>
                 <button type="button"
+                        class="conversations-filter-pill conversations-filter-pill--instagram @(_canalActivo == "INSTAGRAM" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("INSTAGRAM")'>
+                    <i class="bi bi-instagram"></i> Instagram
+                </button>
+                <button type="button"
+                        class="conversations-filter-pill @(_canalActivo == "FACEBOOK" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("FACEBOOK")'>
+                    <i class="bi bi-facebook"></i> Facebook
+                </button>
+                <button type="button"
+                        class="conversations-filter-pill conversations-filter-pill--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
+                    <i class="bi bi-bag-fill"></i> Mercado Libre
+                </button>
+                <button type="button"
                         class="conversations-filter-pill @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeCanalAsync("INTERNO")'>
                     <i class="bi bi-people-fill"></i> Chat interno
@@ -299,6 +336,12 @@
                 {
                     <button type="button" class="btn btn--primary btn--sm" @onclick='() => _showNuevoHilo = true'>
                         <i class="bi bi-plus-circle-fill"></i> Nuevo hilo
+                    </button>
+                }
+                @if (_canalActivo == "MERCADOLIBRE")
+                {
+                    <button type="button" class="btn btn--primary btn--sm conversations-sync-meli-button" @onclick="SyncMercadoLibreQuestionsAsync" disabled="@(_syncingMercadoLibre || _loadingInbox)">
+                        <i class="bi bi-arrow-repeat"></i> Sincronizar
                     </button>
                 }
             </div>
@@ -315,6 +358,9 @@
                 <button type="button" class="btn btn--primary btn--sm conversations-ticket-button" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
                     <i class="bi bi-life-preserver"></i>
                     <span>Crear ticket</span>
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm conversations-ai-suggestion-button @(_showAiSuggestionPanel ? "is-active" : string.Empty)" @onclick="ToggleAiSuggestionPanel" disabled="@(_selectedConversation is null)" title="Sugerencia IA">
+                    <i class="bi bi-stars"></i>
                 </button>
             </div>
 
@@ -548,6 +594,21 @@
                             WhatsApp
                         </button>
                         <button type="button"
+                                class="conversations-mobile-chip @(_canalActivo == "INSTAGRAM" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("INSTAGRAM")'>
+                            Instagram
+                        </button>
+                        <button type="button"
+                                class="conversations-mobile-chip @(_canalActivo == "FACEBOOK" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("FACEBOOK")'>
+                            Facebook
+                        </button>
+                        <button type="button"
+                                class="conversations-mobile-chip conversations-mobile-chip--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
+                            Mercado Libre
+                        </button>
+                        <button type="button"
                                 class="conversations-mobile-chip @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
                                 @onclick='() => ChangeCanalAsync("INTERNO")'>
                             Chat interno
@@ -686,18 +747,34 @@
                 else
                 {
                     <div class="conversations-list__items">
-                        @foreach (var item in _inbox)
+                        @foreach (var item in InboxDisplayItems)
                         {
                             <div role="button"
                                  tabindex="0"
                                  class="@ConversationRowClass(item)"
-                                 @onclick="() => SelectConversationAsync(item.IdConversacion, showMobileChat: true)"
-                                 @onkeydown="args => HandleConversationRowKeyDownAsync(args, item.IdConversacion)">
-                                <span class="conversation-row__avatar" aria-hidden="true">@GetConversationInitials(item)</span>
+                                 style="@GetInboxTechnicianStyle(item)"
+                                 @onclick="() => SelectInboxItemAsync(item, showMobileChat: true)"
+                                 @onkeydown="args => HandleInboxRowKeyDownAsync(args, item)">
+                                <span class="conversation-row__avatar @(item.Canal == "MERCADOLIBRE" ? "conversation-row__avatar--mercadolibre" : string.Empty)" aria-hidden="true">
+                                    @if (!string.IsNullOrWhiteSpace(item.FotoPerfilUrl))
+                                    {
+                                        <img src="@item.FotoPerfilUrl" alt="" loading="lazy" referrerpolicy="no-referrer" />
+                                    }
+                                    else
+                                    {
+                                        @GetConversationInitials(item)
+                                    }
+                                </span>
                                 <div class="conversation-row__content">
                                 <div class="conversation-row__top">
                                     <span class="conversation-row__name">@GetDisplayName(item)</span>
                                     <span class="conversation-row__side">
+                                        @if (item.Canal == "MERCADOLIBRE" && GetMercadoLibreGroupCount(item) > 1)
+                                        {
+                                            <span class="mercadolibre-group-chevron" aria-hidden="true">
+                                                <i class="bi @(IsMercadoLibreGroupExpanded(item) ? "bi-chevron-down" : "bi-chevron-right")"></i>
+                                            </span>
+                                        }
                                         <button type="button"
                                                 class="conversation-pin @(item.FijadaPorUsuario ? "is-pinned" : string.Empty)"
                                                 title="@(item.FijadaPorUsuario ? "Desfijar para mi usuario" : "Fijar para mi usuario")"
@@ -707,27 +784,85 @@
                                             <i class="bi @(item.FijadaPorUsuario ? "bi-pin-angle-fill" : "bi-pin-angle")"></i>
                                         </button>
                                         <span class="conversation-row__date">@FormatShortDate(item.FechaHoraUltimoMensaje)</span>
-                                        @if (GetConversationNewCount(item.IdConversacion) > 0)
+                                        @if (GetInboxDisplayNewCount(item) > 0)
                                         {
-                                            <span class="conversation-row__new-count">@GetConversationNewCount(item.IdConversacion)</span>
+                                            <span class="conversation-row__new-count">@GetInboxDisplayNewCount(item)</span>
                                         }
                                     </span>
                                 </div>
                                 <div class="conversation-row__badges">
                                     <span class="conversation-badge conversation-badge--state">@item.EstadoDescripcion</span>
+                                    @if (!string.IsNullOrWhiteSpace(item.IdTecnico))
+                                    {
+                                        <span class="conversation-badge conversation-badge--technician">
+                                            <i class="bi bi-person-fill"></i>
+                                            @FirstNonEmpty(item.TecnicoNombre, item.IdTecnico)
+                                        </span>
+                                    }
                                     @if (!string.IsNullOrWhiteSpace(item.ClienteNombre))
                                     {
                                         <span class="conversation-badge">@item.ClienteNombre</span>
                                     }
+                                    @if (item.Canal == "MERCADOLIBRE")
+                                    {
+                                        var groupCount = GetMercadoLibreGroupCount(item);
+                                        if (groupCount > 1)
+                                        {
+                                            <span class="conversation-badge conversation-badge--mercadolibre-count">@groupCount preguntas</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="conversation-badge conversation-badge--mercadolibre-buyer">@GetMercadoLibreBuyerLabel(item)</span>
+                                        }
+                                    }
                                 </div>
-                                <p class="conversation-row__summary">@item.ResumenUltimoMensaje</p>
+                                <p class="conversation-row__summary">
+                                    @if (IsLastInboxMessageOutgoing(item))
+                                    {
+                                        <span class="conversation-row__delivery @GetDeliveryClass(item.EstadoUltimoMensaje)"
+                                              title="Último mensaje enviado por nosotros: @GetDeliveryLabel(item.EstadoUltimoMensaje)">
+                                            <i class="bi @GetDeliveryIcon(item.EstadoUltimoMensaje)"></i>
+                                        </span>
+                                    }
+                                    @FormatInboxSummary(item.ResumenUltimoMensaje)
+                                </p>
                                 </div>
                             </div>
+                            @if (ShouldShowMercadoLibreInboxChildren(item))
+                            {
+                                <div class="mercadolibre-inbox-children">
+                                    @foreach (var question in GetMercadoLibreGroupItems(item))
+                                    {
+                                        <button type="button"
+                                                class="mercadolibre-inbox-child @(question.IdConversacion == _selectedConversationId ? "is-active" : string.Empty)"
+                                                @onclick="() => SelectMercadoLibreGroupQuestionAsync(question.IdConversacion)"
+                                                disabled="@(_loadingConversation && question.IdConversacion == _selectedConversationId)">
+                                            <span class="mercadolibre-inbox-child__buyer">@GetMercadoLibreBuyerLabel(question)</span>
+                                            <strong>@FormatInboxSummary(question.ResumenUltimoMensaje)</strong>
+                                            <span class="mercadolibre-inbox-child__side">
+                                                <small>@FormatShortDate(question.FechaHoraUltimoMensaje)</small>
+                                                @if (GetConversationNewCount(question.IdConversacion) > 0)
+                                                {
+                                                    <span class="mercadolibre-inbox-child__new">@GetConversationNewCount(question.IdConversacion)</span>
+                                                }
+                                            </span>
+                                        </button>
+                                    }
+                                </div>
+                            }
                         }
                     </div>
                 }
             </aside>
 
+            <div class="conversations-column-resizer conversations-column-resizer--inbox"
+                 data-conversations-resizer="inbox"
+                 role="separator"
+                 aria-label="Cambiar ancho del inbox"
+                 aria-orientation="vertical"
+                 tabindex="0"></div>
+
+            <div class="conversations-chat-workspace">
             <section class="panel-card conversations-chat">
                 @if (_loadingConversation || _loadingAuditMessages)
                 {
@@ -802,6 +937,19 @@
                                 <i class="bi bi-arrow-left"></i>
                                 <span>Volver</span>
                             </button>
+                            @if (_selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK" || _selectedConversation.Canal == "MERCADOLIBRE")
+                            {
+                                <div class="conversation-profile-avatar @(_selectedConversation.Canal == "MERCADOLIBRE" ? "conversation-profile-avatar--mercadolibre" : string.Empty)" aria-hidden="true">
+                                    @if (!string.IsNullOrWhiteSpace(_selectedConversation.FotoPerfilUrl))
+                                    {
+                                        <img src="@_selectedConversation.FotoPerfilUrl" alt="" referrerpolicy="no-referrer" />
+                                    }
+                                    else
+                                    {
+                                        <span>@GetConversationInitials(_selectedConversation)</span>
+                                    }
+                                </div>
+                            }
                             <div>
                                 <div class="conversation-title-editor">
                                     @if (_editingConversationName)
@@ -838,7 +986,54 @@
                                         </button>
                                     }
                                 </div>
-                                @if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
+                                @if (_selectedConversation.Canal == "INSTAGRAM" && !string.IsNullOrWhiteSpace(_selectedConversation.UsuarioExterno))
+                                {
+                                    <div class="conversation-social-profile">
+                                        <a href="@GetInstagramProfileUrl(_selectedConversation.UsuarioExterno)"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           title="Abrir perfil en Instagram">
+                                            @($"@{_selectedConversation.UsuarioExterno}")
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                        @if (_selectedConversation.PerfilExternoVerificado)
+                                        {
+                                            <span title="Perfil verificado"><i class="bi bi-patch-check-fill"></i></span>
+                                        }
+                                        @if (_selectedConversation.SeguidoresExterno.HasValue)
+                                        {
+                                            <span>@FormatCompactNumber(_selectedConversation.SeguidoresExterno.Value) seguidores</span>
+                                        }
+                                    </div>
+                                }
+                                else if (_selectedConversation.Canal == "FACEBOOK")
+                                {
+                                    <div class="conversation-social-profile conversation-social-profile--facebook">
+                                        <a href="@GetFacebookProfileUrl(_selectedConversation)"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           title="Abrir referencia en Facebook">
+                                            <i class="bi bi-facebook"></i>
+                                            Ver en Facebook
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                    </div>
+                                }
+                                else if (_selectedConversation.Canal == "MERCADOLIBRE")
+                                {
+                                    <div class="conversation-social-profile conversation-social-profile--mercadolibre">
+                                        <a href="@GetMercadoLibreQuestionUrl(_selectedConversation)"
+                                           target="_blank"
+                                           rel="noopener noreferrer"
+                                           title="Abrir referencia en Mercado Libre">
+                                            <i class="bi bi-bag-fill"></i>
+                                            Ver publicación
+                                            <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                        <span>@GetMercadoLibreBuyerLabel(_selectedConversation)</span>
+                                    </div>
+                                }
+                                else if (_selectedConversation.Canal != "INTERNO" && !string.IsNullOrWhiteSpace(_selectedConversation.TelefonoWhatsApp))
                                 {
                                     <p class="panel-card__subtitle">@_selectedConversation.TelefonoWhatsApp</p>
                                 }
@@ -879,6 +1074,13 @@
                                         <i class="bi bi-life-preserver"></i>
                                         <span>Crear ticket</span>
                                     </button>
+                                    @if (CanAssignSelectedConversationToMe)
+                                    {
+                                        <button type="button" role="menuitem" @onclick="AssignSelectedConversationToMeAsync" disabled="@_busyAction">
+                                            <i class="bi bi-person-check-fill"></i>
+                                            <span>Asignarme la conversación</span>
+                                        </button>
+                                    }
                                     <button type="button" role="menuitem" @onclick="ToggleStatusMenu" disabled="@_busyAction">
                                         <i class="bi bi-circle-half"></i>
                                         <span>Estado: @GetCurrentStatusDescription()</span>
@@ -909,7 +1111,18 @@
                                 </div>
                             }
                         </div>
-                        <div class="conversation-header-state">
+                        <div class="conversation-header-state @(CanAssignSelectedConversationToMe ? "has-assign-to-me" : string.Empty)">
+                            @if (CanAssignSelectedConversationToMe)
+                            {
+                                <button type="button"
+                                        class="btn btn--primary btn--sm conversation-assign-to-me"
+                                        @onclick="AssignSelectedConversationToMeAsync"
+                                        disabled="@_busyAction"
+                                        title="Tomar esta conversación">
+                                    <i class="bi bi-person-check-fill"></i>
+                                    Asignarme
+                                </button>
+                            }
                             <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)" @onclick:stopPropagation="true">
                                 <span class="conversation-header-state__caption">Estado:</span>
                                 <button type="button"
@@ -968,6 +1181,12 @@
                             </button>
                         </div>
                     }
+                    @if (IsProviderPendingConversation && !_showStatusMenu)
+                    {
+                        <div class="conversations-window-banner conversations-window-banner--provider">
+                            <span>@GetProviderPendingMessage()</span>
+                        </div>
+                    }
 
                     @if (_ticketSelectionMode)
                     {
@@ -984,8 +1203,25 @@
                         </div>
                     }
 
+                    @if (ShouldShowMercadoLibreThreadPicker)
+                    {
+                        <div class="mercadolibre-thread-picker" aria-label="Preguntas de la publicación">
+                            @foreach (var question in _selectedMercadoLibreGroupItems)
+                            {
+                                <button type="button"
+                                        class="mercadolibre-thread-picker__item @(question.IdConversacion == _selectedConversationId ? "is-active" : string.Empty)"
+                                        @onclick="() => SelectMercadoLibreGroupQuestionAsync(question.IdConversacion)"
+                                        disabled="@(_loadingConversation || question.IdConversacion == _selectedConversationId)">
+                                    <span class="mercadolibre-thread-picker__buyer">@GetMercadoLibreBuyerLabel(question)</span>
+                                    <strong>@FormatInboxSummary(question.ResumenUltimoMensaje)</strong>
+                                    <small>@FormatShortDate(question.FechaHoraUltimoMensaje)</small>
+                                </button>
+                            }
+                        </div>
+                    }
+
                     <div class="conversations-thread-shell">
-                    <div class="conversations-thread" @ref="_threadElement">
+                    <div class="conversations-thread @GetThreadCssClass()" @ref="_threadElement">
                         @if (_messages.Count == 0)
                         {
                             <div class="conversations-empty conversations-empty--center">
@@ -1032,7 +1268,7 @@
                                 }
 
                                 <div id="@GetMessageDomId(message.IdMensaje)"
-                                     class="message-row @(IsOutgoingMessage(message) ? "message-row--outgoing" : "message-row--incoming") @(IsQuotedSource(message) ? "message-row--quoted-source" : string.Empty)"
+                                     class="message-row @GetMessageRowClass(message) @(IsQuotedSource(message) ? "message-row--quoted-source" : string.Empty)"
                                      @ondblclick="() => QuoteMessageAsync(message)">
                                     @if (_ticketSelectionMode)
                                     {
@@ -1049,12 +1285,13 @@
                                             <div class="message-reaction-picker" @onclick:stopPropagation>
                                                 @foreach (var emoji in QuickReactionEmojis)
                                                 {
+                                                    var reactionMessageId = message.IdMensaje;
+                                                    var reactionEmoji = emoji;
                                                     <button type="button"
                                                             class="btn btn--ghost btn--sm message-reaction-picker__emoji"
                                                             title="Reaccionar @emoji"
-                                                            @onclick="() => SendReactionAsync(message, emoji)"
-                                                            @onclick:stopPropagation
-                                                            disabled="@_busyAction">
+                                                            @onclick="async () => await SendReactionAsync(reactionMessageId, reactionEmoji)"
+                                                            disabled="@(_reactionSendingMessageId.HasValue)">
                                                         @emoji
                                                     </button>
                                                 }
@@ -1085,7 +1322,7 @@
                                                 }
                                             </div>
                                         }
-                                        <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty)">
+                                        <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty) @(_aiFocusedMessageId == message.IdMensaje ? "message-card--ai-selected" : string.Empty)">
                                     <div class="message-card__meta">
                                         <span>@GetMessageAuthor(message)</span>
                                         <span>@FormatShortDate(message.FechaHora)</span>
@@ -1177,9 +1414,9 @@
                                                         }
                                                         else
                                                         {
-                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
-                                                                <i class="bi bi-image-alt"></i>
-                                                                <span>Imagen no disponible</span>
+                                                            <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-image-alt")"></i>
+                                                                <span>@GetAttachmentUnavailableText(adj, "Imagen no disponible")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1222,9 +1459,9 @@
                                                         }
                                                         else
                                                         {
-                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
-                                                                <i class="bi bi-file-earmark-music"></i>
-                                                                <span>Audio no disponible</span>
+                                                            <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-file-earmark-music")"></i>
+                                                                <span>@GetAttachmentUnavailableText(adj, "Audio no disponible")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1256,9 +1493,9 @@
                                                         }
                                                         else
                                                         {
-                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
-                                                                <i class="bi bi-camera-video-off"></i>
-                                                                <span>Video no disponible</span>
+                                                            <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-camera-video-off")"></i>
+                                                                <span>@GetAttachmentUnavailableText(adj, "Video no disponible")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1279,9 +1516,9 @@
                                                         }
                                                         else
                                                         {
-                                                            <div class="attachment-unavailable" title="@GetAttachmentUnavailableTitle(adj)">
-                                                                <i class="bi bi-file-earmark-x"></i>
-                                                                <span>Archivo no disponible</span>
+                                                            <div class="attachment-unavailable @GetAttachmentRecoveryClass(adj)" title="@GetAttachmentUnavailableTitle(adj)">
+                                                                <i class="bi @GetAttachmentUnavailableIcon(adj, "bi-file-earmark-x")"></i>
+                                                                <span>@GetAttachmentUnavailableText(adj, "Archivo no disponible")</span>
                                                             </div>
                                                         }
                                                     </div>
@@ -1319,28 +1556,44 @@
                                             </div>
                                         }
                                     </div>
-                                    @if (CanReactToMessage(message) || CanQuoteMessage(message))
+                                    @if (CanReactToMessage(message) || CanQuoteMessage(message) || CanUseMessageAsAiFocus(message))
                                     {
-                                        <div class="message-actions">
-                                            @if (CanReactToMessage(message))
-                                            {
-                                                <button type="button"
-                                                        class="btn btn--ghost btn--sm message-action-button"
-                                                        title="Reaccionar"
-                                                        @onclick="() => ToggleReactionPicker(message.IdMensaje)">
-                                                    <i class="bi bi-emoji-smile"></i>
-                                                </button>
-                                            }
-                                            @if (CanQuoteMessage(message))
-                                            {
-                                                <button type="button"
-                                                        class="btn btn--ghost btn--sm message-action-button"
-                                                        title="Responder citando"
-                                                        @onclick="() => QuoteMessageAsync(message)">
-                                                    <i class="bi bi-reply-fill"></i>
-                                                </button>
-                                            }
-                                        </div>
+                                        <details class="message-actions">
+                                            <summary class="message-actions__trigger"
+                                                     title="Más acciones"
+                                                     aria-label="Más acciones">
+                                                <i class="bi bi-three-dots"></i>
+                                            </summary>
+                                            <div class="message-actions__menu">
+                                                @if (CanUseMessageAsAiFocus(message))
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-action-button @(_aiFocusedMessageId == message.IdMensaje ? "is-active" : string.Empty)"
+                                                            title="Consultar este mensaje con la IA"
+                                                            @onclick="() => SelectAiFocusMessageAsync(message)">
+                                                        <i class="bi bi-stars"></i>
+                                                    </button>
+                                                }
+                                                @if (CanReactToMessage(message))
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-action-button"
+                                                            title="Reaccionar"
+                                                            @onclick="() => ToggleReactionPicker(message.IdMensaje)">
+                                                        <i class="bi bi-emoji-smile"></i>
+                                                    </button>
+                                                }
+                                                @if (CanQuoteMessage(message))
+                                                {
+                                                    <button type="button"
+                                                            class="btn btn--ghost btn--sm message-action-button"
+                                                            title="Responder citando"
+                                                            @onclick="() => QuoteMessageAsync(message)">
+                                                        <i class="bi bi-reply-fill"></i>
+                                                    </button>
+                                                }
+                                            </div>
+                                        </details>
                                     }
                                 </div>
                             }
@@ -1370,7 +1623,7 @@
                             <InputFile id="conv-file-drop-input" OnChange="HandleFileSelectedAsync" class="conversations-drop-input" multiple accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
                             <div class="field conversations-composer__reply">
                                 <label for="conv-message">
-                                    @(_selectedConversation.Canal == "INTERNO" ? "Mensaje al equipo" : "Responder")
+                                    @GetReplyLabel()
                                 </label>
                                 @if (!string.IsNullOrWhiteSpace(TypingIndicatorText))
                                 {
@@ -1396,7 +1649,7 @@
                                           @ref="_replyTextArea"
                                           @key="_selectedConversationId"
                                           rows="2"
-                                          placeholder="@(_selectedConversation.Canal == "INTERNO" ? "Escribí un mensaje para el equipo…" : "Escribí una respuesta para WhatsApp…")"
+                                          placeholder="@GetReplyPlaceholder()"
                                           @onfocus="MarkSelectedConversationAsRead"
                                           @onfocusin="OnReplyFocusAsync"
                                           @oninput="HandleReplyInputAsync"></textarea>
@@ -1452,7 +1705,15 @@
                                 </div>
                             }
                             <div class="conversations-composer__actions conversations-composer__actions--reply">
-                                <button type="button" class="btn btn--primary" @onclick="SendReplyAsync" disabled="@(!_canSendReply)" title="@(HasPendingAttachmentError ? "Reintentar envio" : (_selectedConversation.Canal == "INTERNO" ? "Enviar" : "Enviar mensaje"))">
+                                <button type="button"
+                                        class="btn btn--ghost conversations-improve-ai"
+                                        title="Mejorar con IA"
+                                        aria-label="Mejorar con IA"
+                                        @onclick="ImproveReplyWithAiAsync"
+                                        disabled="@(_improvingReplyWithAi || !HasReplyText || !AlfaKnowledgeSvc.IsConfigured)">
+                                    <i class="bi @(_improvingReplyWithAi ? "bi-hourglass-split" : "bi-stars")"></i>
+                                </button>
+                                <button type="button" class="btn btn--primary" @onclick="SendReplyAsync" disabled="@(!_canSendReply)" title="@GetReplyButtonTitle()">
                                     <i class="bi @(HasPendingAttachmentError ? "bi-arrow-clockwise" : "bi-send-fill")"></i>
                                 </button>
                                 <button type="button"
@@ -1531,13 +1792,13 @@
                                             <label for="conv-note-mobile">Nota interna</label>
                                             <textarea id="conv-note-mobile"
                                                       @ref="_internalNoteMobileTextArea"
+                                                      @key="_selectedConversationId"
                                                       rows="1"
                                                       placeholder="Escribí una nota interna visible solo para el equipo…"
-                                                      value="@_internalNoteText"
-                                                      @oninput="HandleInternalNoteInputAsync"></textarea>
+                                                      ></textarea>
                                         </div>
                                         <div class="conversations-composer__actions conversations-composer__actions--note conversations-composer__actions--note-mobile">
-                                            <button type="button" class="btn btn--ghost" @onclick="AddInternalNoteAsync" disabled="@(!_canAddNote)" title="Guardar nota interna">
+                                            <button type="button" class="btn btn--ghost" @onclick="() => AddInternalNoteAsync()" disabled="@(_busyAction || _selectedConversation is null)" title="Guardar nota interna">
                                                 <i class="bi bi-journal-text"></i>
                                             </button>
                                         </div>
@@ -1549,12 +1810,14 @@
                         <div class="field conversations-composer__note">
                             <label for="conv-note">Nota interna</label>
                             <textarea id="conv-note"
+                                      @ref="_internalNoteTextArea"
+                                      @key="_selectedConversationId"
                                       rows="1"
                                       placeholder="Escribí una nota interna visible solo para el equipo…"
-                                      @bind="_internalNoteText"></textarea>
+                                      ></textarea>
                         </div>
                         <div class="conversations-composer__actions conversations-composer__actions--note">
-                            <button type="button" class="btn btn--ghost" @onclick="AddInternalNoteAsync" disabled="@(!_canAddNote)" title="Guardar nota interna">
+                            <button type="button" class="btn btn--ghost" @onclick="() => AddInternalNoteAsync()" disabled="@(_busyAction || _selectedConversation is null)" title="Guardar nota interna">
                                 <i class="bi bi-journal-text"></i>
                             </button>
                         </div>
@@ -1700,9 +1963,247 @@
                     }
                 }
             </aside>
+            </div>
         </div>
+        </div>
+
+        <div class="conversations-column-resizer conversations-column-resizer--ai @(_showAiSuggestionPanel ? "is-visible" : string.Empty)"
+             data-conversations-resizer="ai"
+             role="separator"
+             aria-label="Cambiar ancho de AlfaKnowledge"
+             aria-orientation="vertical"
+             tabindex="@(_showAiSuggestionPanel ? "0" : "-1")"></div>
+
+        <aside class="panel-card conversations-context conversations-context-drawer conversations-ai-suggestion-drawer @(_showAiSuggestionPanel ? "is-open" : string.Empty)">
+                <div class="conversations-context__section conversations-ai-header">
+                    <div class="conversations-ai-header__identity">
+                        <span class="conversations-ai-header__avatar"><i class="bi bi-stars"></i></span>
+                        <div>
+                            <h3 class="panel-card__title">AlfaKnowledge</h3>
+                            <p class="panel-card__subtitle"><span></span> Asistente para esta conversación</p>
+                        </div>
+                    </div>
+                    @if (AlfaKnowledgeSvc.IsConfigured)
+                    {
+                        <a class="btn btn--ghost btn--sm conversations-ai-full-link"
+                           href="@AlfaKnowledgeSvc.FullChatUrl"
+                           target="_blank"
+                           rel="noopener noreferrer">
+                            <i class="bi bi-box-arrow-up-right"></i> Abrir AlfaKnowledge completo
+                        </a>
+                    }
+                    <button type="button" class="conversations-drawer-close" title="Cerrar sugerencia IA" aria-label="Cerrar asistente" @onclick="ToggleAiSuggestionPanel">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+
+                <div class="conversations-ai-body">
+                @if (_selectedConversation is null)
+                {
+                    <div class="conversations-empty">Seleccioná una conversación para usar el asistente.</div>
+                }
+                else
+                {
+                    <div class="conversations-ai-context">
+                        <label for="ai-context-scope">Contexto que leerá la IA</label>
+                        <select id="ai-context-scope" value="@_aiContextScope" @onchange="OnAiContextScopeChangedAsync" disabled="@_loadingAiSuggestion">
+                            <option value="@AiContextScopes.CurrentCycle">Tramo actual</option>
+                            <option value="@AiContextScopes.EntireConversation">Toda la conversación</option>
+                            <option value="@AiContextScopes.FocusedMessage" disabled="@(!_aiFocusedMessageId.HasValue)">Mensaje marcado</option>
+                        </select>
+                        <small>@GetAiContextDescription()</small>
+                        @if (HasAiContextImage())
+                        {
+                            <small class="conversations-ai-image-context">
+                                <i class="bi bi-image"></i> También analizará la última imagen enviada por el cliente.
+                            </small>
+                        }
+                    </div>
+
+                    @if (_aiFocusedMessageId.HasValue && GetAiFocusedMessage() is { } focusedMessage)
+                    {
+                        <div class="conversations-ai-focus">
+                            <span>Mensaje marcado</span>
+                            <strong>@GetAiMessagePreview(focusedMessage)</strong>
+                            <button type="button" class="btn btn--ghost btn--sm" title="Quitar selección" @onclick="ClearAiFocusMessage">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    }
+
+                    @if (_aiChatHistory.Count > 0)
+                    {
+                        <div class="conversations-ai-chat" aria-live="polite">
+                            @foreach (var turn in _aiChatHistory)
+                            {
+                                <div class="conversations-ai-chat__message conversations-ai-chat__message--@turn.Role">
+                                    <span>@(turn.Role == "assistant" ? "IA" : "Vos")</span>
+                                    <p>@turn.Content</p>
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (_loadingAiSuggestion)
+                    {
+                        <div class="conversations-empty conversations-ai-typing">
+                            <i class="bi bi-stars"></i> Analizando el contexto seleccionado
+                            <span class="conversations-ai-typing__dots"><span></span><span></span><span></span></span>
+                        </div>
+                    }
+                    else if (_aiSuggestion is null)
+                    {
+                        @if (!string.IsNullOrWhiteSpace(_aiSuggestionError))
+                        {
+                            <div class="conversations-empty">@_aiSuggestionError</div>
+                        }
+                    }
+                    else
+                    {
+                        @if (_aiChatHistory.Count == 0)
+                        {
+                            @if (_aiSuggestion.NeedsClarification)
+                            {
+                                <div class="context-card" style="border-color:rgba(250,204,21,.6);background:#1a1506;">
+                                    <span class="context-card__label">La IA pide una aclaración</span>
+                                    <strong>@_aiSuggestion.ClarificationQuestion</strong>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="context-card">
+                                    <span class="context-card__label">Respuesta sugerida</span>
+                                    <strong style="white-space:pre-wrap;">@_aiSuggestion.SuggestedReply</strong>
+                                </div>
+                            }
+                        }
+
+                        @if (_aiSuggestion.Citations.Count > 0)
+                        {
+                            <div class="conversations-context__section conversations-ai-sources @(_aiSourcesExpanded ? "is-expanded" : "is-collapsed")">
+                                <button type="button"
+                                        class="conversations-ai-sources__toggle"
+                                        aria-expanded="@_aiSourcesExpanded"
+                                        @onclick="ToggleAiSources">
+                                    <span>Fuentes <span class="conversations-ai-source-count">· @_aiSuggestion.Citations.Count</span></span>
+                                    <i class="bi @(_aiSourcesExpanded ? "bi-chevron-up" : "bi-chevron-down")"></i>
+                                </button>
+                                @if (_aiSourcesExpanded)
+                                {
+                                    <div class="conversations-ai-sources__list">
+                                        @foreach (var citation in _aiSuggestion.Citations)
+                                        {
+                                            <a class="conversations-ai-source-link"
+                                               href="@AlfaKnowledgeSvc.GetCitationUrl(citation)"
+                                               target="_blank"
+                                               rel="noopener noreferrer"
+                                               title="Abrir fuente en una pestaña nueva">
+                                                <i class="bi bi-box-arrow-up-right"></i>
+                                                <span title="@citation.SourceLabel — @citation.Title">@citation.SourceLabel — @citation.Title</span>
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <div class="conversations-ai-suggestion-actions">
+                            <button type="button"
+                                    class="btn btn--primary btn--sm"
+                                    @onclick="UseAiSuggestionAsync"
+                                    disabled="@string.IsNullOrWhiteSpace(GetAiTransferText())">
+                                <i class="bi bi-check2"></i> Llevar a respuesta
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="RegenerateAiSuggestionAsync">
+                                <i class="bi bi-arrow-repeat"></i> Regenerar
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenAiCorrectionModal">
+                                <i class="bi bi-pencil-square"></i> Corregir respuesta
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="DiscardAiSuggestionAsync">
+                                <i class="bi bi-x-lg"></i> Descartar
+                            </button>
+                        </div>
+                    }
+
+                    <div class="conversations-ai-composer">
+                        <label for="ai-technician-message">Hablá con la IA sobre este caso</label>
+                        <textarea id="ai-technician-message"
+                                  @ref="_aiInstructionTextArea"
+                                  rows="3"
+                                  placeholder="Ej.: resumime el problema, ¿qué debería preguntarle?, redactá una respuesta más breve..."
+                                  value="@_aiInstruction"
+                                  @oninput="OnAiInstructionInput"
+                                  disabled="@_loadingAiSuggestion"></textarea>
+                        <button type="button"
+                                class="btn btn--primary btn--sm"
+                                @onclick="SendAiInstructionAsync"
+                                disabled="@(_loadingAiSuggestion || string.IsNullOrWhiteSpace(_aiInstruction))">
+                            <i class="bi bi-send-fill"></i> Enviar a IA
+                        </button>
+                    </div>
+                }
+                </div>
+            </aside>
     }
 </section>
+
+@if (_showAiCorrectionModal)
+{
+    <div class="modal-overlay conversations-ai-correction-overlay" @onclick="CloseAiCorrectionModal">
+        <div class="modal-card conversations-ai-correction-modal" role="dialog" aria-modal="true" aria-labelledby="ai-correction-title" @onclick:stopPropagation>
+            <div class="conversations-ai-correction-modal__header">
+                <div>
+                    <h3 id="ai-correction-title" class="modal-card__title">Corregir respuesta</h3>
+                    @if (_aiSuggestion?.InteractionId != Guid.Empty)
+                    {
+                        <small>Basado en la interacción @_aiSuggestion?.InteractionId</small>
+                    }
+                </div>
+                <button type="button" class="conversations-drawer-close" title="Cerrar" aria-label="Cerrar corrección" @onclick="CloseAiCorrectionModal">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            <label class="field">
+                <span>Título</span>
+                <input type="text" @bind="_aiCorrectionTitle" disabled="@_savingAiCorrection" />
+            </label>
+            <label class="field">
+                <span>Pregunta original</span>
+                <textarea rows="3" @bind="_aiCorrectionQuestion" disabled="@_savingAiCorrection"></textarea>
+            </label>
+            <label class="field">
+                <span>Respuesta curada</span>
+                <textarea class="conversations-ai-correction-modal__answer" rows="7" @bind="_aiCorrectionAnswer" disabled="@_savingAiCorrection"></textarea>
+            </label>
+            <label class="field">
+                <span>Notas de corrección</span>
+                <textarea rows="3" placeholder="Qué estaba mal o qué faltaba" @bind="_aiCorrectionNotes" disabled="@_savingAiCorrection"></textarea>
+            </label>
+
+            @if (!string.IsNullOrWhiteSpace(_aiCorrectionError))
+            {
+                <div class="conversations-ai-correction-modal__error" role="alert">@_aiCorrectionError</div>
+            }
+
+            <p class="conversations-ai-correction-modal__hint">Reemplazá la respuesta por la versión correcta y guardala en AlfaKnowledge.</p>
+            <div class="modal-card__actions">
+                <button type="button" class="btn btn--ghost" @onclick="CloseAiCorrectionModal" disabled="@_savingAiCorrection">Cancelar</button>
+                <button type="button"
+                        class="btn btn--primary"
+                        @onclick="SaveAiCorrectionAsync"
+                        disabled="@(_savingAiCorrection || !CanSaveAiCorrection)">
+                    @if (_savingAiCorrection)
+                    {
+                        <span class="spinner" aria-hidden="true"></span>
+                    }
+                    Guardar respuesta curada
+                </button>
+            </div>
+        </div>
+    </div>
+}
 
 @if (_showContextNotesModal && HasContextNotes)
 {
@@ -2429,6 +2930,13 @@
 }
 
 @code {
+    private static class AiContextScopes
+    {
+        public const string CurrentCycle = "current-cycle";
+        public const string EntireConversation = "entire-conversation";
+        public const string FocusedMessage = "focused-message";
+    }
+
     private readonly (string Value, string Label)[] _modeOptions =
     [
         ("todas", "Todas"),
@@ -2444,6 +2952,26 @@
     private bool _showContextPanel;
     private bool _showMobileAdvancedFilters;
     private bool _showTemplatePanel;
+    private bool _showAiSuggestionPanel;
+    private bool _loadingAiSuggestion;
+    private bool _improvingReplyWithAi;
+    private CancellationTokenSource? _aiSuggestionRequestCts;
+    private AlfaKnowledgeSuggestionResult? _aiSuggestion;
+    private long? _aiSuggestionConversationId;
+    private string? _aiSuggestionError;
+    private string _aiContextScope = AiContextScopes.CurrentCycle;
+    private long? _aiFocusedMessageId;
+    private string _aiInstruction = string.Empty;
+    private List<AlfaKnowledgeAssistantMessage> _aiChatHistory = [];
+    private bool _aiSourcesExpanded = true;
+    private bool _showAiCorrectionModal;
+    private bool _savingAiCorrection;
+    private string _aiSuggestionOriginalQuestion = string.Empty;
+    private string _aiCorrectionTitle = string.Empty;
+    private string _aiCorrectionQuestion = string.Empty;
+    private string _aiCorrectionAnswer = string.Empty;
+    private string _aiCorrectionNotes = string.Empty;
+    private string? _aiCorrectionError;
     private string _nuevoHiloNombre = string.Empty;
     private string _nuevoHiloTecnico = string.Empty;
     private string? _nuevoHiloError;
@@ -2478,7 +3006,11 @@
     private bool _loadingInbox;
     private bool _loadingAuditMessages;
     private bool _loadingConversation;
+    private bool _syncingMercadoLibre;
     private bool _busyAction;
+    private string _selectedMercadoLibreGroupKey = string.Empty;
+    private List<ConversacionInboxItemDto> _selectedMercadoLibreGroupItems = [];
+    private readonly HashSet<string> _expandedMercadoLibreGroupKeys = new(StringComparer.OrdinalIgnoreCase);
     private bool _editingConversationName;
     private bool _savingConversationName;
     private bool _focusConversationNameAfterRender;
@@ -2487,6 +3019,7 @@
     private string? _conversationError;
     private string? _actionMessage;
     private string? _actionError;
+    private long? _reactionSendingMessageId;
     private bool _noticeLeaving;
     private DateTime _noticeSetAtUtc = DateTime.MinValue;
     private string _noticeSignature = string.Empty;
@@ -2514,6 +3047,8 @@
     private readonly Dictionary<long, int> _newMessagesByConversation = [];
     private bool _showReturnToLatest;
     private bool _scrollThreadToBottomAfterRender;
+    private int _scrollThreadToBottomStabilizePasses;
+    private bool _threadAnchoringToBottom;
     private long? _openAttachmentMenuId;
     private long? _openReactionMessageId;
     private ConversacionMensajeDto? _quotedMessage;
@@ -2531,6 +3066,8 @@
     private double _previewPanY;
     private SoundDiagnosticsVm _soundDiagnostics = new();
     private ElementReference _replyTextArea;
+    private ElementReference _aiInstructionTextArea;
+    private ElementReference _internalNoteTextArea;
     private ElementReference _internalNoteMobileTextArea;
     private ElementReference _parteHorasDialogElement;
     private long? _replyEnterHandlerConversationId;
@@ -2614,6 +3151,7 @@
 
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TypingPollingInterval = TimeSpan.FromMilliseconds(650);
+    private static readonly TimeSpan ConversationCacheTtl = TimeSpan.FromSeconds(20);
     private static readonly string[] ParteHoraTiposConversacion =
     [
         ParteHoraTipoTrabajoKeys.Soporte,
@@ -2642,7 +3180,7 @@
                 .Where(x => x.Emojis.Count > 0)
                 .ToList();
 
-    private bool _canSendReply => !_busyAction && !_uploadingFile && !_uploadingAudio && _selectedConversation is not null && !IsWhatsAppWindowExpired && (HasReplyText || _pendingAttachments.Count > 0);
+    private bool _canSendReply => !_busyAction && !_uploadingFile && !_uploadingAudio && _selectedConversation is not null && IsSelectedChannelSendEnabled && !IsWhatsAppWindowExpired && (HasReplyText || _pendingAttachments.Count > 0);
     private bool HasReplyText => !string.IsNullOrWhiteSpace(_replyText);
     private string TypingIndicatorText
     {
@@ -2677,6 +3215,16 @@
     private bool IsWhatsAppConversation
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP";
+    private bool IsProviderPendingConversation
+        => _selectedConversation is not null
+           && false;
+    private bool IsSelectedChannelSendEnabled
+        => _selectedConversation is not null
+           && (_selectedConversation.Canal == "WHATSAPP"
+               || _selectedConversation.Canal == "INSTAGRAM"
+               || _selectedConversation.Canal == "FACEBOOK"
+               || _selectedConversation.Canal == "MERCADOLIBRE"
+               || _selectedConversation.Canal == "INTERNO");
     private bool IsWhatsAppWindowExpired
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP"
@@ -2689,7 +3237,13 @@
     private IReadOnlyList<TicketEstadoDto> ParteHoraTicketOpenStates
         => _parteHoraTicketEstados.Where(x => !x.EsCerrado).ToList();
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
-        => _messages.Where(x => !IsReactionMessage(x)).ToList();
+        => OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x)));
+    private IReadOnlyList<ConversacionInboxItemDto> InboxDisplayItems
+        => _canalActivo == "MERCADOLIBRE"
+            ? BuildMercadoLibreInboxGroups()
+            : _inbox;
+    private bool ShouldShowMercadoLibreThreadPicker
+        => false;
     private IReadOnlyList<ConversacionEstadoOptionDto> HeaderStatusOptions
         => _states
             .Where(x => !x.EsCerrado || string.Equals(x.CodigoEstado, _statusCode, StringComparison.OrdinalIgnoreCase))
@@ -2754,8 +3308,8 @@
             return;
         }
 
-        if (_selectedConversationId.HasValue && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
-            await SelectConversationAsync(_inbox[0].IdConversacion, updateUrl: false);
+        if (_selectedConversationId.HasValue && InboxDisplayItems.Count > 0 && !ShouldKeepAuditResultsOpen)
+            await SelectInboxItemAsync(InboxDisplayItems[0]);
         else if (_selectedConversationId.HasValue)
             ClearSelection();
     }
@@ -2822,6 +3376,7 @@
         {
             try
             {
+                await JS.InvokeVoidAsync("conversacionesUi.bindColumnResizers", "conversations-page");
                 await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
                 await UpdateSoundDiagnosticsAsync();
             }
@@ -2836,6 +3391,21 @@
         }
         catch
         {
+        }
+
+        if (_showAiSuggestionPanel && _selectedConversation is not null)
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+            try
+            {
+                await JS.InvokeAsync<bool>(
+                    "conversacionesUi.bindAiInstructionEnter",
+                    _aiInstructionTextArea,
+                    _dotNetRef);
+            }
+            catch
+            {
+            }
         }
 
         try
@@ -2916,6 +3486,20 @@
             }
         }
 
+        if (_selectedConversationId.HasValue && _selectedConversation is not null)
+        {
+            _dotNetRef ??= DotNetObjectReference.Create(this);
+
+            try
+            {
+                await JS.InvokeAsync<bool>("conversacionesUi.bindInternalNoteEnter", _internalNoteTextArea, _dotNetRef);
+                await JS.InvokeAsync<bool>("conversacionesUi.bindInternalNoteEnter", _internalNoteMobileTextArea, _dotNetRef);
+            }
+            catch
+            {
+            }
+        }
+
         if (_syncReplyTextAfterRender)
         {
             _syncReplyTextAfterRender = false;
@@ -2925,7 +3509,15 @@
         if (_scrollThreadToBottomAfterRender)
         {
             _scrollThreadToBottomAfterRender = false;
-            await ScrollThreadToBottomAsync();
+            await ScrollThreadToBottomAsync(stabilize: true);
+        }
+
+        if (_scrollThreadToBottomStabilizePasses > 0)
+        {
+            _scrollThreadToBottomStabilizePasses--;
+            await ScrollThreadToBottomAsync(stabilize: false);
+            if (_scrollThreadToBottomStabilizePasses > 0)
+                _ = InvokeAsync(StateHasChanged);
         }
 
         if (_focusReplyAfterRender)
@@ -3011,6 +3603,7 @@
     private async Task ChangeModeAsync(string mode)
     {
         _filters.Modo = mode;
+        NormalizeConversationModeFilters();
         EnsureCurrentTechnicianFilterForCurrentMode();
         await LoadInboxAsync();
     }
@@ -3018,7 +3611,19 @@
     private void SetMobileMode(string mode)
     {
         _filters.Modo = mode;
+        NormalizeConversationModeFilters();
         EnsureCurrentTechnicianFilterForCurrentMode();
+    }
+
+    private void NormalizeConversationModeFilters()
+    {
+        if (!string.Equals(_filters.Modo, "asignadas_a_mi", StringComparison.OrdinalIgnoreCase))
+            _filters.IdTecnicoActual = string.Empty;
+
+        if (string.Equals(_filters.Modo, "todas", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_filters.Modo, "pendientes", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(_filters.Modo, "cerradas", StringComparison.OrdinalIgnoreCase))
+            _filters.CodigoEstado = string.Empty;
     }
 
     private void OpenMobileAdvancedFilters()
@@ -3193,6 +3798,35 @@
         await LoadAuditMessagesIfNeededAsync();
     }
 
+    private async Task SyncMercadoLibreQuestionsAsync()
+    {
+        if (_syncingMercadoLibre)
+            return;
+
+        _syncingMercadoLibre = true;
+        _actionError = null;
+        _actionMessage = null;
+
+        try
+        {
+            var result = await ConversacionesSvc.SyncMercadoLibreQuestionsAsync();
+            var detalle = string.IsNullOrWhiteSpace(result.Detalle) ? string.Empty : $" ({result.Detalle})";
+            _actionMessage = result.MensajesProcesados == 0
+                ? $"Mercado Libre no devolvió preguntas pendientes nuevas{detalle}."
+                : $"Mercado Libre sincronizó {result.MensajesProcesados.ToString(System.Globalization.CultureInfo.InvariantCulture)} pregunta(s){detalle}.";
+
+            await LoadInboxAsync();
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex.Message;
+        }
+        finally
+        {
+            _syncingMercadoLibre = false;
+        }
+    }
+
     private async Task<int> RefreshInboxAsync(bool showLoading, bool allowSelectionChange, bool trackNewMessages = false)
     {
         if (showLoading)
@@ -3216,7 +3850,10 @@
             StoreChannelCache(_canalActivo);
 
             if (_selectedConversationId.HasValue && _inbox.Any(x => x.IdConversacion == _selectedConversationId.Value))
+            {
+                RefreshSelectedMercadoLibreGroup();
                 return newMessagesDetected;
+            }
 
             if (showLoading)
             {
@@ -3225,8 +3862,8 @@
                 await Task.Yield();
             }
 
-            if (allowSelectionChange && _inbox.Count > 0 && !ShouldKeepAuditResultsOpen)
-                await SelectConversationAsync(_inbox[0].IdConversacion, updateUrl: false);
+            if (allowSelectionChange && InboxDisplayItems.Count > 0 && !ShouldKeepAuditResultsOpen)
+                await SelectInboxItemAsync(InboxDisplayItems[0], updateUrl: false, toggleMercadoLibreGroup: false);
             else if (allowSelectionChange)
                 ClearSelection();
         }
@@ -3302,12 +3939,24 @@
     private string ConversationRowClass(ConversacionInboxItemDto item)
     {
         var classes = "conversation-row";
-        if (item.IdConversacion == _selectedConversationId)
+        if (item.IdConversacion == _selectedConversationId
+            || (item.Canal == "MERCADOLIBRE"
+                && _selectedConversationId.HasValue
+                && GetMercadoLibreGroupItems(item).Any(x => x.IdConversacion == _selectedConversationId.Value)))
+        {
             classes += " is-selected";
+        }
         if (item.FijadaPorUsuario)
             classes += " is-pinned";
+        if (!string.IsNullOrWhiteSpace(item.IdTecnico))
+            classes += " has-technician";
         return classes;
     }
+
+    private static string GetInboxTechnicianStyle(ConversacionInboxItemDto item)
+        => string.IsNullOrWhiteSpace(item.IdTecnico)
+            ? string.Empty
+            : $"--technician-color:{TechnicianColorPalette.Resolve(item.IdTecnico, item.TecnicoNombre)};";
 
     private void ApplyCurrentUserToFilters(ConversacionesInboxFilters filters)
     {
@@ -3370,6 +4019,12 @@
 
     private async Task SelectConversationAsync(long idConversacion, bool showMobileChat = false, bool updateUrl = true)
     {
+        if (_canalActivo != "MERCADOLIBRE")
+        {
+            _selectedMercadoLibreGroupKey = string.Empty;
+            _selectedMercadoLibreGroupItems = [];
+        }
+
         if (updateUrl && NavigateToConversationUrl(idConversacion))
             return;
 
@@ -3382,6 +4037,52 @@
         _showMobileChatActions = false;
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
+
+        if (_showAiSuggestionPanel)
+        {
+            await RequestAiSuggestionAsync();
+        }
+    }
+
+    private async Task SelectInboxItemAsync(ConversacionInboxItemDto item, bool showMobileChat = false, bool updateUrl = true, bool toggleMercadoLibreGroup = true)
+    {
+        if (item.Canal != "MERCADOLIBRE")
+        {
+            await SelectConversationAsync(item.IdConversacion, showMobileChat: showMobileChat, updateUrl: updateUrl);
+            return;
+        }
+
+        _selectedMercadoLibreGroupKey = GetMercadoLibreGroupKey(item);
+        _selectedMercadoLibreGroupItems = GetMercadoLibreGroupItems(item).ToList();
+        var wasExpanded = _expandedMercadoLibreGroupKeys.Contains(_selectedMercadoLibreGroupKey);
+        if (toggleMercadoLibreGroup && wasExpanded)
+            _expandedMercadoLibreGroupKeys.Remove(_selectedMercadoLibreGroupKey);
+        else
+            _expandedMercadoLibreGroupKeys.Add(_selectedMercadoLibreGroupKey);
+
+        if (showMobileChat)
+            _mobileChatActive = true;
+
+        if (!toggleMercadoLibreGroup || !wasExpanded || _selectedConversationId is null)
+            await SelectConversationAsync(item.IdConversacion, showMobileChat: showMobileChat, updateUrl: updateUrl);
+    }
+
+    private async Task SelectMercadoLibreGroupQuestionAsync(long idConversacion)
+    {
+        var question = _inbox.FirstOrDefault(x => x.IdConversacion == idConversacion);
+        if (question is not null)
+        {
+            _selectedMercadoLibreGroupKey = GetMercadoLibreGroupKey(question);
+            _expandedMercadoLibreGroupKeys.Add(_selectedMercadoLibreGroupKey);
+        }
+
+        await SelectConversationAsync(idConversacion, showMobileChat: true);
+    }
+
+    private async Task HandleInboxRowKeyDownAsync(KeyboardEventArgs args, ConversacionInboxItemDto item)
+    {
+        if (args.Key is "Enter" or " ")
+            await SelectInboxItemAsync(item, showMobileChat: true);
     }
 
     private bool NavigateToConversationUrl(long idConversacion)
@@ -3408,6 +4109,7 @@
         {
             _replyText = string.Empty;
             _syncReplyTextAfterRender = true;
+            ResetAiConversation(clearFocus: true);
         }
 
         var hasWarmCache = _conversationCache.TryGetValue(idConversacion, out var cachedConversation);
@@ -3418,6 +4120,13 @@
             showLoading = false;
             await InvokeAsync(StateHasChanged);
             await Task.Yield();
+
+            if (clearActionState && IsConversationCacheFresh(cachedConversation))
+            {
+                QueueContextTicketsLoad();
+                QueueContextNotesLoad();
+                return;
+            }
         }
 
         if (showLoading)
@@ -3444,13 +4153,14 @@
             await Task.WhenAll(conversationTask, messagesTask, attachmentsTask, typingTask);
 
             _selectedConversation = await conversationTask;
+            RefreshSelectedMercadoLibreGroup();
             if (conversationChanged || clearActionState || !_editingConversationName)
             {
                 _editingConversationName = false;
                 _savingConversationName = false;
                 _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
             }
-            _messages = (await messagesTask).ToList();
+            _messages = OrderConversationMessages(await messagesTask);
             _typingUsers = (await typingTask).ToList();
             var adjuntos = await attachmentsTask;
             _adjuntosPorMensaje = adjuntos
@@ -3468,6 +4178,7 @@
                 ClearNewMessageState();
                 _showReturnToLatest = false;
                 _scrollThreadToBottomAfterRender = true;
+                _threadAnchoringToBottom = true;
                 _focusReplyAfterRender = true;
                 _scrollHandlerConversationId = null;
                 RestoreSelectedNewMessageMarker(idConversacion);
@@ -3525,19 +4236,31 @@
         IReadOnlyList<ConversacionMensajeDto> messages,
         IReadOnlyList<ConversacionAdjuntoDto> attachments)
     {
-        if (attachments.Any(x => !x.ArchivoDisponible || string.IsNullOrWhiteSpace(x.RutaLocal)))
+        if (attachments.Any(x => !x.ArchivoDisponible && x.PuedeRecuperarse))
             return true;
 
         return messages.Any(message =>
             !message.TieneAdjuntos
+            && IsRecentRecoverableMediaMessage(message)
             && IsGeneratedMediaFileName(message.Texto.Trim(), message.MessageType));
+    }
+
+    private static bool IsRecentRecoverableMediaMessage(ConversacionMensajeDto message)
+    {
+        if (message.FechaHora == DateTime.MinValue)
+            return false;
+
+        var age = DateTime.Now - message.FechaHora;
+        return age >= TimeSpan.Zero && age <= TimeSpan.FromDays(30);
     }
 
     private async Task RecoverConversationAttachmentsInBackgroundAsync(long idConversacion)
     {
+        var hadRecoveryProgress = false;
         try
         {
             var recovery = await ConversacionesSvc.RecoverConversationAttachmentsAsync(idConversacion);
+            hadRecoveryProgress = recovery.MensajesHidratados > 0 || recovery.AdjuntosRecuperados > 0;
             if (recovery.MensajesHidratados <= 0 && recovery.AdjuntosRecuperados <= 0)
                 return;
 
@@ -3550,7 +4273,7 @@
                 var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
                 await Task.WhenAll(messagesTask, attachmentsTask);
 
-                _messages = (await messagesTask).ToList();
+                _messages = OrderConversationMessages(await messagesTask);
                 var adjuntos = await attachmentsTask;
                 _adjuntosPorMensaje = adjuntos
                     .GroupBy(a => a.IdMensaje)
@@ -3568,6 +4291,8 @@
             try
             {
                 await InvokeAsync(() => _recoveringAttachmentConversations.Remove(idConversacion));
+                if (!hadRecoveryProgress)
+                    _recoveredAttachmentConversations.Remove(idConversacion);
             }
             catch
             {
@@ -4788,8 +5513,9 @@
 
         _conversationCache[idConversacion] = new ConversationViewCache(
             _selectedConversation,
-            _messages.ToList(),
-            _adjuntosPorMensaje.ToDictionary(x => x.Key, x => x.Value.ToList()));
+            OrderConversationMessages(_messages),
+            _adjuntosPorMensaje.ToDictionary(x => x.Key, x => x.Value.ToList()),
+            DateTime.UtcNow);
 
         const int maxCachedConversations = 16;
         if (_conversationCache.Count <= maxCachedConversations)
@@ -4803,17 +5529,21 @@
     private void ApplyConversationCache(long idConversacion, ConversationViewCache cache, bool scrollToBottom)
     {
         _selectedConversation = cache.Conversation;
-        _messages = cache.Messages.ToList();
+        _messages = OrderConversationMessages(cache.Messages);
         _adjuntosPorMensaje = cache.AttachmentsByMessage.ToDictionary(x => x.Key, x => x.Value.ToList());
         _assignmentTechnicianId = _selectedConversation.IdTecnico;
         _statusCode = _selectedConversation.CodigoEstado;
         _conversationError = null;
         _scrollThreadToBottomAfterRender = scrollToBottom;
+        _threadAnchoringToBottom = scrollToBottom;
         _focusReplyAfterRender = scrollToBottom;
         _scrollHandlerConversationId = null;
         _fileDropHandlerConversationId = null;
         RestoreSelectedNewMessageMarker(idConversacion);
     }
+
+    private static bool IsConversationCacheFresh(ConversationViewCache cache)
+        => DateTime.UtcNow - cache.CachedAtUtc <= ConversationCacheTtl;
 
     private void StoreChannelCache(string canal)
     {
@@ -4991,6 +5721,12 @@
                     _newMessagesCount += newMessages.Count;
                     _showReturnToLatest = true;
                 }
+
+                if (_showAiSuggestionPanel && !_loadingAiSuggestion)
+                {
+                    ResetAiConversation(clearFocus: true);
+                    await RequestAiSuggestionAsync();
+                }
             }
         }
 
@@ -5056,13 +5792,21 @@
         }
     }
 
-    private async Task ScrollThreadToBottomAsync()
+    private async Task ScrollThreadToBottomAsync(bool stabilize = false)
     {
         try
         {
+            var wasAnchoring = _threadAnchoringToBottom;
             await Task.Yield();
-            await JS.InvokeVoidAsync("conversacionesUi.scrollToBottom", _threadElement);
+            if (stabilize)
+                await JS.InvokeVoidAsync("conversacionesUi.scrollToBottomStable", _threadElement);
+            else
+                await JS.InvokeVoidAsync("conversacionesUi.scrollToBottom", _threadElement);
+            _scrollThreadToBottomStabilizePasses = stabilize ? 4 : _scrollThreadToBottomStabilizePasses;
+            _threadAnchoringToBottom = false;
             _showReturnToLatest = false;
+            if (wasAnchoring)
+                await InvokeAsync(StateHasChanged);
         }
         catch
         {
@@ -5307,7 +6051,36 @@
     {
         try
         {
+            await JS.InvokeVoidAsync("conversacionesUi.autoResizeTextarea", _internalNoteTextArea, 44, 120);
             await JS.InvokeVoidAsync("conversacionesUi.autoResizeTextarea", _internalNoteMobileTextArea, 44, 120);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task<string> GetInternalNoteTextareaValueAsync()
+    {
+        try
+        {
+            var desktopValue = await JS.InvokeAsync<string>("conversacionesUi.getElementValue", _internalNoteTextArea);
+            if (!string.IsNullOrWhiteSpace(desktopValue))
+                return desktopValue;
+
+            return await JS.InvokeAsync<string>("conversacionesUi.getElementValue", _internalNoteMobileTextArea);
+        }
+        catch
+        {
+            return _internalNoteText;
+        }
+    }
+
+    private async Task SetInternalNoteTextareasValueAsync(string value)
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.setElementValue", _internalNoteTextArea, value, false);
+            await JS.InvokeVoidAsync("conversacionesUi.setElementValue", _internalNoteMobileTextArea, value, false);
         }
         catch
         {
@@ -5414,8 +6187,10 @@
 
             await UploadPendingAttachmentsAsync(attachmentsToSend, RemovePendingAttachment);
 
-            _actionMessage = "Mensaje registrado correctamente.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
+            _actionMessage = _selectedConversation.Canal == "INTERNO"
+                ? "Mensaje registrado correctamente."
+                : "Mensaje enviado correctamente.";
+            await LoadConversationAsync(_selectedConversation.IdConversacion, showLoading: false, clearActionState: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
         }
         catch (Exception ex)
@@ -5447,6 +6222,13 @@
     [JSInvokable]
     public Task SendComposerFromEnter()
         => InvokeAsync(SendReplyAsync);
+
+    [JSInvokable]
+    public Task SendInternalNoteFromEnter(string text)
+        => InvokeAsync(async () =>
+        {
+            await AddInternalNoteAsync(text);
+        });
 
     private long AddOptimisticOutgoingMessage(string text)
     {
@@ -5622,9 +6404,14 @@
         }
     }
 
-    private async Task AddInternalNoteAsync()
+    private async Task AddInternalNoteAsync(string? explicitText = null)
     {
         if (_selectedConversation is null)
+            return;
+
+        _internalNoteText = explicitText ?? await GetInternalNoteTextareaValueAsync();
+        var noteText = _internalNoteText.Trim();
+        if (string.IsNullOrWhiteSpace(noteText))
             return;
 
         _busyAction = true;
@@ -5636,14 +6423,14 @@
             await ConversacionesSvc.AddInternalNoteAsync(new ConversacionNotaInternaRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
-                Texto = _internalNoteText.Trim(),
+                Texto = noteText,
                 IdTecnicoAutor = CurrentMessageTechnicianId,
                 UsuarioAccion = CurrentUserNameForAudit,
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
             _internalNoteText = string.Empty;
-            await AutoResizeInternalNoteTextareaAsync();
+            await SetInternalNoteTextareasValueAsync(string.Empty);
             _showComposerTools = false;
             _composerToolTab = ComposerToolTabs.Emojis;
             _actionMessage = "Nota interna guardada.";
@@ -5831,9 +6618,11 @@
                 SistemaAccion = CurrentUserSystemForAudit
             });
 
+            var idConversacion = _selectedConversation.IdConversacion;
+            _conversationCache.Remove(idConversacion);
             MarkSelectedConversationAsRead();
             _actionMessage = "Estado actualizado.";
-            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
+            await SelectConversationAsync(idConversacion, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             return true;
         }
@@ -5869,6 +6658,7 @@
         _canalActivo = canal;
         _filters.Canal = canal;
         _showNuevoHilo = false;
+        ClearSelection();
 
         if (TryApplyChannelCache(canal))
         {
@@ -5876,7 +6666,6 @@
             return;
         }
 
-        ClearSelection();
         await LoadInboxAsync();
     }
 
@@ -5888,6 +6677,653 @@
         _showContextPanel = false;
         _showMobileAdvancedFilters = false;
         _showContextNotesModal = false;
+    }
+
+    private async Task ToggleAiSuggestionPanel()
+    {
+        _showAiSuggestionPanel = !_showAiSuggestionPanel;
+
+        if (!_showAiSuggestionPanel)
+        {
+            CancelAiSuggestionRequest();
+            return;
+        }
+
+        _showContextPanel = false;
+
+        if (_selectedConversationId is { } conversationId
+            && (_aiSuggestion is null || _aiSuggestionConversationId != conversationId))
+        {
+            await RequestAiSuggestionAsync();
+        }
+    }
+
+    private async Task RequestAiSuggestionAsync(
+        string? instruction = null,
+        IReadOnlyList<AlfaKnowledgeAssistantMessage>? assistantHistory = null)
+    {
+        if (!_showAiSuggestionPanel
+            || _selectedConversation is null
+            || _selectedConversationId is not { } conversationId)
+        {
+            return;
+        }
+
+        _aiSuggestionError = null;
+
+        if (!AlfaKnowledgeSvc.IsConfigured)
+        {
+            _aiSuggestion = null;
+            _aiSuggestionConversationId = conversationId;
+            _aiSuggestionError = "AlfaKnowledge no está configurado en este servidor.";
+            return;
+        }
+
+        var contextMessages = GetAiContextMessages();
+        var imageCandidate = GetAiImageCandidate(contextMessages);
+        var focusMessage = string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal)
+            ? GetAiFocusedMessage()
+            : contextMessages
+                .Where(IsIncomingMessage)
+                .Where(message => !string.IsNullOrWhiteSpace(message.Texto))
+                .OrderByDescending(message => message.FechaHora)
+                .FirstOrDefault();
+
+        focusMessage ??= imageCandidate?.Message;
+
+        if (focusMessage is null && !string.IsNullOrWhiteSpace(instruction))
+        {
+            focusMessage = contextMessages
+                .Where(CanUseMessageAsAiFocus)
+                .OrderByDescending(message => message.FechaHora)
+                .FirstOrDefault();
+        }
+
+        if (focusMessage is null)
+        {
+            _aiSuggestion = null;
+            _aiSuggestionConversationId = conversationId;
+            _aiSuggestionError = string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal)
+                ? "Marcá un mensaje de texto o una imagen para usarlo como foco."
+                : "El contexto elegido no tiene texto ni imágenes para analizar.";
+            return;
+        }
+
+        CancelAiSuggestionRequest();
+        var requestCts = new CancellationTokenSource();
+        _aiSuggestionRequestCts = requestCts;
+        _loadingAiSuggestion = true;
+        _aiSuggestion = null;
+        _aiSuggestionConversationId = conversationId;
+        var customerMessage = string.IsNullOrWhiteSpace(focusMessage.Texto)
+            ? "El cliente envió una imagen con un error o una pantalla para analizar."
+            : focusMessage.Texto.Trim();
+        _aiSuggestionOriginalQuestion = customerMessage;
+        StateHasChanged();
+
+        try
+        {
+            var image = imageCandidate is null
+                ? null
+                : await BuildAiImageInputAsync(imageCandidate.Value.Attachment, requestCts.Token);
+            var result = await AlfaKnowledgeSvc.SuggestReplyAsync(
+                customerMessage,
+                contextMessages,
+                conversationId,
+                instruction,
+                assistantHistory,
+                image,
+                requestCts.Token);
+
+            if (requestCts.IsCancellationRequested
+                || !_showAiSuggestionPanel
+                || !ReferenceEquals(_aiSuggestionRequestCts, requestCts))
+            {
+                return;
+            }
+
+            _aiSuggestion = result;
+            if (_aiSuggestion is not null
+                && image is not null
+                && (IsGenericImageQuestion(_aiSuggestionOriginalQuestion)
+                    || !string.IsNullOrWhiteSpace(_aiSuggestion.ImageContext)))
+            {
+                var visualQuestion = !string.IsNullOrWhiteSpace(_aiSuggestion.ImageContext)
+                    ? _aiSuggestion.ImageContext
+                    : ExtractVisibleErrorFromSuggestion(_aiSuggestion.SuggestedReply);
+                if (!string.IsNullOrWhiteSpace(visualQuestion))
+                {
+                    _aiSuggestionOriginalQuestion = visualQuestion.Trim();
+                }
+            }
+
+            if (_aiSuggestion is null)
+            {
+                _aiSuggestionError = "AlfaKnowledge no respondió o no pudo analizar este contexto.";
+            }
+            else if (image is not null && !_aiSuggestion.ImageAnalyzed)
+            {
+                _aiSuggestionError = "La imagen no llegó a AlfaKnowledge. Reintentá luego de actualizar el servicio.";
+                _aiSuggestion = null;
+            }
+            else if (!string.IsNullOrWhiteSpace(instruction))
+            {
+                _aiChatHistory.Add(new AlfaKnowledgeAssistantMessage
+                {
+                    Role = "assistant",
+                    Content = !string.IsNullOrWhiteSpace(_aiSuggestion.SuggestedReply)
+                        ? _aiSuggestion.SuggestedReply
+                        : _aiSuggestion.ClarificationQuestion ?? "No pude responder con el contexto disponible."
+                });
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_aiSuggestionRequestCts, requestCts))
+            {
+                _aiSuggestionRequestCts = null;
+                _loadingAiSuggestion = false;
+                StateHasChanged();
+            }
+
+            requestCts.Dispose();
+        }
+    }
+
+    private void CancelAiSuggestionRequest()
+    {
+        if (_aiSuggestionRequestCts is null)
+        {
+            return;
+        }
+
+        _aiSuggestionRequestCts.Cancel();
+        _aiSuggestionRequestCts = null;
+        _loadingAiSuggestion = false;
+    }
+
+    private async Task SendAiInstructionAsync()
+    {
+        var instruction = _aiInstruction.Trim();
+        if (string.IsNullOrWhiteSpace(instruction) || _loadingAiSuggestion)
+        {
+            return;
+        }
+
+        var previousHistory = _aiChatHistory.ToList();
+        _aiChatHistory.Add(new AlfaKnowledgeAssistantMessage
+        {
+            Role = "user",
+            Content = instruction
+        });
+        _aiInstruction = string.Empty;
+        await RequestAiSuggestionAsync(instruction, previousHistory);
+    }
+
+    private static bool IsGenericImageQuestion(string? value)
+    {
+        var normalized = value?.Trim();
+        return string.Equals(normalized, "[image]", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "[imagen]", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "image", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "imagen", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string? ExtractVisibleErrorFromSuggestion(string? suggestion)
+    {
+        if (string.IsNullOrWhiteSpace(suggestion))
+        {
+            return null;
+        }
+
+        var text = suggestion.Trim();
+        var errorIndex = text.IndexOf("error", StringComparison.OrdinalIgnoreCase);
+        if (errorIndex < 0)
+        {
+            return null;
+        }
+
+        var openingQuote = text.IndexOfAny(['“', '"'], errorIndex);
+        if (openingQuote >= 0)
+        {
+            var closingQuote = text.IndexOf(text[openingQuote] == '“' ? '”' : '"', openingQuote + 1);
+            if (closingQuote > openingQuote + 1)
+            {
+                return text[(openingQuote + 1)..closingQuote].Trim();
+            }
+        }
+
+        var end = text.IndexOfAny(['.', '?', '¿', '\n', '\r'], errorIndex);
+        return (end > errorIndex ? text[errorIndex..end] : text[errorIndex..]).Trim(' ', ':');
+    }
+
+    [JSInvokable]
+    public async Task SendAiInstructionFromEnter(string value)
+    {
+        _aiInstruction = value ?? string.Empty;
+        await SendAiInstructionAsync();
+    }
+
+    private void ToggleAiSources()
+        => _aiSourcesExpanded = !_aiSourcesExpanded;
+
+    private void OpenAiCorrectionModal()
+    {
+        if (_aiSuggestion is null)
+        {
+            return;
+        }
+
+        _aiCorrectionQuestion = _aiSuggestionOriginalQuestion.Trim();
+        _aiCorrectionAnswer = _aiSuggestion.SuggestedReply.Trim();
+        _aiCorrectionTitle = BuildAiCorrectionTitle(_aiCorrectionQuestion);
+        _aiCorrectionNotes = string.Empty;
+        _aiCorrectionError = null;
+        _showAiCorrectionModal = true;
+    }
+
+    private void CloseAiCorrectionModal()
+    {
+        if (_savingAiCorrection)
+        {
+            return;
+        }
+
+        _showAiCorrectionModal = false;
+        _aiCorrectionError = null;
+    }
+
+    private bool CanSaveAiCorrection
+        => !string.IsNullOrWhiteSpace(_aiCorrectionTitle)
+           && !string.IsNullOrWhiteSpace(_aiCorrectionQuestion)
+           && !string.IsNullOrWhiteSpace(_aiCorrectionAnswer);
+
+    private async Task SaveAiCorrectionAsync()
+    {
+        if (_aiSuggestion is null || !CanSaveAiCorrection || _savingAiCorrection)
+        {
+            return;
+        }
+
+        _savingAiCorrection = true;
+        _aiCorrectionError = null;
+
+        try
+        {
+            var saved = await AlfaKnowledgeSvc.SaveCorrectionAsync(
+                new AlfaKnowledgeCorrectionRequest
+                {
+                    InteractionId = _aiSuggestion.InteractionId == Guid.Empty
+                        ? null
+                        : _aiSuggestion.InteractionId,
+                    Title = _aiCorrectionTitle.Trim(),
+                    OriginalQuestion = _aiCorrectionQuestion.Trim(),
+                    OriginalAnswer = _aiSuggestion.SuggestedReply,
+                    CorrectedAnswer = _aiCorrectionAnswer.Trim(),
+                    SourceReference = _aiSuggestion.Citations
+                        .Select(static citation => citation.SourceReference)
+                        .FirstOrDefault(static source => !string.IsNullOrWhiteSpace(source)),
+                    CorrectionNotes = string.IsNullOrWhiteSpace(_aiCorrectionNotes)
+                        ? null
+                        : _aiCorrectionNotes.Trim(),
+                    CreatedBy = FirstNonEmpty(CurrentUserNameForAudit, "AlfaCore")
+                });
+
+            if (!saved)
+            {
+                _aiCorrectionError = "No se pudo guardar la corrección. Revisá la conexión con AlfaKnowledge e intentá nuevamente.";
+                return;
+            }
+
+            _aiSuggestion.SuggestedReply = _aiCorrectionAnswer.Trim();
+            _showAiCorrectionModal = false;
+            _actionMessage = "La respuesta corregida se guardó en AlfaKnowledge.";
+        }
+        finally
+        {
+            _savingAiCorrection = false;
+        }
+    }
+
+    private static string BuildAiCorrectionTitle(string question)
+    {
+        var normalized = string.IsNullOrWhiteSpace(question)
+            ? "respuesta sugerida"
+            : question.Trim();
+        const int maxQuestionLength = 90;
+        if (normalized.Length > maxQuestionLength)
+        {
+            normalized = $"{normalized[..maxQuestionLength].TrimEnd()}…";
+        }
+
+        return $"Corrección: {normalized}";
+    }
+
+    private async Task ImproveReplyWithAiAsync()
+    {
+        if (_improvingReplyWithAi
+            || _selectedConversationId is not { } conversationId
+            || !AlfaKnowledgeSvc.IsConfigured)
+        {
+            return;
+        }
+
+        var draft = (await GetReplyTextareaValueAsync()).Trim();
+        if (string.IsNullOrWhiteSpace(draft))
+            return;
+
+        var focusMessage = _messages
+            .Where(IsIncomingMessage)
+            .Where(static message => !string.IsNullOrWhiteSpace(message.Texto))
+            .OrderByDescending(static message => message.FechaHora)
+            .FirstOrDefault();
+        if (focusMessage is null)
+            return;
+
+        _improvingReplyWithAi = true;
+        StateHasChanged();
+
+        try
+        {
+            var instruction =
+                "Mejorá únicamente la redacción del siguiente borrador, manteniendo exactamente su intención, " +
+                "los datos y el tono profesional cercano. No agregues información, explicaciones, saludos ni " +
+                $"contenido nuevo. Devolvé solamente el texto final mejorado. Borrador: {draft}";
+            var result = await AlfaKnowledgeSvc.SuggestReplyAsync(
+                focusMessage.Texto,
+                _messages,
+                conversationId,
+                instruction);
+
+            if (result is null || string.IsNullOrWhiteSpace(result.SuggestedReply))
+                return;
+
+            var currentDraft = (await GetReplyTextareaValueAsync()).Trim();
+            if (!string.Equals(currentDraft, draft, StringComparison.Ordinal))
+                return;
+
+            _replyText = result.SuggestedReply.Trim();
+            await SetReplyTextareaValueAsync(_replyText, focus: true);
+        }
+        catch
+        {
+        }
+
+        finally
+        {
+            _improvingReplyWithAi = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task RegenerateAiSuggestionAsync()
+    {
+        var lastUserIndex = _aiChatHistory.FindLastIndex(
+            static message => string.Equals(message.Role, "user", StringComparison.OrdinalIgnoreCase));
+        if (lastUserIndex < 0)
+        {
+            await RequestAiSuggestionAsync();
+            return;
+        }
+
+        var instruction = _aiChatHistory[lastUserIndex].Content;
+        var previousHistory = _aiChatHistory.Take(lastUserIndex).ToList();
+        _aiChatHistory = _aiChatHistory.Take(lastUserIndex + 1).ToList();
+        await RequestAiSuggestionAsync(instruction, previousHistory);
+    }
+
+    private async Task SelectAiFocusMessageAsync(ConversacionMensajeDto message)
+    {
+        _aiFocusedMessageId = message.IdMensaje;
+        _aiContextScope = AiContextScopes.FocusedMessage;
+        _showAiSuggestionPanel = true;
+        _showContextPanel = false;
+        ResetAiConversation(clearFocus: false);
+        await RequestAiSuggestionAsync();
+    }
+
+    private async Task OnAiContextScopeChangedAsync(ChangeEventArgs args)
+    {
+        var requestedScope = args.Value?.ToString();
+        _aiContextScope = requestedScope switch
+        {
+            AiContextScopes.EntireConversation => AiContextScopes.EntireConversation,
+            AiContextScopes.FocusedMessage when _aiFocusedMessageId.HasValue => AiContextScopes.FocusedMessage,
+            _ => AiContextScopes.CurrentCycle
+        };
+
+        ResetAiConversation(clearFocus: false);
+        await RequestAiSuggestionAsync();
+    }
+
+    private void OnAiInstructionInput(ChangeEventArgs args)
+        => _aiInstruction = args.Value?.ToString() ?? string.Empty;
+
+    private bool HasAiContextImage()
+        => GetAiImageCandidate(GetAiContextMessages()) is not null;
+
+    private (ConversacionMensajeDto Message, ConversacionAdjuntoDto Attachment)? GetAiImageCandidate(
+        IReadOnlyCollection<ConversacionMensajeDto> contextMessages)
+    {
+        var candidates = string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal)
+            && _aiFocusedMessageId.HasValue
+                ? contextMessages.Where(message => message.IdMensaje == _aiFocusedMessageId.Value)
+                : contextMessages;
+
+        foreach (var message in candidates
+                     .Where(IsIncomingMessage)
+                     .OrderByDescending(static message => message.FechaHora)
+                     .ThenByDescending(static message => message.IdMensaje))
+        {
+            if (!_adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var attachments))
+            {
+                continue;
+            }
+
+            var image = attachments
+                .Where(static attachment => attachment.ArchivoDisponible)
+                .Where(IsImageAttachment)
+                .Where(static attachment => !IsStickerAttachment(attachment))
+                .OrderByDescending(static attachment => attachment.IdAdjunto)
+                .FirstOrDefault();
+            if (image is not null)
+            {
+                return (message, image);
+            }
+        }
+
+        return null;
+    }
+
+    private async Task<AlfaKnowledgeImageInput?> BuildAiImageInputAsync(
+        ConversacionAdjuntoDto attachment,
+        CancellationToken cancellationToken)
+    {
+        const long maxImageBytes = 10 * 1024 * 1024;
+        if (attachment.TamanoBytes > maxImageBytes)
+        {
+            return null;
+        }
+
+        var file = await ConversacionesSvc.GetAttachmentForServeAsync(
+            attachment.IdAdjunto,
+            includeDownloadName: false,
+            ct: cancellationToken);
+        if (file is null || file.Contenido.Length == 0 || file.Contenido.LongLength > maxImageBytes)
+        {
+            return null;
+        }
+
+        var mimeType = file.MimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase)
+            ? file.MimeType
+            : GetAttachmentMime(attachment);
+        if (!mimeType.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return new AlfaKnowledgeImageInput
+        {
+            DataUrl = $"data:{mimeType};base64,{Convert.ToBase64String(file.Contenido)}",
+            FileName = FirstNonEmpty(file.NombreArchivo, attachment.NombreArchivo)
+        };
+    }
+
+    private void ClearAiFocusMessage()
+    {
+        _aiFocusedMessageId = null;
+        if (string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal))
+        {
+            _aiContextScope = AiContextScopes.CurrentCycle;
+        }
+
+        ResetAiConversation(clearFocus: false);
+    }
+
+    private void ResetAiConversation(bool clearFocus)
+    {
+        _aiSuggestion = null;
+        _aiSuggestionError = null;
+        _aiChatHistory = [];
+        _aiInstruction = string.Empty;
+        _aiSuggestionOriginalQuestion = string.Empty;
+        _showAiCorrectionModal = false;
+        _aiCorrectionError = null;
+        if (clearFocus)
+        {
+            _aiFocusedMessageId = null;
+            _aiContextScope = AiContextScopes.CurrentCycle;
+        }
+    }
+
+    private IReadOnlyList<ConversacionMensajeDto> GetAiContextMessages()
+    {
+        var ordered = _messages
+            .OrderBy(message => message.FechaHora)
+            .ThenBy(message => message.IdMensaje)
+            .ToList();
+
+        if (string.Equals(_aiContextScope, AiContextScopes.FocusedMessage, StringComparison.Ordinal))
+        {
+            var focused = GetAiFocusedMessage();
+            return focused is null ? [] : [focused];
+        }
+
+        if (string.Equals(_aiContextScope, AiContextScopes.EntireConversation, StringComparison.Ordinal))
+        {
+            return ordered;
+        }
+
+        var closureIndexes = ordered
+            .Select((message, index) => new { message, index })
+            .Where(item => IsConversationClosureEvent(item.message))
+            .Select(item => item.index)
+            .ToList();
+
+        var startIndex = 0;
+        var endIndex = ordered.Count;
+        if (IsSelectedConversationClosed && closureIndexes.Count > 0)
+        {
+            endIndex = closureIndexes[^1];
+            startIndex = closureIndexes.Count > 1 ? closureIndexes[^2] + 1 : 0;
+        }
+        else if (closureIndexes.Count > 0)
+        {
+            startIndex = closureIndexes[^1] + 1;
+        }
+
+        var currentCycle = ordered
+            .Skip(startIndex)
+            .Take(Math.Max(0, endIndex - startIndex))
+            .ToList();
+
+        return currentCycle.Any(CanUseMessageAsAiFocus) ? currentCycle : ordered;
+    }
+
+    private ConversacionMensajeDto? GetAiFocusedMessage()
+        => _aiFocusedMessageId is { } messageId
+            ? _messages.FirstOrDefault(message => message.IdMensaje == messageId)
+            : null;
+
+    private static bool CanUseMessageAsAiFocus(ConversacionMensajeDto message)
+        => (IsIncomingMessage(message) || IsOutgoingMessage(message))
+           && !string.IsNullOrWhiteSpace(message.Texto);
+
+    private static bool IsConversationClosureEvent(ConversacionMensajeDto message)
+    {
+        if (!IsInternalEventMessage(message) || string.IsNullOrWhiteSpace(message.Texto))
+        {
+            return false;
+        }
+
+        var text = message.Texto.Trim();
+        return text.Contains("cerró la conversación", StringComparison.OrdinalIgnoreCase)
+               || text.Contains("conversación cerrada", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string GetAiContextDescription()
+    {
+        var count = GetAiContextMessages().Count(CanUseMessageAsAiFocus);
+        var sentCount = count > 60 ? $"los últimos 60 de {count}" : count.ToString();
+        return _aiContextScope switch
+        {
+            AiContextScopes.FocusedMessage => "La IA leerá únicamente el mensaje marcado.",
+            AiContextScopes.EntireConversation => $"La IA recibirá {sentCount} mensajes de texto cargados en este hilo.",
+            _ => $"La IA recibirá {sentCount} mensajes del tramo abierto desde el último cierre detectado."
+        };
+    }
+
+    private static string GetAiMessagePreview(ConversacionMensajeDto message)
+    {
+        var text = message.Texto.Trim();
+        return text.Length <= 180 ? text : $"{text[..177]}...";
+    }
+
+    private async Task UseAiSuggestionAsync()
+    {
+        var transferText = GetAiTransferText();
+        if (string.IsNullOrWhiteSpace(transferText))
+        {
+            return;
+        }
+
+        await SetReplyTextareaValueAsync(transferText, focus: true);
+        await SendAiSuggestionFeedbackAsync(isHelpful: true);
+    }
+
+    private string GetAiTransferText()
+    {
+        if (_aiSuggestion is null)
+        {
+            return string.Empty;
+        }
+
+        return _aiSuggestion.NeedsClarification
+            ? FirstNonEmpty(_aiSuggestion.ClarificationQuestion, _aiSuggestion.SuggestedReply)
+            : FirstNonEmpty(_aiSuggestion.SuggestedReply, _aiSuggestion.ClarificationQuestion);
+    }
+
+    private async Task DiscardAiSuggestionAsync()
+    {
+        await SendAiSuggestionFeedbackAsync(isHelpful: false);
+        ResetAiConversation(clearFocus: false);
+    }
+
+    private async Task SendAiSuggestionFeedbackAsync(bool isHelpful)
+    {
+        if (_aiSuggestion is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await AlfaKnowledgeSvc.SendFeedbackAsync(_aiSuggestion.InteractionId, isHelpful);
+        }
+        catch
+        {
+            // Silencioso a propósito: el feedback es informativo, no debe interrumpir al técnico.
+        }
     }
 
     private async Task OpenTemplatePanel()
@@ -6472,7 +7908,7 @@
         {
             var message = _messages.FirstOrDefault(x => x.IdMensaje == _reactionEmojiMessageId.Value);
             if (message is not null)
-                await SendReactionAsync(message, emoji);
+                await SendReactionAsync(message.IdMensaje, emoji);
 
             _reactionEmojiMessageId = null;
             MinimizeComposerTools();
@@ -6504,39 +7940,71 @@
         await AutoResizeReplyTextareaAsync();
     }
 
-    private async Task SendReactionAsync(ConversacionMensajeDto message, string emoji)
+    private async Task SendReactionAsync(long messageId, string emoji)
     {
-        if (_selectedConversation is null)
+        if (_selectedConversation is null || _reactionSendingMessageId.HasValue)
             return;
 
-        _busyAction = true;
+        var target = _messages.FirstOrDefault(x => x.IdMensaje == messageId);
+        if (target is null || string.IsNullOrWhiteSpace(target.WhatsAppMessageId))
+            return;
+
+        var conversationId = _selectedConversation.IdConversacion;
+        var optimisticId = -DateTime.UtcNow.Ticks;
+        _openReactionMessageId = null;
+        _reactionSendingMessageId = messageId;
         _actionMessage = null;
         _actionError = null;
+        _messages.Add(new ConversacionMensajeDto
+        {
+            IdMensaje = optimisticId,
+            IdConversacion = conversationId,
+            WhatsAppReplyToMessageId = target.WhatsAppMessageId,
+            MessageType = "REACTION",
+            Direction = "SALIENTE",
+            EstadoEnvio = "PENDIENTE",
+            Texto = emoji,
+            FechaHora = DateTime.Now,
+            UsuarioAutor = CurrentUserNameForAudit,
+            SistemaAutor = CurrentUserSystemForAudit,
+            IdTecnicoAutor = CurrentMessageTechnicianId
+        });
+        await InvokeAsync(StateHasChanged);
 
         try
         {
-            await ConversacionesSvc.SendReactionAsync(new ConversacionReaccionRequest
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            var result = await ConversacionesSvc.SendReactionAsync(new ConversacionReaccionRequest
             {
-                IdConversacion = _selectedConversation.IdConversacion,
-                IdMensaje = message.IdMensaje,
+                IdConversacion = conversationId,
+                IdMensaje = messageId,
                 Emoji = emoji,
                 IdTecnicoAutor = CurrentMessageTechnicianId,
                 UsuarioAccion = CurrentUserNameForAudit,
                 SistemaAccion = CurrentUserSystemForAudit
-            });
+            }, timeout.Token);
 
-            _openReactionMessageId = null;
-            await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
-            await LoadInboxAsync();
-            _actionMessage = $"Reacción enviada: {emoji}";
+            var optimistic = _messages.FirstOrDefault(x => x.IdMensaje == optimisticId);
+            if (optimistic is not null)
+            {
+                optimistic.IdMensaje = result.IdMensaje;
+                optimistic.WhatsAppMessageId = result.WhatsAppMessageId;
+                optimistic.EstadoEnvio = result.EstadoEnvio;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _messages.RemoveAll(x => x.IdMensaje == optimisticId);
+            _actionError = "No se pudo enviar la reacción a tiempo. Revisá la conexión y reintentá.";
         }
         catch (Exception ex)
         {
+            _messages.RemoveAll(x => x.IdMensaje == optimisticId);
             _actionError = ex.Message;
         }
         finally
         {
-            _busyAction = false;
+            _reactionSendingMessageId = null;
         }
     }
 
@@ -6657,6 +8125,7 @@
 
     private void ClearSelection()
     {
+        CancelAiSuggestionRequest();
         _selectedConversationId = null;
         _selectedConversation = null;
         _messages = [];
@@ -6674,6 +8143,7 @@
         _showMobileChatActions = false;
         ClearContextNotesState();
         ClearTemplateSelection();
+        ResetAiConversation(clearFocus: true);
         _scrollHandlerConversationId = null;
         _replyEnterHandlerConversationId = null;
         _fileDropHandlerConversationId = null;
@@ -6699,6 +8169,135 @@
     private static string GetDisplayName(ConversacionInboxItemDto item)
         => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
 
+    private IReadOnlyList<ConversacionInboxItemDto> BuildMercadoLibreInboxGroups()
+    {
+        return _inbox
+            .GroupBy(GetMercadoLibreGroupKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group =>
+            {
+                var ordered = group
+                    .OrderByDescending(x => x.FechaHoraUltimoMensaje)
+                    .ThenByDescending(x => x.IdConversacion)
+                    .ToList();
+                var latest = ordered[0];
+                return new ConversacionInboxItemDto
+                {
+                    IdConversacion = latest.IdConversacion,
+                    Canal = latest.Canal,
+                    TelefonoWhatsApp = latest.TelefonoWhatsApp,
+                    NombreVisible = latest.NombreVisible,
+                    UsuarioExterno = latest.UsuarioExterno,
+                    FotoPerfilUrl = latest.FotoPerfilUrl,
+                    PerfilExternoVerificado = latest.PerfilExternoVerificado,
+                    ClienteCodigo = latest.ClienteCodigo,
+                    ClienteNombre = latest.ClienteNombre,
+                    IdContacto = latest.IdContacto,
+                    ContactoNombre = latest.ContactoNombre,
+                    CodigoEstado = latest.CodigoEstado,
+                    EstadoDescripcion = latest.EstadoDescripcion,
+                    IdTecnico = latest.IdTecnico,
+                    TecnicoNombre = latest.TecnicoNombre,
+                    ResumenUltimoMensaje = latest.ResumenUltimoMensaje,
+                    DireccionUltimoMensaje = latest.DireccionUltimoMensaje,
+                    EstadoUltimoMensaje = latest.EstadoUltimoMensaje,
+                    TipoUltimoMensaje = latest.TipoUltimoMensaje,
+                    FechaHoraUltimoMensaje = latest.FechaHoraUltimoMensaje,
+                    FechaHoraUltimoMensajeCliente = ordered
+                        .Where(x => x.FechaHoraUltimoMensajeCliente.HasValue)
+                        .Select(x => x.FechaHoraUltimoMensajeCliente)
+                        .OrderByDescending(x => x)
+                        .FirstOrDefault(),
+                    IdUltimoMensajeCliente = latest.IdUltimoMensajeCliente,
+                    CantidadMensajesCliente = ordered.Sum(x => x.CantidadMensajesCliente),
+                    MensajesNoLeidosUsuario = ordered.Sum(x => x.MensajesNoLeidosUsuario),
+                    VentanaWhatsAppActiva = latest.VentanaWhatsAppActiva,
+                    FechaHoraVencimientoVentanaWhatsApp = latest.FechaHoraVencimientoVentanaWhatsApp,
+                    Archivada = ordered.All(x => x.Archivada),
+                    Bloqueada = ordered.Any(x => x.Bloqueada),
+                    FijadaPorUsuario = ordered.Any(x => x.FijadaPorUsuario),
+                    FechaHoraFijada = ordered
+                        .Where(x => x.FechaHoraFijada.HasValue)
+                        .Select(x => x.FechaHoraFijada)
+                        .OrderByDescending(x => x)
+                        .FirstOrDefault()
+                };
+            })
+            .OrderByDescending(x => x.FijadaPorUsuario)
+            .ThenByDescending(x => x.FechaHoraFijada ?? DateTime.MinValue)
+            .ThenByDescending(x => x.FechaHoraUltimoMensaje)
+            .ToList();
+    }
+
+    private IReadOnlyList<ConversacionInboxItemDto> GetMercadoLibreGroupItems(ConversacionInboxItemDto item)
+    {
+        var key = GetMercadoLibreGroupKey(item);
+        return _inbox
+            .Where(x => string.Equals(GetMercadoLibreGroupKey(x), key, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.FechaHoraUltimoMensaje)
+            .ThenByDescending(x => x.IdConversacion)
+            .ToList();
+    }
+
+    private int GetMercadoLibreGroupCount(ConversacionInboxItemDto item)
+        => item.Canal == "MERCADOLIBRE" ? GetMercadoLibreGroupItems(item).Count : 1;
+
+    private bool IsMercadoLibreGroupExpanded(ConversacionInboxItemDto item)
+        => item.Canal == "MERCADOLIBRE"
+           && _expandedMercadoLibreGroupKeys.Contains(GetMercadoLibreGroupKey(item));
+
+    private int GetInboxDisplayNewCount(ConversacionInboxItemDto item)
+        => item.Canal == "MERCADOLIBRE"
+            ? GetMercadoLibreGroupItems(item).Sum(x => GetConversationNewCount(x.IdConversacion))
+            : GetConversationNewCount(item.IdConversacion);
+
+    private bool ShouldShowMercadoLibreInboxChildren(ConversacionInboxItemDto item)
+        => item.Canal == "MERCADOLIBRE"
+           && GetMercadoLibreGroupCount(item) > 1
+           && IsMercadoLibreGroupExpanded(item);
+
+    private void RefreshSelectedMercadoLibreGroup()
+    {
+        if (_selectedConversation?.Canal != "MERCADOLIBRE")
+            return;
+
+        var selectedInboxItem = _inbox.FirstOrDefault(x => x.IdConversacion == _selectedConversation.IdConversacion);
+        if (selectedInboxItem is null)
+            return;
+
+        _selectedMercadoLibreGroupKey = GetMercadoLibreGroupKey(selectedInboxItem);
+        _selectedMercadoLibreGroupItems = GetMercadoLibreGroupItems(selectedInboxItem).ToList();
+        _expandedMercadoLibreGroupKeys.Add(_selectedMercadoLibreGroupKey);
+    }
+
+    private static string GetMercadoLibreGroupKey(ConversacionInboxItemDto item)
+        => FirstNonEmpty(item.UsuarioExterno, item.NombreVisible, item.IdConversacion.ToString(System.Globalization.CultureInfo.InvariantCulture)).Trim().ToUpperInvariant();
+
+    private static string FormatInboxSummary(string? summary)
+    {
+        var value = summary?.Trim() ?? string.Empty;
+        if (!value.StartsWith("Reacci", StringComparison.OrdinalIgnoreCase))
+            return value;
+
+        var separator = value.LastIndexOf(':');
+        var detail = separator >= 0 && separator < value.Length - 1
+            ? value[(separator + 1)..].Trim()
+            : string.Empty;
+
+        if (detail.StartsWith("wamid.", StringComparison.OrdinalIgnoreCase))
+            return "Reacción eliminada.";
+
+        if (value.Contains("recibida", StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(detail) ? "Reacción recibida." : $"Reacción recibida: {detail}";
+
+        if (value.Contains("enviada", StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(detail) ? "Reacción enviada." : $"Reacción enviada: {detail}";
+
+        return value;
+    }
+
+    private static bool IsLastInboxMessageOutgoing(ConversacionInboxItemDto item)
+        => string.Equals(item.DireccionUltimoMensaje, "SALIENTE", StringComparison.OrdinalIgnoreCase);
+
     private string GetConversationInitials(ConversacionInboxItemDto item)
     {
         var displayName = GetDisplayName(item).Trim();
@@ -6721,6 +8320,96 @@
 
     private static string GetConversationHeader(ConversacionDetalleDto item)
         => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
+
+    private static string GetConversationInitials(ConversacionDetalleDto item)
+    {
+        var displayName = GetConversationHeader(item).Trim();
+        if (string.IsNullOrWhiteSpace(displayName))
+            return "?";
+
+        var words = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return words.Length == 1
+            ? words[0][0].ToString().ToUpperInvariant()
+            : string.Concat(words[0][0], words[^1][0]).ToUpperInvariant();
+    }
+
+    private static string GetInstagramProfileUrl(string username)
+        => $"https://www.instagram.com/{Uri.EscapeDataString(username.Trim().TrimStart('@'))}/";
+
+    private static string GetFacebookProfileUrl(ConversacionDetalleDto item)
+    {
+        return string.IsNullOrWhiteSpace(item.IdentificadorExternoContacto)
+            ? "https://www.facebook.com/"
+            : $"https://www.facebook.com/profile.php?id={Uri.EscapeDataString(item.IdentificadorExternoContacto.Trim())}";
+    }
+
+    private static string GetMercadoLibreQuestionUrl(ConversacionDetalleDto item)
+    {
+        var itemId = item.UsuarioExterno?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(itemId))
+        {
+            var match = System.Text.RegularExpressions.Regex.Match(itemId, @"^MLA(\d+)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            if (match.Success)
+                return $"https://articulo.mercadolibre.com.ar/MLA-{Uri.EscapeDataString(match.Groups[1].Value)}-_JM";
+
+            return $"https://www.mercadolibre.com.ar/publicaciones/{Uri.EscapeDataString(itemId)}";
+        }
+
+        return "https://www.mercadolibre.com.ar/";
+    }
+
+    private static string GetMercadoLibreBuyerLabel(ConversacionInboxItemDto item)
+        => FirstNonEmpty(item.TelefonoWhatsApp, "Comprador de Mercado Libre");
+
+    private static string GetMercadoLibreBuyerLabel(ConversacionDetalleDto item)
+        => FirstNonEmpty(item.TelefonoWhatsApp, item.IdentificadorExternoContacto, "Comprador de Mercado Libre");
+
+    private static string FormatCompactNumber(int value)
+        => value switch
+        {
+            >= 1_000_000 => $"{value / 1_000_000d:0.#} M",
+            >= 1_000 => $"{value / 1_000d:0.#} mil",
+            _ => value.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+
+    private string GetChannelCssClass()
+        => _canalActivo switch
+        {
+            "INSTAGRAM" => "conversations-page--instagram",
+            "FACEBOOK" => "conversations-page--facebook",
+            "MERCADOLIBRE" => "conversations-page--mercadolibre",
+            "INTERNO" => "conversations-page--internal",
+            _ => "conversations-page--whatsapp"
+        };
+
+    private string GetReplyPlaceholder()
+        => _selectedConversation?.Canal switch
+        {
+            "INTERNO" => "Escribí un mensaje para el equipo...",
+            "INSTAGRAM" => "Escribí una respuesta para Instagram...",
+            "FACEBOOK" => "Escribí una respuesta para Facebook Messenger...",
+            "MERCADOLIBRE" => "Respondé la pregunta de Mercado Libre...",
+            _ => "Escribí una respuesta para WhatsApp..."
+        };
+
+    private string GetReplyLabel()
+        => _selectedConversation?.Canal == "INTERNO" ? "Mensaje al equipo" : "Responder";
+
+    private string GetReplyButtonTitle()
+    {
+        if (HasPendingAttachmentError)
+            return "Reintentar envío";
+
+        return _selectedConversation?.Canal == "INTERNO" ? "Enviar" : "Enviar mensaje";
+    }
+
+    private string GetProviderPendingMessage()
+        => _selectedConversation?.Canal switch
+        {
+            "INSTAGRAM" => "Instagram está conectado para recibir mensajes. El envío desde AlfaCore se habilita en la próxima etapa.",
+            "FACEBOOK" => "Facebook Messenger está conectado.",
+            _ => string.Empty
+        };
 
     private static string GetWhatsAppWindowLabel(ConversacionDetalleDto item)
     {
@@ -6893,6 +8582,27 @@
     private string CurrentMessageTechnicianName
         => FirstNonEmpty(CurrentUserTechnician?.Nombre, CurrentUserNameForAudit);
 
+    private bool CanAssignSelectedConversationToMe
+        => _selectedConversation is not null
+           && !IsSelectedConversationClosed
+           && CurrentUserTechnician is not null
+           && !string.Equals(
+               _selectedConversation.IdTecnico?.Trim(),
+               CurrentUserTechnician.IdTecnico.Trim(),
+               StringComparison.OrdinalIgnoreCase);
+
+    private async Task AssignSelectedConversationToMeAsync()
+    {
+        if (!CanAssignSelectedConversationToMe || CurrentUserTechnician is null)
+            return;
+
+        var previousValue = _assignmentTechnicianId;
+        _assignmentTechnicianId = CurrentUserTechnician.IdTecnico;
+        _showMobileChatActions = false;
+        if (!await AssignAsync())
+            _assignmentTechnicianId = previousValue;
+    }
+
     private void EnsureCurrentTechnicianFilter()
     {
         if (!string.IsNullOrWhiteSpace(_filters.IdTecnicoActual))
@@ -6945,6 +8655,14 @@
             _ => "message-card--outgoing"
         };
 
+    private static string GetMessageRowClass(ConversacionMensajeDto message)
+        => message.Direction switch
+        {
+            "SALIENTE" => "message-row--outgoing",
+            "NOTA_INTERNA" => "message-row--internal",
+            _ => "message-row--incoming"
+        };
+
     private static bool IsIncomingMessage(ConversacionMensajeDto message)
         => string.Equals(message.Direction, "ENTRANTE", StringComparison.OrdinalIgnoreCase);
 
@@ -6977,7 +8695,8 @@
 
     private static bool IsReactionMessage(ConversacionMensajeDto message)
         => string.Equals(message.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase)
-           || (message.Texto ?? string.Empty).StartsWith("Reacción ", StringComparison.OrdinalIgnoreCase);
+           || IsLegacyReactionText(message.Texto)
+           || TryExtractReactionEmojiFromPayload(message.PayloadJson, out _);
 
     private IReadOnlyList<string> GetInlineReactions(ConversacionMensajeDto message)
     {
@@ -6987,6 +8706,11 @@
         return _messages
             .Where(IsReactionMessage)
             .Where(x => string.Equals(x.WhatsAppReplyToMessageId, message.WhatsAppMessageId, StringComparison.OrdinalIgnoreCase))
+            .GroupBy(x => (x.Direction ?? string.Empty).Trim().ToUpperInvariant())
+            .Select(group => group
+                .OrderByDescending(x => x.FechaHora)
+                .ThenByDescending(x => x.IdMensaje)
+                .First())
             .Select(ExtractReactionEmoji)
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Distinct()
@@ -6995,14 +8719,52 @@
 
     private static string ExtractReactionEmoji(ConversacionMensajeDto message)
     {
-        var text = message.Texto ?? string.Empty;
-        foreach (var emoji in QuickReactionEmojis)
-        {
-            if (text.Contains(emoji, StringComparison.Ordinal))
-                return emoji;
-        }
+        if (TryExtractReactionEmojiFromPayload(message.PayloadJson, out var payloadEmoji))
+            return payloadEmoji;
 
-        return string.Empty;
+        var text = message.Texto ?? string.Empty;
+        if (string.Equals(message.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase)
+            && !IsLegacyReactionText(text))
+            return text.Trim();
+
+        var separator = text.LastIndexOf(':');
+        return separator >= 0 && separator < text.Length - 1
+            ? text[(separator + 1)..].Trim()
+            : string.Empty;
+    }
+
+    private static bool IsLegacyReactionText(string? text)
+    {
+        var value = text?.Trim() ?? string.Empty;
+        return value.StartsWith("Reacci", StringComparison.OrdinalIgnoreCase)
+               && (value.Contains("recibida", StringComparison.OrdinalIgnoreCase)
+                   || value.Contains("enviada", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool TryExtractReactionEmojiFromPayload(string? payloadJson, out string emoji)
+    {
+        emoji = string.Empty;
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return false;
+
+        try
+        {
+            using var document = System.Text.Json.JsonDocument.Parse(payloadJson);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("type", out var type)
+                || !string.Equals(type.GetString(), "reaction", StringComparison.OrdinalIgnoreCase)
+                || !root.TryGetProperty("reaction", out var reaction))
+                return false;
+
+            emoji = reaction.TryGetProperty("emoji", out var value)
+                ? value.GetString()?.Trim() ?? string.Empty
+                : string.Empty;
+            return true;
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
     }
 
     private bool TryGetQuotedMessage(ConversacionMensajeDto message, out ConversacionMensajeDto quotedMessage)
@@ -7137,6 +8899,12 @@
         return $"{code} · {ticket.Titulo}";
     }
 
+    private static List<ConversacionMensajeDto> OrderConversationMessages(IEnumerable<ConversacionMensajeDto> messages)
+        => messages
+            .OrderBy(x => x.FechaHora == DateTime.MinValue ? DateTime.MaxValue : x.FechaHora)
+            .ThenBy(x => x.IdMensaje)
+            .ToList();
+
     private static string FormatShortDate(DateTime value)
     {
         if (value == DateTime.MinValue)
@@ -7211,6 +8979,34 @@
 
     private static bool IsAttachmentAvailable(ConversacionAdjuntoDto adjunto)
         => adjunto.ArchivoDisponible;
+
+    private bool IsRecoveringSelectedConversationAttachments()
+        => _selectedConversationId is { } idConversacion
+           && _recoveringAttachmentConversations.Contains(idConversacion);
+
+    private string GetAttachmentRecoveryClass(ConversacionAdjuntoDto adjunto)
+        => IsRecoveringAttachment(adjunto) ? "is-loading" : string.Empty;
+
+    private string GetAttachmentUnavailableIcon(ConversacionAdjuntoDto adjunto, string fallbackIcon)
+        => IsRecoveringAttachment(adjunto) ? "bi-arrow-clockwise" : fallbackIcon;
+
+    private bool IsRecoveringAttachment(ConversacionAdjuntoDto adjunto)
+        => adjunto.PuedeRecuperarse && IsRecoveringSelectedConversationAttachments();
+
+    private string GetAttachmentUnavailableText(ConversacionAdjuntoDto adjunto, string fallbackText)
+    {
+        if (!IsRecoveringAttachment(adjunto))
+            return fallbackText;
+
+        if (IsImageAttachment(adjunto))
+            return "Buscando imagen...";
+        if (IsAudioAttachment(adjunto))
+            return "Buscando audio...";
+        if (IsVideoAttachment(adjunto))
+            return "Buscando video...";
+
+        return "Buscando archivo...";
+    }
 
     private static string GetAttachmentUnavailableTitle(ConversacionAdjuntoDto adjunto)
         => $"No se pudo recuperar {GetAttachmentLabel(adjunto)}. El archivo ya no está disponible en Meta o faltan permisos para descargarlo.";
@@ -7830,6 +9626,9 @@
     private string GetConversationNoticeLeavingClass()
         => _noticeLeaving ? "is-leaving" : string.Empty;
 
+    private string GetThreadCssClass()
+        => _threadAnchoringToBottom ? "is-bottom-anchoring" : string.Empty;
+
     private string BuildNoticeSignature()
         => string.Join("|", new[]
         {
@@ -8039,6 +9838,7 @@
     public async ValueTask DisposeAsync()
     {
         Nav.LocationChanged -= OnLocationChanged;
+        CancelAiSuggestionRequest();
         await ClearTypingAsync();
         CancelSearchDebounce();
         CancelContactSearch();
@@ -8087,6 +9887,14 @@
         try
         {
             await JS.InvokeVoidAsync("conversacionesUi.unbindAttachmentPreviewKeyboard");
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.unbindColumnResizers", "conversations-page");
         }
         catch
         {
@@ -8150,7 +9958,8 @@
     private sealed record ConversationViewCache(
         ConversacionDetalleDto Conversation,
         List<ConversacionMensajeDto> Messages,
-        Dictionary<long, List<ConversacionAdjuntoDto>> AttachmentsByMessage);
+        Dictionary<long, List<ConversacionAdjuntoDto>> AttachmentsByMessage,
+        DateTime CachedAtUtc);
 
     private sealed record ConversationChannelCache(
         ConversacionesInboxFilters Filters,

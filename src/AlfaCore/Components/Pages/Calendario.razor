@@ -5,52 +5,12 @@
 @inject AlfaCore.Services.ITecnicosService TecnicosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@implements IDisposable
 
-<PageTitle>Calendario | Alfa Gestion</PageTitle>
+<PageTitle>Calendario | Alfa Gestión</PageTitle>
 
 <section class="calendario-page" @onclick="DismissFeedbackAsync">
-    <header class="calendario-topbar">
-        <div>
-            <p class="calendario-eyebrow">Soporte</p>
-            <h2>Calendario</h2>
-        </div>
-        <div class="calendario-actions" @onclick:stopPropagation>
-            <button type="button" class="btn btn--ghost" @onclick="ToggleSearchPanel">
-                <i class="bi bi-search"></i>
-                <span>Buscar</span>
-            </button>
-            <button type="button" class="btn btn--primary" @onclick="() => OpenNewEvent(DateTime.Today)">
-                <i class="bi bi-plus-circle"></i>
-                <span>Nuevo</span>
-            </button>
-            <a class="btn btn--ghost" href="/calendario/reuniones">
-                <i class="bi bi-camera-video"></i>
-                <span>Reuniones</span>
-            </a>
-            <button type="button" class="btn btn--ghost" @onclick="LoadAsync" disabled="@_loading">
-                <i class="bi bi-arrow-clockwise"></i>
-                <span>Recargar</span>
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="ToggleSidePanel">
-                <i class="bi bi-layout-sidebar-inset-reverse"></i>
-                <span>Panel</span>
-            </button>
-        </div>
-    </header>
-
-    @if (_showSearchPanel)
-    {
-        <section class="calendario-search-panel" @onclick:stopPropagation>
-            <div class="field">
-                <label>Buscar evento</label>
-                <input value="@_request.Search" @oninput="OnSearchInput" placeholder="Evento, técnico o descripción..." />
-            </div>
-            <button type="button" class="btn btn--ghost btn--icon" title="Limpiar búsqueda" @onclick="ClearSearchAsync">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </section>
-    }
-
     @if (!string.IsNullOrWhiteSpace(_feedbackText))
     {
         <div class="calendario-feedback calendario-feedback--@_feedbackKind">
@@ -79,31 +39,6 @@
             <strong>@ActiveGuardTitle</strong>
         </button>
 
-        <div class="calendario-filters">
-            <div class="field">
-                <label>Tecnico</label>
-                <select @bind="_request.IdTecnico" @bind:after="LoadAsync">
-                    <option value="">Todos</option>
-                    @foreach (var tecnico in _tecnicos)
-                    {
-                        <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
-                    }
-                </select>
-            </div>
-            <div class="field">
-                <label>Tipo</label>
-                <select @bind="_request.Tipo" @bind:after="LoadAsync">
-                    <option value="@CalendarioEventoTipos.Todos">Todos</option>
-                    <option value="@CalendarioEventoTipos.Guardia">Guardias</option>
-                    <option value="@CalendarioEventoTipos.Vacaciones">Vacaciones</option>
-                    <option value="@CalendarioEventoTipos.Ausencia">Ausencias</option>
-                    <option value="@CalendarioEventoTipos.Feriado">Feriados</option>
-                    <option value="@CalendarioEventoTipos.Reunion">Reuniones</option>
-                    <option value="@CalendarioEventoTipos.Capacitacion">Capacitaciones</option>
-                    <option value="@CalendarioEventoTipos.Otro">Otros</option>
-                </select>
-            </div>
-        </div>
     </section>
 
     <section class="calendario-shell">
@@ -121,27 +56,43 @@
                         @onclick="() => OpenNewEvent(day)">
                     <span class="calendario-day-number">@day.Day</span>
                     <span class="calendario-day-events">
-                        @foreach (var item in dayEvents.Take(4))
+                        @if (dayEvents.Count <= 1)
                         {
-                            <span class="calendario-event-chip"
-                                  style="@EventChipStyle(item)"
-                                  title="@item.Titulo"
-                                  @onclick:stopPropagation
-                                  @onclick="() => OpenCalendarItem(item)">
-                                <span>@item.Titulo</span>
-                                @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
+                            @foreach (var item in dayEvents)
+                            {
+                                <span class="calendario-event-chip"
+                                      style="@EventChipStyle(item)"
+                                      title="@item.Titulo"
+                                      @onclick:stopPropagation
+                                      @onclick="() => OpenCalendarItem(item)">
+                                    <span>@item.Titulo</span>
+                                    @if (!string.IsNullOrWhiteSpace(item.TecnicoNombre))
+                                    {
+                                        <small>@item.TecnicoNombre</small>
+                                    }
+                                    else
+                                    {
+                                        <small>@TypeLabel(item.Tipo)</small>
+                                    }
+                                </span>
+                            }
+                        }
+                        else
+                        {
+                            <span class="calendario-event-markers">
+                                @foreach (var item in dayEvents.Take(12))
                                 {
-                                    <small>@item.TecnicoNombre</small>
+                                    <span class="calendario-event-marker"
+                                          style="@EventMarkerStyle(item)"
+                                          title="@($"{item.Titulo} - {FirstNonEmpty(item.TecnicoNombre, TypeLabel(item.Tipo))}")"
+                                          @onclick:stopPropagation
+                                          @onclick="() => OpenCalendarItem(item)">@EventMarkerText(item)</span>
                                 }
-                                else
+                                @if (dayEvents.Count > 12)
                                 {
-                                    <small>@TypeLabel(item.Tipo)</small>
+                                    <span class="calendario-more">+@(dayEvents.Count - 12)</span>
                                 }
                             </span>
-                        }
-                        @if (dayEvents.Count > 4)
-                        {
-                            <span class="calendario-more">+@(dayEvents.Count - 4) mas</span>
                         }
                     </span>
                 </button>
@@ -180,30 +131,6 @@
 
         <section class="calendario-side-section">
             <div class="calendario-side-head">
-                <span>Guardias del rango</span>
-                <small>@ActiveGuards.Count</small>
-            </div>
-            @if (ActiveGuards.Count == 0)
-            {
-                <p class="calendario-empty">Sin guardias para este rango.</p>
-            }
-            else
-            {
-                @foreach (var guardia in ActiveGuards)
-                {
-                    <button type="button" class="calendario-side-event" @onclick="() => OpenEventFromPanel(guardia.IdEvento)">
-                        <span class="calendario-dot" style="background:@EventColor(guardia)"></span>
-                        <span>
-                            <strong>@guardia.Titulo</strong>
-                            <small>@guardia.FechaInicio.ToString("dd/MM", Culture) - @guardia.FechaFin.ToString("dd/MM", Culture)</small>
-                        </span>
-                    </button>
-                }
-            }
-        </section>
-
-        <section class="calendario-side-section">
-            <div class="calendario-side-head">
                 <span>Próximamente</span>
                 <button type="button" class="calendario-count-button" @onclick="ToggleUpcomingPopover">@UpcomingEvents.Count</button>
             </div>
@@ -228,7 +155,7 @@
 
         <section class="calendario-side-section">
             <div class="calendario-side-head">
-                <span>Tecnicos</span>
+                <span>Técnicos</span>
                 <small>@_tecnicos.Count</small>
             </div>
             <div class="calendario-technicians">
@@ -285,7 +212,7 @@
 
         <div class="calendario-form">
             <div class="field field--wide">
-                <label>Titulo</label>
+                <label>Título</label>
                 <input @bind="_form.Titulo" disabled="@_saving" />
             </div>
 
@@ -324,11 +251,11 @@
 
             <label class="checkbox calendario-checkbox">
                 <input type="checkbox" @bind="_form.TodoElDia" disabled="@_saving" />
-                <span>Todo el dia</span>
+                <span>Todo el día</span>
             </label>
 
             <div class="field">
-                <label>Tecnico responsable</label>
+                <label>Técnico responsable</label>
                 <select value="@_form.IdTecnico" @onchange="OnTechnicianChangedAsync" disabled="@_saving">
                     <option value="">Sin asignar</option>
                     @foreach (var tecnico in _tecnicos)
@@ -339,7 +266,7 @@
             </div>
 
             <div class="field">
-                <label>WhatsApp del tecnico</label>
+                <label>WhatsApp del técnico</label>
                 <input @bind="_form.TelefonoWhatsApp" disabled="@_saving" placeholder="549..." />
             </div>
 
@@ -349,7 +276,7 @@
             </div>
 
             <div class="field field--wide">
-                <label>Descripcion</label>
+                <label>Descripción</label>
                 <textarea @bind="_form.Descripcion" disabled="@_saving"></textarea>
             </div>
 
@@ -364,8 +291,8 @@
                     <select @bind="_form.MinutosAntesRecordatorio" disabled="@(!_form.CrearRecordatorioWhatsApp || _saving)">
                         <option value="60">1 hora</option>
                         <option value="720">12 horas</option>
-                        <option value="1440">1 dia</option>
-                        <option value="2880">2 dias</option>
+                        <option value="1440">1 día</option>
+                        <option value="2880">2 días</option>
                     </select>
                 </div>
 
@@ -464,7 +391,7 @@
     private bool _saving;
     private bool _showEditor;
     private bool _showSidePanel;
-    private bool _showSearchPanel;
+    private bool _showHeaderFilters;
     private bool _showUpcomingPopover;
     private string _feedbackTitle = string.Empty;
     private string _feedbackText = string.Empty;
@@ -481,11 +408,6 @@
             return monthStart.AddDays(-(((int)monthStart.DayOfWeek + 6) % 7));
         }
     }
-    private List<CalendarioEventoDto> ActiveGuards => _events
-        .Where(x => x.Tipo == CalendarioEventoTipos.Guardia && x.Estado != CalendarioEventoEstados.Cancelado)
-        .OrderBy(x => x.FechaInicio)
-        .Take(8)
-        .ToList();
     private List<CalendarioEventoDto> CorporateEvents => _events
         .Where(x => IsCorporateType(x.Tipo) && x.Estado != CalendarioEventoEstados.Cancelado)
         .OrderBy(x => x.FechaInicio)
@@ -545,7 +467,16 @@
 
     protected override async Task OnInitializedAsync()
     {
+        UpdatePageHeader();
         await LoadAsync();
+        UpdatePageHeader();
+    }
+
+    public void Dispose()
+    {
+        PageHeader.Clear();
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
     }
 
     private async Task LoadAsync()
@@ -557,6 +488,7 @@
             _events = result.Value.Eventos;
             _tecnicos = result.Value.Tecnicos;
             _plantillas = result.Value.PlantillasWhatsApp;
+            UpdatePageHeader();
         }
         else
         {
@@ -599,10 +531,125 @@
     {
         await FilterTechnicianAsync(idTecnico);
         _showSidePanel = false;
+        UpdatePageHeader();
+    }
+
+    private RenderFragment RenderCalendarSmartSearch() => @<div class="smart-search calendario-header-search" @onclick:stopPropagation>
+        <div class="smart-search__bar">
+            <i class="bi bi-search"></i>
+            <input type="search"
+                   placeholder="Evento, técnico o descripción..."
+                   value="@_request.Search"
+                   @oninput="OnSearchInput" />
+            <button type="button" class="smart-search__toggle @(_showHeaderFilters ? "is-active" : string.Empty)" title="Filtros" aria-label="Filtros" @onclick="ToggleHeaderFilters">
+                <i class="bi @(_showHeaderFilters ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        <div class="smart-search__chips" aria-live="polite">
+            @if (!string.IsNullOrWhiteSpace(_request.Search))
+            {
+                <button type="button" class="smart-chip" @onclick="ClearSearchAsync">
+                    Texto <i class="bi bi-x"></i>
+                </button>
+            }
+            @if (!string.IsNullOrWhiteSpace(_request.IdTecnico))
+            {
+                <button type="button" class="smart-chip" @onclick="async () => { _request.IdTecnico = null; await LoadAsync(); UpdatePageHeader(); }">
+                    @TechnicianFilterLabel <i class="bi bi-x"></i>
+                </button>
+            }
+            @if (!string.Equals(_request.Tipo, CalendarioEventoTipos.Todos, StringComparison.OrdinalIgnoreCase))
+            {
+                <button type="button" class="smart-chip" @onclick="async () => { _request.Tipo = CalendarioEventoTipos.Todos; await LoadAsync(); UpdatePageHeader(); }">
+                    @TypeLabel(_request.Tipo) <i class="bi bi-x"></i>
+                </button>
+            }
+        </div>
+
+        @if (_showHeaderFilters)
+        {
+            <div class="smart-search__panel calendario-header-search__panel" @onclick:stopPropagation>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-person"></i> Técnico</h4>
+                    <select value="@_request.IdTecnico" @onchange="SetHeaderTechnicianAsync">
+                        <option value="">Todos los técnicos</option>
+                        @foreach (var tecnico in _tecnicos)
+                        {
+                            <option value="@tecnico.IdTecnico">@tecnico.Nombre</option>
+                        }
+                    </select>
+                </div>
+                <div class="smart-search__column">
+                    <h4><i class="bi bi-tags"></i> Tipo</h4>
+                    <select value="@_request.Tipo" @onchange="SetHeaderTypeAsync">
+                        <option value="@CalendarioEventoTipos.Todos">Todos los tipos</option>
+                        <option value="@CalendarioEventoTipos.Guardia">Guardias</option>
+                        <option value="@CalendarioEventoTipos.Vacaciones">Vacaciones</option>
+                        <option value="@CalendarioEventoTipos.Ausencia">Ausencias</option>
+                        <option value="@CalendarioEventoTipos.Feriado">Feriados</option>
+                        <option value="@CalendarioEventoTipos.Reunion">Reuniones</option>
+                        <option value="@CalendarioEventoTipos.Capacitacion">Capacitaciones</option>
+                        <option value="@CalendarioEventoTipos.Otro">Otros</option>
+                    </select>
+                    <button type="button" class="smart-option" @onclick="ResetHeaderFiltersAsync">
+                        <i class="bi bi-x-circle"></i> Limpiar filtros
+                    </button>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private string TechnicianFilterLabel
+        => _tecnicos.FirstOrDefault(x => x.IdTecnico == _request.IdTecnico)?.Nombre
+           ?? _request.IdTecnico
+           ?? "Técnico";
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = "Calendario",
+            Breadcrumb = ["Calendario"],
+            State = _loading ? PageHeaderState.Loading : PageHeaderState.List,
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderCalendarSmartSearch(),
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "nuevo",
+                    Label = "Nuevo",
+                    Icon = "bi-plus-circle",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    OnClick = OpenNewEventFromHeaderAsync
+                },
+                new PageHeaderAction
+                {
+                    Key = "panel",
+                    Label = "Panel",
+                    Icon = "bi-layout-sidebar-inset-reverse",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    OnClick = ToggleSidePanelFromHeaderAsync
+                }
+            ]
+        });
     }
 
     private void ToggleSidePanel()
-        => _showSidePanel = !_showSidePanel;
+    {
+        _showSidePanel = !_showSidePanel;
+        UpdatePageHeader();
+    }
+
+    private async Task ToggleSidePanelFromHeaderAsync()
+    {
+        _showSidePanel = !_showSidePanel;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
 
     private void CloseSidePanel()
     {
@@ -610,15 +657,19 @@
         _showUpcomingPopover = false;
     }
 
-    private void ToggleSearchPanel()
-        => _showSearchPanel = !_showSearchPanel;
-
     private void ToggleUpcomingPopover()
         => _showUpcomingPopover = !_showUpcomingPopover;
+
+    private void ToggleHeaderFilters()
+    {
+        _showHeaderFilters = !_showHeaderFilters;
+        UpdatePageHeader();
+    }
 
     private async Task OnSearchInput(ChangeEventArgs args)
     {
         _request.Search = args.Value?.ToString() ?? string.Empty;
+        UpdatePageHeader();
         _searchCts?.Cancel();
         _searchCts = new CancellationTokenSource();
         var token = _searchCts.Token;
@@ -634,8 +685,32 @@
     private async Task ClearSearchAsync()
     {
         _request.Search = string.Empty;
-        _showSearchPanel = false;
         await LoadAsync();
+        UpdatePageHeader();
+    }
+
+    private async Task SetHeaderTechnicianAsync(ChangeEventArgs args)
+    {
+        _request.IdTecnico = args.Value?.ToString();
+        await LoadAsync();
+        UpdatePageHeader();
+    }
+
+    private async Task SetHeaderTypeAsync(ChangeEventArgs args)
+    {
+        _request.Tipo = args.Value?.ToString() ?? CalendarioEventoTipos.Todos;
+        await LoadAsync();
+        UpdatePageHeader();
+    }
+
+    private async Task ResetHeaderFiltersAsync()
+    {
+        _request.Search = string.Empty;
+        _request.IdTecnico = null;
+        _request.Tipo = CalendarioEventoTipos.Todos;
+        _showHeaderFilters = false;
+        await LoadAsync();
+        UpdatePageHeader();
     }
 
     private IEnumerable<CalendarioEventoDto> EventsFor(DateTime day)
@@ -675,6 +750,13 @@
         _form = NewForm(day);
         ApplyGuardiaTemplateDefault();
         _showEditor = true;
+    }
+
+    private async Task OpenNewEventFromHeaderAsync()
+    {
+        OpenNewEvent(DateTime.Today);
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task OpenEvent(long idEvento)
@@ -815,7 +897,7 @@
         var result = await UiOps.RunAsync(() => CalendarioSvc.SendWhatsAppReminderAsync(reminderId, CurrentUserName), "No se pudo enviar el recordatorio.");
         if (result.Success)
         {
-            SetFeedback("Recordatorio enviado", "Se envio la plantilla de WhatsApp al tecnico.", "success");
+            SetFeedback("Recordatorio enviado", "Se envió la plantilla de WhatsApp al técnico.", "success");
             _showEditor = false;
             await LoadAsync();
         }
@@ -839,14 +921,14 @@
         }
         else
         {
-            var detail = await UiOps.RunAsync(() => TecnicosSvc.GetByIdAsync(id), "No se pudo cargar el telefono del tecnico.");
+            var detail = await UiOps.RunAsync(() => TecnicosSvc.GetByIdAsync(id), "No se pudo cargar el teléfono del técnico.");
             if (detail.Success && detail.Value is not null && !string.IsNullOrWhiteSpace(detail.Value.Telefono))
             {
                 _form.TelefonoWhatsApp = detail.Value.Telefono.Trim();
             }
             else if (!detail.Success)
             {
-                SetFeedback("No se pudo cargar el telefono", FeedbackText(detail.Feedback), "error");
+                SetFeedback("No se pudo cargar el teléfono", FeedbackText(detail.Feedback), "error");
             }
         }
 
@@ -969,6 +1051,21 @@
         return $"--event-color:{color};border-left-color:{color};";
     }
 
+    private static string EventMarkerStyle(CalendarioEventoDto item)
+        => $"--event-color:{EventColor(item)};";
+
+    private static string EventMarkerText(CalendarioEventoDto item)
+    {
+        var source = FirstNonEmpty(item.TecnicoNombre, TypeLabel(item.Tipo), item.Titulo);
+        var letters = source
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(x => x[0].ToString())
+            .Take(2)
+            .ToArray();
+
+        return letters.Length == 0 ? "?" : string.Concat(letters);
+    }
+
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
 
@@ -981,42 +1078,18 @@
     private static string FeedbackText(AppUiMessage? message)
     {
         if (message is null)
-            return "Ocurrio un problema inesperado.";
+            return "Ocurrió un problema inesperado.";
 
-        var parts = new[] { message.Message, message.Suggestion, string.IsNullOrWhiteSpace(message.Code) ? string.Empty : $"Codigo: {message.Code}" }
+        var parts = new[] { message.Message, message.Suggestion, string.IsNullOrWhiteSpace(message.Code) ? string.Empty : $"Código: {message.Code}" }
             .Where(x => !string.IsNullOrWhiteSpace(x));
         return string.Join(" ", parts);
     }
 
     private string TechnicianColor(string? idTecnico, string? tecnicoNombre = null)
-    {
-        var fixedColor = FixedTechnicianColor(idTecnico, tecnicoNombre);
-        if (!string.IsNullOrWhiteSpace(fixedColor))
-            return fixedColor;
-
-        var value = FirstNonEmpty(idTecnico, tecnicoNombre);
-        if (string.IsNullOrWhiteSpace(value))
-            return "#14b8a6";
-        var hash = value.Aggregate(0, (current, ch) => (current * 31) + ch);
-        var colors = new[] { "#14b8a6", "#38bdf8", "#f472b6", "#f59e0b", "#a78bfa", "#22c55e" };
-        return colors[Math.Abs(hash) % colors.Length];
-    }
+        => TechnicianColorPalette.Resolve(idTecnico, tecnicoNombre);
 
     private static string FixedTechnicianColor(string? idTecnico, string? tecnicoNombre = null)
-    {
-        var value = NormalizeTechnicianKey($"{tecnicoNombre} {idTecnico}");
-        return value switch
-        {
-            var x when x.Contains("FAVIO", StringComparison.Ordinal) => "#ef4444",
-            var x when x.Contains("FRANCO", StringComparison.Ordinal) => "#3b82f6",
-            var x when x.Contains("MARCOS", StringComparison.Ordinal) => "#facc15",
-            var x when x.Contains("DANIEL", StringComparison.Ordinal) => "#22c55e",
-            _ => string.Empty
-        };
-    }
-
-    private static string NormalizeTechnicianKey(string? value)
-        => (value ?? string.Empty).Trim().ToUpperInvariant();
+        => TechnicianColorPalette.ResolveFixed(idTecnico, tecnicoNombre);
 
     private string ColorForTypeOrTechnician(string? tipo, string? idTecnico)
         => tipo switch

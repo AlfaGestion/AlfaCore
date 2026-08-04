@@ -1,3 +1,7 @@
+.audit-users-search-options {
+    grid-row: 1;
+}
+
 .audit-users-table th {
     white-space: nowrap;
     vertical-align: middle;

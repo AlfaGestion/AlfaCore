@@ -1,0 +1,218 @@
+@page "/registrarme"
+@layout AlfaCore.Components.Layout.PublicLayout
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using Microsoft.AspNetCore.Components
+@inject IConfiguration Configuration
+@inject ICentralRegistrationService RegistrationService
+@inject IJSRuntime JS
+@inject NavigationManager Nav
+@inject ILogger<Register> Logger
+@implements IAsyncDisposable
+
+<PageTitle>Registro | AlfaCore</PageTitle>
+
+<section class="public-register">
+    <div class="public-register__shell">
+        <aside class="public-register__info">
+            <a href="/login" class="public-register__brand">
+                <img src="/logos/Logo.png" alt="AlfaNet" />
+                <span>AlfaNet Web</span>
+            </a>
+
+            <h1>Creá tu acceso inicial y activá tu prueba.</h1>
+            <p>Completás el registro, confirmás el correo y el servidor prepara tu base desde la plantilla restaurada.</p>
+
+            <div class="public-register__features">
+                <article>
+                    <i class="bi bi-check2-circle"></i>
+                    <div>
+                        <strong>Registro validado</strong>
+                        <span>Protegido con reCAPTCHA y confirmación por email.</span>
+                    </div>
+                </article>
+                <article>
+                    <i class="bi bi-database-check"></i>
+                    <div>
+                        <strong>Base lista para usar</strong>
+                        <span>La cuenta verificada dispara el aprovisionamiento desde el backup plantilla.</span>
+                    </div>
+                </article>
+                <article>
+                    <i class="bi bi-person-workspace"></i>
+                    <div>
+                        <strong>Acceso legacy preparado</strong>
+                        <span>El usuario queda guardado en la base nueva para el login tradicional.</span>
+                    </div>
+                </article>
+            </div>
+        </aside>
+
+        <div class="public-register__card">
+            <div class="public-register__card-head">
+                <span class="public-register__pill">Alta pública</span>
+                <h2>Registrarme gratis</h2>
+                <p>Usá un email real. Lo vamos a necesitar para confirmar la cuenta.</p>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="public-register__alert @( _success ? "is-success" : "is-error")">
+                    <strong>@(_success ? "Registro enviado" : "No se pudo registrar")</strong>
+                    <span>@_message</span>
+                    @if (!string.IsNullOrWhiteSpace(_incidentId))
+                    {
+                        <small>Incidente: @_incidentId</small>
+                    }
+                </div>
+            }
+
+            <form class="public-register__form" @onsubmit="SubmitAsync" @onsubmit:preventDefault="true">
+                <label>
+                    <span>Nombre</span>
+                    <input @bind="_request.Nombre" @bind:event="oninput" maxlength="50" disabled="@_busy" />
+                </label>
+
+                <label>
+                    <span>Teléfono</span>
+                    <input @bind="_request.Telefono" @bind:event="oninput" maxlength="50" disabled="@_busy" />
+                </label>
+
+                <label>
+                    <span>Email</span>
+                    <input type="email" @bind="_request.Email" @bind:event="oninput" maxlength="120" autocomplete="email" disabled="@_busy" />
+                </label>
+
+                <label>
+                    <span>Contraseña</span>
+                    <input type="password" @bind="_request.Password" maxlength="50" autocomplete="new-password" disabled="@_busy" />
+                </label>
+
+                <label>
+                    <span>Repetir contraseña</span>
+                    <input type="password" @bind="_request.PasswordConfirmacion" maxlength="50" autocomplete="new-password" disabled="@_busy" />
+                </label>
+
+                <label>
+                    <span>CUIT</span>
+                    <input @bind="_request.Cuit" @bind:event="oninput" maxlength="20" disabled="@_busy" />
+                </label>
+
+                <label class="is-wide">
+                    <span>Cond. IVA</span>
+                    <select @bind="_request.Iva" disabled="@_busy">
+                        <option value="">Seleccionar</option>
+                        <option value="5">Monotributo</option>
+                        <option value="1">Responsable inscripto</option>
+                        <option value="3">Consumidor final</option>
+                    </select>
+                </label>
+
+                <div class="public-register__captcha is-wide">
+                    @if (string.IsNullOrWhiteSpace(_siteKey))
+                    {
+                        <div class="public-register__captcha-warning">
+                            El servidor todavía no tiene configurado `RegistroPublico:RecaptchaSiteKey`.
+                        </div>
+                    }
+                    else
+                    {
+                        <div id="@CaptchaElementId"></div>
+                    }
+                </div>
+
+                <div class="public-register__actions is-wide">
+                    <button type="submit" class="btn btn--primary" disabled="@(_busy || string.IsNullOrWhiteSpace(_siteKey))">
+                        @(_busy ? "Enviando..." : "Registrarme gratis")
+                    </button>
+                    <a href="/login" class="btn btn--ghost">Volver al login</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</section>
+
+@code {
+    private readonly PublicRegistrationRequest _request = new();
+    private bool _busy;
+    private bool _success;
+    private string _message = string.Empty;
+    private string _incidentId = string.Empty;
+    private string _siteKey = string.Empty;
+    private bool _captchaRendered;
+
+    private string CaptchaElementId { get; } = $"public-register-captcha-{Guid.NewGuid():N}";
+
+    protected override void OnInitialized()
+    {
+        _siteKey = Configuration["RegistroPublico:RecaptchaSiteKey"]?.Trim() ?? string.Empty;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if ((_captchaRendered && !firstRender) || string.IsNullOrWhiteSpace(_siteKey))
+            return;
+
+        try
+        {
+            await JS.InvokeAsync<int>("alfaCorePublicRegistration.renderRecaptcha", CaptchaElementId, _siteKey);
+            _captchaRendered = true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Registro público: no se pudo inicializar reCAPTCHA.");
+            _message = "No se pudo inicializar reCAPTCHA en este navegador.";
+            _success = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SubmitAsync()
+    {
+        _busy = true;
+        _message = string.Empty;
+        _incidentId = string.Empty;
+        _success = false;
+
+        try
+        {
+            _request.RecaptchaToken = string.IsNullOrWhiteSpace(_siteKey)
+                ? string.Empty
+                : await JS.InvokeAsync<string>("alfaCorePublicRegistration.getRecaptchaResponse", CaptchaElementId);
+            _request.PublicBaseUrl = new Uri(Nav.Uri).GetLeftPart(UriPartial.Authority);
+
+            var result = await RegistrationService.RegisterAsync(_request);
+            _success = result.Success;
+            _message = result.Message;
+            _incidentId = result.IncidentId;
+
+            if (result.Success)
+            {
+                _request.Nombre = string.Empty;
+                _request.Telefono = string.Empty;
+                _request.Email = string.Empty;
+                _request.Password = string.Empty;
+                _request.PasswordConfirmacion = string.Empty;
+                _request.Cuit = string.Empty;
+                _request.Iva = string.Empty;
+            }
+        }
+        finally
+        {
+            if (!string.IsNullOrWhiteSpace(_siteKey))
+            {
+                try
+                {
+                    await JS.InvokeVoidAsync("alfaCorePublicRegistration.resetRecaptcha", CaptchaElementId);
+                }
+                catch
+                {
+                }
+            }
+
+            _busy = false;
+        }
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}

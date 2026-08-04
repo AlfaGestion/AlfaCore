@@ -5,6 +5,8 @@ using AlfaCore.Repositories;
 using AlfaCore.Services;
 using System.Net;
 using System.Diagnostics;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace AlfaCore;
@@ -113,6 +115,9 @@ public class Program
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
         builder.Services.AddScoped<ICentralAuthService, CentralAuthService>();
+        builder.Services.AddScoped<IRecaptchaValidationService, RecaptchaValidationService>();
+        builder.Services.AddScoped<ICentralProvisioningService, CentralProvisioningService>();
+        builder.Services.AddScoped<ICentralRegistrationService, CentralRegistrationService>();
         builder.Services.AddScoped<IConexionClienteService, ConexionClienteService>();
         builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
@@ -127,6 +132,7 @@ public class Program
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
         builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
+        builder.Services.AddScoped<ICrmService, CrmService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
         builder.Services.AddScoped<ITareasService, TareasService>();
@@ -162,6 +168,12 @@ public class Program
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
         builder.Services.AddScoped<IPuntoVentaCartStateService, PuntoVentaCartStateService>();
+        builder.Services.AddScoped<IPuntoVentaConfigService, PuntoVentaConfigService>();
+        builder.Services.AddScoped<IPuntoVentaConfigValidator, PuntoVentaConfigValidator>();
+        builder.Services.AddScoped<IPuntoVentaPedidoService, PuntoVentaPedidoService>();
+        builder.Services.AddScoped<IPuntoVentaPedidoValidator, PuntoVentaPedidoValidator>();
+        builder.Services.AddScoped<IPuntoVentaTurnoService, PuntoVentaTurnoService>();
+        builder.Services.AddScoped<IPuntoVentaTurnoValidator, PuntoVentaTurnoValidator>();
         builder.Services.AddScoped<IAppUiOperationService, AppUiOperationService>();
         builder.Services.AddScoped<IAppUiDialogService, AppUiDialogService>();
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
@@ -174,6 +186,8 @@ public class Program
         builder.Services.AddSingleton<ReporteComprasExcelExporter>();
         builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
         builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
+        builder.Services.AddSingleton<CargaViajesViajesExcelExporter>();
+        builder.Services.AddSingleton<CargaViajesReporteExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -184,6 +198,7 @@ public class Program
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
         builder.Services.Configure<PushNotificationsOptions>(builder.Configuration.GetSection(PushNotificationsOptions.SectionName));
+        builder.Services.AddScoped<IAlfaKnowledgeSuggestionService, AlfaKnowledgeSuggestionService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
@@ -195,6 +210,23 @@ public class Program
         {
             app.UseExceptionHandler("/Error");
         }
+
+        app.Use(async (context, next) =>
+        {
+            var host = context.Request.Host.Host;
+            var isTemporaryInstagramTunnel = host.EndsWith(".trycloudflare.com", StringComparison.OrdinalIgnoreCase);
+            var isInstagramWebhook = context.Request.Path.StartsWithSegments(
+                "/api/conversaciones/instagram/webhook",
+                StringComparison.OrdinalIgnoreCase);
+
+            if (isTemporaryInstagramTunnel && !isInstagramWebhook)
+            {
+                context.Response.StatusCode = StatusCodes.Status404NotFound;
+                return;
+            }
+
+            await next();
+        });
 
         app.UseMiddleware<AppExceptionLoggingMiddleware>();
         app.UseStaticFiles();
@@ -670,12 +702,22 @@ public class Program
             }
         });
 
-        app.MapGet("/carga-viajes/liquidacion/descargar-excel", async (
+        static void RestoreUserSessionFromToken(HttpRequest request, IAppUserSessionService appUserSession)
+        {
+            var token = request.Query["token"].ToString();
+            if (!string.IsNullOrWhiteSpace(token))
+                appUserSession.TryRestoreFromToken(token);
+        }
+
+        async Task<IResult> DescargarLiquidacionExcel(
             HttpRequest request,
             ICargaViajesService cargaViajesSvc,
+            IAppUserSessionService appUserSession,
             CargaViajesLiquidacionExcelExporter exporter,
-            CancellationToken ct) =>
+            CancellationToken ct)
         {
+            RestoreUserSessionFromToken(request, appUserSession);
+
             static DateTime? ParseDate(string? value)
                 => DateTime.TryParse(value, out var parsed) ? parsed : null;
 
@@ -709,14 +751,81 @@ public class Program
                 bytes,
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 CargaViajesLiquidacionExcelExporter.NombreArchivo());
-        });
+        }
+
+        app.MapGet("/carga-viajes/liquidacion/descargar-excel", DescargarLiquidacionExcel);
+        app.MapGet("/{idweb}/{idbase:int}/carga-viajes/liquidacion/descargar-excel", DescargarLiquidacionExcel);
+
+        async Task<IResult> DescargarReporteExcel(
+            HttpRequest request,
+            ICargaViajesService cargaViajesSvc,
+            IAppUserSessionService appUserSession,
+            CargaViajesReporteExcelExporter exporter,
+            CancellationToken ct)
+        {
+            RestoreUserSessionFromToken(request, appUserSession);
+
+            static DateTime? ParseDate(string? value)
+                => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+            static string TrimOrEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+            static bool ParseBool(string? value)
+                => bool.TryParse(value, out var parsed) && parsed;
+
+            var incluirClientes = ParseBool(request.Query["incluirClientes"]);
+            var incluirTodoJunto = ParseBool(request.Query["incluirTodoJunto"]);
+
+            var filters = new CargaViajesReporteLiquidacionFilters
+            {
+                FechaDesde = ParseDate(request.Query["desde"]),
+                FechaHasta = ParseDate(request.Query["hasta"]),
+                ChoferCodigo = TrimOrEmpty(request.Query["chofer"]),
+                ClienteCodigo = TrimOrEmpty(request.Query["cliente"]),
+                DestinoCodigo = TrimOrEmpty(request.Query["destino"]),
+                TipoPersona = TrimOrEmpty(request.Query["tipoPersona"]),
+                Estado = TrimOrEmpty(request.Query["estado"]),
+                EstadoPago = TrimOrEmpty(request.Query["estadoPago"]),
+                IncluirClientes = incluirClientes,
+                IncluirTodoJunto = incluirTodoJunto
+            };
+
+            byte[] bytes;
+            if (incluirTodoJunto)
+            {
+                var rows = await cargaViajesSvc.SearchReporteClientesAsync(filters, ct);
+                bytes = exporter.ExportarTodoJunto(rows, filters);
+            }
+            else if (incluirClientes)
+            {
+                var rows = await cargaViajesSvc.SearchReporteClientesAsync(filters, ct);
+                bytes = exporter.ExportarClientes(rows, filters);
+            }
+            else
+            {
+                var rows = await cargaViajesSvc.SearchLiquidacionChoferesAsync(filters, ct);
+                bytes = exporter.ExportarChoferesFleteros(rows, filters);
+            }
+
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                CargaViajesReporteExcelExporter.NombreArchivo());
+        }
+
+        app.MapGet("/carga-viajes/reportes/descargar-excel", DescargarReporteExcel);
+        app.MapGet("/{idweb}/{idbase:int}/carga-viajes/reportes/descargar-excel", DescargarReporteExcel);
 
         async Task<IResult> DescargarTarifasExcel(
             HttpRequest request,
             ICargaViajesService cargaViajesSvc,
+            IAppUserSessionService appUserSession,
             CargaViajesTarifasExcelExporter exporter,
             CancellationToken ct)
         {
+            RestoreUserSessionFromToken(request, appUserSession);
+
             static bool ParseBool(string? value)
                 => bool.TryParse(value, out var parsed) && parsed;
 
@@ -762,6 +871,66 @@ public class Program
 
         app.MapGet("/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
         app.MapGet("/{idweb}/{idbase:int}/carga-viajes/tarifas/descargar-excel", DescargarTarifasExcel);
+
+        async Task<IResult> DescargarViajesExcel(
+            HttpRequest request,
+            ICargaViajesService cargaViajesSvc,
+            IAppUserSessionService appUserSession,
+            CargaViajesViajesExcelExporter exporter,
+            CancellationToken ct)
+        {
+            RestoreUserSessionFromToken(request, appUserSession);
+
+            static DateTime? ParseDate(string? value)
+                => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+            static string TrimOrEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+            static bool ParseBool(string? value)
+                => bool.TryParse(value, out var parsed) && parsed;
+
+            var filters = new CargaViajesFilters
+            {
+                FechaDesde = ParseDate(request.Query["fechaDesde"]),
+                FechaHasta = ParseDate(request.Query["fechaHasta"]),
+                Texto = TrimOrEmpty(request.Query["texto"]),
+                Cliente = TrimOrEmpty(request.Query["cliente"]),
+                Chofer = TrimOrEmpty(request.Query["chofer"]),
+                Destino = TrimOrEmpty(request.Query["destino"]),
+                TipoVehiculo = TrimOrEmpty(request.Query["tipoVehiculo"]),
+                Estado = TrimOrEmpty(request.Query["estado"]),
+                Usuario = TrimOrEmpty(request.Query["usuario"]),
+                IdComprobante = TrimOrEmpty(request.Query["idComprobante"]),
+                SortBy = TrimOrEmpty(request.Query["sortBy"]),
+                SortDescending = ParseBool(request.Query["sortDescending"]),
+                PageNumber = 1,
+                PageSize = 500
+            };
+
+            var allItems = new List<CargaViajesGridItemDto>();
+            while (true)
+            {
+                var page = await cargaViajesSvc.SearchViajesAsync(filters, ct);
+                if (page.Items.Count == 0)
+                    break;
+
+                allItems.AddRange(page.Items);
+                if (allItems.Count >= page.Total || page.Items.Count < filters.PageSize)
+                    break;
+
+                filters.PageNumber++;
+            }
+
+            var bytes = exporter.Exportar(allItems, filters);
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                CargaViajesViajesExcelExporter.NombreArchivo());
+        }
+
+        app.MapGet("/carga-viajes/descargar-excel", DescargarViajesExcel);
+        app.MapGet("/{idweb}/{idbase:int}/carga-viajes/descargar-excel", DescargarViajesExcel);
 
         app.MapGet("/api/conversaciones", async (
             string? modo,
@@ -889,6 +1058,226 @@ public class Program
             return Results.Ok(result);
         });
 
+        app.MapGet("/api/conversaciones/instagram/webhook", async (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            CancellationToken ct) =>
+        {
+            var options = await configService.GetInstagramConfigAsync(ct);
+            var mode = request.Query["hub.mode"].ToString();
+            var verifyToken = request.Query["hub.verify_token"].ToString();
+            var challenge = request.Query["hub.challenge"].ToString();
+
+            if (string.IsNullOrWhiteSpace(options.VerifyToken))
+                return Results.Problem("Instagram VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+            if (mode == "subscribe" && verifyToken == options.VerifyToken)
+                return Results.Text(challenge, "text/plain");
+
+            return Results.Unauthorized();
+        });
+
+        app.MapPost("/api/conversaciones/instagram/webhook", async (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            IConversacionesService svc,
+            CancellationToken ct) =>
+        {
+            var options = await configService.GetInstagramConfigAsync(ct);
+            if (string.IsNullOrWhiteSpace(options.AppSecret))
+                return Results.Problem("Instagram App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            var rawPayload = await reader.ReadToEndAsync(ct);
+            var signature = request.Headers["X-Hub-Signature-256"].ToString();
+            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
+                return Results.Unauthorized();
+
+            using var payload = JsonDocument.Parse(rawPayload);
+            var result = await svc.RegisterIncomingInstagramWebhookAsync(new ConversacionWebhookRequest
+            {
+                Payload = payload,
+                RawPayload = rawPayload,
+                Headers = request.Headers.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.ToString(),
+                    StringComparer.OrdinalIgnoreCase)
+            }, ct);
+
+            return Results.Ok(result);
+        });
+
+        app.MapGet("/api/conversaciones/facebook/webhook", async (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            CancellationToken ct) =>
+        {
+            var options = await configService.GetFacebookConfigAsync(ct);
+            var mode = request.Query["hub.mode"].ToString();
+            var verifyToken = request.Query["hub.verify_token"].ToString();
+            var challenge = request.Query["hub.challenge"].ToString();
+
+            if (string.IsNullOrWhiteSpace(options.VerifyToken))
+                return Results.Problem("Facebook VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+            if (mode == "subscribe" && verifyToken == options.VerifyToken)
+                return Results.Text(challenge, "text/plain");
+
+            return Results.Unauthorized();
+        });
+
+        app.MapPost("/api/conversaciones/facebook/webhook", async (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            IConversacionesService svc,
+            CancellationToken ct) =>
+        {
+            var options = await configService.GetFacebookConfigAsync(ct);
+            if (string.IsNullOrWhiteSpace(options.AppSecret))
+                return Results.Problem("Facebook App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            var rawPayload = await reader.ReadToEndAsync(ct);
+            var signature = request.Headers["X-Hub-Signature-256"].ToString();
+            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
+                return Results.Unauthorized();
+
+            using var payload = JsonDocument.Parse(rawPayload);
+            var result = await svc.RegisterIncomingFacebookWebhookAsync(new ConversacionWebhookRequest
+            {
+                Payload = payload,
+                RawPayload = rawPayload,
+                Headers = request.Headers.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.ToString(),
+                    StringComparer.OrdinalIgnoreCase)
+            }, ct);
+
+            return Results.Ok(result);
+        });
+
+        app.MapPost("/api/conversaciones/mercadolibre/webhook", async (
+            HttpRequest request,
+            IConversacionesService svc,
+            CancellationToken ct) =>
+        {
+            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+            var rawPayload = await reader.ReadToEndAsync(ct);
+            using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
+
+            var result = await svc.RegisterIncomingMercadoLibreWebhookAsync(new ConversacionWebhookRequest
+            {
+                Payload = payload,
+                RawPayload = rawPayload,
+                Headers = request.Headers.ToDictionary(
+                    pair => pair.Key,
+                    pair => pair.Value.ToString(),
+                    StringComparer.OrdinalIgnoreCase)
+            }, ct);
+
+            return Results.Ok(result);
+        });
+
+        app.MapGet("/api/conversaciones/mercadolibre/oauth/callback", async (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            IAppEventService appEvents,
+            IHttpClientFactory httpClientFactory,
+            CancellationToken ct) =>
+        {
+            var code = request.Query["code"].ToString();
+            var error = request.Query["error"].ToString();
+            var errorDescription = request.Query["error_description"].ToString();
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "MercadoLibreOAuthCallback",
+                "TA_CONFIGURACION",
+                "CONVERSACIONES",
+                string.IsNullOrWhiteSpace(error)
+                    ? "Callback OAuth de Mercado Libre recibido."
+                    : "Callback OAuth de Mercado Libre recibido con error.",
+                new
+                {
+                    TieneCode = !string.IsNullOrWhiteSpace(code),
+                    Error = error,
+                    ErrorDescription = errorDescription
+                },
+                ct);
+
+            if (!string.IsNullOrWhiteSpace(error))
+                return Results.Text("No se pudo vincular Mercado Libre. Volvé a AlfaCore y revisá la configuración del canal.", "text/plain; charset=utf-8");
+
+            if (string.IsNullOrWhiteSpace(code))
+                return Results.Text("Mercado Libre no devolvió un código de autorización.", "text/plain; charset=utf-8");
+
+            var config = await configService.GetMercadoLibreConfigAsync(ct);
+            if (!config.IsConfiguredForAuth)
+                return Results.Text("Mercado Libre autorizó la app, pero faltan Client ID o Client Secret en AlfaCore para obtener los tokens.", "text/plain; charset=utf-8");
+
+            var redirectUri = config.GetOAuthCallbackUrl();
+            using var tokenRequest = new HttpRequestMessage(HttpMethod.Post, $"{config.ApiBaseUrl.TrimEnd('/')}/oauth/token");
+            tokenRequest.Content = new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["grant_type"] = "authorization_code",
+                ["client_id"] = config.ClientId,
+                ["client_secret"] = config.ClientSecret,
+                ["code"] = code,
+                ["redirect_uri"] = redirectUri
+            });
+
+            var client = httpClientFactory.CreateClient();
+            using var tokenResponse = await client.SendAsync(tokenRequest, ct);
+            var tokenBody = await tokenResponse.Content.ReadAsStringAsync(ct);
+            if (!tokenResponse.IsSuccessStatusCode)
+                return Results.Text($"Mercado Libre autorizó la app, pero no se pudieron obtener los tokens. Respuesta: {(int)tokenResponse.StatusCode}", "text/plain; charset=utf-8");
+
+            using var tokenJson = JsonDocument.Parse(tokenBody);
+            var root = tokenJson.RootElement;
+            config.AccessToken = root.TryGetProperty("access_token", out var accessToken) ? accessToken.GetString() ?? string.Empty : string.Empty;
+            config.RefreshToken = root.TryGetProperty("refresh_token", out var refreshToken) ? refreshToken.GetString() ?? string.Empty : string.Empty;
+            config.SellerId = root.TryGetProperty("user_id", out var userId) ? userId.GetRawText().Trim('"') : config.SellerId;
+            await configService.SaveMercadoLibreConfigAsync(config, ct);
+
+            return Results.Text("Mercado Libre quedó vinculado correctamente. Ya podés volver a AlfaCore.", "text/plain; charset=utf-8");
+        });
+
+        app.MapGet("/api/conversaciones/instagram/oauth/callback", async (
+            HttpRequest request,
+            IAppEventService appEvents,
+            CancellationToken ct) =>
+        {
+            var code = request.Query["code"].ToString();
+            var error = request.Query["error"].ToString();
+            var errorReason = request.Query["error_reason"].ToString();
+            var errorDescription = request.Query["error_description"].ToString();
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "InstagramOAuthCallback",
+                "CONV_CUENTAS_CANAL",
+                string.Empty,
+                string.IsNullOrWhiteSpace(error)
+                    ? "Callback OAuth de Instagram recibido."
+                    : "Callback OAuth de Instagram recibido con error.",
+                new
+                {
+                    TieneCode = !string.IsNullOrWhiteSpace(code),
+                    Error = error,
+                    ErrorReason = errorReason,
+                    ErrorDescription = errorDescription
+                },
+                ct);
+
+            if (!string.IsNullOrWhiteSpace(error))
+                return Results.Text("No se pudo vincular Instagram. Volvé a AlfaCore y revisá la configuración del canal.", "text/plain; charset=utf-8");
+
+            if (string.IsNullOrWhiteSpace(code))
+                return Results.Text("Meta no devolvió un código de autorización para Instagram.", "text/plain; charset=utf-8");
+
+            return Results.Text("Instagram devolvió autorización correctamente. Ya podés volver a AlfaCore para completar la vinculación.", "text/plain; charset=utf-8");
+        });
+
         app.MapPost("/api/conversaciones/{id:long}/adjuntos", async (
             long id,
             HttpRequest request,
@@ -936,13 +1325,14 @@ public class Program
             var download = string.Equals(request.Query["download"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
             var preview = string.Equals(request.Query["preview"].ToString(), "1", StringComparison.OrdinalIgnoreCase);
             var adjunto = await svc.GetAttachmentForServeAsync(idAdjunto, idBase, includeDownloadName: download, ct);
-            if (adjunto is null || !File.Exists(adjunto.RutaLocal))
+            if (adjunto is null)
                 return Results.NotFound();
 
             var mime = NormalizeAttachmentMime(adjunto.MimeType, adjunto.NombreArchivo);
-            var fileInfo = new FileInfo(adjunto.RutaLocal);
-            var lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
-            var entityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"");
+            var hasLocalFile = !string.IsNullOrWhiteSpace(adjunto.RutaLocal) && File.Exists(adjunto.RutaLocal);
+            var hasSqlContent = adjunto.Contenido.Length > 0;
+            if (!hasLocalFile && !hasSqlContent)
+                return Results.NotFound();
 
             if (download)
             {
@@ -959,10 +1349,31 @@ public class Program
                 request.HttpContext.Response.Headers.Expires = DateTimeOffset.UtcNow.AddDays(preview ? 7 : 1).ToString("R", System.Globalization.CultureInfo.InvariantCulture);
             }
 
+            var downloadName = download
+                ? string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga
+                : null;
+
+            if (!hasLocalFile)
+            {
+                var fechaArchivo = adjunto.FechaHoraModificacion?.ToUniversalTime() ?? DateTime.UtcNow;
+                var lastModifiedSql = new DateTimeOffset(fechaArchivo, TimeSpan.Zero);
+                var entityTagSql = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"sql-{adjunto.Contenido.Length:x}-{lastModifiedSql.UtcTicks:x}\"");
+                return Results.File(
+                    adjunto.Contenido,
+                    contentType: mime,
+                    fileDownloadName: downloadName,
+                    lastModified: lastModifiedSql,
+                    entityTag: entityTagSql,
+                    enableRangeProcessing: false);
+            }
+
+            var fileInfo = new FileInfo(adjunto.RutaLocal);
+            var lastModified = new DateTimeOffset(fileInfo.LastWriteTimeUtc, TimeSpan.Zero);
+            var entityTag = new Microsoft.Net.Http.Headers.EntityTagHeaderValue($"\"{fileInfo.Length:x}-{fileInfo.LastWriteTimeUtc.Ticks:x}\"");
             return Results.File(
                 adjunto.RutaLocal,
                 contentType: mime,
-                fileDownloadName: download ? (string.IsNullOrWhiteSpace(adjunto.NombreDescarga) ? adjunto.NombreArchivo : adjunto.NombreDescarga) : null,
+                fileDownloadName: downloadName,
                 lastModified: lastModified,
                 entityTag: entityTag,
                 enableRangeProcessing: true);
@@ -1364,6 +1775,30 @@ public class Program
             .Replace("'", "\\'", StringComparison.Ordinal)
             .Replace("\r", string.Empty, StringComparison.Ordinal)
             .Replace("\n", string.Empty, StringComparison.Ordinal);
+
+    private static bool IsValidMetaSignature(string rawPayload, string appSecret, string signature)
+    {
+        const string prefix = "sha256=";
+        if (string.IsNullOrWhiteSpace(rawPayload)
+            || string.IsNullOrWhiteSpace(appSecret)
+            || string.IsNullOrWhiteSpace(signature)
+            || !signature.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        try
+        {
+            var expected = Convert.FromHexString(signature[prefix.Length..]);
+            var actual = HMACSHA256.HashData(
+                Encoding.UTF8.GetBytes(appSecret.Trim()),
+                Encoding.UTF8.GetBytes(rawPayload));
+            return expected.Length == actual.Length
+                && CryptographicOperations.FixedTimeEquals(expected, actual);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
 
     private static void WriteStartupError(string message, Exception exception)
     {

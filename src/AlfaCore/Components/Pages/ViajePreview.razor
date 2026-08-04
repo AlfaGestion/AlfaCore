@@ -56,7 +56,7 @@ else
                 <i class="bi bi-printer"></i>
                 <span>Imprimir</span>
             </button>
-            <button type="button" class="btn btn--ghost btn--sm" disabled title="Próximamente">
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="ImprimirAsync">
                 <i class="bi bi-file-earmark-arrow-down"></i>
                 <span>Exportar PDF</span>
             </button>
@@ -106,21 +106,6 @@ else
                 </div>
             </section>
 
-            <section class="viaje-preview-card__money">
-                <article class="viaje-preview-money">
-                    <span>Importe cliente</span>
-                    <strong>@GetImporteBaseCliente().ToString("C2")</strong>
-                </article>
-                <article class="viaje-preview-money">
-                    <span>Importe fletero</span>
-                    <strong>@GetImporteBaseFletero().ToString("C2")</strong>
-                </article>
-                <article class="viaje-preview-money">
-                    <span>Peaje</span>
-                    <strong>@Math.Max(0m, _preview.Viaje.Peaje).ToString("C2")</strong>
-                </article>
-            </section>
-
             <section class="viaje-preview-section">
                 <div class="viaje-preview-section__head">
                     <h2>Adicionales</h2>
@@ -145,7 +130,7 @@ else
                                     <span>@item.Subtitulo</span>
                                 </div>
                                 <div class="viaje-preview-additional__amount">
-                                    @item.Importe.ToString("C2")
+                                    @FormatMoney(item.Importe)
                                 </div>
                             </article>
                         }
@@ -153,18 +138,49 @@ else
                 }
             </section>
 
-            <section class="viaje-preview-card__totals">
-                <article class="viaje-preview-total">
-                    <span>Total cliente</span>
-                    <strong>@GetTotalCliente().ToString("C2")</strong>
+            <section class="viaje-preview-card__details">
+                <article class="viaje-preview-detail viaje-preview-detail--cliente">
+                    <div class="viaje-preview-detail__head">
+                        <span>Detalle cliente</span>
+                        <strong>CLIENTE</strong>
+                    </div>
+                    <div class="viaje-preview-detail__lines">
+                        @foreach (var item in GetClienteConceptos())
+                        {
+                            <div class="viaje-preview-detail__line">
+                                <span>@item.Descripcion</span>
+                                <strong>@FormatMoney(item.Importe)</strong>
+                            </div>
+                        }
+                    </div>
+                    <div class="viaje-preview-detail__total">
+                        <span>TOTAL CLIENTE</span>
+                        <strong>@FormatMoney(GetTotalCliente())</strong>
+                    </div>
+                    <div class="viaje-preview-detail__line">
+                        <span>PEAJE</span>
+                        <strong>@FormatMoney(_preview.Viaje.Peaje)</strong>
+                    </div>
                 </article>
-                <article class="viaje-preview-total">
-                    <span>Total fletero</span>
-                    <strong>@GetTotalFletero().ToString("C2")</strong>
-                </article>
-                <article class="viaje-preview-total viaje-preview-total--result">
-                    <span>Resultado</span>
-                    <strong>@GetResultado().ToString("C2")</strong>
+
+                <article class="viaje-preview-detail viaje-preview-detail--fletero">
+                    <div class="viaje-preview-detail__head">
+                        <span>Detalle fletero</span>
+                        <strong>FLETERO</strong>
+                    </div>
+                    <div class="viaje-preview-detail__lines">
+                        @foreach (var item in GetFleteroConceptos())
+                        {
+                            <div class="viaje-preview-detail__line">
+                                <span>@item.Descripcion</span>
+                                <strong>@FormatMoney(item.Importe)</strong>
+                            </div>
+                        }
+                    </div>
+                    <div class="viaje-preview-detail__total">
+                        <span>TOTAL FLETERO</span>
+                        <strong>@FormatMoney(GetTotalFletero())</strong>
+                    </div>
                 </article>
             </section>
 
@@ -231,29 +247,25 @@ else
     private async Task ImprimirAsync()
         => await JS.InvokeVoidAsync("dashboardExport.printCurrentPage", "Viaje");
 
-    private decimal GetImporteBaseCliente()
-        => _preview is null ? 0m : Math.Max(0m, _preview.Viaje.TotalCliente) * Math.Max(1, _preview.Viaje.CantidadViajes);
+    private static readonly System.Globalization.CultureInfo MoneyCulture = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
 
-    private decimal GetImporteBaseFletero()
-        => _preview is null ? 0m : Math.Max(0m, _preview.Viaje.TotalFletero) * Math.Max(1, _preview.Viaje.CantidadViajes);
+    private ViajeTotalesDto GetViajeTotales()
+        => _preview is null ? new ViajeTotalesDto() : CargaViajesService.BuildViajeTotales(_preview.Viaje, _preview.Configuracion);
 
-    private decimal GetTotalAdicionalesGenerales()
-        => GetAdicionales().Where(item => !item.EsFijo).Sum(item => item.Importe);
+    private IReadOnlyList<ViajeConceptoTotalDto> GetClienteConceptos()
+        => GetViajeTotales().ConceptosCliente.Where(item => item.AportaAlTotal).ToList();
 
-    private decimal GetTotalAdicionalesFijos()
-        => GetAdicionales().Where(item => item.EsFijo).Sum(item => item.Importe);
+    private IReadOnlyList<ViajeConceptoTotalDto> GetFleteroConceptos()
+        => GetViajeTotales().ConceptosFletero;
 
     private decimal GetTotalCliente()
-        => GetImporteBaseCliente()
-           + GetTotalAdicionalesGenerales()
-           + GetTotalAdicionalesFijos()
-           + (_preview is null ? 0m : Math.Max(0m, _preview.Viaje.Peaje));
+        => GetViajeTotales().TotalCliente;
 
     private decimal GetTotalFletero()
-        => GetImporteBaseFletero();
+        => GetViajeTotales().TotalFletero;
 
-    private decimal GetResultado()
-        => GetTotalCliente() - GetTotalFletero();
+    private static string FormatMoney(decimal value)
+        => value.ToString("C2", MoneyCulture);
 
     private static string GetAdicionalesResumen(int count)
         => count == 0 ? "Sin adicionales" : $"{count} adicional(es)";
@@ -282,15 +294,14 @@ else
 
     private static void AddGeneralAdditional(List<ViajePreviewAdicionalItem> items, int index, CargaViajesConfigDto config, decimal percent, decimal amount)
     {
-        var limit = Math.Max(1, Math.Min(5, config.PorcentajesAdicionalesHabilitados));
-        if (index >= limit)
-            return;
-
-        if (percent <= 0m && amount <= 0m)
+        if (!GetConfigFlag(config.AdicionalesHabilitados, index))
             return;
 
         var title = GetConfigName(config, index);
-        items.Add(new ViajePreviewAdicionalItem(title, $"{percent:0.##}% · adicional general", amount, false, percent > 0m || amount > 0m));
+        var subtitle = GetConfigFlag(config.AdicionalesSumarFletero, index)
+            ? $"{percent:0.##}% - adicional general - fletero"
+            : $"{percent:0.##}% - adicional general";
+        items.Add(new ViajePreviewAdicionalItem(title, subtitle, amount, false, true));
     }
 
     private static void AddFixedAdditional(List<ViajePreviewAdicionalItem> items, string descripcion, decimal importe, bool aplicado)
@@ -311,6 +322,9 @@ else
         var value = config.NombresAdicionales[index];
         return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
     }
+
+    private static bool GetConfigFlag(IReadOnlyList<bool> values, int index)
+        => index >= 0 && index < values.Count && values[index];
 
     private static string GetDisplayOrDefault(string? value, string fallback)
         => string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
