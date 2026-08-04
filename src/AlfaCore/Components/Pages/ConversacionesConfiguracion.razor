@@ -509,6 +509,86 @@
                 </div>
             </aside>
     </div>
+
+    <div class="conv-config-layout">
+            <section class="panel-card conv-config-form">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">AlfaKnowledge</h3>
+                        <p class="panel-card__subtitle">Origen actual: @DisplaySource(_alfaKnowledgeConfig.ConfigSource)</p>
+                    </div>
+                    <span class="panel-card__tag">CONV_ALFAKNOWLEDGE_*</span>
+                </div>
+
+                <div class="conv-config-status-grid">
+                    <article class="context-card">
+                        <span class="context-card__label">Asistente contextual</span>
+                        <strong class="@GetStatusClass(_alfaKnowledgeConfig.IsConfigured)">@GetStatusLabel(_alfaKnowledgeConfig.IsConfigured)</strong>
+                        <span class="context-card__muted">Se usa desde Conversaciones para sugerencias y correcciones.</span>
+                    </article>
+                </div>
+
+                <div class="conv-config-fields">
+                    <div class="field conv-config-fields__full">
+                        <label for="ak-base-url">Base URL</label>
+                        <input id="ak-base-url" @bind="_alfaKnowledgeConfig.BaseUrl" />
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="ak-api-key">API Key</label>
+                        <input id="ak-api-key" @bind="_alfaKnowledgeConfig.ApiKey" placeholder="Clave X-Api-Key de AlfaKnowledge" />
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="ak-kb-id">Knowledge Base Id</label>
+                        <input id="ak-kb-id" @bind="_alfaKnowledgeConfig.KnowledgeBaseId" placeholder="GUID de la base en AlfaKnowledgeMaster" />
+                    </div>
+
+                    <div class="field">
+                        <label for="ak-timeout">Timeout (segundos)</label>
+                        <input id="ak-timeout" type="number" min="1" @bind="_alfaKnowledgeConfig.TimeoutSeconds" />
+                    </div>
+                </div>
+
+                <div class="context-card">
+                    <span class="context-card__label">Acceso directo</span>
+                    <strong>@GetAlfaKnowledgeUrlPreview()</strong>
+                    <span class="context-card__muted">Esta URL se usa para abrir AlfaKnowledge completo y para llamar a <code>/api/external/suggest-reply</code>.</span>
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="SaveAlfaKnowledgeAsync" disabled="@(Loading || Saving)">
+                        <i class="bi bi-floppy-fill"></i> Guardar AlfaKnowledge
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="TestAlfaKnowledgeConnectionAsync" disabled="@(Loading || Saving)">
+                        <i class="bi bi-plug"></i> Probar conexión
+                    </button>
+                </div>
+            </section>
+
+            <aside class="panel-card conv-config-help">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Uso en Conversaciones</h3>
+                        <p class="panel-card__subtitle">Parámetros del panel lateral de asistencia.</p>
+                    </div>
+                    <span class="panel-card__tag">IA</span>
+                </div>
+
+                <ol class="conv-config-steps">
+                    <li>Cargar la URL base pública o interna con la que AlfaCore puede llegar a AlfaKnowledge.</li>
+                    <li>Definir la misma API Key configurada en AlfaKnowledge para el endpoint externo.</li>
+                    <li>Copiar el `Knowledge Base Id` exacto de la base habilitada en AlfaKnowledge para que el copiloto consulte la base correcta.</li>
+                    <li>Probar desde una conversación real para validar sugerencias, citas y guardado de correcciones.</li>
+                </ol>
+
+                <div class="context-card">
+                    <span class="context-card__label">Persistencia</span>
+                    <strong>dbo.TA_CONFIGURACION</strong>
+                    <span class="context-card__muted">Claves usadas: <code>CONV_ALFAKNOWLEDGE_BASE_URL</code>, <code>CONV_ALFAKNOWLEDGE_API_KEY</code>, <code>CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID</code> y <code>CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS</code>.</span>
+                </div>
+            </aside>
+    </div>
 </section>
 
 @code {
@@ -516,6 +596,7 @@
     private ConversacionInstagramConfigDto _instagramConfig = new();
     private ConversacionFacebookConfigDto _facebookConfig = new();
     private ConversacionMercadoLibreConfigDto _mercadoLibreConfig = new();
+    private ConversacionAlfaKnowledgeConfigDto _alfaKnowledgeConfig = new();
     private bool Loading { get; set; }
     private bool Saving { get; set; }
     private AppUiMessage? _feedback;
@@ -590,6 +671,21 @@
         {
             EnsureMercadoLibreDefaults();
             _feedback ??= mercadoLibreResult.Feedback;
+        }
+
+        var alfaKnowledgeResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetAlfaKnowledgeConfigAsync(),
+            "No se pudo cargar la configuración de AlfaKnowledge.");
+
+        if (alfaKnowledgeResult.Success && alfaKnowledgeResult.Value is not null)
+        {
+            _alfaKnowledgeConfig = alfaKnowledgeResult.Value;
+            EnsureAlfaKnowledgeDefaults();
+        }
+        else
+        {
+            EnsureAlfaKnowledgeDefaults();
+            _feedback ??= alfaKnowledgeResult.Feedback;
         }
 
         Loading = false;
@@ -703,6 +799,77 @@
         Saving = false;
     }
 
+    private async Task SaveAlfaKnowledgeAsync()
+    {
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveAlfaKnowledgeConfigAsync(_alfaKnowledgeConfig),
+            "No se pudo guardar la configuración de AlfaKnowledge.");
+
+        if (result.Success)
+        {
+            _alfaKnowledgeConfig.ConfigSource = "TA_CONFIGURACION";
+            _feedback = AppUiMessage.Success(
+                "Configuración guardada",
+                "La configuración de AlfaKnowledge se grabó correctamente y queda disponible para el asistente de Conversaciones.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
+    private async Task TestAlfaKnowledgeConnectionAsync()
+    {
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.TestAlfaKnowledgeConnectionAsync(_alfaKnowledgeConfig),
+            "No se pudo probar la conexión con AlfaKnowledge.");
+
+        if (result.Success && result.Value is not null)
+        {
+            if (result.Value.Success)
+            {
+                var databasePart = string.IsNullOrWhiteSpace(result.Value.Database)
+                    ? "base no informada"
+                    : $"base {result.Value.Database}";
+                var kbPart = string.IsNullOrWhiteSpace(result.Value.KnowledgeBase)
+                    ? string.Empty
+                    : $" ({result.Value.KnowledgeBase})";
+
+                _feedback = AppUiMessage.Success(
+                    "Conexión verificada",
+                    $"AlfaKnowledge respondió OK sobre {databasePart}{kbPart}.");
+            }
+            else
+            {
+                _feedback = new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Warning,
+                    Title = "Conexión con observaciones",
+                    Message = string.IsNullOrWhiteSpace(result.Value.Message)
+                        ? $"AlfaKnowledge respondió HTTP {result.Value.StatusCode}."
+                        : result.Value.Message,
+                    Suggestion = string.IsNullOrWhiteSpace(result.Value.KnowledgeBase)
+                        ? "Revisá la URL, la API Key y el Knowledge Base Id configurados para esta base."
+                        : $"Base resuelta: {result.Value.KnowledgeBase}."
+                };
+            }
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
     private void EnsureDefaults()
     {
         if (string.IsNullOrWhiteSpace(_config.WebhookPath))
@@ -743,6 +910,12 @@
 
         if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.SiteId))
             _mercadoLibreConfig.SiteId = "MLA";
+    }
+
+    private void EnsureAlfaKnowledgeDefaults()
+    {
+        if (_alfaKnowledgeConfig.TimeoutSeconds <= 0)
+            _alfaKnowledgeConfig.TimeoutSeconds = 15;
     }
 
     private string GetCurrentBaseUrl()
@@ -802,6 +975,11 @@
         return $"https://auth.mercadolibre.com.ar/authorization?response_type=code&client_id={Uri.EscapeDataString(_mercadoLibreConfig.ClientId.Trim())}&redirect_uri={Uri.EscapeDataString(redirectUri)}";
     }
 
+    private string GetAlfaKnowledgeUrlPreview()
+        => string.IsNullOrWhiteSpace(_alfaKnowledgeConfig.BaseUrl)
+            ? "Completá la Base URL"
+            : _alfaKnowledgeConfig.FullChatUrl;
+
     private string GetStatusLabel(bool ready) => ready ? "Listo" : "Pendiente";
 
     private string GetPublicationLabel()
@@ -814,6 +992,7 @@
         => value switch
         {
             "TA_CONFIGURACION" => "TA_CONFIGURACION",
+            "sin_configurar" => "Sin configurar en esta base",
             "mixta" => "Mixta (TA_CONFIGURACION + appsettings)",
             "appsettings" => "appsettings",
             _ => "No determinado"
