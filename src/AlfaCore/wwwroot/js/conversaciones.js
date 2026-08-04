@@ -282,7 +282,16 @@ window.conversacionesUi = {
 
     scrollToBottom: function (element) {
         if (!element) return;
-        element.scrollTop = element.scrollHeight;
+        element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+    },
+
+    restoreScrollAfterPrepend: function (element, previousScrollTop, previousScrollHeight) {
+        if (!element) return false;
+        const currentScrollHeight = element.scrollHeight || 0;
+        const previousTop = Number(previousScrollTop) || 0;
+        const previousHeight = Number(previousScrollHeight) || 0;
+        element.scrollTop = Math.max(0, previousTop + (currentScrollHeight - previousHeight));
+        return true;
     },
 
     scrollToBottomStable: function (element) {

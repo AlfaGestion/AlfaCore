@@ -2560,13 +2560,29 @@
     flex: 0 1 auto !important;
     gap: .22rem !important;
     border-color: color-mix(in srgb, var(--technician-color) 65%, transparent) !important;
-    background: color-mix(in srgb, var(--technician-color) 18%, rgba(15, 23, 42, .85)) !important;
-    color: color-mix(in srgb, var(--technician-color) 72%, white) !important;
+    background: color-mix(in srgb, var(--technician-color) 22%, rgba(15, 23, 42, .88)) !important;
+    color: color-mix(in srgb, var(--technician-color) 82%, white) !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--technician-color) 18%, transparent) !important;
 }
 
 .conversations-page--odoo .conversation-badge--technician i {
     flex: 0 0 auto;
     font-size: .68rem;
+}
+
+.conversations-page--odoo .conversation-badge--technician-prominent {
+    max-width: 14rem !important;
+    padding-inline: .72rem !important;
+    background: linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--technician-color) 28%, rgba(15, 23, 42, .96)),
+        color-mix(in srgb, var(--technician-color) 16%, rgba(15, 23, 42, .92))
+    ) !important;
+    color: color-mix(in srgb, var(--technician-color) 88%, white) !important;
+    border-color: color-mix(in srgb, var(--technician-color) 72%, transparent) !important;
+    box-shadow:
+        inset 0 0 0 1px color-mix(in srgb, var(--technician-color) 20%, transparent),
+        0 8px 18px color-mix(in srgb, var(--technician-color) 16%, transparent) !important;
 }
 
 .conversations-page--odoo .conversation-assign-to-me {

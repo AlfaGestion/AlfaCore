@@ -269,6 +269,13 @@ public sealed class ConversacionMensajeDto
     public bool TieneAdjuntos { get; set; }
 }
 
+public sealed class ConversacionMensajesPaginaDto
+{
+    public List<ConversacionMensajeDto> Messages { get; set; } = [];
+    public int TotalMessages { get; set; }
+    public bool HasMoreBefore { get; set; }
+}
+
 public sealed class ConversacionAuditoriaMensajeDto
 {
     public long IdMensaje { get; set; }
