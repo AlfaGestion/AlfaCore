@@ -152,3 +152,32 @@ public sealed class ConversacionMercadoLibreConfigDto
         return string.IsNullOrWhiteSpace(baseUrl) ? path : $"{baseUrl}{path}";
     }
 }
+
+public sealed class ConversacionAlfaKnowledgeConfigDto
+{
+    public string BaseUrl { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
+    public string KnowledgeBaseId { get; set; } = string.Empty;
+    public int TimeoutSeconds { get; set; } = 15;
+    public string ConfigSource { get; set; } = string.Empty;
+
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(BaseUrl) &&
+        !string.IsNullOrWhiteSpace(ApiKey);
+
+    public string FullChatUrl
+        => string.IsNullOrWhiteSpace(BaseUrl)
+            ? string.Empty
+            : BaseUrl.Trim().TrimEnd('/') + "/";
+}
+
+public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
+{
+    public bool Success { get; set; }
+    public int StatusCode { get; set; }
+    public string Service { get; set; } = string.Empty;
+    public string Database { get; set; } = string.Empty;
+    public string DataSource { get; set; } = string.Empty;
+    public string KnowledgeBase { get; set; } = string.Empty;
+    public string Message { get; set; } = string.Empty;
+}

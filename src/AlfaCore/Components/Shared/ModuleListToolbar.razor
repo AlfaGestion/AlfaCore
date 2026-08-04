@@ -1,0 +1,156 @@
+@using AlfaCore.Models
+
+<section class="@ToolbarClass" aria-label="@AriaLabel">
+    @if (SearchContent is not null)
+    {
+        <div class="module-list-toolbar__search">
+            @SearchContent
+        </div>
+    }
+
+    @if (ShowPager || HasActions)
+    {
+        <div class="module-list-toolbar__right">
+            @if (ShowPager)
+            {
+                <nav class="module-list-toolbar__pager" aria-label="@PagerAriaLabel">
+                    <button type="button" class="module-list-toolbar__pager-btn" title="Primera página" aria-label="Primera página" disabled="@(!CanGoToFirst)" @onclick="GoToFirstAsync">
+                        <i class="bi bi-chevron-double-left"></i>
+                    </button>
+                    <button type="button" class="module-list-toolbar__pager-btn" title="Página anterior" aria-label="Página anterior" disabled="@(!CanGoToPrevious)" @onclick="GoToPreviousAsync">
+                        <i class="bi bi-chevron-left"></i>
+                    </button>
+                    <span class="module-list-toolbar__pager-status" aria-live="polite">@PageIndicator</span>
+                    <button type="button" class="module-list-toolbar__pager-btn" title="Página siguiente" aria-label="Página siguiente" disabled="@(!CanGoToNext)" @onclick="GoToNextAsync">
+                        <i class="bi bi-chevron-right"></i>
+                    </button>
+                    <button type="button" class="module-list-toolbar__pager-btn" title="Última página" aria-label="Última página" disabled="@(!CanGoToLast)" @onclick="GoToLastAsync">
+                        <i class="bi bi-chevron-double-right"></i>
+                    </button>
+                </nav>
+            }
+
+            @if (HasActions)
+            {
+                <div class="module-list-toolbar__actions" aria-label="@ActionsAriaLabel">
+                    @foreach (var action in VisibleActions)
+                    {
+                        <button type="button"
+                                class="@GetActionClass(action)"
+                                title="@GetActionTitle(action)"
+                                disabled="@(action.Disabled || action.Busy)"
+                                @onclick="() => RunActionAsync(action)">
+                            @if (!string.IsNullOrWhiteSpace(action.Icon))
+                            {
+                                <i class="bi @action.Icon"></i>
+                            }
+                            <span>@(action.Busy ? "Procesando..." : action.Label)</span>
+                        </button>
+                    }
+
+                    @if (OverflowActions.Count > 0)
+                    {
+                        <details class="module-list-toolbar__overflow">
+                            <summary title="Más opciones" aria-label="Más opciones">
+                                <i class="bi bi-three-dots"></i>
+                            </summary>
+                            <div class="module-list-toolbar__menu">
+                                @foreach (var action in OverflowActions)
+                                {
+                                    <button type="button" disabled="@(action.Disabled || action.Busy)" @onclick="() => RunActionAsync(action)">
+                                        @if (!string.IsNullOrWhiteSpace(action.Icon))
+                                        {
+                                            <i class="bi @action.Icon"></i>
+                                        }
+                                        <span>@(action.Busy ? "Procesando..." : action.Label)</span>
+                                    </button>
+                                }
+                            </div>
+                        </details>
+                    }
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public string AriaLabel { get; set; } = "Herramientas de listado";
+    [Parameter] public string PagerAriaLabel { get; set; } = "Paginación";
+    [Parameter] public string ActionsAriaLabel { get; set; } = "Acciones";
+    [Parameter] public string Class { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? SearchContent { get; set; }
+    [Parameter] public IReadOnlyList<PageHeaderAction> Actions { get; set; } = [];
+    [Parameter] public bool ShowPager { get; set; }
+    [Parameter] public int CurrentPage { get; set; } = 1;
+    [Parameter] public int TotalPages { get; set; } = 1;
+    [Parameter] public bool IsLoading { get; set; }
+    [Parameter] public EventCallback<int> OnPageChanged { get; set; }
+
+    private string ToolbarClass
+        => string.IsNullOrWhiteSpace(Class)
+            ? "module-list-toolbar"
+            : $"module-list-toolbar {Class.Trim()}";
+
+    private IReadOnlyList<PageHeaderAction> VisibleActions
+        => Actions.Where(action => action.Priority != PageHeaderActionPriority.Overflow).ToList();
+
+    private IReadOnlyList<PageHeaderAction> OverflowActions
+        => Actions.Where(action => action.Priority == PageHeaderActionPriority.Overflow).ToList();
+
+    private bool HasActions => VisibleActions.Count > 0 || OverflowActions.Count > 0;
+
+    private int DisplayTotalPages => Math.Max(0, TotalPages);
+
+    private int DisplayPage
+        => DisplayTotalPages == 0
+            ? 0
+            : Math.Min(Math.Max(1, CurrentPage), DisplayTotalPages);
+
+    private string PageIndicator => $"{DisplayPage} / {DisplayTotalPages}";
+
+    private bool CanGoToFirst => ShowPager && !IsLoading && DisplayTotalPages > 1 && DisplayPage > 1;
+    private bool CanGoToPrevious => CanGoToFirst;
+    private bool CanGoToNext => ShowPager && !IsLoading && DisplayTotalPages > 1 && DisplayPage < DisplayTotalPages;
+    private bool CanGoToLast => CanGoToNext;
+
+    private Task GoToFirstAsync() => GoToPageAsync(1);
+    private Task GoToPreviousAsync() => GoToPageAsync(DisplayPage - 1);
+    private Task GoToNextAsync() => GoToPageAsync(DisplayPage + 1);
+    private Task GoToLastAsync() => GoToPageAsync(DisplayTotalPages);
+
+    private async Task GoToPageAsync(int page)
+    {
+        if (IsLoading || DisplayTotalPages <= 0)
+            return;
+
+        var targetPage = Math.Min(Math.Max(1, page), DisplayTotalPages);
+        if (targetPage == DisplayPage)
+            return;
+
+        await OnPageChanged.InvokeAsync(targetPage);
+    }
+
+    private static string GetActionClass(PageHeaderAction action)
+    {
+        var styleClass = action.Style switch
+        {
+            PageHeaderActionStyle.Primary => "btn--primary",
+            PageHeaderActionStyle.Danger => "btn--danger",
+            _ => "btn--ghost"
+        };
+
+        return $"btn btn--sm module-list-toolbar__action {styleClass}";
+    }
+
+    private static string GetActionTitle(PageHeaderAction action)
+        => string.IsNullOrWhiteSpace(action.Title) ? action.Label : action.Title;
+
+    private static async Task RunActionAsync(PageHeaderAction action)
+    {
+        if (action.Disabled || action.Busy || action.OnClick is null)
+            return;
+
+        await action.OnClick();
+    }
+}

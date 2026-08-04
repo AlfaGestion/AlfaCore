@@ -3,23 +3,30 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using AlfaCore.Configuration;
 using AlfaCore.Models;
-using Microsoft.Extensions.Options;
+using Microsoft.Data.SqlClient;
 
 namespace AlfaCore.Services;
 
 public sealed class AlfaKnowledgeSuggestionService(
     IHttpClientFactory httpClientFactory,
-    IOptions<AlfaKnowledgeOptions> options,
+    IConfiguration configuration,
+    ISessionService sessionService,
     IAppEventService appEvents,
     ILogger<AlfaKnowledgeSuggestionService> logger) : IAlfaKnowledgeSuggestionService
 {
     private const string ModuleName = "AlfaKnowledge";
+    private const string KnowledgeBaseHeaderName = "X-Knowledge-Base-Id";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
-    public bool IsConfigured => options.Value.IsConfigured;
+    public bool IsConfigured => GetEffectiveSettings().IsConfigured;
 
     public string FullChatUrl
-        => options.Value.IsConfigured ? $"{options.Value.BaseUrl.TrimEnd('/')}/" : string.Empty;
+    {
+        get
+        {
+            var settings = GetEffectiveSettings();
+            return settings.IsConfigured ? $"{settings.BaseUrl.TrimEnd('/')}/" : string.Empty;
+        }
+    }
 
     public string GetCitationUrl(AlfaKnowledgeSuggestionCitation citation)
     {
@@ -49,7 +56,7 @@ public sealed class AlfaKnowledgeSuggestionService(
         AlfaKnowledgeImageInput? image = null,
         CancellationToken cancellationToken = default)
     {
-        var settings = options.Value;
+        var settings = await GetEffectiveSettingsAsync(cancellationToken);
         if (!settings.IsConfigured)
         {
             logger.LogWarning("AlfaKnowledge no está configurado (falta BaseUrl o ApiKey); no se pidió sugerencia.");
@@ -102,6 +109,7 @@ public sealed class AlfaKnowledgeSuggestionService(
             var client = httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(Math.Max(settings.TimeoutSeconds, 1));
             client.DefaultRequestHeaders.Add("X-Api-Key", settings.ApiKey);
+            TryAddKnowledgeBaseHeader(client, settings);
 
             var baseUrl = settings.BaseUrl.TrimEnd('/');
             using var response = await client.PostAsJsonAsync(
@@ -181,7 +189,7 @@ public sealed class AlfaKnowledgeSuggestionService(
 
     public async Task SendFeedbackAsync(Guid interactionId, bool isHelpful, CancellationToken cancellationToken = default)
     {
-        var settings = options.Value;
+        var settings = await GetEffectiveSettingsAsync(cancellationToken);
         if (!settings.IsConfigured)
         {
             return;
@@ -191,6 +199,7 @@ public sealed class AlfaKnowledgeSuggestionService(
         {
             var client = httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(Math.Max(settings.TimeoutSeconds, 1));
+            TryAddKnowledgeBaseHeader(client, settings);
 
             var baseUrl = settings.BaseUrl.TrimEnd('/');
             var payload = new { interactionId, isHelpful };
@@ -233,7 +242,7 @@ public sealed class AlfaKnowledgeSuggestionService(
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var settings = options.Value;
+        var settings = await GetEffectiveSettingsAsync(cancellationToken);
         if (!settings.IsConfigured)
         {
             return false;
@@ -244,6 +253,7 @@ public sealed class AlfaKnowledgeSuggestionService(
             var client = httpClientFactory.CreateClient();
             client.Timeout = TimeSpan.FromSeconds(Math.Max(settings.TimeoutSeconds, 1));
             client.DefaultRequestHeaders.Add("X-Api-Key", settings.ApiKey);
+            TryAddKnowledgeBaseHeader(client, settings);
 
             var payload = new
             {
@@ -327,6 +337,195 @@ public sealed class AlfaKnowledgeSuggestionService(
                 action);
         }
     }
+
+    private AlfaKnowledgeOptions GetEffectiveSettings()
+    {
+        try
+        {
+            return LoadSettingsFromDatabase() ?? CreateEmptyOptions();
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo leer la configuración de AlfaKnowledge desde TA_CONFIGURACION.");
+            return CreateEmptyOptions();
+        }
+    }
+
+    private async Task<AlfaKnowledgeOptions> GetEffectiveSettingsAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await LoadSettingsFromDatabaseAsync(cancellationToken) ?? CreateEmptyOptions();
+        }
+        catch (Exception ex) when (ex is SqlException or InvalidOperationException)
+        {
+            logger.LogWarning(ex, "No se pudo leer la configuración de AlfaKnowledge desde TA_CONFIGURACION.");
+            return CreateEmptyOptions();
+        }
+    }
+
+    private AlfaKnowledgeOptions? LoadSettingsFromDatabase()
+    {
+        var connectionString = ResolveConnectionString();
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return null;
+
+        using var cn = new SqlConnection(connectionString);
+        cn.Open();
+        var detailColumn = ResolveDetailColumn(cn);
+        using var cmd = new SqlCommand(BuildSelectSql(detailColumn), cn);
+        using var rd = cmd.ExecuteReader();
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        while (rd.Read())
+        {
+            var key = GetString(rd, 0);
+            var value = GetString(rd, 1);
+            var detailValue = GetString(rd, 2);
+            values[key] = ResolveStoredValue(value, detailValue);
+        }
+
+        return BuildOptions(values);
+    }
+
+    private async Task<AlfaKnowledgeOptions?> LoadSettingsFromDatabaseAsync(CancellationToken cancellationToken)
+    {
+        var connectionString = ResolveConnectionString();
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return null;
+
+        await using var cn = new SqlConnection(connectionString);
+        await cn.OpenAsync(cancellationToken);
+        var detailColumn = await ResolveDetailColumnAsync(cn, cancellationToken);
+        await using var cmd = new SqlCommand(BuildSelectSql(detailColumn), cn);
+        await using var rd = await cmd.ExecuteReaderAsync(cancellationToken);
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        while (await rd.ReadAsync(cancellationToken))
+        {
+            var key = GetString(rd, 0);
+            var value = GetString(rd, 1);
+            var detailValue = GetString(rd, 2);
+            values[key] = ResolveStoredValue(value, detailValue);
+        }
+
+        return BuildOptions(values);
+    }
+
+    private AlfaKnowledgeOptions BuildOptions(Dictionary<string, string> values)
+    {
+        return new AlfaKnowledgeOptions
+        {
+            BaseUrl = ReadValue(values, "CONV_ALFAKNOWLEDGE_BASE_URL", string.Empty),
+            ApiKey = ReadValue(values, "CONV_ALFAKNOWLEDGE_API_KEY", string.Empty),
+            KnowledgeBaseId = ReadValue(values, "CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID", string.Empty),
+            TimeoutSeconds = ReadIntValue(values, "CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS", 0, 15)
+        };
+    }
+
+    private string ResolveConnectionString()
+    {
+        var sessionConnection = sessionService.GetConnectionString();
+        if (!string.IsNullOrWhiteSpace(sessionConnection))
+            return sessionConnection;
+
+        return configuration.GetConnectionString("AlfaGestion") ?? string.Empty;
+    }
+
+    private static void TryAddKnowledgeBaseHeader(HttpClient client, AlfaKnowledgeOptions settings)
+    {
+        if (string.IsNullOrWhiteSpace(settings.KnowledgeBaseId))
+            return;
+
+        client.DefaultRequestHeaders.Remove(KnowledgeBaseHeaderName);
+        client.DefaultRequestHeaders.Add(KnowledgeBaseHeaderName, settings.KnowledgeBaseId.Trim());
+    }
+
+    private static AlfaKnowledgeOptions CreateEmptyOptions()
+        => new()
+        {
+            BaseUrl = string.Empty,
+            ApiKey = string.Empty,
+            KnowledgeBaseId = string.Empty,
+            TimeoutSeconds = 15
+        };
+
+    private static async Task<string> ResolveDetailColumnAsync(SqlConnection cn, CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT TOP (1) name
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID(N'dbo.TA_CONFIGURACION')
+              AND LOWER(name) IN (N'valoraux', N'valor_aux', N'descripcion')
+            ORDER BY CASE WHEN LOWER(name) IN (N'valoraux', N'valor_aux') THEN 0 ELSE 1 END
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        var result = await cmd.ExecuteScalarAsync(cancellationToken);
+        var column = Convert.ToString(result) ?? string.Empty;
+        return string.IsNullOrWhiteSpace(column) ? "DESCRIPCION" : column;
+    }
+
+    private static string ResolveDetailColumn(SqlConnection cn)
+    {
+        const string sql = """
+            SELECT TOP (1) name
+            FROM sys.columns
+            WHERE object_id = OBJECT_ID(N'dbo.TA_CONFIGURACION')
+              AND LOWER(name) IN (N'valoraux', N'valor_aux', N'descripcion')
+            ORDER BY CASE WHEN LOWER(name) IN (N'valoraux', N'valor_aux') THEN 0 ELSE 1 END
+            """;
+
+        using var cmd = new SqlCommand(sql, cn);
+        var result = cmd.ExecuteScalar();
+        var column = Convert.ToString(result) ?? string.Empty;
+        return string.IsNullOrWhiteSpace(column) ? "DESCRIPCION" : column;
+    }
+
+    private static string BuildSelectSql(string detailColumn)
+        => $"""
+            SELECT
+                UPPER(LTRIM(RTRIM(CLAVE))),
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
+            (
+                'CONV_ALFAKNOWLEDGE_BASE_URL',
+                'CONV_ALFAKNOWLEDGE_API_KEY',
+                'CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID',
+                'CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS'
+            )
+            """;
+
+    private static string ReadValue(Dictionary<string, string> values, string key, string fallback)
+    {
+        if (values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
+            return value.Trim();
+
+        return string.IsNullOrWhiteSpace(fallback) ? string.Empty : fallback.Trim();
+    }
+
+    private static int ReadIntValue(Dictionary<string, string> values, string key, int fallback, int defaultValue)
+    {
+        if (values.TryGetValue(key, out var value)
+            && int.TryParse(value, out var parsed)
+            && parsed > 0)
+        {
+            return parsed;
+        }
+
+        return fallback > 0 ? fallback : defaultValue;
+    }
+
+    private static string ResolveStoredValue(string value, string auxValue)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            return value.Trim();
+
+        return string.IsNullOrWhiteSpace(auxValue) ? string.Empty : auxValue.Trim();
+    }
+
+    private static string GetString(SqlDataReader rd, int index)
+        => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index)) ?? string.Empty;
 
     private sealed class SuggestReplyApiResponse
     {

@@ -56,7 +56,7 @@ else
                 <i class="bi bi-printer"></i>
                 <span>Imprimir</span>
             </button>
-            <button type="button" class="btn btn--ghost btn--sm" disabled title="Próximamente">
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="ImprimirAsync">
                 <i class="bi bi-file-earmark-arrow-down"></i>
                 <span>Exportar PDF</span>
             </button>
@@ -157,6 +157,10 @@ else
                         <span>TOTAL CLIENTE</span>
                         <strong>@FormatMoney(GetTotalCliente())</strong>
                     </div>
+                    <div class="viaje-preview-detail__line">
+                        <span>PEAJE</span>
+                        <strong>@FormatMoney(_preview.Viaje.Peaje)</strong>
+                    </div>
                 </article>
 
                 <article class="viaje-preview-detail viaje-preview-detail--fletero">
@@ -249,7 +253,7 @@ else
         => _preview is null ? new ViajeTotalesDto() : CargaViajesService.BuildViajeTotales(_preview.Viaje, _preview.Configuracion);
 
     private IReadOnlyList<ViajeConceptoTotalDto> GetClienteConceptos()
-        => GetViajeTotales().ConceptosCliente;
+        => GetViajeTotales().ConceptosCliente.Where(item => item.AportaAlTotal).ToList();
 
     private IReadOnlyList<ViajeConceptoTotalDto> GetFleteroConceptos()
         => GetViajeTotales().ConceptosFletero;

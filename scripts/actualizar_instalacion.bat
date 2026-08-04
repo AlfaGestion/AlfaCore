@@ -4,6 +4,8 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0.."
 
 set "SOURCE_DIR=.\publish\AlfaCoreLAN"
+set "DEFAULT_DEST_1=\\10.8.0.32\c\Program Files\Alfa Gestion\AlfaCore"
+set "DEFAULT_DEST_2=\\10.8.0.53\c\inetpub\wwwroot\AlfaCore"
 for %%I in ("%SOURCE_DIR%") do set "SOURCE_DIR_FULL=%%~fI"
 set "ROOT_COPY_EXIT=0"
 set "UPDATES_COPY_EXIT=0"
@@ -23,6 +25,9 @@ echo Uso:
 echo   scripts\actualizar_instalacion.bat "C:\Ruta\De\Instalacion"
 echo.
 echo Si no informas destino, el script lo pide por pantalla.
+echo Destinos sugeridos:
+echo   1^) %DEFAULT_DEST_1% ^(SERVER-ALFAWEB^)
+echo   2^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL^)
 echo.
 echo Este script:
 echo   - toma el publish de .\publish\AlfaCoreLAN
@@ -78,8 +83,22 @@ echo.
 set "DEST_DIR_FULL=%~1"
 if defined DEST_DIR_FULL goto :got_destination
 
-set /p "DEST_DIR_FULL=Destino de instalacion: "
-set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
+echo Destinos sugeridos:
+echo   1^) %DEFAULT_DEST_1% ^(SERVER-ALFAWEB^)
+echo   2^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL^)
+echo   3^) Otra ruta
+echo.
+set /p "DEST_OPTION=Elige destino [1/2/3]: "
+set "DEST_OPTION=%DEST_OPTION:"=%"
+
+if /i "%DEST_OPTION%"=="1" (
+  set "DEST_DIR_FULL=%DEFAULT_DEST_1%"
+) else if /i "%DEST_OPTION%"=="2" (
+  set "DEST_DIR_FULL=%DEFAULT_DEST_2%"
+) else (
+  set /p "DEST_DIR_FULL=Destino de instalacion: "
+  set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
+)
 
 :got_destination
 set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"

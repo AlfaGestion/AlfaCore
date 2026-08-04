@@ -2,6 +2,8 @@ using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using System.Net.Http;
+using System.Text.Json;
 
 namespace AlfaCore.Services;
 
@@ -9,7 +11,8 @@ public sealed class ConversacionesConfigService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
-    IOptions<WhatsAppOptions> whatsAppOptions) : IConversacionesConfigService
+    IOptions<WhatsAppOptions> whatsAppOptions,
+    IHttpClientFactory httpClientFactory) : IConversacionesConfigService
 {
     private const string ConfigGroup = "CONVERSACIONES";
     private const string DefaultWebhookPath = "/api/conversaciones/whatsapp/webhook";
@@ -17,6 +20,7 @@ public sealed class ConversacionesConfigService(
     private const string DefaultFacebookWebhookPath = "/api/conversaciones/facebook/webhook";
     private const string DefaultMercadoLibreWebhookPath = "/api/conversaciones/mercadolibre/webhook";
     private const string DefaultMercadoLibreOAuthCallbackPath = "/api/conversaciones/mercadolibre/oauth/callback";
+    private const string KnowledgeBaseHeaderName = "X-Knowledge-Base-Id";
     private readonly WhatsAppOptions _fallbackOptions = whatsAppOptions.Value;
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
@@ -476,6 +480,146 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo guardar la configuración de Mercado Libre.", ct);
     }
 
+    public Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetAlfaKnowledgeConfig", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            await using var cmd = new SqlCommand(BuildAlfaKnowledgeSelectSql(detailColumn), cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                var key = GetString(rd, 0);
+                var value = GetString(rd, 1);
+                var detailValue = GetString(rd, 2);
+                values[key] = ResolveStoredValue(value, detailValue);
+            }
+
+            return new ConversacionAlfaKnowledgeConfigDto
+            {
+                BaseUrl = ReadValue(values, "CONV_ALFAKNOWLEDGE_BASE_URL", string.Empty),
+                ApiKey = ReadValue(values, "CONV_ALFAKNOWLEDGE_API_KEY", string.Empty),
+                KnowledgeBaseId = ReadValue(values, "CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID", string.Empty),
+                TimeoutSeconds = ReadIntValue(values, "CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS", 0, 15),
+                ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
+            };
+        }, "No se pudo cargar la configuración de AlfaKnowledge.", ct);
+
+    public async Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        await ExecuteLoggedAsync("Conversaciones", "SaveAlfaKnowledgeConfig", async token =>
+        {
+            var normalized = Normalize(config);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            foreach (var item in BuildItems(normalized))
+            {
+                var stored = SplitStoredValue(item.Value);
+                var sql = $"""
+                    UPDATE dbo.TA_CONFIGURACION
+                    SET
+                        VALOR = @Valor,
+                        {detailColumn} = @ValorAux,
+                        GRUPO = @Grupo
+                    WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO)
+                        VALUES (@Clave, @Valor, @ValorAux, @Grupo);
+                    END;
+                    """;
+
+                await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@ClaveNormalizada", item.Key.ToUpperInvariant());
+                cmd.Parameters.AddWithValue("@Clave", item.Key);
+                cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
+                cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
+                cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveAlfaKnowledgeConfig",
+                "TA_CONFIGURACION",
+                ConfigGroup,
+                "Configuración de AlfaKnowledge actualizada.",
+                new
+                {
+                    normalized.BaseUrl,
+                    normalized.TimeoutSeconds
+                },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración de AlfaKnowledge.", ct);
+    }
+
+    public Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "TestAlfaKnowledgeConnection", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(config);
+
+            var normalized = Normalize(config);
+            if (string.IsNullOrWhiteSpace(normalized.BaseUrl))
+                throw new InvalidOperationException("Completá la Base URL de AlfaKnowledge antes de probar la conexión.");
+
+            if (string.IsNullOrWhiteSpace(normalized.ApiKey))
+                throw new InvalidOperationException("Completá la API Key de AlfaKnowledge antes de probar la conexión.");
+
+            var client = httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(Math.Max(normalized.TimeoutSeconds, 1));
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{normalized.BaseUrl}/api/health/db");
+            request.Headers.Add("X-Api-Key", normalized.ApiKey);
+
+            if (!string.IsNullOrWhiteSpace(normalized.KnowledgeBaseId))
+                request.Headers.Add(KnowledgeBaseHeaderName, normalized.KnowledgeBaseId);
+
+            using var response = await client.SendAsync(request, token);
+            var body = await response.Content.ReadAsStringAsync(token);
+
+            string service = string.Empty;
+            string database = string.Empty;
+            string dataSource = string.Empty;
+            string knowledgeBase = string.Empty;
+            string message = string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(body))
+            {
+                using var document = JsonDocument.Parse(body);
+                var root = document.RootElement;
+                service = ReadJsonString(root, "service");
+                database = ReadJsonString(root, "database");
+                dataSource = ReadJsonString(root, "dataSource");
+                knowledgeBase = ReadJsonString(root, "knowledgeBase");
+                message = ReadJsonString(root, "message");
+            }
+
+            return new ConversacionAlfaKnowledgeConnectionTestResultDto
+            {
+                Success = response.IsSuccessStatusCode,
+                StatusCode = (int)response.StatusCode,
+                Service = service,
+                Database = database,
+                DataSource = dataSource,
+                KnowledgeBase = knowledgeBase,
+                Message = message
+            };
+        }, "No se pudo probar la conexión con AlfaKnowledge.", ct);
+
     private static async Task<string> ResolveDetailColumnAsync(SqlConnection cn, CancellationToken ct)
     {
         // Acepta ValorAux / VALOR_AUX / valor_aux y cae en DESCRIPCION solo como último recurso.
@@ -580,6 +724,22 @@ public sealed class ConversacionesConfigService(
             )
             """;
 
+    private static string BuildAlfaKnowledgeSelectSql(string detailColumn)
+        => $"""
+            SELECT
+                UPPER(LTRIM(RTRIM(CLAVE))),
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
+            (
+                'CONV_ALFAKNOWLEDGE_BASE_URL',
+                'CONV_ALFAKNOWLEDGE_API_KEY',
+                'CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID',
+                'CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS'
+            )
+            """;
+
     private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionWhatsAppConfigDto config)
     {
         yield return ("CONV_WHATSAPP_VERIFY_TOKEN", config.VerifyToken);
@@ -630,6 +790,14 @@ public sealed class ConversacionesConfigService(
         yield return ("CONV_MELI_WEBHOOK_PATH", config.WebhookPath);
         yield return ("CONV_MELI_OAUTH_CALLBACK_PATH", config.OAuthCallbackPath);
         yield return ("CONV_MELI_API_BASE_URL", config.ApiBaseUrl);
+    }
+
+    private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionAlfaKnowledgeConfigDto config)
+    {
+        yield return ("CONV_ALFAKNOWLEDGE_BASE_URL", config.BaseUrl);
+        yield return ("CONV_ALFAKNOWLEDGE_API_KEY", config.ApiKey);
+        yield return ("CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID", config.KnowledgeBaseId);
+        yield return ("CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS", config.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private static ConversacionWhatsAppConfigDto Normalize(ConversacionWhatsAppConfigDto config)
@@ -724,6 +892,20 @@ public sealed class ConversacionesConfigService(
         };
     }
 
+    private static ConversacionAlfaKnowledgeConfigDto Normalize(ConversacionAlfaKnowledgeConfigDto config)
+    {
+        var timeoutSeconds = config.TimeoutSeconds <= 0 ? 15 : config.TimeoutSeconds;
+
+        return new ConversacionAlfaKnowledgeConfigDto
+        {
+            BaseUrl = NormalizeBaseUrl(config.BaseUrl),
+            ApiKey = (config.ApiKey ?? string.Empty).Trim(),
+            KnowledgeBaseId = (config.KnowledgeBaseId ?? string.Empty).Trim(),
+            TimeoutSeconds = timeoutSeconds,
+            ConfigSource = string.Empty
+        };
+    }
+
     private static string NormalizeBaseUrl(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().TrimEnd('/');
 
@@ -745,6 +927,18 @@ public sealed class ConversacionesConfigService(
             return fallback.Trim();
 
         return defaultValue;
+    }
+
+    private static int ReadIntValue(Dictionary<string, string> values, string key, int fallback, int defaultValue)
+    {
+        if (values.TryGetValue(key, out var value)
+            && int.TryParse(value, out var parsed)
+            && parsed > 0)
+        {
+            return parsed;
+        }
+
+        return fallback > 0 ? fallback : defaultValue;
     }
 
     private static string ResolveStoredValue(string value, string auxValue)
@@ -769,6 +963,16 @@ public sealed class ConversacionesConfigService(
 
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index)) ?? string.Empty;
+
+    private static string ReadJsonString(JsonElement root, string propertyName)
+    {
+        if (!root.TryGetProperty(propertyName, out var property))
+            return string.Empty;
+
+        return property.ValueKind == JsonValueKind.String
+            ? property.GetString() ?? string.Empty
+            : property.ToString();
+    }
 
     private async Task<T> ExecuteLoggedAsync<T>(
         string module,

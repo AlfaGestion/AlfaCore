@@ -408,13 +408,139 @@ html[data-theme="light"] .viaje-preview-detail--fletero {
     .viaje-preview-page {
         width: 100%;
         margin: 0;
-        gap: .7rem;
+        gap: .35rem;
         color: #000;
+        font-size: 10.5pt;
     }
 
     .viaje-preview-page__toolbar,
     .no-print {
         display: none !important;
+    }
+
+    .viaje-preview-card {
+        gap: .5rem;
+    }
+
+    .viaje-preview-card__hero {
+        padding-bottom: .4rem;
+    }
+
+    .viaje-preview-card h1 {
+        margin: .15rem 0 0;
+        font-size: 1.4rem;
+    }
+
+    .viaje-preview-card__eyebrow {
+        font-size: .62rem;
+    }
+
+    .viaje-preview-card__subtitle {
+        font-size: .8rem;
+        margin-top: .15rem;
+    }
+
+    .viaje-preview-card__badge {
+        padding: .35rem .6rem;
+        gap: .1rem;
+    }
+
+    .viaje-preview-card__badge strong {
+        font-size: .78rem;
+    }
+
+    .viaje-preview-card__grid {
+        gap: .4rem;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .viaje-preview-field {
+        padding: .4rem .55rem;
+        gap: .1rem;
+    }
+
+    .viaje-preview-field__label {
+        font-size: .62rem;
+    }
+
+    .viaje-preview-field strong {
+        font-size: .82rem;
+    }
+
+    .viaje-preview-section {
+        gap: .35rem;
+        padding-top: .1rem;
+    }
+
+    .viaje-preview-section__head h2 {
+        font-size: .85rem;
+    }
+
+    .viaje-preview-additional-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .3rem;
+    }
+
+    .viaje-preview-additional {
+        padding: .35rem .5rem;
+        gap: .4rem;
+    }
+
+    .viaje-preview-additional__check {
+        width: 1.3rem;
+        height: 1.3rem;
+        font-size: .7rem;
+    }
+
+    .viaje-preview-additional__content {
+        gap: .05rem;
+    }
+
+    .viaje-preview-additional__content strong {
+        font-size: .78rem;
+    }
+
+    .viaje-preview-additional__content span {
+        font-size: .66rem;
+    }
+
+    .viaje-preview-additional__amount {
+        font-size: .78rem;
+    }
+
+    .viaje-preview-card__details {
+        gap: .4rem;
+    }
+
+    .viaje-preview-detail {
+        padding: .5rem .6rem;
+        gap: .3rem;
+    }
+
+    .viaje-preview-detail__lines {
+        gap: .2rem;
+    }
+
+    .viaje-preview-detail__head strong {
+        font-size: .82rem;
+    }
+
+    .viaje-preview-detail__line strong {
+        font-size: .78rem;
+    }
+
+    .viaje-preview-detail__total {
+        padding-top: .35rem;
+    }
+
+    .viaje-preview-detail__total strong {
+        font-size: .9rem;
+    }
+
+    .viaje-preview-section--observaciones .viaje-preview-observaciones {
+        padding: .5rem .6rem;
+        font-size: .8rem;
+        line-height: 1.3;
     }
 
     .viaje-preview-card,
