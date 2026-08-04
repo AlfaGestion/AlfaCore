@@ -1912,6 +1912,28 @@ select {
     min-width: min(100%, 480px);
 }
 
+.calendario-header-search .smart-search__panel {
+    grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr);
+    width: min(520px, calc(100vw - 6rem));
+}
+
+.calendario-header-search .smart-search__column {
+    gap: .45rem;
+}
+
+.calendario-header-search select {
+    min-height: 2.05rem;
+    padding: .42rem .5rem;
+    border: 1px solid rgba(92, 201, 255, .2);
+    border-radius: .65rem;
+    background: rgba(15, 23, 42, .78);
+    color: #e2e8f0;
+}
+
+.calendario-header-search .smart-option {
+    justify-content: flex-start;
+}
+
 .tickets-page--odoo .tickets-commandbar {
     grid-template-columns: auto minmax(320px, 520px) minmax(0, 1fr) auto;
     align-items: start;
