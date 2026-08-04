@@ -1367,7 +1367,6 @@ public sealed class ConversacionesService(
     public Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversation", async token =>
         {
-            await AutoCloseExpiredOpenWhatsAppConversationsAsync(conversationId, token);
             var sql = $"""
                 SELECT
                     c.IdConversacion,
@@ -1570,7 +1569,6 @@ public sealed class ConversacionesService(
     public Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessages", async token =>
         {
-            await AutoCloseExpiredOpenWhatsAppConversationsAsync(conversationId, token);
             var sql = $"""
                 SELECT
                     m.IdMensaje,
@@ -2518,7 +2516,19 @@ public sealed class ConversacionesService(
                 IdTecnicoAutor = request.IdTecnicoAutor
             }, token);
 
-            var sendResult = await SendTemplateToWhatsAppAsync(config, conversation.TelefonoWhatsApp, template, values, token);
+            WhatsAppSendResult sendResult;
+            try
+            {
+                sendResult = await SendTemplateToWhatsAppAsync(config, conversation.TelefonoWhatsApp, template, values, token);
+            }
+            catch (Exception ex)
+            {
+                await UpdateMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
+                await RefreshConversationAsync(request.IdConversacion, now, previewText, token);
+
+                throw;
+            }
+
             await UpdateMessageDeliveryAsync(messageId, sendResult.EstadoEnvio, sendResult.WhatsAppMessageId, sendResult.PayloadJson, token);
             await RefreshConversationAsync(request.IdConversacion, now, previewText, token);
 

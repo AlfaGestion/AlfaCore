@@ -922,9 +922,16 @@
                 }
                 else if (_selectedConversation is null)
                 {
-                    <div class="conversations-empty conversations-empty--center">
-                        Seleccioná una conversación del panel izquierdo para verla y responder.
-                    </div>
+                    @if (_conversationError is not null)
+                    {
+                        <div class="conversations-error conversations-notice">@_conversationError</div>
+                    }
+                    else
+                    {
+                        <div class="conversations-empty conversations-empty--center">
+                            Seleccioná una conversación del panel izquierdo para verla y responder.
+                        </div>
+                    }
                 }
                 else
                 {
@@ -4147,10 +4154,8 @@
         {
             var conversationTask = ConversacionesSvc.GetConversationAsync(idConversacion);
             var messagesTask = ConversacionesSvc.GetMessagesAsync(idConversacion);
-            var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
-            var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId);
 
-            await Task.WhenAll(conversationTask, messagesTask, attachmentsTask, typingTask);
+            await Task.WhenAll(conversationTask, messagesTask);
 
             _selectedConversation = await conversationTask;
             RefreshSelectedMercadoLibreGroup();
@@ -4161,8 +4166,41 @@
                 _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
             }
             _messages = OrderConversationMessages(await messagesTask);
-            _typingUsers = (await typingTask).ToList();
-            var adjuntos = await attachmentsTask;
+            _typingUsers = [];
+            _adjuntosPorMensaje = [];
+
+            if (showLoading)
+            {
+                _loadingConversation = false;
+                await InvokeAsync(StateHasChanged);
+                await Task.Yield();
+                showLoading = false;
+            }
+
+            var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId);
+            var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
+
+            IReadOnlyList<ConversacionTypingDto> typingUsers;
+            try
+            {
+                typingUsers = await typingTask;
+            }
+            catch
+            {
+                typingUsers = [];
+            }
+
+            IReadOnlyList<ConversacionAdjuntoDto> adjuntos;
+            try
+            {
+                adjuntos = await attachmentsTask;
+            }
+            catch
+            {
+                adjuntos = [];
+            }
+
+            _typingUsers = typingUsers.ToList();
             _adjuntosPorMensaje = adjuntos
                 .GroupBy(a => a.IdMensaje)
                 .ToDictionary(g => g.Key, g => g.ToList());
