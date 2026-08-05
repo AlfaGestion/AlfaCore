@@ -68,6 +68,9 @@ publish/
 scripts/publish/
 Instalador/AlfaCore/
 
+# Capturas locales de validación de Fase 3
+artifacts/fase3-validation/
+
 # =========================
 # Librerías web
 # =========================

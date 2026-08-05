@@ -1,0 +1,46 @@
+.alfa-empty-state {
+    min-height: 220px;
+    border: 1px dashed var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    display: grid;
+    place-items: center;
+    gap: var(--alfa-space-12);
+    align-content: center;
+    padding: var(--alfa-space-24);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
+    text-align: center;
+}
+
+.alfa-empty-state__icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--alfa-radius-full);
+    display: grid;
+    place-items: center;
+    background: var(--alfa-bg-input);
+    color: var(--alfa-accent-hover);
+    font-size: 20px;
+}
+
+.alfa-empty-state--error .alfa-empty-state__icon {
+    color: var(--alfa-danger);
+}
+
+.alfa-empty-state__body {
+    display: grid;
+    gap: var(--alfa-space-4);
+}
+
+.alfa-empty-state h2,
+.alfa-empty-state p {
+    margin: 0;
+}
+
+.alfa-empty-state h2 {
+    font-size: 16px;
+}
+
+.alfa-empty-state p {
+    color: var(--alfa-text-secondary);
+}

@@ -1,0 +1,37 @@
+.alfa-tag {
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-full);
+    padding: 0 var(--alfa-space-8);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--alfa-text-primary);
+    background: var(--alfa-bg-raised);
+}
+
+.alfa-tag--accent { color: var(--alfa-accent-hover); background: color-mix(in srgb, var(--alfa-accent) 18%, transparent); }
+.alfa-tag--success { color: var(--alfa-success); background: color-mix(in srgb, var(--alfa-success) 16%, transparent); }
+.alfa-tag--warning { color: var(--alfa-warning); background: color-mix(in srgb, var(--alfa-warning) 16%, transparent); }
+.alfa-tag--danger { color: var(--alfa-danger); background: color-mix(in srgb, var(--alfa-danger) 16%, transparent); }
+
+.alfa-tag__remove {
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: var(--alfa-radius-full);
+    display: inline-grid;
+    place-items: center;
+    background: transparent;
+    color: currentColor;
+    cursor: pointer;
+    padding: 0;
+}
+
+.alfa-tag__remove:hover,
+.alfa-tag__remove:focus-visible {
+    background: color-mix(in srgb, currentColor 18%, transparent);
+    outline: 0;
+}

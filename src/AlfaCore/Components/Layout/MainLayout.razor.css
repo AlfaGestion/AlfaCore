@@ -871,11 +871,23 @@ html[data-theme="light"] .shell--collapsed .menu__link:hover > span:not(.menu__i
     grid-template-columns: minmax(0, 1fr);
 }
 
+.shell--direct {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .shell--top-only .shell__main {
     grid-column: 1;
 }
 
+.shell--direct .shell__main {
+    grid-column: 1;
+}
+
 .shell--top-only ::deep .main-page-header {
+    left: 0;
+}
+
+.shell--direct ::deep .main-page-header {
     left: 0;
 }
 

@@ -4210,11 +4210,6 @@
         try
         {
             var conversationTask = ConversacionesSvc.GetConversationAsync(idConversacion);
-<<<<<<< HEAD
-            var messagesTask = ConversacionesSvc.GetMessagesAsync(idConversacion);
-
-            await Task.WhenAll(conversationTask, messagesTask);
-=======
             var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId);
             var pageSize = conversationChanged || clearActionState
                 ? ConversationMessagePageSize
@@ -4222,7 +4217,6 @@
             var messagesTask = ConversacionesSvc.GetMessagesPageAsync(idConversacion, pageSize);
 
             await Task.WhenAll(conversationTask, messagesTask, typingTask);
->>>>>>> 44a55a5cca7df1adddaab44f74ea8584d302532a
 
             _selectedConversation = await conversationTask;
             RefreshSelectedMercadoLibreGroup();
@@ -4232,47 +4226,6 @@
                 _savingConversationName = false;
                 _conversationNameDraft = _selectedConversation is null ? string.Empty : GetConversationHeader(_selectedConversation);
             }
-<<<<<<< HEAD
-            _messages = OrderConversationMessages(await messagesTask);
-            _typingUsers = [];
-            _adjuntosPorMensaje = [];
-
-            if (showLoading)
-            {
-                _loadingConversation = false;
-                await InvokeAsync(StateHasChanged);
-                await Task.Yield();
-                showLoading = false;
-            }
-
-            var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId);
-            var attachmentsTask = ConversacionesSvc.GetConversationAttachmentsAsync(idConversacion);
-
-            IReadOnlyList<ConversacionTypingDto> typingUsers;
-            try
-            {
-                typingUsers = await typingTask;
-            }
-            catch
-            {
-                typingUsers = [];
-            }
-
-            IReadOnlyList<ConversacionAdjuntoDto> adjuntos;
-            try
-            {
-                adjuntos = await attachmentsTask;
-            }
-            catch
-            {
-                adjuntos = [];
-            }
-
-            _typingUsers = typingUsers.ToList();
-            _adjuntosPorMensaje = adjuntos
-                .GroupBy(a => a.IdMensaje)
-                .ToDictionary(g => g.Key, g => g.ToList());
-=======
             var messagesPage = await messagesTask;
             var messageIds = messagesPage.Messages
                 .Select(x => x.IdMensaje)
@@ -4283,7 +4236,6 @@
                 : await ConversacionesSvc.GetMessageAttachmentsAsync(idConversacion, messageIds);
             ApplyConversationMessagesPage(messagesPage, adjuntos);
             _typingUsers = (await typingTask).ToList();
->>>>>>> 44a55a5cca7df1adddaab44f74ea8584d302532a
 
             StoreConversationCache(idConversacion);
             if (ShouldRecoverConversationAttachments(_messages, adjuntos))

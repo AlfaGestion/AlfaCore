@@ -1,0 +1,20 @@
+<span class="@CssClass">
+    <span>@ChildContent</span>
+    @if (Removable)
+    {
+        <button type="button" class="alfa-tag__remove" aria-label="@RemoveLabel" @onclick="OnRemove">
+            <i class="bi bi-x" aria-hidden="true"></i>
+        </button>
+    }
+</span>
+
+@code {
+    [Parameter] public AlfaTagTone Tone { get; set; } = AlfaTagTone.Neutral;
+    [Parameter] public bool Removable { get; set; }
+    [Parameter] public string RemoveLabel { get; set; } = "Quitar etiqueta";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnRemove { get; set; }
+
+    private string CssClass => string.Join(" ", new[] { "alfa-tag", $"alfa-tag--{Tone.ToString().ToLowerInvariant()}", Class }.Where(static x => !string.IsNullOrWhiteSpace(x)));
+}

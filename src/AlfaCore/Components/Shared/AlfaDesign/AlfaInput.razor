@@ -1,0 +1,67 @@
+<div class="@WrapperClass">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="alfa-field__label" for="@InputId">
+            @Label
+            @if (Required)
+            {
+                <span aria-hidden="true">*</span>
+            }
+        </label>
+    }
+    <input id="@InputId"
+           class="alfa-input__control"
+           type="@Type"
+           value="@Value"
+           placeholder="@Placeholder"
+           disabled="@Disabled"
+           required="@Required"
+           aria-invalid="@HasError.ToString().ToLowerInvariant()"
+           aria-describedby="@DescribedBy"
+           @oninput="HandleInputAsync" />
+    @if (!string.IsNullOrWhiteSpace(ErrorText))
+    {
+        <div id="@ErrorId" class="alfa-field__message alfa-field__message--error">@ErrorText</div>
+    }
+    else if (!string.IsNullOrWhiteSpace(HelpText))
+    {
+        <div id="@HelpId" class="alfa-field__message">@HelpText</div>
+    }
+</div>
+
+@code {
+    private readonly string _id = $"alfa-input-{Guid.NewGuid():N}";
+
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public string Type { get; set; } = "text";
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string? HelpText { get; set; }
+    [Parameter] public string? ErrorText { get; set; }
+    [Parameter] public bool Required { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string InputId => string.IsNullOrWhiteSpace(Id) ? _id : Id;
+    private string HelpId => $"{InputId}-help";
+    private string ErrorId => $"{InputId}-error";
+    private bool HasError => !string.IsNullOrWhiteSpace(ErrorText);
+    private string? DescribedBy => HasError ? ErrorId : (!string.IsNullOrWhiteSpace(HelpText) ? HelpId : null);
+
+    private string WrapperClass
+        => string.Join(" ", new[]
+        {
+            "alfa-field",
+            HasError ? "has-error" : null,
+            Disabled ? "is-disabled" : null,
+            Class
+        }.Where(static x => !string.IsNullOrWhiteSpace(x)));
+
+    private async Task HandleInputAsync(ChangeEventArgs args)
+    {
+        Value = args.Value?.ToString();
+        await ValueChanged.InvokeAsync(Value);
+    }
+}

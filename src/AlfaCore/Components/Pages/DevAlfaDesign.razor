@@ -1,0 +1,139 @@
+@page "/dev/alfadesign"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inject IWebHostEnvironment Environment
+
+<PageTitle>AlfaDesign | Componentes</PageTitle>
+
+@if (!Environment.IsDevelopment())
+{
+    <div class="alfa-design-demo alfa-design-demo--blocked">
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                        Title="No disponible"
+                        Message="La demostración de componentes solo está habilitada en desarrollo." />
+    </div>
+}
+else
+{
+    <div class="alfa-design-demo">
+        <header class="alfa-design-demo__header">
+            <div>
+                <p>AlfaDesign</p>
+                <h1>Componentes compartidos mínimos</h1>
+            </div>
+            <AlfaTag Tone="AlfaTagTone.Accent">Fase 2</AlfaTag>
+        </header>
+
+        <section class="alfa-design-demo__section">
+            <h2>Buttons</h2>
+            <div class="alfa-design-demo__row">
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-plus-lg">Primary</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Secondary">Secondary</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm">Ghost sm</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Danger">Danger</AlfaButton>
+                <AlfaButton Loading="true">Guardando</AlfaButton>
+                <AlfaButton Disabled="true">Disabled</AlfaButton>
+            </div>
+        </section>
+
+        <section class="alfa-design-demo__section">
+            <h2>Icon Buttons</h2>
+            <div class="alfa-design-demo__row">
+                <AlfaIconButton Icon="bi bi-pencil" Label="Editar" />
+                <AlfaIconButton Icon="bi bi-funnel" Label="Filtros activos" Active="true" />
+                <AlfaIconButton Icon="bi bi-trash" Label="Eliminar" Disabled="true" />
+            </div>
+        </section>
+
+        <EditForm Model="_form">
+            <section class="alfa-design-demo__section">
+                <h2>Form Controls</h2>
+                <div class="alfa-design-demo__grid">
+                    <AlfaInput Label="Nombre" @bind-Value="_form.Name" Required="true" HelpText="Campo obligatorio al guardar." />
+                    <AlfaInput Label="Email" Value="correo inválido" ErrorText="Ingresá un email válido." />
+                    <AlfaInput Label="Deshabilitado" Value="Solo lectura" Disabled="true" />
+                    <AlfaSelect Label="Estado"
+                                Placeholder="Seleccionar"
+                                Options="_statusOptions"
+                                @bind-Value="_form.Status" />
+                    <AlfaSelect Label="Con error"
+                                Placeholder="Seleccionar"
+                                Options="_statusOptions"
+                                ErrorText="Seleccioná una opción." />
+                    <AlfaSelect Label="Deshabilitado"
+                                Value="activo"
+                                Options="_statusOptions"
+                                Disabled="true" />
+                </div>
+            </section>
+        </EditForm>
+
+        <section class="alfa-design-demo__section">
+            <h2>Checkbox</h2>
+            <div class="alfa-design-demo__row">
+                <AlfaCheckbox @bind-Value="_checked">Checked</AlfaCheckbox>
+                <AlfaCheckbox Value="false">Unchecked</AlfaCheckbox>
+                <AlfaCheckbox Value="@((bool?)null)">Mixed</AlfaCheckbox>
+                <AlfaCheckbox Value="true" Disabled="true">Disabled</AlfaCheckbox>
+            </div>
+        </section>
+
+        <section class="alfa-design-demo__section">
+            <h2>Tags</h2>
+            <div class="alfa-design-demo__row">
+                <AlfaTag>Neutral</AlfaTag>
+                <AlfaTag Tone="AlfaTagTone.Accent">Accent</AlfaTag>
+                <AlfaTag Tone="AlfaTagTone.Success">Success</AlfaTag>
+                <AlfaTag Tone="AlfaTagTone.Warning">Warning</AlfaTag>
+                <AlfaTag Tone="AlfaTagTone.Danger" Removable="true">Danger</AlfaTag>
+            </div>
+        </section>
+
+        <section class="alfa-design-demo__section">
+            <h2>Tabs</h2>
+            <AlfaTabs Items="_tabs" @bind-ActiveKey="_activeTab" />
+        </section>
+
+        <section class="alfa-design-demo__section">
+            <h2>Empty States</h2>
+            <div class="alfa-design-demo__empty-grid">
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                Title="Sin datos"
+                                Message="Todavía no hay registros para mostrar."
+                                ActionLabel="Crear"
+                                ActionIcon="bi bi-plus-lg" />
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                                Title="Sin resultados"
+                                Message="Probá ajustar la búsqueda o quitar filtros." />
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                Title="No se pudo cargar"
+                                Message="Reintentá la operación." />
+            </div>
+        </section>
+    </div>
+}
+
+@code {
+    private DemoForm _form = new();
+    private bool? _checked = true;
+    private string? _activeTab = "datos";
+
+    private readonly IReadOnlyList<AlfaSelectOption> _statusOptions =
+    [
+        new("activo", "Activo"),
+        new("pendiente", "Pendiente"),
+        new("bloqueado", "Bloqueado", true)
+    ];
+
+    private readonly IReadOnlyList<AlfaTabItem> _tabs =
+    [
+        new("datos", "Datos", Badge: "3"),
+        new("actividad", "Actividad"),
+        new("disabled", "Bloqueada", Disabled: true)
+    ];
+
+    private sealed class DemoForm
+    {
+        public string? Name { get; set; }
+        public string? Status { get; set; } = "activo";
+    }
+}

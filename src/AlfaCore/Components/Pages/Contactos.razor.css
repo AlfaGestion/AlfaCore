@@ -1,0 +1,291 @@
+.contactos-page {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    display: grid;
+    gap: var(--alfa-space-16);
+}
+
+.contactos-feedback {
+    position: fixed;
+    top: calc(var(--alfa-topbar-height) + var(--alfa-context-toolbar-height) + var(--alfa-space-12));
+    right: var(--alfa-space-16);
+    z-index: 1880;
+    width: min(420px, calc(100vw - 32px));
+    pointer-events: none;
+}
+
+.contactos-feedback ::deep .editor-msg {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    margin: 0;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+    pointer-events: auto;
+}
+
+.contactos-feedback__close {
+    width: 30px;
+    height: 30px;
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 auto;
+    border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
+    border-radius: var(--alfa-radius-sm);
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+}
+
+.contactos-feedback__close:hover,
+.contactos-feedback__close:focus-visible {
+    background: color-mix(in srgb, currentColor 12%, transparent);
+    outline: 0;
+}
+
+.contactos-list-shell {
+    min-width: 0;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
+    overflow: hidden;
+}
+
+.contactos-list-shell__summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    padding: var(--alfa-space-8) var(--alfa-space-12);
+    border-bottom: 1px solid var(--alfa-border-default);
+}
+
+.contactos-list-shell__summary > div {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.contactos-list-shell__summary strong {
+    overflow: hidden;
+    color: var(--alfa-text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-list-shell__eyebrow {
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.contactos-list-shell__state {
+    padding: var(--alfa-space-16);
+}
+
+.contactos-list-shell__table-scroll {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+}
+
+.contactos-list-table {
+    width: 100%;
+    min-width: 1040px;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.contactos-list-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    height: 38px;
+    border-bottom: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-raised);
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+    text-align: left;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+.contactos-list-table td {
+    height: 48px;
+    border-bottom: 1px solid color-mix(in srgb, var(--alfa-border-default) 72%, transparent);
+    color: var(--alfa-text-primary);
+    font-size: 13px;
+    overflow: hidden;
+    padding: 0 var(--alfa-space-12);
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.contactos-list-table__row {
+    background: var(--alfa-bg-surface);
+    cursor: pointer;
+}
+
+.contactos-list-table__row:hover {
+    background: var(--alfa-state-hover);
+}
+
+.contactos-list-table__row.is-active,
+.contactos-list-table__row.is-selected {
+    background: color-mix(in srgb, var(--alfa-state-selected) 70%, var(--alfa-bg-surface));
+}
+
+.contactos-list-table__select {
+    width: 44px;
+    text-align: center;
+}
+
+.contactos-list-table__checkbox {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--alfa-accent);
+}
+
+.contactos-list-table__identity {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.contactos-list-table__identity strong,
+.contactos-list-table__identity span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-list-table__identity span {
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+}
+
+.contactos-list-table__actions {
+    width: 88px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+.contactos-list-table__actions ::deep .alfa-icon-button {
+    width: 32px;
+    height: 32px;
+    margin-left: var(--alfa-space-4);
+}
+
+.contactos-list-table__actions ::deep .contactos-row-action--open {
+    border-color: color-mix(in srgb, var(--alfa-accent) 42%, transparent);
+    color: var(--alfa-accent-hover);
+}
+
+.contactos-list-table__actions ::deep .contactos-row-action--create {
+    border-color: color-mix(in srgb, var(--alfa-success) 42%, transparent);
+    color: var(--alfa-success);
+}
+
+.contactos-list-table__actions ::deep .contactos-row-action--create:hover {
+    background: color-mix(in srgb, var(--alfa-success) 12%, transparent);
+}
+
+.contactos-list-table__actions ::deep .contactos-row-action--disabled {
+    opacity: 0.48;
+}
+
+.contactos-table__col {
+    min-width: 0;
+}
+
+.contactos-table__col--nombre {
+    width: 260px;
+}
+
+.contactos-table__col--localidad,
+.contactos-table__col--provincia {
+    width: 150px;
+}
+
+.contactos-table__col--telefono,
+.contactos-table__col--celular {
+    width: 150px;
+}
+
+.contactos-table__col--email {
+    width: 240px;
+}
+
+.contactos-table__col--cargo {
+    width: 160px;
+}
+
+.contactos-list-table ::deep .table-sort {
+    width: 100%;
+    border: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--alfa-space-4);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 700;
+    padding: 0 var(--alfa-space-12);
+    text-align: left;
+}
+
+.contactos-list-table ::deep .table-sort:focus-visible {
+    outline: 2px solid var(--alfa-accent);
+    outline-offset: -2px;
+}
+
+.contactos-list-table ::deep .table-sort__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-list-table ::deep .table-sort__mark {
+    color: var(--alfa-accent-hover);
+}
+
+.contactos-list-table ::deep .usuarios-group-row td {
+    height: 34px;
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+@media (max-width: 1024px) {
+    .contactos-page {
+        gap: var(--alfa-space-12);
+    }
+
+    .contactos-feedback {
+        top: calc(var(--alfa-topbar-height) + var(--alfa-context-toolbar-height) + var(--alfa-space-8));
+        right: var(--alfa-space-8);
+        left: var(--alfa-space-8);
+        width: auto;
+    }
+
+    .contactos-list-shell__summary {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .contactos-list-table {
+        min-width: 980px;
+    }
+}
