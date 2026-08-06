@@ -11,6 +11,7 @@
 @inject IRouteContextService RouteContext
 @inject IPageHeaderService PageHeader
 @inject NavigationManager Nav
+@inject ILogger<Contactos> Logger
 @implements IDisposable
 
 <PageTitle>Contactos | Alfa Gestión</PageTitle>
@@ -270,7 +271,7 @@
                     else
                     {
                         <div class="usuarios-table-wrap">
-                            <table class="data-table usuarios-table" data-sticky-list-header>
+                            <table class="data-table usuarios-table">
                                 <thead>
                                     <tr>
                                         <th>Tipo</th>
@@ -319,19 +320,43 @@
         var visibleColumns = GetVisibleColumns();
         var groups = BuildGridGroups();
 
-        <section class="contactos-list-shell" aria-label="Listado de contactos">
-            <div class="contactos-list-shell__summary">
-                <div>
-                    <span class="contactos-list-shell__eyebrow">Contactos</span>
-                    <strong>@GetContactListSummary()</strong>
+        <section class="contactos-list-shell @(_viewMode == ContactosViewModeKeys.Kanban ? "contactos-list-shell--kanban" : _selectedIds.Count > 0 ? "contactos-list-shell--selection" : string.Empty)" aria-label="Listado de contactos">
+            @if (_viewMode != ContactosViewModeKeys.Kanban)
+            {
+                <div class="contactos-list-shell__summary">
+                    <div>
+                        <span class="contactos-list-shell__eyebrow">Contactos</span>
+                        <strong>@GetContactListSummary()</strong>
+                    </div>
+                    @if (_selectedIds.Count > 0)
+                    {
+                        <AlfaTag Tone="AlfaTagTone.Accent">@_selectedIds.Count seleccionados</AlfaTag>
+                    }
                 </div>
-                @if (_selectedIds.Count > 0)
-                {
-                    <AlfaTag Tone="AlfaTagTone.Accent">@_selectedIds.Count seleccionados</AlfaTag>
-                }
-            </div>
+            }
 
-            @if (_loadingList)
+            @if (_viewMode == ContactosViewModeKeys.Kanban)
+            {
+                <ContactosKanbanView Items="_items"
+                                     SelectedIds="_selectedIds"
+                                     PageNumber="@_pageNumber"
+                                     ShowActiveStatus="@(_activoFiltro != "1")"
+                                     Loading="_loadingList"
+                                     ConversationBusy="_openingConversation"
+                                     ErrorMessage="@_listErrorMessage"
+                                     EmptyKind="@GetContactEmptyStateKind()"
+                                     EmptyTitle="@GetContactEmptyTitle()"
+                                     EmptyMessage="@GetContactEmptyMessage()"
+                                     EmptyActionLabel="@GetContactEmptyActionLabel()"
+                                     EmptyActionIcon="@GetContactEmptyActionIcon()"
+                                     OnToggleSelection="ToggleCardSelection"
+                                     OnEdit="@(id => AbrirEditorAsync(id))"
+                                     OnOpenConversation="OpenConversationForContactAsync"
+                                     OnCreateConversation="OpenConversationForContactAsync"
+                                     OnRetry="RecargarAsync"
+                                     OnEmptyAction="HandleContactEmptyActionAsync" />
+            }
+            else if (_loadingList)
             {
                 <div class="contactos-list-shell__state">
                     <AlfaEmptyState Title="Cargando contactos"
@@ -363,7 +388,7 @@
             else
             {
                 <div class="contactos-list-shell__table-scroll">
-                    <table class="contactos-list-table" data-sticky-list-header>
+                    <table class="contactos-list-table contactos-list-table--local-sticky">
                         <thead>
                             <tr>
                                 <th class="contactos-list-table__select">
@@ -371,6 +396,7 @@
                                            class="contactos-list-table__checkbox"
                                            checked="@AreAllCurrentPageSelected"
                                            @onchange="ToggleSelectAll"
+                                           aria-label="Seleccionar todos los contactos visibles"
                                            title="Seleccionar todos los contactos visibles" />
                                 </th>
                                 @foreach (var col in visibleColumns)
@@ -386,7 +412,7 @@
                                         </button>
                                     </th>
                                 }
-                                <th class="contactos-list-table__actions">Acciones</th>
+                                <th class="contactos-list-table__actions" aria-label="Acciones">…</th>
                             </tr>
                         </thead>
                         @foreach (var group in groups)
@@ -408,6 +434,7 @@
                                                    class="contactos-list-table__checkbox"
                                                    checked="@_selectedIds.Contains(item.Id)"
                                                    @onchange="args => ToggleRowSelection(item.Id, args)"
+                                                   aria-label="@($"Seleccionar contacto {item.NombreApellido}")"
                                                    title="Seleccionar contacto" />
                                         </td>
                                         @foreach (var col in visibleColumns)
@@ -418,7 +445,6 @@
                                                     case ContactosViewColumnKeys.Nombre:
                                                         <div class="contactos-list-table__identity">
                                                             <strong>@item.NombreApellido</strong>
-                                                            <span>@GetContactSecondaryLine(item)</span>
                                                         </div>
                                                         break;
                                                     case ContactosViewColumnKeys.Localidad:
@@ -443,18 +469,31 @@
                                             </td>
                                         }
                                         <td class="contactos-list-table__actions" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true">
-                                            <AlfaIconButton Icon="bi bi-pencil-square"
-                                                            Label="Editar contacto"
-                                                            Tooltip="Editar contacto"
-                                                            Size="AlfaSize.Sm"
-                                                            OnClick="() => AbrirEditorAsync(item.Id)" />
-                                            <AlfaIconButton Icon="@GetConversationActionIcon(item)"
-                                                            Label="@GetConversationActionAriaLabel(item)"
-                                                            Tooltip="@GetConversationActionAriaLabel(item)"
-                                                            Size="AlfaSize.Sm"
-                                                            Class="@GetConversationActionCssClass(item)"
-                                                            Disabled="@(_openingConversation || !HasContactPhone(item))"
-                                                            OnClick="() => OpenConversationForContactAsync(item)" />
+                                            <details class="contactos-row-menu">
+                                                <summary title="Acciones del contacto" aria-label="Acciones del contacto">
+                                                    <i class="bi bi-three-dots" aria-hidden="true"></i>
+                                                </summary>
+                                                <div class="contactos-row-menu__popover">
+                                                    <button type="button" @onclick="() => AbrirEditorAsync(item.Id)">
+                                                        <i class="bi bi-pencil-square" aria-hidden="true"></i>
+                                                        <span>Editar</span>
+                                                    </button>
+                                                    <button type="button"
+                                                            class="@(item.IdConversacionWhatsApp.HasValue ? "is-open-conversation" : "is-create-conversation")"
+                                                            disabled="@(_openingConversation || !HasContactPhone(item))"
+                                                            @onclick="() => OpenConversationForContactAsync(item)">
+                                                        <i class="@GetConversationActionIcon(item)" aria-hidden="true"></i>
+                                                        <span>@GetConversationActionAriaLabel(item)</span>
+                                                    </button>
+                                                    @if (item.Activo)
+                                                    {
+                                                        <button type="button" class="is-danger" disabled="@_saving" @onclick="() => DarDeBajaDesdeFilaAsync(item.Id)">
+                                                            <i class="bi bi-person-dash" aria-hidden="true"></i>
+                                                            <span>Dar de baja</span>
+                                                        </button>
+                                                    }
+                                                </div>
+                                            </details>
                                         </td>
                                     </tr>
                                 }
@@ -753,6 +792,7 @@
     private bool _hasPrev;
     private bool _hasNext;
     private string _activoFiltro = "1";
+    private string _viewMode = ContactosViewModeKeys.Listado;
     private string _draftAgruparPor = ContactosViewGroupKeys.None;
     private string _viewSettingsUserName = string.Empty;
     private string _bulkAction = BulkActionDeactivate;
@@ -790,35 +830,47 @@
     private ConversacionPlantillaDto? SelectedBulkTemplate => _bulkTemplates.FirstOrDefault(item => item.IdPlantilla == _bulkTemplateId);
 
     private RenderFragment RenderContactSmartSearch() => @<div class="smart-search" @onclick:stopPropagation>
-        <div class="smart-search__bar">
-            <i class="bi bi-search"></i>
-            <input type="search"
-                   placeholder="Buscar por nombre, contacto, teléfono, email, cargo o localidad..."
-                   value="@_filters.Texto"
-                   @onfocus="OpenContactSearchPanel"
-                   @oninput="OnContactSearchInput"
-                   @onkeydown="HandleContactApplyKeyDownAsync" />
-            <button type="button" class="smart-search__toggle" @onclick="ToggleContactSearchPanel" aria-label="Mostrar filtros">
-                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+        @{ var activeChips = BuildContactFilterChips(); }
+        <div class="smart-search__bar @(_showSearchPanel ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true">
+                <i class="bi bi-search"></i>
+            </span>
+            <button type="button"
+                    class="smart-search__filter-button @(_showSearchPanel || activeChips.Count > 0 ? "is-active" : string.Empty)"
+                    title="Abrir filtros"
+                    aria-label="Abrir filtros"
+                    aria-expanded="@_showSearchPanel"
+                    @onclick="ToggleContactSearchPanel">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
             </button>
-        </div>
-
-        <div class="smart-search__chips" aria-live="polite">
-            @foreach (var chip in BuildContactFilterChips())
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+            @foreach (var chip in activeChips.Take(2))
             {
                 <button type="button"
-                        class="smart-chip"
+                        class="smart-search__active-filter"
                         title="@($"Quitar filtro {chip.Label}")"
                         aria-label="@($"Quitar filtro {chip.Label}")"
                         @onclick="() => RemoveContactChipAsync(chip.Key)">
                     <span>@chip.Label</span>
-                    <i class="bi bi-x smart-chip__remove" aria-hidden="true"></i>
+                    <span class="smart-search__active-filter-remove" aria-hidden="true">
+                        <i class="bi bi-x"></i>
+                    </span>
                 </button>
             }
-            @if (BuildContactFilterChips().Count == 0)
+            @if (activeChips.Count > 2)
             {
-                <span class="smart-search__hint">Click en el buscador para filtros, agrupaciones y favoritos.</span>
+                <span class="smart-search__more-filters" title="@string.Join(", ", activeChips.Skip(2).Select(chip => chip.Label))">+@(activeChips.Count - 2)</span>
             }
+            </div>
+            <input type="search"
+                   placeholder="Buscar..."
+                   value="@_filters.Texto"
+                   @onfocus="OpenContactSearchPanel"
+                   @oninput="OnContactSearchInput"
+                   @onkeydown="HandleContactApplyKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleContactSearchPanel" aria-label="Mostrar filtros" aria-expanded="@_showSearchPanel">
+                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
         </div>
 
         @if (_showSearchPanel)
@@ -1080,7 +1132,13 @@
         {
             Title = _showEditor ? (_isNewMode ? "Nuevo contacto" : $"Editar {_form.NombreApellido}") : "Contactos",
             Breadcrumb = ["Conversaciones", "Contactos"],
-            State = _saving ? PageHeaderState.Loading : _showEditor ? (_isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing) : _selectedIds.Count > 0 ? PageHeaderState.Selection : PageHeaderState.List,
+            State = _saving
+                ? PageHeaderState.Loading
+                : _showEditor
+                    ? (_isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing)
+                    : _selectedIds.Count > 0
+                        ? PageHeaderState.Selection
+                        : _viewMode == ContactosViewModeKeys.Kanban ? PageHeaderState.Kanban : PageHeaderState.List,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems(),
             OnBack = _showEditor && _isNewMode ? new Func<Task>(() => { CerrarEditor(); return Task.CompletedTask; }) : null,
@@ -1102,9 +1160,20 @@
             {
                 Key = "contactos",
                 Label = "Contactos",
-                Icon = "bi-person-lines-fill",
                 Url = RouteContext.BuildRoute("/contactos"),
                 Active = true
+            },
+            new()
+            {
+                Key = "usuarios",
+                Label = "Usuarios",
+                Url = RouteContext.BuildRoute("/usuarios")
+            },
+            new()
+            {
+                Key = "configuracion",
+                Label = "Configuración",
+                Url = RouteContext.BuildRoute("/conversaciones/configuracion")
             }
         ];
 
@@ -1117,9 +1186,64 @@
                 Label = "Listado",
                 Title = "Vista de listado",
                 Icon = "bi-table",
-                Active = true
+                Active = _viewMode == ContactosViewModeKeys.Listado,
+                Disabled = _loadingList,
+                OnClick = () => SetViewModeAsync(ContactosViewModeKeys.Listado)
+            },
+            new()
+            {
+                Key = "kanban",
+                Label = "Kanban",
+                Title = "Vista Kanban",
+                Icon = "bi-kanban",
+                Active = _viewMode == ContactosViewModeKeys.Kanban,
+                Disabled = _loadingList,
+                OnClick = () => SetViewModeAsync(ContactosViewModeKeys.Kanban)
             }
         ];
+
+    private async Task SetViewModeAsync(string mode)
+    {
+        var normalized = mode == ContactosViewModeKeys.Kanban
+            ? ContactosViewModeKeys.Kanban
+            : ContactosViewModeKeys.Listado;
+        if (_viewMode == normalized)
+            return;
+
+        _viewMode = normalized;
+        _viewSettings.Vista = normalized;
+        UpdatePageHeader();
+        Logger.LogDebug(
+            "Contactos: cambio de vista. Vista={ViewMode}, Items={ItemCount}, Loading={IsLoading}, TieneErrorCarga={HasLoadError}",
+            _viewMode,
+            _items.Count,
+            _loadingList,
+            !string.IsNullOrWhiteSpace(_listErrorMessage));
+
+        StateHasChanged();
+
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            Logger.LogDebug("Contactos: vista activa en sesión sin persistencia por falta de usuario.");
+            return;
+        }
+
+        var result = await UiOps.RunAsync(
+            async () =>
+            {
+                await ContactosSvc.SaveViewSettingsAsync(currentUser, _viewSettings);
+                return true;
+            },
+            "No se pudo guardar la vista seleccionada.");
+        Logger.LogDebug(
+            "Contactos: persistencia de vista finalizada. Vista={ViewMode}, Success={Success}, Items={ItemCount}",
+            _viewMode,
+            result.Success,
+            _items.Count);
+        if (!result.Success)
+            SetFeedback(result.Feedback);
+    }
 
     private PageHeaderPaginationConfig BuildHeaderPagination()
         => new()
@@ -2071,6 +2195,15 @@
         UpdatePageHeader();
     }
 
+    private void ToggleCardSelection(int id)
+    {
+        if (!_selectedIds.Add(id))
+            _selectedIds.Remove(id);
+
+        _selectedId = id;
+        UpdatePageHeader();
+    }
+
     private void ToggleSelectAll(ChangeEventArgs args)
     {
         var shouldSelect = args.Value is bool flag && flag;
@@ -2117,6 +2250,13 @@
         {
             _saving = false;
         }
+    }
+
+    private async Task DarDeBajaDesdeFilaAsync(int id)
+    {
+        _selectedId = id;
+        _isNewMode = false;
+        await DarDeBajaAsync();
     }
 
     private async Task EjecutarAccionSeleccionadaAsync()
@@ -2615,6 +2755,9 @@
     private void ApplyViewSettings(ContactosViewSettingsDto settings, string userName)
     {
         _viewSettings = settings;
+        _viewMode = settings.Vista == ContactosViewModeKeys.Kanban
+            ? ContactosViewModeKeys.Kanban
+            : ContactosViewModeKeys.Listado;
         _viewSettingsUserName = userName;
         _viewSettingsLoaded = true;
         _draftAgruparPor = settings.AgruparPor;
@@ -2666,7 +2809,7 @@
             return;
         }
 
-        var settings = new ContactosViewSettingsDto { AgruparPor = _draftAgruparPor, Columnas = CloneColumns(_viewSettingsDraft) };
+        var settings = new ContactosViewSettingsDto { Vista = _viewMode, AgruparPor = _draftAgruparPor, Columnas = CloneColumns(_viewSettingsDraft) };
         var result = await UiOps.RunAsync(async () => { await ContactosSvc.SaveViewSettingsAsync(currentUser, settings); return true; }, "No se pudo guardar la configuración de vista.");
         if (!result.Success) { SetFeedback(result.Feedback); return; }
 
@@ -2946,6 +3089,7 @@
     private static ContactosViewSettingsDto BuildDefaultViewSettings()
         => new()
         {
+            Vista = ContactosViewModeKeys.Listado,
             AgruparPor = ContactosViewGroupKeys.None,
             Columnas =
             [

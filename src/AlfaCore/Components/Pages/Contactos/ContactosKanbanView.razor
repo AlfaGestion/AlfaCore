@@ -1,0 +1,185 @@
+@namespace AlfaCore.Components.Pages
+
+<section class="contactos-kanban" aria-label="Kanban de contactos" aria-busy="@Loading">
+    @if (Loading)
+    {
+        <div class="contactos-kanban__state">
+            <AlfaEmptyState Title="Cargando contactos"
+                            Message="Estamos consultando la base activa con los filtros actuales." />
+        </div>
+    }
+    else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+    {
+        <div class="contactos-kanban__state">
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                            Title="No se pudieron cargar los contactos"
+                            Message="@ErrorMessage"
+                            ActionLabel="Reintentar"
+                            ActionIcon="bi bi-arrow-clockwise"
+                            OnAction="OnRetry" />
+        </div>
+    }
+    else if (Items.Count == 0)
+    {
+        <div class="contactos-kanban__state">
+            <AlfaEmptyState Kind="@EmptyKind"
+                            Title="@EmptyTitle"
+                            Message="@EmptyMessage"
+                            ActionLabel="@EmptyActionLabel"
+                            ActionIcon="@EmptyActionIcon"
+                            OnAction="OnEmptyAction" />
+        </div>
+    }
+    else
+    {
+        <div class="contactos-kanban__scroll" @key="PageNumber">
+            <div class="contactos-kanban__grid">
+                @foreach (var item in Items)
+                {
+                    var selected = SelectedIds.Contains(item.Id);
+                    var hasConversation = item.IdConversacionWhatsApp.HasValue;
+                    var hasPhone = HasPhone(item);
+                    var location = GetLocation(item);
+                    var phone = GetPrimaryPhone(item);
+                    var avatarInitial = GetAvatarInitial(item.NombreApellido);
+
+                    <article class="contactos-kanban-card @(selected ? "is-selected" : string.Empty)"
+                             aria-label="@($"Contacto {item.NombreApellido}")">
+                        <div class="contactos-kanban-card__main">
+                            <label class="contactos-kanban-card__selection" title="Seleccionar contacto">
+                                <input type="checkbox"
+                                       checked="@selected"
+                                       @onchange="() => OnToggleSelection.InvokeAsync(item.Id)"
+                                       aria-label="@($"Seleccionar contacto {item.NombreApellido}")" />
+                                <span aria-hidden="true"><i class="bi bi-check2"></i></span>
+                            </label>
+
+                            <span class="contactos-kanban-card__avatar @GetAvatarTone(item)" aria-hidden="true">
+                                @if (avatarInitial is null)
+                                {
+                                    <i class="bi bi-person"></i>
+                                }
+                                else
+                                {
+                                    @avatarInitial
+                                }
+                            </span>
+
+                            <div class="contactos-kanban-card__identity">
+                                <h3 title="@item.NombreApellido">@item.NombreApellido</h3>
+                                <div class="contactos-kanban-card__details" aria-label="Datos de contacto">
+                                    @if (!string.IsNullOrWhiteSpace(location))
+                                    {
+                                        <span title="@location"><i class="bi bi-geo-alt" aria-hidden="true"></i>@location</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(phone))
+                                    {
+                                        <span title="@phone"><i class="bi bi-telephone" aria-hidden="true"></i>@phone</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(item.Email))
+                                    {
+                                        <span title="@item.Email"><i class="bi bi-envelope" aria-hidden="true"></i>@item.Email</span>
+                                    }
+                                </div>
+                            </div>
+
+                            <div class="contactos-kanban-card__actions">
+                                <AlfaIconButton Icon="bi bi-pencil-square"
+                                                Label="Editar contacto"
+                                                Tooltip="Editar contacto"
+                                                Size="AlfaSize.Sm"
+                                                OnClick="() => OnEdit.InvokeAsync(item.Id)" />
+                                @if (hasConversation)
+                                {
+                                    <AlfaIconButton Icon="bi bi-chat-left-text"
+                                                    Label="Abrir conversación"
+                                                    Tooltip="Abrir conversación"
+                                                    Size="AlfaSize.Sm"
+                                                    Class="contactos-kanban-action--open"
+                                                    Disabled="@(ConversationBusy || !hasPhone)"
+                                                    OnClick="() => OnOpenConversation.InvokeAsync(item)" />
+                                }
+                                else
+                                {
+                                    <AlfaIconButton Icon="bi bi-plus-circle"
+                                                    Label="Crear conversación"
+                                                    Tooltip="Crear conversación"
+                                                    Size="AlfaSize.Sm"
+                                                    Class="contactos-kanban-action--create"
+                                                    Disabled="@(ConversationBusy || !hasPhone)"
+                                                    OnClick="() => OnCreateConversation.InvokeAsync(item)" />
+                                }
+                            </div>
+                        </div>
+
+                        <div class="contactos-kanban-card__footer">
+                            @if (ShowActiveStatus || !item.Activo)
+                            {
+                                <span class="contactos-kanban-card__status @(item.Activo ? "is-active" : "is-inactive")">
+                                    <i class="bi bi-circle-fill" aria-hidden="true"></i>
+                                    @(item.Activo ? "Activo" : "Inactivo")
+                                </span>
+                            }
+                            else
+                            {
+                                <span></span>
+                            }
+                            @if (hasConversation)
+                            {
+                                <span class="contactos-kanban-card__conversation">
+                                    <i class="bi bi-chat-left-text" aria-hidden="true"></i>
+                                    Con conversación
+                                </span>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<ContactoGridItemDto> Items { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlySet<int> SelectedIds { get; set; } = new HashSet<int>();
+    [Parameter] public int PageNumber { get; set; } = 1;
+    [Parameter] public bool ShowActiveStatus { get; set; } = true;
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public bool ConversationBusy { get; set; }
+    [Parameter] public string ErrorMessage { get; set; } = string.Empty;
+    [Parameter] public AlfaEmptyStateKind EmptyKind { get; set; }
+    [Parameter] public string EmptyTitle { get; set; } = string.Empty;
+    [Parameter] public string EmptyMessage { get; set; } = string.Empty;
+    [Parameter] public string EmptyActionLabel { get; set; } = string.Empty;
+    [Parameter] public string EmptyActionIcon { get; set; } = string.Empty;
+    [Parameter] public EventCallback<int> OnToggleSelection { get; set; }
+    [Parameter] public EventCallback<int> OnEdit { get; set; }
+    [Parameter] public EventCallback<ContactoGridItemDto> OnOpenConversation { get; set; }
+    [Parameter] public EventCallback<ContactoGridItemDto> OnCreateConversation { get; set; }
+    [Parameter] public EventCallback OnRetry { get; set; }
+    [Parameter] public EventCallback OnEmptyAction { get; set; }
+
+    private static bool HasPhone(ContactoGridItemDto item)
+        => !string.IsNullOrWhiteSpace(item.Celular) || !string.IsNullOrWhiteSpace(item.Telefono);
+
+    private static string GetPrimaryPhone(ContactoGridItemDto item)
+        => !string.IsNullOrWhiteSpace(item.Celular) ? item.Celular.Trim() : item.Telefono.Trim();
+
+    private static string GetLocation(ContactoGridItemDto item)
+        => string.Join(" · ", new[] { item.Localidad, item.ProvinciaDescripcion }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+
+    private static string GetAvatarTone(ContactoGridItemDto item)
+        => $"tone-{Math.Abs((long)item.Id) % 6}";
+
+    private static string? GetAvatarInitial(string value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized[0] == '+')
+            return null;
+
+        return normalized[..1].ToUpperInvariant();
+    }
+}

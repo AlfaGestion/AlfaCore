@@ -769,7 +769,13 @@ else
             <header class="alfa-app-topbar no-print" aria-label="Barra global">
                 <div class="alfa-app-topbar__brand">
                     <a class="alfa-app-topbar__logo" href="@GetLauncherUrl()" title="Ir a Inicio" aria-label="Ir a Inicio" @onclick:preventDefault="true" @onclick="GoToLauncher">
-                        <img src="/logos/Logo.png" alt="Alfa Gestión" />
+                        <span class="alfa-app-topbar__logo-mark" aria-hidden="true">
+                            <i class="bi bi-person-vcard"></i>
+                        </span>
+                        <span class="alfa-app-topbar__brand-copy">
+                            <strong>AlfaCore</strong>
+                            <small>@GetModuleTitle()</small>
+                        </span>
                     </a>
                     <nav class="alfa-app-topbar__nav" aria-label="Navegación principal">
                         @foreach (var item in PageHeader.Current.TopNavigationItems)
@@ -808,6 +814,18 @@ else
                     </nav>
                 </div>
                 <div class="alfa-app-topbar__global-actions">
+                    <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones")" title="Conversaciones" aria-label="Conversaciones">
+                        <i class="bi bi-chat-left-text"></i>
+                    </a>
+                    @if (AppUserSession.IsAuthenticated)
+                    {
+                        <button type="button" class="alfa-app-topbar__global-icon" @onclick="TogglePushPanelAsync" title="Notificaciones" aria-label="Notificaciones">
+                            <i class="bi bi-bell"></i>
+                        </button>
+                    }
+                    <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
+                        <i class="bi bi-gear"></i>
+                    </a>
                     <button type="button" class="alfa-app-topbar__chip alfa-app-topbar__chip--base" @onclick="OpenSqlSessionDrawerAsync" title="Base activa">
                         <i class="bi bi-database"></i>
                         <span>@GetActiveBaseShortLabel()</span>
@@ -1305,7 +1323,7 @@ else
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode && !IsAlfaDesignShellActive;
     private bool CanShowLauncherAccess => !IsDirectMode;
     private bool UseTopOnlyNavigation => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase);
-    private bool IsAlfaDesignShellActive => !IsDirectMode && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+    private bool IsAlfaDesignShellActive => PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
     private bool ShowSidebar => !UseTopOnlyNavigation && !IsAlfaDesignShellActive && !IsDirectMode;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;

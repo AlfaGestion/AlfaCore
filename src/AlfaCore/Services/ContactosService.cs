@@ -1065,13 +1065,14 @@ public sealed class ContactosService(
                 "TA_CONFIGURACION",
                 configKey,
                 "Configuración de vista de contactos actualizada.",
-                new { UserName = userName.Trim(), normalized.AgruparPor, Columnas = normalized.Columnas },
+                new { UserName = userName.Trim(), normalized.Vista, normalized.AgruparPor, Columnas = normalized.Columnas },
                 token);
         }, "No se pudo guardar la configuración de vista.", ct);
 
     private static ContactosViewSettingsDto CreateDefaultViewSettings()
         => new()
         {
+            Vista = ContactosViewModeKeys.Listado,
             AgruparPor = ContactosViewGroupKeys.None,
             Columnas =
             [
@@ -1097,6 +1098,9 @@ public sealed class ContactosService(
 
         var normalized = new ContactosViewSettingsDto
         {
+            Vista = settings.Vista == ContactosViewModeKeys.Kanban
+                ? ContactosViewModeKeys.Kanban
+                : ContactosViewModeKeys.Listado,
             AgruparPor = settings.AgruparPor == ContactosViewGroupKeys.Activo
                 ? ContactosViewGroupKeys.Activo
                 : ContactosViewGroupKeys.None,

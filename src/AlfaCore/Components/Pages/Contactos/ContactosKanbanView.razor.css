@@ -1,0 +1,342 @@
+.contactos-kanban {
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.contactos-kanban__state {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--alfa-space-16);
+    overflow-y: auto;
+}
+
+.contactos-kanban__scroll {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    padding: 14px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+}
+
+.contactos-kanban__grid {
+    width: 100%;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 14px;
+    align-items: stretch;
+}
+
+.contactos-kanban-card {
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    min-height: 136px;
+    display: grid;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 12px 14px;
+    border: 1px solid color-mix(in srgb, var(--alfa-border-default) 78%, transparent);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    overflow: hidden;
+    transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.contactos-kanban-card::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: transparent;
+    content: "";
+}
+
+.contactos-kanban-card:hover {
+    border-color: color-mix(in srgb, var(--alfa-accent) 38%, var(--alfa-border-default));
+    background: var(--alfa-bg-row-hover);
+}
+
+.contactos-kanban-card.is-selected {
+    border-color: var(--alfa-accent);
+    background: color-mix(in srgb, var(--alfa-state-selected) 28%, var(--alfa-bg-surface));
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--alfa-accent) 18%, transparent);
+}
+
+.contactos-kanban-card.is-selected::before {
+    background: var(--alfa-accent);
+}
+
+.contactos-kanban-card__main {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 22px 52px minmax(0, 1fr) 32px;
+    align-items: start;
+    gap: 10px;
+}
+
+.contactos-kanban-card__selection {
+    position: relative;
+    width: 22px;
+    height: 28px;
+    display: inline-grid;
+    place-items: center;
+    align-self: start;
+    margin-top: 2px;
+    padding: 0;
+    line-height: 1;
+    box-sizing: border-box;
+    cursor: pointer;
+}
+
+.contactos-kanban-card__selection input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+}
+
+.contactos-kanban-card__selection span {
+    width: 16px;
+    height: 16px;
+    display: inline-grid;
+    place-items: center;
+    padding: 0;
+    border: 1px solid color-mix(in srgb, var(--alfa-border-strong) 84%, transparent);
+    border-radius: var(--alfa-radius-sm);
+    background: color-mix(in srgb, var(--alfa-bg-surface) 90%, transparent);
+    color: transparent;
+    line-height: 1;
+    box-sizing: border-box;
+}
+
+.contactos-kanban-card__selection i {
+    display: block;
+    margin: 0;
+    font-size: 12px;
+    line-height: 1;
+}
+
+.contactos-kanban-card__selection input:checked + span {
+    border-color: var(--alfa-accent);
+    background: var(--alfa-accent);
+    color: var(--alfa-bg-canvas);
+}
+
+.contactos-kanban-card__selection input:focus-visible + span {
+    outline: 2px solid var(--alfa-accent-hover);
+    outline-offset: 2px;
+}
+
+.contactos-kanban-card__avatar {
+    width: 52px;
+    height: 52px;
+    display: grid;
+    place-items: center;
+    border-radius: 7px;
+    color: #ffffff;
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.contactos-kanban-card__avatar i {
+    display: block;
+    font-size: 23px;
+    line-height: 1;
+}
+
+.contactos-kanban-card__avatar.tone-0 { background: #397dcc; }
+.contactos-kanban-card__avatar.tone-1 { background: #3a966c; }
+.contactos-kanban-card__avatar.tone-2 { background: #7958b5; }
+.contactos-kanban-card__avatar.tone-3 { background: #318f99; }
+.contactos-kanban-card__avatar.tone-4 { background: #ad4f7d; }
+.contactos-kanban-card__avatar.tone-5 { background: #a87936; }
+
+.contactos-kanban-card__identity {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.contactos-kanban-card__identity h3 {
+    min-height: 18px;
+    margin: 0 0 5px;
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--alfa-text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 17px;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.contactos-kanban-card__details {
+    min-width: 0;
+    display: grid;
+    gap: 1px;
+}
+
+.contactos-kanban-card__details span {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    overflow: hidden;
+    color: var(--alfa-text-secondary);
+    font-size: 11.5px;
+    line-height: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-kanban-card__details i {
+    width: 14px;
+    flex: 0 0 14px;
+    color: color-mix(in srgb, var(--alfa-accent) 72%, var(--alfa-text-secondary));
+    font-size: 13px;
+    text-align: center;
+}
+
+.contactos-kanban-card__actions {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+.contactos-kanban-card__actions ::deep .alfa-icon-button {
+    width: 32px;
+    height: 32px;
+    color: var(--alfa-text-secondary);
+    font-size: 16px;
+}
+
+.contactos-kanban-card__actions ::deep .alfa-icon-button:hover,
+.contactos-kanban-card__actions ::deep .alfa-icon-button:focus-visible,
+.contactos-kanban-card__actions ::deep .contactos-kanban-action--open:hover,
+.contactos-kanban-card__actions ::deep .contactos-kanban-action--open:focus-visible {
+    color: var(--alfa-accent-hover);
+}
+
+.contactos-kanban-card__actions ::deep .contactos-kanban-action--create {
+    color: var(--alfa-text-secondary);
+}
+
+.contactos-kanban-card__actions ::deep .contactos-kanban-action--create:hover,
+.contactos-kanban-card__actions ::deep .contactos-kanban-action--create:focus-visible {
+    color: var(--alfa-success);
+}
+
+.contactos-kanban-card__footer {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-8);
+}
+
+.contactos-kanban-card__status {
+    height: 21px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 0 7px;
+    border: 1px solid currentColor;
+    border-radius: var(--alfa-radius-full);
+    font-size: 10.5px;
+    font-weight: 500;
+    line-height: 1;
+}
+
+.contactos-kanban-card__status i {
+    font-size: 6px;
+}
+
+.contactos-kanban-card__status.is-active {
+    border-color: color-mix(in srgb, var(--alfa-success) 52%, transparent);
+    background: color-mix(in srgb, var(--alfa-success) 14%, var(--alfa-bg-surface));
+    color: color-mix(in srgb, var(--alfa-success) 78%, #ffffff);
+}
+
+.contactos-kanban-card__status.is-inactive {
+    border-color: var(--alfa-border-default);
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-disabled);
+}
+
+.contactos-kanban-card__conversation {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--alfa-text-secondary);
+    font-size: 10.5px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-kanban-card__conversation i {
+    margin-right: var(--alfa-space-4);
+    color: var(--alfa-accent);
+    font-size: 12px;
+}
+
+@media (min-width: 1601px) {
+    .contactos-kanban__grid {
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 1359px) {
+    .contactos-kanban__grid {
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+    }
+}
+
+@media (max-width: 1099px) {
+    .contactos-kanban__grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .contactos-kanban-card__avatar {
+        width: 48px;
+        height: 48px;
+        font-size: 22px;
+    }
+
+    .contactos-kanban-card__main {
+        grid-template-columns: 22px 48px minmax(0, 1fr) 32px;
+    }
+}
+
+@media (max-width: 899px) {
+    .contactos-kanban__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 599px) {
+    .contactos-kanban__scroll {
+        padding: var(--alfa-space-12);
+    }
+
+    .contactos-kanban__grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .contactos-kanban-card {
+        transition: none;
+    }
+}

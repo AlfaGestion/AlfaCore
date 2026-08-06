@@ -119,6 +119,7 @@ public sealed class ContactoMergeRequest
 
 public sealed class ContactosViewSettingsDto
 {
+    public string Vista { get; set; } = ContactosViewModeKeys.Listado;
     public string AgruparPor { get; set; } = ContactosViewGroupKeys.None;
     public List<ContactoViewColumnDto> Columnas { get; set; } = [];
 }
@@ -146,4 +147,10 @@ public static class ContactosViewGroupKeys
 {
     public const string None   = "none";
     public const string Activo = "activo";
+}
+
+public static class ContactosViewModeKeys
+{
+    public const string Listado = "listado";
+    public const string Kanban  = "kanban";
 }
