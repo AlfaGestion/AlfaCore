@@ -87,7 +87,7 @@
                 <button type="button"
                         class="main-page-header__view-btn @(view.Active ? "is-active" : string.Empty)"
                         title="@DisplayTitle(view.Title, view.Label)"
-                        aria-label="@view.Label"
+                        aria-label="@DisplayTitle(view.Title, view.Label)"
                         disabled="@view.Disabled"
                         @onclick="() => RunAsync(view.OnClick)">
                     <i class="bi @view.Icon"></i>

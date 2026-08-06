@@ -389,8 +389,19 @@
 }
 
 .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__view-btn {
+    width: auto !important;
+    max-width: none !important;
+    flex: 0 0 auto !important;
+    overflow: visible !important;
     font-size: var(--alfa-font-small);
     font-weight: 600;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__view-label {
+    display: inline !important;
+    max-width: none !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
 }
 
 .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__view-btn.is-active {
@@ -789,7 +800,17 @@
     }
 
     .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__view-label {
-        display: none;
+        display: none !important;
+    }
+
+    .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__view-btn {
+        width: var(--alfa-icon-button-size) !important;
+        min-width: var(--alfa-icon-button-size) !important;
+        max-width: var(--alfa-icon-button-size) !important;
+        flex: 0 0 var(--alfa-icon-button-size) !important;
+        gap: 0 !important;
+        padding: 0 !important;
+        overflow: hidden !important;
     }
 
     .shell.shell--alfa-design .smart-search__active-filters {
