@@ -11,5 +11,11 @@ public interface INotificacionesPushService
     Task<NotificacionesPushSendResultDto> SendTestAsync(string userName, string deviceId, CancellationToken ct = default);
     Task<NotificacionesPushDiagnosticsDto> GetDiagnosticsAsync(string userName, string deviceId, CancellationToken ct = default);
     Task NotifyNewMessageAsync(long idConversacion, long idMensaje, CancellationToken ct = default);
+    /// <summary>
+    /// Aviso dirigido a usuarios puntuales (ej. "Notificar a..." en un hilo interno) — a
+    /// diferencia de <see cref="NotifyNewMessageAsync"/>, no filtra por las preferencias
+    /// generales de alcance/canal del usuario, es un llamado explícito.
+    /// </summary>
+    Task<NotificacionesPushSendResultDto> NotifyMentionAsync(long idConversacion, long idMensaje, IReadOnlyCollection<string> userNames, string mencionadoPor, CancellationToken ct = default);
     Task<bool> UserCanUseConversacionesAsync(string userName, CancellationToken ct = default);
 }

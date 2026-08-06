@@ -33,6 +33,8 @@ public sealed class UsuarioDetailDto
     public string FotoCacheToken { get; set; } = string.Empty;
     public DateTime? FechaHoraGrabacion { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }
+    /// <summary>Tiene una fila activa (Baja=0) en dbo.V_TA_Tecnicos asociada a este usuario.</summary>
+    public bool EsTecnico { get; set; }
 }
 
 public sealed class UsuarioSaveRequest
@@ -47,6 +49,13 @@ public sealed class UsuarioSaveRequest
     public string FotoNombreOriginal { get; set; } = string.Empty;
     public string FotoMimeType { get; set; } = string.Empty;
     public bool QuitarFoto { get; set; }
+    /// <summary>
+    /// Si está tildado, se da de alta (o reactiva) automáticamente una fila en
+    /// dbo.V_TA_Tecnicos asociada a este usuario — para poder asignarle conversaciones, usar el
+    /// chat interno, etc. Si se destilda, la fila existente se da de baja lógica (no se borra:
+    /// puede tener tickets/mensajes atados).
+    /// </summary>
+    public bool EsTecnico { get; set; }
 }
 
 public sealed class UsuarioPhotoServeDto

@@ -7,7 +7,8 @@ namespace AlfaCore.Services;
 public sealed class AutorizacionTareasService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : IAutorizacionTareasService
+    IAppEventService appEvents,
+    ICentralAdminService centralAdminService) : IAutorizacionTareasService
 {
     private const string ModuleName = "AutorizacionTareas";
     private const string DefaultUnidadNegocioVisual = "1";
@@ -105,6 +106,38 @@ public sealed class AutorizacionTareasService(
                 SistemaPermisos = sistemaPermisos.Trim().ToUpperInvariant(),
                 MenuSistema = menuSistema.Trim().ToUpperInvariant()
             }, cancellationToken: token))).ToList();
+
+            // Esta consulta solo trae opciones de dbo.ALFACORE_MENU_WEB (Proceso siempre viene
+            // vacío arriba), o sea que todo lo que llega acá es web y cae bajo el sistema de
+            // módulos — no solo debería mostrarse, sino permitirse autorizar solo lo que el
+            // cliente efectivamente contrató (a diferencia del menú, acá no hay excepción para
+            // "Administrar": esta pantalla ya está gateada por superadmin=1 en el menú).
+            var moduloFiltro = await centralAdminService.GetModuloMenuFiltroParaClienteActualAsync(token).ConfigureAwait(false);
+            if (moduloFiltro is not null)
+            {
+                var parentByKey = rows
+                    .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
+                    .GroupBy(x => x.Clave!.Trim(), StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(g => g.Key, g => g.First().Titulo?.Trim() ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+
+                var includeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var row in rows.Where(x => !string.IsNullOrWhiteSpace(x.Clave)))
+                {
+                    var key = row.Clave!.Trim();
+                    if (!moduloFiltro.PermiteClave(key, parentByKey))
+                        continue;
+
+                    includeKeys.Add(key);
+                    var current = key;
+                    while (parentByKey.TryGetValue(current, out var parent) && !string.IsNullOrWhiteSpace(parent))
+                    {
+                        includeKeys.Add(parent);
+                        current = parent;
+                    }
+                }
+
+                rows = rows.Where(x => !string.IsNullOrWhiteSpace(x.Clave) && includeKeys.Contains(x.Clave!.Trim())).ToList();
+            }
 
             var nodeByKey = rows
                 .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
@@ -227,6 +260,17 @@ public sealed class AutorizacionTareasService(
             var parentByKey = parentRows
                 .Where(x => !string.IsNullOrWhiteSpace(x.Clave))
                 .ToDictionary(x => x.Clave, x => x.Titulo, StringComparer.OrdinalIgnoreCase);
+
+            // Igual que en GetAutorizacionAsync: si no está contratado, ni se toca al guardar —
+            // así un permiso previo sobre algo no modularizado todavía no se borra solo por
+            // guardar la autorización de otra sección.
+            var moduloFiltroGuardar = await centralAdminService.GetModuloMenuFiltroParaClienteActualAsync(token).ConfigureAwait(false);
+            if (moduloFiltroGuardar is not null)
+            {
+                managedKeys = managedKeys
+                    .Where(key => moduloFiltroGuardar.PermiteClave(key, parentByKey))
+                    .ToArray();
+            }
 
             var selected = new HashSet<string>(
                 request.TareasSeleccionadas

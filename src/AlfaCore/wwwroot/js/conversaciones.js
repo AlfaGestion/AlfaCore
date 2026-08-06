@@ -144,6 +144,32 @@ window.conversacionesUi = {
     _lastSoundError: '',
     _soundInitialized: false,
 
+    // El disparador usa el atributo nativo `popovertarget` (sin round-trip a Blazor para abrir/cerrar).
+    // Acá solo escuchamos el evento nativo `toggle` para reposicionar el popover junto al botón cada
+    // vez que se abre — se mide con getBoundingClientRect ya con el popover visible (offsetWidth real).
+    bindPopoverToTrigger: function (popoverId, triggerElement) {
+        const menu = document.getElementById(popoverId);
+        if (!menu || !triggerElement || menu.dataset.positionBound === '1') return;
+        menu.dataset.positionBound = '1';
+
+        const reposition = function () {
+            if (!menu.matches(':popover-open')) return;
+            const rect = triggerElement.getBoundingClientRect();
+            const menuWidth = menu.offsetWidth || 178;
+            const top = rect.bottom + 6;
+            const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+            menu.style.top = top + 'px';
+            menu.style.left = left + 'px';
+        };
+
+        // No confiamos solo en event.newState (difiere entre versiones de navegador): al abrirse,
+        // reposicionamos en el próximo frame (para medir ya con el popover pintado) y de nuevo al
+        // toggle por si el evento llega antes de que el layout esté listo.
+        menu.addEventListener('toggle', function () {
+            requestAnimationFrame(reposition);
+        });
+    },
+
     bindColumnResizers: function (rootId) {
         const root = document.getElementById(rootId);
         if (!root || this._columnResizerWatchers.has(rootId)) return false;

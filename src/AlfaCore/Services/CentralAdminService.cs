@@ -1,14 +1,21 @@
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using System.Net.Http.Json;
 
 namespace AlfaCore.Services;
 
 public sealed class CentralAdminService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : ICentralAdminService
+    IAppUserSessionService appUserSession,
+    IAppModeService appMode,
+    IAppEventService appEvents,
+    IConversacionesConfigService conversacionesConfigService,
+    IHttpClientFactory httpClientFactory) : ICentralAdminService
 {
+    private const string AlfaKnowledgeModuloCodigo = "ALFAKNOWLEDGE";
+
     private string ConnectionString => configuration.GetConnectionString("AlfaCentral")
         ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaCentral'.");
 
@@ -481,6 +488,739 @@ public sealed class CentralAdminService(
 
         const string sql = "DELETE FROM dbo.users WHERE [user] = @UserName;";
         await cn.ExecuteAsync(new CommandDefinition(sql, new { UserName = normalized }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<MenuRaizOptionDto>> GetMenuRaizOptionsAsync(CancellationToken ct = default)
+    {
+        var defaultConnectionString = configuration.GetConnectionString("AlfaGestion")
+            ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+
+        const string sql = """
+            ;WITH nodos AS (
+                SELECT
+                    w.Clave,
+                    w.PadreClave,
+                    ISNULL(NULLIF(w.NombreWeb, ''), w.Clave) AS Nombre,
+                    CAST(ISNULL(NULLIF(w.NombreWeb, ''), w.Clave) AS nvarchar(400)) AS Ruta,
+                    0 AS Nivel
+                FROM dbo.ALFACORE_MENU_WEB w
+                WHERE UPPER(LTRIM(RTRIM(ISNULL(w.Menu, '')))) = N'ALFA'
+                  AND (w.PadreClave IS NULL OR LTRIM(RTRIM(w.PadreClave)) = '')
+                  AND ISNULL(w.Clave, '') <> ''
+
+                UNION ALL
+
+                SELECT
+                    w.Clave,
+                    w.PadreClave,
+                    ISNULL(NULLIF(w.NombreWeb, ''), w.Clave),
+                    CAST(n.Ruta + N' > ' + ISNULL(NULLIF(w.NombreWeb, ''), w.Clave) AS nvarchar(400)),
+                    n.Nivel + 1
+                FROM dbo.ALFACORE_MENU_WEB w
+                JOIN nodos n ON w.PadreClave = n.Clave
+                WHERE UPPER(LTRIM(RTRIM(ISNULL(w.Menu, '')))) = N'ALFA'
+                  AND ISNULL(w.Clave, '') <> ''
+            )
+            SELECT Clave, Ruta AS Nombre
+            FROM nodos
+            ORDER BY Ruta;
+            """;
+
+        await using var cn = new SqlConnection(defaultConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var rows = await cn.QueryAsync<MenuRaizOptionDto>(new CommandDefinition(sql, cancellationToken: ct)).ConfigureAwait(false);
+        return rows.ToArray();
+    }
+
+    public async Task<IReadOnlyList<ModuloDto>> GetModulosAsync(CancellationToken ct = default)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        return await QueryModulosAsync(cn, ct).ConfigureAwait(false);
+    }
+
+    public async Task<ModuloDto?> GetModuloAsync(int idModulo, CancellationToken ct = default)
+    {
+        var modulos = await GetModulosAsync(ct).ConfigureAwait(false);
+        return modulos.FirstOrDefault(m => m.Id == idModulo);
+    }
+
+    public async Task CreateModuloAsync(CrearModuloRequest request, CancellationToken ct = default)
+    {
+        var codigo = NormalizeKey(request.Codigo).ToUpperInvariant();
+        var nombre = NormalizeText(request.Nombre);
+        var menuKeyRaiz = NormalizeKey(request.MenuKeyRaiz);
+
+        if (string.IsNullOrWhiteSpace(codigo))
+            throw new AppUserFacingException("El código del módulo es obligatorio.", "ADMIN_MODULO_CODIGO");
+        if (string.IsNullOrWhiteSpace(nombre))
+            throw new AppUserFacingException("El nombre del módulo es obligatorio.", "ADMIN_MODULO_NOMBRE");
+        // MenuKeyRaiz es opcional: hay módulos "solo funcionalidad" que no agregan una sección
+        // propia al menú (ej.: AlfaKnowledge, un panel dentro de Conversaciones).
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        if (await ExistsModuloCodigoAsync(cn, codigo, null, ct).ConfigureAwait(false))
+            throw new AppUserFacingException("Ya existe un módulo con ese código.", "ADMIN_MODULO_DUPLICADO");
+
+        await using var tx = cn.BeginTransaction();
+        try
+        {
+            const string insertSql = """
+                INSERT INTO dbo.Modulos (Codigo, Nombre, Descripcion, MenuKeyRaiz, Precio, Activo)
+                VALUES (@Codigo, @Nombre, @Descripcion, @MenuKeyRaiz, @Precio, 1);
+                SELECT CAST(SCOPE_IDENTITY() AS int);
+                """;
+
+            var newId = await cn.ExecuteScalarAsync<int>(new CommandDefinition(insertSql, new
+            {
+                Codigo = codigo,
+                Nombre = nombre,
+                Descripcion = string.IsNullOrWhiteSpace(request.Descripcion) ? null : request.Descripcion.Trim(),
+                MenuKeyRaiz = string.IsNullOrWhiteSpace(menuKeyRaiz) ? null : menuKeyRaiz,
+                request.Precio
+            }, tx, cancellationToken: ct)).ConfigureAwait(false);
+
+            await ReplaceDependenciasAsync(cn, tx, newId, request.Dependencias, ct).ConfigureAwait(false);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    public async Task UpdateModuloAsync(CrearModuloRequest request, CancellationToken ct = default)
+    {
+        if (request.Id is not int id || id <= 0)
+            throw new AppUserFacingException("El módulo seleccionado es inválido.", "ADMIN_MODULO_ID");
+
+        var codigo = NormalizeKey(request.Codigo).ToUpperInvariant();
+        var nombre = NormalizeText(request.Nombre);
+        var menuKeyRaiz = NormalizeKey(request.MenuKeyRaiz);
+
+        if (string.IsNullOrWhiteSpace(codigo))
+            throw new AppUserFacingException("El código del módulo es obligatorio.", "ADMIN_MODULO_CODIGO");
+        if (string.IsNullOrWhiteSpace(nombre))
+            throw new AppUserFacingException("El nombre del módulo es obligatorio.", "ADMIN_MODULO_NOMBRE");
+        // MenuKeyRaiz es opcional: hay módulos "solo funcionalidad" que no agregan una sección
+        // propia al menú (ej.: AlfaKnowledge, un panel dentro de Conversaciones).
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        if (await ExistsModuloCodigoAsync(cn, codigo, id, ct).ConfigureAwait(false))
+            throw new AppUserFacingException("Ya existe otro módulo con ese código.", "ADMIN_MODULO_DUPLICADO");
+
+        await using var tx = cn.BeginTransaction();
+        try
+        {
+            const string sql = """
+                UPDATE dbo.Modulos
+                SET Codigo = @Codigo,
+                    Nombre = @Nombre,
+                    Descripcion = @Descripcion,
+                    MenuKeyRaiz = @MenuKeyRaiz,
+                    Precio = @Precio
+                WHERE Id = @Id;
+                """;
+
+            await cn.ExecuteAsync(new CommandDefinition(sql, new
+            {
+                Id = id,
+                Codigo = codigo,
+                Nombre = nombre,
+                Descripcion = string.IsNullOrWhiteSpace(request.Descripcion) ? null : request.Descripcion.Trim(),
+                MenuKeyRaiz = string.IsNullOrWhiteSpace(menuKeyRaiz) ? null : menuKeyRaiz,
+                request.Precio
+            }, tx, cancellationToken: ct)).ConfigureAwait(false);
+
+            await ReplaceDependenciasAsync(cn, tx, id, request.Dependencias, ct).ConfigureAwait(false);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+    }
+
+    public async Task DeleteModuloAsync(int idModulo, CancellationToken ct = default)
+    {
+        if (idModulo <= 0)
+            throw new AppUserFacingException("El módulo seleccionado es inválido.", "ADMIN_MODULO_ID");
+
+        // Baja lógica: un DELETE físico chocaría con la FK de ClienteModulos/ModulosDependencias
+        // en cuanto algún cliente lo tenga activo o algún otro módulo dependa de él.
+        const string sql = "UPDATE dbo.Modulos SET Activo = 0 WHERE Id = @Id;";
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await cn.ExecuteAsync(new CommandDefinition(sql, new { Id = idModulo }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<ClienteModuloDto>> GetClienteModulosAsync(string idCliente, CancellationToken ct = default)
+    {
+        var normalizedIdCliente = NormalizeKey(idCliente);
+        if (string.IsNullOrWhiteSpace(normalizedIdCliente))
+            return [];
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        var modulos = await QueryModulosAsync(cn, ct).ConfigureAwait(false);
+        var esLegacy = await IsClienteLegacyAsync(cn, normalizedIdCliente, ct).ConfigureAwait(false);
+
+        const string activosSql = """
+            SELECT IdModulo, Estado, ActivadoUtc, ActivadoPor
+            FROM dbo.ClienteModulos
+            WHERE IdCliente = @IdCliente;
+            """;
+        var activos = (await cn.QueryAsync<ClienteModuloRow>(new CommandDefinition(activosSql, new { IdCliente = normalizedIdCliente }, cancellationToken: ct)).ConfigureAwait(false))
+            .ToDictionary(x => x.IdModulo);
+
+        const string dependenciaSql = "SELECT DISTINCT IdModuloDependeDe FROM dbo.ModulosDependencias;";
+        var esDependenciaSet = (await cn.QueryAsync<int>(new CommandDefinition(dependenciaSql, cancellationToken: ct)).ConfigureAwait(false)).ToHashSet();
+
+        return modulos
+            .Where(m => m.Activo)
+            .Select(m =>
+            {
+                activos.TryGetValue(m.Id, out var activoRow);
+                var estaActivo = esLegacy || string.Equals(activoRow?.Estado, "Activo", StringComparison.OrdinalIgnoreCase);
+
+                return new ClienteModuloDto
+                {
+                    IdModulo = m.Id,
+                    Codigo = m.Codigo,
+                    Nombre = m.Nombre,
+                    Precio = m.Precio,
+                    EsDependenciaDeOtro = esDependenciaSet.Contains(m.Id),
+                    EstaActivo = estaActivo,
+                    ActivadoUtc = activoRow?.ActivadoUtc,
+                    ActivadoPor = activoRow?.ActivadoPor
+                };
+            })
+            .OrderBy(x => x.Nombre)
+            .ToArray();
+    }
+
+    public async Task ActivarModuloAsync(ActivarModuloRequest request, CancellationToken ct = default)
+    {
+        var idCliente = NormalizeKey(request.IdCliente);
+        if (string.IsNullOrWhiteSpace(idCliente))
+            throw new AppUserFacingException("El cliente es obligatorio.", "ADMIN_CLIENTEMODULO_CLIENTE");
+        if (!await ExistsClienteAsync(idCliente, ct).ConfigureAwait(false))
+            throw new AppUserFacingException("El cliente central no existe.", "ADMIN_CLIENTEMODULO_CLIENTE_NO_EXISTE");
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        var modulos = await QueryModulosAsync(cn, ct).ConfigureAwait(false);
+        if (modulos.All(m => m.Id != request.IdModulo || !m.Activo))
+            throw new AppUserFacingException("El módulo seleccionado no existe o está dado de baja.", "ADMIN_CLIENTEMODULO_MODULO_NO_EXISTE");
+
+        // Las dependencias se activan en cascada junto con el módulo pedido, sin cargo aparte
+        // (decisión de producto — ver docs/gestion/CONTINUIDAD_MODULOS_ADMINISTRAR.md).
+        var idsAActivar = ResolveDependenciasTransitivas(modulos, request.IdModulo);
+        var activadoPor = NormalizeText(request.ActivadoPor);
+
+        await using var tx = cn.BeginTransaction();
+        try
+        {
+            const string upsertSql = """
+                IF EXISTS (SELECT 1 FROM dbo.ClienteModulos WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo)
+                    UPDATE dbo.ClienteModulos
+                    SET Estado = N'Activo', ActivadoUtc = GETUTCDATE(), ActivadoPor = @ActivadoPor
+                    WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo;
+                ELSE
+                    INSERT INTO dbo.ClienteModulos (IdCliente, IdModulo, Estado, ActivadoPor)
+                    VALUES (@IdCliente, @IdModulo, N'Activo', @ActivadoPor);
+                """;
+
+            foreach (var idModulo in idsAActivar)
+            {
+                await cn.ExecuteAsync(new CommandDefinition(upsertSql, new
+                {
+                    IdCliente = idCliente,
+                    IdModulo = idModulo,
+                    ActivadoPor = string.IsNullOrWhiteSpace(activadoPor) ? null : activadoPor
+                }, tx, cancellationToken: ct)).ConfigureAwait(false);
+            }
+
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
+
+        // Si el módulo activado directamente (no una dependencia arrastrada) es AlfaKnowledge,
+        // aprovisionamos su base de conocimiento en el momento del contrato en vez de dejarlo
+        // para carga manual — ver docs/gestion/CONTINUIDAD_MODULOS_ADMINISTRAR.md.
+        var moduloActivado = modulos.FirstOrDefault(m => m.Id == request.IdModulo);
+        if (moduloActivado is not null && string.Equals(moduloActivado.Codigo, AlfaKnowledgeModuloCodigo, StringComparison.OrdinalIgnoreCase))
+        {
+            await ProvisionAlfaKnowledgeAsync(idCliente, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Crea (si todavía no existe) la base de conocimiento del cliente en AlfaKnowledge y guarda
+    /// la conexión resultante en su propia base (TA_CONFIGURACION), sin depender de que el
+    /// superadmin tenga esa base como sesión activa. No aborta la activación del módulo si algo
+    /// sale mal — el módulo queda activo igual, y esto se puede reintentar volviendo a activar.
+    /// </summary>
+    private async Task ProvisionAlfaKnowledgeAsync(string idCliente, CancellationToken ct)
+    {
+        var tenantConnectionString = await ResolveClienteConnectionStringAsync(idCliente, ct).ConfigureAwait(false);
+        if (tenantConnectionString is null)
+        {
+            throw new AppUserFacingException(
+                "El módulo AlfaKnowledge quedó activo, pero el cliente todavía no tiene una base de ERP registrada para guardar la conexión. Cargala en Administrar y volvé a activar el módulo.",
+                "ADMIN_ALFAKNOWLEDGE_SIN_BASE");
+        }
+
+        if (await TieneAlfaKnowledgeConfiguradoAsync(tenantConnectionString, ct).ConfigureAwait(false))
+            return;
+
+        var baseUrl = configuration["AlfaKnowledge:BaseUrl"];
+        var externalApiKey = configuration["AlfaKnowledge:ExternalApiKey"];
+        if (string.IsNullOrWhiteSpace(baseUrl) || string.IsNullOrWhiteSpace(externalApiKey))
+        {
+            throw new AppUserFacingException(
+                "El módulo AlfaKnowledge quedó activo, pero falta configurar AlfaKnowledge:BaseUrl / AlfaKnowledge:ExternalApiKey en el servidor para poder aprovisionar la base automáticamente.",
+                "ADMIN_ALFAKNOWLEDGE_SIN_CONFIG");
+        }
+
+        var databaseName = BuildAlfaKnowledgeDatabaseName(idCliente);
+
+        var client = httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
+        client.DefaultRequestHeaders.Add("X-Api-Key", externalApiKey);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await client.PostAsJsonAsync(
+                $"{baseUrl.TrimEnd('/')}/api/external/knowledge-bases",
+                new { name = $"Cliente {idCliente}", databaseName, qdrantCollectionName = (string?)null, setAsDefault = false },
+                ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new AppUserFacingException(
+                "El módulo AlfaKnowledge quedó activo, pero no se pudo contactar al servidor de AlfaKnowledge para crear la base. Reintentá más tarde volviendo a activar el módulo.",
+                "ADMIN_ALFAKNOWLEDGE_SIN_CONEXION",
+                ex);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            throw new AppUserFacingException(
+                $"El módulo AlfaKnowledge quedó activo, pero AlfaKnowledge rechazó la creación de la base ({(int)response.StatusCode}). Detalle: {detail}",
+                "ADMIN_ALFAKNOWLEDGE_PROVISION_FALLO");
+        }
+
+        var payload = await response.Content.ReadFromJsonAsync<AlfaKnowledgeProvisionResponse>(cancellationToken: ct).ConfigureAwait(false);
+        var knowledgeBaseId = payload?.KnowledgeBase?.Id;
+        if (knowledgeBaseId is null)
+        {
+            throw new AppUserFacingException(
+                "El módulo AlfaKnowledge quedó activo, pero la respuesta de AlfaKnowledge no incluyó el id de la base creada.",
+                "ADMIN_ALFAKNOWLEDGE_RESPUESTA_INVALIDA");
+        }
+
+        await conversacionesConfigService.SaveAlfaKnowledgeConfigForConnectionAsync(
+            tenantConnectionString,
+            new ConversacionAlfaKnowledgeConfigDto
+            {
+                BaseUrl = baseUrl,
+                ApiKey = externalApiKey,
+                KnowledgeBaseId = knowledgeBaseId.Value.ToString(),
+                TimeoutSeconds = 15
+            },
+            ct).ConfigureAwait(false);
+    }
+
+    private async Task<bool> TieneAlfaKnowledgeConfiguradoAsync(string tenantConnectionString, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) VALOR
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID';
+            """;
+
+        await using var cn = new SqlConnection(tenantConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var value = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(sql, cancellationToken: ct)).ConfigureAwait(false);
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    /// <summary>
+    /// Cliente dueño de la base actualmente activa en la sesión — NO el cliente de la cuenta
+    /// central con la que se logueó. Para un superadmin de Alfa parado en la base de otro
+    /// cliente (caso normal en Administrar), son cosas distintas: <c>appUserSession.CurrentUser.IdCliente</c>
+    /// es "quién soy yo", esto es "de qué cliente son los datos que estoy mirando ahora" — lo
+    /// segundo es lo que hay que usar para filtrar módulos/menú. Cae a
+    /// <c>appUserSession.CurrentUser.IdCliente</c> si todavía no hay una base activa resuelta.
+    /// </summary>
+    private async Task<string?> ResolveIdClienteDeBaseActivaAsync(CancellationToken ct)
+    {
+        var activeSession = sessionService.GetActiveSession();
+        if (activeSession is not null && activeSession.BaseId > 0)
+        {
+            const string sql = "SELECT idcliente FROM dbo.bases WHERE id = @IdBase;";
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            var idClienteDeBase = await cn.ExecuteScalarAsync<string?>(
+                new CommandDefinition(sql, new { IdBase = activeSession.BaseId }, cancellationToken: ct)).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(idClienteDeBase))
+                return idClienteDeBase;
+        }
+
+        return appUserSession.CurrentUser?.IdCliente;
+    }
+
+    private async Task<string?> ResolveClienteConnectionStringAsync(string idCliente, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                id AS IdBase,
+                idcliente AS IdCliente,
+                ISNULL(nombre, '') AS Nombre,
+                ISNULL(dbserver, '') AS DbServer,
+                ISNULL(dbname, '') AS DbName,
+                ISNULL(dbuser, '') AS DbUser,
+                ISNULL(dbpassword, '') AS DbPassword
+            FROM dbo.bases
+            WHERE idcliente = @IdCliente
+            ORDER BY id;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var row = await cn.QuerySingleOrDefaultAsync<AdminBaseDto>(
+            new CommandDefinition(sql, new { IdCliente = idCliente }, cancellationToken: ct)).ConfigureAwait(false);
+
+        if (row is null || string.IsNullOrWhiteSpace(row.DbServer) || string.IsNullOrWhiteSpace(row.DbName))
+            return null;
+
+        return new SqlConnectionStringBuilder
+        {
+            DataSource = row.DbServer,
+            InitialCatalog = row.DbName,
+            UserID = row.DbUser,
+            Password = row.DbPassword,
+            TrustServerCertificate = true,
+            ApplicationName = "AlfaCore"
+        }.ConnectionString;
+    }
+
+    private static string BuildAlfaKnowledgeDatabaseName(string idCliente)
+    {
+        var sanitized = new string(idCliente.Select(c => char.IsLetterOrDigit(c) ? c : '_').ToArray());
+        return $"AK_{sanitized}";
+    }
+
+    private sealed class AlfaKnowledgeProvisionResponse
+    {
+        public AlfaKnowledgeProvisionKnowledgeBase? KnowledgeBase { get; set; }
+    }
+
+    private sealed class AlfaKnowledgeProvisionKnowledgeBase
+    {
+        public Guid Id { get; set; }
+    }
+
+    public async Task SuspenderModuloAsync(string idCliente, int idModulo, CancellationToken ct = default)
+    {
+        var normalizedIdCliente = NormalizeKey(idCliente);
+        if (string.IsNullOrWhiteSpace(normalizedIdCliente))
+            throw new AppUserFacingException("El cliente es obligatorio.", "ADMIN_CLIENTEMODULO_CLIENTE");
+
+        const string sql = """
+            UPDATE dbo.ClienteModulos
+            SET Estado = N'Suspendido'
+            WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await cn.ExecuteAsync(new CommandDefinition(sql, new { IdCliente = normalizedIdCliente, IdModulo = idModulo }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task<bool> IsModuloActivoParaClienteActualAsync(string codigoModulo, CancellationToken ct = default)
+    {
+        // Instalación clásica de un solo cliente (on-premise, sin ALFA_CENTRAL de por medio):
+        // no hay noción de "módulo contratado", todo sigue disponible como siempre.
+        if (!appMode.IsSaaSMode)
+            return true;
+
+        var idCliente = await ResolveIdClienteDeBaseActivaAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(idCliente))
+            return true;
+
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+
+            if (await IsClienteLegacyAsync(cn, idCliente, ct).ConfigureAwait(false))
+                return true;
+
+            // Si el módulo todavía no está definido en el catálogo, nadie configuró esta
+            // integración opcional todavía — no bloqueamos por eso (fail-open).
+            const string existsSql = """
+                SELECT COUNT(1) FROM dbo.Modulos
+                WHERE UPPER(LTRIM(RTRIM(Codigo))) = UPPER(LTRIM(RTRIM(@Codigo))) AND Activo = 1;
+                """;
+            var moduloExiste = await cn.ExecuteScalarAsync<int>(new CommandDefinition(existsSql, new { Codigo = codigoModulo }, cancellationToken: ct)).ConfigureAwait(false) > 0;
+            if (!moduloExiste)
+                return true;
+
+            const string activoSql = """
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1
+                    FROM dbo.ClienteModulos cm
+                    INNER JOIN dbo.Modulos m ON m.Id = cm.IdModulo
+                    WHERE UPPER(LTRIM(RTRIM(cm.IdCliente))) = UPPER(LTRIM(RTRIM(@IdCliente)))
+                      AND UPPER(LTRIM(RTRIM(m.Codigo))) = UPPER(LTRIM(RTRIM(@Codigo)))
+                      AND cm.Estado = N'Activo'
+                ) THEN 1 ELSE 0 END;
+                """;
+            return await cn.ExecuteScalarAsync<bool>(new CommandDefinition(activoSql, new { IdCliente = idCliente, Codigo = codigoModulo }, cancellationToken: ct)).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                "Central",
+                "ModuloActivoCheck",
+                ex,
+                "No se pudo verificar si un módulo opcional está activo; se muestra por defecto.",
+                new { idCliente, codigoModulo },
+                AppEventSeverity.Warning,
+                ct).ConfigureAwait(false);
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// Para <c>MenuService</c>: qué nodos raíz del menú caen bajo el sistema de módulos para el
+    /// cliente del usuario logueado. Devuelve <c>null</c> cuando NO corresponde filtrar el menú
+    /// (modo legacy/on-premise o cliente legacy) — en ese caso el menú se arma completo, como
+    /// siempre. Cuando devuelve un valor, cualquier nodo cuya clave (o la de algún ancestro) no
+    /// figure en <see cref="ModuloMenuFiltroDto.MenuKeysActivos"/> se oculta — a diferencia de
+    /// <see cref="IsModuloActivoParaClienteActualAsync"/>, acá una sección SIN módulo definido
+    /// también se oculta (decisión de producto: el menú solo muestra lo que el cliente contrató).
+    /// </summary>
+    public async Task<ModuloMenuFiltroDto?> GetModuloMenuFiltroParaClienteActualAsync(CancellationToken ct = default)
+    {
+        if (!appMode.IsSaaSMode)
+        {
+            await appEvents.LogAuditAsync("Central", "ModuloMenuFiltroCheck", "Modulos", "-", "Sin filtrar: IsSaaSMode=false.", null, ct).ConfigureAwait(false);
+            return null;
+        }
+
+        var idCliente = await ResolveIdClienteDeBaseActivaAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(idCliente))
+        {
+            await appEvents.LogAuditAsync("Central", "ModuloMenuFiltroCheck", "Modulos", "-", "Sin filtrar: IdCliente vacío en la sesión actual.", null, ct).ConfigureAwait(false);
+            return null;
+        }
+
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+
+            if (await IsClienteLegacyAsync(cn, idCliente, ct).ConfigureAwait(false))
+            {
+                await appEvents.LogAuditAsync("Central", "ModuloMenuFiltroCheck", "Modulos", idCliente, "Sin filtrar: cliente legacy.", null, ct).ConfigureAwait(false);
+                return null;
+            }
+
+            const string sql = """
+                SELECT m.MenuKeyRaiz, cm.Estado
+                FROM dbo.Modulos m
+                LEFT JOIN dbo.ClienteModulos cm
+                    ON cm.IdModulo = m.Id AND UPPER(LTRIM(RTRIM(cm.IdCliente))) = UPPER(LTRIM(RTRIM(@IdCliente)))
+                WHERE m.Activo = 1 AND m.MenuKeyRaiz IS NOT NULL AND LTRIM(RTRIM(m.MenuKeyRaiz)) <> '';
+                """;
+
+            var rows = (await cn.QueryAsync<(string MenuKeyRaiz, string? Estado)>(
+                new CommandDefinition(sql, new { IdCliente = idCliente }, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+
+            var definidos = new HashSet<string>(rows.Select(r => r.MenuKeyRaiz.Trim()), StringComparer.OrdinalIgnoreCase);
+            var activos = new HashSet<string>(
+                rows.Where(r => string.Equals(r.Estado, "Activo", StringComparison.OrdinalIgnoreCase)).Select(r => r.MenuKeyRaiz.Trim()),
+                StringComparer.OrdinalIgnoreCase);
+
+            await appEvents.LogAuditAsync(
+                "Central",
+                "ModuloMenuFiltroCheck",
+                "Modulos",
+                idCliente,
+                "Filtro calculado.",
+                new { idCliente, definidos = definidos.ToArray(), activos = activos.ToArray() },
+                ct).ConfigureAwait(false);
+
+            return new ModuloMenuFiltroDto { MenuKeysDefinidos = definidos, MenuKeysActivos = activos };
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                "Central",
+                "ModuloMenuFiltroCheck",
+                ex,
+                "No se pudo calcular el filtro de menú por módulos; se muestra el menú completo.",
+                new { idCliente },
+                AppEventSeverity.Warning,
+                ct).ConfigureAwait(false);
+            return null;
+        }
+    }
+
+    private static async Task<IReadOnlyList<ModuloDto>> QueryModulosAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string modulosSql = """
+            SELECT Id, Codigo, Nombre, Descripcion, ISNULL(MenuKeyRaiz, '') AS MenuKeyRaiz, Precio, Activo
+            FROM dbo.Modulos
+            ORDER BY Nombre;
+            """;
+        const string depsSql = """
+            SELECT d.IdModulo, d.IdModuloDependeDe, m.Codigo, m.Nombre, d.EsObligatoria
+            FROM dbo.ModulosDependencias d
+            INNER JOIN dbo.Modulos m ON m.Id = d.IdModuloDependeDe;
+            """;
+
+        var modulos = (await cn.QueryAsync<ModuloRow>(new CommandDefinition(modulosSql, cancellationToken: ct)).ConfigureAwait(false)).ToList();
+        var deps = (await cn.QueryAsync<DependenciaRow>(new CommandDefinition(depsSql, cancellationToken: ct)).ConfigureAwait(false)).ToLookup(x => x.IdModulo);
+
+        return modulos.Select(m => new ModuloDto
+        {
+            Id = m.Id,
+            Codigo = m.Codigo,
+            Nombre = m.Nombre,
+            Descripcion = m.Descripcion,
+            MenuKeyRaiz = m.MenuKeyRaiz,
+            Precio = m.Precio,
+            Activo = m.Activo,
+            Dependencias = deps[m.Id].Select(x => new ModuloDependenciaDto
+            {
+                IdModuloDependeDe = x.IdModuloDependeDe,
+                Codigo = x.Codigo,
+                Nombre = x.Nombre,
+                EsObligatoria = x.EsObligatoria
+            }).ToList()
+        }).ToArray();
+    }
+
+    private static IReadOnlyCollection<int> ResolveDependenciasTransitivas(IReadOnlyCollection<ModuloDto> catalogo, int idModulo)
+    {
+        var porId = catalogo.ToDictionary(m => m.Id);
+        var resultado = new HashSet<int>();
+        var pendientes = new Queue<int>();
+        pendientes.Enqueue(idModulo);
+
+        while (pendientes.Count > 0)
+        {
+            var actual = pendientes.Dequeue();
+            if (!resultado.Add(actual) || !porId.TryGetValue(actual, out var moduloActual))
+                continue;
+
+            // Las opcionales (EsObligatoria = false) NO se activan solas: son solo un enganche
+            // informativo que las pantallas usan para decidir si mostrar una función puntual.
+            foreach (var dependencia in moduloActual.Dependencias.Where(d => d.EsObligatoria))
+            {
+                if (!resultado.Contains(dependencia.IdModuloDependeDe))
+                    pendientes.Enqueue(dependencia.IdModuloDependeDe);
+            }
+        }
+
+        return resultado;
+    }
+
+    private static async Task ReplaceDependenciasAsync(SqlConnection cn, SqlTransaction tx, int idModulo, IReadOnlyCollection<DependenciaSeleccionDto> dependencias, CancellationToken ct)
+    {
+        const string deleteSql = "DELETE FROM dbo.ModulosDependencias WHERE IdModulo = @IdModulo;";
+        await cn.ExecuteAsync(new CommandDefinition(deleteSql, new { IdModulo = idModulo }, tx, cancellationToken: ct)).ConfigureAwait(false);
+
+        var distinctDeps = dependencias
+            .Where(d => d.IdModulo != idModulo)
+            .GroupBy(d => d.IdModulo)
+            .Select(g => g.First())
+            .ToArray();
+        if (distinctDeps.Length == 0)
+            return;
+
+        const string insertSql = """
+            INSERT INTO dbo.ModulosDependencias (IdModulo, IdModuloDependeDe, EsObligatoria)
+            VALUES (@IdModulo, @IdModuloDependeDe, @EsObligatoria);
+            """;
+
+        foreach (var dependencia in distinctDeps)
+        {
+            await cn.ExecuteAsync(new CommandDefinition(insertSql, new
+            {
+                IdModulo = idModulo,
+                IdModuloDependeDe = dependencia.IdModulo,
+                dependencia.EsObligatoria
+            }, tx, cancellationToken: ct)).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<bool> ExistsModuloCodigoAsync(SqlConnection cn, string codigo, int? excludeId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(1) FROM dbo.Modulos
+            WHERE UPPER(LTRIM(RTRIM(Codigo))) = UPPER(LTRIM(RTRIM(@Codigo)))
+              AND (@ExcludeId IS NULL OR Id <> @ExcludeId);
+            """;
+        var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { Codigo = codigo, ExcludeId = excludeId }, cancellationToken: ct)).ConfigureAwait(false);
+        return count > 0;
+    }
+
+    private static async Task<bool> IsClienteLegacyAsync(SqlConnection cn, string idCliente, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT ISNULL(EsClienteLegacy, 0)
+            FROM dbo.Clientes
+            WHERE UPPER(LTRIM(RTRIM(idcliente))) = UPPER(LTRIM(RTRIM(@IdCliente)));
+            """;
+        var result = await cn.ExecuteScalarAsync<bool?>(new CommandDefinition(sql, new { IdCliente = idCliente }, cancellationToken: ct)).ConfigureAwait(false);
+        return result ?? false;
+    }
+
+    private sealed class ModuloRow
+    {
+        public int Id { get; set; }
+        public string Codigo { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public string? Descripcion { get; set; }
+        public string MenuKeyRaiz { get; set; } = string.Empty;
+        public decimal Precio { get; set; }
+        public bool Activo { get; set; }
+    }
+
+    private sealed class DependenciaRow
+    {
+        public int IdModulo { get; set; }
+        public int IdModuloDependeDe { get; set; }
+        public string Codigo { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public bool EsObligatoria { get; set; }
+    }
+
+    private sealed class ClienteModuloRow
+    {
+        public int IdModulo { get; set; }
+        public string Estado { get; set; } = string.Empty;
+        public DateTime ActivadoUtc { get; set; }
+        public string? ActivadoPor { get; set; }
     }
 
     private async Task<AdminClienteDto?> QueryClienteAsync(string filterSql, object parameters, CancellationToken ct)

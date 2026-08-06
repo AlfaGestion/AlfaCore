@@ -177,7 +177,12 @@
                             <input type="checkbox" @bind="_form.CambiarProximoInicio" disabled="@(_saving || _form.EsGrupo)" />
                             <span>Cambiar contraseña en el próximo inicio</span>
                         </label>
+                        <label class="checkbox">
+                            <input type="checkbox" @bind="_form.EsTecnico" disabled="@(_saving || _form.EsGrupo)" />
+                            <span>Es técnico / agente de soporte</span>
+                        </label>
                     </div>
+                    <p class="usuarios-photo-hint">Da de alta (o reactiva) automáticamente al usuario en Técnicos, para poder asignarle conversaciones y usar el chat interno.</p>
                     @if (HasFieldError("cambiar-proximo-inicio"))
                     {
                         <small class="usuarios-field-error">@GetFieldError("cambiar-proximo-inicio")</small>
@@ -781,6 +786,7 @@
         _form.Email = string.Empty;
         _form.EsGrupo = false;
         _form.CambiarProximoInicio = false;
+        _form.EsTecnico = false;
         _form.Contrasena = string.Empty;
         _form.FotoContenido = null;
         _form.FotoNombreOriginal = string.Empty;
@@ -1088,6 +1094,7 @@
         _form.Email = detail.Email;
         _form.EsGrupo = detail.EsGrupo;
         _form.CambiarProximoInicio = detail.CambiarProximoInicio;
+        _form.EsTecnico = detail.EsTecnico;
         _form.Contrasena = detail.ContrasenaDecodificada;
         _form.FotoContenido = null;
         _form.FotoNombreOriginal = string.Empty;

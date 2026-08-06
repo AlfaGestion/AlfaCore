@@ -696,6 +696,9 @@ else
                     <span class="menu__icon"><i class="bi bi-question-circle-fill"></i></span>
                     <span>Ayuda</span>
                 </NavLink>
+                <div class="menu__build" title="Fecha de compilación del binario que está corriendo — si esperabas un cambio reciente y no lo ves, comparalo con la hora en que compilaste." style="padding: 4px 12px; font-size: 11px; opacity: 0.5; white-space: nowrap;">
+                    build @BuildStamp
+                </div>
             </div>
             }
         </div>
@@ -1195,6 +1198,23 @@ else
 <NovedadesPopup Enabled="@(!IsDirectMode)" />
 
 @code {
+    private static readonly string BuildStamp = ResolveBuildStamp();
+
+    private static string ResolveBuildStamp()
+    {
+        try
+        {
+            var path = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            return string.IsNullOrWhiteSpace(path)
+                ? "?"
+                : System.IO.File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm");
+        }
+        catch
+        {
+            return "?";
+        }
+    }
+
     private bool _mobileSidebarOpen;
     private bool? _sidebarCollapsedOverride;
     private bool _isDark = false;

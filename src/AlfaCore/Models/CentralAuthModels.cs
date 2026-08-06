@@ -39,6 +39,7 @@ public sealed class BaseCentralDto
     public string DbName { get; init; } = string.Empty;
     public string DbUser { get; init; } = string.Empty;
     public string DbPassword { get; init; } = string.Empty;
+    public string? WebhookToken { get; init; }
 }
 
 public sealed class SesionCentralDto

@@ -508,15 +508,23 @@ public sealed class ConversacionesConfigService(
             };
         }, "No se pudo cargar la configuración de AlfaKnowledge.", ct);
 
-    public async Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
+    public Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(config);
+        return SaveAlfaKnowledgeConfigForConnectionAsync(ConnectionString, config, ct);
+    }
 
-        await ExecuteLoggedAsync("Conversaciones", "SaveAlfaKnowledgeConfig", async token =>
+    public Task SaveAlfaKnowledgeConfigForConnectionAsync(string connectionString, ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        if (string.IsNullOrWhiteSpace(connectionString))
+            throw new InvalidOperationException("La cadena de conexión es obligatoria para guardar la configuración de AlfaKnowledge.");
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveAlfaKnowledgeConfig", async token =>
         {
             var normalized = Normalize(config);
 
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
             await using var tx = await cn.BeginTransactionAsync(token);
@@ -565,6 +573,117 @@ public sealed class ConversacionesConfigService(
 
             return true;
         }, "No se pudo guardar la configuración de AlfaKnowledge.", ct);
+    }
+
+    public Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetAutomatizacionesConfig", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            await using var cmd = new SqlCommand(BuildAutomatizacionesSelectSql(detailColumn), cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                var key = GetString(rd, 0);
+                var value = GetString(rd, 1);
+                var detailValue = GetString(rd, 2);
+                values[key] = ResolveStoredValue(value, detailValue);
+            }
+
+            var dias = ReadValue(values, "CONV_AUTOMATIZACIONES_DIAS", string.Empty, "LUN,MAR,MIE,JUE,VIE")
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var diasSet = new HashSet<string>(dias, StringComparer.OrdinalIgnoreCase);
+
+            return new ConversacionAutomatizacionesConfigDto
+            {
+                Activo = ReadValue(values, "CONV_AUTOMATIZACIONES_ACTIVO", string.Empty) == "1",
+                MensajeFueraHorario = ReadValue(values, "CONV_AUTOMATIZACIONES_MENSAJE", string.Empty,
+                    "Gracias por escribirnos. Estamos fuera de nuestro horario de atención, te vamos a responder a la brevedad."),
+                Lunes = diasSet.Contains("LUN"),
+                Martes = diasSet.Contains("MAR"),
+                Miercoles = diasSet.Contains("MIE"),
+                Jueves = diasSet.Contains("JUE"),
+                Viernes = diasSet.Contains("VIE"),
+                Sabado = diasSet.Contains("SAB"),
+                Domingo = diasSet.Contains("DOM"),
+                HoraDesde = ReadValue(values, "CONV_AUTOMATIZACIONES_HORA_DESDE", string.Empty, "09:00"),
+                HoraHasta = ReadValue(values, "CONV_AUTOMATIZACIONES_HORA_HASTA", string.Empty, "18:00"),
+                ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
+            };
+        }, "No se pudo cargar la configuración de automatizaciones.", ct);
+
+    public Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveAutomatizacionesConfig", async token =>
+        {
+            var dias = new List<string>();
+            if (config.Lunes) dias.Add("LUN");
+            if (config.Martes) dias.Add("MAR");
+            if (config.Miercoles) dias.Add("MIE");
+            if (config.Jueves) dias.Add("JUE");
+            if (config.Viernes) dias.Add("VIE");
+            if (config.Sabado) dias.Add("SAB");
+            if (config.Domingo) dias.Add("DOM");
+
+            var items = new[]
+            {
+                ("CONV_AUTOMATIZACIONES_ACTIVO", config.Activo ? "1" : "0"),
+                ("CONV_AUTOMATIZACIONES_MENSAJE", (config.MensajeFueraHorario ?? string.Empty).Trim()),
+                ("CONV_AUTOMATIZACIONES_DIAS", string.Join(',', dias)),
+                ("CONV_AUTOMATIZACIONES_HORA_DESDE", (config.HoraDesde ?? string.Empty).Trim()),
+                ("CONV_AUTOMATIZACIONES_HORA_HASTA", (config.HoraHasta ?? string.Empty).Trim())
+            };
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            foreach (var item in items)
+            {
+                var stored = SplitStoredValue(item.Item2);
+                var sql = $"""
+                    UPDATE dbo.TA_CONFIGURACION
+                    SET
+                        VALOR = @Valor,
+                        {detailColumn} = @ValorAux,
+                        GRUPO = @Grupo
+                    WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO)
+                        VALUES (@Clave, @Valor, @ValorAux, @Grupo);
+                    END;
+                    """;
+
+                await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@ClaveNormalizada", item.Item1.ToUpperInvariant());
+                cmd.Parameters.AddWithValue("@Clave", item.Item1);
+                cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
+                cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
+                cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveAutomatizacionesConfig",
+                "TA_CONFIGURACION",
+                ConfigGroup,
+                "Configuración de automatizaciones actualizada.",
+                new { config.Activo, Dias = dias },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración de automatizaciones.", ct);
     }
 
     public Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
@@ -737,6 +856,23 @@ public sealed class ConversacionesConfigService(
                 'CONV_ALFAKNOWLEDGE_API_KEY',
                 'CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID',
                 'CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS'
+            )
+            """;
+
+    private static string BuildAutomatizacionesSelectSql(string detailColumn)
+        => $"""
+            SELECT
+                UPPER(LTRIM(RTRIM(CLAVE))),
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
+            (
+                'CONV_AUTOMATIZACIONES_ACTIVO',
+                'CONV_AUTOMATIZACIONES_MENSAJE',
+                'CONV_AUTOMATIZACIONES_DIAS',
+                'CONV_AUTOMATIZACIONES_HORA_DESDE',
+                'CONV_AUTOMATIZACIONES_HORA_HASTA'
             )
             """;
 

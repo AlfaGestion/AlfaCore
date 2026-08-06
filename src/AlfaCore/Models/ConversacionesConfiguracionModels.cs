@@ -171,6 +171,28 @@ public sealed class ConversacionAlfaKnowledgeConfigDto
             : BaseUrl.Trim().TrimEnd('/') + "/";
 }
 
+/// <summary>
+/// Automatizaciones "Nivel 0" (sin IA, sin aprobación de operador): respuesta fija cuando llega
+/// un mensaje de WhatsApp fuera del horario de atención configurado.
+/// </summary>
+public sealed class ConversacionAutomatizacionesConfigDto
+{
+    public bool Activo { get; set; }
+    public string MensajeFueraHorario { get; set; } = string.Empty;
+    public bool Lunes { get; set; } = true;
+    public bool Martes { get; set; } = true;
+    public bool Miercoles { get; set; } = true;
+    public bool Jueves { get; set; } = true;
+    public bool Viernes { get; set; } = true;
+    public bool Sabado { get; set; }
+    public bool Domingo { get; set; }
+    public string HoraDesde { get; set; } = "09:00";
+    public string HoraHasta { get; set; } = "18:00";
+    public string ConfigSource { get; set; } = string.Empty;
+
+    public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);
+}
+
 public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
 {
     public bool Success { get; set; }
@@ -181,3 +203,4 @@ public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
     public string KnowledgeBase { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
 }
+

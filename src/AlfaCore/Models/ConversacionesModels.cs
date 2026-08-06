@@ -267,6 +267,11 @@ public sealed class ConversacionMensajeDto
     public string IdTecnicoAutor { get; set; } = string.Empty;
     public string TecnicoAutorNombre { get; set; } = string.Empty;
     public bool TieneAdjuntos { get; set; }
+    /// <summary>
+    /// Marca interna de seguimiento (ej. "PENDIENTE"/"COMPLETADA") — nunca se envía al cliente,
+    /// es solo para uso propio del agente. <c>null</c>/vacío = sin marcar.
+    /// </summary>
+    public string? MarcaInterna { get; set; }
 }
 
 public sealed class ConversacionMensajesPaginaDto
