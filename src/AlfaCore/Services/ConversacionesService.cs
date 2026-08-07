@@ -6128,6 +6128,7 @@ public sealed class ConversacionesService(
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         var idTecnicoAutor = await ResolveTechnicianIdOrNullAsync(message.IdTecnicoAutor, ct);
+        var author = await ResolveLegacyMessageAuthorAsync(cn, message.UsuarioAutor, message.SistemaAutor, ct);
         cmd.Parameters.AddWithValue("@IdConversacion", message.ConversationId);
         cmd.Parameters.AddWithValue("@TelefonoWhatsApp", DbNullable(message.Phone));
         cmd.Parameters.AddWithValue("@WhatsAppMessageId", DbNullable(message.WhatsAppMessageId));
@@ -6140,11 +6141,41 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@Texto", DbNullable(message.Text));
         cmd.Parameters.AddWithValue("@PayloadJson", DbNullable(message.PayloadJson));
         cmd.Parameters.AddWithValue("@FechaHora", message.FechaHora);
-        cmd.Parameters.AddWithValue("@UsuarioAutor", DbNullable(message.UsuarioAutor));
-        cmd.Parameters.AddWithValue("@SistemaAutor", DbNullable(message.SistemaAutor));
+        cmd.Parameters.AddWithValue("@UsuarioAutor", DbNullable(author.Usuario));
+        cmd.Parameters.AddWithValue("@SistemaAutor", DbNullable(author.Sistema));
         cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullablePreserve(idTecnicoAutor));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<(string Usuario, string Sistema)> ResolveLegacyMessageAuthorAsync(
+        SqlConnection cn,
+        string? usuario,
+        string? sistema,
+        CancellationToken ct)
+    {
+        var normalizedUser = (usuario ?? string.Empty).Trim();
+        var normalizedSystem = (sistema ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalizedUser) || string.IsNullOrWhiteSpace(normalizedSystem))
+            return (string.Empty, string.Empty);
+
+        const string sql = """
+            SELECT TOP (1)
+                ISNULL(NOMBRE, N''),
+                ISNULL(SISTEMA, N'')
+            FROM dbo.TA_USUARIOS
+            WHERE UPPER(LTRIM(RTRIM(NOMBRE))) = UPPER(LTRIM(RTRIM(@Usuario)))
+              AND UPPER(LTRIM(RTRIM(SISTEMA))) = UPPER(LTRIM(RTRIM(@Sistema)));
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Usuario", normalizedUser);
+        cmd.Parameters.AddWithValue("@Sistema", normalizedSystem);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return (string.Empty, string.Empty);
+
+        return (GetString(rd, 0), GetString(rd, 1));
     }
 
     private async Task<long> GetExistingMessageIdByWhatsAppIdAsync(string whatsAppMessageId, CancellationToken ct)

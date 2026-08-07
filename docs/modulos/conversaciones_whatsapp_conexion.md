@@ -70,7 +70,17 @@ Por eso necesitás:
 - que la ruta final responda en:
   `/api/conversaciones/whatsapp/webhook`
 
-Ejemplo:
+En modo SaaS, cada base debe usar la URL con token propio generado desde
+`ALFA_CENTRAL.dbo.bases.WebhookToken`. Ese token identifica el cliente/base antes de tocar
+`TA_CONFIGURACION`, porque un webhook entrante no tiene sesión de usuario.
+
+Ejemplo recomendado para SaaS:
+
+```text
+https://midominio.com/api/conversaciones/whatsapp/webhook/{WebhookTokenDeLaBase}
+```
+
+Ejemplo legacy o monobase:
 
 ```text
 https://midominio.com/api/conversaciones/whatsapp/webhook
@@ -85,7 +95,7 @@ https://midominio.com/api/conversaciones/whatsapp/webhook
 | Access Token | `CONV_WHATSAPP_ACCESS_TOKEN` |
 | Verify Token | `CONV_WHATSAPP_VERIFY_TOKEN` |
 | App Secret | `CONV_WHATSAPP_APP_SECRET` |
-| Callback URL | `CONV_WHATSAPP_PUBLIC_BASE_URL` + `CONV_WHATSAPP_WEBHOOK_PATH` |
+| Callback URL | SaaS: `CONV_WHATSAPP_PUBLIC_BASE_URL` + `CONV_WHATSAPP_WEBHOOK_PATH` + `/{WebhookTokenDeLaBase}` |
 | API version | `CONV_WHATSAPP_API_VERSION` |
 
 ## Flujo recomendado de configuración
@@ -96,7 +106,7 @@ https://midominio.com/api/conversaciones/whatsapp/webhook
 4. Cargar `WhatsApp Business Account ID`.
 5. Cargar `Access Token`.
 6. Definir un `Verify Token` propio.
-7. Revisar la `URL de callback` que arma AlfaCore.
+7. Revisar la `URL de callback` que arma AlfaCore. En SaaS debe terminar con el token propio de la base.
 8. Guardar.
 9. Ir a Meta y usar esa misma URL + ese mismo `Verify Token`.
 10. Suscribir el webhook a eventos de mensajes y estados.
@@ -111,8 +121,11 @@ https://midominio.com/api/conversaciones/whatsapp/webhook
 Se usa en:
 
 - `GET /api/conversaciones/whatsapp/webhook`
+- `GET /api/conversaciones/whatsapp/webhook/{token}` en modo SaaS
 
 Cuando Meta intenta validar el webhook, AlfaCore compara el token recibido con `CONV_WHATSAPP_VERIFY_TOKEN`.
+Si la ruta incluye `{token}`, AlfaCore primero resuelve la base en `ALFA_CENTRAL.dbo.bases` y luego lee
+la configuración `CONV_WHATSAPP_*` de esa base.
 
 ### Access Token
 
@@ -134,6 +147,7 @@ Se usa para mostrar la URL exacta que tenés que registrar en Meta.
 
 - Usar un token estable y no uno temporal de pruebas para producción.
 - Mantener el `Verify Token` como secreto interno del equipo.
+- En SaaS, registrar siempre la URL con `{WebhookTokenDeLaBase}`. La ruta sin token queda solo para instalaciones monobase o compatibilidad legacy.
 - Registrar primero una URL pública real antes de probar con Meta.
 - Verificar que firewall, DNS y certificado HTTPS estén resueltos antes de activar el webhook.
 - Si algo falla, revisar `AUX_ERR` y el diagnóstico JSON en `App_Data/diagnostics`.

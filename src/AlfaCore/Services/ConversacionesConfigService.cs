@@ -950,7 +950,7 @@ public sealed class ConversacionesConfigService(
             BusinessAccountId = (config.BusinessAccountId ?? string.Empty).Trim(),
             AppSecret = (config.AppSecret ?? string.Empty).Trim(),
             ApiVersion = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v22.0" : config.ApiVersion.Trim(),
-            PublicBaseUrl = NormalizeBaseUrl(config.PublicBaseUrl),
+            PublicBaseUrl = NormalizePublicBaseUrl(config.PublicBaseUrl, "WhatsApp"),
             WebhookPath = path,
             ConfigSource = string.Empty
         };
@@ -971,7 +971,7 @@ public sealed class ConversacionesConfigService(
             InstagramAccountId = (config.InstagramAccountId ?? string.Empty).Trim(),
             FacebookPageId = (config.FacebookPageId ?? string.Empty).Trim(),
             ApiVersion = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v22.0" : config.ApiVersion.Trim(),
-            PublicBaseUrl = NormalizeBaseUrl(config.PublicBaseUrl),
+            PublicBaseUrl = NormalizePublicBaseUrl(config.PublicBaseUrl, "Instagram"),
             WebhookPath = path,
             ConfigSource = string.Empty
         };
@@ -992,7 +992,7 @@ public sealed class ConversacionesConfigService(
             PageId = (config.PageId ?? string.Empty).Trim(),
             PageUsername = (config.PageUsername ?? string.Empty).Trim().TrimStart('@'),
             ApiVersion = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v22.0" : config.ApiVersion.Trim(),
-            PublicBaseUrl = NormalizeBaseUrl(config.PublicBaseUrl),
+            PublicBaseUrl = NormalizePublicBaseUrl(config.PublicBaseUrl, "Facebook"),
             WebhookPath = path,
             ConfigSource = string.Empty
         };
@@ -1020,7 +1020,7 @@ public sealed class ConversacionesConfigService(
             RefreshToken = (config.RefreshToken ?? string.Empty).Trim(),
             SellerId = (config.SellerId ?? string.Empty).Trim(),
             SiteId = string.IsNullOrWhiteSpace(config.SiteId) ? "MLA" : config.SiteId.Trim().ToUpperInvariant(),
-            PublicBaseUrl = NormalizeBaseUrl(config.PublicBaseUrl),
+            PublicBaseUrl = NormalizePublicBaseUrl(config.PublicBaseUrl, "Mercado Libre"),
             WebhookPath = webhookPath,
             OAuthCallbackPath = callbackPath,
             ApiBaseUrl = apiBaseUrl,
@@ -1044,6 +1044,25 @@ public sealed class ConversacionesConfigService(
 
     private static string NormalizeBaseUrl(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().TrimEnd('/');
+
+    private static string NormalizePublicBaseUrl(string? value, string channelName)
+    {
+        var normalized = NormalizeBaseUrl(value);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return string.Empty;
+
+        if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttps && uri.Scheme != Uri.UriSchemeHttp)
+            || string.IsNullOrWhiteSpace(uri.Host))
+        {
+            throw new InvalidOperationException($"La base pública de {channelName} debe ser una URL absoluta http/https. Ejemplo: https://midominio.com");
+        }
+
+        if (normalized == "." || normalized == "/" || normalized.Contains(' '))
+            throw new InvalidOperationException($"La base pública de {channelName} no parece válida. Revisala antes de guardar la configuración del canal.");
+
+        return normalized;
+    }
 
     private static string ResolveConfigSource(Dictionary<string, string> values, int expectedKeys = 8)
     {
