@@ -141,23 +141,10 @@
 
             @if (OverflowActions.Count > 0)
             {
-                <details class="main-page-header__overflow">
-                    <summary title="Más acciones" aria-label="Más acciones">
-                        <i class="bi bi-three-dots"></i>
-                    </summary>
-                    <div class="main-page-header__overflow-menu">
-                        @foreach (var action in OverflowActions)
-                        {
-                            <button type="button" disabled="@(action.Disabled || action.Busy)" @onclick="() => RunAsync(action.OnClick)">
-                                @if (!string.IsNullOrWhiteSpace(action.Icon))
-                                {
-                                    <i class="bi @action.Icon"></i>
-                                }
-                                <span>@action.Label</span>
-                            </button>
-                        }
-                    </div>
-                </details>
+                <AlfaActionMenu Items="@OverflowMenuItems"
+                                TriggerLabel="Más acciones"
+                                MenuLabel="Acciones secundarias"
+                                Align="AlfaActionMenuAlign.End" />
             }
         </div>
     </section>
@@ -175,6 +162,16 @@
     private bool CanGoForward => Config.OnForward is not null || HeaderNavigation.CanGoForward;
     private IReadOnlyList<PageHeaderAction> VisibleActions => Config.Actions.Where(a => a.Priority != PageHeaderActionPriority.Overflow).ToList();
     private IReadOnlyList<PageHeaderAction> OverflowActions => Config.Actions.Where(a => a.Priority == PageHeaderActionPriority.Overflow).ToList();
+    private IReadOnlyList<AlfaActionMenuItem> OverflowMenuItems
+        => OverflowActions.Select(action => new AlfaActionMenuItem
+        {
+            Key = action.Key,
+            Label = action.Label,
+            Icon = action.Icon,
+            Disabled = action.Disabled || action.Busy,
+            Danger = action.Style == PageHeaderActionStyle.Danger,
+            OnClick = action.OnClick
+        }).ToList();
     private string BreadcrumbTitle => string.Join(" / ", Config.Breadcrumb);
     protected override void OnInitialized()
         => PageHeader.Changed += OnHeaderChanged;

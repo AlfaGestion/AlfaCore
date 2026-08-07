@@ -38,6 +38,9 @@
     --alfa-topbar-height: 44px;
     --alfa-toolbar-height: 44px;
     --alfa-context-toolbar-height: var(--alfa-toolbar-height);
+    /* Capa compartida para Action Menu: backdrop 1998, panel 1999. */
+    --alfa-z-action-menu-backdrop: 1998;
+    --alfa-z-action-menu: 1999;
 }
 
 .shell.shell--alfa-design {

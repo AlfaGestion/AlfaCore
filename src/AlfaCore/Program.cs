@@ -1,4 +1,5 @@
 using AlfaCore.Components;
+using AlfaCore.Components.Shared.AlfaDesign;
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Repositories;
@@ -179,6 +180,7 @@ public class Program
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
         builder.Services.AddScoped<IPageHeaderService, PageHeaderService>();
         builder.Services.AddScoped<IPageHeaderNavigationService, PageHeaderNavigationService>();
+        builder.Services.AddScoped<AlfaActionMenuCoordinator>();
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
         builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();

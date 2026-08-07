@@ -343,6 +343,7 @@
                                      ShowActiveStatus="@(_activoFiltro != "1")"
                                      Loading="_loadingList"
                                      ConversationBusy="_openingConversation"
+                                     DeactivateDisabled="_saving"
                                      ErrorMessage="@_listErrorMessage"
                                      EmptyKind="@GetContactEmptyStateKind()"
                                      EmptyTitle="@GetContactEmptyTitle()"
@@ -353,6 +354,7 @@
                                      OnEdit="@(id => AbrirEditorAsync(id))"
                                      OnOpenConversation="OpenConversationForContactAsync"
                                      OnCreateConversation="OpenConversationForContactAsync"
+                                     OnDeactivate="DarDeBajaDesdeFilaAsync"
                                      OnRetry="RecargarAsync"
                                      OnEmptyAction="HandleContactEmptyActionAsync" />
             }
@@ -469,31 +471,10 @@
                                             </td>
                                         }
                                         <td class="contactos-list-table__actions" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true">
-                                            <details class="contactos-row-menu">
-                                                <summary title="Acciones del contacto" aria-label="Acciones del contacto">
-                                                    <i class="bi bi-three-dots" aria-hidden="true"></i>
-                                                </summary>
-                                                <div class="contactos-row-menu__popover">
-                                                    <button type="button" @onclick="() => AbrirEditorAsync(item.Id)">
-                                                        <i class="bi bi-pencil-square" aria-hidden="true"></i>
-                                                        <span>Editar</span>
-                                                    </button>
-                                                    <button type="button"
-                                                            class="@(item.IdConversacionWhatsApp.HasValue ? "is-open-conversation" : "is-create-conversation")"
-                                                            disabled="@(_openingConversation || !HasContactPhone(item))"
-                                                            @onclick="() => OpenConversationForContactAsync(item)">
-                                                        <i class="@GetConversationActionIcon(item)" aria-hidden="true"></i>
-                                                        <span>@GetConversationActionAriaLabel(item)</span>
-                                                    </button>
-                                                    @if (item.Activo)
-                                                    {
-                                                        <button type="button" class="is-danger" disabled="@_saving" @onclick="() => DarDeBajaDesdeFilaAsync(item.Id)">
-                                                            <i class="bi bi-person-dash" aria-hidden="true"></i>
-                                                            <span>Dar de baja</span>
-                                                        </button>
-                                                    }
-                                                </div>
-                                            </details>
+                                            <AlfaActionMenu Items="@BuildContactActionMenu(item)"
+                                                            TriggerLabel="Acciones del contacto"
+                                                            MenuLabel="Acciones del contacto"
+                                                            Align="AlfaActionMenuAlign.End" />
                                         </td>
                                     </tr>
                                 }
@@ -695,38 +676,16 @@
     </div>
 }
 
-@if (_showBulkDeactivateConfirm)
-{
-    <div class="cuentas-modal-backdrop" @onclick="CloseBulkDeactivateConfirm">
-        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-deactivate-title" @onclick:stopPropagation="true">
-            <header class="cuentas-modal__header">
-                <div>
-                    <span class="cuentas-modal__eyebrow">Confirmación</span>
-                    <h3 id="contactos-bulk-deactivate-title">Dar de baja contactos</h3>
-                </div>
-                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </header>
-            <div class="cuentas-modal__body">
-                <div class="context-card">
-                    <span class="context-card__label">Acción masiva</span>
-                    <strong>@_bulkDeactivateConfirmCount contacto(s)</strong>
-                    <span class="context-card__muted">Se darán de baja los contactos seleccionados.</span>
-                </div>
-            </div>
-            <footer class="cuentas-modal__actions">
-                <button type="button" class="btn btn--danger" @onclick="ConfirmBulkDeactivateAsync" disabled="@_saving">
-                    <i class="bi bi-person-dash"></i>
-                    @(_saving ? "Procesando..." : "Confirmar baja")
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving">
-                    Cancelar
-                </button>
-            </footer>
-        </section>
-    </div>
-}
+<AlfaConfirmDialog Open="@_showDeactivateConfirm"
+                   Title="@DeactivateConfirmTitle"
+                   Message="@DeactivateConfirmMessage"
+                   SecondaryMessage="@DeactivateConfirmSecondaryMessage"
+                   ConfirmLabel="@DeactivateConfirmButtonLabel"
+                   LoadingLabel="Dando de baja..."
+                   Loading="@_deactivateConfirmLoading"
+                   ErrorMessage="@_deactivateConfirmError"
+                   OnConfirm="ConfirmDeactivateAsync"
+                   OnCancel="CloseDeactivateConfirm" />
 
 @if (_showBulkTemplateConfirm)
 {
@@ -810,8 +769,12 @@
     private ContactoMergeCandidateDto? _mergeConfirmCandidate;
     private string _mergeSearchText = string.Empty;
     private string _mergeError = string.Empty;
-    private bool _showBulkDeactivateConfirm;
-    private int _bulkDeactivateConfirmCount;
+    private bool _showDeactivateConfirm;
+    private bool _deactivateConfirmLoading;
+    private bool _pendingDeactivateIsBulk;
+    private int[] _pendingDeactivateIds = [];
+    private string _pendingDeactivateName = string.Empty;
+    private string _deactivateConfirmError = string.Empty;
     private bool _showBulkTemplateModal;
     private bool _showBulkTemplateConfirm;
     private bool _loadingBulkTemplates;
@@ -827,6 +790,18 @@
     private SearchRuleDto _contactRuleDraft = new() { Campo = "nombre", Operador = "contains" };
     private readonly List<SavedContactSearch> _contactFavorites = [];
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedIds.Contains(item.Id));
+    private string DeactivateConfirmTitle => _pendingDeactivateIsBulk ? "Dar de baja contactos" : "Dar de baja contacto";
+    private string DeactivateConfirmMessage => _pendingDeactivateIsBulk
+        ? _pendingDeactivateIds.Length == 1
+            ? "El contacto seleccionado dejará de figurar como activo."
+            : $"Los {_pendingDeactivateIds.Length} contactos seleccionados dejarán de figurar como activos."
+        : $"El contacto “{_pendingDeactivateName}” dejará de figurar como activo.";
+    private string DeactivateConfirmSecondaryMessage => _pendingDeactivateIsBulk
+        ? "Esta acción no elimina los registros ni sus datos asociados."
+        : "Esta acción no elimina el registro ni sus datos asociados.";
+    private string DeactivateConfirmButtonLabel => _pendingDeactivateIsBulk
+        ? _pendingDeactivateIds.Length == 1 ? "Dar de baja 1 contacto" : $"Dar de baja {_pendingDeactivateIds.Length} contactos"
+        : "Dar de baja";
     private ConversacionPlantillaDto? SelectedBulkTemplate => _bulkTemplates.FirstOrDefault(item => item.IdPlantilla == _bulkTemplateId);
 
     private RenderFragment RenderContactSmartSearch() => @<div class="smart-search" @onclick:stopPropagation>
@@ -2226,37 +2201,18 @@
         return Task.CompletedTask;
     }
 
-    private async Task DarDeBajaAsync()
+    private Task DarDeBajaAsync()
     {
         if (_isNewMode || _selectedId <= 0)
-            return;
+            return Task.CompletedTask;
 
-        _saving = true;
-        try
-        {
-            var result = await UiOps.RunAsync(() => ContactosSvc.DeactivateAsync(_selectedId), "No se pudo dar de baja el contacto.");
-            if (!result.Success)
-            {
-                SetFeedback(result.Feedback);
-                return;
-            }
-
-            SetFeedback(AppUiMessage.Success("Contacto dado de baja", $"El contacto #{_selectedId} quedó inactivo."));
-            BeginNew();
-            _showEditor = false;
-            await BuscarAsync();
-        }
-        finally
-        {
-            _saving = false;
-        }
+        return OpenIndividualDeactivateConfirmAsync(_selectedId, _form.NombreApellido);
     }
 
-    private async Task DarDeBajaDesdeFilaAsync(int id)
+    private Task DarDeBajaDesdeFilaAsync(int id)
     {
-        _selectedId = id;
-        _isNewMode = false;
-        await DarDeBajaAsync();
+        var contact = _items.FirstOrDefault(item => item.Id == id);
+        return OpenIndividualDeactivateConfirmAsync(id, contact?.NombreApellido);
     }
 
     private async Task EjecutarAccionSeleccionadaAsync()
@@ -2294,49 +2250,80 @@
         if (_selectedIds.Count == 0 || _saving)
             return;
 
-        _bulkDeactivateConfirmCount = _selectedIds.Count;
-        _showBulkDeactivateConfirm = true;
+        _pendingDeactivateIds = _selectedIds.OrderBy(id => id).ToArray();
+        _pendingDeactivateName = string.Empty;
+        _pendingDeactivateIsBulk = true;
+        _deactivateConfirmError = string.Empty;
+        _showDeactivateConfirm = true;
     }
 
-    private void CloseBulkDeactivateConfirm()
+    private Task OpenIndividualDeactivateConfirmAsync(int id, string? name)
     {
-        if (_saving)
-            return;
+        if (id <= 0 || _saving)
+            return Task.CompletedTask;
 
-        _showBulkDeactivateConfirm = false;
+        _pendingDeactivateIds = [id];
+        _pendingDeactivateName = string.IsNullOrWhiteSpace(name) ? $"#{id}" : name.Trim();
+        _pendingDeactivateIsBulk = false;
+        _deactivateConfirmError = string.Empty;
+        _showDeactivateConfirm = true;
+        return Task.CompletedTask;
     }
 
-    private async Task ConfirmBulkDeactivateAsync()
+    private void CloseDeactivateConfirm()
     {
-        var ids = _selectedIds.OrderBy(id => id).ToArray();
-        if (ids.Length == 0 || _saving)
-        {
-            _showBulkDeactivateConfirm = false;
+        if (_deactivateConfirmLoading)
             return;
-        }
 
-        _showBulkDeactivateConfirm = false;
+        _showDeactivateConfirm = false;
+        _deactivateConfirmError = string.Empty;
+        _pendingDeactivateIds = [];
+        _pendingDeactivateName = string.Empty;
+        _pendingDeactivateIsBulk = false;
+    }
+
+    private async Task ConfirmDeactivateAsync()
+    {
+        if (_deactivateConfirmLoading || _pendingDeactivateIds.Length == 0)
+            return;
+
+        var ids = _pendingDeactivateIds.ToArray();
+        var isBulk = _pendingDeactivateIsBulk;
+        _deactivateConfirmLoading = true;
         _saving = true;
+        _deactivateConfirmError = string.Empty;
         try
         {
             foreach (var id in ids)
                 await ContactosSvc.DeactivateAsync(id);
 
-            _selectedIds.Clear();
+            if (isBulk)
+                _selectedIds.Clear();
+
             if (ids.Contains(_selectedId))
                 _selectedId = 0;
 
             _showEditor = false;
-            SetFeedback(AppUiMessage.Success("Contactos actualizados", $"Se dieron de baja {ids.Length} contacto(s) seleccionados."));
+            SetFeedback(isBulk
+                ? AppUiMessage.Success("Contactos actualizados", $"Se dieron de baja {ids.Length} contacto(s) seleccionados.")
+                : AppUiMessage.Success("Contacto dado de baja", "El contacto quedó inactivo."));
             await BuscarAsync();
+            _showDeactivateConfirm = false;
+            _pendingDeactivateIds = [];
+            _pendingDeactivateName = string.Empty;
+            _pendingDeactivateIsBulk = false;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            SetFeedback(UiOps.BuildMessage(ex, "No se pudieron actualizar los contactos seleccionados."));
+            _deactivateConfirmError = isBulk
+                ? "No se pudieron dar de baja los contactos seleccionados. Podés reintentar o cancelar."
+                : "No se pudo dar de baja el contacto. Podés reintentar o cancelar.";
         }
         finally
         {
+            _deactivateConfirmLoading = false;
             _saving = false;
+            UpdatePageHeader();
         }
     }
 
@@ -2838,6 +2825,44 @@
 
     private static string GetGroupingLabel(string grouping)
         => grouping == ContactosViewGroupKeys.Activo ? "Estado" : "Sin agrupar";
+
+    private IReadOnlyList<AlfaActionMenuItem> BuildContactActionMenu(ContactoGridItemDto item)
+    {
+        var actions = new List<AlfaActionMenuItem>
+        {
+            new()
+            {
+                Key = "editar",
+                Label = "Editar",
+                Icon = "bi bi-pencil-square",
+                OnClick = () => AbrirEditorAsync(item.Id)
+            },
+            new()
+            {
+                Key = "conversacion",
+                Label = GetConversationActionAriaLabel(item),
+                Icon = GetConversationActionIcon(item),
+                Disabled = _openingConversation || !HasContactPhone(item),
+                OnClick = () => OpenConversationForContactAsync(item)
+            }
+        };
+
+        if (item.Activo)
+        {
+            actions.Add(new AlfaActionMenuItem
+            {
+                Key = "baja",
+                Label = "Dar de baja",
+                Icon = "bi bi-person-dash",
+                Danger = true,
+                SeparatorBefore = true,
+                Disabled = _saving,
+                OnClick = () => DarDeBajaDesdeFilaAsync(item.Id)
+            });
+        }
+
+        return actions;
+    }
 
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "-";

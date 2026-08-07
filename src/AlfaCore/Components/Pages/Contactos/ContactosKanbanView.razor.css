@@ -209,32 +209,8 @@
 
 .contactos-kanban-card__actions {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 2px;
-}
-
-.contactos-kanban-card__actions ::deep .alfa-icon-button {
-    width: 32px;
-    height: 32px;
-    color: var(--alfa-text-secondary);
-    font-size: 16px;
-}
-
-.contactos-kanban-card__actions ::deep .alfa-icon-button:hover,
-.contactos-kanban-card__actions ::deep .alfa-icon-button:focus-visible,
-.contactos-kanban-card__actions ::deep .contactos-kanban-action--open:hover,
-.contactos-kanban-card__actions ::deep .contactos-kanban-action--open:focus-visible {
-    color: var(--alfa-accent-hover);
-}
-
-.contactos-kanban-card__actions ::deep .contactos-kanban-action--create {
-    color: var(--alfa-text-secondary);
-}
-
-.contactos-kanban-card__actions ::deep .contactos-kanban-action--create:hover,
-.contactos-kanban-card__actions ::deep .contactos-kanban-action--create:focus-visible {
-    color: var(--alfa-success);
+    justify-content: center;
 }
 
 .contactos-kanban-card__footer {

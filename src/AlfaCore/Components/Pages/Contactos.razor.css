@@ -272,86 +272,6 @@
     opacity: 0.48;
 }
 
-.contactos-row-menu {
-    position: relative;
-    display: inline-block;
-}
-
-.contactos-row-menu summary {
-    width: 32px;
-    height: 32px;
-    display: inline-grid;
-    place-items: center;
-    border-radius: var(--alfa-radius-sm);
-    color: var(--alfa-text-secondary);
-    cursor: pointer;
-    list-style: none;
-}
-
-.contactos-row-menu summary::-webkit-details-marker {
-    display: none;
-}
-
-.contactos-row-menu summary:hover,
-.contactos-row-menu summary:focus-visible,
-.contactos-row-menu[open] summary {
-    background: var(--alfa-state-hover);
-    color: var(--alfa-accent-hover);
-    outline: 0;
-}
-
-.contactos-row-menu__popover {
-    position: absolute;
-    top: calc(100% + 2px);
-    right: 0;
-    z-index: 20;
-    width: 190px;
-    display: grid;
-    gap: 2px;
-    padding: var(--alfa-space-4);
-    border: 1px solid var(--alfa-border-default);
-    border-radius: var(--alfa-radius-md);
-    background: var(--alfa-bg-surface-raised);
-    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
-}
-
-.contactos-row-menu__popover button {
-    min-height: 32px;
-    display: flex;
-    align-items: center;
-    gap: var(--alfa-space-8);
-    padding: 0 var(--alfa-space-8);
-    border: 0;
-    border-radius: var(--alfa-radius-sm);
-    background: transparent;
-    color: var(--alfa-text-primary);
-    font: inherit;
-    font-size: 11px;
-    text-align: left;
-}
-
-.contactos-row-menu__popover button:hover:not(:disabled),
-.contactos-row-menu__popover button:focus-visible {
-    background: var(--alfa-state-hover);
-    outline: 0;
-}
-
-.contactos-row-menu__popover button:disabled {
-    color: var(--alfa-text-disabled);
-}
-
-.contactos-row-menu__popover .is-create-conversation {
-    color: var(--alfa-success);
-}
-
-.contactos-row-menu__popover .is-open-conversation {
-    color: var(--alfa-accent-hover);
-}
-
-.contactos-row-menu__popover .is-danger {
-    color: var(--alfa-danger);
-}
-
 .contactos-table__col {
     min-width: 0;
 }
@@ -458,13 +378,5 @@
 
 .contactos-list-table__identity span,
 .contactos-list-shell ::deep .usuarios-group-row td {
-    font-size: var(--alfa-font-small);
-}
-
-.contactos-row-menu summary {
-    font-size: 16px;
-}
-
-.contactos-row-menu__popover button {
     font-size: var(--alfa-font-small);
 }

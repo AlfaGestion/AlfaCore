@@ -84,31 +84,10 @@
                             </div>
 
                             <div class="contactos-kanban-card__actions">
-                                <AlfaIconButton Icon="bi bi-pencil-square"
-                                                Label="Editar contacto"
-                                                Tooltip="Editar contacto"
-                                                Size="AlfaSize.Sm"
-                                                OnClick="() => OnEdit.InvokeAsync(item.Id)" />
-                                @if (hasConversation)
-                                {
-                                    <AlfaIconButton Icon="bi bi-chat-left-text"
-                                                    Label="Abrir conversación"
-                                                    Tooltip="Abrir conversación"
-                                                    Size="AlfaSize.Sm"
-                                                    Class="contactos-kanban-action--open"
-                                                    Disabled="@(ConversationBusy || !hasPhone)"
-                                                    OnClick="() => OnOpenConversation.InvokeAsync(item)" />
-                                }
-                                else
-                                {
-                                    <AlfaIconButton Icon="bi bi-plus-circle"
-                                                    Label="Crear conversación"
-                                                    Tooltip="Crear conversación"
-                                                    Size="AlfaSize.Sm"
-                                                    Class="contactos-kanban-action--create"
-                                                    Disabled="@(ConversationBusy || !hasPhone)"
-                                                    OnClick="() => OnCreateConversation.InvokeAsync(item)" />
-                                }
+                                <AlfaActionMenu Items="@BuildCardActionMenu(item, hasConversation, hasPhone)"
+                                                TriggerLabel="Acciones del contacto"
+                                                MenuLabel="Acciones del contacto"
+                                                Align="AlfaActionMenuAlign.End" />
                             </div>
                         </div>
 
@@ -146,6 +125,7 @@
     [Parameter] public bool ShowActiveStatus { get; set; } = true;
     [Parameter] public bool Loading { get; set; }
     [Parameter] public bool ConversationBusy { get; set; }
+    [Parameter] public bool DeactivateDisabled { get; set; }
     [Parameter] public string ErrorMessage { get; set; } = string.Empty;
     [Parameter] public AlfaEmptyStateKind EmptyKind { get; set; }
     [Parameter] public string EmptyTitle { get; set; } = string.Empty;
@@ -156,6 +136,7 @@
     [Parameter] public EventCallback<int> OnEdit { get; set; }
     [Parameter] public EventCallback<ContactoGridItemDto> OnOpenConversation { get; set; }
     [Parameter] public EventCallback<ContactoGridItemDto> OnCreateConversation { get; set; }
+    [Parameter] public EventCallback<int> OnDeactivate { get; set; }
     [Parameter] public EventCallback OnRetry { get; set; }
     [Parameter] public EventCallback OnEmptyAction { get; set; }
 
@@ -173,6 +154,46 @@
 
     private static string GetAvatarTone(ContactoGridItemDto item)
         => $"tone-{Math.Abs((long)item.Id) % 6}";
+
+    private IReadOnlyList<AlfaActionMenuItem> BuildCardActionMenu(ContactoGridItemDto item, bool hasConversation, bool hasPhone)
+    {
+        var actions = new List<AlfaActionMenuItem>
+        {
+            new()
+            {
+                Key = "editar",
+                Label = "Editar",
+                Icon = "bi bi-pencil-square",
+                OnClick = () => OnEdit.InvokeAsync(item.Id)
+            },
+            new()
+            {
+                Key = "conversacion",
+                Label = hasConversation ? "Abrir conversación" : "Crear conversación",
+                Icon = hasConversation ? "bi bi-chat-left-text" : "bi bi-plus-circle",
+                Disabled = ConversationBusy || !hasPhone,
+                OnClick = () => hasConversation
+                    ? OnOpenConversation.InvokeAsync(item)
+                    : OnCreateConversation.InvokeAsync(item)
+            }
+        };
+
+        if (item.Activo)
+        {
+            actions.Add(new AlfaActionMenuItem
+            {
+                Key = "baja",
+                Label = "Dar de baja",
+                Icon = "bi bi-person-dash",
+                Danger = true,
+                SeparatorBefore = true,
+                Disabled = DeactivateDisabled,
+                OnClick = () => OnDeactivate.InvokeAsync(item.Id)
+            });
+        }
+
+        return actions;
+    }
 
     private static string? GetAvatarInitial(string value)
     {
