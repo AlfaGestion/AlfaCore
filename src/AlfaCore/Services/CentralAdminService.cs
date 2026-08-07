@@ -673,7 +673,7 @@ public sealed class CentralAdminService(
         var esLegacy = await IsClienteLegacyAsync(cn, normalizedIdCliente, ct).ConfigureAwait(false);
 
         const string activosSql = """
-            SELECT IdModulo, Estado, ActivadoUtc, ActivadoPor, SolicitadoUtc, SolicitadoPor
+            SELECT IdModulo, Estado, ActivadoUtc, ActivadoPor, SolicitadoUtc, SolicitadoPor, PruebaVenceUtc
             FROM dbo.ClienteModulos
             WHERE IdCliente = @IdCliente;
             """;
@@ -688,7 +688,9 @@ public sealed class CentralAdminService(
             .Select(m =>
             {
                 activos.TryGetValue(m.Id, out var activoRow);
-                var estaActivo = esLegacy || string.Equals(activoRow?.Estado, "Activo", StringComparison.OrdinalIgnoreCase);
+                var estaActivo = esLegacy
+                    || string.Equals(activoRow?.Estado, ClienteModuloEstados.Activo, StringComparison.OrdinalIgnoreCase)
+                    || EstaEnPruebaVigente(activoRow?.Estado, activoRow?.PruebaVenceUtc);
 
                 return new ClienteModuloDto
                 {
@@ -702,7 +704,8 @@ public sealed class CentralAdminService(
                     ActivadoUtc = activoRow?.ActivadoUtc,
                     ActivadoPor = activoRow?.ActivadoPor,
                     SolicitadoUtc = activoRow?.SolicitadoUtc,
-                    SolicitadoPor = activoRow?.SolicitadoPor
+                    SolicitadoPor = activoRow?.SolicitadoPor,
+                    PruebaVenceUtc = activoRow?.PruebaVenceUtc
                 };
             })
             .OrderBy(x => x.Nombre)
@@ -717,38 +720,118 @@ public sealed class CentralAdminService(
         if (!await ExistsClienteAsync(idCliente, ct).ConfigureAwait(false))
             throw new AppUserFacingException("El cliente central no existe.", "ADMIN_CLIENTEMODULO_CLIENTE_NO_EXISTE");
 
+        await ActivarConEstadoAsync(idCliente, request.IdModulo, ClienteModuloEstados.Activo, NormalizeText(request.ActivadoPor), pruebaVenceUtc: null, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Autoservicio: arranca la prueba gratuita de <see cref="PruebaModuloDefaults.DiasDuracion"/>
+    /// días para los módulos elegidos al confirmar el registro público. Las dependencias
+    /// obligatorias (Clientes/Técnicos) se activan directo como <c>Activo</c> sin cargo, igual
+    /// que en <see cref="ActivarModuloAsync"/> — solo el/los módulo(s) elegidos por el cliente
+    /// quedan en <c>Prueba</c> con vencimiento. No baja de categoría un módulo que ya esté
+    /// <c>Activo</c> (pagado) para ese cliente.
+    /// </summary>
+    public async Task IniciarPruebaModulosAsync(IniciarPruebaModulosRequest request, CancellationToken ct = default)
+    {
+        var idCliente = NormalizeKey(request.IdCliente);
+        if (string.IsNullOrWhiteSpace(idCliente))
+            throw new AppUserFacingException("El cliente es obligatorio.", "ADMIN_CLIENTEMODULO_CLIENTE");
+        if (!await ExistsClienteAsync(idCliente, ct).ConfigureAwait(false))
+            throw new AppUserFacingException("El cliente central no existe.", "ADMIN_CLIENTEMODULO_CLIENTE_NO_EXISTE");
+
+        var idsElegidos = (request.IdsModulos ?? []).Distinct().ToArray();
+        if (idsElegidos.Length == 0)
+            return;
+
+        // Cada módulo se activa de forma independiente: si a uno le falla el aprovisionamiento
+        // externo (hoy solo AlfaKnowledge llama a otro servicio), el módulo en sí queda igual en
+        // Prueba (el commit a ClienteModulos ya pasó antes de intentar aprovisionar) y el resto de
+        // los módulos elegidos no se ven afectados. Recién al final, si hubo fallas, se informa
+        // cuáles para que el usuario sepa que esos puntualmente necesitan reintentarse.
+        var pruebaVenceUtc = DateTime.UtcNow.AddDays(PruebaModuloDefaults.DiasDuracion);
+        var fallas = new List<string>();
+        foreach (var idModulo in idsElegidos)
+        {
+            try
+            {
+                await ActivarConEstadoAsync(idCliente, idModulo, ClienteModuloEstados.Prueba, activadoPor: "auto-registro", pruebaVenceUtc, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                await appEvents.LogErrorAsync(
+                    "Central",
+                    "IniciarPruebaModulo",
+                    ex,
+                    "Un módulo de la prueba gratuita autoservicio no se pudo activar del todo.",
+                    new { idCliente, idModulo },
+                    AppEventSeverity.Warning,
+                    ct).ConfigureAwait(false);
+                fallas.Add(ex.Message);
+            }
+        }
+
+        if (fallas.Count > 0)
+        {
+            throw new AppUserFacingException(
+                $"Se activó la prueba de los módulos elegidos, pero hubo un problema con {fallas.Count} de ellos: {string.Join(" | ", fallas)}",
+                "ADMIN_PRUEBA_MODULOS_PARCIAL");
+        }
+    }
+
+    /// <summary>
+    /// Núcleo compartido por <see cref="ActivarModuloAsync"/> (activación real, pagada) y
+    /// <see cref="IniciarPruebaModulosAsync"/> (prueba gratuita autoservicio): resuelve la
+    /// cascada de dependencias obligatorias (siempre se activan como <c>Activo</c>, sin cargo),
+    /// aplica el estado pedido al módulo elegido y dispara el aprovisionamiento de AlfaKnowledge
+    /// si corresponde. No baja de categoría un módulo que ya esté <c>Activo</c> para ese cliente
+    /// (evita que una prueba iniciada por error retroceda un contrato pago).
+    /// </summary>
+    private async Task ActivarConEstadoAsync(string idCliente, int idModulo, string estado, string? activadoPor, DateTime? pruebaVenceUtc, CancellationToken ct)
+    {
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct).ConfigureAwait(false);
 
         var modulos = await QueryModulosAsync(cn, ct).ConfigureAwait(false);
-        if (modulos.All(m => m.Id != request.IdModulo || !m.Activo))
+        if (modulos.All(m => m.Id != idModulo || !m.Activo))
             throw new AppUserFacingException("El módulo seleccionado no existe o está dado de baja.", "ADMIN_CLIENTEMODULO_MODULO_NO_EXISTE");
 
         // Las dependencias se activan en cascada junto con el módulo pedido, sin cargo aparte
         // (decisión de producto — ver docs/gestion/CONTINUIDAD_MODULOS_ADMINISTRAR.md).
-        var idsAActivar = ResolveDependenciasTransitivas(modulos, request.IdModulo);
-        var activadoPor = NormalizeText(request.ActivadoPor);
+        var idsAActivar = ResolveDependenciasTransitivas(modulos, idModulo);
+
+        const string estadoActualSql = "SELECT Estado FROM dbo.ClienteModulos WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo;";
+        const string upsertSql = """
+            IF EXISTS (SELECT 1 FROM dbo.ClienteModulos WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo)
+                UPDATE dbo.ClienteModulos
+                SET Estado = @Estado, ActivadoUtc = GETUTCDATE(), ActivadoPor = @ActivadoPor, PruebaVenceUtc = @PruebaVenceUtc
+                WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo;
+            ELSE
+                INSERT INTO dbo.ClienteModulos (IdCliente, IdModulo, Estado, ActivadoPor, PruebaVenceUtc)
+                VALUES (@IdCliente, @IdModulo, @Estado, @ActivadoPor, @PruebaVenceUtc);
+            """;
 
         await using var tx = cn.BeginTransaction();
         try
         {
-            const string upsertSql = """
-                IF EXISTS (SELECT 1 FROM dbo.ClienteModulos WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo)
-                    UPDATE dbo.ClienteModulos
-                    SET Estado = N'Activo', ActivadoUtc = GETUTCDATE(), ActivadoPor = @ActivadoPor
-                    WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo;
-                ELSE
-                    INSERT INTO dbo.ClienteModulos (IdCliente, IdModulo, Estado, ActivadoPor)
-                    VALUES (@IdCliente, @IdModulo, N'Activo', @ActivadoPor);
-                """;
-
-            foreach (var idModulo in idsAActivar)
+            foreach (var id in idsAActivar)
             {
+                // El módulo pedido directamente recibe el estado pedido (Activo o Prueba); las
+                // dependencias arrastradas siempre van directo a Activo sin cargo.
+                var esModuloDirecto = id == idModulo;
+                var estadoAAplicar = esModuloDirecto ? estado : ClienteModuloEstados.Activo;
+                var venceAAplicar = esModuloDirecto ? pruebaVenceUtc : null;
+
+                var estadoActual = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(estadoActualSql, new { IdCliente = idCliente, IdModulo = id }, tx, cancellationToken: ct)).ConfigureAwait(false);
+                if (string.Equals(estadoActual, ClienteModuloEstados.Activo, StringComparison.OrdinalIgnoreCase))
+                    continue; // ya es un contrato pago activo — nunca lo retrocedemos a Prueba.
+
                 await cn.ExecuteAsync(new CommandDefinition(upsertSql, new
                 {
                     IdCliente = idCliente,
-                    IdModulo = idModulo,
-                    ActivadoPor = string.IsNullOrWhiteSpace(activadoPor) ? null : activadoPor
+                    IdModulo = id,
+                    Estado = estadoAAplicar,
+                    ActivadoPor = string.IsNullOrWhiteSpace(activadoPor) ? null : activadoPor,
+                    PruebaVenceUtc = venceAAplicar
                 }, tx, cancellationToken: ct)).ConfigureAwait(false);
             }
 
@@ -761,9 +844,9 @@ public sealed class CentralAdminService(
         }
 
         // Si el módulo activado directamente (no una dependencia arrastrada) es AlfaKnowledge,
-        // aprovisionamos su base de conocimiento en el momento del contrato en vez de dejarlo
-        // para carga manual — ver docs/gestion/CONTINUIDAD_MODULOS_ADMINISTRAR.md.
-        var moduloActivado = modulos.FirstOrDefault(m => m.Id == request.IdModulo);
+        // aprovisionamos su base de conocimiento en el momento del contrato (o de la prueba) en
+        // vez de dejarlo para carga manual — ver docs/gestion/CONTINUIDAD_MODULOS_ADMINISTRAR.md.
+        var moduloActivado = modulos.FirstOrDefault(m => m.Id == idModulo);
         if (moduloActivado is not null && string.Equals(moduloActivado.Codigo, AlfaKnowledgeModuloCodigo, StringComparison.OrdinalIgnoreCase))
         {
             await ProvisionAlfaKnowledgeAsync(idCliente, ct).ConfigureAwait(false);
@@ -956,6 +1039,73 @@ public sealed class CentralAdminService(
         await cn.ExecuteAsync(new CommandDefinition(sql, new { IdCliente = normalizedIdCliente, IdModulo = idModulo }, cancellationToken: ct)).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Pruebas gratuitas vigentes que vencen dentro de <paramref name="diasAntes"/> días y todavía
+    /// no recibieron un aviso en las últimas 24hs — para el job de recordatorios. El email sale
+    /// de <c>dbo.users</c> (mismo login con el que el cliente se registró), no de <c>dbo.Clientes</c>
+    /// (que no tiene columna de email).
+    /// </summary>
+    public async Task<IReadOnlyList<PruebaModuloRecordatorioDto>> GetPruebasPorVencerAsync(int diasAntes, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT
+                cm.IdCliente,
+                ISNULL(c.nombre, '') AS ClienteNombre,
+                ISNULL(u.[user], '') AS Email,
+                cm.IdModulo,
+                m.Codigo,
+                m.Nombre,
+                m.Precio,
+                cm.PruebaVenceUtc
+            FROM dbo.ClienteModulos cm
+            JOIN dbo.Modulos m ON m.Id = cm.IdModulo
+            JOIN dbo.Clientes c ON c.idcliente = cm.IdCliente
+            LEFT JOIN dbo.users u ON u.idcliente = cm.IdCliente
+            WHERE cm.Estado = N'Prueba'
+              AND cm.PruebaVenceUtc IS NOT NULL
+              AND cm.PruebaVenceUtc > GETUTCDATE()
+              AND cm.PruebaVenceUtc <= DATEADD(day, @DiasAntes, GETUTCDATE())
+              AND (cm.UltimoRecordatorioUtc IS NULL OR cm.UltimoRecordatorioUtc < DATEADD(hour, -24, GETUTCDATE()))
+            ORDER BY cm.PruebaVenceUtc;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var rows = await cn.QueryAsync<PruebaModuloRecordatorioDto>(new CommandDefinition(sql, new { DiasAntes = diasAntes }, cancellationToken: ct)).ConfigureAwait(false);
+        return rows.Where(r => !string.IsNullOrWhiteSpace(r.Email)).ToArray();
+    }
+
+    public async Task MarcarRecordatorioPruebaEnviadoAsync(string idCliente, int idModulo, CancellationToken ct = default)
+    {
+        const string sql = """
+            UPDATE dbo.ClienteModulos
+            SET UltimoRecordatorioUtc = GETUTCDATE()
+            WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await cn.ExecuteAsync(new CommandDefinition(sql, new { IdCliente = idCliente, IdModulo = idModulo }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Pasa a <c>Suspendido</c> toda prueba vencida que nadie convirtió en contrato pago. Se
+    /// llama desde el job diario, antes de mandar los recordatorios del día — así una prueba que
+    /// venció esta noche ya no aparece como "vigente" en ninguna pantalla al día siguiente.
+    /// </summary>
+    public async Task<int> ExpirarPruebasVencidasAsync(CancellationToken ct = default)
+    {
+        const string sql = """
+            UPDATE dbo.ClienteModulos
+            SET Estado = N'Suspendido'
+            WHERE Estado = N'Prueba' AND PruebaVenceUtc IS NOT NULL AND PruebaVenceUtc <= GETUTCDATE();
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        return await cn.ExecuteAsync(new CommandDefinition(sql, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
     public async Task<IReadOnlyList<SolicitudModuloDto>> GetSolicitudesPendientesAsync(CancellationToken ct = default)
     {
         const string sql = """
@@ -1079,7 +1229,7 @@ public sealed class CentralAdminService(
                     INNER JOIN dbo.Modulos m ON m.Id = cm.IdModulo
                     WHERE UPPER(LTRIM(RTRIM(cm.IdCliente))) = UPPER(LTRIM(RTRIM(@IdCliente)))
                       AND UPPER(LTRIM(RTRIM(m.Codigo))) = UPPER(LTRIM(RTRIM(@Codigo)))
-                      AND cm.Estado = N'Activo'
+                      AND (cm.Estado = N'Activo' OR (cm.Estado = N'Prueba' AND (cm.PruebaVenceUtc IS NULL OR cm.PruebaVenceUtc > GETUTCDATE())))
                 ) THEN 1 ELSE 0 END;
                 """;
             return await cn.ExecuteScalarAsync<bool>(new CommandDefinition(activoSql, new { IdCliente = idCliente, Codigo = codigoModulo }, cancellationToken: ct)).ConfigureAwait(false);
@@ -1134,19 +1284,20 @@ public sealed class CentralAdminService(
             }
 
             const string sql = """
-                SELECT m.MenuKeyRaiz, cm.Estado
+                SELECT m.MenuKeyRaiz, cm.Estado, cm.PruebaVenceUtc
                 FROM dbo.Modulos m
                 LEFT JOIN dbo.ClienteModulos cm
                     ON cm.IdModulo = m.Id AND UPPER(LTRIM(RTRIM(cm.IdCliente))) = UPPER(LTRIM(RTRIM(@IdCliente)))
                 WHERE m.Activo = 1 AND m.MenuKeyRaiz IS NOT NULL AND LTRIM(RTRIM(m.MenuKeyRaiz)) <> '';
                 """;
 
-            var rows = (await cn.QueryAsync<(string MenuKeyRaiz, string? Estado)>(
+            var rows = (await cn.QueryAsync<(string MenuKeyRaiz, string? Estado, DateTime? PruebaVenceUtc)>(
                 new CommandDefinition(sql, new { IdCliente = idCliente }, cancellationToken: ct)).ConfigureAwait(false)).ToList();
 
             var definidos = new HashSet<string>(rows.Select(r => r.MenuKeyRaiz.Trim()), StringComparer.OrdinalIgnoreCase);
             var activos = new HashSet<string>(
-                rows.Where(r => string.Equals(r.Estado, "Activo", StringComparison.OrdinalIgnoreCase)).Select(r => r.MenuKeyRaiz.Trim()),
+                rows.Where(r => string.Equals(r.Estado, ClienteModuloEstados.Activo, StringComparison.OrdinalIgnoreCase) || EstaEnPruebaVigente(r.Estado, r.PruebaVenceUtc))
+                    .Select(r => r.MenuKeyRaiz.Trim()),
                 StringComparer.OrdinalIgnoreCase);
 
             await appEvents.LogAuditAsync(
@@ -1313,7 +1464,17 @@ public sealed class CentralAdminService(
         public string? ActivadoPor { get; set; }
         public DateTime? SolicitadoUtc { get; set; }
         public string? SolicitadoPor { get; set; }
+        public DateTime? PruebaVenceUtc { get; set; }
     }
+
+    /// <summary>
+    /// Un módulo cuenta como activo si está en <c>Activo</c>, o en <c>Prueba</c> con una fecha
+    /// de vencimiento todavía no cumplida (o sin fecha cargada, defensivo). Único lugar con esta
+    /// regla — todos los chequeos de "¿está prendido?" deben pasar por acá.
+    /// </summary>
+    private static bool EstaEnPruebaVigente(string? estado, DateTime? pruebaVenceUtc)
+        => string.Equals(estado, ClienteModuloEstados.Prueba, StringComparison.OrdinalIgnoreCase)
+           && (pruebaVenceUtc is null || pruebaVenceUtc.Value > DateTime.UtcNow);
 
     private async Task<AdminClienteDto?> QueryClienteAsync(string filterSql, object parameters, CancellationToken ct)
     {

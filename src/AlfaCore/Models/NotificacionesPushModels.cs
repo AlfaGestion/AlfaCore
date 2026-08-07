@@ -45,6 +45,12 @@ public sealed class NotificacionesPushClientSettingsDto
     public bool SubjectConfigurado { get; set; }
     public string ConfiguracionMensaje { get; set; } = string.Empty;
     public NotificacionesPushPreferencesDto Preferences { get; set; } = new();
+    /// <summary>
+    /// Si es <c>false</c>, el usuario puede seguir activando notificaciones en el dispositivo,
+    /// pero los canales/alcance propios de Conversaciones (el único tipo hoy implementado) no
+    /// aplican todavía — la pantalla debe ocultarlos en vez de bloquear todo el panel.
+    /// </summary>
+    public bool TieneAccesoConversaciones { get; set; } = true;
 }
 
 public sealed class NotificacionesPushSendResultDto

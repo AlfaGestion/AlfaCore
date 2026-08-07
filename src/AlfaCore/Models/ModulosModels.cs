@@ -75,12 +75,15 @@ public sealed class ClienteModuloDto
     public string? ActivadoPor { get; init; }
     public DateTime? SolicitadoUtc { get; init; }
     public string? SolicitadoPor { get; init; }
+    /// <summary>Solo tiene valor cuando <see cref="Estado"/> es <see cref="ClienteModuloEstados.Prueba"/>.</summary>
+    public DateTime? PruebaVenceUtc { get; init; }
 }
 
 public static class ClienteModuloEstados
 {
     public const string Solicitado = "Solicitado";
     public const string Activo = "Activo";
+    public const string Prueba = "Prueba";
     public const string Suspendido = "Suspendido";
     public const string Rechazado = "Rechazado";
 }
@@ -90,6 +93,36 @@ public sealed class ActivarModuloRequest
     public string IdCliente { get; set; } = string.Empty;
     public int IdModulo { get; set; }
     public string ActivadoPor { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Duración de la prueba gratuita autoservicio que se ofrece al confirmar el registro público.
+/// </summary>
+public static class PruebaModuloDefaults
+{
+    public const int DiasDuracion = 30;
+    public const int DiasAvisoPrevio = 5;
+}
+
+public sealed class IniciarPruebaModulosRequest
+{
+    public string IdCliente { get; set; } = string.Empty;
+    public List<int> IdsModulos { get; set; } = [];
+}
+
+/// <summary>
+/// Fila de prueba próxima a vencer (o ya vencida) — para el job de avisos/expiración.
+/// </summary>
+public sealed class PruebaModuloRecordatorioDto
+{
+    public string IdCliente { get; init; } = string.Empty;
+    public string ClienteNombre { get; init; } = string.Empty;
+    public string Email { get; init; } = string.Empty;
+    public int IdModulo { get; init; }
+    public string Codigo { get; init; } = string.Empty;
+    public string Nombre { get; init; } = string.Empty;
+    public decimal Precio { get; init; }
+    public DateTime PruebaVenceUtc { get; init; }
 }
 
 public sealed class SolicitarModuloRequest

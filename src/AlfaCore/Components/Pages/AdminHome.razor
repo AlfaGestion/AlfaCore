@@ -380,7 +380,12 @@
                                                     </td>
                                                     <td class="text-end">
                                                         <div class="d-inline-flex gap-2">
-                                                            @if (item.EstaActivo)
+                                                            @if (string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Prueba, StringComparison.OrdinalIgnoreCase) && item.EstaActivo)
+                                                            {
+                                                                <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_esClienteLegacySeleccionado" @onclick="() => SuspenderModuloAsync(item)">Cortar prueba</button>
+                                                                <button type="button" class="btn btn-sm btn-primary" @onclick="() => ActivarModuloAsync(item)">Confirmar pago</button>
+                                                            }
+                                                            else if (item.EstaActivo)
                                                             {
                                                                 <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_esClienteLegacySeleccionado" @onclick="() => SuspenderModuloAsync(item)">Suspender</button>
                                                             }
@@ -957,11 +962,15 @@
 
     private static string GetEstadoLabel(AlfaCore.Models.ClienteModuloDto item)
     {
+        if (string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Prueba, StringComparison.OrdinalIgnoreCase) && item.EstaActivo)
+            return item.PruebaVenceUtc is not null ? $"Prueba (vence {item.PruebaVenceUtc.Value:dd/MM/yyyy})" : "Prueba";
+
         if (item.EstaActivo)
             return "Activo";
 
         return item.Estado switch
         {
+            AlfaCore.Models.ClienteModuloEstados.Prueba => "Prueba vencida",
             AlfaCore.Models.ClienteModuloEstados.Solicitado => "Solicitado",
             AlfaCore.Models.ClienteModuloEstados.Suspendido => "Suspendido",
             AlfaCore.Models.ClienteModuloEstados.Rechazado => "Rechazado",

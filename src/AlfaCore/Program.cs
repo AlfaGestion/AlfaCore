@@ -203,6 +203,7 @@ public class Program
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
+        builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
 
         var app = builder.Build();
 
@@ -1380,6 +1381,7 @@ public class Program
                     settings.SubjectConfigurado,
                     settings.ConfiguracionMensaje,
                     settings.Preferences,
+                    settings.TieneAccesoConversaciones,
                     diagnostics = new
                     {
                         subscriptionsFound = diag.SubscriptionCount,

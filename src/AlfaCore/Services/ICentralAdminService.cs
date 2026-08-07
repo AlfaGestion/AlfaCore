@@ -51,6 +51,25 @@ public interface ICentralAdminService
     Task SuspenderModuloAsync(string idCliente, int idModulo, CancellationToken ct = default);
 
     /// <summary>
+    /// Autoservicio: arranca la prueba gratuita de 30 días para los módulos elegidos al
+    /// confirmar el registro público (ver <see cref="PruebaModuloDefaults"/>).
+    /// </summary>
+    Task IniciarPruebaModulosAsync(IniciarPruebaModulosRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Pruebas vigentes que vencen dentro de N días y no recibieron aviso en las últimas 24hs —
+    /// para el job diario de recordatorios.
+    /// </summary>
+    Task<IReadOnlyList<PruebaModuloRecordatorioDto>> GetPruebasPorVencerAsync(int diasAntes, CancellationToken ct = default);
+
+    Task MarcarRecordatorioPruebaEnviadoAsync(string idCliente, int idModulo, CancellationToken ct = default);
+
+    /// <summary>
+    /// Suspende toda prueba vencida sin conversión a pago. Devuelve la cantidad de filas afectadas.
+    /// </summary>
+    Task<int> ExpirarPruebasVencidasAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Cola de solicitudes pendientes de aprobación, cruzando todos los clientes — para
     /// <c>/admin/solicitudes</c>.
     /// </summary>

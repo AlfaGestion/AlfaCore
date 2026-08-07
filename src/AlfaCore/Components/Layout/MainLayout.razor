@@ -1071,22 +1071,29 @@ else
                 <span>Activar notificaciones en este dispositivo</span>
             </label>
 
-            <div class="field">
-                <label>Alcance</label>
-                <select @bind="_pushPreferences.Alcance">
-                    <option value="@NotificacionesPushScopes.Asignadas">Solo conversaciones asignadas a mi usuario</option>
-                    <option value="@NotificacionesPushScopes.Accesibles">Todas las conversaciones accesibles</option>
-                </select>
-            </div>
+            @if (_pushTieneAccesoConversaciones)
+            {
+                <div class="field">
+                    <label>Alcance</label>
+                    <select @bind="_pushPreferences.Alcance">
+                        <option value="@NotificacionesPushScopes.Asignadas">Solo conversaciones asignadas a mi usuario</option>
+                        <option value="@NotificacionesPushScopes.Accesibles">Todas las conversaciones accesibles</option>
+                    </select>
+                </div>
 
-            <div class="field">
-                <label>Canales</label>
-                <label class="toggle-row toggle-row--compact">
-                    <input type="checkbox" checked="@(PushChannelEnabled("WHATSAPP"))" @onchange="@(args => TogglePushChannel("WHATSAPP", args))" />
-                    <span>WhatsApp</span>
-                </label>
-                <p class="app-modal__hint">El selector queda preparado para sumar nuevos canales cuando el módulo los habilite.</p>
-            </div>
+                <div class="field">
+                    <label>Canales</label>
+                    <label class="toggle-row toggle-row--compact">
+                        <input type="checkbox" checked="@(PushChannelEnabled("WHATSAPP"))" @onchange="@(args => TogglePushChannel("WHATSAPP", args))" />
+                        <span>WhatsApp</span>
+                    </label>
+                    <p class="app-modal__hint">El selector queda preparado para sumar nuevos canales cuando el módulo los habilite.</p>
+                </div>
+            }
+            else
+            {
+                <p class="app-modal__hint">Los avisos de Conversaciones (WhatsApp) no están disponibles porque no tenés ese módulo contratado. Vas a poder elegir otros tipos de notificación acá cuando estén disponibles.</p>
+            }
         </div>
 
         <div class="actions">
@@ -1246,6 +1253,7 @@ else
     private bool _showPushPanel;
     private bool _pushBusy;
     private bool _pushConfigured;
+    private bool _pushTieneAccesoConversaciones = true;
     private string _pushPublicKey = string.Empty;
     private string _pushConfigurationMessage = string.Empty;
     private string _pushMessage = string.Empty;
@@ -1306,7 +1314,7 @@ else
            && _pwaPushSupported
            && (!_pwaIsIos || _pwaInstalled);
     private bool CanSendTestPush
-        => CanEnablePush && _pushPreferences.Habilitadas;
+        => CanEnablePush && _pushPreferences.Habilitadas && _pushTieneAccesoConversaciones;
     private bool ShouldShowConversationNotice
         => !IsDirectMode
            && _globalConversationUnreadCount > 0
@@ -2559,6 +2567,7 @@ else
             _pushPublicKey = settings.PublicKey;
             _pushConfigurationMessage = settings.ConfiguracionMensaje;
             _pushPreferences = settings.Preferences ?? new();
+            _pushTieneAccesoConversaciones = settings.TieneAccesoConversaciones;
             if (!_pushConfigured)
             {
                 _pushPreferences.Habilitadas = false;

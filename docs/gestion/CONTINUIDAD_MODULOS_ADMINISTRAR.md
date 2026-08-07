@@ -16,6 +16,61 @@ general del repo).
 
 ---
 
+## Actualización 2026-08-06 (2): prueba gratuita autoservicio de 30 días al registrarse
+
+Nuevo estado `Prueba` en `dbo.ClienteModulos` (se suma a Solicitado/Activo/Suspendido/Rechazado).
+Decisión de producto confirmada: **se incluyen todos los módulos por igual en la prueba**,
+incluido `ALFAKNOWLEDGE` pese a que aprovisiona infraestructura real (base + colección externa)
+al activarse — se evaluó excluirlo pero se prefirió simplicidad.
+
+- `docs/base-datos/sql-referencia/modulos_estado_prueba.sql` (nuevo — ejecutar manualmente contra
+  `ALFA_CENTRAL`, bloqueado para mí por el clasificador de seguridad al ser `ALTER TABLE`, mismo
+  patrón que las migraciones anteriores de este sistema): reemplaza el CHECK de `Estado` para
+  sumar `Prueba`, agrega `PruebaVenceUtc`/`UltimoRecordatorioUtc` (datetime, nullable).
+- `CentralAdminService.ActivarModuloAsync` se refactorizó: ahora delega en un núcleo privado
+  `ActivarConEstadoAsync(idCliente, idModulo, estado, activadoPor, pruebaVenceUtc, ct)` compartido
+  con el nuevo `IniciarPruebaModulosAsync` (autoservicio). Reglas del núcleo: las dependencias
+  obligatorias siempre se activan como `Activo` sin cargo (igual que antes); el módulo elegido
+  directamente recibe el estado pedido; **nunca se retrocede un módulo ya `Activo` a `Prueba`**
+  (protege un contrato pago si alguien reintenta la prueba por error); el hook de aprovisionamiento
+  de AlfaKnowledge se dispara igual para ambos casos.
+- Los 3 lugares que preguntan "¿está prendido?" (`GetClienteModulosAsync`, chequeo puntual
+  `IsModuloActivoParaClienteActualAsync`, filtro de menú `GetModuloMenuFiltroParaClienteActualAsync`)
+  ahora tratan `Prueba` con `PruebaVenceUtc` todavía no cumplida como activo — mismo criterio
+  centralizado en `CentralAdminService.EstaEnPruebaVigente`.
+- `Verify.razor` (paso final del registro público, después de confirmar el email): nuevo bloque
+  "Elegí qué querés probar gratis por 30 días" con checkboxes de todo el catálogo pago (se excluyen
+  Clientes/Técnicos, que son $0 y se arrastran solos), botón "Empezar prueba gratis". Llama a
+  `ICentralRegistrationService.IniciarPruebaModulosAsync(code, idsModulos)` — identifica al cliente
+  por el mismo código de verificación (no por un `IdCliente` que mande el navegador), para no
+  exponer un endpoint público que active módulos de cualquier cliente sin haber probado nada. Si
+  falla, no bloquea el alta — el mensaje de error ofrece pedirlo después por soporte.
+- `ModuloPruebaRecordatorioHostedService` (nuevo, registrado en `Program.cs` junto a los otros
+  `BackgroundService`): corre cada 6hs, solo si `ModoSaaS=true` y `ConnectionStrings:AlfaCentral`
+  está configurado (no hace nada en una instalación on-premise). Cada ciclo: (1)
+  `ExpirarPruebasVencidasAsync` — pasa a `Suspendido` toda prueba con `PruebaVenceUtc` cumplida;
+  (2) `GetPruebasPorVencerAsync(5)` — trae las que vencen en ≤5 días y no recibieron aviso en las
+  últimas 24hs, manda un email (mismo SMTP de `RegistroPublico:Email*` que ya usa la verificación
+  de cuenta) y marca `UltimoRecordatorioUtc`. El email sale de `dbo.users` (no hay columna de email
+  en `dbo.Clientes`).
+- `AdminHome.razor` (panel Cliente → Módulos): la columna Estado muestra `Prueba (vence dd/mm/aaaa)`
+  mientras está vigente y `Prueba vencida` si ya pasó la fecha pero el job diario todavía no corrió;
+  fila con dos botones nuevos cuando está en prueba — "Cortar prueba" (suspende antes de tiempo,
+  reusa `SuspenderModuloAsync`) y "Confirmar pago" (reusa `ActivarModuloAsync` tal cual, que
+  convierte a `Activo` real y limpia `PruebaVenceUtc`).
+
+Compiló limpio (`dotnet build`, 0 errores/advertencias) y pasó `check_catalogo.py`. **Pendiente
+para producción**: (1) ejecutar `modulos_estado_prueba.sql` contra `ALFA_CENTRAL` — sin esto, el
+selector de Verify.razor va a fallar al intentar guardar porque el CHECK constraint todavía no
+admite `Prueba`; (2) probar en vivo el flujo completo (registrarse → verificar → elegir un módulo
+→ confirmar que queda en `Prueba` con fecha de vencimiento → ver que aparece activo en el menú);
+(3) confirmar que el job de recordatorio manda el email de verdad contra la config SMTP real
+(no se probó en vivo, solo compilado); (4) decidir si 6hs de intervalo y 5 días de aviso previo
+son los valores finales, o si el dueño del producto quiere ajustarlos (`PruebaModuloDefaults` en
+`Models/ModulosModels.cs` centraliza `DiasDuracion`/`DiasAvisoPrevio`).
+
+---
+
 ## Actualización 2026-08-06: corrección de estado + cola de aprobación de solicitudes
 
 **Corrección importante**: al retomar este tema se verificó directo contra `ALFA_CENTRAL` (en vez

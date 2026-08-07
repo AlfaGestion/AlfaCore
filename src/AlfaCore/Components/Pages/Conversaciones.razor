@@ -1909,7 +1909,7 @@
                                     </div>
                                     @if (_composerToolTab == ComposerToolTabs.Emojis)
                                     {
-                                        <input class="conversations-tools-panel__search" type="search" placeholder="Buscar emoji" value="@_emojiSearch" @oninput="HandleEmojiSearchInput" />
+                                        <input @key="ComposerToolTabs.Emojis" class="conversations-tools-panel__search" type="search" placeholder="Buscar emoji" value="@_emojiSearch" @oninput="HandleEmojiSearchInput" />
                                         @foreach (var group in FilteredEmojiGroups)
                                         {
                                             <div class="conversations-tools-panel__group">
@@ -1925,7 +1925,7 @@
                                     }
                                     else if (_composerToolTab == ComposerToolTabs.Stickers)
                                     {
-                                        <div class="conversations-tools-panel__actions">
+                                        <div @key="ComposerToolTabs.Stickers" class="conversations-tools-panel__actions">
                                             <label class="btn btn--ghost conversations-tools-panel__tool" title="Cargar sticker WebP">
                                                 <i class="bi bi-plus-lg"></i> Crear
                                                 <InputFile OnChange="HandleStickerSelectedAsync" style="display:none" multiple accept="image/webp,.webp" />
@@ -1948,7 +1948,7 @@
                                     }
                                     else if (_composerToolTab == ComposerToolTabs.Adjuntos)
                                     {
-                                        <div class="conversations-tools-panel__actions">
+                                        <div @key="ComposerToolTabs.Adjuntos" class="conversations-tools-panel__actions">
                                             <label class="btn btn--ghost conversations-tools-panel__tool" title="Adjuntar archivo">
                                                 <i class="bi @(_uploadingFile ? "bi-hourglass-split" : "bi-paperclip")"></i>
                                                 <span>Archivo</span>
@@ -1962,7 +1962,7 @@
                                     }
                                     else
                                     {
-                                        <div class="field conversations-composer__note conversations-composer__note--mobile">
+                                        <div @key="ComposerToolTabs.Notas" class="field conversations-composer__note conversations-composer__note--mobile">
                                             <label for="conv-note-mobile">Nota interna</label>
                                             <textarea id="conv-note-mobile"
                                                       @ref="_internalNoteMobileTextArea"

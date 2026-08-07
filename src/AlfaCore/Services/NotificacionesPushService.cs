@@ -30,11 +30,15 @@ public sealed class NotificacionesPushService(
     public Task<NotificacionesPushClientSettingsDto> GetClientSettingsAsync(string userName, string deviceId, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetClientSettings", async token =>
         {
-            await EnsureUserCanUseConversacionesAsync(userName, token);
+            // A diferencia del resto (guardar/borrar/probar), cargar la configuración nunca debe
+            // fallar por no tener Conversaciones: el dispositivo se puede activar igual para otros
+            // tipos de notificación futuros — la pantalla oculta el alcance/canal de Conversaciones
+            // según TieneAccesoConversaciones en vez de bloquear todo el panel.
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var preferences = await ReadPreferencesAsync(cn, userName, deviceId, token);
             var pushOptions = options.Value;
+            var tieneAccesoConversaciones = await UserCanUseConversacionesAsync(cn, userName, token);
 
             return new NotificacionesPushClientSettingsDto
             {
@@ -44,7 +48,8 @@ public sealed class NotificacionesPushService(
                 PrivateKeyConfigurada = pushOptions.HasPrivateKey,
                 SubjectConfigurado = pushOptions.HasSubject,
                 ConfiguracionMensaje = pushOptions.GetConfigurationMessage(),
-                Preferences = preferences
+                Preferences = preferences,
+                TieneAccesoConversaciones = tieneAccesoConversaciones
             };
         }, "No se pudo cargar la configuración de notificaciones.", ct);
 
@@ -53,7 +58,8 @@ public sealed class NotificacionesPushService(
         {
             ValidateDeviceId(request.DeviceId);
             ValidateSubscription(request.Subscription);
-            await EnsureUserCanUseConversacionesAsync(userName, token);
+            // Registrar el dispositivo es independiente del canal — no requiere Conversaciones
+            // (ver GetClientSettingsAsync).
 
             var record = new StoredSubscription
             {
@@ -101,7 +107,6 @@ public sealed class NotificacionesPushService(
         => ExecuteLoggedAsync("DeleteSubscription", async token =>
         {
             ValidateDeviceId(deviceId);
-            await EnsureUserCanUseConversacionesAsync(userName, token);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
@@ -128,7 +133,6 @@ public sealed class NotificacionesPushService(
         => ExecuteLoggedAsync("SavePreferences", async token =>
         {
             ValidateDeviceId(request.DeviceId);
-            await EnsureUserCanUseConversacionesAsync(userName, token);
             var preferences = NormalizePreferences(request.Preferences);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -223,7 +227,6 @@ public sealed class NotificacionesPushService(
         => ExecuteLoggedAsync("GetDiagnostics", async token =>
         {
             ValidateDeviceId(deviceId);
-            await EnsureUserCanUseConversacionesAsync(userName, token);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var subscriptions = await ReadUserSubscriptionsAsync(cn, userName, token);

@@ -13,6 +13,14 @@ public interface ICentralRegistrationService
 {
     Task<PublicRegistrationResult> RegisterAsync(PublicRegistrationRequest request, CancellationToken ct = default);
     Task<PublicVerificationResult> VerifyAsync(string code, CancellationToken ct = default);
+
+    /// <summary>
+    /// Autoservicio: arranca la prueba gratuita de 30 días para los módulos elegidos justo
+    /// después de confirmar el email (ver Verify.razor). Se identifica al cliente por el mismo
+    /// código de verificación (no por un IdCliente que llegue del navegador) para no exponer un
+    /// endpoint que active módulos de cualquier cliente sin probar nada.
+    /// </summary>
+    Task<PublicTrialResult> IniciarPruebaModulosAsync(string code, IReadOnlyCollection<int> idsModulos, CancellationToken ct = default);
 }
 
 public sealed class CentralRegistrationService(
@@ -20,6 +28,7 @@ public sealed class CentralRegistrationService(
     IHttpContextAccessor httpContextAccessor,
     IRecaptchaValidationService recaptchaValidationService,
     ICentralProvisioningService provisioningService,
+    ICentralAdminService centralAdminService,
     IAppEventService appEvents) : ICentralRegistrationService
 {
     private const string ModuleName = "RegistroPublico";
@@ -51,10 +60,34 @@ public sealed class CentralRegistrationService(
                 };
             }
 
+            // sp_web_altaClienteAlfa NO dedupe por CUIT — crea una cuenta oficial nueva (código
+            // correlativo) en cada llamada, sin mirar si ese CUIT ya existe. Sin este chequeo,
+            // una misma empresa registrándose con otro email termina con una base propia nueva y
+            // vacía, en vez de con un error claro de "esta empresa ya tiene cuenta" — decisión de
+            // producto: mantenerlo simple, un CUIT = una cuenta.
+            if (await CuitYaRegistradoAsync(normalized.Cuit, ct))
+            {
+                return new PublicRegistrationResult
+                {
+                    Success = false,
+                    Message = "Ya existe una cuenta registrada con ese CUIT. Iniciá sesión con la cuenta existente, o contactá a soporte si necesitás agregar otro usuario."
+                };
+            }
+
             await using var central = new SqlConnection(CentralConnectionString);
             await central.OpenAsync(ct);
 
             var existing = await LoadRegistrationByEmailAsync(central, normalized.Email, ct);
+            if (existing is null)
+            {
+                // LoadRegistrationByEmailAsync cruza dbo.users con dbo.Clientes: si el Clientes
+                // de un registro anterior se borró (a mano, o por una limpieza de datos de prueba)
+                // pero el users no, queda un email "fantasma" que ni se detecta como ya registrado
+                // ni deja insertar uno nuevo (choca contra IX_users). Se autolimpia acá — es seguro
+                // porque solo borra un users sin Clientes, bases ni ClienteModulos que lo referencien.
+                await DeleteOrphanedUserByEmailAsync(central, normalized.Email, ct);
+            }
+
             if (existing is not null)
             {
                 if (await BaseAlreadyProvisionedAsync(central, existing.IdCliente, ct))
@@ -194,17 +227,13 @@ public sealed class CentralRegistrationService(
                 };
             }
 
-            if (await BaseAlreadyProvisionedAsync(central, pending.IdCliente, ct))
-            {
-                return new PublicVerificationResult
-                {
-                    Success = true,
-                    AccountVerified = true,
-                    ProvisioningCompleted = true,
-                    Message = "La cuenta ya había sido confirmada y la base ya está preparada."
-                };
-            }
-
+            // OJO: antes esto cortaba acá con "ya está preparada" sin llamar a ProvisionAsync.
+            // Eso rompía el caso de un mismo CUIT registrándose de nuevo con OTRO email (dos
+            // personas de la misma empresa, o un reintento): sp_web_altaClienteAlfa reutiliza el
+            // idCliente, la base ya existe, pero el usuario legacy (TA_USUARIOS) de ESTE email
+            // puntual nunca se creaba — dejaba a ese usuario sin login automático para siempre.
+            // ProvisionAsync ya maneja el caso "base ya registrada" de forma barata (sin restore)
+            // y ahora además asegura el usuario legacy en ese camino — así que siempre se llama.
             var official = await LoadOfficialCustomerAsync(pending.IdCliente, ct);
 
             var provisioning = await provisioningService.ProvisionAsync(new PublicProvisioningRequest
@@ -263,6 +292,56 @@ public sealed class CentralRegistrationService(
         }
     }
 
+    public async Task<PublicTrialResult> IniciarPruebaModulosAsync(string code, IReadOnlyCollection<int> idsModulos, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return new PublicTrialResult { Success = false, Message = "El código de verificación es inválido." };
+
+        if (idsModulos.Count == 0)
+            return new PublicTrialResult { Success = true, Message = "No se eligió ningún módulo para probar." };
+
+        try
+        {
+            await using var central = new SqlConnection(CentralConnectionString);
+            await central.OpenAsync(ct);
+
+            var pending = await LoadRegistrationByCodeAsync(central, code.Trim(), ct);
+            if (pending is null || !pending.Verified)
+            {
+                return new PublicTrialResult
+                {
+                    Success = false,
+                    Message = "No se pudo identificar la cuenta para activar la prueba. Confirmá primero tu cuenta desde el link del email."
+                };
+            }
+
+            await centralAdminService.IniciarPruebaModulosAsync(new IniciarPruebaModulosRequest
+            {
+                IdCliente = pending.IdCliente,
+                IdsModulos = idsModulos.ToList()
+            }, ct);
+
+            return new PublicTrialResult { Success = true, Message = "Prueba gratuita activada por 30 días." };
+        }
+        catch (Exception ex)
+        {
+            var incidentId = await appEvents.LogErrorAsync(
+                ModuleName,
+                "IniciarPruebaModulos",
+                ex,
+                "No se pudo activar la prueba gratuita de módulos.",
+                new { Code = code.Trim(), IdsModulos = idsModulos },
+                AppEventSeverity.Error,
+                ct);
+
+            return new PublicTrialResult
+            {
+                Success = false,
+                Message = $"No se pudo activar la prueba gratuita. Podés seguir usando el sistema y activarla más tarde desde soporte. (Incidente: {incidentId})"
+            };
+        }
+    }
+
     private static PublicRegistrationRequest Normalize(PublicRegistrationRequest request)
         => new()
         {
@@ -306,6 +385,29 @@ public sealed class CentralRegistrationService(
             """;
 
         var count = await central.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { IdCliente = idCliente }, cancellationToken: ct));
+        return count > 0;
+    }
+
+    /// <summary>
+    /// Compara solo dígitos (CUIT puede llegar con o sin guiones) contra NUMERO_DOCUMENTO en el
+    /// registro oficial de clientes — la misma tabla que llena sp_web_altaClienteAlfa al dar de
+    /// alta una cuenta nueva.
+    /// </summary>
+    private async Task<bool> CuitYaRegistradoAsync(string cuit, CancellationToken ct)
+    {
+        var soloDigitos = new string(cuit.Where(char.IsDigit).ToArray());
+        if (soloDigitos.Length == 0)
+            return false;
+
+        const string sql = """
+            SELECT COUNT(1)
+            FROM dbo.MA_CUENTASADIC
+            WHERE REPLACE(REPLACE(LTRIM(RTRIM(ISNULL(NUMERO_DOCUMENTO, ''))), '-', ''), '.', '') = @Cuit;
+            """;
+
+        await using var cn = new SqlConnection(AlfaGestionConnectionString);
+        await cn.OpenAsync(ct);
+        var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { Cuit = soloDigitos }, cancellationToken: ct));
         return count > 0;
     }
 
@@ -548,6 +650,13 @@ public sealed class CentralRegistrationService(
         if (!columns.Contains("verified_code"))
             throw new InvalidOperationException("La base central no tiene la columna verified_code para validar la cuenta.");
 
+        // verified_code vive en dbo.Clientes (uno por idcliente), pero dbo.users puede tener MÁS
+        // de una fila para el mismo idcliente si el mismo CUIT se registró de nuevo con otro email
+        // (sp_web_altaClienteAlfa reutiliza el idCliente). Sin ORDER BY, el TOP(1) del join podía
+        // devolver cualquiera de esos emails — casi siempre el más viejo, no el dueño real del
+        // código que se está verificando ahora. Como verified_code se pisa con cada registro
+        // nuevo, el registro más reciente (id más alto en dbo.users) es el que corresponde a ESTE
+        // código.
         var sql = $"""
             SELECT TOP (1)
                 c.idcliente AS IdCliente,
@@ -557,6 +666,7 @@ public sealed class CentralRegistrationService(
             FROM dbo.Clientes c
             LEFT JOIN dbo.users u ON u.idcliente = c.idcliente
             WHERE UPPER(LTRIM(RTRIM(c.verified_code))) = UPPER(LTRIM(RTRIM(@Code)))
+            ORDER BY u.id DESC
             ;
             """;
 
@@ -592,6 +702,23 @@ public sealed class CentralRegistrationService(
             """;
 
         return await central.QuerySingleOrDefaultAsync<RegistrationRow>(new CommandDefinition(sql, new { Email = email }, cancellationToken: ct));
+    }
+
+    /// <summary>
+    /// Borra un <c>dbo.users</c> con ese email cuyo <c>idcliente</c> ya no tiene fila en
+    /// <c>dbo.Clientes</c> — ver comentario en <see cref="RegisterAsync"/>. La condición
+    /// <c>NOT EXISTS</c> garantiza que nunca borre un usuario todavía vinculado a un cliente real.
+    /// </summary>
+    private static async Task DeleteOrphanedUserByEmailAsync(SqlConnection central, string email, CancellationToken ct)
+    {
+        const string sql = """
+            DELETE u
+            FROM dbo.users u
+            WHERE UPPER(LTRIM(RTRIM(u.[user]))) = UPPER(LTRIM(RTRIM(@Email)))
+              AND NOT EXISTS (SELECT 1 FROM dbo.Clientes c WHERE c.idcliente = u.idcliente);
+            """;
+
+        await central.ExecuteAsync(new CommandDefinition(sql, new { Email = email }, cancellationToken: ct));
     }
 
     private async Task RefreshPendingRegistrationAsync(

@@ -53,6 +53,17 @@ public sealed class CentralProvisioningService(
         {
             if (await BaseAlreadyRegisteredAsync(request.IdCliente, dbName, ct))
             {
+                // Puede pasar que el mismo CUIT se registre de nuevo con OTRO email (p. ej. otro
+                // usuario de la misma empresa) — sp_web_altaClienteAlfa reutiliza el mismo
+                // idCliente en ese caso. La base ya existe y no hay que restaurarla de nuevo, pero
+                // si no se crea el usuario legacy (TA_USUARIOS) para este email puntual, el login
+                // automático por email (ResolveByCentralLoginAsync) nunca lo va a encontrar y ese
+                // usuario queda forzado a tipear el "usuario del sistema" a mano para siempre.
+                var existingTargetConnectionString = BuildDatabaseConnectionString(targetServer, dbName, credentials.User, credentials.Password);
+                await using var existingTarget = new SqlConnection(existingTargetConnectionString);
+                await existingTarget.OpenAsync(ct);
+                await EnsureLegacyUserAsync(existingTarget, request, ct);
+
                 return new PublicProvisioningResult
                 {
                     Success = true,

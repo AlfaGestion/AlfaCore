@@ -31,6 +31,12 @@ public sealed class PublicVerificationResult
     public string DatabaseName { get; init; } = string.Empty;
 }
 
+public sealed class PublicTrialResult
+{
+    public bool Success { get; init; }
+    public string Message { get; init; } = string.Empty;
+}
+
 public sealed class PublicProvisioningRequest
 {
     public string IdCliente { get; init; } = string.Empty;

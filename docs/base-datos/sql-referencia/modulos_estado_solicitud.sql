@@ -1,6 +1,6 @@
 -- Amplía dbo.ClienteModulos para soportar el flujo de solicitud/aprobación de módulos
 -- (pantalla /admin/solicitudes). Ejecutar manualmente contra ALFA_CENTRAL — no se aplica solo.
-
+use ALFA_CENTRAL
 ALTER TABLE dbo.ClienteModulos DROP CONSTRAINT CK_ClienteModulos_Estado;
 GO
 
