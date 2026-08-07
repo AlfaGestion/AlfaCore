@@ -34,8 +34,8 @@ public static class TechnicianColorPalette
             var x when x.Contains("FAVIO", StringComparison.Ordinal) => "#ef4444",
             var x when x.Contains("EVELYN", StringComparison.Ordinal) => "#8b5cf6",
             var x when x.Contains("FRANCO", StringComparison.Ordinal) => "#15803d",
-            var x when x.Contains("ALBERTO", StringComparison.Ordinal) => "#f59e0b",
-            var x when x.Contains("MARCOS", StringComparison.Ordinal) => "#fde047",
+            var x when x.Contains("ALBERTO", StringComparison.Ordinal) => "#f97316",
+            var x when x.Contains("MARCOS", StringComparison.Ordinal) => "#06b6d4",
             var x when x.Contains("DANIEL", StringComparison.Ordinal) => "#a3e635",
             _ => string.Empty
         };

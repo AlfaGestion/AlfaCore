@@ -15,6 +15,7 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
     private IReadOnlyList<SessionDto> _cachedSessions = [];
     private Guid? _activeSessionId;
     private string? _cacheKey;
+    private SessionDto? _webhookOverride;
 
     public ConexionClienteService(
         IAppModeService appMode,
@@ -37,8 +38,31 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         return active is null ? string.Empty : BuildConnectionString(active);
     }
 
+    /// <summary>
+    /// Fuerza la base activa de este scope a la indicada, sin pasar por
+    /// <see cref="IAppUserSessionService.CurrentUser"/>. Uso exclusivo de requests que no tienen
+    /// sesión de usuario (ej. webhooks de WhatsApp/Instagram/Facebook/MercadoLibre), donde el
+    /// tenant se resuelve por otro medio (un token en la URL) antes de tocar cualquier tabla.
+    /// Tiene prioridad sobre la resolución normal mientras dure este scope.
+    /// </summary>
+    public void SetWebhookOverride(SessionDto session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+
+        lock (_lock)
+        {
+            _webhookOverride = session;
+        }
+    }
+
     public SessionDto? GetActiveSession()
     {
+        lock (_lock)
+        {
+            if (_webhookOverride is not null)
+                return Clone(_webhookOverride, true);
+        }
+
         if (!_appMode.IsSaaSMode)
             return GetLegacyActiveSession();
 

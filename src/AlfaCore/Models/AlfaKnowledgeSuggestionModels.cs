@@ -1,5 +1,12 @@
 namespace AlfaCore.Models;
 
+public static class AlfaKnowledgeSuggestionModes
+{
+    public const string ReplySuggestion = "reply-suggestion";
+    public const string TextImprovement = "text-improvement";
+    public const string AnyDeskId = "anydesk-id";
+}
+
 public sealed class AlfaKnowledgeSuggestionCitation
 {
     public int CitationNumber { get; set; }
@@ -20,6 +27,11 @@ public sealed class AlfaKnowledgeImageInput
 {
     public string DataUrl { get; set; } = string.Empty;
     public string? FileName { get; set; }
+}
+
+public sealed class AlfaKnowledgeTextImprovementInput
+{
+    public string? TextToImprove { get; set; }
 }
 
 public sealed class AlfaKnowledgeSuggestionResult

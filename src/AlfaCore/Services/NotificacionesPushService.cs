@@ -404,6 +404,75 @@ public sealed class NotificacionesPushService(
                 token);
         }, "No se pudo enviar la notificación push de mensaje nuevo.", ct);
 
+    public Task<NotificacionesPushSendResultDto> NotifyMentionAsync(long idConversacion, long idMensaje, IReadOnlyCollection<string> userNames, string mencionadoPor, CancellationToken ct = default)
+        => ExecuteLoggedAsync("NotifyMention", async token =>
+        {
+            var normalizedUsers = (userNames ?? [])
+                .Select(NormalizeUser)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (normalizedUsers.Length == 0)
+                return new NotificacionesPushSendResultDto();
+
+            var message = await GetNewMessageAsync(idConversacion, idMensaje, token);
+            if (message is null)
+                return new NotificacionesPushSendResultDto();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var toSend = new List<StoredSubscription>();
+            foreach (var userName in normalizedUsers)
+            {
+                if (!await UserCanUseConversacionesAsync(cn, userName, token))
+                    continue;
+
+                var subscriptions = await ReadUserSubscriptionsAsync(cn, userName, token);
+                toSend.AddRange(subscriptions.Where(x => x.Activo));
+            }
+
+            if (toSend.Count == 0)
+                return new NotificacionesPushSendResultDto();
+
+            var titulo = string.IsNullOrWhiteSpace(mencionadoPor) ? "Te mencionaron" : $"{SanitizeText(mencionadoPor, 60)} te mencionó";
+
+            var result = await SendToSubscriptionsAsync(cn, toSend, new PushPayload
+            {
+                Title = titulo,
+                Body = BuildNotificationPreview(message),
+                Url = $"/conversaciones?id={message.IdConversacion.ToString(CultureInfo.InvariantCulture)}",
+                IdConversacion = message.IdConversacion,
+                IdMensaje = message.IdMensaje,
+                Canal = message.Canal,
+                ContactName = BuildNotificationTitle(message),
+                Preview = BuildNotificationPreview(message),
+                TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                UnreadCount = 1,
+                Renotify = true
+            }, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "NotifyMentionResult",
+                "CONV_MENSAJES",
+                message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                "Resultado de envío push por mención directa.",
+                new
+                {
+                    message.IdConversacion,
+                    message.IdMensaje,
+                    UsuariosMencionados = normalizedUsers,
+                    SuscripcionesAEnviar = toSend.Count,
+                    result.SuccessCount,
+                    result.FailCount
+                },
+                token);
+
+            return result;
+        }, "No se pudo enviar la notificación de mención.", ct);
+
     public Task<bool> UserCanUseConversacionesAsync(string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync("UserCanUseConversaciones", async token =>
         {

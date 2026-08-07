@@ -144,6 +144,21 @@ window.conversacionesUi = {
     _lastSoundError: '',
     _soundInitialized: false,
 
+    // El disparador usa el atributo nativo `popovertarget` (sin round-trip a Blazor para abrir/cerrar).
+    // Este handler se cablea con un `onclick` HTML plano en el propio botón (no interop de Blazor),
+    // así corre siempre en el mismo click nativo que abre el popover, sin depender de que un bind
+    // previo (p.ej. en OnAfterRenderAsync) se haya registrado a tiempo.
+    positionModeMenu: function (triggerElement) {
+        const menu = document.getElementById('conversations-mode-menu');
+        if (!menu || !triggerElement) return;
+        const rect = triggerElement.getBoundingClientRect();
+        const menuWidth = menu.offsetWidth || 178;
+        const top = rect.bottom + 6;
+        const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+        menu.style.top = top + 'px';
+        menu.style.left = left + 'px';
+    },
+
     bindColumnResizers: function (rootId) {
         const root = document.getElementById(rootId);
         if (!root || this._columnResizerWatchers.has(rootId)) return false;
@@ -282,7 +297,16 @@ window.conversacionesUi = {
 
     scrollToBottom: function (element) {
         if (!element) return;
-        element.scrollTop = element.scrollHeight;
+        element.scrollTop = Math.max(0, element.scrollHeight - element.clientHeight);
+    },
+
+    restoreScrollAfterPrepend: function (element, previousScrollTop, previousScrollHeight) {
+        if (!element) return false;
+        const currentScrollHeight = element.scrollHeight || 0;
+        const previousTop = Number(previousScrollTop) || 0;
+        const previousHeight = Number(previousScrollHeight) || 0;
+        element.scrollTop = Math.max(0, previousTop + (currentScrollHeight - previousHeight));
+        return true;
     },
 
     scrollToBottomStable: function (element) {

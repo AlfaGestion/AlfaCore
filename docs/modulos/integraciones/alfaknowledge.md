@@ -18,8 +18,8 @@ La integración es asistida:
 AlfaCore llama:
 
 ```text
-POST {AlfaKnowledge:BaseUrl}/api/external/suggest-reply
-X-Api-Key: {AlfaKnowledge:ApiKey}
+POST {CONV_ALFAKNOWLEDGE_BASE_URL}/api/external/suggest-reply
+X-Api-Key: {CONV_ALFAKNOWLEDGE_API_KEY}
 ```
 
 Envía:
@@ -43,36 +43,23 @@ AlfaKnowledge devuelve:
 El feedback se registra mediante:
 
 ```text
-POST {AlfaKnowledge:BaseUrl}/api/feedback
+POST {CONV_ALFAKNOWLEDGE_BASE_URL}/api/feedback
 ```
 
 ## Configuración
 
-La configuración vive fuera del repositorio:
+La configuración se carga manualmente por base desde `Conversaciones > Configuración` y se guarda
+en `dbo.TA_CONFIGURACION` de la base activa:
 
-```env
-AlfaKnowledge__BaseUrl=http://10.8.0.32:5000
-AlfaKnowledge__ApiKey=
-AlfaKnowledge__TimeoutSeconds=30
-```
+- `CONV_ALFAKNOWLEDGE_BASE_URL`
+- `CONV_ALFAKNOWLEDGE_API_KEY`
+- `CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS`
 
 La clave debe coincidir con `ALFAKNOWLEDGE_EXTERNAL_API_KEY` en la instalación de AlfaKnowledge.
 No documentar ni copiar su valor real.
 
-En el despliegue productivo como servicio Windows, estas tres variables también quedaron
-declaradas en el valor `Environment` del servicio `AlfaCore`. Esto evita depender del directorio
-de trabajo con el que Windows inicia el proceso. El valor real de la clave sigue fuera de
-`appsettings.json` y del repositorio.
-
-La instalación productiva también conserva una sección equivalente en
-`appsettings.Production.json`, archivo local del servidor que no forma parte del repositorio ni del
-release. Se agregó como respaldo operativo porque el primer proceso del servicio no vinculó las
-variables cargadas desde `.env`.
-
-El registro de opciones usa además una lectura explícita de
-`Environment.GetEnvironmentVariable(...)` como fallback. Esta decisión evita que una diferencia
-entre el proveedor de configuración de ASP.NET Core y el entorno efectivo del servicio vuelva a
-dejar la sección vacía.
+No hay fallback a `appsettings.json`, `.env` ni variables de entorno. Si una base no tiene estas
+claves, el copiloto queda deshabilitado solo en esa base.
 
 ## Estado productivo al 2026-07-29
 
@@ -92,7 +79,7 @@ Validación realizada:
 - feedback registrado;
 - recurso CSS público con el panel `Sugerencia IA`;
 - servicio `AlfaCore` en estado `RUNNING`.
-- variables de AlfaKnowledge disponibles en el entorno efectivo del servicio Windows.
+- claves de AlfaKnowledge cargadas en `TA_CONFIGURACION` de la base habilitada.
 
 ## Prueba funcional
 

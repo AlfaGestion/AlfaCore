@@ -27,6 +27,21 @@ Se trabajó sobre la base actual del proyecto.
 
 ---
 
+## Actualización 2026-08-05: AlfaCore modular (catálogo de módulos + panel Administrar)
+
+Se abrió un análisis de arquitectura (todavía sin código) para convertir AlfaCore en un ERP
+modular estilo Odoo: base de datos siempre completa por cliente (como ya funciona hoy), pero
+con módulos que se activan/venden por separado. Conversaciones sería el primer módulo armado
+con este esquema, en vez de separarse como producto aparte.
+
+Estado: solo análisis y decisiones de diseño, cero código escrito.
+
+Detalle completo, decisiones tomadas, hallazgos técnicos y próximos pasos:
+
+- `docs/gestion/CONTINUIDAD_MODULOS_ADMINISTRAR.md`
+
+---
+
 ## Actualización 2026-07-29: copiloto AlfaKnowledge
 
 Se completó la integración asistida entre Conversaciones y el repositorio separado

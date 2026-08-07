@@ -151,20 +151,30 @@ public sealed class UsuariosService(
 
             var decoded = passwordCodec.Decode(GetString(rd, 5));
             var canonicalName = GetString(rd, 0);
+            var email = GetString(rd, 1);
+            var esGrupo = GetBool(rd, 2);
+            var cambiarProximoInicio = GetBool(rd, 3);
+            var activo = GetBool(rd, 4);
+            var fechaGrabacion = rd.IsDBNull(6) ? (DateTime?)null : rd.GetDateTime(6);
+            var fechaModificacion = rd.IsDBNull(7) ? (DateTime?)null : rd.GetDateTime(7);
+            await rd.CloseAsync();
+
             var photoInfo = await TryGetPhotoInfoAsync(canonicalName, token);
+            var esTecnico = await IsLinkedTechnicianActiveAsync(cn, canonicalName, token);
 
             return new UsuarioDetailDto
             {
                 Nombre = canonicalName,
-                Email = GetString(rd, 1),
-                EsGrupo = GetBool(rd, 2),
-                CambiarProximoInicio = GetBool(rd, 3),
-                Activo = GetBool(rd, 4),
+                Email = email,
+                EsGrupo = esGrupo,
+                CambiarProximoInicio = cambiarProximoInicio,
+                Activo = activo,
                 ContrasenaDecodificada = decoded,
                 TieneFoto = photoInfo.Exists,
                 FotoCacheToken = photoInfo.CacheToken,
-                FechaHoraGrabacion = rd.IsDBNull(6) ? null : rd.GetDateTime(6),
-                FechaHoraModificacion = rd.IsDBNull(7) ? null : rd.GetDateTime(7)
+                FechaHoraGrabacion = fechaGrabacion,
+                FechaHoraModificacion = fechaModificacion,
+                EsTecnico = esTecnico
             };
         }, "No se pudo cargar el usuario seleccionado.", ct);
 
@@ -280,6 +290,8 @@ public sealed class UsuariosService(
                 updateCmd.Parameters.AddWithValue("@NombreOriginal", oldName.ToUpperInvariant());
                 await updateCmd.ExecuteNonQueryAsync(token);
             }
+
+            await SyncTechnicianLinkAsync(cn, (SqlTransaction)tx, oldName, newName, normalized.EsTecnico, token);
 
             await tx.CommitAsync(token);
 
@@ -524,7 +536,8 @@ public sealed class UsuariosService(
             FotoContenido = request.FotoContenido,
             FotoNombreOriginal = request.FotoNombreOriginal ?? string.Empty,
             FotoMimeType = request.FotoMimeType ?? string.Empty,
-            QuitarFoto = request.QuitarFoto
+            QuitarFoto = request.QuitarFoto,
+            EsTecnico = request.EsTecnico
         };
 
     private async Task<bool> PhotoExistsAsync(string nombre, CancellationToken ct)
@@ -592,6 +605,109 @@ public sealed class UsuariosService(
         var result = await cmd.ExecuteScalarAsync(ct);
         var column = Convert.ToString(result) ?? string.Empty;
         return string.IsNullOrWhiteSpace(column) ? "DESCRIPCION" : column;
+    }
+
+    private static async Task<bool> TechnicianTableExistsAsync(SqlConnection cn, SqlTransaction? tx, CancellationToken ct)
+    {
+        const string sql = "SELECT COUNT(1) FROM sys.tables WHERE object_id = OBJECT_ID(N'dbo.V_TA_Tecnicos');";
+        await using var cmd = tx is null ? new SqlCommand(sql, cn) : new SqlCommand(sql, cn, tx);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return Convert.ToInt32(result) > 0;
+    }
+
+    private async Task<bool> IsLinkedTechnicianActiveAsync(SqlConnection cn, string userName, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(userName) || !await TechnicianTableExistsAsync(cn, null, ct))
+            return false;
+
+        const string sql = """
+            SELECT TOP (1) 1
+            FROM dbo.V_TA_Tecnicos
+            WHERE UPPER(LTRIM(RTRIM(UsuarioAsociado))) = @UsuarioAsociado
+              AND ISNULL(Baja, 0) = 0;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@UsuarioAsociado", userName.Trim().ToUpperInvariant());
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is not null;
+    }
+
+    /// <summary>
+    /// Da de alta/reactiva o da de baja lógica la fila de <c>dbo.V_TA_Tecnicos</c> asociada al
+    /// usuario, según el tilde "Es técnico / agente de soporte" del formulario. Nunca borra la
+    /// fila — puede tener tickets, mensajes o partes de horas atados.
+    /// </summary>
+    private static async Task SyncTechnicianLinkAsync(SqlConnection cn, SqlTransaction tx, string previousUserName, string userName, bool esTecnico, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(userName) || !await TechnicianTableExistsAsync(cn, tx, ct))
+            return;
+
+        var searchName = (string.IsNullOrWhiteSpace(previousUserName) ? userName : previousUserName).Trim();
+
+        string? existingIdTecnico = null;
+        var existingBaja = false;
+
+        const string findSql = """
+            SELECT TOP (1) IdTecnico, ISNULL(Baja, 0)
+            FROM dbo.V_TA_Tecnicos
+            WHERE UPPER(LTRIM(RTRIM(UsuarioAsociado))) = @UsuarioAsociado
+            ORDER BY ISNULL(Baja, 0) ASC;
+            """;
+
+        await using (var findCmd = new SqlCommand(findSql, cn, tx))
+        {
+            findCmd.Parameters.AddWithValue("@UsuarioAsociado", searchName.ToUpperInvariant());
+            await using var rd = await findCmd.ExecuteReaderAsync(ct);
+            if (await rd.ReadAsync(ct))
+            {
+                existingIdTecnico = GetString(rd, 0);
+                existingBaja = GetBool(rd, 1);
+            }
+        }
+
+        if (esTecnico)
+        {
+            if (existingIdTecnico is not null)
+            {
+                const string reactivateSql = """
+                    UPDATE dbo.V_TA_Tecnicos
+                    SET UsuarioAsociado = @UsuarioAsociado, Baja = 0
+                    WHERE UPPER(LTRIM(RTRIM(IdTecnico))) = @IdTecnico;
+                    """;
+                await using var cmd = new SqlCommand(reactivateSql, cn, tx);
+                cmd.Parameters.AddWithValue("@UsuarioAsociado", userName);
+                cmd.Parameters.AddWithValue("@IdTecnico", existingIdTecnico.ToUpperInvariant());
+                await cmd.ExecuteNonQueryAsync(ct);
+                return;
+            }
+
+            const string nextIdSql = """
+                SELECT ISNULL(MAX(TRY_CAST(LTRIM(RTRIM(IdTecnico)) AS int)), 0) + 1
+                FROM dbo.V_TA_Tecnicos;
+                """;
+            string nextId;
+            await using (var nextIdCmd = new SqlCommand(nextIdSql, cn, tx))
+                nextId = Convert.ToInt32(await nextIdCmd.ExecuteScalarAsync(ct)).ToString();
+
+            const string insertSql = """
+                INSERT INTO dbo.V_TA_Tecnicos (IdTecnico, Nombre, Cargo, UsuarioAsociado, Baja)
+                VALUES (@IdTecnico, @Nombre, @Cargo, @UsuarioAsociado, 0);
+                """;
+            await using var insertCmd = new SqlCommand(insertSql, cn, tx);
+            insertCmd.Parameters.AddWithValue("@IdTecnico", nextId);
+            insertCmd.Parameters.AddWithValue("@Nombre", userName);
+            insertCmd.Parameters.AddWithValue("@Cargo", "Agente de soporte");
+            insertCmd.Parameters.AddWithValue("@UsuarioAsociado", userName);
+            await insertCmd.ExecuteNonQueryAsync(ct);
+        }
+        else if (existingIdTecnico is not null && !existingBaja)
+        {
+            const string bajaSql = "UPDATE dbo.V_TA_Tecnicos SET Baja = 1 WHERE UPPER(LTRIM(RTRIM(IdTecnico))) = @IdTecnico;";
+            await using var cmd = new SqlCommand(bajaSql, cn, tx);
+            cmd.Parameters.AddWithValue("@IdTecnico", existingIdTecnico.ToUpperInvariant());
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
     }
 
     private static async Task<bool> HasActivoColumnAsync(SqlConnection cn, CancellationToken ct)

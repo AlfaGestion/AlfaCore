@@ -46,10 +46,12 @@ public sealed class WorkspaceService(
         if (modules.Count == 0 && await TryAutoRepairShellAsync(ct))
             modules = await menuService.GetModulesAsync(ct);
 
-        var favorites = await SafeGetFavoritesAsync(ct);
+        var searchItems = await menuService.GetSearchItemsAsync(ct);
+        var visibleKeys = new HashSet<string>(searchItems.Select(x => x.Clave), StringComparer.OrdinalIgnoreCase);
+
+        var favorites = FilterByVisibleKeys(await SafeGetFavoritesAsync(ct), visibleKeys);
         var favoriteKeys = await SafeGetFavoriteKeysAsync(ct);
-        IReadOnlyList<ShellMenuSearchItemDto> searchItems = favoriteKeys.Count > 0 ? await menuService.GetSearchItemsAsync(ct) : [];
-        var recents = await SafeGetRecentsAsync(ct);
+        var recents = FilterByVisibleKeys(await SafeGetRecentsAsync(ct), visibleKeys);
 
         var home = new ShellHomeDto
         {
@@ -91,10 +93,12 @@ public sealed class WorkspaceService(
     {
         var module = await menuService.GetModuleByKeyAsync(moduleKey, ct);
         var sections = await menuService.GetModuleSectionsAsync(moduleKey, ct);
-        var favorites = await SafeGetFavoritesAsync(ct);
+        var searchItems = await menuService.GetSearchItemsAsync(ct);
+        var visibleKeys = new HashSet<string>(searchItems.Select(x => x.Clave), StringComparer.OrdinalIgnoreCase);
+
+        var favorites = FilterByVisibleKeys(await SafeGetFavoritesAsync(ct), visibleKeys);
         var favoriteKeys = await SafeGetFavoriteKeysAsync(ct);
-        IReadOnlyList<ShellMenuSearchItemDto> searchItems = favoriteKeys.Count > 0 ? await menuService.GetSearchItemsAsync(ct) : [];
-        var recents = await SafeGetRecentsAsync(ct);
+        var recents = FilterByVisibleKeys(await SafeGetRecentsAsync(ct), visibleKeys);
 
         var workspace = new ShellWorkspaceDto
         {
@@ -217,6 +221,14 @@ public sealed class WorkspaceService(
             return [];
         }
     }
+
+    /// <summary>
+    /// Recientes y favoritos se guardan por su cuenta (historial propio del usuario) y pueden
+    /// quedar apuntando a opciones que ya no están visibles en el menú (permisos, o ahora,
+    /// módulos no contratados) — se descartan acá en vez de dejarlos como accesos rotos.
+    /// </summary>
+    private static IReadOnlyList<ShellMenuNodeDto> FilterByVisibleKeys(IReadOnlyList<ShellMenuNodeDto> items, HashSet<string> visibleKeys)
+        => items.Where(x => visibleKeys.Contains(x.Clave)).ToArray();
 
     private static IReadOnlyList<ShellMenuNodeDto> MergeFavorites(
         IReadOnlyList<ShellMenuNodeDto> favorites,

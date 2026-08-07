@@ -19,6 +19,7 @@ public sealed class ConversacionesService(
     ICentralBasesService centralBasesService,
     IConversacionesConfigService conversacionesConfigService,
     INotificacionesPushService notificacionesPushService,
+    ICentralAdminService centralAdminService,
     IWebHostEnvironment environment) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
@@ -48,6 +49,8 @@ public sealed class ConversacionesService(
     private static readonly ConcurrentDictionary<long, int> AttachmentRecoveryAttempts = new();
     private static readonly ConcurrentDictionary<string, TypingPresence> TypingPresences = new(StringComparer.OrdinalIgnoreCase);
     private static readonly ConcurrentDictionary<string, DateTime> MaintenanceLastRunUtc = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, byte> DurableAttachmentColumnsEnsured = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> DurableAttachmentColumnsLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan InboxMaintenanceInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan InboxDuplicateMaintenanceInterval = TimeSpan.FromHours(6);
     private static readonly TimeSpan ReadBaselineMaintenanceInterval = TimeSpan.FromMinutes(15);
@@ -1367,7 +1370,6 @@ public sealed class ConversacionesService(
     public Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversation", async token =>
         {
-            await AutoCloseExpiredOpenWhatsAppConversationsAsync(conversationId, token);
             var sql = $"""
                 SELECT
                     c.IdConversacion,
@@ -1570,7 +1572,6 @@ public sealed class ConversacionesService(
     public Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessages", async token =>
         {
-            await AutoCloseExpiredOpenWhatsAppConversationsAsync(conversationId, token);
             var sql = $"""
                 SELECT
                     m.IdMensaje,
@@ -1592,7 +1593,8 @@ public sealed class ConversacionesService(
                         SELECT 1
                         FROM dbo.CONV_ADJUNTOS a
                         WHERE a.IdMensaje = m.IdMensaje
-                    ) THEN 1 ELSE 0 END
+                    ) THEN 1 ELSE 0 END,
+                    ISNULL(m.MarcaInterna, '')
                 FROM dbo.CONV_MENSAJES m
                 INNER JOIN dbo.CONV_CONVERSACIONES c
                     ON c.IdConversacion = @IdConversacion
@@ -1637,13 +1639,197 @@ public sealed class ConversacionesService(
                     SistemaAutor = GetString(rd, 11),
                     IdTecnicoAutor = GetString(rd, 12),
                     TecnicoAutorNombre = GetString(rd, 13),
-                    TieneAdjuntos = GetInt(rd, 15) == 1
+                    TieneAdjuntos = GetInt(rd, 15) == 1,
+                    MarcaInterna = GetString(rd, 16)
                 };
 
                 items.Add(item);
             }
 
             return (IReadOnlyList<ConversacionMensajeDto>)items;
+        }, "No se pudieron cargar los mensajes.", ct);
+
+    public Task<ConversacionMensajesPaginaDto> GetMessagesPageAsync(
+        long conversationId,
+        int take,
+        DateTime? beforeDate = null,
+        long? beforeMessageId = null,
+        CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetMessagesPage", async token =>
+        {
+            await AutoCloseExpiredOpenWhatsAppConversationsAsync(conversationId, token);
+
+            var pageSize = Math.Max(1, Math.Min(200, take));
+            var hasCursor = beforeDate.HasValue && beforeMessageId.HasValue;
+            var pageSql = $"""
+                ;WITH FilteredMessages AS (
+                    SELECT
+                        m.IdMensaje,
+                        m.IdConversacion,
+                        ISNULL(m.TelefonoWhatsApp, '') AS TelefonoWhatsApp,
+                        ISNULL(m.WhatsAppMessageId, '') AS WhatsAppMessageId,
+                        ISNULL(m.WhatsAppReplyToMessageId, '') AS WhatsAppReplyToMessageId,
+                        ISNULL(m.MessageType, '') AS MessageType,
+                        ISNULL(m.Direction, '') AS Direction,
+                        ISNULL(m.EstadoEnvio, '') AS EstadoEnvio,
+                        ISNULL(m.Texto, '') AS Texto,
+                        {ConversationMessageVisibleDateSql("m")} AS FechaHora,
+                        ISNULL(m.UsuarioAutor, '') AS UsuarioAutor,
+                        ISNULL(m.SistemaAutor, '') AS SistemaAutor,
+                        ISNULL(m.IdTecnicoAutor, '') AS IdTecnicoAutor,
+                        ISNULL(t.Nombre, '') AS TecnicoAutorNombre,
+                        ISNULL(m.PayloadJson, '') AS PayloadJson,
+                        CASE WHEN EXISTS (
+                            SELECT 1
+                            FROM dbo.CONV_ADJUNTOS a
+                            WHERE a.IdMensaje = m.IdMensaje
+                        ) THEN 1 ELSE 0 END AS TieneAdjuntos,
+                        ISNULL(m.MarcaInterna, '') AS MarcaInterna
+                    FROM dbo.CONV_MENSAJES m
+                    INNER JOIN dbo.CONV_CONVERSACIONES c
+                        ON c.IdConversacion = @IdConversacion
+                    LEFT JOIN dbo.V_TA_Tecnicos t
+                        ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(m.IdTecnicoAutor))
+                    WHERE m.IdConversacion = @IdConversacion
+                      AND (
+                            c.Canal <> N'MERCADOLIBRE'
+                            OR NULLIF(c.IdentificadorExternoConversacion, N'') IS NULL
+                            OR m.Direction = N'NOTA_INTERNA'
+                            OR m.Direction = N'SALIENTE'
+                            OR m.MessageType = N'SYSTEM'
+                            OR NULLIF(m.MessageIdExterno, N'') IS NULL
+                            OR m.MessageIdExterno = CONCAT(N'meli-question-', c.IdentificadorExternoConversacion)
+                            OR m.MessageIdExterno LIKE CONCAT(N'meli-answer-', c.IdentificadorExternoConversacion, N'-%')
+                          )
+                ),
+                PagedMessages AS (
+                    SELECT TOP (@Take)
+                        *
+                    FROM FilteredMessages
+                    WHERE @HasCursor = 0
+                       OR FechaHora < @BeforeDate
+                       OR (FechaHora = @BeforeDate AND IdMensaje < @BeforeMessageId)
+                    ORDER BY FechaHora DESC, IdMensaje DESC
+                )
+                SELECT
+                    page.IdMensaje,
+                    page.IdConversacion,
+                    page.TelefonoWhatsApp,
+                    page.WhatsAppMessageId,
+                    page.WhatsAppReplyToMessageId,
+                    page.MessageType,
+                    page.Direction,
+                    page.EstadoEnvio,
+                    page.Texto,
+                    page.FechaHora,
+                    page.UsuarioAutor,
+                    page.SistemaAutor,
+                    page.IdTecnicoAutor,
+                    page.TecnicoAutorNombre,
+                    page.PayloadJson,
+                    page.TieneAdjuntos,
+                    page.MarcaInterna
+                FROM PagedMessages page
+                ORDER BY page.FechaHora ASC, page.IdMensaje ASC;
+                """;
+            var totalSql = $"""
+                SELECT COUNT(1)
+                FROM dbo.CONV_MENSAJES m
+                INNER JOIN dbo.CONV_CONVERSACIONES c
+                    ON c.IdConversacion = @IdConversacion
+                WHERE m.IdConversacion = @IdConversacion
+                  AND (
+                        c.Canal <> N'MERCADOLIBRE'
+                        OR NULLIF(c.IdentificadorExternoConversacion, N'') IS NULL
+                        OR m.Direction = N'NOTA_INTERNA'
+                        OR m.Direction = N'SALIENTE'
+                        OR m.MessageType = N'SYSTEM'
+                        OR NULLIF(m.MessageIdExterno, N'') IS NULL
+                        OR m.MessageIdExterno = CONCAT(N'meli-question-', c.IdentificadorExternoConversacion)
+                        OR m.MessageIdExterno LIKE CONCAT(N'meli-answer-', c.IdentificadorExternoConversacion, N'-%')
+                      );
+                """;
+            var hasMoreSql = $"""
+                SELECT TOP (1) 1
+                FROM dbo.CONV_MENSAJES m
+                INNER JOIN dbo.CONV_CONVERSACIONES c
+                    ON c.IdConversacion = @IdConversacion
+                WHERE m.IdConversacion = @IdConversacion
+                  AND (
+                        c.Canal <> N'MERCADOLIBRE'
+                        OR NULLIF(c.IdentificadorExternoConversacion, N'') IS NULL
+                        OR m.Direction = N'NOTA_INTERNA'
+                        OR m.Direction = N'SALIENTE'
+                        OR m.MessageType = N'SYSTEM'
+                        OR NULLIF(m.MessageIdExterno, N'') IS NULL
+                        OR m.MessageIdExterno = CONCAT(N'meli-question-', c.IdentificadorExternoConversacion)
+                        OR m.MessageIdExterno LIKE CONCAT(N'meli-answer-', c.IdentificadorExternoConversacion, N'-%')
+                      )
+                  AND (
+                        {ConversationMessageVisibleDateSql("m")} < @OldestDate
+                        OR ({ConversationMessageVisibleDateSql("m")} = @OldestDate AND m.IdMensaje < @OldestMessageId)
+                      );
+                """;
+
+            var items = new List<ConversacionMensajeDto>();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(pageSql, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", conversationId);
+            cmd.Parameters.AddWithValue("@Take", pageSize);
+            cmd.Parameters.AddWithValue("@HasCursor", hasCursor ? 1 : 0);
+            cmd.Parameters.AddWithValue("@BeforeDate", hasCursor ? beforeDate!.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@BeforeMessageId", hasCursor ? beforeMessageId!.Value : DBNull.Value);
+
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                items.Add(new ConversacionMensajeDto
+                {
+                    IdMensaje = rd.GetInt64(0),
+                    IdConversacion = rd.GetInt64(1),
+                    TelefonoWhatsApp = GetString(rd, 2),
+                    WhatsAppMessageId = GetString(rd, 3),
+                    WhatsAppReplyToMessageId = GetString(rd, 4),
+                    MessageType = GetString(rd, 5),
+                    Direction = GetString(rd, 6),
+                    EstadoEnvio = GetString(rd, 7),
+                    Texto = GetString(rd, 8),
+                    FechaHora = rd.IsDBNull(9) ? DateTime.MinValue : NormalizeStoredConversationTime(rd.GetDateTime(9)),
+                    UsuarioAutor = GetString(rd, 10),
+                    SistemaAutor = GetString(rd, 11),
+                    IdTecnicoAutor = GetString(rd, 12),
+                    TecnicoAutorNombre = GetString(rd, 13),
+                    PayloadJson = GetString(rd, 14),
+                    TieneAdjuntos = GetInt(rd, 15) == 1,
+                    MarcaInterna = GetString(rd, 16)
+                });
+            }
+
+            await rd.DisposeAsync();
+
+            await using var totalCmd = new SqlCommand(totalSql, cn);
+            totalCmd.Parameters.AddWithValue("@IdConversacion", conversationId);
+            var totalMessages = Convert.ToInt32(await totalCmd.ExecuteScalarAsync(token) ?? 0, CultureInfo.InvariantCulture);
+
+            var hasMoreBefore = false;
+            if (items.Count > 0)
+            {
+                var oldestMessage = items[0];
+                await using var hasMoreCmd = new SqlCommand(hasMoreSql, cn);
+                hasMoreCmd.Parameters.AddWithValue("@IdConversacion", conversationId);
+                hasMoreCmd.Parameters.AddWithValue("@OldestDate", oldestMessage.FechaHora);
+                hasMoreCmd.Parameters.AddWithValue("@OldestMessageId", oldestMessage.IdMensaje);
+                hasMoreBefore = await hasMoreCmd.ExecuteScalarAsync(token) is not null;
+            }
+
+            return new ConversacionMensajesPaginaDto
+            {
+                Messages = items,
+                TotalMessages = totalMessages,
+                HasMoreBefore = hasMoreBefore
+            };
         }, "No se pudieron cargar los mensajes.", ct);
 
     public Task<IReadOnlyList<ConversacionClienteCandidateDto>> SearchClientesParaRelacionarAsync(string texto, CancellationToken ct = default)
@@ -2119,6 +2305,37 @@ public sealed class ConversacionesService(
             };
         }, "No se pudo registrar el mensaje saliente.", ct);
 
+    private static readonly HashSet<string> MarcasInternasValidas = new(StringComparer.OrdinalIgnoreCase) { "PENDIENTE", "COMPLETADA" };
+
+    public Task SetMensajeMarcaInternaAsync(long idConversacion, long idMensaje, string? marca, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SetMensajeMarcaInterna", async token =>
+        {
+            if (idConversacion <= 0)
+                throw new InvalidOperationException("La conversación es obligatoria.");
+            if (idMensaje <= 0)
+                throw new InvalidOperationException("El mensaje es obligatorio.");
+
+            var normalizada = (marca ?? string.Empty).Trim().ToUpperInvariant();
+            if (normalizada.Length > 0 && !MarcasInternasValidas.Contains(normalizada))
+                throw new InvalidOperationException("Marca interna inválida.");
+
+            const string sql = """
+                UPDATE dbo.CONV_MENSAJES
+                SET MarcaInterna = @Marca
+                WHERE IdMensaje = @IdMensaje AND IdConversacion = @IdConversacion;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdMensaje", idMensaje);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            cmd.Parameters.AddWithValue("@Marca", normalizada.Length == 0 ? DBNull.Value : normalizada);
+            await cmd.ExecuteNonQueryAsync(token);
+
+            return true;
+        }, "No se pudo actualizar la marca interna del mensaje.", ct);
+
     public Task<ConversacionMessageResultDto> SendReactionAsync(ConversacionReaccionRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SendReaction", async token =>
         {
@@ -2518,7 +2735,19 @@ public sealed class ConversacionesService(
                 IdTecnicoAutor = request.IdTecnicoAutor
             }, token);
 
-            var sendResult = await SendTemplateToWhatsAppAsync(config, conversation.TelefonoWhatsApp, template, values, token);
+            WhatsAppSendResult sendResult;
+            try
+            {
+                sendResult = await SendTemplateToWhatsAppAsync(config, conversation.TelefonoWhatsApp, template, values, token);
+            }
+            catch (Exception ex)
+            {
+                await UpdateMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
+                await RefreshConversationAsync(request.IdConversacion, now, previewText, token);
+
+                throw;
+            }
+
             await UpdateMessageDeliveryAsync(messageId, sendResult.EstadoEnvio, sendResult.WhatsAppMessageId, sendResult.PayloadJson, token);
             await RefreshConversationAsync(request.IdConversacion, now, previewText, token);
 
@@ -3027,6 +3256,7 @@ public sealed class ConversacionesService(
                 {
                     await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
                     await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                    await TryAutoReplyOutOfHoursAsync(conversationId, token);
                 }
                 processed++;
             }
@@ -3604,16 +3834,35 @@ public sealed class ConversacionesService(
         }, "No se pudo guardar el adjunto.", ct);
 
     public Task<IReadOnlyList<ConversacionAdjuntoDto>> GetConversationAttachmentsAsync(long idConversacion, CancellationToken ct = default)
+        => GetConversationAttachmentsInternalAsync(idConversacion, messageIds: null, ct);
+
+    public Task<IReadOnlyList<ConversacionAdjuntoDto>> GetMessageAttachmentsAsync(long idConversacion, IReadOnlyCollection<long> messageIds, CancellationToken ct = default)
+        => GetConversationAttachmentsInternalAsync(idConversacion, messageIds, ct);
+
+    private Task<IReadOnlyList<ConversacionAdjuntoDto>> GetConversationAttachmentsInternalAsync(
+        long idConversacion,
+        IReadOnlyCollection<long>? messageIds,
+        CancellationToken ct)
         => ExecuteLoggedAsync("Conversaciones", "GetConversationAttachments", async token =>
         {
+            var filteredMessageIds = messageIds?
+                .Where(x => x > 0)
+                .Distinct()
+                .ToArray();
+            if (filteredMessageIds is { Length: 0 })
+                return (IReadOnlyList<ConversacionAdjuntoDto>)[];
+
             var items = new List<ConversacionAdjuntoDto>();
             var pathUpdates = new List<(long IdAdjunto, string RutaLocal)>();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await EnsureConversationAttachmentsDurableColumnsAsync(cn, token);
+            await EnsureConversationAttachmentsDurableColumnsOnceAsync(cn, token);
             var supportsDurableContent = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", token);
+            var messageFilterSql = filteredMessageIds is { Length: > 0 }
+                ? $" AND a.IdMensaje IN ({string.Join(", ", filteredMessageIds.Select((_, index) => $"@MessageId{index}"))})"
+                : string.Empty;
             var sql = supportsDurableContent
-                ? """
+                ? $$"""
                     SELECT
                         a.IdAdjunto,
                         a.IdMensaje,
@@ -3632,9 +3881,10 @@ public sealed class ConversacionesService(
                     FROM dbo.CONV_ADJUNTOS a
                     INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = a.IdMensaje
                     WHERE m.IdConversacion = @IdConversacion
+                    {{messageFilterSql}}
                     ORDER BY a.IdAdjunto
                     """
-                : """
+                : $$"""
                     SELECT
                         a.IdAdjunto,
                         a.IdMensaje,
@@ -3653,10 +3903,16 @@ public sealed class ConversacionesService(
                     FROM dbo.CONV_ADJUNTOS a
                     INNER JOIN dbo.CONV_MENSAJES m ON m.IdMensaje = a.IdMensaje
                     WHERE m.IdConversacion = @IdConversacion
+                    {{messageFilterSql}}
                     ORDER BY a.IdAdjunto
                     """;
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            if (filteredMessageIds is { Length: > 0 })
+            {
+                for (var index = 0; index < filteredMessageIds.Length; index++)
+                    cmd.Parameters.AddWithValue($"@MessageId{index}", filteredMessageIds[index]);
+            }
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
             {
@@ -3833,7 +4089,7 @@ public sealed class ConversacionesService(
             var connectionString = await ResolveConnectionStringAsync(idBase, token);
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
-            await EnsureConversationAttachmentsDurableColumnsAsync(cn, token);
+            await EnsureConversationAttachmentsDurableColumnsOnceAsync(cn, token);
             var supportsDurableContent = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", token);
             var sql = supportsDurableContent
                 ? """
@@ -4256,7 +4512,7 @@ public sealed class ConversacionesService(
     {
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
-        await EnsureConversationAttachmentsDurableColumnsAsync(cn, ct);
+        await EnsureConversationAttachmentsDurableColumnsOnceAsync(cn, ct);
 
         const string sql = """
             SELECT TOP (@MaxItems)
@@ -4546,7 +4802,7 @@ public sealed class ConversacionesService(
     {
         await using var cn = new SqlConnection(string.IsNullOrWhiteSpace(connectionString) ? ConnectionString : connectionString);
         await cn.OpenAsync(ct);
-        await EnsureConversationAttachmentsDurableColumnsAsync(cn, ct);
+        await EnsureConversationAttachmentsDurableColumnsOnceAsync(cn, ct);
         var supportsDurableContent = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", ct);
         var sql = supportsDurableContent
             ? """
@@ -4591,7 +4847,7 @@ public sealed class ConversacionesService(
 
         await using var cn = new SqlConnection(string.IsNullOrWhiteSpace(connectionString) ? ConnectionString : connectionString);
         await cn.OpenAsync(ct);
-        await EnsureConversationAttachmentsDurableColumnsAsync(cn, ct);
+        await EnsureConversationAttachmentsDurableColumnsOnceAsync(cn, ct);
 
         const string sql = """
             UPDATE dbo.CONV_ADJUNTOS
@@ -4668,6 +4924,28 @@ public sealed class ConversacionesService(
         {
             await using var cmd = new SqlCommand(sql, cn);
             await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    private static async Task EnsureConversationAttachmentsDurableColumnsOnceAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var key = $"{cn.DataSource}|{cn.Database}".Trim().ToUpperInvariant();
+        if (DurableAttachmentColumnsEnsured.ContainsKey(key))
+            return;
+
+        var gate = DurableAttachmentColumnsLocks.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (DurableAttachmentColumnsEnsured.ContainsKey(key))
+                return;
+
+            await EnsureConversationAttachmentsDurableColumnsAsync(cn, ct);
+            DurableAttachmentColumnsEnsured[key] = 1;
+        }
+        finally
+        {
+            gate.Release();
         }
     }
 
@@ -5705,11 +5983,100 @@ public sealed class ConversacionesService(
                 IdConversacion = id,
                 CodigoEstado = closedState,
                 NombreTecnicoAccion = "AlfaCore",
-                UsuarioAccion = "AlfaCore",
-                SistemaAccion = "AlfaCore",
+                UsuarioAccion = null,
+                SistemaAccion = null,
                 Observaciones = eventText
             }, ct);
         }
+    }
+
+    /// <summary>
+    /// Automatizaciones "Nivel 0": si el módulo está contratado, está activo en la configuración
+    /// y el mensaje entrante llegó fuera del horario configurado, manda una respuesta fija —
+    /// sin IA, sin aprobación de operador. No repite el mensaje mientras la última salida de la
+    /// conversación ya haya sido esta misma respuesta automática (evita spamear si el cliente
+    /// sigue escribiendo fuera de horario). Nunca bloquea el procesamiento del webhook si falla.
+    /// </summary>
+    private async Task TryAutoReplyOutOfHoursAsync(long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+                return;
+
+            var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+            if (!config.IsConfigured)
+                return;
+
+            if (!IsOutsideBusinessHours(config, BusinessNow()))
+                return;
+
+            if (await HasPendingAutoReplyAsync(idConversacion, ct).ConfigureAwait(false))
+                return;
+
+            await SendMessageAsync(new ConversacionSendMessageRequest
+            {
+                IdConversacion = idConversacion,
+                Texto = config.MensajeFueraHorario,
+                MessageType = "TEXT",
+                UsuarioAccion = "AlfaCore",
+                SistemaAccion = "AUTOMATIZACION"
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones",
+                "AutoReplyOutOfHours",
+                ex,
+                "No se pudo enviar la respuesta automática fuera de horario.",
+                new { idConversacion },
+                AppEventSeverity.Warning,
+                ct).ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsOutsideBusinessHours(ConversacionAutomatizacionesConfigDto config, DateTime now)
+    {
+        var atiendeHoy = now.DayOfWeek switch
+        {
+            DayOfWeek.Monday => config.Lunes,
+            DayOfWeek.Tuesday => config.Martes,
+            DayOfWeek.Wednesday => config.Miercoles,
+            DayOfWeek.Thursday => config.Jueves,
+            DayOfWeek.Friday => config.Viernes,
+            DayOfWeek.Saturday => config.Sabado,
+            DayOfWeek.Sunday => config.Domingo,
+            _ => false
+        };
+
+        if (!atiendeHoy)
+            return true;
+
+        if (!TimeSpan.TryParse(config.HoraDesde, out var desde) || !TimeSpan.TryParse(config.HoraHasta, out var hasta))
+            return false;
+
+        var horaActual = now.TimeOfDay;
+        return desde <= hasta
+            ? horaActual < desde || horaActual > hasta
+            : horaActual < desde && horaActual > hasta;
+    }
+
+    private async Task<bool> HasPendingAutoReplyAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(SistemaAutor, '')
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @IdConversacion AND Direction = N'SALIENTE'
+            ORDER BY FechaHora DESC, IdMensaje DESC;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string sistemaAutor && string.Equals(sistemaAutor, "AUTOMATIZACION", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<long> InsertMessageAsync(PendingMessageInsert message, CancellationToken ct)
@@ -5919,7 +6286,7 @@ public sealed class ConversacionesService(
     {
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
-        await EnsureConversationAttachmentsDurableColumnsAsync(cn, ct);
+        await EnsureConversationAttachmentsDurableColumnsOnceAsync(cn, ct);
         var supportsDurableContent = await ColumnExistsAsync(cn, "CONV_ADJUNTOS", "ArchivoContenido", ct);
         var sql = supportsDurableContent
             ? """

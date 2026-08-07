@@ -5,6 +5,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 
@@ -18,6 +19,7 @@
                 <p class="panel-card__subtitle">Ficha única para clientes, usuarios y bases centrales.</p>
             </div>
             <div class="d-flex gap-2 flex-wrap">
+                <button type="button" class="btn btn-outline-light" @onclick="GoModulos">Módulos</button>
                 <button type="button" class="btn btn-primary" @onclick="StartNewAccount">Nueva cuenta</button>
                 <button type="button" class="btn btn-outline-light" @onclick="() => ReloadAsync()">Actualizar</button>
             </div>
@@ -299,6 +301,116 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="row g-3 mt-1">
+                    <div class="col-12">
+                        <div class="panel-card h-100">
+                            <div class="panel-card__header">
+                                <div>
+                                    <h2 class="panel-card__title">Módulos</h2>
+                                    <p class="panel-card__subtitle">Qué módulos tiene habilitados el cliente seleccionado. Sin autoservicio: se activan acá después de confirmar el pago por fuera del sistema.</p>
+                                </div>
+                                <div class="d-flex gap-2">
+                                    <button type="button" class="btn btn-outline-light" @onclick="GoSolicitudes">Solicitudes pendientes</button>
+                                    <button type="button" class="btn btn-outline-light" @onclick="GoModulos">Armar catálogo</button>
+                                </div>
+                            </div>
+
+                            @if (!HasSelectedClient)
+                            {
+                                <div class="shell-empty-state">
+                                    <strong>Seleccioná un cliente.</strong>
+                                    <span>Los módulos se cargan desde ALFA_CENTRAL.dbo.ClienteModulos.</span>
+                                </div>
+                            }
+                            else if (_clienteModulos.Count == 0)
+                            {
+                                <div class="shell-empty-state">
+                                    <strong>No hay módulos definidos todavía.</strong>
+                                    <span>Usá "Armar catálogo" para crear el primero.</span>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="table-responsive admin-table-wrap">
+                                    <table class="table table-sm align-middle admin-table" data-sticky-list-header>
+                                        <thead>
+                                            <tr>
+                                                <th>Módulo</th>
+                                                <th>Precio</th>
+                                                <th>Estado</th>
+                                                <th>Activado</th>
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var item in _clienteModulos)
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        @item.Nombre
+                                                        @if (item.EsDependenciaDeOtro)
+                                                        {
+                                                            <span class="shell-empty-state__eyebrow"> (dependencia de otro módulo)</span>
+                                                        }
+                                                    </td>
+                                                    <td>@item.Precio.ToString("C2")</td>
+                                                    <td>@GetEstadoLabel(item)</td>
+                                                    <td>
+                                                        @if (item.EstaActivo && item.ActivadoUtc is not null)
+                                                        {
+                                                            @item.ActivadoUtc.Value.ToString("dd/MM/yyyy HH:mm")
+                                                            @if (!string.IsNullOrWhiteSpace(item.ActivadoPor))
+                                                            {
+                                                                <span> — @item.ActivadoPor</span>
+                                                            }
+                                                        }
+                                                        else if (string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Solicitado, StringComparison.OrdinalIgnoreCase) && item.SolicitadoUtc is not null)
+                                                        {
+                                                            @item.SolicitadoUtc.Value.ToString("dd/MM/yyyy HH:mm")
+                                                            @if (!string.IsNullOrWhiteSpace(item.SolicitadoPor))
+                                                            {
+                                                                <span> — @item.SolicitadoPor</span>
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>—</span>
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <div class="d-inline-flex gap-2">
+                                                            @if (item.EstaActivo)
+                                                            {
+                                                                <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_esClienteLegacySeleccionado" @onclick="() => SuspenderModuloAsync(item)">Suspender</button>
+                                                            }
+                                                            else
+                                                            {
+                                                                @if (string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Solicitado, StringComparison.OrdinalIgnoreCase))
+                                                                {
+                                                                    <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RechazarModuloAsync(item)">Rechazar</button>
+                                                                }
+                                                                else
+                                                                {
+                                                                    <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => SolicitarModuloAsync(item)">Solicitar</button>
+                                                                }
+                                                                <button type="button" class="btn btn-sm btn-primary" @onclick="() => ActivarModuloAsync(item)">Activar</button>
+                                                            }
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                                @if (_esClienteLegacySeleccionado)
+                                {
+                                    <div class="form-text mt-2">Este cliente quedó marcado como legacy: ve todos los módulos activos aunque no tenga filas propias en ClienteModulos.</div>
+                                }
+                            }
+                        </div>
+                    </div>
+                </div>
             }
         }
     </section>
@@ -562,6 +674,7 @@
     private readonly List<AlfaCore.Models.AdminClienteDto> _clients = [];
     private readonly List<AlfaCore.Models.AdminBaseDto> _bases = [];
     private readonly List<AlfaCore.Models.AdminUserDto> _users = [];
+    private readonly List<AlfaCore.Models.ClienteModuloDto> _clienteModulos = [];
     private readonly CrearClienteRequest _clientForm = new();
     private readonly CrearBaseRequest _baseForm = new();
     private readonly CrearUserRequest _userForm = new();
@@ -612,6 +725,11 @@
             .ToArray();
 
     private bool HasSelectedClient => !string.IsNullOrWhiteSpace(_selectedClientId);
+
+    // Un módulo activo sin fila propia en ClienteModulos (ActivadoUtc null) solo puede venir
+    // del override de cliente legacy — es la señal que tenemos disponible sin sumar otro campo.
+    private bool _esClienteLegacySeleccionado
+        => _clienteModulos.Any(m => m.EstaActivo && m.ActivadoUtc is null);
 
     protected override async Task OnInitializedAsync()
     {
@@ -679,6 +797,7 @@
     {
         _selectedClientId = null;
         _newClientDraft = true;
+        _clienteModulos.Clear();
         ResetClientForm();
         CancelUserEditor();
         CancelBaseEditor();
@@ -700,8 +819,154 @@
 
         CancelUserEditor();
         CancelBaseEditor();
+        await LoadClienteModulosAsync(client.IdCliente);
+    }
 
-        await Task.CompletedTask;
+    private void GoModulos()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/admin/modulos"));
+
+    private void GoSolicitudes()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/admin/solicitudes"));
+
+    private async Task LoadClienteModulosAsync(string idCliente)
+    {
+        _clienteModulos.Clear();
+        try
+        {
+            _clienteModulos.AddRange(await AdminSvc.GetClienteModulosAsync(idCliente));
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+
+    private async Task ActivarModuloAsync(AlfaCore.Models.ClienteModuloDto item)
+    {
+        if (!HasSelectedClient)
+            return;
+
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            await AdminSvc.ActivarModuloAsync(new ActivarModuloRequest
+            {
+                IdCliente = _selectedClientId!,
+                IdModulo = item.IdModulo,
+                ActivadoPor = AppUserSession.CurrentUser?.UserName ?? string.Empty
+            });
+
+            await LoadClienteModulosAsync(_selectedClientId!);
+            _message = $"Módulo {item.Nombre} activado.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+
+    private async Task SuspenderModuloAsync(AlfaCore.Models.ClienteModuloDto item)
+    {
+        if (!HasSelectedClient)
+            return;
+
+        if (!await ConfirmAsync($"¿Suspender el módulo {item.Nombre} para este cliente?"))
+            return;
+
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            await AdminSvc.SuspenderModuloAsync(_selectedClientId!, item.IdModulo);
+            await LoadClienteModulosAsync(_selectedClientId!);
+            _message = $"Módulo {item.Nombre} suspendido.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+
+    private async Task SolicitarModuloAsync(AlfaCore.Models.ClienteModuloDto item)
+    {
+        if (!HasSelectedClient)
+            return;
+
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            await AdminSvc.SolicitarModuloAsync(new SolicitarModuloRequest
+            {
+                IdCliente = _selectedClientId!,
+                IdModulo = item.IdModulo,
+                SolicitadoPor = AppUserSession.CurrentUser?.UserName ?? string.Empty
+            });
+
+            await LoadClienteModulosAsync(_selectedClientId!);
+            _message = $"Módulo {item.Nombre} quedó como solicitado, pendiente de aprobación.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+
+    private async Task RechazarModuloAsync(AlfaCore.Models.ClienteModuloDto item)
+    {
+        if (!HasSelectedClient)
+            return;
+
+        if (!await ConfirmAsync($"¿Rechazar la solicitud del módulo {item.Nombre} para este cliente?"))
+            return;
+
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            await AdminSvc.RechazarModuloAsync(new RechazarModuloRequest
+            {
+                IdCliente = _selectedClientId!,
+                IdModulo = item.IdModulo,
+                DecididoPor = AppUserSession.CurrentUser?.UserName ?? string.Empty
+            });
+
+            await LoadClienteModulosAsync(_selectedClientId!);
+            _message = $"Solicitud de {item.Nombre} rechazada.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+
+    private static string GetEstadoLabel(AlfaCore.Models.ClienteModuloDto item)
+    {
+        if (item.EstaActivo)
+            return "Activo";
+
+        return item.Estado switch
+        {
+            AlfaCore.Models.ClienteModuloEstados.Solicitado => "Solicitado",
+            AlfaCore.Models.ClienteModuloEstados.Suspendido => "Suspendido",
+            AlfaCore.Models.ClienteModuloEstados.Rechazado => "Rechazado",
+            _ => "Sin contratar"
+        };
     }
 
     private void StartNewAccount()

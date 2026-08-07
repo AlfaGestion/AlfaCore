@@ -75,23 +75,6 @@ public class Program
             return null;
         }
 
-        static string ResolveConfigurationValue(
-            IConfiguration configuration,
-            string configurationKey,
-            string environmentKey,
-            string fallback)
-        {
-            var candidates = new[]
-            {
-                configuration[configurationKey],
-                configuration[environmentKey],
-                Environment.GetEnvironmentVariable(environmentKey)
-            };
-
-            return candidates.FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))
-                ?? fallback;
-        }
-
         if (!string.IsNullOrWhiteSpace(startupConnectionString))
         {
             builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
@@ -146,6 +129,7 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
         builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
@@ -215,31 +199,6 @@ public class Program
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
         builder.Services.Configure<PushNotificationsOptions>(builder.Configuration.GetSection(PushNotificationsOptions.SectionName));
-        builder.Services.Configure<AlfaKnowledgeOptions>(settings =>
-        {
-            builder.Configuration.GetSection(AlfaKnowledgeOptions.SectionName).Bind(settings);
-
-            settings.BaseUrl = ResolveConfigurationValue(
-                builder.Configuration,
-                "AlfaKnowledge:BaseUrl",
-                "AlfaKnowledge__BaseUrl",
-                settings.BaseUrl);
-            settings.ApiKey = ResolveConfigurationValue(
-                builder.Configuration,
-                "AlfaKnowledge:ApiKey",
-                "AlfaKnowledge__ApiKey",
-                settings.ApiKey);
-
-            var timeoutValue = ResolveConfigurationValue(
-                builder.Configuration,
-                "AlfaKnowledge:TimeoutSeconds",
-                "AlfaKnowledge__TimeoutSeconds",
-                settings.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            if (int.TryParse(timeoutValue, out var timeoutSeconds) && timeoutSeconds > 0)
-            {
-                settings.TimeoutSeconds = timeoutSeconds;
-            }
-        });
         builder.Services.AddScoped<IAlfaKnowledgeSuggestionService, AlfaKnowledgeSuggestionService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
@@ -997,6 +956,26 @@ public class Program
             return Results.Ok(await svc.GetInboxAsync(filters, ct));
         });
 
+        app.MapGet("/api/conversaciones/anydesk/registro.reg", (
+            string? ruta,
+            IAnyDeskLocalSettingsService anyDeskSvc) =>
+        {
+            string script;
+            try
+            {
+                script = anyDeskSvc.BuildRegistryScript(ruta ?? string.Empty);
+            }
+            catch (InvalidOperationException exception)
+            {
+                return Results.BadRequest(exception.Message);
+            }
+
+            // UTF-16LE con BOM: es lo que regedit espera de forma confiable para archivos .reg,
+            // sobre todo si la ruta tiene caracteres no ASCII.
+            var bytes = new UnicodeEncoding(bigEndian: false, byteOrderMark: true).GetBytes(script);
+            return Results.File(bytes, "application/octet-stream", "anydesk-conectar.reg");
+        });
+
         app.MapGet("/api/conversaciones/{id:long}", async (
             long id,
             IConversacionesService svc,
@@ -1059,165 +1038,117 @@ public class Program
             return Results.Ok();
         });
 
-        app.MapGet("/api/conversaciones/whatsapp/webhook", async (
+        // Cada canal tiene dos rutas: la de siempre (sin token, cae al fallback de conexión por
+        // defecto — se conserva para no romper lo que ya está configurado en Meta/MercadoLibre
+        // para el cliente actual) y una nueva con "/{token}" (resuelve el tenant desde
+        // ALFA_CENTRAL.dbo.bases.WebhookToken ANTES de tocar cualquier tabla, sin depender de la
+        // sesión del usuario — necesario porque un webhook entrante nunca tiene sesión).
+        app.MapGet("/api/conversaciones/whatsapp/webhook", HandleWhatsAppVerifyAsync);
+        app.MapGet("/api/conversaciones/whatsapp/webhook/{token}", async (
+            string token,
             HttpRequest request,
             IConversacionesConfigService configService,
+            ICentralBasesService basesService,
+            ISessionService sessionService,
             CancellationToken ct) =>
         {
-            var options = await configService.GetWhatsAppConfigAsync(ct);
-            var mode = request.Query["hub.mode"].ToString();
-            var verifyToken = request.Query["hub.verify_token"].ToString();
-            var challenge = request.Query["hub.challenge"].ToString();
+            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+                return Results.NotFound();
 
-            if (!string.Equals(mode, "subscribe", StringComparison.OrdinalIgnoreCase))
-                return Results.BadRequest("Modo de verificación inválido.");
-
-            if (!options.IsConfiguredForVerify)
-                return Results.Problem("WhatsApp VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
-
-            return string.Equals(verifyToken, options.VerifyToken, StringComparison.Ordinal)
-                ? Results.Text(challenge)
-                : Results.Unauthorized();
+            return await HandleWhatsAppVerifyAsync(request, configService, ct);
         });
 
-        app.MapPost("/api/conversaciones/whatsapp/webhook", async (
-            HttpRequest request,
-            IConversacionesService svc,
-            CancellationToken ct) =>
-        {
-            using var payload = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
-            var headers = request.Headers.ToDictionary(
-                pair => pair.Key,
-                pair => pair.Value.ToString(),
-                StringComparer.OrdinalIgnoreCase);
-
-            var result = await svc.RegisterIncomingWebhookAsync(new ConversacionWebhookRequest
-            {
-                Payload = payload,
-                Headers = headers
-            }, ct);
-
-            return Results.Ok(result);
-        });
-
-        app.MapGet("/api/conversaciones/instagram/webhook", async (
-            HttpRequest request,
-            IConversacionesConfigService configService,
-            CancellationToken ct) =>
-        {
-            var options = await configService.GetInstagramConfigAsync(ct);
-            var mode = request.Query["hub.mode"].ToString();
-            var verifyToken = request.Query["hub.verify_token"].ToString();
-            var challenge = request.Query["hub.challenge"].ToString();
-
-            if (string.IsNullOrWhiteSpace(options.VerifyToken))
-                return Results.Problem("Instagram VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
-
-            if (mode == "subscribe" && verifyToken == options.VerifyToken)
-                return Results.Text(challenge, "text/plain");
-
-            return Results.Unauthorized();
-        });
-
-        app.MapPost("/api/conversaciones/instagram/webhook", async (
+        app.MapPost("/api/conversaciones/whatsapp/webhook", HandleWhatsAppMessageAsync);
+        app.MapPost("/api/conversaciones/whatsapp/webhook/{token}", async (
+            string token,
             HttpRequest request,
             IConversacionesConfigService configService,
             IConversacionesService svc,
+            ICentralBasesService basesService,
+            ISessionService sessionService,
             CancellationToken ct) =>
         {
-            var options = await configService.GetInstagramConfigAsync(ct);
-            if (string.IsNullOrWhiteSpace(options.AppSecret))
-                return Results.Problem("Instagram App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+                return Results.NotFound();
 
-            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-            var rawPayload = await reader.ReadToEndAsync(ct);
-            var signature = request.Headers["X-Hub-Signature-256"].ToString();
-            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
-                return Results.Unauthorized();
-
-            using var payload = JsonDocument.Parse(rawPayload);
-            var result = await svc.RegisterIncomingInstagramWebhookAsync(new ConversacionWebhookRequest
-            {
-                Payload = payload,
-                RawPayload = rawPayload,
-                Headers = request.Headers.ToDictionary(
-                    pair => pair.Key,
-                    pair => pair.Value.ToString(),
-                    StringComparer.OrdinalIgnoreCase)
-            }, ct);
-
-            return Results.Ok(result);
+            return await HandleWhatsAppMessageAsync(request, configService, svc, ct);
         });
 
-        app.MapGet("/api/conversaciones/facebook/webhook", async (
+        app.MapGet("/api/conversaciones/instagram/webhook", HandleInstagramVerifyAsync);
+        app.MapGet("/api/conversaciones/instagram/webhook/{token}", async (
+            string token,
             HttpRequest request,
             IConversacionesConfigService configService,
+            ICentralBasesService basesService,
+            ISessionService sessionService,
             CancellationToken ct) =>
         {
-            var options = await configService.GetFacebookConfigAsync(ct);
-            var mode = request.Query["hub.mode"].ToString();
-            var verifyToken = request.Query["hub.verify_token"].ToString();
-            var challenge = request.Query["hub.challenge"].ToString();
+            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+                return Results.NotFound();
 
-            if (string.IsNullOrWhiteSpace(options.VerifyToken))
-                return Results.Problem("Facebook VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
-
-            if (mode == "subscribe" && verifyToken == options.VerifyToken)
-                return Results.Text(challenge, "text/plain");
-
-            return Results.Unauthorized();
+            return await HandleInstagramVerifyAsync(request, configService, ct);
         });
 
-        app.MapPost("/api/conversaciones/facebook/webhook", async (
+        app.MapPost("/api/conversaciones/instagram/webhook", HandleInstagramMessageAsync);
+        app.MapPost("/api/conversaciones/instagram/webhook/{token}", async (
+            string token,
             HttpRequest request,
             IConversacionesConfigService configService,
             IConversacionesService svc,
+            ICentralBasesService basesService,
+            ISessionService sessionService,
             CancellationToken ct) =>
         {
-            var options = await configService.GetFacebookConfigAsync(ct);
-            if (string.IsNullOrWhiteSpace(options.AppSecret))
-                return Results.Problem("Facebook App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+                return Results.NotFound();
 
-            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-            var rawPayload = await reader.ReadToEndAsync(ct);
-            var signature = request.Headers["X-Hub-Signature-256"].ToString();
-            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
-                return Results.Unauthorized();
-
-            using var payload = JsonDocument.Parse(rawPayload);
-            var result = await svc.RegisterIncomingFacebookWebhookAsync(new ConversacionWebhookRequest
-            {
-                Payload = payload,
-                RawPayload = rawPayload,
-                Headers = request.Headers.ToDictionary(
-                    pair => pair.Key,
-                    pair => pair.Value.ToString(),
-                    StringComparer.OrdinalIgnoreCase)
-            }, ct);
-
-            return Results.Ok(result);
+            return await HandleInstagramMessageAsync(request, configService, svc, ct);
         });
 
-        app.MapPost("/api/conversaciones/mercadolibre/webhook", async (
+        app.MapGet("/api/conversaciones/facebook/webhook", HandleFacebookVerifyAsync);
+        app.MapGet("/api/conversaciones/facebook/webhook/{token}", async (
+            string token,
             HttpRequest request,
-            IConversacionesService svc,
+            IConversacionesConfigService configService,
+            ICentralBasesService basesService,
+            ISessionService sessionService,
             CancellationToken ct) =>
         {
-            using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
-            var rawPayload = await reader.ReadToEndAsync(ct);
-            using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
+            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+                return Results.NotFound();
 
-            var result = await svc.RegisterIncomingMercadoLibreWebhookAsync(new ConversacionWebhookRequest
-            {
-                Payload = payload,
-                RawPayload = rawPayload,
-                Headers = request.Headers.ToDictionary(
-                    pair => pair.Key,
-                    pair => pair.Value.ToString(),
-                    StringComparer.OrdinalIgnoreCase)
-            }, ct);
+            return await HandleFacebookVerifyAsync(request, configService, ct);
+        });
 
-            return Results.Ok(result);
+        app.MapPost("/api/conversaciones/facebook/webhook", HandleFacebookMessageAsync);
+        app.MapPost("/api/conversaciones/facebook/webhook/{token}", async (
+            string token,
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            IConversacionesService svc,
+            ICentralBasesService basesService,
+            ISessionService sessionService,
+            CancellationToken ct) =>
+        {
+            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+                return Results.NotFound();
+
+            return await HandleFacebookMessageAsync(request, configService, svc, ct);
+        });
+
+        app.MapPost("/api/conversaciones/mercadolibre/webhook", HandleMercadoLibreMessageAsync);
+        app.MapPost("/api/conversaciones/mercadolibre/webhook/{token}", async (
+            string token,
+            HttpRequest request,
+            IConversacionesService svc,
+            ICentralBasesService basesService,
+            ISessionService sessionService,
+            CancellationToken ct) =>
+        {
+            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+                return Results.NotFound();
+
+            return await HandleMercadoLibreMessageAsync(request, svc, ct);
         });
 
         app.MapGet("/api/conversaciones/mercadolibre/oauth/callback", async (
@@ -1817,6 +1748,217 @@ public class Program
             .Replace("'", "\\'", StringComparison.Ordinal)
             .Replace("\r", string.Empty, StringComparison.Ordinal)
             .Replace("\n", string.Empty, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Resuelve a qué base pertenece un token de webhook y, si existe, fuerza esa base como
+    /// activa para el resto de este request (ver <see cref="ISessionService.SetWebhookOverride"/>).
+    /// Devuelve <c>false</c> si el token no corresponde a ninguna base — el caller debe responder
+    /// 404 sin exponer si el token "casi" era válido.
+    /// </summary>
+    private static async Task<bool> TryResolveWebhookTenantAsync(
+        string token,
+        ICentralBasesService basesService,
+        ISessionService sessionService,
+        CancellationToken ct)
+    {
+        var baseInfo = await basesService.GetByWebhookTokenAsync(token, ct);
+        if (baseInfo is null)
+        {
+            return false;
+        }
+
+        sessionService.SetWebhookOverride(new SessionDto
+        {
+            BaseId = baseInfo.IdBase,
+            Nombre = baseInfo.Nombre,
+            Servidor = baseInfo.DbServer,
+            BaseDatos = baseInfo.DbName,
+            Usuario = baseInfo.DbUser,
+            Password = baseInfo.DbPassword,
+            TrustServerCertificate = true
+        });
+
+        return true;
+    }
+
+    private static async Task<IResult> HandleWhatsAppVerifyAsync(
+        HttpRequest request,
+        IConversacionesConfigService configService,
+        CancellationToken ct)
+    {
+        var options = await configService.GetWhatsAppConfigAsync(ct);
+        var mode = request.Query["hub.mode"].ToString();
+        var verifyToken = request.Query["hub.verify_token"].ToString();
+        var challenge = request.Query["hub.challenge"].ToString();
+
+        if (!string.Equals(mode, "subscribe", StringComparison.OrdinalIgnoreCase))
+            return Results.BadRequest("Modo de verificación inválido.");
+
+        if (!options.IsConfiguredForVerify)
+            return Results.Problem("WhatsApp VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+        return string.Equals(verifyToken, options.VerifyToken, StringComparison.Ordinal)
+            ? Results.Text(challenge)
+            : Results.Unauthorized();
+    }
+
+    private static async Task<IResult> HandleWhatsAppMessageAsync(
+        HttpRequest request,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        var options = await configService.GetWhatsAppConfigAsync(ct);
+
+        using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        var rawPayload = await reader.ReadToEndAsync(ct);
+
+        // A diferencia de Instagram/Facebook, WhatsApp no exigía App Secret hasta ahora — exigirlo
+        // de golpe rompería al cliente que ya está en producción sin haberlo cargado. Se valida
+        // la firma solo si el App Secret está configurado; queda como mejora pendiente pedirlo
+        // siempre una vez que la configuración actual lo tenga cargado.
+        if (!string.IsNullOrWhiteSpace(options.AppSecret))
+        {
+            var signature = request.Headers["X-Hub-Signature-256"].ToString();
+            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
+                return Results.Unauthorized();
+        }
+
+        using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
+        var headers = request.Headers.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.ToString(),
+            StringComparer.OrdinalIgnoreCase);
+
+        var result = await svc.RegisterIncomingWebhookAsync(new ConversacionWebhookRequest
+        {
+            Payload = payload,
+            RawPayload = rawPayload,
+            Headers = headers
+        }, ct);
+
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> HandleInstagramVerifyAsync(
+        HttpRequest request,
+        IConversacionesConfigService configService,
+        CancellationToken ct)
+    {
+        var options = await configService.GetInstagramConfigAsync(ct);
+        var mode = request.Query["hub.mode"].ToString();
+        var verifyToken = request.Query["hub.verify_token"].ToString();
+        var challenge = request.Query["hub.challenge"].ToString();
+
+        if (string.IsNullOrWhiteSpace(options.VerifyToken))
+            return Results.Problem("Instagram VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+        if (mode == "subscribe" && verifyToken == options.VerifyToken)
+            return Results.Text(challenge, "text/plain");
+
+        return Results.Unauthorized();
+    }
+
+    private static async Task<IResult> HandleInstagramMessageAsync(
+        HttpRequest request,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        var options = await configService.GetInstagramConfigAsync(ct);
+        if (string.IsNullOrWhiteSpace(options.AppSecret))
+            return Results.Problem("Instagram App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+        using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        var rawPayload = await reader.ReadToEndAsync(ct);
+        var signature = request.Headers["X-Hub-Signature-256"].ToString();
+        if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
+            return Results.Unauthorized();
+
+        using var payload = JsonDocument.Parse(rawPayload);
+        var result = await svc.RegisterIncomingInstagramWebhookAsync(new ConversacionWebhookRequest
+        {
+            Payload = payload,
+            RawPayload = rawPayload,
+            Headers = request.Headers.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.ToString(),
+                StringComparer.OrdinalIgnoreCase)
+        }, ct);
+
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> HandleFacebookVerifyAsync(
+        HttpRequest request,
+        IConversacionesConfigService configService,
+        CancellationToken ct)
+    {
+        var options = await configService.GetFacebookConfigAsync(ct);
+        var mode = request.Query["hub.mode"].ToString();
+        var verifyToken = request.Query["hub.verify_token"].ToString();
+        var challenge = request.Query["hub.challenge"].ToString();
+
+        if (string.IsNullOrWhiteSpace(options.VerifyToken))
+            return Results.Problem("Facebook VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+        if (mode == "subscribe" && verifyToken == options.VerifyToken)
+            return Results.Text(challenge, "text/plain");
+
+        return Results.Unauthorized();
+    }
+
+    private static async Task<IResult> HandleFacebookMessageAsync(
+        HttpRequest request,
+        IConversacionesConfigService configService,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        var options = await configService.GetFacebookConfigAsync(ct);
+        if (string.IsNullOrWhiteSpace(options.AppSecret))
+            return Results.Problem("Facebook App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+        using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        var rawPayload = await reader.ReadToEndAsync(ct);
+        var signature = request.Headers["X-Hub-Signature-256"].ToString();
+        if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
+            return Results.Unauthorized();
+
+        using var payload = JsonDocument.Parse(rawPayload);
+        var result = await svc.RegisterIncomingFacebookWebhookAsync(new ConversacionWebhookRequest
+        {
+            Payload = payload,
+            RawPayload = rawPayload,
+            Headers = request.Headers.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.ToString(),
+                StringComparer.OrdinalIgnoreCase)
+        }, ct);
+
+        return Results.Ok(result);
+    }
+
+    private static async Task<IResult> HandleMercadoLibreMessageAsync(
+        HttpRequest request,
+        IConversacionesService svc,
+        CancellationToken ct)
+    {
+        using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
+        var rawPayload = await reader.ReadToEndAsync(ct);
+        using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
+
+        var result = await svc.RegisterIncomingMercadoLibreWebhookAsync(new ConversacionWebhookRequest
+        {
+            Payload = payload,
+            RawPayload = rawPayload,
+            Headers = request.Headers.ToDictionary(
+                pair => pair.Key,
+                pair => pair.Value.ToString(),
+                StringComparer.OrdinalIgnoreCase)
+        }, ct);
+
+        return Results.Ok(result);
+    }
 
     private static bool IsValidMetaSignature(string rawPayload, string appSecret, string signature)
     {

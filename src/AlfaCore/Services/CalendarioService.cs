@@ -242,7 +242,7 @@ public sealed class CalendarioService(
             if (detail.IdPlantillaWhatsApp is null or <= 0)
                 throw new InvalidOperationException("El recordatorio no tiene plantilla de WhatsApp configurada.");
             if (string.IsNullOrWhiteSpace(detail.TelefonoWhatsApp))
-                throw new InvalidOperationException("El evento no tiene telefono WhatsApp para enviar el recordatorio.");
+                throw new InvalidOperationException("El evento no tiene teléfono WhatsApp para enviar el recordatorio.");
 
             var usuarioAutor = ResolveConversationAuthorUser();
             var sistemaAutor = ResolveConversationAuthorSystem(usuarioAutor);
@@ -521,7 +521,7 @@ public sealed class CalendarioService(
         if (!ex.Message.Contains("CAL_", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        message = "El modulo Calendario todavia no esta inicializado en la base activa. Ejecuta el script de actualizacion de calendario y recarga la pantalla.";
+        message = "El módulo Calendario todavía no está inicializado en la base activa. Ejecutá el script de actualización de calendario y recargá la pantalla.";
         return true;
     }
 

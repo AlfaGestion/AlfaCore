@@ -10,7 +10,8 @@ public sealed class MenuService(
     IPermissionService permissionService,
     IAppEventService appEvents,
     IActualizacionesService actualizacionesService,
-    IAppUserSessionService appUserSession) : IMenuService
+    IAppUserSessionService appUserSession,
+    ICentralAdminService centralAdminService) : IMenuService
 {
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -125,6 +126,14 @@ public sealed class MenuService(
             var mapped = rows
                 .Where(x => x.HabilitadoWeb && !string.IsNullOrWhiteSpace(x.RutaWeb))
                 .ToList();
+
+            var moduloFiltro = await centralAdminService.GetModuloMenuFiltroParaClienteActualAsync(ct);
+            if (moduloFiltro is not null)
+            {
+                mapped = mapped
+                    .Where(x => IsNodeAllowedByModulos(x.Clave.Trim(), parentByKey, moduloFiltro))
+                    .ToList();
+            }
 
             var includeKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var row in mapped)
@@ -446,6 +455,16 @@ public sealed class MenuService(
                || (string.Equals(row.Componente?.Trim(), "ShellWorkspacePage", StringComparison.OrdinalIgnoreCase)
                    && route.StartsWith("/shell/", StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// Un nodo se muestra si él mismo o algún ancestro corresponde a un módulo activo para el
+    /// cliente. Si ni él ni ningún ancestro tienen módulo definido en el catálogo, se oculta
+    /// igual — el menú, a diferencia de <c>IsModuloActivoParaClienteActualAsync</c>, solo muestra
+    /// lo que el cliente efectivamente contrató. Implementación compartida:
+    /// <see cref="ModuloMenuFiltroDto.PermiteClave"/>.
+    /// </summary>
+    private static bool IsNodeAllowedByModulos(string clave, IReadOnlyDictionary<string, string> parentByKey, ModuloMenuFiltroDto filtro)
+        => filtro.PermiteClave(clave, parentByKey);
 
     private static void AddAncestors(HashSet<string> includeKeys, IReadOnlyDictionary<string, string> parentByKey, string key)
     {

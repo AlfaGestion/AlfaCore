@@ -12,6 +12,7 @@ public interface IConversacionesService
     Task<IReadOnlyList<ConversacionAuditoriaMensajeDto>> GetAuditMessagesAsync(ConversacionesInboxFilters filters, CancellationToken ct = default);
     Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default);
+    Task<ConversacionMensajesPaginaDto> GetMessagesPageAsync(long conversationId, int take, DateTime? beforeDate = null, long? beforeMessageId = null, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionClienteCandidateDto>> SearchClientesParaRelacionarAsync(string texto, CancellationToken ct = default);
     Task RelacionarClienteAsync(ConversacionRelacionarClienteRequest request, CancellationToken ct = default);
     Task RenameConversationAsync(ConversacionRenameRequest request, CancellationToken ct = default);
@@ -19,6 +20,11 @@ public interface IConversacionesService
     Task SetTypingAsync(ConversacionTypingRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendMessageAsync(ConversacionSendMessageRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendReactionAsync(ConversacionReaccionRequest request, CancellationToken ct = default);
+    /// <summary>
+    /// Marca interna de seguimiento por mensaje (ej. "PENDIENTE"/"COMPLETADA") — nunca se envía
+    /// al cliente por ningún canal, es solo para el agente. Pasar <c>null</c>/vacío quita la marca.
+    /// </summary>
+    Task SetMensajeMarcaInternaAsync(long idConversacion, long idMensaje, string? marca, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesAsync(ConversacionPlantillaFilters filters, CancellationToken ct = default);
     Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, CancellationToken ct = default);
     Task<long> SaveTemplateDraftAsync(ConversacionPlantillaSaveRequest request, CancellationToken ct = default);
@@ -45,6 +51,7 @@ public interface IConversacionesService
     Task SaveFavoriteStickerAsync(long idAdjunto, CancellationToken ct = default);
     Task<ConversacionAdjuntoDto> SendFavoriteStickerAsync(long idConversacion, long idFavorito, string? idTecnicoAutor = null, string? usuarioAccion = null, string? sistemaAccion = null, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionAdjuntoDto>> GetConversationAttachmentsAsync(long idConversacion, CancellationToken ct = default);
+    Task<IReadOnlyList<ConversacionAdjuntoDto>> GetMessageAttachmentsAsync(long idConversacion, IReadOnlyCollection<long> messageIds, CancellationToken ct = default);
     Task<ConversacionAdjuntosRecoveryResultDto> RecoverConversationAttachmentsAsync(long idConversacion, CancellationToken ct = default);
     Task<ConversacionAdjuntoServeDto?> GetAttachmentForServeAsync(long idAdjunto, int? idBase = null, bool includeDownloadName = true, CancellationToken ct = default);
     string GetAttachmentScopeKey();

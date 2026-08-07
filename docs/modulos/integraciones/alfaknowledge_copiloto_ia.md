@@ -18,17 +18,20 @@ Del lado de AlfaKnowledge (repo separado): `ExternalSuggestionsController`, `Ext
 
 ## Configuración
 
-Sección `AlfaKnowledge` en `appsettings.json` / `appsettings.Development.json`:
+La integración se configura manualmente por base desde `Conversaciones > Configuración` y los
+valores se guardan en `dbo.TA_CONFIGURACION` de la base activa:
 
 | Clave | Uso |
 |---|---|
-| `AlfaKnowledge:BaseUrl` | URL base de la instancia de AlfaKnowledge a consultar (ej. `http://10.8.0.32:5000`) |
-| `AlfaKnowledge:ApiKey` | clave enviada como header `X-Api-Key`; no debe guardarse en `appsettings.json` con un valor real |
-| `AlfaKnowledge:TimeoutSeconds` | timeout del HTTP client (default 15) |
+| `CONV_ALFAKNOWLEDGE_BASE_URL` | URL base de la instancia de AlfaKnowledge a consultar |
+| `CONV_ALFAKNOWLEDGE_API_KEY` | clave enviada como header `X-Api-Key` |
+| `CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS` | timeout del HTTP client (default 15) |
 
-El valor real de la clave vive en `.env` (`AlfaKnowledge__ApiKey`), mismo patrón que `OPENAI_API_KEY` en InformesIA. Debe coincidir con `ALFAKNOWLEDGE_EXTERNAL_API_KEY` configurado del lado de AlfaKnowledge.
+Debe coincidir con `ALFAKNOWLEDGE_EXTERNAL_API_KEY` configurado del lado de AlfaKnowledge.
 
-Si `BaseUrl` o `ApiKey` no están configurados (`AlfaKnowledgeOptions.IsConfigured == false`), el servicio no llama a nada y devuelve `null` — el panel muestra "no se pudo generar una sugerencia" en vez de romper la pantalla.
+No existe fallback a `appsettings.json`, `.env` ni variables de entorno. Si la base activa no
+tiene `BaseUrl` o `ApiKey`, el servicio no llama a nada y devuelve `null`: el panel muestra que
+la sugerencia no está disponible sin romper la pantalla.
 
 ## Flujo técnico
 
@@ -40,13 +43,13 @@ Si `BaseUrl` o `ApiKey` no están configurados (`AlfaKnowledgeOptions.IsConfigur
 
 ## Controles de seguridad
 
-- La API key vive en `.env`, nunca en `appsettings.json` con valor real ni en el frontend.
+- La API key vive en `TA_CONFIGURACION` de la base activa, nunca en el frontend.
 - Todas las llamadas se hacen desde el backend de AlfaCore (Blazor Server) — el navegador del técnico nunca llama directo a AlfaKnowledge.
 - Cualquier falla de red, timeout o de deserialización se atrapa y loguea; el método nunca lanza, devuelve `null` para que el panel degrade a "no disponible ahora" sin interrumpir la atención al cliente.
 
 ## Problemas frecuentes
 
-- Si `AlfaKnowledge:ApiKey` en AlfaCore no coincide con `ALFAKNOWLEDGE_EXTERNAL_API_KEY` del servidor de AlfaKnowledge, el endpoint responde `401` y el panel muestra "no se pudo generar una sugerencia" (se loguea como warning, no como error visible al técnico).
+- Si `CONV_ALFAKNOWLEDGE_API_KEY` en AlfaCore no coincide con `ALFAKNOWLEDGE_EXTERNAL_API_KEY` del servidor de AlfaKnowledge, el endpoint responde `401` y el panel muestra "no se pudo generar una sugerencia" (se loguea como warning, no como error visible al técnico).
 - Si `ALFAKNOWLEDGE_EXTERNAL_API_KEY` no está configurado del lado de AlfaKnowledge, el endpoint responde `503` (fail-closed) en vez de aceptar llamadas sin autenticar.
 - Un timeout corto puede cortar la sugerencia si AlfaKnowledge tarda por una consulta compleja; ajustar `TimeoutSeconds` si se repite.
 
