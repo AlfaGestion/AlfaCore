@@ -778,6 +778,17 @@
         }
 
         var bases = SessionSvc.GetAllSessions();
+        if (bases.Count == 0)
+        {
+            // Login central válido pero sin ninguna base asociada — hoy esto pasa casi siempre
+            // porque el registro público (/registrarme) todavía no confirmó el email: recién ahí
+            // se aprovisiona la base. Sin este mensaje, el usuario terminaba en el overlay de
+            // "Usuario del sistema" pidiendo un login interno que no existe todavía, sin ninguna
+            // pista de qué falta.
+            _error = "Tu cuenta todavía no fue confirmada. Revisá tu email y hacé clic en el enlace de confirmación — recién ahí se prepara tu base y vas a poder ingresar.";
+            return;
+        }
+
         if (bases.Count == 1)
         {
             SessionSvc.SwitchSession(bases[0].Id);

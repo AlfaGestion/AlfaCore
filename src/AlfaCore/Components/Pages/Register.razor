@@ -94,12 +94,12 @@
                 </label>
 
                 <label>
-                    <span>CUIT</span>
-                    <input @bind="_request.Cuit" @bind:event="oninput" maxlength="20" disabled="@_busy" />
+                    <span>CUIT (opcional)</span>
+                    <input @bind="_request.Cuit" @bind:event="oninput" maxlength="20" disabled="@_busy" placeholder="Lo pedimos solo si vas a contratar" />
                 </label>
 
                 <label class="is-wide">
-                    <span>Cond. IVA</span>
+                    <span>Cond. IVA (opcional)</span>
                     <select @bind="_request.Iva" disabled="@_busy">
                         <option value="">Seleccionar</option>
                         <option value="5">Monotributo</option>

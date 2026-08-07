@@ -68,3 +68,24 @@ public sealed class CrearUserRequest
     public string? Password { get; set; }
     public string IdCliente { get; set; } = string.Empty;
 }
+
+/// <summary>
+/// Borra por completo un cliente de prueba: logins centrales, base(s) registradas, pruebas de
+/// módulos y el registro oficial (CUIT) en ALFANET2007 — para poder reusar el mismo CUIT/email en
+/// un alta pública nueva. Solo pensado para datos de prueba; ver
+/// <see cref="ICentralAdminService.ResetClientePruebaAsync"/> para el detalle de qué se borra y
+/// qué se preserva si el cliente tiene actividad real.
+/// </summary>
+public sealed class ResetClientePruebaRequest
+{
+    public string IdCliente { get; set; } = string.Empty;
+    /// <summary>Si es true, además borra la base de SQL Server física y su login — irreversible.</summary>
+    public bool EliminarBaseFisica { get; set; }
+}
+
+public sealed class ResetClientePruebaResult
+{
+    public bool RegistroOficialEliminado { get; init; }
+    public string? MotivoRegistroOficialNoEliminado { get; init; }
+    public IReadOnlyList<string> BasesFisicasEliminadas { get; init; } = [];
+}

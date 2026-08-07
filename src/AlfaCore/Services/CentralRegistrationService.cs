@@ -60,11 +60,11 @@ public sealed class CentralRegistrationService(
                 };
             }
 
-            // sp_web_altaClienteAlfa NO dedupe por CUIT — crea una cuenta oficial nueva (código
-            // correlativo) en cada llamada, sin mirar si ese CUIT ya existe. Sin este chequeo,
-            // una misma empresa registrándose con otro email termina con una base propia nueva y
-            // vacía, en vez de con un error claro de "esta empresa ya tiene cuenta" — decisión de
-            // producto: mantenerlo simple, un CUIT = una cuenta.
+            // sp_web_altaClienteAlfa (el alta oficial en ALFANET2007, con el CUIT) NO se llama
+            // acá — se pospone hasta confirmar el email (ver VerifyAsync). Mientras tanto todo
+            // vive en dbo.RegistroPublicoPendiente, una tabla aparte de dbo.Clientes/dbo.users:
+            // así un registro que nunca confirma (bot, typo, se arrepiente) no deja basura
+            // permanente ni ocupa un CUIT en el registro oficial de clientes.
             if (await CuitYaRegistradoAsync(normalized.Cuit, ct))
             {
                 return new PublicRegistrationResult
@@ -77,94 +77,42 @@ public sealed class CentralRegistrationService(
             await using var central = new SqlConnection(CentralConnectionString);
             await central.OpenAsync(ct);
 
-            var existing = await LoadRegistrationByEmailAsync(central, normalized.Email, ct);
-            if (existing is null)
+            if (await ExistsConfirmedUserByEmailAsync(central, normalized.Email, ct))
             {
-                // LoadRegistrationByEmailAsync cruza dbo.users con dbo.Clientes: si el Clientes
-                // de un registro anterior se borró (a mano, o por una limpieza de datos de prueba)
-                // pero el users no, queda un email "fantasma" que ni se detecta como ya registrado
-                // ni deja insertar uno nuevo (choca contra IX_users). Se autolimpia acá — es seguro
-                // porque solo borra un users sin Clientes, bases ni ClienteModulos que lo referencien.
-                await DeleteOrphanedUserByEmailAsync(central, normalized.Email, ct);
-            }
-
-            if (existing is not null)
-            {
-                if (await BaseAlreadyProvisionedAsync(central, existing.IdCliente, ct))
-                {
-                    return new PublicRegistrationResult
-                    {
-                        Success = false,
-                        Message = "El email ya se encuentra registrado."
-                    };
-                }
-
-                var retryVerificationCode = Guid.NewGuid().ToString("N");
-                await RefreshPendingRegistrationAsync(central, existing, normalized, retryVerificationCode, ct);
-
-                var verificationUrl = BuildVerificationUrl(normalized.PublicBaseUrl, retryVerificationCode);
-                await SendVerificationEmailAsync(normalized, verificationUrl, ct);
-
-                await appEvents.LogAuditAsync(
-                    ModuleName,
-                    "RegisterRetry",
-                    "ALFA_CENTRAL.clientes",
-                    existing.IdCliente,
-                    "Registro público rearmado para completar el alta pendiente.",
-                    new
-                    {
-                        existing.IdCliente,
-                        normalized.Nombre,
-                        normalized.Email
-                    },
-                    ct);
-
                 return new PublicRegistrationResult
                 {
-                    Success = true,
-                    Message = "La cuenta ya existía pero no tenía la base lista. Te reenviamos el correo para completar el alta.",
-                    VerificationEmailSent = true
+                    Success = false,
+                    Message = "El email ya se encuentra registrado."
                 };
             }
 
-            var idCliente = await CreateOfficialCustomerAsync(normalized, ct);
-            var verificationCode = Guid.NewGuid().ToString("N");
+            var pendingExistente = await LoadPendingByEmailAsync(central, normalized.Email, ct);
+            var verificationCode = pendingExistente is not null
+                ? pendingExistente.VerifiedCode // mismo código: si ya reservó un idCliente en un intento anterior, VerifyAsync lo reusa.
+                : Guid.NewGuid().ToString("N");
 
-            await using var tx = (SqlTransaction)await central.BeginTransactionAsync(ct);
-            try
-            {
-                await InsertCentralClientAsync(central, tx, idCliente, normalized, verificationCode, ct);
-                await InsertCentralUserAsync(central, tx, idCliente, normalized, ct);
+            await UpsertPendingAsync(central, normalized, verificationCode, ct);
 
-                var verificationUrl = BuildVerificationUrl(normalized.PublicBaseUrl, verificationCode);
-                await SendVerificationEmailAsync(normalized, verificationUrl, ct);
-
-                await tx.CommitAsync(ct);
-            }
-            catch
-            {
-                await tx.RollbackAsync(ct);
-                throw;
-            }
+            var verificationUrl = BuildVerificationUrl(normalized.PublicBaseUrl, verificationCode);
+            await SendVerificationEmailAsync(normalized, verificationUrl, ct);
 
             await appEvents.LogAuditAsync(
                 ModuleName,
-                "Register",
-                "ALFA_CENTRAL.clientes",
-                idCliente,
-                "Registro público creado y pendiente de verificación.",
-                new
-                {
-                    idCliente,
-                    normalized.Nombre,
-                    normalized.Email
-                },
+                pendingExistente is not null ? "RegisterRetry" : "Register",
+                "ALFA_CENTRAL.RegistroPublicoPendiente",
+                normalized.Email,
+                pendingExistente is not null
+                    ? "Registro público reenviado (todavía sin confirmar)."
+                    : "Registro público pendiente de confirmación creado.",
+                new { normalized.Nombre, normalized.Email },
                 ct);
 
             return new PublicRegistrationResult
             {
                 Success = true,
-                Message = "Registro exitoso. Revisá tu correo para confirmar la cuenta.",
+                Message = pendingExistente is not null
+                    ? "Ya habías empezado este registro. Te reenviamos el correo para confirmarlo."
+                    : "Registro exitoso. Revisá tu correo para confirmar la cuenta.",
                 VerificationEmailSent = true
             };
         }
@@ -217,7 +165,7 @@ public sealed class CentralRegistrationService(
             await using var central = new SqlConnection(CentralConnectionString);
             await central.OpenAsync(ct);
 
-            var pending = await LoadRegistrationByCodeAsync(central, code.Trim(), ct);
+            var pending = await LoadPendingByCodeAsync(central, code.Trim(), ct);
             if (pending is null)
             {
                 return new PublicVerificationResult
@@ -227,18 +175,29 @@ public sealed class CentralRegistrationService(
                 };
             }
 
-            // OJO: antes esto cortaba acá con "ya está preparada" sin llamar a ProvisionAsync.
-            // Eso rompía el caso de un mismo CUIT registrándose de nuevo con OTRO email (dos
-            // personas de la misma empresa, o un reintento): sp_web_altaClienteAlfa reutiliza el
-            // idCliente, la base ya existe, pero el usuario legacy (TA_USUARIOS) de ESTE email
-            // puntual nunca se creaba — dejaba a ese usuario sin login automático para siempre.
-            // ProvisionAsync ya maneja el caso "base ya registrada" de forma barata (sin restore)
-            // y ahora además asegura el usuario legacy en ese camino — así que siempre se llama.
-            var official = await LoadOfficialCustomerAsync(pending.IdCliente, ct);
+            // El alta oficial (CUIT incluido) recién se crea acá, al confirmar — no en
+            // RegisterAsync. Si un intento anterior ya reservó un idCliente pero el
+            // aprovisionamiento falló después, se reusa el mismo en vez de pedir uno nuevo (evita
+            // acumular altas oficiales huérfanas en ALFANET2007 en cada reintento del mismo link).
+            var idCliente = pending.IdClienteReservado;
+            if (string.IsNullOrWhiteSpace(idCliente))
+            {
+                idCliente = await CreateOfficialCustomerAsync(new PublicRegistrationRequest
+                {
+                    Nombre = pending.Nombre,
+                    Telefono = pending.Telefono,
+                    Email = pending.Email,
+                    Cuit = pending.Cuit,
+                    Iva = pending.Iva
+                }, ct);
+                await SaveIdClienteReservadoAsync(central, pending.VerifiedCode, idCliente, ct);
+            }
+
+            var official = await LoadOfficialCustomerAsync(idCliente, ct);
 
             var provisioning = await provisioningService.ProvisionAsync(new PublicProvisioningRequest
             {
-                IdCliente = pending.IdCliente,
+                IdCliente = idCliente,
                 RazonSocial = official.RazonSocial,
                 Telefono = official.Telefono,
                 Email = pending.Email,
@@ -249,12 +208,27 @@ public sealed class CentralRegistrationService(
             }, ct);
 
             if (provisioning.Success)
-                await MarkVerifiedAsync(central, pending.IdCliente, code.Trim(), ct);
+            {
+                await using var tx = (SqlTransaction)await central.BeginTransactionAsync(ct);
+                try
+                {
+                    await InsertCentralClientAsync(central, tx, idCliente, pending.Nombre, pending.Password, code.Trim(), ct);
+                    await InsertCentralUserAsync(central, tx, idCliente, pending.Email, pending.Password, pending.Nombre, ct);
+                    await tx.CommitAsync(ct);
+                }
+                catch
+                {
+                    await tx.RollbackAsync(ct);
+                    throw;
+                }
+
+                await DeletePendingAsync(central, pending.VerifiedCode, ct);
+            }
 
             return new PublicVerificationResult
             {
                 Success = provisioning.Success,
-                AccountVerified = provisioning.Success || pending.Verified,
+                AccountVerified = provisioning.Success,
                 ProvisioningCompleted = provisioning.Success,
                 Message = provisioning.Success
                     ? "La cuenta fue confirmada y la base quedó preparada correctamente."
@@ -376,18 +350,6 @@ public sealed class CentralRegistrationService(
             throw new InvalidOperationException("Las contraseñas no coinciden.");
     }
 
-    private async Task<bool> BaseAlreadyProvisionedAsync(SqlConnection central, string idCliente, CancellationToken ct)
-    {
-        const string sql = """
-            SELECT COUNT(1)
-            FROM dbo.bases
-            WHERE UPPER(LTRIM(RTRIM(idcliente))) = UPPER(LTRIM(RTRIM(@IdCliente)));
-            """;
-
-        var count = await central.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { IdCliente = idCliente }, cancellationToken: ct));
-        return count > 0;
-    }
-
     /// <summary>
     /// Compara solo dígitos (CUIT puede llegar con o sin guiones) contra NUMERO_DOCUMENTO en el
     /// registro oficial de clientes — la misma tabla que llena sp_web_altaClienteAlfa al dar de
@@ -425,7 +387,10 @@ public sealed class CentralRegistrationService(
         cmd.Parameters.AddWithValue("@pEmail", DbNullable(request.Email));
         cmd.Parameters.AddWithValue("@pTel", DbNullable(request.Telefono));
         cmd.Parameters.AddWithValue("@pCuit", DbNullable(request.Cuit));
-        cmd.Parameters.AddWithValue("@pIva", DbNullable(request.Iva));
+        // El SP espera '' (no NULL) para disparar su propio default de IVA ("IF @pIva = ''
+        // SET @pIva = '   1'") cuando no se cargó condición de IVA — pasar DBNull.Value ahí hace
+        // que esa comparación nunca dispare y la columna quede NULL en vez de con el default.
+        cmd.Parameters.AddWithValue("@pIva", request.Iva ?? string.Empty);
         var codeParam = new SqlParameter("@pCodigoCuenta", SqlDbType.VarChar, 9)
         {
             Direction = ParameterDirection.Output
@@ -445,7 +410,8 @@ public sealed class CentralRegistrationService(
         SqlConnection central,
         SqlTransaction tx,
         string idCliente,
-        PublicRegistrationRequest request,
+        string nombre,
+        string password,
         string verificationCode,
         CancellationToken ct)
     {
@@ -499,11 +465,11 @@ public sealed class CentralRegistrationService(
             new
             {
                 IdCliente = idCliente,
-                Nombre = request.Nombre,
+                Nombre = nombre,
                 SuperAdmin = 0,
                 IdWeb = string.Empty,
-                Password = request.Password,
-                Verified = 0,
+                Password = password,
+                Verified = 1,
                 Type = AccountType,
                 VerifiedCode = verificationCode,
                 Created = DateTime.Now
@@ -516,7 +482,9 @@ public sealed class CentralRegistrationService(
         SqlConnection central,
         SqlTransaction tx,
         string idCliente,
-        PublicRegistrationRequest request,
+        string email,
+        string password,
+        string nombre,
         CancellationToken ct)
     {
         var columns = await GetColumnNamesAsync(central, tx, "users", ct);
@@ -544,11 +512,11 @@ public sealed class CentralRegistrationService(
             sql,
             new
             {
-                UserName = request.Email,
-                Password = request.Password,
+                UserName = email,
+                Password = password,
                 IdCliente = idCliente,
                 IsAdmin = 1,
-                Name = request.Nombre
+                Name = nombre
             },
             tx,
             cancellationToken: ct));
@@ -673,135 +641,79 @@ public sealed class CentralRegistrationService(
         return await central.QuerySingleOrDefaultAsync<RegistrationRow>(new CommandDefinition(sql, new { Code = code }, cancellationToken: ct));
     }
 
-    private static async Task MarkVerifiedAsync(SqlConnection central, string idCliente, string code, CancellationToken ct)
+    private static async Task<bool> ExistsConfirmedUserByEmailAsync(SqlConnection central, string email, CancellationToken ct)
     {
-        const string sql = """
-            UPDATE dbo.Clientes
-            SET verified = 1
-            WHERE UPPER(LTRIM(RTRIM(idcliente))) = UPPER(LTRIM(RTRIM(@IdCliente)))
-              AND UPPER(LTRIM(RTRIM(verified_code))) = UPPER(LTRIM(RTRIM(@Code)));
-            """;
-
-        await central.ExecuteAsync(new CommandDefinition(sql, new { IdCliente = idCliente, Code = code }, cancellationToken: ct));
+        const string sql = "SELECT COUNT(1) FROM dbo.users WHERE UPPER(LTRIM(RTRIM([user]))) = UPPER(LTRIM(RTRIM(@Email)));";
+        var count = await central.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { Email = email }, cancellationToken: ct));
+        return count > 0;
     }
 
-    private async Task<RegistrationRow?> LoadRegistrationByEmailAsync(SqlConnection central, string email, CancellationToken ct)
+    private static async Task<PendingRegistrationRow?> LoadPendingByEmailAsync(SqlConnection central, string email, CancellationToken ct)
     {
-        var columns = await GetColumnNamesAsync(central, null, "Clientes", ct);
-        var sql = $"""
-            SELECT TOP (1)
-                c.idcliente AS IdCliente,
-                ISNULL(u.[user], '') AS Email,
-                ISNULL(u.password, '') AS Password,
-                {(columns.Contains("verified") ? "ISNULL(c.verified, 0)" : "CAST(0 AS bit)")} AS Verified,
-                {(columns.Contains("verified_code") ? "ISNULL(c.verified_code, '')" : "CAST('' AS nvarchar(100))")} AS VerifiedCode
-            FROM dbo.users u
-            INNER JOIN dbo.Clientes c ON c.idcliente = u.idcliente
-            WHERE UPPER(LTRIM(RTRIM(u.[user]))) = UPPER(LTRIM(RTRIM(@Email)))
-            ORDER BY c.idcliente DESC;
+        const string sql = """
+            SELECT VerifiedCode, Nombre, Telefono, Email, Password, ISNULL(Cuit, '') AS Cuit, ISNULL(Iva, '') AS Iva, IdClienteReservado
+            FROM dbo.RegistroPublicoPendiente
+            WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(LTRIM(RTRIM(@Email)));
             """;
 
-        return await central.QuerySingleOrDefaultAsync<RegistrationRow>(new CommandDefinition(sql, new { Email = email }, cancellationToken: ct));
+        return await central.QuerySingleOrDefaultAsync<PendingRegistrationRow>(new CommandDefinition(sql, new { Email = email }, cancellationToken: ct));
+    }
+
+    private static async Task<PendingRegistrationRow?> LoadPendingByCodeAsync(SqlConnection central, string code, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT VerifiedCode, Nombre, Telefono, Email, Password, ISNULL(Cuit, '') AS Cuit, ISNULL(Iva, '') AS Iva, IdClienteReservado
+            FROM dbo.RegistroPublicoPendiente
+            WHERE UPPER(LTRIM(RTRIM(VerifiedCode))) = UPPER(LTRIM(RTRIM(@Code)));
+            """;
+
+        return await central.QuerySingleOrDefaultAsync<PendingRegistrationRow>(new CommandDefinition(sql, new { Code = code }, cancellationToken: ct));
     }
 
     /// <summary>
-    /// Borra un <c>dbo.users</c> con ese email cuyo <c>idcliente</c> ya no tiene fila en
-    /// <c>dbo.Clientes</c> — ver comentario en <see cref="RegisterAsync"/>. La condición
-    /// <c>NOT EXISTS</c> garantiza que nunca borre un usuario todavía vinculado a un cliente real.
+    /// Un registro por email: si ya había uno pendiente (mismo <paramref name="verificationCode"/>
+    /// que <see cref="LoadPendingByEmailAsync"/> encontró), lo actualiza con los datos nuevos; si
+    /// no, inserta uno. El <c>UNIQUE (Email)</c> de la tabla es la garantía real contra duplicados.
     /// </summary>
-    private static async Task DeleteOrphanedUserByEmailAsync(SqlConnection central, string email, CancellationToken ct)
+    private static async Task UpsertPendingAsync(SqlConnection central, PublicRegistrationRequest request, string verificationCode, CancellationToken ct)
     {
         const string sql = """
-            DELETE u
-            FROM dbo.users u
-            WHERE UPPER(LTRIM(RTRIM(u.[user]))) = UPPER(LTRIM(RTRIM(@Email)))
-              AND NOT EXISTS (SELECT 1 FROM dbo.Clientes c WHERE c.idcliente = u.idcliente);
+            IF EXISTS (SELECT 1 FROM dbo.RegistroPublicoPendiente WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(LTRIM(RTRIM(@Email))))
+                UPDATE dbo.RegistroPublicoPendiente
+                SET Nombre = @Nombre, Telefono = @Telefono, Password = @Password, Cuit = @Cuit, Iva = @Iva, CreatedUtc = GETUTCDATE()
+                WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(LTRIM(RTRIM(@Email)));
+            ELSE
+                INSERT INTO dbo.RegistroPublicoPendiente (VerifiedCode, Nombre, Telefono, Email, Password, Cuit, Iva)
+                VALUES (@VerifiedCode, @Nombre, @Telefono, @Email, @Password, @Cuit, @Iva);
             """;
 
-        await central.ExecuteAsync(new CommandDefinition(sql, new { Email = email }, cancellationToken: ct));
+        await central.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            VerifiedCode = verificationCode,
+            request.Nombre,
+            request.Telefono,
+            request.Email,
+            request.Password,
+            Cuit = string.IsNullOrWhiteSpace(request.Cuit) ? null : request.Cuit,
+            Iva = string.IsNullOrWhiteSpace(request.Iva) ? null : request.Iva
+        }, cancellationToken: ct));
     }
 
-    private async Task RefreshPendingRegistrationAsync(
-        SqlConnection central,
-        RegistrationRow existing,
-        PublicRegistrationRequest request,
-        string verificationCode,
-        CancellationToken ct)
+    private static async Task SaveIdClienteReservadoAsync(SqlConnection central, string verificationCode, string idCliente, CancellationToken ct)
     {
-        await using var tx = (SqlTransaction)await central.BeginTransactionAsync(ct);
-        try
-        {
-            var clientColumns = await GetColumnNamesAsync(central, tx, "Clientes", ct);
-            var userColumns = await GetColumnNamesAsync(central, tx, "users", ct);
+        const string sql = """
+            UPDATE dbo.RegistroPublicoPendiente
+            SET IdClienteReservado = @IdCliente
+            WHERE UPPER(LTRIM(RTRIM(VerifiedCode))) = UPPER(LTRIM(RTRIM(@Code)));
+            """;
 
-            var updates = new List<string>();
-            if (clientColumns.Contains("nombre"))
-                updates.Add("nombre = @Nombre");
-            if (clientColumns.Contains("password"))
-                updates.Add("password = @Password");
-            if (clientColumns.Contains("verified"))
-                updates.Add("verified = 0");
-            if (clientColumns.Contains("verified_code"))
-                updates.Add("verified_code = @VerifiedCode");
-            if (clientColumns.Contains("created"))
-                updates.Add("created = GETDATE()");
+        await central.ExecuteAsync(new CommandDefinition(sql, new { IdCliente = idCliente, Code = verificationCode }, cancellationToken: ct));
+    }
 
-            if (updates.Count > 0)
-            {
-                var sqlCliente = $"""
-                    UPDATE dbo.Clientes
-                    SET {string.Join(", ", updates)}
-                    WHERE UPPER(LTRIM(RTRIM(idcliente))) = UPPER(LTRIM(RTRIM(@IdCliente)));
-                    """;
-
-                await central.ExecuteAsync(new CommandDefinition(
-                    sqlCliente,
-                    new
-                    {
-                        existing.IdCliente,
-                        Nombre = request.Nombre,
-                        Password = request.Password,
-                        VerifiedCode = verificationCode
-                    },
-                    tx,
-                    cancellationToken: ct));
-            }
-
-            var userUpdates = new List<string>();
-            if (userColumns.Contains("password"))
-                userUpdates.Add("password = @Password");
-            if (userColumns.Contains("name"))
-                userUpdates.Add("name = @Name");
-
-            if (userUpdates.Count > 0)
-            {
-                var sqlUser = $"""
-                    UPDATE dbo.users
-                    SET {string.Join(", ", userUpdates)}
-                    WHERE UPPER(LTRIM(RTRIM(idcliente))) = UPPER(LTRIM(RTRIM(@IdCliente)))
-                      AND UPPER(LTRIM(RTRIM([user]))) = UPPER(LTRIM(RTRIM(@Email)));
-                    """;
-
-                await central.ExecuteAsync(new CommandDefinition(
-                    sqlUser,
-                    new
-                    {
-                        existing.IdCliente,
-                        Email = request.Email,
-                        Password = request.Password,
-                        Name = request.Nombre
-                    },
-                    tx,
-                    cancellationToken: ct));
-            }
-
-            await tx.CommitAsync(ct);
-        }
-        catch
-        {
-            await tx.RollbackAsync(ct);
-            throw;
-        }
+    private static async Task DeletePendingAsync(SqlConnection central, string verificationCode, CancellationToken ct)
+    {
+        const string sql = "DELETE FROM dbo.RegistroPublicoPendiente WHERE UPPER(LTRIM(RTRIM(VerifiedCode))) = UPPER(LTRIM(RTRIM(@Code)));";
+        await central.ExecuteAsync(new CommandDefinition(sql, new { Code = verificationCode }, cancellationToken: ct));
     }
 
     private async Task<OfficialCustomerRow> LoadOfficialCustomerAsync(string idCliente, CancellationToken ct)
@@ -858,5 +770,17 @@ public sealed class CentralRegistrationService(
         public string Telefono { get; set; } = string.Empty;
         public string Cuit { get; set; } = string.Empty;
         public string Iva { get; set; } = string.Empty;
+    }
+
+    private sealed class PendingRegistrationRow
+    {
+        public string VerifiedCode { get; set; } = string.Empty;
+        public string Nombre { get; set; } = string.Empty;
+        public string Telefono { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string Cuit { get; set; } = string.Empty;
+        public string Iva { get; set; } = string.Empty;
+        public string? IdClienteReservado { get; set; }
     }
 }

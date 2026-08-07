@@ -19,6 +19,10 @@ public sealed class CentralAdminService(
     private string ConnectionString => configuration.GetConnectionString("AlfaCentral")
         ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaCentral'.");
 
+    /// <summary>Registro oficial de clientes (CUIT incluido) — vive en ALFANET2007, no en ALFA_CENTRAL.</summary>
+    private string AlfaGestionConnectionString => configuration.GetConnectionString("AlfaGestion")
+        ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+
     public async Task<IReadOnlyList<AdminClienteDto>> GetClientesAsync(CancellationToken ct = default)
     {
         const string sql = """
@@ -379,6 +383,150 @@ public sealed class CentralAdminService(
         const string sql = "DELETE FROM dbo.bases WHERE id = @IdBase;";
         await cn.ExecuteAsync(new CommandDefinition(sql, new { IdBase = idBase }, cancellationToken: ct)).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Borra por completo un cliente de prueba para poder reusar el mismo CUIT/email en un alta
+    /// pública nueva — a diferencia de <see cref="DeleteBaseAsync"/>/<see cref="DeleteUserAsync"/>
+    /// (que solo desvinculan una fila puntual), esto limpia TODO lo que <c>/registrarme</c> dejó:
+    /// pruebas de módulos, logins centrales, la(s) base(s) registradas y el registro oficial
+    /// (CUIT) en ALFANET2007. Si el cliente ya tiene actividad real (conversaciones, comprobantes,
+    /// asientos...) el borrado del registro oficial falla por FK — se informa sin abortar el resto,
+    /// porque para ese caso no tiene sentido "reciclar" el CUIT igual.
+    /// </summary>
+    public async Task<ResetClientePruebaResult> ResetClientePruebaAsync(ResetClientePruebaRequest request, CancellationToken ct = default)
+    {
+        var idCliente = NormalizeKey(request.IdCliente);
+        if (string.IsNullOrWhiteSpace(idCliente))
+            throw new AppUserFacingException("El cliente es obligatorio.", "ADMIN_RESET_CLIENTE_ID");
+        if (!await ExistsClienteAsync(idCliente, ct).ConfigureAwait(false))
+            throw new AppUserFacingException("El cliente central no existe.", "ADMIN_RESET_CLIENTE_NO_EXISTE");
+
+        var bases = (await GetBasesAsync(ct).ConfigureAwait(false))
+            .Where(b => string.Equals(b.IdCliente, idCliente, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        await using (var central = new SqlConnection(ConnectionString))
+        {
+            await central.OpenAsync(ct).ConfigureAwait(false);
+            await using var tx = central.BeginTransaction();
+            try
+            {
+                await central.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.ClienteModulos WHERE IdCliente = @IdCliente;", new { IdCliente = idCliente }, tx, cancellationToken: ct)).ConfigureAwait(false);
+                await central.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.users WHERE idcliente = @IdCliente;", new { IdCliente = idCliente }, tx, cancellationToken: ct)).ConfigureAwait(false);
+                await central.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.bases WHERE idcliente = @IdCliente;", new { IdCliente = idCliente }, tx, cancellationToken: ct)).ConfigureAwait(false);
+                await central.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.Clientes WHERE idcliente = @IdCliente;", new { IdCliente = idCliente }, tx, cancellationToken: ct)).ConfigureAwait(false);
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct).ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        bool registroOficialEliminado;
+        string? motivoNoEliminado = null;
+        await using (var gestion = new SqlConnection(AlfaGestionConnectionString))
+        {
+            await gestion.OpenAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await gestion.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.MA_CUENTASADIC WHERE CODIGO = @IdCliente;", new { IdCliente = idCliente }, cancellationToken: ct)).ConfigureAwait(false);
+                var filas = await gestion.ExecuteAsync(new CommandDefinition("DELETE FROM dbo.MA_CUENTAS WHERE CODIGO = @IdCliente;", new { IdCliente = idCliente }, cancellationToken: ct)).ConfigureAwait(false);
+                registroOficialEliminado = filas > 0;
+            }
+            catch (SqlException ex) when (ex.Number is 547) // FK constraint violation
+            {
+                registroOficialEliminado = false;
+                motivoNoEliminado = "El cliente ya tiene actividad real asociada (conversaciones, comprobantes, asientos, etc.), así que el registro oficial con el CUIT no se pudo borrar. El CUIT sigue marcado como usado.";
+            }
+        }
+
+        var basesFisicasEliminadas = new List<string>();
+        if (request.EliminarBaseFisica)
+        {
+            foreach (var b in bases)
+            {
+                if (await TryDropBaseFisicaAsync(b, ct).ConfigureAwait(false))
+                    basesFisicasEliminadas.Add(b.DbName);
+            }
+        }
+
+        await appEvents.LogAuditAsync(
+            "Central",
+            "ResetClientePrueba",
+            "Clientes",
+            idCliente,
+            "Reset completo de cliente de prueba.",
+            new { idCliente, request.EliminarBaseFisica, registroOficialEliminado, motivoNoEliminado, basesFisicasEliminadas },
+            ct).ConfigureAwait(false);
+
+        return new ResetClientePruebaResult
+        {
+            RegistroOficialEliminado = registroOficialEliminado,
+            MotivoRegistroOficialNoEliminado = motivoNoEliminado,
+            BasesFisicasEliminadas = basesFisicasEliminadas
+        };
+    }
+
+    /// <summary>
+    /// DROP DATABASE + DROP LOGIN de una base de prueba. Nunca lanza — si algo falla (server
+    /// inalcanzable, permisos, etc.) devuelve <c>false</c> y el resto del reset ya se aplicó igual.
+    /// Valida que DbName/DbUser sean alfanuméricos antes de interpolarlos en el DDL (no se pueden
+    /// parametrizar nombres de base/login) — nunca deberían ser otra cosa, los genera el propio
+    /// sistema al aprovisionar, pero es la única defensa real contra inyección acá.
+    /// </summary>
+    private async Task<bool> TryDropBaseFisicaAsync(AdminBaseDto b, CancellationToken ct)
+    {
+        if (!EsIdentificadorSqlSeguro(b.DbName) || (!string.IsNullOrWhiteSpace(b.DbUser) && !EsIdentificadorSqlSeguro(b.DbUser)))
+        {
+            await appEvents.LogAuditAsync("Central", "ResetClientePruebaDropFisico", "bases", b.DbName, "DbName/DbUser con caracteres no seguros, no se intentó el DROP físico.", new { b.DbName, b.DbUser }, ct).ConfigureAwait(false);
+            return false;
+        }
+
+        try
+        {
+            var master = new SqlConnectionStringBuilder(AlfaGestionConnectionString)
+            {
+                DataSource = b.DbServer,
+                InitialCatalog = "master",
+                ApplicationName = "AlfaCore-ResetClientePrueba"
+            }.ConnectionString;
+
+            await using var cn = new SqlConnection(master);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+
+            var sql = $"""
+                IF DB_ID(N'{b.DbName}') IS NOT NULL
+                BEGIN
+                    ALTER DATABASE {QuoteIdent(b.DbName)} SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+                    DROP DATABASE {QuoteIdent(b.DbName)};
+                END
+                """;
+            await cn.ExecuteAsync(new CommandDefinition(sql, cancellationToken: ct)).ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(b.DbUser))
+            {
+                var dropLoginSql = $"""
+                    IF EXISTS (SELECT 1 FROM sys.server_principals WHERE name = N'{b.DbUser}')
+                        DROP LOGIN {QuoteIdent(b.DbUser)};
+                    """;
+                await cn.ExecuteAsync(new CommandDefinition(dropLoginSql, cancellationToken: ct)).ConfigureAwait(false);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync("Central", "ResetClientePruebaDropFisico", ex, "No se pudo eliminar la base física de un cliente de prueba.", new { b.DbName, b.DbServer }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return false;
+        }
+    }
+
+    private static bool EsIdentificadorSqlSeguro(string value)
+        => !string.IsNullOrWhiteSpace(value) && value.All(c => char.IsLetterOrDigit(c) || c == '_');
+
+    private static string QuoteIdent(string identifier) => $"[{identifier.Replace("]", "]]")}]";
 
     public async Task<IReadOnlyList<AdminUserDto>> GetUsersAsync(CancellationToken ct = default)
     {

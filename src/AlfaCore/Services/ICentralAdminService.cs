@@ -17,6 +17,13 @@ public interface ICentralAdminService
     Task UpdateBaseAsync(CrearBaseRequest request, CancellationToken ct = default);
     Task DeleteBaseAsync(int idBase, CancellationToken ct = default);
 
+    /// <summary>
+    /// Borra por completo un cliente de prueba (módulos, logins, bases y el registro oficial con
+    /// el CUIT) para poder reusar los mismos datos en un alta pública nueva. A diferencia de
+    /// <see cref="DeleteBaseAsync"/>/<see cref="DeleteUserAsync"/>, que solo desvinculan una fila.
+    /// </summary>
+    Task<ResetClientePruebaResult> ResetClientePruebaAsync(ResetClientePruebaRequest request, CancellationToken ct = default);
+
     Task<IReadOnlyList<AdminUserDto>> GetUsersAsync(CancellationToken ct = default);
     Task<AdminUserDto?> GetUserAsync(string userName, CancellationToken ct = default);
     Task CreateUserAsync(CrearUserRequest request, CancellationToken ct = default);

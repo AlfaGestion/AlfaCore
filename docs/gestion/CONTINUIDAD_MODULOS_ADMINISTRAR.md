@@ -16,6 +16,55 @@ general del repo).
 
 ---
 
+## Actualización 2026-08-07: alta oficial pospuesta a la confirmación + CUIT/IVA opcionales
+
+Dos decisiones de producto confirmadas tras encontrar datos basura en `ALFANET2007` durante las
+pruebas de la prueba gratuita (ver actualización anterior): cuentas de test nunca confirmadas
+(`pconway@gmail.com`, `alfredopinero@gmail.com`) que ya habían ocupado un `idCliente` y un CUIT
+para siempre.
+
+- **CUIT y Condición de IVA pasan a ser opcionales** en `/registrarme` — son datos fiscales
+  argentinos que no hacen falta para una prueba gratuita, solo cuando alguien va a contratar de
+  verdad. `sp_web_altaClienteAlfa` ya aceptaba ambos como nullable; el único ajuste real fue en
+  `CreateOfficialCustomerAsync`: `@pIva` ahora se manda como `''` (no `DBNull`) cuando viene vacío,
+  porque el SP dispara su propio default (`IF @pIva = '' SET @pIva = '   1'`) comparando contra
+  string vacío, no contra NULL — con `DBNull` esa rama nunca se ejecutaba y la columna quedaba
+  NULL en vez del default.
+- **El alta oficial en `ALFANET2007` (`sp_web_altaClienteAlfa`, ocupa un CUIT y un `idCliente`) se
+  pospuso de "al registrarse" a "al confirmar el email"**. Antes, cualquier intento sin confirmar
+  (bot, typo, arrepentimiento) ya dejaba basura permanente en `MA_CUENTAS`/`MA_CUENTASADIC`. Ahora:
+  - Nueva tabla `dbo.RegistroPublicoPendiente` en `ALFA_CENTRAL`
+    (`docs/base-datos/sql-referencia/registro_publico_pendientes.sql`, **ya corrida** — este
+    `CREATE TABLE` sí lo pudo ejecutar el propio Claude, a diferencia de los `ALTER TABLE`
+    anteriores que quedan bloqueados por el clasificador de seguridad): guarda
+    nombre/teléfono/email/password/CUIT/IVA + un `IdClienteReservado` nullable mientras el email
+    no se confirma. `UNIQUE (Email)` es la garantía real contra duplicados en esta etapa.
+  - `RegisterAsync` ya NO llama a `CreateOfficialCustomerAsync` ni toca `dbo.Clientes`/`dbo.users`
+    — solo hace upsert en `RegistroPublicoPendiente` (por email) y manda el mail. `dbo.users` pasa
+    a contener SOLO cuentas ya confirmadas, así que el chequeo de "¿ya existe?" es un simple
+    `COUNT(1)` sin el JOIN ambiguo que causaba bugs la vez pasada.
+  - `VerifyAsync` es donde ahora se llama a `sp_web_altaClienteAlfa` (con los datos de la fila
+    pendiente) para recién ahí obtener el `idCliente`, seguido de `ProvisionAsync` y el insert en
+    `dbo.Clientes`/`dbo.users` (con `verified = 1` directo, ya no hace falta un paso aparte). Si
+    `ProvisionAsync` falla, el `idCliente` ya emitido se guarda en `IdClienteReservado` de la fila
+    pendiente (que NO se borra) — un reintento del mismo link reusa ese mismo `idCliente` en vez de
+    pedirle uno nuevo a la SP y acumular altas oficiales huérfanas por cada intento fallido. La fila
+    pendiente solo se borra tras un `ProvisionAsync` exitoso.
+  - Se sacaron `BaseAlreadyProvisionedAsync`, `RefreshPendingRegistrationAsync`,
+    `LoadRegistrationByEmailAsync` y `DeleteOrphanedUserByEmailAsync` — existían para parchear
+    problemas del diseño viejo (`dbo.Clientes`/`users` cumpliendo doble función de "pendiente" y
+    "confirmado" a la vez) que ya no aplican con la tabla separada.
+  - `IniciarPruebaModulosAsync` (selector de módulos en Verify.razor) no cambió — sigue resolviendo
+    por `dbo.Clientes.verified_code` una vez que la cuenta ya está confirmada.
+- `Register.razor`: labels actualizados a "CUIT (opcional)" / "Cond. IVA (opcional)".
+
+Compiló limpio y pasó `check_catalogo.py`. **Pendiente**: probar en vivo el flujo completo
+(registrarse sin CUIT → confirmar → que aparezca la base) y confirmar que un `ProvisionAsync`
+fallido realmente reusa `IdClienteReservado` en el reintento (no se forzó ese camino en esta
+sesión, solo se revisó el código).
+
+---
+
 ## Actualización 2026-08-06 (2): prueba gratuita autoservicio de 30 días al registrarse
 
 Nuevo estado `Prueba` en `dbo.ClienteModulos` (se suma a Solicitado/Activo/Suspendido/Rechazado).

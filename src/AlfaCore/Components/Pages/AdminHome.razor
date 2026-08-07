@@ -166,6 +166,7 @@
                                     <div class="d-flex gap-2 flex-wrap mt-3">
                                         <button type="button" class="btn btn-primary" @onclick="OpenSelectedClientEditor">Editar datos</button>
                                         <button type="button" class="btn btn-outline-light" @onclick="ClearSelection">Limpiar selección</button>
+                                        <button type="button" class="btn btn-outline-danger ms-auto" title="Borra módulos, usuarios, bases y el registro oficial (CUIT) — para reusar los mismos datos en un alta de prueba nueva" @onclick="OpenResetClienteModal">Reset completo (prueba)</button>
                                     </div>
                                 </div>
                             }
@@ -623,6 +624,57 @@
             <div class="d-flex gap-2 mt-3 flex-wrap">
                 <button type="button" class="btn btn-primary" @onclick="SaveBaseAsync">@(_editingBase ? "Guardar cambios" : "Grabar base")</button>
                 <button type="button" class="btn btn-outline-light" @onclick="CancelBaseEditor">Cancelar</button>
+            </div>
+        </section>
+    </div>
+}
+
+@if (_showResetClienteModal)
+{
+    <div class="modal-overlay" @onclick="CancelResetCliente">
+        <section class="panel-card app-modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-reset-cliente-title" @onclick:stopPropagation="true">
+            <div class="panel-card__header">
+                <div>
+                    <h2 id="admin-reset-cliente-title" class="panel-card__title">Reset completo de cliente de prueba</h2>
+                    <p class="panel-card__subtitle">Solo para cuentas de prueba — esta acción no se puede deshacer.</p>
+                </div>
+                <button type="button" class="btn btn-outline-light" @onclick="CancelResetCliente">Cerrar</button>
+            </div>
+
+            <div class="shell-empty-state">
+                <strong>Va a borrar, para <code>@_selectedClientId</code>:</strong>
+                <span>Pruebas de módulos activas · Usuarios centrales (@CurrentUsers.Count) · Bases registradas (@CurrentBases.Count) · El registro oficial (CUIT) en ALFANET2007</span>
+            </div>
+
+            <div class="row g-3 mt-1">
+                <div class="col-12">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="reset-cliente-drop-fisico" @bind="_resetClienteEliminarBaseFisica" />
+                        <label class="form-check-label" for="reset-cliente-drop-fisico">
+                            También borrar la(s) base(s) de SQL Server física(s) y su login — irreversible, libera espacio en disco.
+                        </label>
+                    </div>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">Para confirmar, escribí el ID de cliente (<code>@_selectedClientId</code>):</label>
+                    <input class="form-control admin-modal-input" @bind="_resetClienteConfirmText" @bind:event="oninput" placeholder="@_selectedClientId" />
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_error))
+            {
+                <div class="alert alert-danger mt-3">@_error</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(_message))
+            {
+                <div class="alert alert-success mt-3">@_message</div>
+            }
+
+            <div class="d-flex gap-2 mt-3 flex-wrap">
+                <button type="button" class="btn btn-danger" disabled="@(_resetClienteBusy || !string.Equals(_resetClienteConfirmText, _selectedClientId, StringComparison.Ordinal))" @onclick="ConfirmResetClienteAsync">
+                    @(_resetClienteBusy ? "Borrando..." : "Borrar todo")
+                </button>
+                <button type="button" class="btn btn-outline-light" disabled="@_resetClienteBusy" @onclick="CancelResetCliente">Cancelar</button>
             </div>
         </section>
     </div>
@@ -1288,6 +1340,65 @@
             _error = ex is AlfaCore.Services.AppUserFacingException userFacing
                 ? userFacing.UserMessage
                 : ex.Message;
+        }
+    }
+
+    private bool _showResetClienteModal;
+    private bool _resetClienteEliminarBaseFisica;
+    private bool _resetClienteBusy;
+    private string _resetClienteConfirmText = string.Empty;
+
+    private void OpenResetClienteModal()
+    {
+        if (!HasSelectedClient)
+            return;
+
+        _resetClienteConfirmText = string.Empty;
+        _resetClienteEliminarBaseFisica = false;
+        _resetClienteBusy = false;
+        _message = string.Empty;
+        _error = string.Empty;
+        _showResetClienteModal = true;
+    }
+
+    private void CancelResetCliente()
+    {
+        _showResetClienteModal = false;
+        _resetClienteBusy = false;
+    }
+
+    private async Task ConfirmResetClienteAsync()
+    {
+        if (!HasSelectedClient || !string.Equals(_resetClienteConfirmText, _selectedClientId, StringComparison.Ordinal))
+            return;
+
+        _resetClienteBusy = true;
+        _error = string.Empty;
+        _message = string.Empty;
+        try
+        {
+            var resultado = await AdminSvc.ResetClientePruebaAsync(new AlfaCore.Models.ResetClientePruebaRequest
+            {
+                IdCliente = _selectedClientId!,
+                EliminarBaseFisica = _resetClienteEliminarBaseFisica
+            });
+
+            _showResetClienteModal = false;
+            await ReloadAsync();
+
+            _message = resultado.RegistroOficialEliminado
+                ? "Cliente de prueba borrado por completo. El CUIT y el email quedan libres para un alta nueva."
+                : $"Se borraron módulos, usuarios y bases, pero el registro oficial (CUIT) no se pudo borrar: {resultado.MotivoRegistroOficialNoEliminado}";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+        finally
+        {
+            _resetClienteBusy = false;
         }
     }
 
