@@ -41,6 +41,13 @@
             }
         </div>
     }
+    @if (AppMode.IsSaaSMode)
+    {
+        <div class="conversations-inline @(HasWebhookToken ? "conversations-inline--ok" : "conversations-inline--error")">
+            <strong>@(HasWebhookToken ? "Webhook identificado por base" : "Webhook sin identificación de base")</strong>
+            <div>@GetWebhookTenantHelp("los mensajes entrantes")</div>
+        </div>
+    }
     <div class="conv-config-status-grid">
             <article class="panel-card conv-status-card">
                 <span class="panel-card__tag">Envío Cloud API</span>
@@ -120,7 +127,7 @@
                         Si no cargás la base pública, se sugiere la URL actual del navegador.
                         @if (string.IsNullOrWhiteSpace(_webhookToken))
                         {
-                            <text> Esta base todavía no tiene token de webhook propio (solo disponible en modo SaaS con una base activa) — hasta tenerlo, los mensajes entrantes de este canal van a la base por defecto.</text>
+                            <text> Esta base todavía no tiene token de webhook propio. No uses este callback para producción SaaS porque el servidor no puede identificar el cliente del mensaje entrante.</text>
                         }
                         else
                         {
@@ -244,7 +251,7 @@
                     <strong>@GetInstagramWebhookUrlPreview()</strong>
                     <span class="context-card__muted">
                         El endpoint queda preparado para la siguiente etapa de recepción y envío de mensajes.
-                        @(string.IsNullOrWhiteSpace(_webhookToken) ? " Sin token propio (modo SaaS con base activa), los mensajes van a la base por defecto." : " El token identifica a esta base sin depender de ninguna sesión.")
+                        @GetWebhookTenantHelp("los mensajes de Instagram")
                     </span>
                 </div>
 
@@ -355,7 +362,7 @@
                     <strong>@GetFacebookWebhookUrlPreview()</strong>
                     <span class="context-card__muted">
                         Suscribir el producto Messenger al evento <code>messages</code> de la página.
-                        @(string.IsNullOrWhiteSpace(_webhookToken) ? " Sin token propio (modo SaaS con base activa), los mensajes van a la base por defecto." : " El token identifica a esta base sin depender de ninguna sesión.")
+                        @GetWebhookTenantHelp("los mensajes de Facebook")
                     </span>
                 </div>
 
@@ -476,7 +483,7 @@
                     <strong>@GetMercadoLibreWebhookUrlPreview()</strong>
                     <span class="context-card__muted">
                         Suscribir el topic <code>questions</code> para preguntas de publicaciones.
-                        @(string.IsNullOrWhiteSpace(_webhookToken) ? " Sin token propio (modo SaaS con base activa), las notificaciones van a la base por defecto." : " El token identifica a esta base sin depender de ninguna sesión.")
+                        @GetWebhookTenantHelp("las notificaciones de Mercado Libre")
                     </span>
                 </div>
 
@@ -770,6 +777,7 @@
     private AppUiMessage? _anyDeskFeedback;
     private string _suggestedBaseUrl = string.Empty;
     private string? _webhookToken;
+    private bool HasWebhookToken => !string.IsNullOrWhiteSpace(_webhookToken);
 
     protected override async Task OnInitializedAsync()
     {
@@ -808,6 +816,26 @@
     /// </summary>
     private string? BuildTokenizedWebhookUrl(string basePath)
         => string.IsNullOrWhiteSpace(_webhookToken) ? null : $"{basePath}/{_webhookToken}";
+
+    private bool EnsureSaaSWebhookTokenReady()
+    {
+        if (!AppMode.IsSaaSMode || HasWebhookToken)
+            return true;
+
+        _feedback = new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Warning,
+            Title = "Token de webhook requerido",
+            Message = "Seleccioná una base activa y recargá la pantalla para generar el token propio antes de guardar la configuración del canal.",
+            Suggestion = "En SaaS, Meta y Mercado Libre deben usar la URL con token para que AlfaCore identifique el cliente/base sin depender de una sesión."
+        };
+        return false;
+    }
+
+    private string GetWebhookTenantHelp(string subject)
+        => HasWebhookToken
+            ? $"La URL mostrada incluye el token propio de esta base; {subject} se enrutan sin depender de la sesión activa."
+            : $"Falta el token propio de esta base. En SaaS no configures este callback: {subject} podrían ir a la base por defecto.";
 
     private async Task LoadAsync()
     {
@@ -926,6 +954,12 @@
         Saving = true;
         _feedback = null;
 
+        if (!EnsureSaaSWebhookTokenReady())
+        {
+            Saving = false;
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_config.PublicBaseUrl))
             _config.PublicBaseUrl = _suggestedBaseUrl;
 
@@ -952,6 +986,12 @@
     {
         Saving = true;
         _feedback = null;
+
+        if (!EnsureSaaSWebhookTokenReady())
+        {
+            Saving = false;
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(_instagramConfig.PublicBaseUrl))
             _instagramConfig.PublicBaseUrl = _suggestedBaseUrl;
@@ -980,6 +1020,12 @@
         Saving = true;
         _feedback = null;
 
+        if (!EnsureSaaSWebhookTokenReady())
+        {
+            Saving = false;
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(_facebookConfig.PublicBaseUrl))
             _facebookConfig.PublicBaseUrl = _suggestedBaseUrl;
 
@@ -1006,6 +1052,12 @@
     {
         Saving = true;
         _feedback = null;
+
+        if (!EnsureSaaSWebhookTokenReady())
+        {
+            Saving = false;
+            return;
+        }
 
         if (string.IsNullOrWhiteSpace(_mercadoLibreConfig.PublicBaseUrl))
             _mercadoLibreConfig.PublicBaseUrl = _suggestedBaseUrl;
