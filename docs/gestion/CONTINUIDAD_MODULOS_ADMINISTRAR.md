@@ -16,6 +16,53 @@ general del repo).
 
 ---
 
+## Actualización 2026-08-06: corrección de estado + cola de aprobación de solicitudes
+
+**Corrección importante**: al retomar este tema se verificó directo contra `ALFA_CENTRAL` (en vez
+de confiar en este documento) y varias cosas anotadas como "pendiente" ya estaban resueltas:
+
+- Las 3 migraciones que quedaban pendientes (`modulos_modelo_inicial.sql`,
+  `modulos_menukeyraiz_nullable.sql`, `webhook_token_bases.sql`) **ya están corridas** en
+  `ALFA_CENTRAL` — confirmado con `sys.tables`/`sys.columns`.
+- El catálogo tiene 7 módulos cargados: `CLIENTES`, `TECNICOS`, `CONVERSACIONES`, `TICKETS`,
+  `ALFAKNOWLEDGE`, `PARTES_HORAS`, `AUTOMATIZACIONES`.
+- El cliente de prueba (112012786) ya tiene activos `CLIENTES`/`TECNICOS`/`CONVERSACIONES`/
+  `TICKETS`, confirmado en vivo (filtro de menú, Autorización de tareas, botón "Crear ticket").
+- Siguen **sin activar/probar en vivo** para el cliente de prueba: `ALFAKNOWLEDGE`,
+  `PARTES_HORAS`, `AUTOMATIZACIONES` — están en el catálogo pero nadie los prendió todavía.
+  Sigue siendo el próximo paso natural si se retoma la prueba en vivo.
+
+**Nuevo: cola de solicitud/aprobación de módulos** (resuelve el punto 2 de "Próximos pasos" de
+más abajo). Diseño confirmado con el dueño del producto:
+
+- 3 preguntas de diseño cerradas: (1) la solicitud se carga desde el panel Cliente → Módulos que
+  ya existía (botón nuevo "Solicitar", no un formulario aparte); (2) "Aprobar" activa directo, sin
+  paso intermedio de "aprobado pendiente de pago" (se descartó el 4to estado del boceto original
+  por simplicidad); (3) rechazar deja la fila marcada como `Rechazado` (no se borra, keep para
+  historial).
+- `dbo.ClienteModulos.Estado` pasa de 2 a 4 valores posibles: `Solicitado` / `Activo` /
+  `Suspendido` / `Rechazado` — migración nueva
+  `docs/base-datos/sql-referencia/modulos_estado_solicitud.sql` (ALTER TABLE, **pendiente de
+  correr manualmente contra `ALFA_CENTRAL`**, bloqueado para mí por el clasificador). Suma
+  columnas `SolicitadoUtc`/`SolicitadoPor`/`DecididoUtc`/`DecididoPor`.
+- `ICentralAdminService`: `SolicitarModuloAsync` (dejar pedido sin activar), `RechazarModuloAsync`
+  (marca `Rechazado`), `GetSolicitudesPendientesAsync` (cola cruzando todos los clientes). Reusa
+  `ActivarModuloAsync` tal cual para "Aprobar" — mismo efecto que activar directo (cascada de
+  dependencias incluida), no hizo falta un método nuevo.
+- `AdminHome.razor` (panel Cliente → Módulos): columna Estado ahora muestra
+  Solicitado/Activo/Suspendido/Rechazado/Sin contratar en vez de solo Activo/Inactivo; botones
+  nuevos "Solicitar" (cuando no hay nada pendiente) y "Rechazar" (cuando está Solicitado), más un
+  botón "Solicitudes pendientes" en el header que lleva a la pantalla nueva.
+- `src/AlfaCore/Components/Pages/AdminSolicitudesModulos.razor` (nuevo, `/admin/solicitudes`):
+  cola cruzando todos los clientes con quién/cuándo pidió cada módulo, botones Aprobar/Rechazar.
+  Mismo gate `superadmin=1` que el resto de Administrar.
+
+Compiló limpio y pasó `check_catalogo.py`. **Pendiente**: correr
+`modulos_estado_solicitud.sql` contra `ALFA_CENTRAL`, y probar en vivo el flujo completo
+(Solicitar → aparece en la cola → Aprobar → queda Activo) con el cliente de prueba.
+
+---
+
 ## Actualización 2026-08-05 (2): primera versión construida — catálogo de módulos + activación
 
 Se construyó y compiló (0 errores/advertencias) una primera versión funcional del sistema de

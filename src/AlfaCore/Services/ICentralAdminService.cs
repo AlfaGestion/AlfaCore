@@ -51,6 +51,23 @@ public interface ICentralAdminService
     Task SuspenderModuloAsync(string idCliente, int idModulo, CancellationToken ct = default);
 
     /// <summary>
+    /// Cola de solicitudes pendientes de aprobación, cruzando todos los clientes — para
+    /// <c>/admin/solicitudes</c>.
+    /// </summary>
+    Task<IReadOnlyList<SolicitudModuloDto>> GetSolicitudesPendientesAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Deja pedido un módulo para un cliente (estado Solicitado) sin activarlo todavía — para
+    /// cuando el cliente lo pide pero todavía no se confirmó el pago.
+    /// </summary>
+    Task SolicitarModuloAsync(SolicitarModuloRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// Rechaza una solicitud pendiente (queda marcada como Rechazada, no se borra).
+    /// </summary>
+    Task RechazarModuloAsync(RechazarModuloRequest request, CancellationToken ct = default);
+
+    /// <summary>
     /// Para usar desde pantallas normales (no solo Administrar): si el módulo con ese código
     /// está definido y NO está activo para el cliente del usuario logueado, la pantalla que
     /// llama debería ocultar la función correspondiente. Devuelve <c>true</c> (fail-open) en

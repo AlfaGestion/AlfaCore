@@ -70,8 +70,19 @@ public sealed class ClienteModuloDto
     public decimal Precio { get; init; }
     public bool EsDependenciaDeOtro { get; init; }
     public bool EstaActivo { get; init; }
+    public string Estado { get; init; } = string.Empty;
     public DateTime? ActivadoUtc { get; init; }
     public string? ActivadoPor { get; init; }
+    public DateTime? SolicitadoUtc { get; init; }
+    public string? SolicitadoPor { get; init; }
+}
+
+public static class ClienteModuloEstados
+{
+    public const string Solicitado = "Solicitado";
+    public const string Activo = "Activo";
+    public const string Suspendido = "Suspendido";
+    public const string Rechazado = "Rechazado";
 }
 
 public sealed class ActivarModuloRequest
@@ -79,6 +90,36 @@ public sealed class ActivarModuloRequest
     public string IdCliente { get; set; } = string.Empty;
     public int IdModulo { get; set; }
     public string ActivadoPor { get; set; } = string.Empty;
+}
+
+public sealed class SolicitarModuloRequest
+{
+    public string IdCliente { get; set; } = string.Empty;
+    public int IdModulo { get; set; }
+    public string SolicitadoPor { get; set; } = string.Empty;
+}
+
+public sealed class RechazarModuloRequest
+{
+    public string IdCliente { get; set; } = string.Empty;
+    public int IdModulo { get; set; }
+    public string DecididoPor { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Fila de la cola de aprobación en <c>/admin/solicitudes</c> — un módulo pedido por un cliente,
+/// todavía no aprobado ni rechazado.
+/// </summary>
+public sealed class SolicitudModuloDto
+{
+    public string IdCliente { get; init; } = string.Empty;
+    public string ClienteNombre { get; init; } = string.Empty;
+    public int IdModulo { get; init; }
+    public string Codigo { get; init; } = string.Empty;
+    public string Nombre { get; init; } = string.Empty;
+    public decimal Precio { get; init; }
+    public DateTime? SolicitadoUtc { get; init; }
+    public string? SolicitadoPor { get; init; }
 }
 
 /// <summary>

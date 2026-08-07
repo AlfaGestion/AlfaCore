@@ -673,7 +673,7 @@ public sealed class CentralAdminService(
         var esLegacy = await IsClienteLegacyAsync(cn, normalizedIdCliente, ct).ConfigureAwait(false);
 
         const string activosSql = """
-            SELECT IdModulo, Estado, ActivadoUtc, ActivadoPor
+            SELECT IdModulo, Estado, ActivadoUtc, ActivadoPor, SolicitadoUtc, SolicitadoPor
             FROM dbo.ClienteModulos
             WHERE IdCliente = @IdCliente;
             """;
@@ -698,8 +698,11 @@ public sealed class CentralAdminService(
                     Precio = m.Precio,
                     EsDependenciaDeOtro = esDependenciaSet.Contains(m.Id),
                     EstaActivo = estaActivo,
+                    Estado = esLegacy ? ClienteModuloEstados.Activo : (activoRow?.Estado ?? string.Empty),
                     ActivadoUtc = activoRow?.ActivadoUtc,
-                    ActivadoPor = activoRow?.ActivadoPor
+                    ActivadoPor = activoRow?.ActivadoPor,
+                    SolicitadoUtc = activoRow?.SolicitadoUtc,
+                    SolicitadoPor = activoRow?.SolicitadoPor
                 };
             })
             .OrderBy(x => x.Nombre)
@@ -951,6 +954,93 @@ public sealed class CentralAdminService(
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct).ConfigureAwait(false);
         await cn.ExecuteAsync(new CommandDefinition(sql, new { IdCliente = normalizedIdCliente, IdModulo = idModulo }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task<IReadOnlyList<SolicitudModuloDto>> GetSolicitudesPendientesAsync(CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT
+                cm.IdCliente,
+                ISNULL(c.nombre, '') AS ClienteNombre,
+                cm.IdModulo,
+                m.Codigo,
+                m.Nombre,
+                m.Precio,
+                cm.SolicitadoUtc,
+                cm.SolicitadoPor
+            FROM dbo.ClienteModulos cm
+            JOIN dbo.Modulos m ON m.Id = cm.IdModulo
+            JOIN dbo.Clientes c ON c.idcliente = cm.IdCliente
+            WHERE cm.Estado = N'Solicitado'
+            ORDER BY cm.SolicitadoUtc;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var rows = await cn.QueryAsync<SolicitudModuloDto>(new CommandDefinition(sql, cancellationToken: ct)).ConfigureAwait(false);
+        return rows.ToArray();
+    }
+
+    public async Task SolicitarModuloAsync(SolicitarModuloRequest request, CancellationToken ct = default)
+    {
+        var idCliente = NormalizeKey(request.IdCliente);
+        if (string.IsNullOrWhiteSpace(idCliente))
+            throw new AppUserFacingException("El cliente es obligatorio.", "ADMIN_CLIENTEMODULO_CLIENTE");
+        if (!await ExistsClienteAsync(idCliente, ct).ConfigureAwait(false))
+            throw new AppUserFacingException("El cliente central no existe.", "ADMIN_CLIENTEMODULO_CLIENTE_NO_EXISTE");
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        var modulos = await QueryModulosAsync(cn, ct).ConfigureAwait(false);
+        if (modulos.All(m => m.Id != request.IdModulo || !m.Activo))
+            throw new AppUserFacingException("El módulo seleccionado no existe o está dado de baja.", "ADMIN_CLIENTEMODULO_MODULO_NO_EXISTE");
+
+        var solicitadoPor = NormalizeText(request.SolicitadoPor);
+
+        // El WHERE Estado <> 'Activo' en la rama UPDATE evita que "Solicitar" por error sobre un
+        // módulo ya activo lo haga retroceder a Solicitado.
+        const string upsertSql = """
+            IF EXISTS (SELECT 1 FROM dbo.ClienteModulos WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo)
+                UPDATE dbo.ClienteModulos
+                SET Estado = N'Solicitado', SolicitadoUtc = GETUTCDATE(), SolicitadoPor = @SolicitadoPor,
+                    DecididoUtc = NULL, DecididoPor = NULL
+                WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo AND Estado <> N'Activo';
+            ELSE
+                INSERT INTO dbo.ClienteModulos (IdCliente, IdModulo, Estado, SolicitadoUtc, SolicitadoPor)
+                VALUES (@IdCliente, @IdModulo, N'Solicitado', GETUTCDATE(), @SolicitadoPor);
+            """;
+
+        await cn.ExecuteAsync(new CommandDefinition(upsertSql, new
+        {
+            IdCliente = idCliente,
+            IdModulo = request.IdModulo,
+            SolicitadoPor = string.IsNullOrWhiteSpace(solicitadoPor) ? null : solicitadoPor
+        }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    public async Task RechazarModuloAsync(RechazarModuloRequest request, CancellationToken ct = default)
+    {
+        var idCliente = NormalizeKey(request.IdCliente);
+        if (string.IsNullOrWhiteSpace(idCliente))
+            throw new AppUserFacingException("El cliente es obligatorio.", "ADMIN_CLIENTEMODULO_CLIENTE");
+
+        var decididoPor = NormalizeText(request.DecididoPor);
+
+        const string sql = """
+            UPDATE dbo.ClienteModulos
+            SET Estado = N'Rechazado', DecididoUtc = GETUTCDATE(), DecididoPor = @DecididoPor
+            WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo AND Estado = N'Solicitado';
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await cn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            IdCliente = idCliente,
+            IdModulo = request.IdModulo,
+            DecididoPor = string.IsNullOrWhiteSpace(decididoPor) ? null : decididoPor
+        }, cancellationToken: ct)).ConfigureAwait(false);
     }
 
     public async Task<bool> IsModuloActivoParaClienteActualAsync(string codigoModulo, CancellationToken ct = default)
@@ -1221,6 +1311,8 @@ public sealed class CentralAdminService(
         public string Estado { get; set; } = string.Empty;
         public DateTime ActivadoUtc { get; set; }
         public string? ActivadoPor { get; set; }
+        public DateTime? SolicitadoUtc { get; set; }
+        public string? SolicitadoPor { get; set; }
     }
 
     private async Task<AdminClienteDto?> QueryClienteAsync(string filterSql, object parameters, CancellationToken ct)

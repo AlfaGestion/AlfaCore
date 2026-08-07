@@ -374,8 +374,8 @@
 
             <div class="conversations-mode-select">
                 <button type="button"
-                        @ref="_modeMenuTrigger"
                         popovertarget="conversations-mode-menu"
+                        onclick="conversacionesUi.positionModeMenu(this)"
                         class="conversations-filter-pill conversations-filter-pill--dropdown"
                         aria-haspopup="listbox"
                         aria-label="Filtro de conversaciones">
@@ -3196,7 +3196,6 @@
     private string _assignmentTechnicianId = string.Empty;
     private string _statusCode = "ABIERTA";
     private bool _showStatusMenu;
-    private ElementReference _modeMenuTrigger;
     private bool _showMobileChatActions;
     private IDisposable? _floatingWindowRegistration;
     private ElementReference _threadElement;
@@ -3562,11 +3561,29 @@
             {
                 await JS.InvokeVoidAsync("conversacionesUi.bindColumnResizers", "conversations-page");
                 await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
-                await JS.InvokeVoidAsync("conversacionesUi.bindPopoverToTrigger", "conversations-mode-menu", _modeMenuTrigger);
                 await UpdateSoundDiagnosticsAsync();
             }
             catch
             {
+            }
+
+            // Restaura si el usuario había dejado el asistente de IA abierto la última vez
+            // (preferencia global guardada en localStorage, no ligada a una conversación puntual).
+            if (!_showAiSuggestionPanel && _selectedConversationId is not null)
+            {
+                try
+                {
+                    var storedOpen = await JS.InvokeAsync<string?>("localStorage.getItem", AiPanelOpenStorageKey);
+                    if (storedOpen == "1")
+                    {
+                        _showAiSuggestionPanel = true;
+                        await OpenAiSuggestionPanelAsync();
+                        StateHasChanged();
+                    }
+                }
+                catch
+                {
+                }
             }
         }
 
@@ -3815,7 +3832,9 @@
     /// abrirse/cerrarse: el navegador lo pinta en la "top layer", por encima de cualquier contexto
     /// de apilamiento de ancestros (no importa el z-index/overflow del panel de IA u otro contenedor),
     /// y el cierre al hacer clic afuera lo maneja el propio navegador. La posición junto al botón se
-    /// calcula en JS (<c>bindPopoverToTrigger</c>) escuchando el evento nativo <c>toggle</c>.
+    /// calcula con un <c>onclick</c> nativo en el botón (<c>conversacionesUi.positionModeMenu</c>),
+    /// no vía interop de Blazor, para que corra siempre en el mismo click sin depender de que un
+    /// bind previo en OnAfterRenderAsync se haya registrado a tiempo.
     /// </summary>
     private async Task SelectModeAsync(string mode)
         => await ChangeModeAsync(mode);
@@ -4761,11 +4780,11 @@
     private void OpenContextPanel()
         => _showContextPanel = true;
 
-    private void OpenPendingTicketsFromHeader()
+    private async Task OpenPendingTicketsFromHeader()
     {
         if (_contextTicketMatches.Count == 1)
         {
-            OpenTicket(_contextTicketMatches[0].Ticket.IdTicket);
+            await OpenTicket(_contextTicketMatches[0].Ticket.IdTicket);
             return;
         }
 
@@ -6406,10 +6425,12 @@
         try
         {
             await JS.InvokeVoidAsync("conversacionesUi.setElementValue", _replyTextArea, value, focus);
+            _replyText = value;
             await AutoResizeReplyTextareaAsync();
         }
         catch
         {
+            _replyText = value;
             _syncReplyTextAfterRender = true;
         }
     }
@@ -7054,9 +7075,19 @@
         _showContextNotesModal = false;
     }
 
+    private const string AiPanelOpenStorageKey = "alfacore.conversaciones.aiPanelOpen";
+
     private async Task ToggleAiSuggestionPanel()
     {
         _showAiSuggestionPanel = !_showAiSuggestionPanel;
+
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", AiPanelOpenStorageKey, _showAiSuggestionPanel ? "1" : "0");
+        }
+        catch
+        {
+        }
 
         if (!_showAiSuggestionPanel)
         {
@@ -7064,6 +7095,11 @@
             return;
         }
 
+        await OpenAiSuggestionPanelAsync();
+    }
+
+    private async Task OpenAiSuggestionPanelAsync()
+    {
         _showContextPanel = false;
 
         if (_selectedConversationId is { } conversationId
@@ -9243,8 +9279,13 @@
         return text.Length <= 120 ? text : $"{text[..120]}...";
     }
 
-    private void OpenTicket(long idTicket)
-        => Nav.NavigateTo($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+    // Se abre en una pestaña nueva (en vez de navegar la actual) para no perder el lugar en la
+    // conversación: el usuario mira/edita el ticket y simplemente cierra esa pestaña al terminar.
+    private async Task OpenTicket(long idTicket)
+    {
+        var url = Nav.ToAbsoluteUri($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}").ToString();
+        await JS.InvokeVoidAsync("open", url, "_blank");
+    }
 
     private static string RenderTicketPriority(int priority)
         => priority switch
