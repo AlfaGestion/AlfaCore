@@ -107,4 +107,17 @@ public interface ICentralAdminService
     /// por el cliente del usuario logueado. <c>null</c> = no filtrar (legacy/on-premise).
     /// </summary>
     Task<ModuloMenuFiltroDto?> GetModuloMenuFiltroParaClienteActualAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Estado (activa/suspendida) de cada landing de <c>LandingContenidoCatalogo</c> — para la
+    /// sección de administración de landings. Una landing sin fila en dbo.LandingModulos está
+    /// activa por defecto.
+    /// </summary>
+    Task<IReadOnlyList<LandingEstadoDto>> GetLandingEstadosAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Activa o suspende una landing pública (/landing/{slug}). Suspendida = la página deja de
+    /// mostrarse y no aparece en /modulos, pero el contenido sigue viviendo en el catálogo hardcodeado.
+    /// </summary>
+    Task SetLandingActivoAsync(string slug, bool activo, CancellationToken ct = default);
 }

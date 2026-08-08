@@ -649,7 +649,7 @@
             <div class="row g-3 mt-1">
                 <div class="col-12">
                     <div class="form-check">
-                        <input class="form-check-input" type="checkbox" id="reset-cliente-drop-fisico" @bind="_resetClienteEliminarBaseFisica" />
+                        <input class="form-check-input admin-modal-check" type="checkbox" id="reset-cliente-drop-fisico" checked="@_resetClienteEliminarBaseFisica" @onchange="args => _resetClienteEliminarBaseFisica = args.Value is bool b && b" />
                         <label class="form-check-label" for="reset-cliente-drop-fisico">
                             También borrar la(s) base(s) de SQL Server física(s) y su login — irreversible, libera espacio en disco.
                         </label>

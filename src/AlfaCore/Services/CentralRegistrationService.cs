@@ -168,6 +168,26 @@ public sealed class CentralRegistrationService(
             var pending = await LoadPendingByCodeAsync(central, code.Trim(), ct);
             if (pending is null)
             {
+                // La fila pendiente se borra apenas se confirma — pero el link de confirmación
+                // suele visitarse dos veces sin que el usuario haga nada (webmails/filtros de
+                // seguridad que pre-visitan links de un email para escanearlos antes de que el
+                // usuario lo abra). Si ese primer hit automático ya confirmó la cuenta, acá no
+                // hay que devolver error: dbo.Clientes.verified_code sigue guardando el código
+                // después de confirmar, así que se puede resolver igual y devolver éxito de
+                // nuevo (entre otras cosas, para que Verify.razor pueda mostrar el selector de
+                // módulos a la visita real del usuario, no solo a la del bot).
+                var yaConfirmado = await LoadConfirmedByCodeAsync(central, code.Trim(), ct);
+                if (yaConfirmado is not null)
+                {
+                    return new PublicVerificationResult
+                    {
+                        Success = true,
+                        AccountVerified = true,
+                        ProvisioningCompleted = true,
+                        Message = "La cuenta ya había sido confirmada y la base ya está preparada."
+                    };
+                }
+
                 return new PublicVerificationResult
                 {
                     Success = false,
@@ -225,6 +245,10 @@ public sealed class CentralRegistrationService(
                 await DeletePendingAsync(central, pending.VerifiedCode, ct);
             }
 
+            string? moduloPreactivado = null;
+            if (provisioning.Success && !string.IsNullOrWhiteSpace(pending.ModuloSlug))
+                moduloPreactivado = await TryActivarModuloDeLandingAsync(idCliente, pending.ModuloSlug, ct);
+
             return new PublicVerificationResult
             {
                 Success = provisioning.Success,
@@ -233,7 +257,8 @@ public sealed class CentralRegistrationService(
                 Message = provisioning.Success
                     ? "La cuenta fue confirmada y la base quedó preparada correctamente."
                     : provisioning.Message,
-                DatabaseName = provisioning.DatabaseName
+                DatabaseName = provisioning.DatabaseName,
+                ModuloPreactivado = moduloPreactivado
             };
         }
         catch (InvalidOperationException ex)
@@ -651,7 +676,7 @@ public sealed class CentralRegistrationService(
     private static async Task<PendingRegistrationRow?> LoadPendingByEmailAsync(SqlConnection central, string email, CancellationToken ct)
     {
         const string sql = """
-            SELECT VerifiedCode, Nombre, Telefono, Email, Password, ISNULL(Cuit, '') AS Cuit, ISNULL(Iva, '') AS Iva, IdClienteReservado
+            SELECT VerifiedCode, Nombre, Telefono, Email, Password, ISNULL(Cuit, '') AS Cuit, ISNULL(Iva, '') AS Iva, IdClienteReservado, ModuloSlug
             FROM dbo.RegistroPublicoPendiente
             WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(LTRIM(RTRIM(@Email)));
             """;
@@ -662,12 +687,65 @@ public sealed class CentralRegistrationService(
     private static async Task<PendingRegistrationRow?> LoadPendingByCodeAsync(SqlConnection central, string code, CancellationToken ct)
     {
         const string sql = """
-            SELECT VerifiedCode, Nombre, Telefono, Email, Password, ISNULL(Cuit, '') AS Cuit, ISNULL(Iva, '') AS Iva, IdClienteReservado
+            SELECT VerifiedCode, Nombre, Telefono, Email, Password, ISNULL(Cuit, '') AS Cuit, ISNULL(Iva, '') AS Iva, IdClienteReservado, ModuloSlug
             FROM dbo.RegistroPublicoPendiente
             WHERE UPPER(LTRIM(RTRIM(VerifiedCode))) = UPPER(LTRIM(RTRIM(@Code)));
             """;
 
         return await central.QuerySingleOrDefaultAsync<PendingRegistrationRow>(new CommandDefinition(sql, new { Code = code }, cancellationToken: ct));
+    }
+
+    /// <summary>
+    /// Activa la prueba de 30 días del módulo que el visitante eligió en /landing/{slug}, sin
+    /// pasarlo por el selector manual de Verify.razor. No es fatal si falla (el módulo no existe
+    /// más, AlfaKnowledge no pudo aprovisionar, etc.) — la cuenta ya quedó creada igual; devuelve
+    /// null y Verify.razor cae al selector manual como si no hubiera venido de una landing.
+    /// </summary>
+    private async Task<string?> TryActivarModuloDeLandingAsync(string idCliente, string moduloSlug, CancellationToken ct)
+    {
+        try
+        {
+            var contenido = LandingContenidoCatalogo.Todos.FirstOrDefault(m => string.Equals(m.Slug, moduloSlug, StringComparison.OrdinalIgnoreCase));
+            if (contenido is null)
+                return null;
+
+            var modulos = await centralAdminService.GetModulosAsync(ct);
+            var modulo = modulos.FirstOrDefault(m => string.Equals(m.Codigo, contenido.Codigo, StringComparison.OrdinalIgnoreCase) && m.Activo);
+            if (modulo is null)
+                return null;
+
+            await centralAdminService.IniciarPruebaModulosAsync(new IniciarPruebaModulosRequest
+            {
+                IdCliente = idCliente,
+                IdsModulos = [modulo.Id]
+            }, ct);
+
+            return contenido.Nombre;
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                ModuleName,
+                "ActivarModuloDeLanding",
+                ex,
+                "No se pudo activar automáticamente el módulo elegido en la landing.",
+                new { idCliente, moduloSlug },
+                AppEventSeverity.Warning,
+                ct);
+            return null;
+        }
+    }
+
+    /// <summary>Cuenta ya confirmada cuyo verified_code coincide — ver comentario en VerifyAsync.</summary>
+    private static async Task<string?> LoadConfirmedByCodeAsync(SqlConnection central, string code, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) idcliente
+            FROM dbo.Clientes
+            WHERE UPPER(LTRIM(RTRIM(verified_code))) = UPPER(LTRIM(RTRIM(@Code)));
+            """;
+
+        return await central.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(sql, new { Code = code }, cancellationToken: ct));
     }
 
     /// <summary>
@@ -680,11 +758,11 @@ public sealed class CentralRegistrationService(
         const string sql = """
             IF EXISTS (SELECT 1 FROM dbo.RegistroPublicoPendiente WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(LTRIM(RTRIM(@Email))))
                 UPDATE dbo.RegistroPublicoPendiente
-                SET Nombre = @Nombre, Telefono = @Telefono, Password = @Password, Cuit = @Cuit, Iva = @Iva, CreatedUtc = GETUTCDATE()
+                SET Nombre = @Nombre, Telefono = @Telefono, Password = @Password, Cuit = @Cuit, Iva = @Iva, ModuloSlug = @ModuloSlug, CreatedUtc = GETUTCDATE()
                 WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(LTRIM(RTRIM(@Email)));
             ELSE
-                INSERT INTO dbo.RegistroPublicoPendiente (VerifiedCode, Nombre, Telefono, Email, Password, Cuit, Iva)
-                VALUES (@VerifiedCode, @Nombre, @Telefono, @Email, @Password, @Cuit, @Iva);
+                INSERT INTO dbo.RegistroPublicoPendiente (VerifiedCode, Nombre, Telefono, Email, Password, Cuit, Iva, ModuloSlug)
+                VALUES (@VerifiedCode, @Nombre, @Telefono, @Email, @Password, @Cuit, @Iva, @ModuloSlug);
             """;
 
         await central.ExecuteAsync(new CommandDefinition(sql, new
@@ -695,7 +773,8 @@ public sealed class CentralRegistrationService(
             request.Email,
             request.Password,
             Cuit = string.IsNullOrWhiteSpace(request.Cuit) ? null : request.Cuit,
-            Iva = string.IsNullOrWhiteSpace(request.Iva) ? null : request.Iva
+            Iva = string.IsNullOrWhiteSpace(request.Iva) ? null : request.Iva,
+            ModuloSlug = string.IsNullOrWhiteSpace(request.ModuloSlug) ? null : request.ModuloSlug
         }, cancellationToken: ct));
     }
 
@@ -782,5 +861,6 @@ public sealed class CentralRegistrationService(
         public string Cuit { get; set; } = string.Empty;
         public string Iva { get; set; } = string.Empty;
         public string? IdClienteReservado { get; set; }
+        public string? ModuloSlug { get; set; }
     }
 }

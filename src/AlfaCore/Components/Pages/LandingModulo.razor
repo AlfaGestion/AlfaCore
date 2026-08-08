@@ -1,0 +1,123 @@
+@page "/landing/{Slug}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@using AlfaCore.Services
+@inject ICentralAdminService AdminService
+
+<PageTitle>@(_contenido?.Nombre ?? "Módulo") | AlfaCore</PageTitle>
+<HeadContent>
+    <link rel="stylesheet" href="/css/landing.css" />
+    <meta name="description" content="@(_contenido?.MetaDescripcion ?? "Módulos de AlfaCore para hacer crecer tu negocio.")" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="@(_contenido?.Nombre ?? "AlfaCore") — AlfaCore" />
+    <meta property="og:description" content="@(_contenido?.MetaDescripcion ?? "Módulos de AlfaCore para hacer crecer tu negocio.")" />
+    <meta property="og:image" content="/logos/Logo.png" />
+    <meta name="twitter:card" content="summary" />
+</HeadContent>
+
+@if (_contenido is null || _suspendida)
+{
+    <section class="landing-404">
+        <div class="landing-404__card">
+            <h1>@(_suspendida ? "Esta landing no está disponible" : "No encontramos ese módulo")</h1>
+            <p>@(_suspendida ? "Por ahora no está disponible para nuevos registros." : "Puede que el link esté mal escrito o el módulo ya no exista.")</p>
+            <a href="/modulos" class="btn btn--primary">Ver todos los módulos</a>
+        </div>
+    </section>
+}
+else
+{
+    <section class="landing-hero">
+        <div class="landing-hero__bg"></div>
+        <div class="landing-hero__inner">
+            <a href="/modulos" class="landing-brand">
+                <img src="/logos/Logo.png" alt="AlfaNet" />
+                <span>AlfaCore</span>
+            </a>
+
+            <span class="landing-hero__badge"><i class="bi @_contenido.Icono"></i> Módulo AlfaCore</span>
+            <h1>@_contenido.Nombre</h1>
+            <p class="landing-hero__tagline">@_contenido.Tagline</p>
+            <p class="landing-hero__desc">@_contenido.Descripcion</p>
+
+            <div class="landing-hero__actions">
+                <a href="@($"/registrarme?modulo={_contenido.Slug}")" class="btn btn--primary btn--lg">Probar 30 días gratis</a>
+                <a href="/modulos" class="btn btn--ghost btn--lg">Ver todos los módulos</a>
+            </div>
+
+            @if (_contenido.Precio > 0)
+            {
+                <p class="landing-hero__price">Desde <strong>USD @_contenido.Precio.ToString("0.##")/mes</strong> después de la prueba gratuita — sin tarjeta, sin compromiso.</p>
+            }
+        </div>
+    </section>
+
+    <section class="landing-features">
+        <div class="landing-features__inner">
+            <h2>Qué podés hacer con @_contenido.Nombre</h2>
+            <div class="landing-features__grid">
+                @foreach (var feature in _contenido.Features)
+                {
+                    <article class="landing-feature">
+                        <span class="landing-feature__icon"><i class="bi @feature.Icono"></i></span>
+                        <div>
+                            <strong>@feature.Titulo</strong>
+                            <span>@feature.Texto</span>
+                        </div>
+                    </article>
+                }
+            </div>
+        </div>
+    </section>
+
+    @if (_contenido.Dependencias.Count > 0)
+    {
+        <section class="landing-deps">
+            <div class="landing-deps__inner">
+                <p>
+                    <i class="bi bi-link-45deg"></i>
+                    @_contenido.Nombre funciona junto a @string.Join(" y ", _contenido.Dependencias) — se activan automáticamente, sin pasos extra.
+                </p>
+            </div>
+        </section>
+    }
+
+    <section class="landing-cta">
+        <div class="landing-cta__inner">
+            <h2>Empezá a usar @_contenido.Nombre hoy</h2>
+            <p>Creá tu cuenta, confirmá el email y elegí este módulo en la prueba gratuita de 30 días.</p>
+            <a href="@($"/registrarme?modulo={_contenido.Slug}")" class="btn btn--primary btn--lg">Registrarme gratis</a>
+        </div>
+    </section>
+
+    <footer class="landing-footer">
+        <span>© @DateTime.Now.Year AlfaNet — Soluciones Informáticas</span>
+        <a href="/modulos">Ver todos los módulos</a>
+    </footer>
+}
+
+@code {
+    [Parameter] public string Slug { get; set; } = string.Empty;
+
+    private LandingContenido? _contenido;
+    private bool _suspendida;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _contenido = LandingContenidoCatalogo.Todos.FirstOrDefault(m =>
+            string.Equals(m.Slug, Slug, StringComparison.OrdinalIgnoreCase));
+
+        _suspendida = false;
+        if (_contenido is not null)
+        {
+            try
+            {
+                var estados = await AdminService.GetLandingEstadosAsync();
+                _suspendida = estados.Any(e => string.Equals(e.Slug, _contenido.Slug, StringComparison.OrdinalIgnoreCase) && !e.Activo);
+            }
+            catch
+            {
+                _suspendida = false;
+            }
+        }
+    }
+}

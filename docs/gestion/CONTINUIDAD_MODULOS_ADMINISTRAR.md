@@ -16,6 +16,44 @@ general del repo).
 
 ---
 
+## Actualización 2026-08-08: landing pages públicas por módulo + activación automática al confirmar
+
+Primer paso hacia un acceso público tipo "sitio de marketing" (a futuro, algo manejable como el
+Website de Odoo — por ahora todo el contenido está hardcodeado en `LandingModulos.cs`, no hay CMS).
+
+**Landing por módulo** (`/landing/{slug}`, índice en `/modulos`):
+- `Models/LandingModels.cs` define `LandingContenidoCatalogo.Todos` — copy de marketing (tagline,
+  descripción, features, dependencias) para cada módulo vendible (Precio > 0). Vive separado del
+  catálogo real (`dbo.Modulos`) porque no hay editor todavía; el `Slug` es propio (no el `Codigo`)
+  para que las URLs queden limpias (ej. `punto-de-venta`, no `pos%20-%20punto%20de%20venta`).
+- Estilos en `wwwroot/css/landing.css` (global, no scoped) porque Blazor CSS isolation
+  (`.razor.css`) no comparte estilos entre `LandingModulo.razor` y `LandingModulos.razor`.
+
+**El CTA de cada landing activa la prueba sola, sin preguntar de nuevo**: el botón de cada landing
+apunta a `/registrarme?modulo={slug}`. `Register.razor` lee ese query string, resuelve el
+`LandingContenido` y lo manda como `PublicRegistrationRequest.ModuloSlug`, que viaja guardado en
+`RegistroPublicoPendiente.ModuloSlug` (columna agregada en `landing_modulos.sql`) hasta la
+confirmación. `CentralRegistrationService.VerifyAsync` llama a `TryActivarModuloDeLandingAsync`
+después de aprovisionar la base — resuelve el `ModuloDto.Id` por código y llama al mismo
+`IniciarPruebaModulosAsync` que ya usaba el selector manual — y devuelve el nombre activado como
+`PublicVerificationResult.ModuloPreactivado`. `Verify.razor` salta el selector de módulos por
+completo cuando `ModuloPreactivado` viene cargado, mostrando en cambio "Ya activamos tu prueba de
+X. Iniciá sesión para empezar." El registro directo a `/registrarme` (sin pasar por una landing)
+sigue mostrando el selector manual de siempre, sin cambios.
+
+**Administración de landings** (sección nueva en `AdminModulos.razor`, debajo del catálogo de
+módulos): lista todas las landings del catálogo hardcodeado con acciones "Ver" / "Suspender" /
+"Reactivar". El estado se guarda en `dbo.LandingModulos` (Slug, Activo, ModificadoUtc,
+ModificadoPor — tabla creada en `landing_modulos.sql`); sin fila = activa por defecto. Una landing
+suspendida no aparece en `/modulos` y muestra "no disponible" si se entra directo a su URL.
+**Nota de diseño no confirmada con el usuario todavía**: se implementó solo "suspender/reactivar"
+(un booleano), no un "borrar" real — como el contenido es hardcodeado en código (no hay filas que
+eliminar), "borrar" una landing equivaldría a sacarla del código fuente, algo que no tiene sentido
+exponer como botón en Administrar. Si en algún momento el copy deja de ser hardcodeado (CMS real),
+ahí sí tendría sentido un borrado de verdad.
+
+---
+
 ## Actualización 2026-08-07: alta oficial pospuesta a la confirmación + CUIT/IVA opcionales
 
 Dos decisiones de producto confirmadas tras encontrar datos basura en `ALFANET2007` durante las

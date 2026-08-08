@@ -1473,6 +1473,50 @@ public sealed class CentralAdminService(
         }
     }
 
+    public async Task<IReadOnlyList<LandingEstadoDto>> GetLandingEstadosAsync(CancellationToken ct = default)
+    {
+        const string sql = "SELECT Slug, Activo, ModificadoUtc, ModificadoPor FROM dbo.LandingModulos;";
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var filas = (await cn.QueryAsync<LandingEstadoDto>(new CommandDefinition(sql, cancellationToken: ct)).ConfigureAwait(false))
+            .ToDictionary(f => f.Slug, StringComparer.OrdinalIgnoreCase);
+
+        return LandingContenidoCatalogo.Todos
+            .Select(m => filas.TryGetValue(m.Slug, out var fila)
+                ? fila
+                : new LandingEstadoDto { Slug = m.Slug, Activo = true })
+            .ToArray();
+    }
+
+    public async Task SetLandingActivoAsync(string slug, bool activo, CancellationToken ct = default)
+    {
+        var slugNormalizado = NormalizeText(slug);
+        if (string.IsNullOrWhiteSpace(slugNormalizado))
+            throw new AppUserFacingException("El slug de la landing es obligatorio.", "ADMIN_LANDING_SLUG");
+        if (!LandingContenidoCatalogo.Todos.Any(m => string.Equals(m.Slug, slugNormalizado, StringComparison.OrdinalIgnoreCase)))
+            throw new AppUserFacingException("La landing no existe en el catálogo.", "ADMIN_LANDING_NO_EXISTE");
+
+        var actor = appUserSession.CurrentUser?.UserName?.Trim();
+
+        const string sql = """
+            MERGE dbo.LandingModulos AS destino
+            USING (SELECT @Slug AS Slug) AS origen
+                ON destino.Slug = origen.Slug
+            WHEN MATCHED THEN
+                UPDATE SET Activo = @Activo, ModificadoUtc = GETUTCDATE(), ModificadoPor = @Actor
+            WHEN NOT MATCHED THEN
+                INSERT (Slug, Activo, ModificadoUtc, ModificadoPor)
+                VALUES (@Slug, @Activo, GETUTCDATE(), @Actor);
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await cn.ExecuteAsync(new CommandDefinition(sql, new { Slug = slugNormalizado, Activo = activo, Actor = actor }, cancellationToken: ct)).ConfigureAwait(false);
+
+        await appEvents.LogAuditAsync("Central", "SetLandingActivo", "LandingModulos", slugNormalizado, activo ? "Landing reactivada." : "Landing suspendida.", new { slugNormalizado, activo }, ct).ConfigureAwait(false);
+    }
+
     private static async Task<IReadOnlyList<ModuloDto>> QueryModulosAsync(SqlConnection cn, CancellationToken ct)
     {
         const string modulosSql = """

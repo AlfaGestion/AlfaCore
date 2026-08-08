@@ -61,7 +61,7 @@
                                 {
                                     var seleccionado = _seleccionados.Contains(modulo.Id);
                                     var info = GetModuloInfo(modulo.Codigo);
-                                    <label class="modulo-card @(seleccionado ? "is-selected" : string.Empty)">
+                                    <label @key="modulo.Id" class="modulo-card @(seleccionado ? "is-selected" : string.Empty)">
                                         <input type="checkbox" class="modulo-card__checkbox" checked="@seleccionado"
                                                @onchange="args => ToggleModulo(modulo.Id, args)" />
                                         <span class="modulo-card__icon"><i class="bi @info.Icono"></i></span>
@@ -96,6 +96,11 @@
                 }
                 else
                 {
+                    @if (_result?.Success == true && !string.IsNullOrWhiteSpace(_result.ModuloPreactivado))
+                    {
+                        <div class="public-verify__db">Ya activamos tu prueba de <strong>@_result.ModuloPreactivado</strong>. Iniciá sesión para empezar.</div>
+                    }
+
                     <div class="public-verify__actions">
                         <a href="/login" class="btn btn--primary">Ir al login</a>
                         <a href="/registrarme" class="btn btn--ghost">Nuevo registro</a>
@@ -126,7 +131,12 @@
         _loading = false;
 
         if (_result?.Success == true)
-            await CargarModulosAsync();
+        {
+            if (!string.IsNullOrWhiteSpace(_result.ModuloPreactivado))
+                _pruebaFinalizada = true;
+            else
+                await CargarModulosAsync();
+        }
     }
 
     private async Task CargarModulosAsync()

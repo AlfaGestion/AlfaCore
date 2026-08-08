@@ -8,6 +8,7 @@
 
 <PageTitle>Módulos | AlfaCore</PageTitle>
 
+<div class="page-grid admin-home-page">
 <div class="panel-card">
     <div class="panel-card__header">
         <div>
@@ -175,7 +176,71 @@
                 </div>
             </div>
         </div>
+
+        <div class="panel-card mt-3">
+            <div class="panel-card__header">
+                <div>
+                    <h2 class="panel-card__title">Landing pages públicas</h2>
+                    <p class="panel-card__subtitle">Una landing por módulo vendible, compartible en redes (/landing/{slug}). El contenido está hardcodeado por ahora; acá solo se controla si está publicada o suspendida.</p>
+                </div>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_landingError))
+            {
+                <div class="editor-msg editor-msg--warning">
+                    <strong>No se pudo actualizar</strong>
+                    <p>@_landingError</p>
+                </div>
+            }
+
+            <div class="table-responsive admin-table-wrap">
+                <table class="table table-sm align-middle admin-table">
+                    <thead>
+                        <tr>
+                            <th>Módulo</th>
+                            <th>URL</th>
+                            <th>Estado</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var landing in AlfaCore.Models.LandingContenidoCatalogo.Todos)
+                        {
+                            var activa = !_landingSuspendidas.Contains(landing.Slug);
+                            <tr>
+                                <td>@landing.Nombre</td>
+                                <td><code>/landing/@landing.Slug</code></td>
+                                <td>
+                                    @if (activa)
+                                    {
+                                        <span class="badge text-bg-success">Publicada</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge text-bg-secondary">Suspendida</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <div class="d-inline-flex gap-2">
+                                        <a class="btn btn-sm btn-outline-light" href="@("/landing/" + landing.Slug)" target="_blank" rel="noopener">Ver</a>
+                                        @if (activa)
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_landingBusy" @onclick="() => SetLandingActivoAsync(landing.Slug, false)">Suspender</button>
+                                        }
+                                        else
+                                        {
+                                            <button type="button" class="btn btn-sm btn-outline-success" disabled="@_landingBusy" @onclick="() => SetLandingActivoAsync(landing.Slug, true)">Reactivar</button>
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
     }
+</div>
 </div>
 
 @code {
@@ -188,6 +253,10 @@
     private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
     private string _message = string.Empty;
     private string _error = string.Empty;
+
+    private HashSet<string> _landingSuspendidas = [];
+    private bool _landingBusy;
+    private string _landingError = string.Empty;
 
     private IReadOnlyList<AlfaCore.Models.ModuloDto> _dependenciaOptions
         => _editing ? _items.Where(m => m.Id != _form.Id).ToArray() : _items;
@@ -215,6 +284,9 @@
             _menuOptions.Clear();
             _items.AddRange(await AdminSvc.GetModulosAsync());
             _menuOptions.AddRange(await AdminSvc.GetMenuRaizOptionsAsync());
+
+            var landingEstados = await AdminSvc.GetLandingEstadosAsync();
+            _landingSuspendidas = landingEstados.Where(e => !e.Activo).Select(e => e.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
         }
         catch (Exception ex)
         {
@@ -304,6 +376,30 @@
             _error = ex is AlfaCore.Services.AppUserFacingException userFacing
                 ? userFacing.UserMessage
                 : ex.Message;
+        }
+    }
+
+    private async Task SetLandingActivoAsync(string slug, bool activo)
+    {
+        _landingError = string.Empty;
+        _landingBusy = true;
+        try
+        {
+            await AdminSvc.SetLandingActivoAsync(slug, activo);
+            if (activo)
+                _landingSuspendidas.Remove(slug);
+            else
+                _landingSuspendidas.Add(slug);
+        }
+        catch (Exception ex)
+        {
+            _landingError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+        finally
+        {
+            _landingBusy = false;
         }
     }
 

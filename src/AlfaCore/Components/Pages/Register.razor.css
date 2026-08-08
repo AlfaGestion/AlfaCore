@@ -57,6 +57,18 @@
     letter-spacing: 0.06em;
 }
 
+.public-register__pill--modulo {
+    display: flex;
+    width: fit-content;
+    margin-top: 12px;
+    background: rgba(19, 154, 89, 0.12);
+    color: #0b5f34;
+}
+
+.public-register__pill--modulo i {
+    margin-right: 6px;
+}
+
 .public-register__info h1 {
     margin: 18px 0 12px;
     color: #10233d;
