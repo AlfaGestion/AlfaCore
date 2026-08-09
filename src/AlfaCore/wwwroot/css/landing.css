@@ -113,9 +113,17 @@
     margin-top: -28px;
 }
 
-.landing-showcase__frame {
-    max-width: 980px;
+.landing-showcase__grid {
+    max-width: 1180px;
     margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 24px;
+    align-items: start;
+}
+
+.landing-showcase__frame {
+    margin: 0;
     border-radius: 18px;
     overflow: hidden;
     background: #0f2138;
@@ -139,6 +147,13 @@
     display: block;
     width: 100%;
     height: auto;
+}
+
+.landing-showcase__frame figcaption {
+    padding: 14px 16px 18px;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 0.86rem;
+    line-height: 1.4;
 }
 
 /* --- Features --- */

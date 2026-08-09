@@ -19,14 +19,17 @@ public sealed class LandingContenido
     public decimal Precio { get; init; }
     public IReadOnlyList<string> Dependencias { get; init; } = [];
     public IReadOnlyList<LandingFeature> Features { get; init; } = [];
-    /// <summary>Captura de pantalla del producto para el mockup debajo del hero — ruta bajo wwwroot (ej. "/img/landing/conversaciones/inbox.png"). Null = no se muestra esa sección.</summary>
-    public string? ImagenHero { get; init; }
+    /// <summary>Capturas de pantalla del producto real para la galería debajo del hero. Vacío = no se muestra esa sección.</summary>
+    public IReadOnlyList<LandingCaptura> Capturas { get; init; } = [];
     public IReadOnlyList<LandingTestimonio> Testimonios { get; init; } = [];
 }
 
 public sealed record LandingFeature(string Icono, string Titulo, string Texto);
 
 public sealed record LandingTestimonio(string Texto, string Autor, string Empresa);
+
+/// <summary>Una captura real de la aplicación para la galería de la landing — ruta bajo wwwroot (ej. "/img/landing/conversaciones/inbox-ia.png").</summary>
+public sealed record LandingCaptura(string Ruta, string Titulo);
 
 /// <summary>Estado administrable (activa/suspendida) de una landing — cruza <see cref="LandingContenidoCatalogo"/> con dbo.LandingModulos.</summary>
 public sealed class LandingEstadoDto
@@ -51,7 +54,12 @@ public static class LandingContenidoCatalogo
             Descripcion = "WhatsApp, Instagram, Facebook y MercadoLibre en un único inbox. Tu equipo atiende todo desde un mismo lugar, sin saltar entre apps ni perder mensajes de clientes.",
             MetaDescripcion = "Bandeja unificada de WhatsApp, Instagram, Facebook y MercadoLibre. Probalo gratis 30 días.",
             Precio = 150,
-            ImagenHero = "/img/landing/conversaciones/inbox.png",
+            Capturas =
+            [
+                new("/img/landing/conversaciones/inbox-ia.png", "La IA sugiere la respuesta usando tu propia base de conocimiento, vos la revisás y la enviás en un clic."),
+                new("/img/landing/conversaciones/estadisticas.png", "Métricas de todo el equipo en tiempo real: mensajes, tiempos de respuesta y tickets."),
+                new("/img/landing/conversaciones/mercadolibre-ia.png", "La misma IA responde también las consultas de tus publicaciones en MercadoLibre."),
+            ],
             Features =
             [
                 new("bi-inboxes", "Bandeja multicanal", "WhatsApp, Instagram, Facebook y MercadoLibre en una sola pantalla."),

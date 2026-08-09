@@ -51,12 +51,18 @@ else
         </div>
     </section>
 
-    @if (!string.IsNullOrWhiteSpace(_contenido.ImagenHero))
+    @if (_contenido.Capturas.Count > 0)
     {
         <section class="landing-showcase">
-            <div class="landing-showcase__frame">
-                <div class="landing-showcase__bar"><span></span><span></span><span></span></div>
-                <img src="@_contenido.ImagenHero" alt="Pantalla de @_contenido.Nombre en AlfaCore" loading="lazy" />
+            <div class="landing-showcase__grid">
+                @foreach (var captura in _contenido.Capturas)
+                {
+                    <figure class="landing-showcase__frame">
+                        <div class="landing-showcase__bar"><span></span><span></span><span></span></div>
+                        <img src="@captura.Ruta" alt="@captura.Titulo" loading="lazy" />
+                        <figcaption>@captura.Titulo</figcaption>
+                    </figure>
+                }
             </div>
         </section>
     }
