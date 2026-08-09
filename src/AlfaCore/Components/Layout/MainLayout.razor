@@ -744,7 +744,7 @@ else
                     }
                     <button type="button" class="session-chip no-print" @onclick="() => _drawerOpen = true" title="Gestionar sesiones de base de datos">
                         <span class="session-chip__dot"></span>
-                        <span class="session-chip__text">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</span>
+                        <span class="session-chip__text">@(_activeSession?.BaseDatos ?? "—")</span>
                         <i class="bi bi-chevron-down"></i>
                     </button>
                     @if (AppUserSession.IsAuthenticated && AppUserSession.CurrentUser is not null)
@@ -1667,7 +1667,7 @@ else
             var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
             _routeSessionLabel = routeBase is null
                 ? $"Base #{routeBaseId}"
-                : $"{routeBase.Nombre} · {routeBase.DbServer} · {routeBase.DbName}";
+                : $"{routeBase.Nombre} · {routeBase.DbName}";
             return;
         }
 
@@ -1690,7 +1690,7 @@ else
                 GetRouteIdWeb() ?? "(sin ruta)",
                 routeSession.BaseId,
                 routeSession.Nombre);
-            _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.Servidor} · {routeSession.BaseDatos}";
+            _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.BaseDatos}";
             return;
         }
 
@@ -1709,7 +1709,7 @@ else
             GetRouteIdWeb() ?? "(sin ruta)",
             routeSession.BaseId,
             routeSession.Nombre);
-        _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.Servidor} · {routeSession.BaseDatos}";
+        _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.BaseDatos}";
     }
 
     private async Task EnsureInternalLoginUsersAsync()
@@ -3250,7 +3250,7 @@ else
     private string GetSqlSessionLabel()
         => _activeSession is null
             ? (!string.IsNullOrWhiteSpace(_routeSessionLabel) ? _routeSessionLabel : "Sin base activa")
-            : $"{_activeSession.Nombre} · {_activeSession.Servidor} · {_activeSession.BaseDatos}";
+            : $"{_activeSession.Nombre} · {_activeSession.BaseDatos}";
 
     private string GetCurrentPageTitle()
     {
