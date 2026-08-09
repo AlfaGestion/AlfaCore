@@ -52,6 +52,15 @@ eliminar), "borrar" una landing equivaldría a sacarla del código fuente, algo 
 exponer como botón en Administrar. Si en algún momento el copy deja de ser hardcodeado (CMS real),
 ahí sí tendría sentido un borrado de verdad.
 
+**Fix del mismo día**: la activación automática se perdía cuando el link de confirmación se
+pre-visitaba dos veces (el mismo bug de webmails/scanners que ya afectaba el mensaje de "cuenta
+sin confirmar", ver más abajo) — el segundo visiteo (el clic real del usuario) caía en el camino
+de "ya estaba confirmada" de `VerifyAsync`, que no sabía qué módulo se había elegido en la landing
+porque `dbo.RegistroPublicoPendiente` ya se había borrado. Se agregó la columna
+`dbo.Clientes.ModuloSlugLanding` (`clientes_landing_slug.sql`, ejecutada contra ALFA_CENTRAL) para
+persistir el slug más allá del borrado de la fila pendiente; ese camino ahora reintenta
+`TryActivarModuloDeLandingAsync` (idempotente) y también devuelve `ModuloPreactivado`.
+
 ---
 
 ## Actualización 2026-08-07: alta oficial pospuesta a la confirmación + CUIT/IVA opcionales

@@ -179,12 +179,20 @@ public sealed class CentralRegistrationService(
                 var yaConfirmado = await LoadConfirmedByCodeAsync(central, code.Trim(), ct);
                 if (yaConfirmado is not null)
                 {
+                    // El primer hit (bot) ya activó el módulo de la landing si correspondía —
+                    // se reintenta acá (es idempotente, ver ActivarConEstadoAsync) solo para poder
+                    // devolver el nombre y que Verify.razor salte el selector también en esta visita.
+                    string? moduloPreactivadoConfirmado = null;
+                    if (!string.IsNullOrWhiteSpace(yaConfirmado.ModuloSlugLanding))
+                        moduloPreactivadoConfirmado = await TryActivarModuloDeLandingAsync(yaConfirmado.IdCliente, yaConfirmado.ModuloSlugLanding, ct);
+
                     return new PublicVerificationResult
                     {
                         Success = true,
                         AccountVerified = true,
                         ProvisioningCompleted = true,
-                        Message = "La cuenta ya había sido confirmada y la base ya está preparada."
+                        Message = "La cuenta ya había sido confirmada y la base ya está preparada.",
+                        ModuloPreactivado = moduloPreactivadoConfirmado
                     };
                 }
 
@@ -232,7 +240,7 @@ public sealed class CentralRegistrationService(
                 await using var tx = (SqlTransaction)await central.BeginTransactionAsync(ct);
                 try
                 {
-                    await InsertCentralClientAsync(central, tx, idCliente, pending.Nombre, pending.Password, code.Trim(), ct);
+                    await InsertCentralClientAsync(central, tx, idCliente, pending.Nombre, pending.Password, code.Trim(), pending.ModuloSlug, ct);
                     await InsertCentralUserAsync(central, tx, idCliente, pending.Email, pending.Password, pending.Nombre, ct);
                     await tx.CommitAsync(ct);
                 }
@@ -438,11 +446,21 @@ public sealed class CentralRegistrationService(
         string nombre,
         string password,
         string verificationCode,
+        string? moduloSlug,
         CancellationToken ct)
     {
         var columns = await GetColumnNamesAsync(central, tx, "Clientes", ct);
         var names = new List<string> { "idcliente", "nombre", "superadmin" };
         var values = new List<string> { "@IdCliente", "@Nombre", "@SuperAdmin" };
+
+        // Persiste el módulo elegido en la landing más allá de que dbo.RegistroPublicoPendiente
+        // se borre al confirmar — lo necesita el camino de "cuenta ya confirmada" de VerifyAsync
+        // cuando el link se pre-visita (webmails/scanners) antes que el usuario real haga clic.
+        if (columns.Contains("modulosluglanding") && !string.IsNullOrWhiteSpace(moduloSlug))
+        {
+            names.Add("ModuloSlugLanding");
+            values.Add("@ModuloSlugLanding");
+        }
 
         if (columns.Contains("idweb"))
         {
@@ -497,7 +515,8 @@ public sealed class CentralRegistrationService(
                 Verified = 1,
                 Type = AccountType,
                 VerifiedCode = verificationCode,
-                Created = DateTime.Now
+                Created = DateTime.Now,
+                ModuloSlugLanding = moduloSlug
             },
             tx,
             cancellationToken: ct));
@@ -737,15 +756,18 @@ public sealed class CentralRegistrationService(
     }
 
     /// <summary>Cuenta ya confirmada cuyo verified_code coincide — ver comentario en VerifyAsync.</summary>
-    private static async Task<string?> LoadConfirmedByCodeAsync(SqlConnection central, string code, CancellationToken ct)
+    private static async Task<ConfirmedClientRow?> LoadConfirmedByCodeAsync(SqlConnection central, string code, CancellationToken ct)
     {
-        const string sql = """
-            SELECT TOP (1) idcliente
+        var columns = await GetColumnNamesAsync(central, null, "Clientes", ct);
+        var moduloSlugSelect = columns.Contains("modulosluglanding") ? "ModuloSlugLanding" : "CAST(NULL AS nvarchar(50)) AS ModuloSlugLanding";
+
+        var sql = $"""
+            SELECT TOP (1) idcliente AS IdCliente, {moduloSlugSelect}
             FROM dbo.Clientes
             WHERE UPPER(LTRIM(RTRIM(verified_code))) = UPPER(LTRIM(RTRIM(@Code)));
             """;
 
-        return await central.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(sql, new { Code = code }, cancellationToken: ct));
+        return await central.QuerySingleOrDefaultAsync<ConfirmedClientRow>(new CommandDefinition(sql, new { Code = code }, cancellationToken: ct));
     }
 
     /// <summary>
@@ -849,6 +871,12 @@ public sealed class CentralRegistrationService(
         public string Telefono { get; set; } = string.Empty;
         public string Cuit { get; set; } = string.Empty;
         public string Iva { get; set; } = string.Empty;
+    }
+
+    private sealed class ConfirmedClientRow
+    {
+        public string IdCliente { get; set; } = string.Empty;
+        public string? ModuloSlugLanding { get; set; }
     }
 
     private sealed class PendingRegistrationRow
