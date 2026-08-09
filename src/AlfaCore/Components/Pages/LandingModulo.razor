@@ -3,13 +3,13 @@
 @using AlfaCore.Services
 @inject ICentralAdminService AdminService
 
-<PageTitle>@(_contenido?.Nombre ?? "Módulo") | AlfaCore</PageTitle>
+<PageTitle>@(_contenido?.Nombre ?? "Módulo") | AlfaNet</PageTitle>
 <HeadContent>
     <link rel="stylesheet" href="/css/landing.css" />
-    <meta name="description" content="@(_contenido?.MetaDescripcion ?? "Módulos de AlfaCore para hacer crecer tu negocio.")" />
+    <meta name="description" content="@(_contenido?.MetaDescripcion ?? "Módulos de AlfaNet para hacer crecer tu negocio.")" />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="@(_contenido?.Nombre ?? "AlfaCore") — AlfaCore" />
-    <meta property="og:description" content="@(_contenido?.MetaDescripcion ?? "Módulos de AlfaCore para hacer crecer tu negocio.")" />
+    <meta property="og:title" content="@(_contenido?.Nombre ?? "AlfaNet") — AlfaNet" />
+    <meta property="og:description" content="@(_contenido?.MetaDescripcion ?? "Módulos de AlfaNet para hacer crecer tu negocio.")" />
     <meta property="og:image" content="/logos/Logo.png" />
     <meta name="twitter:card" content="summary" />
 </HeadContent>
@@ -31,10 +31,10 @@ else
         <div class="landing-hero__inner">
             <a href="/modulos" class="landing-brand">
                 <img src="/logos/Logo.png" alt="AlfaNet" />
-                <span>AlfaCore</span>
+                <span>AlfaNet</span>
             </a>
 
-            <span class="landing-hero__badge"><i class="bi @_contenido.Icono"></i> Módulo AlfaCore</span>
+            <span class="landing-hero__badge"><i class="bi @_contenido.Icono"></i> Módulo AlfaNet</span>
             <h1>@_contenido.Nombre</h1>
             <p class="landing-hero__tagline">@_contenido.Tagline</p>
             <p class="landing-hero__desc">@_contenido.Descripcion</p>
