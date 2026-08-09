@@ -51,6 +51,16 @@ else
         </div>
     </section>
 
+    @if (!string.IsNullOrWhiteSpace(_contenido.ImagenHero))
+    {
+        <section class="landing-showcase">
+            <div class="landing-showcase__frame">
+                <div class="landing-showcase__bar"><span></span><span></span><span></span></div>
+                <img src="@_contenido.ImagenHero" alt="Pantalla de @_contenido.Nombre en AlfaCore" loading="lazy" />
+            </div>
+        </section>
+    }
+
     <section class="landing-features">
         <div class="landing-features__inner">
             <h2>Qué podés hacer con @_contenido.Nombre</h2>
@@ -77,6 +87,29 @@ else
                     <i class="bi bi-link-45deg"></i>
                     @_contenido.Nombre funciona junto a @string.Join(" y ", _contenido.Dependencias) — se activan automáticamente, sin pasos extra.
                 </p>
+            </div>
+        </section>
+    }
+
+    @if (_contenido.Testimonios.Count > 0)
+    {
+        <section class="landing-testimonios">
+            <div class="landing-testimonios__inner">
+                <h2>Lo que dicen quienes ya lo usan</h2>
+                <p class="landing-testimonios__nota">Ejemplos ilustrativos — se reemplazan por testimonios reales antes de difundir la landing.</p>
+                <div class="landing-testimonios__grid">
+                    @foreach (var testimonio in _contenido.Testimonios)
+                    {
+                        <blockquote class="landing-testimonio">
+                            <i class="bi bi-quote landing-testimonio__icon"></i>
+                            <p>@testimonio.Texto</p>
+                            <footer>
+                                <strong>@testimonio.Autor</strong>
+                                <span>@testimonio.Empresa</span>
+                            </footer>
+                        </blockquote>
+                    }
+                </div>
             </div>
         </section>
     }

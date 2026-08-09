@@ -19,9 +19,14 @@ public sealed class LandingContenido
     public decimal Precio { get; init; }
     public IReadOnlyList<string> Dependencias { get; init; } = [];
     public IReadOnlyList<LandingFeature> Features { get; init; } = [];
+    /// <summary>Captura de pantalla del producto para el mockup debajo del hero — ruta bajo wwwroot (ej. "/img/landing/conversaciones/inbox.png"). Null = no se muestra esa sección.</summary>
+    public string? ImagenHero { get; init; }
+    public IReadOnlyList<LandingTestimonio> Testimonios { get; init; } = [];
 }
 
 public sealed record LandingFeature(string Icono, string Titulo, string Texto);
+
+public sealed record LandingTestimonio(string Texto, string Autor, string Empresa);
 
 /// <summary>Estado administrable (activa/suspendida) de una landing — cruza <see cref="LandingContenidoCatalogo"/> con dbo.LandingModulos.</summary>
 public sealed class LandingEstadoDto
@@ -46,6 +51,7 @@ public static class LandingContenidoCatalogo
             Descripcion = "WhatsApp, Instagram, Facebook y MercadoLibre en un único inbox. Tu equipo atiende todo desde un mismo lugar, sin saltar entre apps ni perder mensajes de clientes.",
             MetaDescripcion = "Bandeja unificada de WhatsApp, Instagram, Facebook y MercadoLibre. Probalo gratis 30 días.",
             Precio = 150,
+            ImagenHero = "/img/landing/conversaciones/inbox.png",
             Features =
             [
                 new("bi-inboxes", "Bandeja multicanal", "WhatsApp, Instagram, Facebook y MercadoLibre en una sola pantalla."),
@@ -53,6 +59,13 @@ public static class LandingContenidoCatalogo
                 new("bi-clock-history", "Historial completo", "Todo lo que hablaste con un cliente, ordenado y accesible en segundos."),
                 new("bi-journal-text", "Notas internas", "Dejá contexto para el resto del equipo sin que el cliente lo vea."),
                 new("bi-bell", "Notificaciones push", "Enterate al instante cuando llega un mensaje nuevo, aunque no tengas la pestaña abierta."),
+            ],
+            // Ejemplos ilustrativos — reemplazar por testimonios reales de clientes antes de difundir la landing.
+            Testimonios =
+            [
+                new("Antes perdíamos pedidos porque quedaban perdidos entre WhatsApp Web e Instagram. Ahora todo entra a un solo lugar y nadie se queda sin respuesta.", "Nombre Apellido", "Ejemplo — comercio con venta por redes"),
+                new("Repartir las conversaciones entre el equipo era un caos de capturas de pantalla. Con la asignación de agentes cada uno sabe qué le toca.", "Nombre Apellido", "Ejemplo — equipo de atención al cliente"),
+                new("Lo que más noto es el historial: cuando un cliente vuelve después de meses, ya sé de qué hablamos la última vez sin preguntarle de nuevo.", "Nombre Apellido", "Ejemplo — servicio técnico"),
             ]
         },
         new LandingContenido
