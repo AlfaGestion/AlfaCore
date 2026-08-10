@@ -12,7 +12,7 @@
 @using AlfaCore.Components.Shared
 @implements IAsyncDisposable
 
-<PageTitle>Login | AlfaCore</PageTitle>
+<PageTitle>Login | AlfaNet</PageTitle>
 
 <div class="auth-page">
     <LoginShell RootClass="@LoginShellClass">
@@ -20,7 +20,7 @@
             <div class="auth-hero__brand">
                 <img class="central-brand-logo central-login-logo"
                      src="@LogoPrincipal"
-                     alt="AlfaCore"
+                     alt="AlfaNet"
                      loading="eager"
                      decoding="async" />
             </div>
@@ -37,7 +37,7 @@
                         <span class="auth-hero__summary-icon" aria-hidden="true"><i class="bi bi-shield-check"></i></span>
                         <span class="auth-hero__summary-label">Cuenta segura</span>
                         <strong>Protegemos tus datos</strong>
-                        <small>Tu ingreso se valida contra la cuenta AlfaCore.</small>
+                        <small>Tu ingreso se valida contra la cuenta AlfaNet.</small>
                     </article>
                     <article class="auth-hero__summary-card">
                         <span class="auth-hero__summary-icon" aria-hidden="true"><i class="bi bi-display"></i></span>
@@ -126,7 +126,7 @@
                         <div class="auth-mobile-brand auth-mobile-brand--saas" aria-hidden="true">
                             <img class="central-brand-logo central-login-logo"
                                  src="@LogoPrincipal"
-                                 alt="AlfaCore"
+                                 alt="AlfaNet"
                                  loading="eager"
                                  decoding="async" />
                         </div>
@@ -145,7 +145,7 @@
                             </span>
                             <div class="auth-saas-login__header-copy">
                                 <h1 class="auth-card__title">Ingresar a tu cuenta</h1>
-                                <p class="auth-card__subtitle">Usá tus credenciales de AlfaCore para continuar.</p>
+                                <p class="auth-card__subtitle">Usá tus credenciales de AlfaNet para continuar.</p>
                             </div>
                         </div>
 
@@ -778,6 +778,17 @@
         }
 
         var bases = SessionSvc.GetAllSessions();
+        if (bases.Count == 0)
+        {
+            // Login central válido pero sin ninguna base asociada — hoy esto pasa casi siempre
+            // porque el registro público (/registrarme) todavía no confirmó el email: recién ahí
+            // se aprovisiona la base. Sin este mensaje, el usuario terminaba en el overlay de
+            // "Usuario del sistema" pidiendo un login interno que no existe todavía, sin ninguna
+            // pista de qué falta.
+            _error = "Tu cuenta todavía no fue confirmada. Revisá tu email y hacé clic en el enlace de confirmación — recién ahí se prepara tu base y vas a poder ingresar.";
+            return;
+        }
+
         if (bases.Count == 1)
         {
             SessionSvc.SwitchSession(bases[0].Id);

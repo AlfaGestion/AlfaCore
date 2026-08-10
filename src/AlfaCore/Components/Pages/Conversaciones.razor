@@ -10,10 +10,12 @@
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
+@inject AlfaCore.Services.ICentralAdminService AdminSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @inject AlfaCore.Services.IAlfaKnowledgeSuggestionService AlfaKnowledgeSvc
+@inject AlfaCore.Services.INotificacionesPushService PushSvc
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IAsyncDisposable
@@ -222,13 +224,16 @@
                         <span class="conversation-badge" style="margin-left:.25rem;border-color:rgba(45,212,191,.85);color:#67e8f9;background:rgba(14,116,144,.28);">Notas</span>
                     }
                 </button>
-                <button type="button"
-                        class="conversations-mobile-action"
-                        @onclick="StartTicketSelection"
-                        disabled="@(_selectedConversation is null || _messages.Count == 0)">
-                    <i class="bi bi-plus-lg"></i>
-                    <span>Ticket</span>
-                </button>
+                @if (_ticketsModuloActivo)
+                {
+                    <button type="button"
+                            class="conversations-mobile-action"
+                            @onclick="StartTicketSelection"
+                            disabled="@(_selectedConversation is null || _messages.Count == 0)">
+                        <i class="bi bi-plus-lg"></i>
+                        <span>Ticket</span>
+                    </button>
+                }
             </div>
 
             <div class="conversations-mobile-quick-filters mobile-filter-chips" aria-label="Filtros rápidos">
@@ -305,7 +310,7 @@
             </div>
         </section>
 
-        <section class="panel-card conversations-filters desktop-only" @onclick:stopPropagation>
+        <section class="panel-card conversations-filters desktop-only" @onclick:stopPropagation style="position:relative;z-index:500;">
             <div class="conversations-canal">
                 <button type="button"
                         class="conversations-filter-pill @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
@@ -355,25 +360,47 @@
                         <span style="width:.55rem;height:.55rem;border-radius:999px;background:#22d3ee;box-shadow:0 0 0 4px rgba(34,211,238,.16),0 0 14px rgba(34,211,238,.9);display:inline-block;margin-left:.15rem;" title="Hay observaciones del cliente o contacto"></span>
                     }
                 </button>
-                <button type="button" class="btn btn--primary btn--sm conversations-ticket-button" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
-                    <i class="bi bi-life-preserver"></i>
-                    <span>Crear ticket</span>
-                </button>
+                @if (_ticketsModuloActivo)
+                {
+                    <button type="button" class="btn btn--primary btn--sm conversations-ticket-button" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
+                        <i class="bi bi-life-preserver"></i>
+                        <span>Crear ticket</span>
+                    </button>
+                }
                 <button type="button" class="btn btn--ghost btn--sm conversations-ai-suggestion-button @(_showAiSuggestionPanel ? "is-active" : string.Empty)" @onclick="ToggleAiSuggestionPanel" disabled="@(_selectedConversation is null)" title="Sugerencia IA">
                     <i class="bi bi-stars"></i>
                 </button>
+                <button type="button" class="btn btn--ghost btn--sm conversations-message-search-button @(_showMessageSearch ? "is-active" : string.Empty)" @onclick="ToggleMessageSearchAsync" disabled="@(_selectedConversation is null)" title="Buscar en esta conversación">
+                    <i class="bi bi-search"></i>
+                </button>
             </div>
 
-            <div class="conversations-filters__modes conversations-filters__modes--compact" aria-label="Filtro de conversaciones">
-                @foreach (var mode in _modeOptions)
-                {
-                    <button type="button"
-                            class="conversations-filter-pill @(mode.Value == _filters.Modo ? "is-active" : string.Empty)"
-                            @onclick="() => ChangeModeAsync(mode.Value)">
-                        @mode.Label
-                        <i class="bi bi-chevron-down conversations-mode-caret"></i>
-                    </button>
-                }
+            <div class="conversations-mode-select">
+                <button type="button"
+                        popovertarget="conversations-mode-menu"
+                        onclick="conversacionesUi.positionModeMenu(this)"
+                        class="conversations-filter-pill conversations-filter-pill--dropdown"
+                        aria-haspopup="listbox"
+                        aria-label="Filtro de conversaciones">
+                    @GetCurrentModeLabel()
+                    <i class="bi bi-chevron-down conversations-mode-caret" style="display:inline-flex;"></i>
+                </button>
+                <div id="conversations-mode-menu" popover="auto" role="listbox"
+                     style="position:fixed;right:auto;bottom:auto;margin:0;min-width:178px;padding:.28rem;border:1px solid rgba(14,165,233,.28);border-radius:12px;background:rgba(15,23,42,.98);box-shadow:0 16px 32px rgba(2,6,23,.34);">
+                    @foreach (var mode in _modeOptions)
+                    {
+                        var isCurrent = mode.Value == _filters.Modo;
+                        <button type="button"
+                                popovertarget="conversations-mode-menu"
+                                popovertargetaction="hide"
+                                class="conversation-header-state__option @(isCurrent ? "is-active" : string.Empty)"
+                                @onclick="() => SelectModeAsync(mode.Value)"
+                                role="option"
+                                aria-selected="@isCurrent">
+                            @mode.Label
+                        </button>
+                    }
+                </div>
             </div>
 
             <div class="conversations-filters__fields">
@@ -925,7 +952,9 @@
                 {
                     @if (_conversationError is not null)
                     {
-                        <div class="conversations-error conversations-notice">@_conversationError</div>
+                        <div class="conversations-empty conversations-empty--center">
+                            <div class="conversations-error conversations-notice">No se pudo cargar la conversación: @_conversationError</div>
+                        </div>
                     }
                     else
                     {
@@ -983,6 +1012,17 @@
                                                     title="Hay observaciones del cliente o contacto. Abrir contexto."
                                                     @onclick="OpenContextPanel">
                                                 <i class="bi bi-info-circle"></i> Observaciones
+                                            </button>
+                                        }
+                                        @if (_contextTicketMatches.Count > 0)
+                                        {
+                                            <button type="button"
+                                                    class="conversation-badge"
+                                                    style="border-color:rgba(251,146,60,.9);color:#fdba74;background:linear-gradient(90deg,rgba(154,52,18,.34),rgba(15,23,42,.72));box-shadow:0 0 0 3px rgba(251,146,60,.10);cursor:pointer;"
+                                                    title="Este cliente tiene tickets pendientes. Click para abrir."
+                                                    @onclick="OpenPendingTicketsFromHeader">
+                                                <i class="bi bi-life-preserver"></i>
+                                                @(_contextTicketMatches.Count == 1 ? "1 ticket pendiente" : $"{_contextTicketMatches.Count} tickets pendientes")
                                             </button>
                                         }
                                         <button type="button"
@@ -1059,6 +1099,30 @@
                                     @_selectedConversation.TecnicoNombre
                                 </span>
                             }
+                            @if (!string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
+                            {
+                                @if (!string.IsNullOrWhiteSpace(_selectedConversation.ClasificacionDescripcion))
+                                {
+                                    <span class="conversation-badge conversation-badge--state" title="Clasificación del cliente">
+                                        <i class="bi bi-tag-fill"></i> @_selectedConversation.ClasificacionDescripcion
+                                    </span>
+                                }
+                                <span class="conversation-badge @GetAbonoBadgeClass(_selectedConversation.EstadoAbono)" title="Estado de abono al mantenimiento">
+                                    <i class="bi @GetAbonoBadgeIcon(_selectedConversation.EstadoAbono)"></i> @GetAbonoBadgeLabel(_selectedConversation.EstadoAbono)
+                                </span>
+                            }
+                            else if (_selectedConversation.IdContacto.HasValue)
+                            {
+                                <span class="conversation-badge conversation-badge--sin-cuenta" title="Contacto guardado, sin cuenta de cliente asociada">
+                                    <i class="bi bi-person-vcard"></i> Contacto conocido, sin cuenta
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="conversation-badge conversation-badge--sin-identificar" title="No está en Clientes ni en Contactos">
+                                    <i class="bi bi-person-fill-exclamation"></i> Sin identificar
+                                </span>
+                            }
                             </div>
                         </div>
                         <div class="conversations-mobile-chat-actions mobile-only" @onclick:stopPropagation>
@@ -1082,10 +1146,33 @@
                                             <strong>Notas</strong>
                                         }
                                     </button>
-                                    <button type="button" role="menuitem" @onclick="StartMobileTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)">
-                                        <i class="bi bi-life-preserver"></i>
-                                        <span>Crear ticket</span>
+                                    @if (_ticketsModuloActivo)
+                                    {
+                                        <button type="button" role="menuitem" @onclick="StartMobileTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)">
+                                            <i class="bi bi-life-preserver"></i>
+                                            <span>Crear ticket</span>
+                                        </button>
+                                    }
+                                    <button type="button" role="menuitem" @onclick="ToggleAnyDeskToolbarPrompt">
+                                        <i class="bi bi-display"></i>
+                                        <span>Conectar por AnyDesk</span>
                                     </button>
+                                    @if (_showAnyDeskToolbarPrompt)
+                                    {
+                                        <div class="conversations-mobile-chat-actions__anydesk" @onclick:stopPropagation>
+                                            <input type="text"
+                                                   class="anydesk-prompt__input"
+                                                   placeholder="ID de AnyDesk (ej: 248 321 383)"
+                                                   value="@_anyDeskIdDraft"
+                                                   @oninput="args => _anyDeskIdDraft = args.Value?.ToString() ?? string.Empty" />
+                                            <a class="btn btn--primary btn--sm anydesk-prompt__connect"
+                                               href="@BuildAnyDeskUri(_anyDeskIdDraft)"
+                                               title="Conectar por AnyDesk"
+                                               @onclick="CloseAnyDeskPrompt">
+                                                <i class="bi bi-display"></i> Conectar
+                                            </a>
+                                        </div>
+                                    }
                                     @if (CanAssignSelectedConversationToMe)
                                     {
                                         <button type="button" role="menuitem" @onclick="AssignSelectedConversationToMeAsync" disabled="@_busyAction">
@@ -1178,6 +1265,34 @@
                             }
                         </div>
                     </header>
+
+                    @if (_showMessageSearch)
+                    {
+                        <div class="conversations-message-search">
+                            <i class="bi bi-search"></i>
+                            <input @ref="_messageSearchInput"
+                                   type="search"
+                                   placeholder="Buscar en esta conversación..."
+                                   value="@_messageSearchText"
+                                   @oninput="OnMessageSearchInputAsync"
+                                   @onkeydown="OnMessageSearchKeyDownAsync" />
+                            @if (!string.IsNullOrWhiteSpace(_messageSearchText))
+                            {
+                                <span class="conversations-message-search__count">
+                                    @(_messageSearchMatchIds.Count == 0 ? "Sin resultados" : $"{_messageSearchActiveIndex + 1} de {_messageSearchMatchIds.Count}")
+                                </span>
+                            }
+                            <button type="button" class="btn btn--ghost btn--sm" title="Anterior" @onclick="GoToPreviousMessageMatchAsync" disabled="@(_messageSearchMatchIds.Count == 0)">
+                                <i class="bi bi-chevron-up"></i>
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" title="Siguiente" @onclick="GoToNextMessageMatchAsync" disabled="@(_messageSearchMatchIds.Count == 0)">
+                                <i class="bi bi-chevron-down"></i>
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" title="Cerrar búsqueda" @onclick="CloseMessageSearch">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    }
 
                     @if (_conversationError is not null)
                     {
@@ -1358,6 +1473,18 @@
                                                     </div>
                                                 }
                                             </div>
+                                        }
+                                        @if (string.Equals(message.MarcaInterna, "PENDIENTE", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <span class="message-card__marca message-card__marca--pendiente" title="Marcado pendiente (interno)">
+                                                <i class="bi bi-flag-fill"></i>
+                                            </span>
+                                        }
+                                        else if (string.Equals(message.MarcaInterna, "COMPLETADA", StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            <span class="message-card__marca message-card__marca--completada" title="Marcado completada (interno)">
+                                                <i class="bi bi-check-circle-fill"></i>
+                                            </span>
                                         }
                                         <article class="message-card @GetMessageClass(message) @(_selectedTicketMessageIds.Contains(message.IdMensaje) ? "message-card--ticket-selected" : string.Empty) @(_aiFocusedMessageId == message.IdMensaje ? "message-card--ai-selected" : string.Empty)">
                                     <div class="message-card__meta">
@@ -1593,14 +1720,13 @@
                                             </div>
                                         }
                                     </div>
-                                    @if (CanReactToMessage(message) || CanQuoteMessage(message) || CanUseMessageAsAiFocus(message))
-                                    {
-                                        <details class="message-actions">
-                                            <summary class="message-actions__trigger"
-                                                     title="Más acciones"
-                                                     aria-label="Más acciones">
-                                                <i class="bi bi-three-dots"></i>
-                                            </summary>
+                                    <details class="message-actions">
+                                        <summary class="message-actions__trigger"
+                                                 title="Más acciones"
+                                                 aria-label="Más acciones">
+                                            <i class="bi bi-three-dots"></i>
+                                        </summary>
+                                        <div class="message-actions__popout">
                                             <div class="message-actions__menu">
                                                 @if (CanUseMessageAsAiFocus(message))
                                                 {
@@ -1629,9 +1755,46 @@
                                                         <i class="bi bi-reply-fill"></i>
                                                     </button>
                                                 }
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm message-action-button @(_anyDeskPromptMessageId == message.IdMensaje ? "is-active" : string.Empty)"
+                                                        title="Conectar por AnyDesk"
+                                                        @onclick="() => ToggleAnyDeskPromptAsync(message)">
+                                                    <i class="bi bi-display"></i>
+                                                </button>
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm message-action-button message-action-button--marca-pendiente @(string.Equals(message.MarcaInterna, "PENDIENTE", StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)"
+                                                        title="Marcar pendiente (interno, no lo ve el cliente)"
+                                                        @onclick="() => MarcarMensajePendienteAsync(message)">
+                                                    <i class="bi bi-flag-fill"></i>
+                                                </button>
+                                                <button type="button"
+                                                        class="btn btn--ghost btn--sm message-action-button message-action-button--marca-completada @(string.Equals(message.MarcaInterna, "COMPLETADA", StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)"
+                                                        title="Marcar completada (interno, no lo ve el cliente)"
+                                                        @onclick="() => MarcarMensajeCompletadaAsync(message)">
+                                                    <i class="bi bi-check-circle-fill"></i>
+                                                </button>
                                             </div>
-                                        </details>
-                                    }
+                                            @if (_anyDeskPromptMessageId == message.IdMensaje)
+                                            {
+                                                var isReadingImage = _anyDeskReadingImageMessageId == message.IdMensaje;
+                                                <div class="anydesk-prompt" @onclick:stopPropagation>
+                                                    <input type="text"
+                                                           class="anydesk-prompt__input"
+                                                           placeholder="@(isReadingImage ? "Leyendo imagen..." : "ID de AnyDesk (ej: 248 321 383)")"
+                                                           value="@_anyDeskIdDraft"
+                                                           disabled="@isReadingImage"
+                                                           @oninput="args => _anyDeskIdDraft = args.Value?.ToString() ?? string.Empty"
+                                                           autofocus />
+                                                    <a class="btn btn--primary btn--sm anydesk-prompt__connect @(isReadingImage ? "is-disabled" : string.Empty)"
+                                                       href="@(isReadingImage ? null : BuildAnyDeskUri(_anyDeskIdDraft))"
+                                                       title="Conectar por AnyDesk"
+                                                       @onclick="() => { if (!isReadingImage) CloseAnyDeskPrompt(); }">
+                                                        <i class="bi @(isReadingImage ? "bi-hourglass-split" : "bi-display")"></i> Conectar
+                                                    </a>
+                                                </div>
+                                            }
+                                        </div>
+                                    </details>
                                 </div>
                             }
                         }
@@ -1653,6 +1816,35 @@
                         </button>
                     }
                     </div>
+
+                    @if (_selectedConversation?.Canal == "INTERNO")
+                    {
+                        var mencionables = _technicians.Where(t => !string.IsNullOrWhiteSpace(t.UsuarioAsociado)).ToList();
+                        if (mencionables.Count > 0)
+                        {
+                            <div class="conversations-mencion" style="display:flex;flex-wrap:wrap;align-items:center;gap:.4rem .6rem;padding:0 .2rem .5rem;">
+                                <span class="conversations-mencion__label" style="font-size:.74rem;color:var(--color-muted);">Notificar a (opcional):</span>
+                                <div class="conversations-mencion__list" style="display:flex;flex-wrap:wrap;gap:.4rem;">
+                                    @foreach (var tech in mencionables)
+                                    {
+                                        var userName = tech.UsuarioAsociado;
+                                        var isSelected = _mencionSeleccionados.Contains(userName);
+                                        var chipStyle = isSelected
+                                            ? "display:inline-flex;align-items:center;gap:.32rem;padding:.3rem .7rem;border-radius:999px;border:1px solid rgba(34,211,238,.55);font-size:.76rem;font-weight:600;line-height:1;cursor:pointer;background:rgba(34,211,238,.16);color:#22d3ee;transition:background .12s ease,border-color .12s ease;"
+                                            : "display:inline-flex;align-items:center;gap:.32rem;padding:.3rem .7rem;border-radius:999px;border:1px solid transparent;font-size:.76rem;font-weight:600;line-height:1;cursor:pointer;background:rgba(148,163,184,.14);color:var(--color-muted);transition:background .12s ease,border-color .12s ease;";
+                                        <label class="conversations-mencion__chip @(isSelected ? "is-active" : string.Empty)" style="@chipStyle">
+                                            <input type="checkbox" checked="@isSelected" @onchange="args => ToggleMencion(userName, args)" style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;" />
+                                            @if (isSelected)
+                                            {
+                                                <i class="bi bi-check-lg" style="font-size:.72rem;"></i>
+                                            }
+                                            <span>@tech.Nombre</span>
+                                        </label>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
 
                     <div class="conversations-composer conversations-composer--support" @ref="_composerDropZone">
                         @if (!IsWhatsAppWindowExpired)
@@ -1772,7 +1964,7 @@
                                     </div>
                                     @if (_composerToolTab == ComposerToolTabs.Emojis)
                                     {
-                                        <input class="conversations-tools-panel__search" type="search" placeholder="Buscar emoji" value="@_emojiSearch" @oninput="HandleEmojiSearchInput" />
+                                        <input @key="ComposerToolTabs.Emojis" class="conversations-tools-panel__search" type="search" placeholder="Buscar emoji" value="@_emojiSearch" @oninput="HandleEmojiSearchInput" />
                                         @foreach (var group in FilteredEmojiGroups)
                                         {
                                             <div class="conversations-tools-panel__group">
@@ -1788,7 +1980,7 @@
                                     }
                                     else if (_composerToolTab == ComposerToolTabs.Stickers)
                                     {
-                                        <div class="conversations-tools-panel__actions">
+                                        <div @key="ComposerToolTabs.Stickers" class="conversations-tools-panel__actions">
                                             <label class="btn btn--ghost conversations-tools-panel__tool" title="Cargar sticker WebP">
                                                 <i class="bi bi-plus-lg"></i> Crear
                                                 <InputFile OnChange="HandleStickerSelectedAsync" style="display:none" multiple accept="image/webp,.webp" />
@@ -1811,7 +2003,7 @@
                                     }
                                     else if (_composerToolTab == ComposerToolTabs.Adjuntos)
                                     {
-                                        <div class="conversations-tools-panel__actions">
+                                        <div @key="ComposerToolTabs.Adjuntos" class="conversations-tools-panel__actions">
                                             <label class="btn btn--ghost conversations-tools-panel__tool" title="Adjuntar archivo">
                                                 <i class="bi @(_uploadingFile ? "bi-hourglass-split" : "bi-paperclip")"></i>
                                                 <span>Archivo</span>
@@ -1825,7 +2017,7 @@
                                     }
                                     else
                                     {
-                                        <div class="field conversations-composer__note conversations-composer__note--mobile">
+                                        <div @key="ComposerToolTabs.Notas" class="field conversations-composer__note conversations-composer__note--mobile">
                                             <label for="conv-note-mobile">Nota interna</label>
                                             <textarea id="conv-note-mobile"
                                                       @ref="_internalNoteMobileTextArea"
@@ -1941,14 +2133,7 @@
                         <div class="conversations-context__section">
                             <h4 class="panel-card__title">Tickets</h4>
                             <p class="panel-card__subtitle">@GetContextTicketsSubtitle()</p>
-                            <button type="button"
-                                    class="btn btn--ghost"
-                                    @onclick="ToggleContextTickets"
-                                    disabled="@(_loadingContextTickets || _contextTicketMatches.Count == 0)">
-                                <i class="bi bi-life-preserver"></i>
-                                @(_loadingContextTickets ? "Buscando..." : $"Ver tickets ({_contextTicketMatches.Count})")
-                            </button>
-                            @if (_showContextTickets)
+                            @if (_contextTicketMatches.Count > 0)
                             {
                                 <div class="conversations-context-tickets">
                                     @foreach (var match in _contextTicketMatches.Take(6))
@@ -2115,6 +2300,24 @@
                             }
                         }
 
+                        <div class="conversations-ai-suggestion-actions">
+                            <button type="button"
+                                    class="btn btn--primary btn--sm"
+                                    @onclick="UseAiSuggestionAsync"
+                                    disabled="@string.IsNullOrWhiteSpace(GetAiTransferText())">
+                                <i class="bi bi-check2"></i> Llevar a respuesta
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="RegenerateAiSuggestionAsync">
+                                <i class="bi bi-arrow-repeat"></i> Regenerar
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenAiCorrectionModal">
+                                <i class="bi bi-pencil-square"></i> Corregir respuesta
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="DiscardAiSuggestionAsync">
+                                <i class="bi bi-x-lg"></i> Descartar
+                            </button>
+                        </div>
+
                         @if (_aiSuggestion.Citations.Count > 0)
                         {
                             <div class="conversations-context__section conversations-ai-sources @(_aiSourcesExpanded ? "is-expanded" : "is-collapsed")">
@@ -2143,24 +2346,6 @@
                                 }
                             </div>
                         }
-
-                        <div class="conversations-ai-suggestion-actions">
-                            <button type="button"
-                                    class="btn btn--primary btn--sm"
-                                    @onclick="UseAiSuggestionAsync"
-                                    disabled="@string.IsNullOrWhiteSpace(GetAiTransferText())">
-                                <i class="bi bi-check2"></i> Llevar a respuesta
-                            </button>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="RegenerateAiSuggestionAsync">
-                                <i class="bi bi-arrow-repeat"></i> Regenerar
-                            </button>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="OpenAiCorrectionModal">
-                                <i class="bi bi-pencil-square"></i> Corregir respuesta
-                            </button>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="DiscardAiSuggestionAsync">
-                                <i class="bi bi-x-lg"></i> Descartar
-                            </button>
-                        </div>
                     }
 
                     <div class="conversations-ai-composer">
@@ -2449,7 +2634,7 @@
                 <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_nuevoHiloError</div>
             }
             <div class="modal-card__actions">
-                <button type="button" class="btn btn--primary" @onclick="CrearHiloInternoAsync" disabled="_busyAction">
+                <button type="button" class="btn btn--primary" @onclick="CrearHiloInternoAsync" disabled="@_busyAction">
                     <i class="bi bi-plus-circle-fill"></i> Crear hilo
                 </button>
                 <button type="button" class="btn btn--ghost" @onclick="CerrarNuevoHilo">
@@ -3061,6 +3246,7 @@
     private DateTime _noticeSetAtUtc = DateTime.MinValue;
     private string _noticeSignature = string.Empty;
     private string _replyText = string.Empty;
+    private readonly HashSet<string> _mencionSeleccionados = new(StringComparer.OrdinalIgnoreCase);
     private string _internalNoteText = string.Empty;
     private string _assignmentTechnicianId = string.Empty;
     private string _statusCode = "ABIERTA";
@@ -3092,9 +3278,19 @@
     private ThreadScrollState? _pendingThreadScrollRestoreAfterPrepend;
     private long? _openAttachmentMenuId;
     private long? _openReactionMessageId;
+    private long? _anyDeskPromptMessageId;
+    private long? _anyDeskReadingImageMessageId;
+    private bool _showAnyDeskToolbarPrompt;
+    private string _anyDeskIdDraft = string.Empty;
     private ConversacionMensajeDto? _quotedMessage;
     private long? _quotedHighlightMessageId;
     private int _quotedHighlightVersion;
+    private bool _showMessageSearch;
+    private string _messageSearchText = string.Empty;
+    private List<long> _messageSearchMatchIds = [];
+    private int _messageSearchActiveIndex = -1;
+    private ElementReference _messageSearchInput;
+    private bool _focusMessageSearchAfterRender;
     private long _nextOptimisticMessageId = -1;
     private ConversacionAdjuntoDto? _previewAttachment;
     private PendingAttachment? _previewPendingAttachment;
@@ -3149,7 +3345,6 @@
     private bool _allowCreateDespiteRelated;
     private List<TicketRelatedMatchDto> _relatedTicketMatches = [];
     private bool _loadingContextTickets;
-    private bool _showContextTickets;
     private List<TicketRelatedMatchDto> _contextTicketMatches = [];
     private long? _contextTicketsConversationId;
     private bool _loadingContextNotes;
@@ -3318,11 +3513,18 @@
             _statusCode,
             "Sin estado");
 
+    // Tickets es un módulo opcional (ver docs/gestion/CONTINUIDAD_MODULOS_ADMINISTRAR.md): si
+    // el cliente no lo tiene activo, el botón de crear ticket se oculta en vez de regalarse. En
+    // modo legacy/on-premise o ante cualquier error queda en true (fail-open) para no romper
+    // funcionalidad existente.
+    private bool _ticketsModuloActivo = true;
+
     protected override async Task OnInitializedAsync()
     {
         _floatingWindowRegistration = FloatingWindows.Register(AlfaCore.Services.FloatingWindowType.DropdownMenu, CloseFloatingWindowsAsync);
         Nav.LocationChanged += OnLocationChanged;
         ApplyStartupQuery();
+        _ticketsModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("TICKETS");
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
         {
@@ -3424,6 +3626,25 @@
             }
             catch
             {
+            }
+
+            // Restaura si el usuario había dejado el asistente de IA abierto la última vez
+            // (preferencia global guardada en localStorage, no ligada a una conversación puntual).
+            if (!_showAiSuggestionPanel && _selectedConversationId is not null)
+            {
+                try
+                {
+                    var storedOpen = await JS.InvokeAsync<string?>("localStorage.getItem", AiPanelOpenStorageKey);
+                    if (storedOpen == "1")
+                    {
+                        _showAiSuggestionPanel = true;
+                        await OpenAiSuggestionPanelAsync();
+                        StateHasChanged();
+                    }
+                }
+                catch
+                {
+                }
             }
         }
 
@@ -3597,6 +3818,18 @@
             }
         }
 
+        if (_focusMessageSearchAfterRender)
+        {
+            _focusMessageSearchAfterRender = false;
+            try
+            {
+                await _messageSearchInput.FocusAsync();
+            }
+            catch
+            {
+            }
+        }
+
         if (_bindPreviewPanAfterRender && _previewAttachment is not null)
         {
             _bindPreviewPanAfterRender = false;
@@ -3666,6 +3899,21 @@
         EnsureCurrentTechnicianFilterForCurrentMode();
         await LoadInboxAsync();
     }
+
+    /// <summary>
+    /// El desplegable usa el Popover API nativo (<c>popover="auto"</c> + <c>popovertarget</c>) para
+    /// abrirse/cerrarse: el navegador lo pinta en la "top layer", por encima de cualquier contexto
+    /// de apilamiento de ancestros (no importa el z-index/overflow del panel de IA u otro contenedor),
+    /// y el cierre al hacer clic afuera lo maneja el propio navegador. La posición junto al botón se
+    /// calcula con un <c>onclick</c> nativo en el botón (<c>conversacionesUi.positionModeMenu</c>),
+    /// no vía interop de Blazor, para que corra siempre en el mismo click sin depender de que un
+    /// bind previo en OnAfterRenderAsync se haya registrado a tiempo.
+    /// </summary>
+    private async Task SelectModeAsync(string mode)
+        => await ChangeModeAsync(mode);
+
+    private string GetCurrentModeLabel()
+        => _modeOptions.FirstOrDefault(x => x.Value == _filters.Modo).Label ?? "Pendientes";
 
     private void SetMobileMode(string mode)
     {
@@ -4022,6 +4270,27 @@
             ? string.Empty
             : $"--technician-color:{TechnicianColorPalette.Resolve(item.IdTecnico, item.TecnicoNombre)};";
 
+    private static string GetAbonoBadgeClass(string estadoAbono) => estadoAbono switch
+    {
+        ConversacionAbonoEstados.Abonado => "conversation-badge--abonado",
+        ConversacionAbonoEstados.Suspendido => "conversation-badge--suspendido",
+        _ => string.Empty
+    };
+
+    private static string GetAbonoBadgeIcon(string estadoAbono) => estadoAbono switch
+    {
+        ConversacionAbonoEstados.Abonado => "bi-patch-check-fill",
+        ConversacionAbonoEstados.Suspendido => "bi-exclamation-triangle-fill",
+        _ => "bi-dash-circle"
+    };
+
+    private static string GetAbonoBadgeLabel(string estadoAbono) => estadoAbono switch
+    {
+        ConversacionAbonoEstados.Abonado => "Abonado",
+        ConversacionAbonoEstados.Suspendido => "Suspendido",
+        _ => "Sin abono"
+    };
+
     private void ApplyCurrentUserToFilters(ConversacionesInboxFilters filters)
     {
         filters.UsuarioActual = CurrentUserNameForAudit;
@@ -4099,6 +4368,7 @@
         _showTemplatePanel = false;
         _showStatusMenu = false;
         _showMobileChatActions = false;
+        CloseMessageSearch();
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
 
@@ -4604,6 +4874,17 @@
 
     private void OpenContextPanel()
         => _showContextPanel = true;
+
+    private async Task OpenPendingTicketsFromHeader()
+    {
+        if (_contextTicketMatches.Count == 1)
+        {
+            await OpenTicket(_contextTicketMatches[0].Ticket.IdTicket);
+            return;
+        }
+
+        OpenContextPanel();
+    }
 
     private void OpenContextNotesModal()
     {
@@ -5436,17 +5717,25 @@
     private void QueueContextTicketsLoad()
     {
         var idConversacion = _selectedConversation?.IdConversacion;
+        var conversationChanged = _contextTicketsConversationId != idConversacion;
         _contextTicketsConversationId = idConversacion;
-        _contextTicketMatches.Clear();
-        _showContextTickets = false;
 
         if (_selectedConversation is null || _selectedConversation.Canal == "INTERNO")
         {
+            _contextTicketMatches.Clear();
             _loadingContextTickets = false;
             return;
         }
 
-        _loadingContextTickets = true;
+        // Al refrescar la MISMA conversación (poll cada 3s) no limpiamos la lista antes de
+        // tener el resultado nuevo: hacerlo hacía que la sección de tickets parpadeara
+        // (vacía -> repoblada) cada vez que corría el auto-refresh.
+        if (conversationChanged)
+        {
+            _contextTicketMatches.Clear();
+            _loadingContextTickets = true;
+        }
+
         _ = InvokeAsync(async () =>
         {
             await LoadContextTicketsAsync(idConversacion!.Value);
@@ -5474,8 +5763,8 @@
         }
         catch
         {
-            if (_contextTicketsConversationId == idConversacion)
-                _contextTicketMatches.Clear();
+            // Background refresh failure for the same conversation: keep showing the last
+            // known-good list instead of flashing it empty.
         }
         finally
         {
@@ -5483,9 +5772,6 @@
                 _loadingContextTickets = false;
         }
     }
-
-    private void ToggleContextTickets()
-        => _showContextTickets = !_showContextTickets;
 
     private string GetContextTicketsSubtitle()
     {
@@ -6234,10 +6520,12 @@
         try
         {
             await JS.InvokeVoidAsync("conversacionesUi.setElementValue", _replyTextArea, value, focus);
+            _replyText = value;
             await AutoResizeReplyTextareaAsync();
         }
         catch
         {
+            _replyText = value;
             _syncReplyTextAfterRender = true;
         }
     }
@@ -6303,7 +6591,7 @@
         {
             if (!string.IsNullOrWhiteSpace(textToSend))
             {
-                await ConversacionesSvc.SendMessageAsync(new ConversacionSendMessageRequest
+                var sendResult = await ConversacionesSvc.SendMessageAsync(new ConversacionSendMessageRequest
                 {
                     IdConversacion = _selectedConversation.IdConversacion,
                     Texto = textToSend,
@@ -6313,6 +6601,8 @@
                     UsuarioAccion = CurrentUserNameForAudit,
                     SistemaAccion = CurrentUserSystemForAudit
                 });
+
+                await NotifyMencionadosAsync(_selectedConversation.IdConversacion, sendResult.IdMensaje);
             }
 
             await UploadPendingAttachmentsAsync(attachmentsToSend, RemovePendingAttachment);
@@ -6346,6 +6636,39 @@
         {
             _busyAction = false;
             await ClearTypingAsync();
+        }
+    }
+
+    private void ToggleMencion(string userName, ChangeEventArgs args)
+    {
+        var isChecked = args.Value is bool b && b;
+        if (isChecked)
+            _mencionSeleccionados.Add(userName);
+        else
+            _mencionSeleccionados.Remove(userName);
+    }
+
+    /// <summary>
+    /// Aviso dirigido para "Notificar a..." en un hilo interno — se dispara al mandar el
+    /// mensaje, independiente de las preferencias generales de push de cada destinatario (ver
+    /// <see cref="INotificacionesPushService.NotifyMentionAsync"/>). No interrumpe el envío del
+    /// mensaje si falla: es un aviso, no algo crítico.
+    /// </summary>
+    private async Task NotifyMencionadosAsync(long idConversacion, long idMensaje)
+    {
+        if (_selectedConversation?.Canal != "INTERNO" || _mencionSeleccionados.Count == 0)
+            return;
+
+        var destinatarios = _mencionSeleccionados.ToArray();
+        _mencionSeleccionados.Clear();
+
+        try
+        {
+            await PushSvc.NotifyMentionAsync(idConversacion, idMensaje, destinatarios, CurrentMessageTechnicianName);
+        }
+        catch (Exception ex)
+        {
+            _actionError = $"El mensaje se envió, pero no se pudo avisar a todos: {ex.Message}";
         }
     }
 
@@ -6797,6 +7120,44 @@
         }
 
         await LoadInboxAsync();
+
+        if (canal == "INTERNO" && _selectedConversationId is null)
+            await EnsureGeneralThreadSelectedAsync();
+    }
+
+    private const string HiloGeneralNombre = "General";
+
+    /// <summary>
+    /// "Chat interno" por defecto no debería obligar a crear un hilo — entrás y ya estás
+    /// hablando en un hilo compartido de equipo ("General"), que se crea solo la primera vez.
+    /// "Nuevo hilo" sigue disponible aparte para temas puntuales.
+    /// </summary>
+    private async Task EnsureGeneralThreadSelectedAsync()
+    {
+        var general = _inbox.FirstOrDefault(x =>
+            string.Equals(x.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(x.NombreVisible, HiloGeneralNombre, StringComparison.OrdinalIgnoreCase));
+
+        if (general is null)
+        {
+            try
+            {
+                var id = await ConversacionesSvc.CreateInternalThreadAsync(new ConversacionCrearHiloInternoRequest
+                {
+                    NombreHilo = HiloGeneralNombre
+                });
+                await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+                general = _inbox.FirstOrDefault(x => x.IdConversacion == id);
+            }
+            catch (Exception ex)
+            {
+                _loadError = ex.Message;
+                return;
+            }
+        }
+
+        if (general is not null)
+            await SelectConversationAsync(general.IdConversacion, showMobileChat: false, updateUrl: false);
     }
 
     private void ToggleContextPanel()
@@ -6809,9 +7170,19 @@
         _showContextNotesModal = false;
     }
 
+    private const string AiPanelOpenStorageKey = "alfacore.conversaciones.aiPanelOpen";
+
     private async Task ToggleAiSuggestionPanel()
     {
         _showAiSuggestionPanel = !_showAiSuggestionPanel;
+
+        try
+        {
+            await JS.InvokeVoidAsync("localStorage.setItem", AiPanelOpenStorageKey, _showAiSuggestionPanel ? "1" : "0");
+        }
+        catch
+        {
+        }
 
         if (!_showAiSuggestionPanel)
         {
@@ -6819,12 +7190,124 @@
             return;
         }
 
+        await OpenAiSuggestionPanelAsync();
+    }
+
+    private async Task OpenAiSuggestionPanelAsync()
+    {
         _showContextPanel = false;
 
         if (_selectedConversationId is { } conversationId
             && (_aiSuggestion is null || _aiSuggestionConversationId != conversationId))
         {
             await RequestAiSuggestionAsync();
+        }
+    }
+
+    private long? ActiveMessageSearchId
+        => _messageSearchActiveIndex >= 0 && _messageSearchActiveIndex < _messageSearchMatchIds.Count
+            ? _messageSearchMatchIds[_messageSearchActiveIndex]
+            : null;
+
+    private async Task ToggleMessageSearchAsync()
+    {
+        _showMessageSearch = !_showMessageSearch;
+
+        if (!_showMessageSearch)
+        {
+            CloseMessageSearch();
+            return;
+        }
+
+        _focusMessageSearchAfterRender = true;
+        await Task.CompletedTask;
+    }
+
+    private void CloseMessageSearch()
+    {
+        _showMessageSearch = false;
+        _messageSearchText = string.Empty;
+        _messageSearchMatchIds = [];
+        _messageSearchActiveIndex = -1;
+    }
+
+    private async Task OnMessageSearchInputAsync(ChangeEventArgs args)
+    {
+        _messageSearchText = Convert.ToString(args.Value) ?? string.Empty;
+        RecomputeMessageSearchMatches();
+
+        if (_messageSearchMatchIds.Count > 0)
+        {
+            _messageSearchActiveIndex = 0;
+            await ScrollToActiveMessageMatchAsync();
+        }
+    }
+
+    private async Task OnMessageSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (args.ShiftKey)
+            await GoToPreviousMessageMatchAsync();
+        else
+            await GoToNextMessageMatchAsync();
+    }
+
+    /// <summary>
+    /// Busca solo entre los mensajes ya cargados en el hilo (no dispara "Leer más" automáticamente
+    /// si el mensaje buscado está en historial todavía no traído).
+    /// </summary>
+    private void RecomputeMessageSearchMatches()
+    {
+        var term = _messageSearchText.Trim();
+        if (term.Length == 0)
+        {
+            _messageSearchMatchIds = [];
+            _messageSearchActiveIndex = -1;
+            return;
+        }
+
+        _messageSearchMatchIds = VisibleMessages
+            .Where(m => !IsInternalEventMessage(m) && m.Texto.Contains(term, StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.IdMensaje)
+            .ToList();
+
+        if (_messageSearchActiveIndex >= _messageSearchMatchIds.Count)
+            _messageSearchActiveIndex = _messageSearchMatchIds.Count > 0 ? 0 : -1;
+    }
+
+    private async Task GoToNextMessageMatchAsync()
+    {
+        if (_messageSearchMatchIds.Count == 0)
+            return;
+
+        _messageSearchActiveIndex = (_messageSearchActiveIndex + 1) % _messageSearchMatchIds.Count;
+        await ScrollToActiveMessageMatchAsync();
+    }
+
+    private async Task GoToPreviousMessageMatchAsync()
+    {
+        if (_messageSearchMatchIds.Count == 0)
+            return;
+
+        _messageSearchActiveIndex = _messageSearchActiveIndex <= 0
+            ? _messageSearchMatchIds.Count - 1
+            : _messageSearchActiveIndex - 1;
+        await ScrollToActiveMessageMatchAsync();
+    }
+
+    private async Task ScrollToActiveMessageMatchAsync()
+    {
+        if (ActiveMessageSearchId is not { } idMensaje)
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.scrollToMessage", GetMessageDomId(idMensaje));
+        }
+        catch
+        {
         }
     }
 
@@ -8998,8 +9481,13 @@
         return text.Length <= 120 ? text : $"{text[..120]}...";
     }
 
-    private void OpenTicket(long idTicket)
-        => Nav.NavigateTo($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+    // Se abre en una pestaña nueva (en vez de navegar la actual) para no perder el lugar en la
+    // conversación: el usuario mira/edita el ticket y simplemente cierra esa pestaña al terminar.
+    private async Task OpenTicket(long idTicket)
+    {
+        var url = Nav.ToAbsoluteUri($"/tickets?id={idTicket.ToString(System.Globalization.CultureInfo.InvariantCulture)}").ToString();
+        await JS.InvokeVoidAsync("open", url, "_blank");
+    }
 
     private static string RenderTicketPriority(int priority)
         => priority switch
@@ -9275,15 +9763,26 @@
         @"(?i)\b((?:https?://|www\.)[^\s<]+)",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    private static MarkupString RenderMessageText(ConversacionMensajeDto message)
-        => new(LinkifyMessageText(GetMessageDisplayText(message)));
+    // Formato con el que AnyDesk muestra el ID en su propio cliente (3-3-3 o 3-3-4 dígitos
+    // separados por un espacio). Detectar solo ese patrón evita falsos positivos con
+    // teléfonos, DNI o números de pedido que no vienen agrupados así.
+    private static readonly Regex AnyDeskIdRegex = new(
+        @"\b\d{3} \d{3} \d{3,4}\b",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    private static string LinkifyMessageText(string? text)
+    private MarkupString RenderMessageText(ConversacionMensajeDto message)
+        => new(LinkifyMessageText(GetMessageDisplayText(message), _messageSearchText, message.IdMensaje == ActiveMessageSearchId));
+
+    private static string LinkifyMessageText(string? text, string searchTerm, bool isActiveMatch)
     {
         if (string.IsNullOrEmpty(text))
             return string.Empty;
 
         var encoded = WebUtility.HtmlEncode(text);
+        encoded = HighlightSearchTerm(encoded, searchTerm, isActiveMatch);
+        encoded = AnyDeskIdRegex.Replace(encoded, match =>
+            $"""<a class="message-card__anydesk-chip" href="{BuildAnyDeskUri(match.Value)}" title="Conectar por AnyDesk"><i class="bi bi-display"></i>{match.Value}</a>""");
+
         return MessageUrlRegex.Replace(encoded, match =>
         {
             var display = match.Value;
@@ -9308,6 +9807,146 @@
 
     private static bool IsUrlTrailingPunctuation(char value)
         => value is '.' or ',' or ';' or ':' or ')' or ']' or '}' or '!' or '?';
+
+    /// <summary>
+    /// Corre sobre el texto YA escapado con HtmlEncode (antes de linkificar URLs/AnyDesk) para no
+    /// terminar insertando &lt;mark&gt; adentro de un atributo href y corromper el HTML resultante.
+    /// </summary>
+    private static string HighlightSearchTerm(string encodedText, string searchTerm, bool isActiveMatch)
+    {
+        var term = searchTerm?.Trim() ?? string.Empty;
+        if (term.Length == 0)
+            return encodedText;
+
+        var encodedTerm = WebUtility.HtmlEncode(term);
+        if (encodedTerm.Length == 0)
+            return encodedText;
+
+        var markClass = isActiveMatch ? "message-search-mark message-search-mark--active" : "message-search-mark";
+        return Regex.Replace(
+            encodedText,
+            Regex.Escape(encodedTerm),
+            match => $"""<mark class="{markClass}">{match.Value}</mark>""",
+            RegexOptions.IgnoreCase);
+    }
+
+    private static string BuildAnyDeskUri(string? rawId)
+        => $"anydesk:{NormalizeAnyDeskId(rawId)}";
+
+    private static string NormalizeAnyDeskId(string? rawId)
+        => rawId is null ? string.Empty : new string(rawId.Where(char.IsDigit).ToArray());
+
+    private Task MarcarMensajePendienteAsync(ConversacionMensajeDto message)
+        => ToggleMensajeMarcaAsync(message, "PENDIENTE");
+
+    private Task MarcarMensajeCompletadaAsync(ConversacionMensajeDto message)
+        => ToggleMensajeMarcaAsync(message, "COMPLETADA");
+
+    private async Task ToggleMensajeMarcaAsync(ConversacionMensajeDto message, string marca)
+    {
+        var nuevaMarca = string.Equals(message.MarcaInterna, marca, StringComparison.OrdinalIgnoreCase) ? null : marca;
+        var previa = message.MarcaInterna;
+        message.MarcaInterna = nuevaMarca;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            await ConversacionesSvc.SetMensajeMarcaInternaAsync(message.IdConversacion, message.IdMensaje, nuevaMarca, timeout.Token);
+        }
+        catch (Exception ex)
+        {
+            message.MarcaInterna = previa;
+            _actionError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : "No se pudo actualizar la marca del mensaje.";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ToggleAnyDeskPromptAsync(ConversacionMensajeDto message)
+    {
+        _anyDeskIdDraft = string.Empty;
+        _showAnyDeskToolbarPrompt = false;
+
+        if (_anyDeskPromptMessageId == message.IdMensaje)
+        {
+            _anyDeskPromptMessageId = null;
+            return;
+        }
+
+        _anyDeskPromptMessageId = message.IdMensaje;
+
+        var imageAttachment = GetMessageImageAttachment(message);
+        if (imageAttachment is null || !AlfaKnowledgeSvc.IsConfigured)
+        {
+            return;
+        }
+
+        _anyDeskReadingImageMessageId = message.IdMensaje;
+        StateHasChanged();
+
+        try
+        {
+            var imageInput = await BuildAiImageInputAsync(imageAttachment, CancellationToken.None);
+            if (imageInput is null || _anyDeskPromptMessageId != message.IdMensaje)
+            {
+                return;
+            }
+
+            var result = await AlfaKnowledgeSvc.SuggestReplyAsync(
+                "Leer ID de AnyDesk desde la imagen adjunta.",
+                Array.Empty<ConversacionMensajeDto>(),
+                message.IdConversacion,
+                mode: AlfaKnowledgeSuggestionModes.AnyDeskId,
+                image: imageInput);
+
+            // Solo completar si el técnico sigue con este mismo cuadro abierto: pudo cerrarlo
+            // o abrir el de otro mensaje mientras se esperaba la respuesta de la IA.
+            if (_anyDeskPromptMessageId != message.IdMensaje)
+            {
+                return;
+            }
+
+            if (result is not null && result.HasSufficientContext && !string.IsNullOrWhiteSpace(result.SuggestedReply))
+            {
+                _anyDeskIdDraft = result.SuggestedReply;
+            }
+        }
+        finally
+        {
+            _anyDeskReadingImageMessageId = null;
+        }
+    }
+
+    private ConversacionAdjuntoDto? GetMessageImageAttachment(ConversacionMensajeDto message)
+    {
+        if (!_adjuntosPorMensaje.TryGetValue(message.IdMensaje, out var attachments))
+        {
+            return null;
+        }
+
+        return attachments
+            .Where(static attachment => attachment.ArchivoDisponible)
+            .Where(IsImageAttachment)
+            .Where(static attachment => !IsStickerAttachment(attachment))
+            .OrderByDescending(static attachment => attachment.IdAdjunto)
+            .FirstOrDefault();
+    }
+
+    private void ToggleAnyDeskToolbarPrompt()
+    {
+        _anyDeskIdDraft = string.Empty;
+        _anyDeskPromptMessageId = null;
+        _showAnyDeskToolbarPrompt = !_showAnyDeskToolbarPrompt;
+    }
+
+    private void CloseAnyDeskPrompt()
+    {
+        _anyDeskPromptMessageId = null;
+        _showAnyDeskToolbarPrompt = false;
+        _anyDeskIdDraft = string.Empty;
+    }
 
     private static bool IsContactMessage(ConversacionMensajeDto message)
         => string.Equals(message.MessageType, "CONTACT", StringComparison.OrdinalIgnoreCase)

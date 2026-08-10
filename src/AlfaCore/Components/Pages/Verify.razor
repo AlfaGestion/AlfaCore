@@ -4,8 +4,9 @@
 @using AlfaCore.Services
 @using Microsoft.AspNetCore.Components
 @inject ICentralRegistrationService RegistrationService
+@inject ICentralAdminService AdminService
 
-<PageTitle>Verificación | AlfaCore</PageTitle>
+<PageTitle>Verificación | AlfaNet</PageTitle>
 
 <section class="public-verify">
     <div class="public-verify__card">
@@ -36,10 +37,75 @@
                     <small>Incidente: @_result!.IncidentId</small>
                 }
 
-                <div class="public-verify__actions">
-                    <a href="/login" class="btn btn--primary">Ir al login</a>
-                    <a href="/registrarme" class="btn btn--ghost">Nuevo registro</a>
-                </div>
+                @if (_result?.Success == true && !_pruebaFinalizada)
+                {
+                    <div class="modulos">
+                        <div class="modulos__intro">
+                            <span class="modulos__badge">30 días gratis</span>
+                            <h3>Elegí con qué querés arrancar</h3>
+                            <p>Activá todos los que quieras probar sin costo. Te avisamos por email antes de que venza cada prueba — si no lo contratás, se desactiva solo, sin sorpresas.</p>
+                        </div>
+
+                        @if (_modulosLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm"></span>
+                        }
+                        else if (_modulos.Count == 0)
+                        {
+                            <p><em>No hay módulos disponibles para probar en este momento.</em></p>
+                        }
+                        else
+                        {
+                            <div class="modulos__grid">
+                                @foreach (var modulo in _modulos)
+                                {
+                                    var seleccionado = _seleccionados.Contains(modulo.Id);
+                                    var info = GetModuloInfo(modulo.Codigo);
+                                    <label @key="modulo.Id" class="modulo-card @(seleccionado ? "is-selected" : string.Empty)">
+                                        <input type="checkbox" class="modulo-card__checkbox" checked="@seleccionado"
+                                               @onchange="args => ToggleModulo(modulo.Id, args)" />
+                                        <span class="modulo-card__icon"><i class="bi @info.Icono"></i></span>
+                                        <span class="modulo-card__body">
+                                            <span class="modulo-card__name">@modulo.Nombre</span>
+                                            <span class="modulo-card__desc">@info.Descripcion</span>
+                                            @if (modulo.Precio > 0)
+                                            {
+                                                <span class="modulo-card__price">USD @modulo.Precio.ToString("0.##")/mes después de la prueba</span>
+                                            }
+                                        </span>
+                                        <span class="modulo-card__mark"><i class="bi bi-check-lg"></i></span>
+                                    </label>
+                                }
+                            </div>
+
+                            @if (!string.IsNullOrWhiteSpace(_pruebaFeedback))
+                            {
+                                <p class="public-verify__feedback">@_pruebaFeedback</p>
+                            }
+
+                            <div class="public-verify__actions">
+                                <button type="button" class="btn btn--primary" disabled="@(_pruebaEnCurso || _seleccionados.Count == 0)" @onclick="IniciarPruebaAsync">
+                                    @(_pruebaEnCurso ? "Activando..." : _seleccionados.Count == 0 ? "Elegí al menos un módulo" : $"Empezar prueba gratis ({_seleccionados.Count})")
+                                </button>
+                                <button type="button" class="btn btn--ghost" disabled="@_pruebaEnCurso" @onclick="() => _pruebaFinalizada = true">
+                                    Elegir más tarde
+                                </button>
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    @if (_result?.Success == true && !string.IsNullOrWhiteSpace(_result.ModuloPreactivado))
+                    {
+                        <div class="public-verify__db">Ya activamos tu prueba de <strong>@_result.ModuloPreactivado</strong>. Iniciá sesión para empezar.</div>
+                    }
+
+                    <div class="public-verify__actions">
+                        <a href="/login" class="btn btn--primary">Ir al login</a>
+                        <a href="/registrarme" class="btn btn--ghost">Nuevo registro</a>
+                    </div>
+                }
             </div>
         }
     </div>
@@ -51,15 +117,103 @@
     private bool _loading = true;
     private PublicVerificationResult? _result;
 
+    private bool _modulosLoading;
+    private IReadOnlyList<ModuloDto> _modulos = [];
+    private readonly HashSet<int> _seleccionados = [];
+    private bool _pruebaEnCurso;
+    private bool _pruebaFinalizada;
+    private string? _pruebaFeedback;
+
     protected override async Task OnParametersSetAsync()
     {
         _loading = true;
         _result = await RegistrationService.VerifyAsync(Code);
         _loading = false;
+
+        if (_result?.Success == true)
+        {
+            if (!string.IsNullOrWhiteSpace(_result.ModuloPreactivado))
+                _pruebaFinalizada = true;
+            else
+                await CargarModulosAsync();
+        }
+    }
+
+    private async Task CargarModulosAsync()
+    {
+        _modulosLoading = true;
+        try
+        {
+            // Los módulos base sin costo (Clientes/Técnicos) se activan solos en cascada cuando
+            // se elige cualquier módulo que dependa de ellos — no tiene sentido ofrecerlos como
+            // opción propia en el selector de prueba.
+            _modulos = (await AdminService.GetModulosAsync()).Where(m => m.Precio > 0).ToArray();
+        }
+        catch
+        {
+            _modulos = [];
+        }
+        finally
+        {
+            _modulosLoading = false;
+        }
+    }
+
+    private void ToggleModulo(int idModulo, ChangeEventArgs args)
+    {
+        var marcado = args.Value is bool b && b;
+        if (marcado)
+            _seleccionados.Add(idModulo);
+        else
+            _seleccionados.Remove(idModulo);
+    }
+
+    private async Task IniciarPruebaAsync()
+    {
+        if (_seleccionados.Count == 0 || _pruebaEnCurso)
+            return;
+
+        _pruebaEnCurso = true;
+        _pruebaFeedback = null;
+        try
+        {
+            var resultado = await RegistrationService.IniciarPruebaModulosAsync(Code, _seleccionados.ToArray());
+            if (resultado.Success)
+            {
+                _pruebaFinalizada = true;
+            }
+            else
+            {
+                _pruebaFeedback = resultado.Message;
+            }
+        }
+        finally
+        {
+            _pruebaEnCurso = false;
+        }
     }
 
     private string GetTitle()
         => _result?.Success == true
             ? "Cuenta confirmada"
             : "No se pudo completar la confirmación";
+
+    private sealed record ModuloInfo(string Icono, string Descripcion);
+
+    /// <summary>
+    /// Copy pensado para el visitante que se acaba de registrar (beneficio, no ficha técnica) —
+    /// distinto de <c>Modulos.Descripcion</c> en la base, que es texto interno para el catálogo
+    /// de Administrar.
+    /// </summary>
+    private static ModuloInfo GetModuloInfo(string codigo) => codigo.ToUpperInvariant() switch
+    {
+        "CONVERSACIONES" => new("bi-chat-dots-fill", "Todos tus mensajes de WhatsApp, Instagram, Facebook y MercadoLibre en una sola bandeja, sin perder ni un cliente."),
+        "TICKETS" => new("bi-ticket-perforated-fill", "Convertí cualquier conversación en un ticket con seguimiento, sin salir del chat."),
+        "ALFAKNOWLEDGE" => new("bi-stars", "Un asistente con IA que sugiere la respuesta ideal usando tu propia base de conocimiento."),
+        "PARTES_HORAS" => new("bi-clock-history", "Registrá y controlá las horas trabajadas por tu equipo, con reportes listos para facturar."),
+        "AUTOMATIZACIONES" => new("bi-lightning-charge-fill", "Respuestas automáticas fuera de horario y mensajes de bienvenida, para no dejar a nadie sin contestar."),
+        "LOGISTICA" => new("bi-truck", "Carga y seguimiento de viajes, tarifas de clientes y fleteros, liquidaciones y reportes en un solo lugar."),
+        "POS" or "POS - PUNTO DE VENTA" => new("bi-shop", "Punto de venta ágil para mostrador, salón y delivery, con caja y stock integrados."),
+        _ => new("bi-puzzle-fill", "Sumá esta función a tu cuenta y probala sin costo por 30 días.")
+    };
 }

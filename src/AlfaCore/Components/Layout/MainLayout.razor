@@ -696,6 +696,9 @@ else
                     <span class="menu__icon"><i class="bi bi-question-circle-fill"></i></span>
                     <span>Ayuda</span>
                 </NavLink>
+                <div class="menu__build" title="Fecha de compilación del binario que está corriendo — si esperabas un cambio reciente y no lo ves, comparalo con la hora en que compilaste." style="padding: 4px 12px; font-size: 11px; opacity: 0.5; white-space: nowrap;">
+                    build @BuildStamp
+                </div>
             </div>
             }
         </div>
@@ -741,7 +744,7 @@ else
                     }
                     <button type="button" class="session-chip no-print" @onclick="() => _drawerOpen = true" title="Gestionar sesiones de base de datos">
                         <span class="session-chip__dot"></span>
-                        <span class="session-chip__text">@(_activeSession?.Servidor ?? "—") · @(_activeSession?.BaseDatos ?? "—")</span>
+                        <span class="session-chip__text">@(_activeSession?.BaseDatos ?? "—")</span>
                         <i class="bi bi-chevron-down"></i>
                     </button>
                     @if (AppUserSession.IsAuthenticated && AppUserSession.CurrentUser is not null)
@@ -1148,22 +1151,29 @@ else
                 <span>Activar notificaciones en este dispositivo</span>
             </label>
 
-            <div class="field">
-                <label>Alcance</label>
-                <select @bind="_pushPreferences.Alcance">
-                    <option value="@NotificacionesPushScopes.Asignadas">Solo conversaciones asignadas a mi usuario</option>
-                    <option value="@NotificacionesPushScopes.Accesibles">Todas las conversaciones accesibles</option>
-                </select>
-            </div>
+            @if (_pushTieneAccesoConversaciones)
+            {
+                <div class="field">
+                    <label>Alcance</label>
+                    <select @bind="_pushPreferences.Alcance">
+                        <option value="@NotificacionesPushScopes.Asignadas">Solo conversaciones asignadas a mi usuario</option>
+                        <option value="@NotificacionesPushScopes.Accesibles">Todas las conversaciones accesibles</option>
+                    </select>
+                </div>
 
-            <div class="field">
-                <label>Canales</label>
-                <label class="toggle-row toggle-row--compact">
-                    <input type="checkbox" checked="@(PushChannelEnabled("WHATSAPP"))" @onchange="@(args => TogglePushChannel("WHATSAPP", args))" />
-                    <span>WhatsApp</span>
-                </label>
-                <p class="app-modal__hint">El selector queda preparado para sumar nuevos canales cuando el módulo los habilite.</p>
-            </div>
+                <div class="field">
+                    <label>Canales</label>
+                    <label class="toggle-row toggle-row--compact">
+                        <input type="checkbox" checked="@(PushChannelEnabled("WHATSAPP"))" @onchange="@(args => TogglePushChannel("WHATSAPP", args))" />
+                        <span>WhatsApp</span>
+                    </label>
+                    <p class="app-modal__hint">El selector queda preparado para sumar nuevos canales cuando el módulo los habilite.</p>
+                </div>
+            }
+            else
+            {
+                <p class="app-modal__hint">Los avisos de Conversaciones (WhatsApp) no están disponibles porque no tenés ese módulo contratado. Vas a poder elegir otros tipos de notificación acá cuando estén disponibles.</p>
+            }
         </div>
 
         <div class="actions">
@@ -1275,6 +1285,23 @@ else
 <NovedadesPopup Enabled="@(!IsDirectMode)" />
 
 @code {
+    private static readonly string BuildStamp = ResolveBuildStamp();
+
+    private static string ResolveBuildStamp()
+    {
+        try
+        {
+            var path = System.Reflection.Assembly.GetExecutingAssembly().Location;
+            return string.IsNullOrWhiteSpace(path)
+                ? "?"
+                : System.IO.File.GetLastWriteTime(path).ToString("yyyy-MM-dd HH:mm");
+        }
+        catch
+        {
+            return "?";
+        }
+    }
+
     private bool _mobileSidebarOpen;
     private bool? _sidebarCollapsedOverride;
     private bool _isDark = false;
@@ -1306,6 +1333,7 @@ else
     private bool _showPushPanel;
     private bool _pushBusy;
     private bool _pushConfigured;
+    private bool _pushTieneAccesoConversaciones = true;
     private string _pushPublicKey = string.Empty;
     private string _pushConfigurationMessage = string.Empty;
     private string _pushMessage = string.Empty;
@@ -1367,7 +1395,7 @@ else
            && _pwaPushSupported
            && (!_pwaIsIos || _pwaInstalled);
     private bool CanSendTestPush
-        => CanEnablePush && _pushPreferences.Habilitadas;
+        => CanEnablePush && _pushPreferences.Habilitadas && _pushTieneAccesoConversaciones;
     private bool ShouldShowConversationNotice
         => !IsDirectMode
            && _globalConversationUnreadCount > 0
@@ -1760,7 +1788,7 @@ else
             var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
             _routeSessionLabel = routeBase is null
                 ? $"Base #{routeBaseId}"
-                : $"{routeBase.Nombre} · {routeBase.DbServer} · {routeBase.DbName}";
+                : $"{routeBase.Nombre} · {routeBase.DbName}";
             return;
         }
 
@@ -1783,7 +1811,7 @@ else
                 GetRouteIdWeb() ?? "(sin ruta)",
                 routeSession.BaseId,
                 routeSession.Nombre);
-            _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.Servidor} · {routeSession.BaseDatos}";
+            _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.BaseDatos}";
             return;
         }
 
@@ -1802,7 +1830,7 @@ else
             GetRouteIdWeb() ?? "(sin ruta)",
             routeSession.BaseId,
             routeSession.Nombre);
-        _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.Servidor} · {routeSession.BaseDatos}";
+        _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.BaseDatos}";
     }
 
     private async Task EnsureInternalLoginUsersAsync()
@@ -2660,6 +2688,7 @@ else
             _pushPublicKey = settings.PublicKey;
             _pushConfigurationMessage = settings.ConfiguracionMensaje;
             _pushPreferences = settings.Preferences ?? new();
+            _pushTieneAccesoConversaciones = settings.TieneAccesoConversaciones;
             if (!_pushConfigured)
             {
                 _pushPreferences.Habilitadas = false;
@@ -3342,7 +3371,7 @@ else
     private string GetSqlSessionLabel()
         => _activeSession is null
             ? (!string.IsNullOrWhiteSpace(_routeSessionLabel) ? _routeSessionLabel : "Sin base activa")
-            : $"{_activeSession.Nombre} · {_activeSession.Servidor} · {_activeSession.BaseDatos}";
+            : $"{_activeSession.Nombre} · {_activeSession.BaseDatos}";
 
     private string GetCurrentPageTitle()
     {

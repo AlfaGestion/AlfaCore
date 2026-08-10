@@ -4,6 +4,7 @@ public static class AlfaKnowledgeSuggestionModes
 {
     public const string ReplySuggestion = "reply-suggestion";
     public const string TextImprovement = "text-improvement";
+    public const string AnyDeskId = "anydesk-id";
 }
 
 public sealed class AlfaKnowledgeSuggestionCitation

@@ -30,11 +30,15 @@ public sealed class NotificacionesPushService(
     public Task<NotificacionesPushClientSettingsDto> GetClientSettingsAsync(string userName, string deviceId, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetClientSettings", async token =>
         {
-            await EnsureUserCanUseConversacionesAsync(userName, token);
+            // A diferencia del resto (guardar/borrar/probar), cargar la configuración nunca debe
+            // fallar por no tener Conversaciones: el dispositivo se puede activar igual para otros
+            // tipos de notificación futuros — la pantalla oculta el alcance/canal de Conversaciones
+            // según TieneAccesoConversaciones en vez de bloquear todo el panel.
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var preferences = await ReadPreferencesAsync(cn, userName, deviceId, token);
             var pushOptions = options.Value;
+            var tieneAccesoConversaciones = await UserCanUseConversacionesAsync(cn, userName, token);
 
             return new NotificacionesPushClientSettingsDto
             {
@@ -44,7 +48,8 @@ public sealed class NotificacionesPushService(
                 PrivateKeyConfigurada = pushOptions.HasPrivateKey,
                 SubjectConfigurado = pushOptions.HasSubject,
                 ConfiguracionMensaje = pushOptions.GetConfigurationMessage(),
-                Preferences = preferences
+                Preferences = preferences,
+                TieneAccesoConversaciones = tieneAccesoConversaciones
             };
         }, "No se pudo cargar la configuración de notificaciones.", ct);
 
@@ -53,7 +58,8 @@ public sealed class NotificacionesPushService(
         {
             ValidateDeviceId(request.DeviceId);
             ValidateSubscription(request.Subscription);
-            await EnsureUserCanUseConversacionesAsync(userName, token);
+            // Registrar el dispositivo es independiente del canal — no requiere Conversaciones
+            // (ver GetClientSettingsAsync).
 
             var record = new StoredSubscription
             {
@@ -101,7 +107,6 @@ public sealed class NotificacionesPushService(
         => ExecuteLoggedAsync("DeleteSubscription", async token =>
         {
             ValidateDeviceId(deviceId);
-            await EnsureUserCanUseConversacionesAsync(userName, token);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
@@ -128,7 +133,6 @@ public sealed class NotificacionesPushService(
         => ExecuteLoggedAsync("SavePreferences", async token =>
         {
             ValidateDeviceId(request.DeviceId);
-            await EnsureUserCanUseConversacionesAsync(userName, token);
             var preferences = NormalizePreferences(request.Preferences);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -223,7 +227,6 @@ public sealed class NotificacionesPushService(
         => ExecuteLoggedAsync("GetDiagnostics", async token =>
         {
             ValidateDeviceId(deviceId);
-            await EnsureUserCanUseConversacionesAsync(userName, token);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var subscriptions = await ReadUserSubscriptionsAsync(cn, userName, token);
@@ -403,6 +406,75 @@ public sealed class NotificacionesPushService(
                 },
                 token);
         }, "No se pudo enviar la notificación push de mensaje nuevo.", ct);
+
+    public Task<NotificacionesPushSendResultDto> NotifyMentionAsync(long idConversacion, long idMensaje, IReadOnlyCollection<string> userNames, string mencionadoPor, CancellationToken ct = default)
+        => ExecuteLoggedAsync("NotifyMention", async token =>
+        {
+            var normalizedUsers = (userNames ?? [])
+                .Select(NormalizeUser)
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+            if (normalizedUsers.Length == 0)
+                return new NotificacionesPushSendResultDto();
+
+            var message = await GetNewMessageAsync(idConversacion, idMensaje, token);
+            if (message is null)
+                return new NotificacionesPushSendResultDto();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var toSend = new List<StoredSubscription>();
+            foreach (var userName in normalizedUsers)
+            {
+                if (!await UserCanUseConversacionesAsync(cn, userName, token))
+                    continue;
+
+                var subscriptions = await ReadUserSubscriptionsAsync(cn, userName, token);
+                toSend.AddRange(subscriptions.Where(x => x.Activo));
+            }
+
+            if (toSend.Count == 0)
+                return new NotificacionesPushSendResultDto();
+
+            var titulo = string.IsNullOrWhiteSpace(mencionadoPor) ? "Te mencionaron" : $"{SanitizeText(mencionadoPor, 60)} te mencionó";
+
+            var result = await SendToSubscriptionsAsync(cn, toSend, new PushPayload
+            {
+                Title = titulo,
+                Body = BuildNotificationPreview(message),
+                Url = $"/conversaciones?id={message.IdConversacion.ToString(CultureInfo.InvariantCulture)}",
+                IdConversacion = message.IdConversacion,
+                IdMensaje = message.IdMensaje,
+                Canal = message.Canal,
+                ContactName = BuildNotificationTitle(message),
+                Preview = BuildNotificationPreview(message),
+                TimestampUnixMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                UnreadCount = 1,
+                Renotify = true
+            }, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "NotifyMentionResult",
+                "CONV_MENSAJES",
+                message.IdMensaje.ToString(CultureInfo.InvariantCulture),
+                "Resultado de envío push por mención directa.",
+                new
+                {
+                    message.IdConversacion,
+                    message.IdMensaje,
+                    UsuariosMencionados = normalizedUsers,
+                    SuscripcionesAEnviar = toSend.Count,
+                    result.SuccessCount,
+                    result.FailCount
+                },
+                token);
+
+            return result;
+        }, "No se pudo enviar la notificación de mención.", ct);
 
     public Task<bool> UserCanUseConversacionesAsync(string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync("UserCanUseConversaciones", async token =>

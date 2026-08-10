@@ -207,6 +207,10 @@ public sealed class ConversacionDetalleDto
     public string MercadoLibreItemPermalink { get; set; } = string.Empty;
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
+    /// <summary>Descripción de TA_CLASIFICACIONES para el código en VT_CLIENTES.Clasificacion — vacío si no hay cliente identificado o no tiene clasificación cargada.</summary>
+    public string ClasificacionDescripcion { get; set; } = string.Empty;
+    /// <summary>Ver <see cref="ConversacionAbonoEstados"/> — solo tiene sentido cuando ClienteCodigo no está vacío.</summary>
+    public string EstadoAbono { get; set; } = string.Empty;
     public int? IdContacto { get; set; }
     public string ContactoNombre { get; set; } = string.Empty;
     public string ContactoTelefono { get; set; } = string.Empty;
@@ -231,6 +235,17 @@ public sealed class ConversacionDetalleDto
     public bool VentanaWhatsAppActiva { get; set; }
     public DateTime? FechaHoraVencimientoVentanaWhatsApp { get; set; }
     public DateTime? FechaHoraCierre { get; set; }
+}
+
+/// <summary>
+/// Estado de abono al mantenimiento según dbo.MA_CUENTAS_AUTOCPTES (cualquier fila de la
+/// cuenta, sin filtrar por Concepto — la más reciente por FechaUltMov gana si hay varias).
+/// </summary>
+public static class ConversacionAbonoEstados
+{
+    public const string Abonado = "Abonado";
+    public const string Suspendido = "Suspendido";
+    public const string SinAbono = "SinAbono";
 }
 
 public sealed class ConversacionClienteCandidateDto
@@ -267,6 +282,11 @@ public sealed class ConversacionMensajeDto
     public string IdTecnicoAutor { get; set; } = string.Empty;
     public string TecnicoAutorNombre { get; set; } = string.Empty;
     public bool TieneAdjuntos { get; set; }
+    /// <summary>
+    /// Marca interna de seguimiento (ej. "PENDIENTE"/"COMPLETADA") — nunca se envía al cliente,
+    /// es solo para uso propio del agente. <c>null</c>/vacío = sin marcar.
+    /// </summary>
+    public string? MarcaInterna { get; set; }
 }
 
 public sealed class ConversacionMensajesPaginaDto

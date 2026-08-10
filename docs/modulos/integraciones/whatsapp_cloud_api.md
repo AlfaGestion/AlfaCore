@@ -33,13 +33,14 @@ La configuración principal vive en `TA_CONFIGURACION`, grupo `CONVERSACIONES`.
 
 ## Flujo técnico
 
-1. Meta verifica el webhook con `GET /api/conversaciones/whatsapp/webhook`.
-2. AlfaCore compara el `hub.verify_token` recibido con `CONV_WHATSAPP_VERIFY_TOKEN`.
-3. Meta envía eventos por `POST /api/conversaciones/whatsapp/webhook`.
-4. AlfaCore guarda el payload en `CONV_WEBHOOK_LOG`.
-5. El servicio deduplica por `WhatsAppMessageId` cuando corresponde.
-6. El mensaje se transforma en una conversación y un registro en `CONV_MENSAJES`.
-7. Las respuestas salen por `POST https://graph.facebook.com/{version}/{phone-number-id}/messages`.
+1. En SaaS, Meta verifica el webhook con `GET /api/conversaciones/whatsapp/webhook/{token}`. En instalaciones monobase o legacy puede usarse la ruta sin token.
+2. Si llega `{token}`, AlfaCore resuelve primero la base en `ALFA_CENTRAL.dbo.bases.WebhookToken` y fuerza esa conexión para el request.
+3. AlfaCore compara el `hub.verify_token` recibido con `CONV_WHATSAPP_VERIFY_TOKEN` de la base resuelta.
+4. Meta envía eventos por `POST /api/conversaciones/whatsapp/webhook/{token}`.
+5. AlfaCore guarda el payload en `CONV_WEBHOOK_LOG`.
+6. El servicio deduplica por `WhatsAppMessageId` cuando corresponde.
+7. El mensaje se transforma en una conversación y un registro en `CONV_MENSAJES`.
+8. Las respuestas salen por `POST https://graph.facebook.com/{version}/{phone-number-id}/messages`.
 
 ## Requisitos del proveedor
 
@@ -48,11 +49,13 @@ La configuración principal vive en `TA_CONFIGURACION`, grupo `CONVERSACIONES`.
 - Número de teléfono conectado.
 - Token de acceso válido para producción.
 - URL pública HTTPS accesible desde Meta.
+- En SaaS, URL con token propio de la base: `/api/conversaciones/whatsapp/webhook/{WebhookTokenDeLaBase}`.
 - Suscripción del webhook a eventos de mensajes y estados.
 
 ## Problemas frecuentes
 
 - `localhost` o IP privada no sirven para webhooks de Meta; se necesita HTTPS público.
+- En SaaS, la ruta sin token no identifica el cliente/base; si se configura en Meta, los mensajes pueden entrar a la base por defecto del proceso.
 - El `Verify Token` no lo entrega Meta: lo define AlfaCore/equipo y debe coincidir exactamente en ambos lados.
 - Los tokens temporales de prueba vencen; para producción hay que usar un token estable y administrado.
 - Si cambia el `Phone Number ID`, el envío falla aunque el token siga siendo válido.

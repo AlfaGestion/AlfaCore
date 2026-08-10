@@ -20,6 +20,11 @@
     margin: 0;
 }
 
+.module-list-toolbar--reportes .module-list-toolbar__search ::deep .carga-viajes-smart-search {
+    width: min(100%, 900px) !important;
+    max-width: 900px !important;
+}
+
 .module-list-toolbar__right,
 .module-list-toolbar__actions,
 .module-list-toolbar__pager {
@@ -33,8 +38,17 @@
     gap: .4rem;
 }
 
+.module-list-toolbar--reportes .module-list-toolbar__right {
+    flex-wrap: wrap;
+    gap: .35rem;
+}
+
 .module-list-toolbar__actions {
     gap: .35rem;
+}
+
+.module-list-toolbar--reportes .module-list-toolbar__actions {
+    flex-wrap: wrap;
 }
 
 .module-list-toolbar__pager {

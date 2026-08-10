@@ -10,7 +10,7 @@
 @inject ILogger<Register> Logger
 @implements IAsyncDisposable
 
-<PageTitle>Registro | AlfaCore</PageTitle>
+<PageTitle>Registro | AlfaNet</PageTitle>
 
 <section class="public-register">
     <div class="public-register__shell">
@@ -20,8 +20,19 @@
                 <span>AlfaNet Web</span>
             </a>
 
+            @if (_moduloElegido is not null)
+            {
+                <span class="public-register__pill public-register__pill--modulo"><i class="bi @_moduloElegido.Icono"></i> Vas a probar @_moduloElegido.Nombre</span>
+            }
+
             <h1>Creá tu acceso inicial y activá tu prueba.</h1>
-            <p>Completás el registro, confirmás el correo y el servidor prepara tu base desde la plantilla restaurada.</p>
+            <p>
+                Completás el registro, confirmás el correo y el servidor prepara tu base desde la plantilla restaurada.
+                @if (_moduloElegido is not null)
+                {
+                    <text> Al confirmar, la prueba de <strong>@_moduloElegido.Nombre</strong> queda activada sola, sin pasos extra.</text>
+                }
+            </p>
 
             <div class="public-register__features">
                 <article>
@@ -94,12 +105,12 @@
                 </label>
 
                 <label>
-                    <span>CUIT</span>
-                    <input @bind="_request.Cuit" @bind:event="oninput" maxlength="20" disabled="@_busy" />
+                    <span>CUIT (opcional)</span>
+                    <input @bind="_request.Cuit" @bind:event="oninput" maxlength="20" disabled="@_busy" placeholder="Lo pedimos solo si vas a contratar" />
                 </label>
 
                 <label class="is-wide">
-                    <span>Cond. IVA</span>
+                    <span>Cond. IVA (opcional)</span>
                     <select @bind="_request.Iva" disabled="@_busy">
                         <option value="">Seleccionar</option>
                         <option value="5">Monotributo</option>
@@ -133,6 +144,9 @@
 </section>
 
 @code {
+    [SupplyParameterFromQuery(Name = "modulo")]
+    public string? ModuloQuery { get; set; }
+
     private readonly PublicRegistrationRequest _request = new();
     private bool _busy;
     private bool _success;
@@ -140,12 +154,15 @@
     private string _incidentId = string.Empty;
     private string _siteKey = string.Empty;
     private bool _captchaRendered;
+    private LandingContenido? _moduloElegido;
 
     private string CaptchaElementId { get; } = $"public-register-captcha-{Guid.NewGuid():N}";
 
     protected override void OnInitialized()
     {
         _siteKey = Configuration["RegistroPublico:RecaptchaSiteKey"]?.Trim() ?? string.Empty;
+        _moduloElegido = LandingContenidoCatalogo.Todos.FirstOrDefault(m => string.Equals(m.Slug, ModuloQuery, StringComparison.OrdinalIgnoreCase));
+        _request.ModuloSlug = _moduloElegido?.Slug;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)

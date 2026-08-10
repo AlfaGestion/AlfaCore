@@ -19,6 +19,7 @@ public sealed class ConversacionesService(
     ICentralBasesService centralBasesService,
     IConversacionesConfigService conversacionesConfigService,
     INotificacionesPushService notificacionesPushService,
+    ICentralAdminService centralAdminService,
     IWebHostEnvironment environment) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
@@ -1409,7 +1410,9 @@ public sealed class ConversacionesService(
                     c.FechaHoraPerfilExterno,
                     ISNULL(mlMeta.QuestionStatus, N''),
                     ISNULL(mlMeta.ItemStatus, N''),
-                    ISNULL(mlMeta.ItemPermalink, N'')
+                    ISNULL(mlMeta.ItemPermalink, N''),
+                    ISNULL(clienteClasificacion.Descripcion, N''),
+                    clienteAbono.Estado
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
@@ -1477,6 +1480,28 @@ public sealed class ConversacionesService(
                     WHERE UPPER(LTRIM(RTRIM(obs.Codigo))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
                       AND ISNULL(obs.Sucursal, 0) = 0
                 ) cuentaObs
+                OUTER APPLY (
+                    SELECT TOP (1) ISNULL(cls.Descripcion, '') AS Descripcion
+                    FROM dbo.VT_CLIENTES cliCls
+                    LEFT JOIN dbo.TA_CLASIFICACIONES cls ON cls.Codigo = cliCls.Clasificacion
+                    WHERE LTRIM(RTRIM(clienteContexto.Codigo)) <> ''
+                      AND UPPER(LTRIM(RTRIM(cliCls.CODIGO))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
+                ) clienteClasificacion
+                OUTER APPLY (
+                    -- Abonado al mantenimiento: cualquier fila de la cuenta en MA_CUENTAS_AUTOCPTES (sin
+                    -- filtrar por Concepto), la más reciente por FechaUltMov si hay varias (distintas
+                    -- sucursales/conceptos). Sin fila = NULL = "sin abono" (se resuelve en C#).
+                    SELECT TOP (1)
+                        CASE
+                            WHEN ISNULL(auto.Activo, 0) = 0 THEN 'Suspendido'
+                            WHEN auto.FechaUltMov IS NULL OR auto.FechaUltMov < DATEADD(MONTH, -3, GETDATE()) THEN 'Suspendido'
+                            ELSE 'Abonado'
+                        END AS Estado
+                    FROM dbo.MA_CUENTAS_AUTOCPTES auto
+                    WHERE LTRIM(RTRIM(clienteContexto.Codigo)) <> ''
+                      AND UPPER(LTRIM(RTRIM(auto.Cuenta))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
+                    ORDER BY auto.FechaUltMov DESC
+                ) clienteAbono
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -1561,7 +1586,9 @@ public sealed class ConversacionesService(
                 FechaHoraPerfilExterno = rd.IsDBNull(35) ? null : rd.GetDateTime(35),
                 MercadoLibreQuestionStatus = GetString(rd, 36),
                 MercadoLibreItemStatus = GetString(rd, 37),
-                MercadoLibreItemPermalink = GetString(rd, 38)
+                MercadoLibreItemPermalink = GetString(rd, 38),
+                ClasificacionDescripcion = GetString(rd, 39),
+                EstadoAbono = rd.IsDBNull(40) ? ConversacionAbonoEstados.SinAbono : GetString(rd, 40)
             };
 
             ApplyWhatsAppWindow(item);
@@ -1592,7 +1619,8 @@ public sealed class ConversacionesService(
                         SELECT 1
                         FROM dbo.CONV_ADJUNTOS a
                         WHERE a.IdMensaje = m.IdMensaje
-                    ) THEN 1 ELSE 0 END
+                    ) THEN 1 ELSE 0 END,
+                    ISNULL(m.MarcaInterna, '')
                 FROM dbo.CONV_MENSAJES m
                 INNER JOIN dbo.CONV_CONVERSACIONES c
                     ON c.IdConversacion = @IdConversacion
@@ -1637,7 +1665,8 @@ public sealed class ConversacionesService(
                     SistemaAutor = GetString(rd, 11),
                     IdTecnicoAutor = GetString(rd, 12),
                     TecnicoAutorNombre = GetString(rd, 13),
-                    TieneAdjuntos = GetInt(rd, 15) == 1
+                    TieneAdjuntos = GetInt(rd, 15) == 1,
+                    MarcaInterna = GetString(rd, 16)
                 };
 
                 items.Add(item);
@@ -1680,7 +1709,8 @@ public sealed class ConversacionesService(
                             SELECT 1
                             FROM dbo.CONV_ADJUNTOS a
                             WHERE a.IdMensaje = m.IdMensaje
-                        ) THEN 1 ELSE 0 END AS TieneAdjuntos
+                        ) THEN 1 ELSE 0 END AS TieneAdjuntos,
+                        ISNULL(m.MarcaInterna, '') AS MarcaInterna
                     FROM dbo.CONV_MENSAJES m
                     INNER JOIN dbo.CONV_CONVERSACIONES c
                         ON c.IdConversacion = @IdConversacion
@@ -1723,7 +1753,8 @@ public sealed class ConversacionesService(
                     page.IdTecnicoAutor,
                     page.TecnicoAutorNombre,
                     page.PayloadJson,
-                    page.TieneAdjuntos
+                    page.TieneAdjuntos,
+                    page.MarcaInterna
                 FROM PagedMessages page
                 ORDER BY page.FechaHora ASC, page.IdMensaje ASC;
                 """;
@@ -1797,7 +1828,8 @@ public sealed class ConversacionesService(
                     IdTecnicoAutor = GetString(rd, 12),
                     TecnicoAutorNombre = GetString(rd, 13),
                     PayloadJson = GetString(rd, 14),
-                    TieneAdjuntos = GetInt(rd, 15) == 1
+                    TieneAdjuntos = GetInt(rd, 15) == 1,
+                    MarcaInterna = GetString(rd, 16)
                 });
             }
 
@@ -2298,6 +2330,37 @@ public sealed class ConversacionesService(
                 MessageIdExterno = externalMessageId
             };
         }, "No se pudo registrar el mensaje saliente.", ct);
+
+    private static readonly HashSet<string> MarcasInternasValidas = new(StringComparer.OrdinalIgnoreCase) { "PENDIENTE", "COMPLETADA" };
+
+    public Task SetMensajeMarcaInternaAsync(long idConversacion, long idMensaje, string? marca, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SetMensajeMarcaInterna", async token =>
+        {
+            if (idConversacion <= 0)
+                throw new InvalidOperationException("La conversación es obligatoria.");
+            if (idMensaje <= 0)
+                throw new InvalidOperationException("El mensaje es obligatorio.");
+
+            var normalizada = (marca ?? string.Empty).Trim().ToUpperInvariant();
+            if (normalizada.Length > 0 && !MarcasInternasValidas.Contains(normalizada))
+                throw new InvalidOperationException("Marca interna inválida.");
+
+            const string sql = """
+                UPDATE dbo.CONV_MENSAJES
+                SET MarcaInterna = @Marca
+                WHERE IdMensaje = @IdMensaje AND IdConversacion = @IdConversacion;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdMensaje", idMensaje);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            cmd.Parameters.AddWithValue("@Marca", normalizada.Length == 0 ? DBNull.Value : normalizada);
+            await cmd.ExecuteNonQueryAsync(token);
+
+            return true;
+        }, "No se pudo actualizar la marca interna del mensaje.", ct);
 
     public Task<ConversacionMessageResultDto> SendReactionAsync(ConversacionReaccionRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SendReaction", async token =>
@@ -3219,6 +3282,7 @@ public sealed class ConversacionesService(
                 {
                     await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
                     await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                    await TryAutoReplyOutOfHoursAsync(conversationId, token);
                 }
                 processed++;
             }
@@ -5945,11 +6009,100 @@ public sealed class ConversacionesService(
                 IdConversacion = id,
                 CodigoEstado = closedState,
                 NombreTecnicoAccion = "AlfaCore",
-                UsuarioAccion = "AlfaCore",
-                SistemaAccion = "AlfaCore",
+                UsuarioAccion = null,
+                SistemaAccion = null,
                 Observaciones = eventText
             }, ct);
         }
+    }
+
+    /// <summary>
+    /// Automatizaciones "Nivel 0": si el módulo está contratado, está activo en la configuración
+    /// y el mensaje entrante llegó fuera del horario configurado, manda una respuesta fija —
+    /// sin IA, sin aprobación de operador. No repite el mensaje mientras la última salida de la
+    /// conversación ya haya sido esta misma respuesta automática (evita spamear si el cliente
+    /// sigue escribiendo fuera de horario). Nunca bloquea el procesamiento del webhook si falla.
+    /// </summary>
+    private async Task TryAutoReplyOutOfHoursAsync(long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+                return;
+
+            var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+            if (!config.IsConfigured)
+                return;
+
+            if (!IsOutsideBusinessHours(config, BusinessNow()))
+                return;
+
+            if (await HasPendingAutoReplyAsync(idConversacion, ct).ConfigureAwait(false))
+                return;
+
+            await SendMessageAsync(new ConversacionSendMessageRequest
+            {
+                IdConversacion = idConversacion,
+                Texto = config.MensajeFueraHorario,
+                MessageType = "TEXT",
+                UsuarioAccion = "AlfaCore",
+                SistemaAccion = "AUTOMATIZACION"
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones",
+                "AutoReplyOutOfHours",
+                ex,
+                "No se pudo enviar la respuesta automática fuera de horario.",
+                new { idConversacion },
+                AppEventSeverity.Warning,
+                ct).ConfigureAwait(false);
+        }
+    }
+
+    private static bool IsOutsideBusinessHours(ConversacionAutomatizacionesConfigDto config, DateTime now)
+    {
+        var atiendeHoy = now.DayOfWeek switch
+        {
+            DayOfWeek.Monday => config.Lunes,
+            DayOfWeek.Tuesday => config.Martes,
+            DayOfWeek.Wednesday => config.Miercoles,
+            DayOfWeek.Thursday => config.Jueves,
+            DayOfWeek.Friday => config.Viernes,
+            DayOfWeek.Saturday => config.Sabado,
+            DayOfWeek.Sunday => config.Domingo,
+            _ => false
+        };
+
+        if (!atiendeHoy)
+            return true;
+
+        if (!TimeSpan.TryParse(config.HoraDesde, out var desde) || !TimeSpan.TryParse(config.HoraHasta, out var hasta))
+            return false;
+
+        var horaActual = now.TimeOfDay;
+        return desde <= hasta
+            ? horaActual < desde || horaActual > hasta
+            : horaActual < desde && horaActual > hasta;
+    }
+
+    private async Task<bool> HasPendingAutoReplyAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(SistemaAutor, '')
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @IdConversacion AND Direction = N'SALIENTE'
+            ORDER BY FechaHora DESC, IdMensaje DESC;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string sistemaAutor && string.Equals(sistemaAutor, "AUTOMATIZACION", StringComparison.OrdinalIgnoreCase);
     }
 
     private async Task<long> InsertMessageAsync(PendingMessageInsert message, CancellationToken ct)
@@ -6001,6 +6154,7 @@ public sealed class ConversacionesService(
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         var idTecnicoAutor = await ResolveTechnicianIdOrNullAsync(message.IdTecnicoAutor, ct);
+        var author = await ResolveLegacyMessageAuthorAsync(cn, message.UsuarioAutor, message.SistemaAutor, ct);
         cmd.Parameters.AddWithValue("@IdConversacion", message.ConversationId);
         cmd.Parameters.AddWithValue("@TelefonoWhatsApp", DbNullable(message.Phone));
         cmd.Parameters.AddWithValue("@WhatsAppMessageId", DbNullable(message.WhatsAppMessageId));
@@ -6013,11 +6167,41 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@Texto", DbNullable(message.Text));
         cmd.Parameters.AddWithValue("@PayloadJson", DbNullable(message.PayloadJson));
         cmd.Parameters.AddWithValue("@FechaHora", message.FechaHora);
-        cmd.Parameters.AddWithValue("@UsuarioAutor", DbNullable(message.UsuarioAutor));
-        cmd.Parameters.AddWithValue("@SistemaAutor", DbNullable(message.SistemaAutor));
+        cmd.Parameters.AddWithValue("@UsuarioAutor", DbNullable(author.Usuario));
+        cmd.Parameters.AddWithValue("@SistemaAutor", DbNullable(author.Sistema));
         cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullablePreserve(idTecnicoAutor));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task<(string Usuario, string Sistema)> ResolveLegacyMessageAuthorAsync(
+        SqlConnection cn,
+        string? usuario,
+        string? sistema,
+        CancellationToken ct)
+    {
+        var normalizedUser = (usuario ?? string.Empty).Trim();
+        var normalizedSystem = (sistema ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalizedUser) || string.IsNullOrWhiteSpace(normalizedSystem))
+            return (string.Empty, string.Empty);
+
+        const string sql = """
+            SELECT TOP (1)
+                ISNULL(NOMBRE, N''),
+                ISNULL(SISTEMA, N'')
+            FROM dbo.TA_USUARIOS
+            WHERE UPPER(LTRIM(RTRIM(NOMBRE))) = UPPER(LTRIM(RTRIM(@Usuario)))
+              AND UPPER(LTRIM(RTRIM(SISTEMA))) = UPPER(LTRIM(RTRIM(@Sistema)));
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Usuario", normalizedUser);
+        cmd.Parameters.AddWithValue("@Sistema", normalizedSystem);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return (string.Empty, string.Empty);
+
+        return (GetString(rd, 0), GetString(rd, 1));
     }
 
     private async Task<long> GetExistingMessageIdByWhatsAppIdAsync(string whatsAppMessageId, CancellationToken ct)

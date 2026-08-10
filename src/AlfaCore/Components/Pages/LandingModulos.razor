@@ -1,0 +1,111 @@
+@page "/modulos"
+@layout AlfaCore.Components.Layout.PublicLayout
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject ICentralAdminService AdminService
+
+<PageTitle>Módulos | AlfaNet</PageTitle>
+<HeadContent>
+    <link rel="stylesheet" href="/css/landing.css" />
+    <meta name="description" content="Conocé todos los módulos de AlfaNet: Conversaciones, Tickets, AlfaKnowledge, Logística, Punto de Venta y más. Probalos gratis 30 días." />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Módulos de AlfaNet" />
+    <meta property="og:description" content="Conocé todos los módulos de AlfaNet y probalos gratis 30 días." />
+    <meta property="og:image" content="/logos/Logo.png" />
+</HeadContent>
+
+<section class="landing-hero landing-hero--index">
+    <div class="landing-hero__inner">
+        <a href="/modulos" class="landing-brand">
+            <img src="/logos/Logo.png" alt="AlfaNet" />
+            <span>AlfaNet</span>
+        </a>
+
+        <span class="landing-hero__badge"><i class="bi bi-grid-3x3-gap-fill"></i> Catálogo de módulos</span>
+        <h1>Armá tu AlfaNet a medida</h1>
+        <p class="landing-hero__desc">Cada módulo se prueba gratis 30 días, por separado. Elegí los que tu negocio necesita hoy y sumá el resto cuando quieras.</p>
+
+        <div class="landing-hero__actions">
+            <a href="/registrarme" class="btn btn--primary btn--lg">Empezar gratis</a>
+        </div>
+    </div>
+</section>
+
+<section class="landing-features">
+    <div class="landing-features__inner">
+        <div class="landing-modulos-grid">
+            @foreach (var modulo in LandingContenidoCatalogo.Todos.Where(m => !_suspendidos.Contains(m.Slug)))
+            {
+                <a href="@($"/landing/{modulo.Slug}")" class="landing-modulo-card">
+                    <span class="landing-modulo-card__icon"><i class="bi @modulo.Icono"></i></span>
+                    <strong>@modulo.Nombre</strong>
+                    <span class="landing-modulo-card__tagline">@modulo.Tagline</span>
+                    @if (modulo.Precio > 0)
+                    {
+                        <span class="landing-modulo-card__price">USD @modulo.Precio.ToString("0.##")/mes</span>
+                    }
+                    <span class="landing-modulo-card__link">Conocer más <i class="bi bi-arrow-right"></i></span>
+                </a>
+            }
+        </div>
+    </div>
+</section>
+
+<section class="landing-respaldo">
+    <div class="landing-respaldo__inner">
+        <h2>El respaldo de AlfaNet</h2>
+        <p class="landing-respaldo__lead">Más de 30 años trabajando con sistemas ERP y miles de clientes que ya confían en nosotros.</p>
+        <div class="landing-respaldo__grid">
+            <article class="landing-respaldo__item">
+                <span class="landing-respaldo__icon"><i class="bi bi-headset"></i></span>
+                <strong>Soporte incluido</strong>
+                <span>Resolvemos tus dudas sin costo extra, incluido en el importe mensual.</span>
+            </article>
+            <article class="landing-respaldo__item">
+                <span class="landing-respaldo__icon"><i class="bi bi-mortarboard"></i></span>
+                <strong>Capacitación incluida</strong>
+                <span>Capacitamos a tu equipo para que aproveche cada función desde el primer día.</span>
+            </article>
+            <article class="landing-respaldo__item">
+                <span class="landing-respaldo__icon"><i class="bi bi-rocket-takeoff"></i></span>
+                <strong>Puesta en marcha incluida</strong>
+                <span>Te acompañamos en la implementación inicial, sin cargos ocultos.</span>
+            </article>
+            <article class="landing-respaldo__item">
+                <span class="landing-respaldo__icon"><i class="bi bi-award"></i></span>
+                <strong>+30 años de trayectoria</strong>
+                <span>Décadas desarrollando sistemas ERP, con miles de clientes satisfechos.</span>
+            </article>
+        </div>
+    </div>
+</section>
+
+<section class="landing-cta">
+    <div class="landing-cta__inner">
+        <h2>¿No sabés por dónde arrancar?</h2>
+        <p>Creá tu cuenta gratis y probá los módulos que quieras — sin tarjeta, sin compromiso.</p>
+        <a href="/registrarme" class="btn btn--primary btn--lg">Registrarme gratis</a>
+    </div>
+</section>
+
+<footer class="landing-footer">
+    <span>© @DateTime.Now.Year AlfaNet — Soluciones Informáticas</span>
+    <a href="/login">Ya tengo cuenta</a>
+</footer>
+
+@code {
+    private HashSet<string> _suspendidos = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var estados = await AdminService.GetLandingEstadosAsync();
+            _suspendidos = estados.Where(e => !e.Activo).Select(e => e.Slug).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            _suspendidos = [];
+        }
+    }
+}

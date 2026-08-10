@@ -2482,16 +2482,16 @@
         outline: none !important;
     }
 
-    .conversations-page--odoo .message-actions__menu {
+    .conversations-page--odoo .message-actions__popout {
         position: absolute !important;
         top: 50% !important;
         display: flex !important;
-        flex-direction: row !important;
-        align-items: center !important;
-        gap: .28rem !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        gap: .3rem !important;
         padding: .24rem !important;
         border: 1px solid rgba(148, 163, 184, .2) !important;
-        border-radius: 999px !important;
+        border-radius: 14px !important;
         background: rgba(8, 20, 34, .96) !important;
         box-shadow: 0 10px 24px rgba(2, 8, 23, .38) !important;
         opacity: 0 !important;
@@ -2499,21 +2499,33 @@
         pointer-events: none !important;
         transform: translateY(-50%) scale(.94) !important;
         transition: opacity .14s ease, transform .14s ease, visibility .14s ease !important;
+    }
+
+    .conversations-page--odoo .message-actions__menu {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: .28rem !important;
         white-space: nowrap !important;
     }
 
-    .conversations-page--odoo .message-row--incoming .message-actions__menu,
-    .conversations-page--odoo .message-row--internal .message-actions__menu {
+    .conversations-page--odoo .message-actions__popout .anydesk-prompt {
+        margin: 0 !important;
+        flex-wrap: nowrap !important;
+    }
+
+    .conversations-page--odoo .message-row--incoming .message-actions__popout,
+    .conversations-page--odoo .message-row--internal .message-actions__popout {
         left: calc(100% + .3rem) !important;
         transform-origin: left center !important;
     }
 
-    .conversations-page--odoo .message-row--outgoing .message-actions__menu {
+    .conversations-page--odoo .message-row--outgoing .message-actions__popout {
         right: calc(100% + .3rem) !important;
         transform-origin: right center !important;
     }
 
-    .conversations-page--odoo .message-actions[open] .message-actions__menu {
+    .conversations-page--odoo .message-actions[open] .message-actions__popout {
         opacity: 1 !important;
         visibility: visible !important;
         pointer-events: auto !important;

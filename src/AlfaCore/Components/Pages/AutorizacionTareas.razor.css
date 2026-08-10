@@ -204,6 +204,43 @@
     gap: .65rem;
 }
 
+.auth-page .auth-tree-toolbar__search {
+    flex: 1 1 16rem;
+    align-items: center;
+    gap: .5rem;
+    padding: .5rem .75rem;
+    border-radius: .75rem;
+    border: 1px solid rgba(102, 171, 255, .16);
+    background: rgba(5, 16, 31, .55);
+    color: rgba(194, 211, 230, .6);
+}
+
+.auth-page .auth-tree-toolbar__search input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    outline: none;
+}
+
+.auth-page .auth-tree-toolbar__search input::placeholder {
+    color: rgba(194, 211, 230, .5);
+}
+
+.auth-page .auth-tree-toolbar__clear {
+    display: inline-flex;
+    border: none;
+    background: transparent;
+    color: rgba(194, 211, 230, .6);
+    cursor: pointer;
+    padding: 0;
+}
+
+.auth-page .auth-tree-toolbar__clear:hover {
+    color: #ffd080;
+}
+
 .auth-page .auth-tree-panel {
     min-height: 34rem;
     max-height: calc(100vh - 18rem);

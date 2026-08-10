@@ -15,5 +15,14 @@ public interface IConversacionesConfigService
     Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default);
     Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default);
     Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default);
+    /// <summary>
+    /// Igual que <see cref="SaveAlfaKnowledgeConfigAsync"/> pero escribe contra una base de un
+    /// cliente puntual en vez de la base activa de la sesión actual — para cuando un superadmin
+    /// aprovisiona AlfaKnowledge para un cliente distinto al que tiene abierto (ver
+    /// <c>CentralAdminService.ActivarModuloAsync</c>).
+    /// </summary>
+    Task SaveAlfaKnowledgeConfigForConnectionAsync(string connectionString, ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default);
     Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default);
+    Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(CancellationToken ct = default);
+    Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, CancellationToken ct = default);
 }

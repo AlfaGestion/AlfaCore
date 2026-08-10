@@ -599,6 +599,30 @@ html[data-theme="light"] .conversations-page--odoo .conversation-badge--state {
     color: #047857 !important;
 }
 
+html[data-theme="light"] .conversations-page--odoo .conversation-badge--abonado {
+    background: #ecfdf5 !important;
+    border-color: rgba(5, 150, 105, .26) !important;
+    color: #047857 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-badge--suspendido {
+    background: #fff7ed !important;
+    border-color: rgba(234, 88, 12, .28) !important;
+    color: #9a3412 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-badge--sin-cuenta {
+    background: #e0f2fe !important;
+    border-color: rgba(2, 132, 199, .28) !important;
+    color: #075985 !important;
+}
+
+html[data-theme="light"] .conversations-page--odoo .conversation-badge--sin-identificar {
+    background: #fdf4ff !important;
+    border-color: rgba(192, 38, 211, .28) !important;
+    color: #86198f !important;
+}
+
 html[data-theme="light"] .conversations-module-actions .conversations-context-button,
 html[data-theme="light"] .conversations-module-actions .conversations-context-button.btn--ghost {
     background: #ffffff !important;
@@ -660,6 +684,23 @@ html[data-theme="light"] .conversations-window-banner {
     border-color: rgba(217, 119, 6, .32) !important;
     color: #78350f !important;
     box-shadow: inset 0 -1px 0 rgba(217, 119, 6, .18) !important;
+}
+
+html[data-theme="light"] .conversations-message-search {
+    background: #f8fafc !important;
+    border-color: rgba(15, 23, 42, .14) !important;
+}
+
+html[data-theme="light"] .conversations-message-search input {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .conversations-message-search input::placeholder {
+    color: rgba(15, 23, 42, .45) !important;
+}
+
+html[data-theme="light"] .conversations-message-search__count {
+    color: rgba(15, 23, 42, .6) !important;
 }
 
 html[data-theme="light"] .conversations-ticket-selection {

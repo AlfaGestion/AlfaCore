@@ -11,6 +11,8 @@ public sealed class PublicRegistrationRequest
     public string Iva { get; set; } = string.Empty;
     public string RecaptchaToken { get; set; } = string.Empty;
     public string PublicBaseUrl { get; set; } = string.Empty;
+    /// <summary>Slug del módulo elegido en /landing/{slug} (ver LandingContenidoCatalogo) — si viene cargado, la prueba de ese módulo se activa sola al confirmar, sin preguntar de nuevo.</summary>
+    public string? ModuloSlug { get; set; }
 }
 
 public sealed class PublicRegistrationResult
@@ -29,6 +31,14 @@ public sealed class PublicVerificationResult
     public string Message { get; init; } = string.Empty;
     public string IncidentId { get; init; } = string.Empty;
     public string DatabaseName { get; init; } = string.Empty;
+    /// <summary>Nombre del módulo activado automáticamente por venir de una landing (null si no aplica o si la activación falló) — Verify.razor usa esto para saltear el selector manual.</summary>
+    public string? ModuloPreactivado { get; init; }
+}
+
+public sealed class PublicTrialResult
+{
+    public bool Success { get; init; }
+    public string Message { get; init; } = string.Empty;
 }
 
 public sealed class PublicProvisioningRequest

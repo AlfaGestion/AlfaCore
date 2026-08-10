@@ -12,6 +12,7 @@ public sealed class SessionService(IConexionClienteService conexionClienteServic
 
     public string GetConnectionString() => conexionClienteService.GetConnectionString();
     public SessionDto? GetActiveSession() => conexionClienteService.GetActiveSession();
+    public void SetWebhookOverride(SessionDto session) => conexionClienteService.SetWebhookOverride(session);
     public IReadOnlyList<SessionDto> GetAllSessions() => conexionClienteService.GetAllSessions();
     public void SwitchSession(Guid id) => conexionClienteService.SwitchSession(id);
     public Guid AddSession(string nombre, string servidor, string baseDatos, string usuario, string password)

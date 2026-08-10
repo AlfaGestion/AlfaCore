@@ -1,0 +1,212 @@
+@page "/admin/solicitudes"
+@page "/{idweb}/{idbase:int}/admin/solicitudes"
+@layout AlfaCore.Components.Layout.MainLayout
+@using AlfaCore.Models
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ICentralAdminService AdminSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+
+<PageTitle>Solicitudes de módulos | AlfaNet</PageTitle>
+
+<div class="panel-card">
+    <div class="panel-card__header">
+        <div>
+            <h1 class="panel-card__title">Solicitudes pendientes</h1>
+            <p class="panel-card__subtitle">Módulos que un cliente pidió y todavía no se aprobaron ni rechazaron — se cargan desde el panel Cliente → Módulos con "Solicitar".</p>
+        </div>
+        <button type="button" class="btn btn-outline-light" @onclick="GoHome">Inicio</button>
+    </div>
+
+    @if (_loading)
+    {
+        <p>Cargando solicitudes...</p>
+    }
+    else if (!IsSuperAdmin)
+    {
+        <div class="editor-msg editor-msg--warning">
+            <strong>Acceso restringido</strong>
+            <p>Solo los superadmin pueden ver esta sección.</p>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="editor-msg editor-msg--success">
+                <strong>Listo</strong>
+                <p>@_message</p>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="editor-msg editor-msg--warning">
+                <strong>No se pudo completar la operación</strong>
+                <p>@_error</p>
+            </div>
+        }
+
+        @if (_items.Count == 0)
+        {
+            <div class="shell-empty-state">
+                <strong>No hay solicitudes pendientes.</strong>
+                <span>Todo lo que se pide desde Cliente → Módulos aparece acá hasta que se aprueba o se rechaza.</span>
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive admin-table-wrap">
+                <table class="table table-sm align-middle admin-table" data-sticky-list-header>
+                    <thead>
+                        <tr>
+                            <th>Cliente</th>
+                            <th>Módulo</th>
+                            <th>Precio</th>
+                            <th>Pedido</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _items)
+                        {
+                            <tr>
+                                <td>@item.ClienteNombre <span class="shell-empty-state__eyebrow">(@item.IdCliente)</span></td>
+                                <td>@item.Nombre</td>
+                                <td>@item.Precio.ToString("C2")</td>
+                                <td>
+                                    @if (item.SolicitadoUtc is not null)
+                                    {
+                                        @item.SolicitadoUtc.Value.ToString("dd/MM/yyyy HH:mm")
+                                        @if (!string.IsNullOrWhiteSpace(item.SolicitadoPor))
+                                        {
+                                            <span> — @item.SolicitadoPor</span>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <span>—</span>
+                                    }
+                                </td>
+                                <td class="text-end">
+                                    <div class="d-inline-flex gap-2">
+                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => RechazarAsync(item)">Rechazar</button>
+                                        <button type="button" class="btn btn-sm btn-primary" @onclick="() => AprobarAsync(item)">Aprobar</button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private readonly List<SolicitudModuloDto> _items = [];
+    private bool _loading = true;
+    private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
+    private string _message = string.Empty;
+    private string _error = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsSuperAdmin)
+        {
+            _loading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    private void GoHome()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/admin"));
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _items.Clear();
+            _items.AddRange(await AdminSvc.GetSolicitudesPendientesAsync());
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task AprobarAsync(SolicitudModuloDto item)
+    {
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            await AdminSvc.ActivarModuloAsync(new ActivarModuloRequest
+            {
+                IdCliente = item.IdCliente,
+                IdModulo = item.IdModulo,
+                ActivadoPor = AppUserSession.CurrentUser?.UserName ?? string.Empty
+            });
+
+            await LoadAsync();
+            _message = $"Módulo {item.Nombre} aprobado y activado para {item.ClienteNombre}.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+
+    private async Task RechazarAsync(SolicitudModuloDto item)
+    {
+        if (!await ConfirmAsync($"¿Rechazar la solicitud de {item.Nombre} para {item.ClienteNombre}?"))
+            return;
+
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            await AdminSvc.RechazarModuloAsync(new RechazarModuloRequest
+            {
+                IdCliente = item.IdCliente,
+                IdModulo = item.IdModulo,
+                DecididoPor = AppUserSession.CurrentUser?.UserName ?? string.Empty
+            });
+
+            await LoadAsync();
+            _message = $"Solicitud de {item.Nombre} rechazada.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+
+    private async Task<bool> ConfirmAsync(string message)
+    {
+        try
+        {
+            return await JS.InvokeAsync<bool>("confirm", message);
+        }
+        catch
+        {
+            return true;
+        }
+    }
+}

@@ -1,7 +1,6 @@
 .admin-client-row {
     cursor: pointer;
 }
-
 .admin-client-row:hover {
     background: rgba(34, 211, 238, 0.06);
 }
@@ -86,42 +85,4 @@
 .admin-sync-field {
     display: grid;
     gap: 0.45rem;
-}
-
-.admin-table {
-    color: #dbeafe;
-}
-
-.admin-table thead th {
-    color: #f5f8ff;
-    border-bottom-color: rgba(148, 163, 184, 0.18);
-    white-space: nowrap;
-}
-
-.admin-table tbody td {
-    border-top-color: rgba(148, 163, 184, 0.12);
-}
-
-.admin-table-wrap {
-    max-height: 520px;
-    overflow: auto;
-}
-
-.admin-table-wrap::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-}
-
-.admin-table-wrap::-webkit-scrollbar-track {
-    background: rgba(15, 23, 42, 0.5);
-    border-radius: 999px;
-}
-
-.admin-table-wrap::-webkit-scrollbar-thumb {
-    background: rgba(148, 163, 184, 0.28);
-    border-radius: 999px;
-}
-
-.admin-table-wrap::-webkit-scrollbar-thumb:hover {
-    background: rgba(148, 163, 184, 0.42);
 }
