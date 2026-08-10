@@ -446,7 +446,9 @@
     color: rgba(255, 255, 255, 0.82);
 }
 
-.landing-cta .btn--primary {
+.landing-cta .btn--primary,
+html[data-theme="light"] .landing-cta .btn--primary,
+html[data-theme="dark"] .landing-cta .btn--primary {
     background: #ffffff;
     color: #0b74c9;
 }
