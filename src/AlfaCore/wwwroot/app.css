@@ -5121,6 +5121,26 @@ html[data-theme="light"] .menu__search-result:hover {
     color: #7dd3fc;
 }
 
+.conversation-badge--abonado {
+    background: rgba(34, 197, 94, 0.16);
+    color: #86efac;
+}
+
+.conversation-badge--suspendido {
+    background: rgba(251, 146, 60, 0.16);
+    color: #fdba74;
+}
+
+.conversation-badge--sin-cuenta {
+    background: rgba(56, 189, 248, 0.14);
+    color: #7dd3fc;
+}
+
+.conversation-badge--sin-identificar {
+    background: rgba(217, 70, 239, 0.14);
+    color: #f0abfc;
+}
+
 .conversations-chat__identity {
     display: grid;
     gap: .18rem;

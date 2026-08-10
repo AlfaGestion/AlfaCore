@@ -1096,6 +1096,30 @@
                                     @_selectedConversation.TecnicoNombre
                                 </span>
                             }
+                            @if (!string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo))
+                            {
+                                @if (!string.IsNullOrWhiteSpace(_selectedConversation.ClasificacionDescripcion))
+                                {
+                                    <span class="conversation-badge conversation-badge--state" title="Clasificación del cliente">
+                                        <i class="bi bi-tag-fill"></i> @_selectedConversation.ClasificacionDescripcion
+                                    </span>
+                                }
+                                <span class="conversation-badge @GetAbonoBadgeClass(_selectedConversation.EstadoAbono)" title="Estado de abono al mantenimiento">
+                                    <i class="bi @GetAbonoBadgeIcon(_selectedConversation.EstadoAbono)"></i> @GetAbonoBadgeLabel(_selectedConversation.EstadoAbono)
+                                </span>
+                            }
+                            else if (_selectedConversation.IdContacto.HasValue)
+                            {
+                                <span class="conversation-badge conversation-badge--sin-cuenta" title="Contacto guardado, sin cuenta de cliente asociada">
+                                    <i class="bi bi-person-vcard"></i> Contacto conocido, sin cuenta
+                                </span>
+                            }
+                            else
+                            {
+                                <span class="conversation-badge conversation-badge--sin-identificar" title="No está en Clientes ni en Contactos">
+                                    <i class="bi bi-person-fill-exclamation"></i> Sin identificar
+                                </span>
+                            }
                             </div>
                         </div>
                         <div class="conversations-mobile-chat-actions mobile-only" @onclick:stopPropagation>
@@ -4196,6 +4220,27 @@
         => string.IsNullOrWhiteSpace(item.IdTecnico)
             ? string.Empty
             : $"--technician-color:{TechnicianColorPalette.Resolve(item.IdTecnico, item.TecnicoNombre)};";
+
+    private static string GetAbonoBadgeClass(string estadoAbono) => estadoAbono switch
+    {
+        ConversacionAbonoEstados.Abonado => "conversation-badge--abonado",
+        ConversacionAbonoEstados.Suspendido => "conversation-badge--suspendido",
+        _ => string.Empty
+    };
+
+    private static string GetAbonoBadgeIcon(string estadoAbono) => estadoAbono switch
+    {
+        ConversacionAbonoEstados.Abonado => "bi-patch-check-fill",
+        ConversacionAbonoEstados.Suspendido => "bi-exclamation-triangle-fill",
+        _ => "bi-dash-circle"
+    };
+
+    private static string GetAbonoBadgeLabel(string estadoAbono) => estadoAbono switch
+    {
+        ConversacionAbonoEstados.Abonado => "Abonado",
+        ConversacionAbonoEstados.Suspendido => "Suspendido",
+        _ => "Sin abono"
+    };
 
     private void ApplyCurrentUserToFilters(ConversacionesInboxFilters filters)
     {

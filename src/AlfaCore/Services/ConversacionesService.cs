@@ -1410,7 +1410,9 @@ public sealed class ConversacionesService(
                     c.FechaHoraPerfilExterno,
                     ISNULL(mlMeta.QuestionStatus, N''),
                     ISNULL(mlMeta.ItemStatus, N''),
-                    ISNULL(mlMeta.ItemPermalink, N'')
+                    ISNULL(mlMeta.ItemPermalink, N''),
+                    ISNULL(clienteClasificacion.Descripcion, N''),
+                    clienteAbono.Estado
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
@@ -1478,6 +1480,28 @@ public sealed class ConversacionesService(
                     WHERE UPPER(LTRIM(RTRIM(obs.Codigo))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
                       AND ISNULL(obs.Sucursal, 0) = 0
                 ) cuentaObs
+                OUTER APPLY (
+                    SELECT TOP (1) ISNULL(cls.Descripcion, '') AS Descripcion
+                    FROM dbo.VT_CLIENTES cliCls
+                    LEFT JOIN dbo.TA_CLASIFICACIONES cls ON cls.Codigo = cliCls.Clasificacion
+                    WHERE LTRIM(RTRIM(clienteContexto.Codigo)) <> ''
+                      AND UPPER(LTRIM(RTRIM(cliCls.CODIGO))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
+                ) clienteClasificacion
+                OUTER APPLY (
+                    -- Abonado al mantenimiento: cualquier fila de la cuenta en MA_CUENTAS_AUTOCPTES (sin
+                    -- filtrar por Concepto), la más reciente por FechaUltMov si hay varias (distintas
+                    -- sucursales/conceptos). Sin fila = NULL = "sin abono" (se resuelve en C#).
+                    SELECT TOP (1)
+                        CASE
+                            WHEN ISNULL(auto.Activo, 0) = 0 THEN 'Suspendido'
+                            WHEN auto.FechaUltMov IS NULL OR auto.FechaUltMov < DATEADD(MONTH, -3, GETDATE()) THEN 'Suspendido'
+                            ELSE 'Abonado'
+                        END AS Estado
+                    FROM dbo.MA_CUENTAS_AUTOCPTES auto
+                    WHERE LTRIM(RTRIM(clienteContexto.Codigo)) <> ''
+                      AND UPPER(LTRIM(RTRIM(auto.Cuenta))) = UPPER(LTRIM(RTRIM(clienteContexto.Codigo)))
+                    ORDER BY auto.FechaUltMov DESC
+                ) clienteAbono
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -1562,7 +1586,9 @@ public sealed class ConversacionesService(
                 FechaHoraPerfilExterno = rd.IsDBNull(35) ? null : rd.GetDateTime(35),
                 MercadoLibreQuestionStatus = GetString(rd, 36),
                 MercadoLibreItemStatus = GetString(rd, 37),
-                MercadoLibreItemPermalink = GetString(rd, 38)
+                MercadoLibreItemPermalink = GetString(rd, 38),
+                ClasificacionDescripcion = GetString(rd, 39),
+                EstadoAbono = rd.IsDBNull(40) ? ConversacionAbonoEstados.SinAbono : GetString(rd, 40)
             };
 
             ApplyWhatsAppWindow(item);
