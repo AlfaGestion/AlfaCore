@@ -144,30 +144,33 @@ window.conversacionesUi = {
     _lastSoundError: '',
     _soundInitialized: false,
 
-    // El disparador usa el atributo nativo `popovertarget` (sin round-trip a Blazor para abrir/cerrar).
-    // Este handler se cablea con un `onclick` HTML plano en el propio botón (no interop de Blazor),
-    // así corre siempre en el mismo click nativo que abre el popover, sin depender de que un bind
-    // previo (p.ej. en OnAfterRenderAsync) se haya registrado a tiempo.
-    positionModeMenu: function (triggerElement) {
-        const menu = document.getElementById('conversations-mode-menu');
-        if (!menu || !triggerElement) return;
-        const rect = triggerElement.getBoundingClientRect();
-        const menuWidth = menu.offsetWidth || 178;
-        const top = rect.bottom + 6;
-        const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
-        menu.style.top = top + 'px';
-        menu.style.left = left + 'px';
+    // Los disparadores usan el atributo nativo `popovertarget` (sin round-trip a Blazor para abrir/
+    // cerrar). Posicionar en el click (onclick plano en el botón) corría antes de que el navegador
+    // terminara de abrir el popover en algunos casos, dejándolo pegado a top:0/left:0 (el inset:0
+    // por default de [popover] del user-agent). Enganchar el reposicionamiento al evento nativo
+    // `toggle` del propio popover es la forma correcta: se dispara justo cuando pasa a "open", con
+    // el popover ya en el top layer y sus medidas ya resueltas.
+    _bindPopoverPosition: function (popoverId, triggerSelector) {
+        const menu = document.getElementById(popoverId);
+        const trigger = document.querySelector(triggerSelector);
+        if (!menu || !trigger || menu.dataset.positionBound === '1') return;
+        menu.dataset.positionBound = '1';
+        menu.addEventListener('toggle', function (event) {
+            if (event.newState !== 'open') return;
+            const rect = trigger.getBoundingClientRect();
+            const menuWidth = menu.offsetWidth || 178;
+            const top = rect.bottom + 6;
+            const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+            menu.style.top = top + 'px';
+            menu.style.left = left + 'px';
+        });
     },
 
-    positionCanalMenu: function (triggerElement) {
-        const menu = document.getElementById('conversations-canal-menu');
-        if (!menu || !triggerElement) return;
-        const rect = triggerElement.getBoundingClientRect();
-        const menuWidth = menu.offsetWidth || 178;
-        const top = rect.bottom + 6;
-        const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
-        menu.style.top = top + 'px';
-        menu.style.left = left + 'px';
+    bindFilterMenusPositioning: function () {
+        // El selector excluye los botones internos de opción (que también apuntan a `popovertarget`
+        // para cerrar el menú con popovertargetaction="hide") y toma solo el botón disparador real.
+        this._bindPopoverPosition('conversations-mode-menu', '[popovertarget="conversations-mode-menu"]:not([popovertargetaction])');
+        this._bindPopoverPosition('conversations-canal-menu', '[popovertarget="conversations-canal-menu"]:not([popovertargetaction])');
     },
 
     bindColumnResizers: function (rootId) {

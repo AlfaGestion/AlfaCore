@@ -322,7 +322,6 @@
                 <div class="conversations-mode-select">
                     <button type="button"
                             popovertarget="conversations-canal-menu"
-                            onclick="conversacionesUi.positionCanalMenu(this)"
                             class="conversations-filter-pill conversations-filter-pill--dropdown @(IsSocialCanalActive ? "is-active" : string.Empty)"
                             aria-haspopup="listbox"
                             aria-label="Filtro de mensajes">
@@ -396,7 +395,7 @@
                 <button type="button" class="btn btn--ghost btn--sm conversations-message-search-button @(_showMessageSearch ? "is-active" : string.Empty)" @onclick="ToggleMessageSearchAsync" disabled="@(_selectedConversation is null)" title="Buscar en esta conversación">
                     <i class="bi bi-search"></i>
                 </button>
-                <button type="button" class="btn btn--ghost btn--sm @(EsColaEspera ? "is-active" : string.Empty)" @onclick="ToggleColaEsperaAsync" title="Ordenar por tiempo de espera y prioridad, en vez de por actividad reciente">
+                <button type="button" class="btn btn--ghost btn--sm conversations-wait-time-button @(EsColaEspera ? "is-active" : string.Empty)" @onclick="ToggleColaEsperaAsync" title="Ordenar por tiempo de espera y prioridad, en vez de por actividad reciente">
                     <i class="bi bi-hourglass-split"></i>
                     <span>Tiempo de espera</span>
                 </button>
@@ -405,7 +404,6 @@
             <div class="conversations-mode-select">
                 <button type="button"
                         popovertarget="conversations-mode-menu"
-                        onclick="conversacionesUi.positionModeMenu(this)"
                         class="conversations-filter-pill conversations-filter-pill--dropdown"
                         aria-haspopup="listbox"
                         aria-label="Filtro de conversaciones">
@@ -3681,6 +3679,7 @@
             try
             {
                 await JS.InvokeVoidAsync("conversacionesUi.bindColumnResizers", "conversations-page");
+                await JS.InvokeVoidAsync("conversacionesUi.bindFilterMenusPositioning");
                 await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
                 await UpdateSoundDiagnosticsAsync();
             }
