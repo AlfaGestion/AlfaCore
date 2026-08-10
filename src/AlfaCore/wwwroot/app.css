@@ -6576,6 +6576,12 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     color: #fff;
 }
 
+.conversations-module-actions .conversations-message-search-button.is-active {
+    background: rgba(250, 204, 21, .28);
+    border-color: rgba(250, 204, 21, .6);
+    color: #fff;
+}
+
 .conversations-anydesk-wrap {
     position: relative;
     display: inline-flex;
@@ -6932,6 +6938,55 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     font-weight: 800;
     flex: 0 0 auto;
     animation: support-slide-up-in .18s ease-out both;
+}
+
+.conversations-message-search {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    min-height: 30px;
+    padding: .4rem .75rem;
+    background: rgba(15, 23, 42, .55);
+    border-bottom: 1px solid rgba(148, 163, 184, .18);
+    flex: 0 0 auto;
+}
+
+.conversations-message-search > i.bi-search {
+    color: rgba(203, 213, 225, .6);
+}
+
+.conversations-message-search input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    color: var(--color-text);
+    font: inherit;
+    outline: none;
+}
+
+.conversations-message-search input::placeholder {
+    color: rgba(203, 213, 225, .5);
+}
+
+.conversations-message-search__count {
+    white-space: nowrap;
+    font-size: .78rem;
+    color: rgba(203, 213, 225, .7);
+}
+
+.message-search-mark {
+    background: rgba(250, 204, 21, .35);
+    color: inherit;
+    border-radius: .2rem;
+    padding: 0 .1rem;
+}
+
+.message-search-mark--active {
+    background: rgba(250, 204, 21, .85);
+    color: #1e1b0f;
 }
 
 .conversations-page--odoo .conversations-chat__header .panel-card__title {

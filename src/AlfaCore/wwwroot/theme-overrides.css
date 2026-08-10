@@ -686,6 +686,23 @@ html[data-theme="light"] .conversations-window-banner {
     box-shadow: inset 0 -1px 0 rgba(217, 119, 6, .18) !important;
 }
 
+html[data-theme="light"] .conversations-message-search {
+    background: #f8fafc !important;
+    border-color: rgba(15, 23, 42, .14) !important;
+}
+
+html[data-theme="light"] .conversations-message-search input {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] .conversations-message-search input::placeholder {
+    color: rgba(15, 23, 42, .45) !important;
+}
+
+html[data-theme="light"] .conversations-message-search__count {
+    color: rgba(15, 23, 42, .6) !important;
+}
+
 html[data-theme="light"] .conversations-ticket-selection {
     background: #ccfbf1 !important;
     border-color: rgba(13, 148, 136, .28) !important;

@@ -370,6 +370,9 @@
                 <button type="button" class="btn btn--ghost btn--sm conversations-ai-suggestion-button @(_showAiSuggestionPanel ? "is-active" : string.Empty)" @onclick="ToggleAiSuggestionPanel" disabled="@(_selectedConversation is null)" title="Sugerencia IA">
                     <i class="bi bi-stars"></i>
                 </button>
+                <button type="button" class="btn btn--ghost btn--sm conversations-message-search-button @(_showMessageSearch ? "is-active" : string.Empty)" @onclick="ToggleMessageSearchAsync" disabled="@(_selectedConversation is null)" title="Buscar en esta conversación">
+                    <i class="bi bi-search"></i>
+                </button>
             </div>
 
             <div class="conversations-mode-select">
@@ -1262,6 +1265,34 @@
                             }
                         </div>
                     </header>
+
+                    @if (_showMessageSearch)
+                    {
+                        <div class="conversations-message-search">
+                            <i class="bi bi-search"></i>
+                            <input @ref="_messageSearchInput"
+                                   type="search"
+                                   placeholder="Buscar en esta conversación..."
+                                   value="@_messageSearchText"
+                                   @oninput="OnMessageSearchInputAsync"
+                                   @onkeydown="OnMessageSearchKeyDownAsync" />
+                            @if (!string.IsNullOrWhiteSpace(_messageSearchText))
+                            {
+                                <span class="conversations-message-search__count">
+                                    @(_messageSearchMatchIds.Count == 0 ? "Sin resultados" : $"{_messageSearchActiveIndex + 1} de {_messageSearchMatchIds.Count}")
+                                </span>
+                            }
+                            <button type="button" class="btn btn--ghost btn--sm" title="Anterior" @onclick="GoToPreviousMessageMatchAsync" disabled="@(_messageSearchMatchIds.Count == 0)">
+                                <i class="bi bi-chevron-up"></i>
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" title="Siguiente" @onclick="GoToNextMessageMatchAsync" disabled="@(_messageSearchMatchIds.Count == 0)">
+                                <i class="bi bi-chevron-down"></i>
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" title="Cerrar búsqueda" @onclick="CloseMessageSearch">
+                                <i class="bi bi-x-lg"></i>
+                            </button>
+                        </div>
+                    }
 
                     @if (_conversationError is not null)
                     {
@@ -3254,6 +3285,12 @@
     private ConversacionMensajeDto? _quotedMessage;
     private long? _quotedHighlightMessageId;
     private int _quotedHighlightVersion;
+    private bool _showMessageSearch;
+    private string _messageSearchText = string.Empty;
+    private List<long> _messageSearchMatchIds = [];
+    private int _messageSearchActiveIndex = -1;
+    private ElementReference _messageSearchInput;
+    private bool _focusMessageSearchAfterRender;
     private long _nextOptimisticMessageId = -1;
     private ConversacionAdjuntoDto? _previewAttachment;
     private PendingAttachment? _previewPendingAttachment;
@@ -3775,6 +3812,18 @@
             try
             {
                 await _conversationNameInput.FocusAsync(preventScroll: true);
+            }
+            catch
+            {
+            }
+        }
+
+        if (_focusMessageSearchAfterRender)
+        {
+            _focusMessageSearchAfterRender = false;
+            try
+            {
+                await _messageSearchInput.FocusAsync();
             }
             catch
             {
@@ -4319,6 +4368,7 @@
         _showTemplatePanel = false;
         _showStatusMenu = false;
         _showMobileChatActions = false;
+        CloseMessageSearch();
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
 
@@ -7154,6 +7204,113 @@
         }
     }
 
+    private long? ActiveMessageSearchId
+        => _messageSearchActiveIndex >= 0 && _messageSearchActiveIndex < _messageSearchMatchIds.Count
+            ? _messageSearchMatchIds[_messageSearchActiveIndex]
+            : null;
+
+    private async Task ToggleMessageSearchAsync()
+    {
+        _showMessageSearch = !_showMessageSearch;
+
+        if (!_showMessageSearch)
+        {
+            CloseMessageSearch();
+            return;
+        }
+
+        _focusMessageSearchAfterRender = true;
+        await Task.CompletedTask;
+    }
+
+    private void CloseMessageSearch()
+    {
+        _showMessageSearch = false;
+        _messageSearchText = string.Empty;
+        _messageSearchMatchIds = [];
+        _messageSearchActiveIndex = -1;
+    }
+
+    private async Task OnMessageSearchInputAsync(ChangeEventArgs args)
+    {
+        _messageSearchText = Convert.ToString(args.Value) ?? string.Empty;
+        RecomputeMessageSearchMatches();
+
+        if (_messageSearchMatchIds.Count > 0)
+        {
+            _messageSearchActiveIndex = 0;
+            await ScrollToActiveMessageMatchAsync();
+        }
+    }
+
+    private async Task OnMessageSearchKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (args.ShiftKey)
+            await GoToPreviousMessageMatchAsync();
+        else
+            await GoToNextMessageMatchAsync();
+    }
+
+    /// <summary>
+    /// Busca solo entre los mensajes ya cargados en el hilo (no dispara "Leer más" automáticamente
+    /// si el mensaje buscado está en historial todavía no traído).
+    /// </summary>
+    private void RecomputeMessageSearchMatches()
+    {
+        var term = _messageSearchText.Trim();
+        if (term.Length == 0)
+        {
+            _messageSearchMatchIds = [];
+            _messageSearchActiveIndex = -1;
+            return;
+        }
+
+        _messageSearchMatchIds = VisibleMessages
+            .Where(m => !IsInternalEventMessage(m) && m.Texto.Contains(term, StringComparison.OrdinalIgnoreCase))
+            .Select(m => m.IdMensaje)
+            .ToList();
+
+        if (_messageSearchActiveIndex >= _messageSearchMatchIds.Count)
+            _messageSearchActiveIndex = _messageSearchMatchIds.Count > 0 ? 0 : -1;
+    }
+
+    private async Task GoToNextMessageMatchAsync()
+    {
+        if (_messageSearchMatchIds.Count == 0)
+            return;
+
+        _messageSearchActiveIndex = (_messageSearchActiveIndex + 1) % _messageSearchMatchIds.Count;
+        await ScrollToActiveMessageMatchAsync();
+    }
+
+    private async Task GoToPreviousMessageMatchAsync()
+    {
+        if (_messageSearchMatchIds.Count == 0)
+            return;
+
+        _messageSearchActiveIndex = _messageSearchActiveIndex <= 0
+            ? _messageSearchMatchIds.Count - 1
+            : _messageSearchActiveIndex - 1;
+        await ScrollToActiveMessageMatchAsync();
+    }
+
+    private async Task ScrollToActiveMessageMatchAsync()
+    {
+        if (ActiveMessageSearchId is not { } idMensaje)
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("conversacionesUi.scrollToMessage", GetMessageDomId(idMensaje));
+        }
+        catch
+        {
+        }
+    }
+
     private async Task RequestAiSuggestionAsync(
         string? instruction = null,
         IReadOnlyList<AlfaKnowledgeAssistantMessage>? assistantHistory = null)
@@ -9613,15 +9770,16 @@
         @"\b\d{3} \d{3} \d{3,4}\b",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
-    private static MarkupString RenderMessageText(ConversacionMensajeDto message)
-        => new(LinkifyMessageText(GetMessageDisplayText(message)));
+    private MarkupString RenderMessageText(ConversacionMensajeDto message)
+        => new(LinkifyMessageText(GetMessageDisplayText(message), _messageSearchText, message.IdMensaje == ActiveMessageSearchId));
 
-    private static string LinkifyMessageText(string? text)
+    private static string LinkifyMessageText(string? text, string searchTerm, bool isActiveMatch)
     {
         if (string.IsNullOrEmpty(text))
             return string.Empty;
 
         var encoded = WebUtility.HtmlEncode(text);
+        encoded = HighlightSearchTerm(encoded, searchTerm, isActiveMatch);
         encoded = AnyDeskIdRegex.Replace(encoded, match =>
             $"""<a class="message-card__anydesk-chip" href="{BuildAnyDeskUri(match.Value)}" title="Conectar por AnyDesk"><i class="bi bi-display"></i>{match.Value}</a>""");
 
@@ -9649,6 +9807,28 @@
 
     private static bool IsUrlTrailingPunctuation(char value)
         => value is '.' or ',' or ';' or ':' or ')' or ']' or '}' or '!' or '?';
+
+    /// <summary>
+    /// Corre sobre el texto YA escapado con HtmlEncode (antes de linkificar URLs/AnyDesk) para no
+    /// terminar insertando &lt;mark&gt; adentro de un atributo href y corromper el HTML resultante.
+    /// </summary>
+    private static string HighlightSearchTerm(string encodedText, string searchTerm, bool isActiveMatch)
+    {
+        var term = searchTerm?.Trim() ?? string.Empty;
+        if (term.Length == 0)
+            return encodedText;
+
+        var encodedTerm = WebUtility.HtmlEncode(term);
+        if (encodedTerm.Length == 0)
+            return encodedText;
+
+        var markClass = isActiveMatch ? "message-search-mark message-search-mark--active" : "message-search-mark";
+        return Regex.Replace(
+            encodedText,
+            Regex.Escape(encodedTerm),
+            match => $"""<mark class="{markClass}">{match.Value}</mark>""",
+            RegexOptions.IgnoreCase);
+    }
 
     private static string BuildAnyDeskUri(string? rawId)
         => $"anydesk:{NormalizeAnyDeskId(rawId)}";
