@@ -25180,17 +25180,24 @@ html[data-theme="light"] .tickets-table-wrap {
 
 .conversations-page--odoo .conversation-row__channel-badge {
     position: absolute !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 16px !important;
-    height: 16px !important;
+    right: -1px !important;
+    bottom: -1px !important;
+    width: 20px !important;
+    height: 20px !important;
+    box-sizing: border-box !important;
     display: grid !important;
     place-items: center !important;
     border-radius: 999px !important;
-    border: 2px solid #111b21 !important;
+    border: 1.5px solid #111b21 !important;
     background: #64748b !important;
     color: #fff !important;
-    font-size: .55rem !important;
+    font-size: .72rem !important;
+    line-height: 1 !important;
+    overflow: visible !important;
+}
+
+.conversations-page--odoo .conversation-row__channel-badge i {
+    line-height: 1 !important;
 }
 
 .conversations-page--odoo .conversation-row__channel-badge--whatsapp {
