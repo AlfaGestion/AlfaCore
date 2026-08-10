@@ -356,25 +356,10 @@
 }
 
 .landing-testimonio p {
-    margin: 8px 0 16px;
+    margin: 8px 0 0;
     color: #34495e;
     font-size: 0.96rem;
     line-height: 1.55;
-}
-
-.landing-testimonio footer {
-    display: grid;
-    gap: 2px;
-}
-
-.landing-testimonio footer strong {
-    color: #10233d;
-    font-size: 0.92rem;
-}
-
-.landing-testimonio footer span {
-    color: #8394a6;
-    font-size: 0.82rem;
 }
 
 /* --- CTA --- */

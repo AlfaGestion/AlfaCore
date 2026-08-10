@@ -26,7 +26,7 @@ public sealed class LandingContenido
 
 public sealed record LandingFeature(string Icono, string Titulo, string Texto);
 
-public sealed record LandingTestimonio(string Texto, string Autor, string Empresa);
+public sealed record LandingTestimonio(string Texto);
 
 /// <summary>Una captura real de la aplicación para la galería de la landing — ruta bajo wwwroot (ej. "/img/landing/conversaciones/inbox-ia.png").</summary>
 public sealed record LandingCaptura(string Ruta, string Titulo);
@@ -71,9 +71,9 @@ public static class LandingContenidoCatalogo
             // Ejemplos ilustrativos — reemplazar por testimonios reales de clientes antes de difundir la landing.
             Testimonios =
             [
-                new("Antes perdíamos pedidos porque quedaban perdidos entre WhatsApp Web e Instagram. Ahora todo entra a un solo lugar y nadie se queda sin respuesta.", "Nombre Apellido", "Ejemplo — comercio con venta por redes"),
-                new("Repartir las conversaciones entre el equipo era un caos de capturas de pantalla. Con la asignación de agentes cada uno sabe qué le toca.", "Nombre Apellido", "Ejemplo — equipo de atención al cliente"),
-                new("Lo que más noto es el historial: cuando un cliente vuelve después de meses, ya sé de qué hablamos la última vez sin preguntarle de nuevo.", "Nombre Apellido", "Ejemplo — servicio técnico"),
+                new("Antes perdíamos pedidos porque quedaban perdidos entre WhatsApp Web e Instagram. Ahora todo entra a un solo lugar y nadie se queda sin respuesta."),
+                new("Repartir las conversaciones entre el equipo era un caos de capturas de pantalla. Con la asignación de agentes cada uno sabe qué le toca."),
+                new("Lo que más noto es el historial: cuando un cliente vuelve después de meses, ya sé de qué hablamos la última vez sin preguntarle de nuevo."),
             ]
         },
         new LandingContenido
