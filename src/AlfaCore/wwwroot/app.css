@@ -5121,6 +5121,11 @@ html[data-theme="light"] .menu__search-result:hover {
     color: #7dd3fc;
 }
 
+.conversation-badge--icon-only {
+    padding: .28rem .4rem;
+    gap: 0;
+}
+
 .conversation-badge--abonado {
     background: rgba(34, 197, 94, 0.16);
     color: #86efac;

@@ -826,10 +826,12 @@
                                     </span>
                                 </div>
                                 <div class="conversation-row__badges">
-                                    <span class="conversation-badge conversation-badge--state">@item.EstadoDescripcion</span>
+                                    <span class="conversation-badge conversation-badge--state conversation-badge--icon-only" title="@item.EstadoDescripcion">
+                                        <i class="bi @GetEstadoIcon(item.CodigoEstado)"></i>
+                                    </span>
                                     @if (string.Equals(item.DireccionUltimoMensaje, "ENTRANTE", StringComparison.OrdinalIgnoreCase))
                                     {
-                                        <span class="conversation-badge conversation-badge--esperando">
+                                        <span class="conversation-badge conversation-badge--esperando" title="Esperando respuesta">
                                             <i class="bi bi-hourglass-split"></i> @GetEsperandoDesdeLabel(item)
                                         </span>
                                     }
@@ -3912,23 +3914,35 @@
 
     /// <summary>
     /// Hace cuánto espera respuesta esta conversación (solo tiene sentido si el último mensaje es
-    /// del cliente) — para el badge "esperando hace X" en la lista.
+    /// del cliente) — para el badge de tiempo de espera en la lista. Sin la palabra "esperando":
+    /// el ícono de reloj de arena ya lo dice, esto es solo el tiempo, para ahorrar espacio.
     /// </summary>
     private static string GetEsperandoDesdeLabel(ConversacionInboxItemDto item)
     {
         var minutos = (int)Math.Max(0, (DateTime.Now - item.FechaHoraUltimoMensaje).TotalMinutes);
         if (minutos < 1)
-            return "esperando hace instantes";
+            return "ahora";
         if (minutos < 60)
-            return $"esperando hace {minutos} min";
+            return $"{minutos} min";
 
         var horas = minutos / 60;
         if (horas < 24)
-            return $"esperando hace {horas} h";
+            return $"{horas} h";
 
         var dias = horas / 24;
-        return $"esperando hace {dias} d";
+        return $"{dias} d";
     }
+
+    /// <summary>Ícono compacto por estado de conversación — reemplaza el texto del badge para ahorrar espacio en la lista.</summary>
+    private static string GetEstadoIcon(string codigoEstado) => (codigoEstado ?? string.Empty).Trim().ToUpperInvariant() switch
+    {
+        "ABIERTA" => "bi-chat-left-dots-fill",
+        "PENDIENTE" => "bi-clock-fill",
+        "EN_GESTION" => "bi-gear-fill",
+        "CERRADA" => "bi-lock-fill",
+        "ARCHIVADA" => "bi-archive-fill",
+        _ => "bi-circle-fill"
+    };
 
     private async Task RecargarAsync()
     {
