@@ -25180,10 +25180,10 @@ html[data-theme="light"] .tickets-table-wrap {
 
 .conversations-page--odoo .conversation-row__channel-badge {
     position: absolute !important;
-    right: -2px !important;
-    bottom: -2px !important;
-    width: 18px !important;
-    height: 18px !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 16px !important;
+    height: 16px !important;
     display: grid !important;
     place-items: center !important;
     border-radius: 999px !important;
