@@ -185,6 +185,12 @@
 
             <div class="conversations-mobile-actions mobile-actions">
                 <button type="button"
+                        class="conversations-mobile-action @(_canalActivo == "SOCIAL" ? "is-active" : string.Empty)"
+                        @onclick='() => ChangeCanalAsync("SOCIAL")'>
+                    <i class="bi bi-inboxes"></i>
+                    <span>Todos</span>
+                </button>
+                <button type="button"
                         class="conversations-mobile-action @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeCanalAsync("WHATSAPP")'>
                     <i class="bi bi-whatsapp"></i>
@@ -313,21 +319,34 @@
 
         <section class="panel-card conversations-filters desktop-only" @onclick:stopPropagation style="position:relative;z-index:500;">
             <div class="conversations-canal">
-                <button type="button"
-                        class="conversations-filter-pill @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
-                        @onclick='() => ChangeCanalAsync("WHATSAPP")'>
-                    <i class="bi bi-whatsapp"></i> WhatsApp
-                </button>
-                <button type="button"
-                        class="conversations-filter-pill conversations-filter-pill--instagram @(_canalActivo == "INSTAGRAM" ? "is-active" : string.Empty)"
-                        @onclick='() => ChangeCanalAsync("INSTAGRAM")'>
-                    <i class="bi bi-instagram"></i> Instagram
-                </button>
-                <button type="button"
-                        class="conversations-filter-pill @(_canalActivo == "FACEBOOK" ? "is-active" : string.Empty)"
-                        @onclick='() => ChangeCanalAsync("FACEBOOK")'>
-                    <i class="bi bi-facebook"></i> Facebook
-                </button>
+                <div class="conversations-mode-select">
+                    <button type="button"
+                            popovertarget="conversations-canal-menu"
+                            onclick="conversacionesUi.positionCanalMenu(this)"
+                            class="conversations-filter-pill conversations-filter-pill--dropdown @(IsSocialCanalActive ? "is-active" : string.Empty)"
+                            aria-haspopup="listbox"
+                            aria-label="Filtro de mensajes">
+                        <i class="bi @GetCurrentCanalSocialIcon()"></i>
+                        @GetCurrentCanalSocialLabel()
+                        <i class="bi bi-chevron-down conversations-mode-caret" style="display:inline-flex;"></i>
+                    </button>
+                    <div id="conversations-canal-menu" popover="auto" role="listbox"
+                         style="position:fixed;right:auto;bottom:auto;margin:0;min-width:178px;padding:.28rem;border:1px solid rgba(14,165,233,.28);border-radius:12px;background:rgba(15,23,42,.98);box-shadow:0 16px 32px rgba(2,6,23,.34);">
+                        @foreach (var canal in _canalSocialOptions)
+                        {
+                            var isCurrent = canal.Value == _canalActivo;
+                            <button type="button"
+                                    popovertarget="conversations-canal-menu"
+                                    popovertargetaction="hide"
+                                    class="conversation-header-state__option @(isCurrent ? "is-active" : string.Empty)"
+                                    @onclick="() => ChangeCanalAsync(canal.Value)"
+                                    role="option"
+                                    aria-selected="@isCurrent">
+                                <i class="bi @canal.Icono"></i> @canal.Label
+                            </button>
+                        }
+                    </div>
+                </div>
                 <button type="button"
                         class="conversations-filter-pill conversations-filter-pill--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
                         @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
@@ -377,8 +396,9 @@
                 <button type="button" class="btn btn--ghost btn--sm conversations-message-search-button @(_showMessageSearch ? "is-active" : string.Empty)" @onclick="ToggleMessageSearchAsync" disabled="@(_selectedConversation is null)" title="Buscar en esta conversación">
                     <i class="bi bi-search"></i>
                 </button>
-                <button type="button" class="btn btn--ghost btn--sm @(EsColaEspera ? "is-active" : string.Empty)" @onclick="ToggleColaEsperaAsync" title="Cola de espera: ordenar por tiempo de espera y prioridad, en vez de por actividad reciente">
+                <button type="button" class="btn btn--ghost btn--sm @(EsColaEspera ? "is-active" : string.Empty)" @onclick="ToggleColaEsperaAsync" title="Ordenar por tiempo de espera y prioridad, en vez de por actividad reciente">
                     <i class="bi bi-hourglass-split"></i>
+                    <span>Tiempo de espera</span>
                 </button>
             </div>
 
@@ -622,6 +642,11 @@
                 <div class="conversations-mobile-sheet-group">
                     <span>Canal</span>
                     <div class="conversations-mobile-sheet-channel">
+                        <button type="button"
+                                class="conversations-mobile-chip @(_canalActivo == "SOCIAL" ? "is-active" : string.Empty)"
+                                @onclick='() => ChangeCanalAsync("SOCIAL")'>
+                            Todos
+                        </button>
                         <button type="button"
                                 class="conversations-mobile-chip @(_canalActivo == "WHATSAPP" ? "is-active" : string.Empty)"
                                 @onclick='() => ChangeCanalAsync("WHATSAPP")'>
@@ -3185,9 +3210,22 @@
         ("pendientes", "Pendientes"),
         ("cerradas", "Cerradas")
     ];
+    /// <summary>
+    /// WhatsApp/Instagram/Facebook comparten el mismo modelo de trabajo (hilo con un contacto), así
+    /// que van juntos en un solo combo — a diferencia de Mercado Libre (preguntas por publicación,
+    /// con su propio agrupamiento y sincronización) y Chat interno (ni siquiera es de cara al
+    /// cliente), que siguen siendo pestañas propias.
+    /// </summary>
+    private readonly (string Value, string Label, string Icono)[] _canalSocialOptions =
+    [
+        ("SOCIAL", "Todos", "bi-inboxes"),
+        ("WHATSAPP", "WhatsApp", "bi-whatsapp"),
+        ("INSTAGRAM", "Instagram", "bi-instagram"),
+        ("FACEBOOK", "Facebook", "bi-facebook")
+    ];
     private static readonly TimeSpan LateIncomingNotificationWindow = TimeSpan.FromMinutes(10);
 
-    private string _canalActivo = "WHATSAPP";
+    private string _canalActivo = "SOCIAL";
     private bool _showNuevoHilo;
     private bool _showContextPanel;
     private bool _showMobileAdvancedFilters;
@@ -3228,7 +3266,7 @@
     private string? _templateAutoNotice;
     private bool _uploadingTemplateFile;
 
-    private ConversacionesInboxFilters _filters = new() { Canal = "WHATSAPP" };
+    private ConversacionesInboxFilters _filters = new() { Canal = "SOCIAL" };
     private List<ConversacionTecnicoOptionDto> _technicians = [];
     private List<ConversacionEstadoOptionDto> _states = [];
     private List<ConversacionInboxItemDto> _inbox = [];
@@ -3459,8 +3497,10 @@
     }
     private bool HasPendingAttachmentError => _pendingAttachments.Any(x => x.HasError);
     private bool _canAddNote => !_busyAction && _selectedConversation is not null && !string.IsNullOrWhiteSpace(_internalNoteText);
-    private bool CanCreateWhatsAppFromSearch => _canalActivo == "WHATSAPP" && !_busyAction && IsPotentialPhone(_filters.Search);
-    private bool ShouldShowContactSuggestions => _canalActivo == "WHATSAPP" && _filters.Search.Trim().Length >= 2;
+    /// <summary>WhatsApp vive dentro del combo "Mensajes" (WHATSAPP puntual, o SOCIAL = todos combinados) — buscar por teléfono para armar un chat nuevo funciona en cualquiera de los dos.</summary>
+    private bool IsWhatsAppInScope => _canalActivo is "WHATSAPP" or "SOCIAL";
+    private bool CanCreateWhatsAppFromSearch => IsWhatsAppInScope && !_busyAction && IsPotentialPhone(_filters.Search);
+    private bool ShouldShowContactSuggestions => IsWhatsAppInScope && _filters.Search.Trim().Length >= 2;
     private bool ShouldShowLatestButton => _showReturnToLatest || _newMessagesCount > 0;
     private int TotalNewMessagesCount => _inbox.Sum(x => GetConversationNewCount(x.IdConversacion));
     private string ConversationPageTitle
@@ -4003,6 +4043,16 @@
 
     private string GetCurrentModeLabel()
         => _modeOptions.FirstOrDefault(x => x.Value == _filters.Modo).Label ?? "Pendientes";
+
+    /// <summary>Si la pestaña de canal activa es alguna de las que viven dentro del combo "Mensajes" (o el combinado "Todos").</summary>
+    private bool IsSocialCanalActive
+        => _canalSocialOptions.Any(x => x.Value == _canalActivo);
+
+    private string GetCurrentCanalSocialLabel()
+        => _canalSocialOptions.FirstOrDefault(x => x.Value == _canalActivo).Label ?? "Mensajes";
+
+    private string GetCurrentCanalSocialIcon()
+        => _canalSocialOptions.FirstOrDefault(x => x.Value == _canalActivo).Icono ?? "bi-inboxes";
 
     private void SetMobileMode(string mode)
     {

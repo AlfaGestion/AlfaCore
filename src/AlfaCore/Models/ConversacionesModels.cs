@@ -19,6 +19,8 @@ public sealed class ConversacionesInboxFilters
     public string ClienteCodigo { get; set; } = string.Empty;
     public string? IdTecnicoActual { get; set; }
     public string? CodigoEstado { get; set; }
+    /// <summary>Canal exacto (WHATSAPP/INSTAGRAM/FACEBOOK/MERCADOLIBRE/INTERNO), o "SOCIAL" como valor
+    /// especial que trae WhatsApp+Instagram+Facebook combinados (ver GetInboxAsync).</summary>
     public string? Canal { get; set; }
     public string? UsuarioActual { get; set; }
     public string? SistemaActual { get; set; }

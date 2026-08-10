@@ -159,6 +159,17 @@ window.conversacionesUi = {
         menu.style.left = left + 'px';
     },
 
+    positionCanalMenu: function (triggerElement) {
+        const menu = document.getElementById('conversations-canal-menu');
+        if (!menu || !triggerElement) return;
+        const rect = triggerElement.getBoundingClientRect();
+        const menuWidth = menu.offsetWidth || 178;
+        const top = rect.bottom + 6;
+        const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+        menu.style.top = top + 'px';
+        menu.style.left = left + 'px';
+    },
+
     bindColumnResizers: function (rootId) {
         const root = document.getElementById(rootId);
         if (!root || this._columnResizerWatchers.has(rootId)) return false;

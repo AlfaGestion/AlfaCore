@@ -1008,7 +1008,11 @@ public sealed class ConversacionesService(
                         END AS SearchRank
                 ) searchRank
                 WHERE
-                    (@Canal IS NULL OR c.Canal = @Canal)
+                    (
+                        @Canal IS NULL
+                        OR (@Canal = N'SOCIAL' AND c.Canal IN (N'WHATSAPP', N'INSTAGRAM', N'FACEBOOK'))
+                        OR (@Canal <> N'SOCIAL' AND c.Canal = @Canal)
+                    )
                     AND (
                         @CodigoEstado IS NULL
                         OR (@CodigoEstado = @EstadoSinFinalizar AND ISNULL(e.EsCerrado, 0) = 0 AND ISNULL(c.Archivada, 0) = 0)
