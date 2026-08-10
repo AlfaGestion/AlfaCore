@@ -322,6 +322,7 @@
                 <div class="conversations-mode-select">
                     <button type="button"
                             popovertarget="conversations-canal-menu"
+                            onclick="conversacionesUi.positionCanalMenu(this)"
                             class="conversations-filter-pill conversations-filter-pill--dropdown @(IsSocialCanalActive ? "is-active" : string.Empty)"
                             aria-haspopup="listbox"
                             aria-label="Filtro de mensajes">
@@ -404,6 +405,7 @@
             <div class="conversations-mode-select">
                 <button type="button"
                         popovertarget="conversations-mode-menu"
+                        onclick="conversacionesUi.positionModeMenu(this)"
                         class="conversations-filter-pill conversations-filter-pill--dropdown"
                         aria-haspopup="listbox"
                         aria-label="Filtro de conversaciones">
@@ -3679,7 +3681,6 @@
             try
             {
                 await JS.InvokeVoidAsync("conversacionesUi.bindColumnResizers", "conversations-page");
-                await JS.InvokeVoidAsync("conversacionesUi.bindFilterMenusPositioning");
                 await JS.InvokeVoidAsync("conversacionesUi.initNotifications", "AlfaCore - Alfa Gestión");
                 await UpdateSoundDiagnosticsAsync();
             }
