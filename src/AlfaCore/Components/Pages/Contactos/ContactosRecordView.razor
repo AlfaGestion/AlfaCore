@@ -1,0 +1,324 @@
+@namespace AlfaCore.Components.Pages
+
+@if (Loading)
+{
+    <section class="contactos-record-shell">
+        <AlfaEmptyState Title="Cargando contacto"
+                        Message="Estamos consultando la ficha en la base activa." />
+    </section>
+}
+else if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <section class="contactos-record-shell">
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                        Title="No se pudo cargar el contacto"
+                        Message="@ErrorMessage"
+                        ActionLabel="Reintentar"
+                        ActionIcon="bi bi-arrow-clockwise"
+                        OnAction="HandleRetryActionAsync" />
+    </section>
+}
+else if (Contact is null)
+{
+    <section class="contactos-record-shell">
+        <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                        Title="Contacto no encontrado"
+                        Message="El contacto solicitado no existe o ya no está disponible en la base activa."
+                        ActionLabel="Volver"
+                        ActionIcon="bi bi-arrow-left"
+                        OnAction="HandleBackActionAsync" />
+    </section>
+}
+else
+{
+    <section class="contactos-record-shell" aria-label="@($"Ficha de {Contact.NombreApellido}")">
+        <header class="contactos-record-header">
+            <div class="contactos-record-header__identity">
+                <span class="contactos-record-header__avatar @GetAvatarTone(Contact.Id)" aria-hidden="true">
+                    @if (GetAvatarInitial(Contact.NombreApellido) is { } initial)
+                    {
+                        @initial
+                    }
+                    else
+                    {
+                        <i class="bi bi-person"></i>
+                    }
+                </span>
+
+                <div class="contactos-record-header__main">
+                    <h2 title="@Contact.NombreApellido">@DisplayValue(Contact.NombreApellido)</h2>
+                    <div class="contactos-record-header__tags" aria-label="Estado y categorías">
+                        <AlfaTag Tone="@(Contact.Activo ? AlfaTagTone.Success : AlfaTagTone.Neutral)">
+                            @(Contact.Activo ? "Activo" : "Inactivo")
+                        </AlfaTag>
+                        @foreach (var tag in GetCommercialTags(Contact))
+                        {
+                            <AlfaTag>@tag</AlfaTag>
+                        }
+                    </div>
+                    @if (GetHeaderSummary(Contact) is { Count: > 0 } summary)
+                    {
+                        <div class="contactos-record-header__summary" aria-label="Resumen del contacto">
+                            @foreach (var item in summary)
+                            {
+                                <span title="@item.Text"><i class="bi @item.Icon" aria-hidden="true"></i>@item.Text</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+
+            @if (HasAnySmartButton)
+            {
+                <div class="contactos-record-smart" aria-label="Accesos del contacto">
+                    @if (HasPhone(Contact))
+                    {
+                        <button type="button" class="contactos-record-smart__button" @onclick="HandleConversationActionAsync">
+                            <strong><i class="bi @(Contact.IdConversacionWhatsApp.HasValue ? "bi-chat-left-text" : "bi-plus-circle")" aria-hidden="true"></i></strong>
+                            <span>@(Contact.IdConversacionWhatsApp.HasValue ? "Abrir conversación" : "Crear conversación")</span>
+                        </button>
+                    }
+                    @if (Contact.CuentasVinculadas.Count > 0)
+                    {
+                        <button type="button" class="contactos-record-smart__button" @onclick="() => SetTab(ContactosRecordTabKeys.Cuentas)">
+                            <strong>@Contact.CuentasVinculadas.Count</strong>
+                            <span>Cuentas vinculadas</span>
+                        </button>
+                    }
+                </div>
+            }
+        </header>
+
+        <div class="contactos-record-layout @(HasContextPanel ? "has-context" : string.Empty)">
+            <article class="contactos-record-card">
+                <nav class="contactos-record-tabs" aria-label="Secciones del contacto">
+                    @foreach (var tab in AvailableTabs)
+                    {
+                        <button type="button"
+                                class="contactos-record-tabs__item @(ActiveTab == tab.Key ? "is-active" : string.Empty)"
+                                aria-current="@(ActiveTab == tab.Key ? "page" : null)"
+                                @onclick="() => SetTab(tab.Key)">
+                            <span>@tab.Label</span>
+                            @if (!string.IsNullOrWhiteSpace(tab.Badge))
+                            {
+                                <small>@tab.Badge</small>
+                            }
+                        </button>
+                    }
+                </nav>
+
+                @if (ActiveTab == ContactosRecordTabKeys.Observaciones)
+                {
+                    <section class="contactos-record-section" aria-label="Observaciones">
+                        <h3>Observaciones</h3>
+                        <p class="contactos-record-text">@DisplayLongValue(Contact.Observaciones)</p>
+                    </section>
+                }
+                else if (ActiveTab == ContactosRecordTabKeys.Cuentas)
+                {
+                    <section class="contactos-record-section" aria-label="Cuentas vinculadas">
+                        <h3>Cuentas vinculadas</h3>
+                        @if (Contact.CuentasVinculadas.Count == 0)
+                        {
+                            <p class="contactos-record-muted">Este contacto no tiene clientes o proveedores vinculados.</p>
+                        }
+                        else
+                        {
+                            <div class="contactos-record-accounts">
+                                @foreach (var account in Contact.CuentasVinculadas)
+                                {
+                                    <a class="contactos-record-account" href="@BuildCuentaLink(account)">
+                                        <span>
+                                            <strong>@DisplayValue(account.RazonSocial, account.Codigo)</strong>
+                                            <small>@account.Tipo · @DisplayValue(account.Codigo)</small>
+                                        </span>
+                                        <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                                    </a>
+                                }
+                            </div>
+                        }
+                    </section>
+                }
+                else
+                {
+                    <section class="contactos-record-section" aria-label="Información principal">
+                        <h3>Información principal</h3>
+                        <div class="contactos-record-fields">
+                            @ReadField("Nombre y apellido", Contact.NombreApellido)
+                            @ReadField("Domicilio", Contact.Domicilio)
+                            @ReadField("Localidad", Contact.Localidad)
+                            @ReadField("Código postal", Contact.CodigoPostal)
+                            @ReadField("Provincia", ProvinciaDisplay)
+                            @ReadField("Número de documento", Contact.NumeroDocumento)
+                            @ReadField("Teléfono", Contact.Telefono)
+                            @ReadField("Teléfono alternativo", Contact.TelefonoAlternativo)
+                            @ReadField("Celular", Contact.Celular)
+                            @ReadField("Email", Contact.Email)
+                            @ReadField("Página web", Contact.Website)
+                            @ReadField("Cargo", Contact.Cargo)
+                        </div>
+                    </section>
+
+                    <section class="contactos-record-section contactos-record-section--compact" aria-label="Permisos y vínculos">
+                        <h3>Permisos / vínculos</h3>
+                        <div class="contactos-record-checks">
+                            @ReadCheck("Pagos/Cobranzas", Contact.MailPagosCobranzas)
+                            @ReadCheck("Órdenes de compra", Contact.MailOrdenCompra)
+                            @ReadCheck("Órdenes de trabajo", Contact.MailOrdenTrabajo)
+                        </div>
+                    </section>
+                }
+            </article>
+
+            @if (HasContextPanel)
+            {
+                <aside class="contactos-record-context" aria-label="Contexto del contacto">
+                    <h3>Contexto</h3>
+                    @if (HasPhone(Contact))
+                    {
+                        <div class="contactos-record-context__item">
+                            <span>WhatsApp</span>
+                            <strong>@(Contact.IdConversacionWhatsApp.HasValue ? "Conversación existente" : "Sin conversación abierta")</strong>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="HandleConversationActionAsync">
+                                <i class="bi @(Contact.IdConversacionWhatsApp.HasValue ? "bi-chat-left-text" : "bi-plus-circle")"></i>
+                                @(Contact.IdConversacionWhatsApp.HasValue ? "Abrir" : "Crear")
+                            </button>
+                        </div>
+                    }
+                    @if (Contact.CuentasVinculadas.Count > 0)
+                    {
+                        <div class="contactos-record-context__item">
+                            <span>Cuentas vinculadas</span>
+                            <strong>@Contact.CuentasVinculadas.Count cliente(s) / proveedor(es)</strong>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => SetTab(ContactosRecordTabKeys.Cuentas)">
+                                <i class="bi bi-link-45deg"></i>
+                                Ver cuentas
+                            </button>
+                        </div>
+                    }
+                </aside>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [Parameter] public ContactoDetailDto? Contact { get; set; }
+    [Parameter] public string ProvinciaDisplay { get; set; } = string.Empty;
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string ErrorMessage { get; set; } = string.Empty;
+    [Parameter] public string ActiveTab { get; set; } = ContactosRecordTabKeys.Informacion;
+    [Parameter] public EventCallback<string> ActiveTabChanged { get; set; }
+    [Parameter] public EventCallback OnBack { get; set; }
+    [Parameter] public EventCallback OnRetry { get; set; }
+    [Parameter] public EventCallback OnConversation { get; set; }
+
+    private bool HasContextPanel => Contact is not null && (HasPhone(Contact) || Contact.CuentasVinculadas.Count > 0);
+    private bool HasAnySmartButton => Contact is not null && (HasPhone(Contact) || Contact.CuentasVinculadas.Count > 0);
+
+    private IReadOnlyList<RecordTab> AvailableTabs
+    {
+        get
+        {
+            var tabs = new List<RecordTab> { new(ContactosRecordTabKeys.Informacion, "Información") };
+            if (!string.IsNullOrWhiteSpace(Contact?.Observaciones))
+                tabs.Add(new(ContactosRecordTabKeys.Observaciones, "Observaciones"));
+            if (Contact?.CuentasVinculadas.Count > 0)
+                tabs.Add(new(ContactosRecordTabKeys.Cuentas, "Cuentas vinculadas", Contact.CuentasVinculadas.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            return tabs;
+        }
+    }
+
+    private async Task SetTab(string key)
+    {
+        ActiveTab = key;
+        await ActiveTabChanged.InvokeAsync(key);
+    }
+
+    private Task HandleBackActionAsync(MouseEventArgs _)
+        => OnBack.InvokeAsync();
+
+    private Task HandleRetryActionAsync(MouseEventArgs _)
+        => OnRetry.InvokeAsync();
+
+    private Task HandleConversationActionAsync()
+        => OnConversation.InvokeAsync();
+
+    private static bool HasPhone(ContactoDetailDto contact)
+        => !string.IsNullOrWhiteSpace(contact.Celular) || !string.IsNullOrWhiteSpace(contact.Telefono);
+
+    private static IReadOnlyList<string> GetCommercialTags(ContactoDetailDto contact)
+    {
+        var tags = new List<string>();
+        if (contact.MailPagosCobranzas) tags.Add("Pagos/Cobranzas");
+        if (contact.MailOrdenCompra) tags.Add("Órdenes de compra");
+        if (contact.MailOrdenTrabajo) tags.Add("Órdenes de trabajo");
+        return tags;
+    }
+
+    private IReadOnlyList<HeaderSummaryItem> GetHeaderSummary(ContactoDetailDto contact)
+    {
+        var items = new List<HeaderSummaryItem>();
+        var location = string.Join(" · ", new[] { contact.Localidad, ProvinciaDisplay }
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(location))
+            items.Add(new("bi-geo-alt", location));
+        var phone = FirstNonEmpty(contact.Celular, contact.Telefono);
+        if (!string.IsNullOrWhiteSpace(phone))
+            items.Add(new("bi-telephone", phone));
+        if (!string.IsNullOrWhiteSpace(contact.Email))
+            items.Add(new("bi-envelope", contact.Email.Trim()));
+        return items;
+    }
+
+    private static string GetAvatarTone(int id)
+        => $"tone-{Math.Abs((long)id) % 6}";
+
+    private static string? GetAvatarInitial(string? value)
+    {
+        var normalized = value?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized) || normalized[0] == '+' || IsMostlyPhone(normalized))
+            return null;
+
+        return normalized[..1].ToUpperInvariant();
+    }
+
+    private static bool IsMostlyPhone(string value)
+    {
+        var digits = value.Count(char.IsDigit);
+        var letters = value.Count(char.IsLetter);
+        return digits >= 6 && letters == 0;
+    }
+
+    private static string DisplayValue(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "—";
+
+    private static string DisplayLongValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "Sin informar" : value.Trim();
+
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+
+    private static string BuildCuentaLink(ContactoCuentaDto account)
+    {
+        var route = string.Equals(account.Tipo, "Proveedor", StringComparison.OrdinalIgnoreCase)
+            ? "/proveedores"
+            : "/clientes";
+        return $"{route}?editar={Uri.EscapeDataString(account.Codigo ?? string.Empty)}";
+    }
+
+    private sealed record HeaderSummaryItem(string Icon, string Text);
+    private sealed record RecordTab(string Key, string Label, string Badge = "");
+
+    private static RenderFragment ReadField(string label, string? value) => @<div class="contactos-record-field">
+        <span>@label</span>
+        <strong class="@(string.IsNullOrWhiteSpace(value) ? "is-empty" : string.Empty)">@DisplayValue(value)</strong>
+    </div>;
+
+    private static RenderFragment ReadCheck(string label, bool value) => @<span class="contactos-record-check @(value ? "is-checked" : "is-unchecked")">
+        <i class="bi @(value ? "bi-check2" : "bi-dash")" aria-hidden="true"></i>
+        <span>@label</span>
+    </span>;
+}
