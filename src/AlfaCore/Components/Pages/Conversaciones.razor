@@ -368,11 +368,17 @@
                         <span>Crear ticket</span>
                     </button>
                 }
-                <button type="button" class="btn btn--ghost btn--sm conversations-ai-suggestion-button @(_showAiSuggestionPanel ? "is-active" : string.Empty)" @onclick="ToggleAiSuggestionPanel" disabled="@(_selectedConversation is null)" title="Sugerencia IA">
-                    <i class="bi bi-stars"></i>
-                </button>
+                @if (_alfaKnowledgeModuloActivo)
+                {
+                    <button type="button" class="btn btn--ghost btn--sm conversations-ai-suggestion-button @(_showAiSuggestionPanel ? "is-active" : string.Empty)" @onclick="ToggleAiSuggestionPanel" disabled="@(_selectedConversation is null)" title="Sugerencia IA">
+                        <i class="bi bi-stars"></i>
+                    </button>
+                }
                 <button type="button" class="btn btn--ghost btn--sm conversations-message-search-button @(_showMessageSearch ? "is-active" : string.Empty)" @onclick="ToggleMessageSearchAsync" disabled="@(_selectedConversation is null)" title="Buscar en esta conversación">
                     <i class="bi bi-search"></i>
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm @(EsColaEspera ? "is-active" : string.Empty)" @onclick="ToggleColaEsperaAsync" title="Cola de espera: ordenar por tiempo de espera y prioridad, en vez de por actividad reciente">
+                    <i class="bi bi-hourglass-split"></i>
                 </button>
             </div>
 
@@ -403,13 +409,6 @@
                     }
                 </div>
             </div>
-
-            <button type="button"
-                    class="conversations-filter-pill @(EsColaEspera ? "is-active" : string.Empty)"
-                    title="Ordenar por tiempo de espera y prioridad, en vez de por actividad reciente"
-                    @onclick="ToggleColaEsperaAsync">
-                <i class="bi bi-hourglass-split"></i> Cola de espera
-            </button>
 
             <div class="conversations-filters__fields">
                 <div class="field">
@@ -799,6 +798,9 @@
                                     {
                                         @GetConversationInitials(item)
                                     }
+                                    <span class="conversation-row__channel-badge conversation-row__channel-badge--@item.Canal.ToLowerInvariant()" title="@GetCanalLabel(item.Canal)">
+                                        <i class="bi @GetCanalIcon(item.Canal)"></i>
+                                    </span>
                                 </span>
                                 <div class="conversation-row__content">
                                 <div class="conversation-row__top">
@@ -3534,6 +3536,7 @@
     // modo legacy/on-premise o ante cualquier error queda en true (fail-open) para no romper
     // funcionalidad existente.
     private bool _ticketsModuloActivo = true;
+    private bool _alfaKnowledgeModuloActivo = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -3541,6 +3544,7 @@
         Nav.LocationChanged += OnLocationChanged;
         ApplyStartupQuery();
         _ticketsModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("TICKETS");
+        _alfaKnowledgeModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("ALFAKNOWLEDGE");
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
         {
@@ -3646,12 +3650,15 @@
 
             // Restaura si el usuario había dejado el asistente de IA abierto la última vez
             // (preferencia global guardada en localStorage, no ligada a una conversación puntual).
-            if (!_showAiSuggestionPanel && _selectedConversationId is not null)
+            // Si todavía no hay preferencia guardada (primera vez) y el cliente tiene AlfaKnowledge
+            // activo, arranca abierto — una vez que el usuario lo cierra o abre a mano, se respeta
+            // esa elección de ahí en más.
+            if (!_showAiSuggestionPanel && _alfaKnowledgeModuloActivo && _selectedConversationId is not null)
             {
                 try
                 {
                     var storedOpen = await JS.InvokeAsync<string?>("localStorage.getItem", AiPanelOpenStorageKey);
-                    if (storedOpen == "1")
+                    if (storedOpen == "1" || storedOpen is null)
                     {
                         _showAiSuggestionPanel = true;
                         await OpenAiSuggestionPanelAsync();
@@ -3942,6 +3949,27 @@
         "CERRADA" => "bi-lock-fill",
         "ARCHIVADA" => "bi-archive-fill",
         _ => "bi-circle-fill"
+    };
+
+    /// <summary>Ícono de origen para la insignia sobre el avatar de cada fila del inbox.</summary>
+    private static string GetCanalIcon(string canal) => (canal ?? string.Empty).Trim().ToUpperInvariant() switch
+    {
+        "WHATSAPP" => "bi-whatsapp",
+        "INSTAGRAM" => "bi-instagram",
+        "FACEBOOK" => "bi-facebook",
+        "MERCADOLIBRE" => "bi-bag-fill",
+        "INTERNO" => "bi-people-fill",
+        _ => "bi-chat-dots-fill"
+    };
+
+    private static string GetCanalLabel(string canal) => (canal ?? string.Empty).Trim().ToUpperInvariant() switch
+    {
+        "WHATSAPP" => "WhatsApp",
+        "INSTAGRAM" => "Instagram",
+        "FACEBOOK" => "Facebook",
+        "MERCADOLIBRE" => "Mercado Libre",
+        "INTERNO" => "Chat interno",
+        _ => canal ?? string.Empty
     };
 
     private async Task RecargarAsync()

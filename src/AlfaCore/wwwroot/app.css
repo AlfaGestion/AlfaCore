@@ -25152,6 +25152,7 @@ html[data-theme="light"] .tickets-table-wrap {
 }
 
 .conversations-page--odoo .conversation-row__avatar {
+    position: relative !important;
     display: inline-grid !important;
     place-items: center !important;
     width: 48px !important;
@@ -25161,6 +25162,42 @@ html[data-theme="light"] .tickets-table-wrap {
     color: #fff !important;
     font-size: .78rem !important;
     font-weight: 900 !important;
+}
+
+.conversations-page--odoo .conversation-row__channel-badge {
+    position: absolute !important;
+    right: -2px !important;
+    bottom: -2px !important;
+    width: 18px !important;
+    height: 18px !important;
+    display: grid !important;
+    place-items: center !important;
+    border-radius: 999px !important;
+    border: 2px solid #111b21 !important;
+    background: #64748b !important;
+    color: #fff !important;
+    font-size: .55rem !important;
+}
+
+.conversations-page--odoo .conversation-row__channel-badge--whatsapp {
+    background: #25d366 !important;
+}
+
+.conversations-page--odoo .conversation-row__channel-badge--instagram {
+    background: radial-gradient(circle at 30% 110%, #fdf497 0%, #fd5949 45%, #d6249f 60%, #285AEB 90%) !important;
+}
+
+.conversations-page--odoo .conversation-row__channel-badge--facebook {
+    background: #1877f2 !important;
+}
+
+.conversations-page--odoo .conversation-row__channel-badge--mercadolibre {
+    background: #fee600 !important;
+    color: #2d3277 !important;
+}
+
+.conversations-page--odoo .conversation-row__channel-badge--interno {
+    background: #7c3aed !important;
 }
 
 .conversations-page--odoo .conversation-row__content {
