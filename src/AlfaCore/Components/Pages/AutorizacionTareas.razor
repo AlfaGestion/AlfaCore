@@ -3,7 +3,6 @@
 @using AlfaCore.Models
 @inject AlfaCore.Services.IAutorizacionTareasService AutorizacionSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
-@inject AlfaCore.Services.IAppUserSessionService AppUserSession
 
 <PageTitle>Autorización de tareas | Alfa Gestión</PageTitle>
 
@@ -44,7 +43,7 @@
         <div class="panel-card__header auth-shell__header">
             <div>
                 <h3 class="panel-card__title">Opciones del menú</h3>
-                <p class="panel-card__subtitle">Sistema de menú <code>@MenuSistema</code> · permisos reales <code>@PermisosSistema</code> · vista inicial <strong>Solo Web</strong>.</p>
+                <p class="panel-card__subtitle">Elegí un usuario y presioná Consultar para ver y editar qué opciones del menú web puede usar.</p>
             </div>
 
             @if (_treeLoaded)
@@ -81,6 +80,22 @@
                 </div>
 
                 <div class="auth-tree-toolbar">
+                    <div class="auth-tree-toolbar__group auth-tree-toolbar__search">
+                        <i class="bi bi-search"></i>
+                        <input type="search"
+                               placeholder="Buscar por nombre, clave o ruta web..."
+                               value="@_searchText"
+                               @oninput="OnSearchChanged"
+                               @onkeydown="HandleSearchKeyDownAsync"
+                               disabled="@(!_treeLoaded)" />
+                        @if (!string.IsNullOrWhiteSpace(_searchText))
+                        {
+                            <button type="button" class="auth-tree-toolbar__clear" title="Limpiar búsqueda" @onclick="LimpiarFiltrosAsync">
+                                <i class="bi bi-x-circle"></i>
+                            </button>
+                        }
+                    </div>
+
                     <div class="auth-tree-toolbar__group">
                         <button type="button" class="btn btn--ghost" @onclick="SeleccionarTodoVisible" disabled="@(!_treeLoaded || _visibleTree.Count == 0)">
                             <i class="bi bi-check2-square"></i> Seleccionar visible
@@ -183,41 +198,6 @@
                     </div>
                 </div>
 
-                <div class="auth-panel auth-panel--compact">
-                    <h4 class="auth-panel__title">Filtros</h4>
-                    <div class="field field--full">
-                        <label>Buscar</label>
-                        <input type="search"
-                               placeholder="Nombre, clave o ruta web..."
-                               value="@_searchText"
-                               @oninput="OnSearchChanged"
-                               @onkeydown="HandleSearchKeyDownAsync" />
-                    </div>
-
-                    <div class="field field--full">
-                        <label>Vista</label>
-                        <select value="@_viewMode" @onchange="OnViewModeChanged">
-                            <option value="@ViewWeb">Solo Web</option>
-                            <option value="@ViewAll">Ver todas</option>
-                            <option value="@ViewDesktop">Solo Desktop</option>
-                            <option value="@ViewShared">Compartidas</option>
-                            <option value="@ViewUnauthorized">Sin autorización</option>
-                        </select>
-                    </div>
-
-                    <div class="actions">
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltrosAsync" disabled="@_loadingTree">
-                            <i class="bi bi-eraser"></i> Limpiar filtros
-                        </button>
-                    </div>
-
-                    <div class="auth-legend auth-legend--stacked">
-                        <span class="auth-badge auth-badge--shared">D+W = Desktop + Web</span>
-                        <span class="auth-badge auth-badge--desktop">Dsk = Solo Desktop</span>
-                        <span class="auth-badge auth-badge--partial">Parcial = selección parcial</span>
-                    </div>
-                </div>
-
                 <div class="auth-panel auth-panel--compact auth-panel--footer">
                     <h4 class="auth-panel__title">Asignaciones del usuario</h4>
                     <div class="auth-assignments">
@@ -283,11 +263,6 @@
     private const string MenuSistema = "ALFA";
     private const string PermisosSistema = "CN000PR";
     private const string DefaultUnidadNegocioVisual = "1";
-    private const string ViewAll = "all";
-    private const string ViewWeb = "web";
-    private const string ViewDesktop = "desktop";
-    private const string ViewShared = "shared";
-    private const string ViewUnauthorized = "unauthorized";
 
     private readonly HashSet<string> _expandedKeys = new(StringComparer.OrdinalIgnoreCase);
     private List<UsuarioSistemaDto> _users = [];
@@ -300,7 +275,6 @@
     private string _selectedUser = string.Empty;
     private string _copyFromUser = string.Empty;
     private string _searchText = string.Empty;
-    private string _viewMode = ViewWeb;
     private string _selectedUNegocio = string.Empty;
     private string _selectedIdCaja = string.Empty;
     private string _selectedIdDeposito = string.Empty;
@@ -330,10 +304,6 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var currentUser = AppUserSession.CurrentUser?.UserName?.Trim();
-        if (!string.IsNullOrWhiteSpace(currentUser))
-            _selectedUser = currentUser;
-
         await RecargarUsuariosAsync();
     }
 
@@ -524,7 +494,6 @@
     private Task LimpiarFiltrosAsync()
     {
         _searchText = string.Empty;
-        _viewMode = ViewWeb;
         RebuildVisibleTree();
         return Task.CompletedTask;
     }
@@ -535,13 +504,6 @@
             return;
 
         await AplicarFiltrosAsync();
-    }
-
-    private Task OnViewModeChanged(ChangeEventArgs args)
-    {
-        _viewMode = Convert.ToString(args.Value) ?? ViewWeb;
-        RebuildVisibleTree();
-        return Task.CompletedTask;
     }
 
     private Task OnAdministradorChanged(ChangeEventArgs args)
@@ -613,7 +575,7 @@
 
     private void RebuildVisibleTree()
     {
-        _visibleTree = BuildFilteredTree(_tree, _searchText, _viewMode);
+        _visibleTree = BuildFilteredTree(_tree, _searchText);
         _visibleTreeCount = CountNodes(_visibleTree);
         _authorizedCount = EnumerateAuthorizedKeys(_tree).Count();
         NormalizePartialState(_visibleTree);
@@ -642,15 +604,15 @@
         return match?.Codigo ?? string.Empty;
     }
 
-    private static List<MenuAutorizacionItemDto> BuildFilteredTree(IEnumerable<MenuAutorizacionItemDto> source, string searchText, string viewMode)
+    private static List<MenuAutorizacionItemDto> BuildFilteredTree(IEnumerable<MenuAutorizacionItemDto> source, string searchText)
     {
         var term = searchText?.Trim() ?? string.Empty;
         var result = new List<MenuAutorizacionItemDto>();
 
         foreach (var item in source)
         {
-            var children = BuildFilteredTree(item.Hijos, term, viewMode);
-            var matchesSelf = MatchesSearch(item, term) && MatchesView(item, viewMode);
+            var children = BuildFilteredTree(item.Hijos, term);
+            var matchesSelf = MatchesSearch(item, term) && MatchesWebScope(item);
             if (!matchesSelf && children.Count == 0)
                 continue;
 
@@ -678,14 +640,8 @@
         return text.Contains(term, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static bool MatchesView(MenuAutorizacionItemDto item, string viewMode) => viewMode switch
-    {
-        ViewWeb => item.EsWeb && !item.EsCompartida,
-        ViewDesktop => item.EsDesktop && !item.EsCompartida,
-        ViewShared => item.EsCompartida,
-        ViewUnauthorized => !item.Autorizado,
-        _ => true
-    };
+    /// <summary>Esta pantalla es exclusivamente para permisos de AlfaCore (web) — un ítem entra si tiene ruta web habilitada, sea exclusivo de web o compartido con Desktop.</summary>
+    private static bool MatchesWebScope(MenuAutorizacionItemDto item) => item.EsWeb;
 
     private static MenuAutorizacionItemDto CloneNode(MenuAutorizacionItemDto item)
         => new()
