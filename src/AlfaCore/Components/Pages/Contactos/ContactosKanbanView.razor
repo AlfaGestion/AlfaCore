@@ -44,9 +44,13 @@
                     var avatarInitial = GetAvatarInitial(item.NombreApellido);
 
                     <article class="contactos-kanban-card @(selected ? "is-selected" : string.Empty)"
+                             @ondblclick="() => OnOpenRecord.InvokeAsync(item.Id)"
                              aria-label="@($"Contacto {item.NombreApellido}")">
                         <div class="contactos-kanban-card__main">
-                            <label class="contactos-kanban-card__selection" title="Seleccionar contacto">
+                            <label class="contactos-kanban-card__selection"
+                                   title="Seleccionar contacto"
+                                   @onclick:stopPropagation="true"
+                                   @ondblclick:stopPropagation="true">
                                 <input type="checkbox"
                                        checked="@selected"
                                        @onchange="() => OnToggleSelection.InvokeAsync(item.Id)"
@@ -68,9 +72,10 @@
                             <div class="contactos-kanban-card__identity">
                                 <button type="button"
                                         class="contactos-kanban-card__record-link"
-                                        title="@($"Abrir ficha de {item.NombreApellido}")"
-                                        @onclick="() => OnOpenRecord.InvokeAsync(item.Id)"
+                                        title="Doble clic para abrir la ficha"
+                                        @onkeydown="args => HandleRecordKeyDownAsync(args, item.Id)"
                                         @onclick:stopPropagation="true"
+                                        @ondblclick="() => OnOpenRecord.InvokeAsync(item.Id)"
                                         @ondblclick:stopPropagation="true">
                                     @item.NombreApellido
                                 </button>
@@ -90,7 +95,9 @@
                                 </div>
                             </div>
 
-                            <div class="contactos-kanban-card__actions">
+                            <div class="contactos-kanban-card__actions"
+                                 @onclick:stopPropagation="true"
+                                 @ondblclick:stopPropagation="true">
                                 <AlfaActionMenu Items="@BuildCardActionMenu(item, hasConversation, hasPhone)"
                                                 TriggerLabel="Acciones del contacto"
                                                 MenuLabel="Acciones del contacto"
@@ -210,5 +217,11 @@
             return null;
 
         return normalized[..1].ToUpperInvariant();
+    }
+
+    private async Task HandleRecordKeyDownAsync(KeyboardEventArgs args, int id)
+    {
+        if (args.Key is "Enter" or " ")
+            await OnOpenRecord.InvokeAsync(id);
     }
 }
