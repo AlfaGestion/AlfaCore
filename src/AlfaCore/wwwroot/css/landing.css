@@ -325,16 +325,9 @@
 }
 
 .landing-testimonios__inner h2 {
-    margin: 0 0 6px;
+    margin: 0 0 28px;
     color: #10233d;
     font-size: clamp(1.4rem, 2.4vw, 1.9rem);
-}
-
-.landing-testimonios__nota {
-    margin: 0 0 28px;
-    color: #8394a6;
-    font-size: 0.82rem;
-    font-style: italic;
 }
 
 .landing-testimonios__grid {
