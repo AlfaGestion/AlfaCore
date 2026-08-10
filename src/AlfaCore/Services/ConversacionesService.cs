@@ -896,6 +896,14 @@ public sealed class ConversacionesService(
                         ON UPPER(LTRIM(RTRIM(cliCuenta.CODIGO))) = cuenta.Cuenta
                     ORDER BY cuenta.Orden, cliCuenta.RAZON_SOCIAL
                 ) contactoCuenta
+                OUTER APPLY (
+                    -- Codigo de clasificacion del cliente resuelto (directo o via contacto->cuenta),
+                    -- solo para la cola de espera por prioridad (ver Orden = 'cola_espera').
+                    SELECT TOP (1) ISNULL(cliCls.Clasificacion, '') AS Codigo
+                    FROM dbo.VT_CLIENTES cliCls
+                    WHERE LTRIM(RTRIM(COALESCE(NULLIF(c.ClienteCodigo, ''), contactoCuenta.Cuenta, ''))) <> ''
+                      AND UPPER(LTRIM(RTRIM(cliCls.CODIGO))) = UPPER(LTRIM(RTRIM(COALESCE(NULLIF(c.ClienteCodigo, ''), contactoCuenta.Cuenta, ''))))
+                ) clienteClasificacion
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -1148,12 +1156,7 @@ public sealed class ConversacionesService(
                             WHERE msg.IdConversacion = c.IdConversacion
                         )
                     )
-                ORDER BY
-                    CASE WHEN @Search IS NULL OR @ClienteCodigo IS NOT NULL THEN 0 ELSE searchRank.SearchRank END ASC,
-                    CASE WHEN pin.IdConversacion IS NULL THEN 0 ELSE 1 END DESC,
-                    pin.FechaHora_Grabacion DESC,
-                    ISNULL(c.FechaHoraUltimoMensaje, ultMsg.FechaHoraVisible) DESC,
-                    c.IdConversacion DESC
+                {BuildInboxOrderByClause(filters.Orden)}
                 OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
                 """;
 
@@ -1197,6 +1200,9 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
             cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
             cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
+            cmd.Parameters.AddWithValue("@Clasifica1", DbNullable(filters.Clasifica1));
+            cmd.Parameters.AddWithValue("@Clasifica2", DbNullable(filters.Clasifica2));
+            cmd.Parameters.AddWithValue("@Clasifica3", DbNullable(filters.Clasifica3));
 
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
@@ -9869,6 +9875,42 @@ public sealed class ConversacionesService(
             "cerradas" => normalized,
             _ => "todas"
         };
+    }
+
+    /// <summary>
+    /// "recientes" (de siempre): fijadas primero, después la actividad más nueva. "cola_espera":
+    /// las conversaciones donde el último mensaje es del cliente (esperando respuesta) van primero,
+    /// agrupadas por prioridad (Clasifica1/2/3 configurados, el resto al final) y dentro de cada
+    /// grupo por cuánto tiempo llevan esperando (más viejas primero); lo que ya se respondió queda
+    /// después, ordenado como siempre.
+    /// </summary>
+    private static string BuildInboxOrderByClause(string? orden)
+    {
+        if (!string.Equals(orden, ConversacionesInboxOrden.ColaEspera, StringComparison.OrdinalIgnoreCase))
+        {
+            return """
+                ORDER BY
+                    CASE WHEN @Search IS NULL OR @ClienteCodigo IS NOT NULL THEN 0 ELSE searchRank.SearchRank END ASC,
+                    CASE WHEN pin.IdConversacion IS NULL THEN 0 ELSE 1 END DESC,
+                    pin.FechaHora_Grabacion DESC,
+                    ISNULL(c.FechaHoraUltimoMensaje, ultMsg.FechaHoraVisible) DESC,
+                    c.IdConversacion DESC
+                """;
+        }
+
+        return """
+            ORDER BY
+                CASE WHEN ISNULL(ultMsg.Direction, N'') = N'ENTRANTE' THEN 0 ELSE 1 END ASC,
+                CASE
+                    WHEN ISNULL(ultMsg.Direction, N'') <> N'ENTRANTE' THEN 99
+                    WHEN @Clasifica1 IS NOT NULL AND UPPER(LTRIM(RTRIM(clienteClasificacion.Codigo))) = UPPER(LTRIM(RTRIM(@Clasifica1))) THEN 1
+                    WHEN @Clasifica2 IS NOT NULL AND UPPER(LTRIM(RTRIM(clienteClasificacion.Codigo))) = UPPER(LTRIM(RTRIM(@Clasifica2))) THEN 2
+                    WHEN @Clasifica3 IS NOT NULL AND UPPER(LTRIM(RTRIM(clienteClasificacion.Codigo))) = UPPER(LTRIM(RTRIM(@Clasifica3))) THEN 3
+                    ELSE 4
+                END ASC,
+                ISNULL(c.FechaHoraUltimoMensaje, ultMsg.FechaHoraVisible) ASC,
+                c.IdConversacion ASC
+            """;
     }
 
     private static string? NormalizeAuditFilter(string? auditoria)

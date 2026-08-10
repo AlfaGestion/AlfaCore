@@ -6,6 +6,7 @@
 @using System.Text.RegularExpressions
 @using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
+@inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IContactosService ContactosSvc
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
 @inject AlfaCore.Services.ITicketsService TicketsSvc
@@ -402,6 +403,13 @@
                     }
                 </div>
             </div>
+
+            <button type="button"
+                    class="conversations-filter-pill @(EsColaEspera ? "is-active" : string.Empty)"
+                    title="Ordenar por tiempo de espera y prioridad, en vez de por actividad reciente"
+                    @onclick="ToggleColaEsperaAsync">
+                <i class="bi bi-hourglass-split"></i> Cola de espera
+            </button>
 
             <div class="conversations-filters__fields">
                 <div class="field">
@@ -819,6 +827,12 @@
                                 </div>
                                 <div class="conversation-row__badges">
                                     <span class="conversation-badge conversation-badge--state">@item.EstadoDescripcion</span>
+                                    @if (string.Equals(item.DireccionUltimoMensaje, "ENTRANTE", StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        <span class="conversation-badge conversation-badge--esperando">
+                                            <i class="bi bi-hourglass-split"></i> @GetEsperandoDesdeLabel(item)
+                                        </span>
+                                    }
                                     @if (!string.IsNullOrWhiteSpace(item.IdTecnico))
                                     {
                                         <span class="conversation-badge conversation-badge--technician"
@@ -3876,11 +3890,44 @@
             _states = (await ConversacionesSvc.GetStatesAsync()).ToList();
             _statusCode = _states.FirstOrDefault()?.CodigoEstado ?? "ABIERTA";
             EnsureCurrentTechnicianFilterForCurrentMode();
+
+            var prioridad = await ConfigSvc.GetPrioridadConfigAsync();
+            _filters.Clasifica1 = string.IsNullOrWhiteSpace(prioridad.Clasifica1) ? null : prioridad.Clasifica1;
+            _filters.Clasifica2 = string.IsNullOrWhiteSpace(prioridad.Clasifica2) ? null : prioridad.Clasifica2;
+            _filters.Clasifica3 = string.IsNullOrWhiteSpace(prioridad.Clasifica3) ? null : prioridad.Clasifica3;
         }
         catch (Exception ex)
         {
             _loadError = ex.Message;
         }
+    }
+
+    private bool EsColaEspera => string.Equals(_filters.Orden, ConversacionesInboxOrden.ColaEspera, StringComparison.OrdinalIgnoreCase);
+
+    private async Task ToggleColaEsperaAsync()
+    {
+        _filters.Orden = EsColaEspera ? ConversacionesInboxOrden.Recientes : ConversacionesInboxOrden.ColaEspera;
+        await LoadInboxAsync();
+    }
+
+    /// <summary>
+    /// Hace cuánto espera respuesta esta conversación (solo tiene sentido si el último mensaje es
+    /// del cliente) — para el badge "esperando hace X" en la lista.
+    /// </summary>
+    private static string GetEsperandoDesdeLabel(ConversacionInboxItemDto item)
+    {
+        var minutos = (int)Math.Max(0, (DateTime.Now - item.FechaHoraUltimoMensaje).TotalMinutes);
+        if (minutos < 1)
+            return "esperando hace instantes";
+        if (minutos < 60)
+            return $"esperando hace {minutos} min";
+
+        var horas = minutos / 60;
+        if (horas < 24)
+            return $"esperando hace {horas} h";
+
+        var dias = horas / 24;
+        return $"esperando hace {dias} d";
     }
 
     private async Task RecargarAsync()

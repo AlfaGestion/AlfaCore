@@ -686,6 +686,111 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo guardar la configuración de automatizaciones.", ct);
     }
 
+    public Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetPrioridadConfig", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            const string sql = """
+                SELECT
+                    UPPER(LTRIM(RTRIM(CLAVE))),
+                    ISNULL(VALOR, '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN ('CLASIFICA1', 'CLASIFICA2', 'CLASIFICA3')
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+                values[GetString(rd, 0)] = GetString(rd, 1);
+
+            return new ConversacionPrioridadConfigDto
+            {
+                Clasifica1 = ReadValue(values, "CLASIFICA1", string.Empty),
+                Clasifica2 = ReadValue(values, "CLASIFICA2", string.Empty),
+                Clasifica3 = ReadValue(values, "CLASIFICA3", string.Empty)
+            };
+        }, "No se pudo cargar la configuración de prioridad de atención.", ct);
+
+    public Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        return ExecuteLoggedAsync("Conversaciones", "SavePrioridadConfig", async token =>
+        {
+            var items = new[]
+            {
+                ("CLASIFICA1", (config.Clasifica1 ?? string.Empty).Trim()),
+                ("CLASIFICA2", (config.Clasifica2 ?? string.Empty).Trim()),
+                ("CLASIFICA3", (config.Clasifica3 ?? string.Empty).Trim())
+            };
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            foreach (var (clave, valor) in items)
+            {
+                // Grupo DATOS a proposito: son las mismas claves globales que ya usa Desktop
+                // (sp1_GrabaCfg), no exclusivas de Conversaciones — no las re-agrupamos.
+                var sql = $"""
+                    UPDATE dbo.TA_CONFIGURACION
+                    SET VALOR = @Valor
+                    WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, GRUPO)
+                        VALUES (@Clave, @Valor, 'DATOS');
+                    END;
+                    """;
+
+                await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@ClaveNormalizada", clave);
+                cmd.Parameters.AddWithValue("@Clave", clave);
+                cmd.Parameters.AddWithValue("@Valor", DbNullable(valor));
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SavePrioridadConfig",
+                "TA_CONFIGURACION",
+                "CLASIFICA1/2/3",
+                "Prioridad de atención por clasificación actualizada.",
+                new { config.Clasifica1, config.Clasifica2, config.Clasifica3 },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración de prioridad de atención.", ct);
+    }
+
+    public Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetClasificaciones", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            const string sql = """
+                SELECT DISTINCT ISNULL(Codigo, ''), ISNULL(Descripcion, '')
+                FROM dbo.TA_CLASIFICACIONES
+                WHERE LTRIM(RTRIM(ISNULL(Codigo, ''))) <> ''
+                ORDER BY 2, 1
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            var result = new List<ConversacionClasificacionOptionDto>();
+            while (await rd.ReadAsync(token))
+                result.Add(new ConversacionClasificacionOptionDto(GetString(rd, 0), GetString(rd, 1)));
+
+            return (IReadOnlyList<ConversacionClasificacionOptionDto>)result;
+        }, "No se pudieron cargar las clasificaciones de clientes.", ct);
+
     public Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "TestAlfaKnowledgeConnection", async token =>
         {

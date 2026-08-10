@@ -193,6 +193,22 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);
 }
 
+/// <summary>
+/// Qué código de dbo.TA_CLASIFICACIONES cuenta como prioridad 1 (más importante), 2 o 3 para
+/// ordenar la cola de espera. Un cliente sin clasificación, o con una que no está en ninguna de
+/// las 3, cae en "el resto" (prioridad 4, la más baja). Se guarda en dbo.TA_CONFIGURACION con las
+/// claves CLASIFICA1/2/3 — las mismas, sin prefijo, que ya usa Desktop, no son propias de este
+/// módulo.
+/// </summary>
+public sealed record ConversacionClasificacionOptionDto(string Codigo, string Descripcion);
+
+public sealed class ConversacionPrioridadConfigDto
+{
+    public string Clasifica1 { get; set; } = string.Empty;
+    public string Clasifica2 { get; set; } = string.Empty;
+    public string Clasifica3 { get; set; } = string.Empty;
+}
+
 public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
 {
     public bool Success { get; set; }

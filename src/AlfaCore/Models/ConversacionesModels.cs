@@ -28,6 +28,18 @@ public sealed class ConversacionesInboxFilters
     public string? TipoMensaje { get; set; }
     public int Limit { get; set; } = 50;
     public int Offset { get; set; }
+    /// <summary>"recientes" (default, actividad más reciente primero) o "cola_espera" (ver <see cref="ConversacionesInboxOrden"/>).</summary>
+    public string Orden { get; set; } = ConversacionesInboxOrden.Recientes;
+    /// <summary>Código de TA_CLASIFICACIONES que cuenta como prioridad 1/2/3 — solo se usan cuando Orden = "cola_espera".</summary>
+    public string? Clasifica1 { get; set; }
+    public string? Clasifica2 { get; set; }
+    public string? Clasifica3 { get; set; }
+}
+
+public static class ConversacionesInboxOrden
+{
+    public const string Recientes = "recientes";
+    public const string ColaEspera = "cola_espera";
 }
 
 public sealed class ConversacionesEstadisticasFilters

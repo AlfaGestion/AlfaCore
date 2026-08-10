@@ -25,4 +25,14 @@ public interface IConversacionesConfigService
     Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default);
     Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(CancellationToken ct = default);
     Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, CancellationToken ct = default);
+
+    /// <summary>
+    /// Prioridad de atención por clasificación de cliente (CLASIFICA1/2/3 en TA_CONFIGURACION —
+    /// las mismas claves sin prefijo que ya graba Desktop, no son exclusivas de Conversaciones).
+    /// </summary>
+    Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default);
+    Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default);
+
+    /// <summary>Catálogo de dbo.TA_CLASIFICACIONES, para poblar los combos de prioridad.</summary>
+    Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(CancellationToken ct = default);
 }

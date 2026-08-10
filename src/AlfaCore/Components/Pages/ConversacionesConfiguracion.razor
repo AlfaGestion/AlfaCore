@@ -703,6 +703,75 @@
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
                     <div>
+                        <h3 class="panel-card__title">Prioridad de atención</h3>
+                        <p class="panel-card__subtitle">Qué clasificación de cliente cuenta como prioridad 1 (más importante), 2 o 3 para ordenar la cola de espera. El resto (sin clasificar o con otra clasificación) queda al final.</p>
+                    </div>
+                    <span class="panel-card__tag">CLASIFICA1/2/3</span>
+                </div>
+
+                <div class="conv-config-fields">
+                    <div class="field">
+                        <label for="prioridad-1">Prioridad 1 (más importante)</label>
+                        <select id="prioridad-1" @bind="_prioridadConfig.Clasifica1">
+                            <option value="">Sin asignar</option>
+                            @foreach (var opcion in _clasificaciones)
+                            {
+                                <option value="@opcion.Codigo">@opcion.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="prioridad-2">Prioridad 2 (media)</label>
+                        <select id="prioridad-2" @bind="_prioridadConfig.Clasifica2">
+                            <option value="">Sin asignar</option>
+                            @foreach (var opcion in _clasificaciones)
+                            {
+                                <option value="@opcion.Codigo">@opcion.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="prioridad-3">Prioridad 3 (baja)</label>
+                        <select id="prioridad-3" @bind="_prioridadConfig.Clasifica3">
+                            <option value="">Sin asignar</option>
+                            @foreach (var opcion in _clasificaciones)
+                            {
+                                <option value="@opcion.Codigo">@opcion.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="SavePrioridadAsync" disabled="@(Loading || Saving)">
+                        <i class="bi bi-floppy-fill"></i> Guardar prioridad
+                    </button>
+                </div>
+            </section>
+
+            <aside class="panel-card conv-config-help">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Cómo funciona</h3>
+                        <p class="panel-card__subtitle">Cómo se arma la cola de espera con esto.</p>
+                    </div>
+                    <span class="panel-card__tag">Cola de espera</span>
+                </div>
+
+                <ol class="conv-config-steps">
+                    <li>El inbox ordena primero por prioridad (1, 2, 3, resto) y dentro de cada grupo por cuánto tiempo lleva esperando respuesta.</li>
+                    <li>La clasificación de cada cliente se carga desde Clientes (Cuentas Comerciales) — acá solo se define qué clasificación pesa más.</li>
+                    <li>Estas claves (<code>CLASIFICA1/2/3</code>) son las mismas que ya usa Desktop, no son propias de Conversaciones: configurarlas acá también las cambia allá.</li>
+                </ol>
+            </aside>
+    </div>
+
+    <div class="conv-config-layout">
+            <section class="panel-card conv-config-form">
+                <div class="panel-card__header">
+                    <div>
                         <h3 class="panel-card__title"><i class="bi bi-display"></i> AnyDesk</h3>
                         <p class="panel-card__subtitle">Generá un archivo para registrar AnyDesk en tu propia PC, no en el servidor.</p>
                     </div>
@@ -769,6 +838,8 @@
     private ConversacionMercadoLibreConfigDto _mercadoLibreConfig = new();
     private ConversacionAlfaKnowledgeConfigDto _alfaKnowledgeConfig = new();
     private ConversacionAutomatizacionesConfigDto _automatizacionesConfig = new();
+    private ConversacionPrioridadConfigDto _prioridadConfig = new();
+    private IReadOnlyList<ConversacionClasificacionOptionDto> _clasificaciones = [];
     private string _anyDeskPath = string.Empty;
     private bool Loading { get; set; }
     private bool Saving { get; set; }
@@ -930,7 +1001,49 @@
             _feedback ??= automatizacionesResult.Feedback;
         }
 
+        var clasificacionesResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetClasificacionesAsync(),
+            "No se pudieron cargar las clasificaciones de clientes.");
+
+        if (clasificacionesResult.Success && clasificacionesResult.Value is not null)
+        {
+            _clasificaciones = clasificacionesResult.Value;
+        }
+        else
+        {
+            _feedback ??= clasificacionesResult.Feedback;
+        }
+
+        var prioridadResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetPrioridadConfigAsync(),
+            "No se pudo cargar la configuración de prioridad de atención.");
+
+        if (prioridadResult.Success && prioridadResult.Value is not null)
+        {
+            _prioridadConfig = prioridadResult.Value;
+        }
+        else
+        {
+            _feedback ??= prioridadResult.Feedback;
+        }
+
         Loading = false;
+    }
+
+    private async Task SavePrioridadAsync()
+    {
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SavePrioridadConfigAsync(_prioridadConfig),
+            "No se pudo guardar la configuración de prioridad de atención.");
+
+        _feedback = result.Success
+            ? AppUiMessage.Success("Prioridad guardada", "La cola de espera del inbox ya usa este orden de prioridad.")
+            : result.Feedback;
+
+        Saving = false;
     }
 
     private async Task SaveAutomatizacionesAsync()
