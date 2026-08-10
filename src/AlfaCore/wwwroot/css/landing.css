@@ -29,18 +29,20 @@
 }
 
 .landing-brand {
-    display: inline-flex;
+    display: flex;
+    justify-content: center;
     align-items: center;
     gap: 10px;
     text-decoration: none;
     color: #0f2138;
     font-weight: 700;
-    margin-bottom: 28px;
+    font-size: 1.15rem;
+    margin-bottom: 32px;
 }
 
 .landing-brand img {
-    width: 40px;
-    height: 40px;
+    width: 36px;
+    height: 36px;
     object-fit: contain;
 }
 
