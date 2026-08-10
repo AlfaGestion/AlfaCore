@@ -1,0 +1,310 @@
+@page "/archivos/tablas"
+@page "/{idweb}/{idbase:int}/archivos/tablas"
+@layout AlfaCore.Components.Layout.MainLayout
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ITablasReferenciaService TablasSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+<PageTitle>Tablas | AlfaNet</PageTitle>
+
+<div class="page-grid admin-home-page">
+<div class="panel-card">
+    <div class="panel-card__header">
+        <div>
+            <h1 class="panel-card__title">Tablas de referencia</h1>
+            <p class="panel-card__subtitle">Catálogos chicos que usan otras pantallas del sistema (clasificaciones de clientes, categorías, etc.). No es un módulo aparte: está disponible siempre, para todos, sin costo.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-light" @onclick="GoHome">Inicio</button>
+        </div>
+    </div>
+
+    @if (_loadingTablas)
+    {
+        <p>Cargando tablas...</p>
+    }
+    else if (!IsSuperAdmin)
+    {
+        <div class="editor-msg editor-msg--warning">
+            <strong>Acceso restringido</strong>
+            <p>Solo los superadmin pueden editar tablas de referencia.</p>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="editor-msg editor-msg--success">
+                <strong>Listo</strong>
+                <p>@_message</p>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="editor-msg editor-msg--warning">
+                <strong>No se pudo completar la acción</strong>
+                <p>@_error</p>
+            </div>
+        }
+
+        @if (_tablas.Count == 0)
+        {
+            <p>No hay tablas de referencia registradas todavía.</p>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-12 col-xl-3">
+                    <div class="panel-card">
+                        <h2 class="panel-card__title">Tablas</h2>
+                        <div class="list-group">
+                            @foreach (var tabla in _tablas)
+                            {
+                                <button type="button"
+                                        class="list-group-item list-group-item-action @(tabla.Clave == _selectedClave ? "active" : string.Empty)"
+                                        @onclick="() => SelectTablaAsync(tabla.Clave)">
+                                    @tabla.NombreVisible
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-xl-9">
+                    @if (_selectedTabla is not null)
+                    {
+                        <div class="panel-card">
+                            <div class="panel-card__header">
+                                <div>
+                                    <h2 class="panel-card__title">@(_editingFilaId.HasValue ? $"Editar #{_editingFilaId}" : "Nueva fila")</h2>
+                                    <p class="panel-card__subtitle">@_selectedTabla.NombreVisible</p>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Código</label>
+                                <input class="form-control" @bind="_filaForm.Codigo" maxlength="8" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Descripción</label>
+                                <input class="form-control" @bind="_filaForm.Descripcion" maxlength="100" />
+                            </div>
+                            @if (_selectedTabla.TieneColor)
+                            {
+                                <div class="mb-3">
+                                    <label class="form-label">Color</label>
+                                    <input class="form-control form-control-color" type="color" value="@(_filaForm.ColorHex ?? "#888888")" @onchange="OnColorChanged" />
+                                </div>
+                            }
+
+                            <div class="d-flex gap-2">
+                                <button type="button" class="btn btn-primary" @onclick="GuardarFilaAsync" disabled="@_savingFila">
+                                    @(_editingFilaId.HasValue ? "Guardar cambios" : "Crear fila")
+                                </button>
+                                <button type="button" class="btn btn-outline-light" @onclick="StartNewFila">Limpiar</button>
+                            </div>
+                        </div>
+
+                        <div class="panel-card mt-3">
+                            <h2 class="panel-card__title">Filas cargadas</h2>
+
+                            @if (_loadingFilas)
+                            {
+                                <p>Cargando...</p>
+                            }
+                            else if (_filas.Count == 0)
+                            {
+                                <p>Todavía no hay filas cargadas.</p>
+                            }
+                            else
+                            {
+                                <div class="table-responsive admin-table-wrap">
+                                    <table class="table table-sm align-middle admin-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Código</th>
+                                                <th>Descripción</th>
+                                                @if (_selectedTabla.TieneColor)
+                                                {
+                                                    <th>Color</th>
+                                                }
+                                                <th></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var fila in _filas)
+                                            {
+                                                <tr>
+                                                    <td>@fila.Codigo</td>
+                                                    <td>@fila.Descripcion</td>
+                                                    @if (_selectedTabla.TieneColor)
+                                                    {
+                                                        <td><span style="display:inline-block;width:18px;height:18px;border-radius:4px;border:1px solid rgba(255,255,255,.2);background:@(fila.ColorHex ?? "transparent");"></span></td>
+                                                    }
+                                                    <td class="text-end">
+                                                        <div class="d-inline-flex gap-2">
+                                                            <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => EditFila(fila)">Editar</button>
+                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarFilaAsync(fila.Id)">Eliminar</button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+</div>
+
+@code {
+    private List<AlfaCore.Models.TablaReferenciaDto> _tablas = [];
+    private List<AlfaCore.Models.TablaReferenciaFilaDto> _filas = [];
+    private AlfaCore.Models.TablaReferenciaDto? _selectedTabla;
+    private string _selectedClave = string.Empty;
+    private readonly AlfaCore.Models.GuardarFilaTablaReferenciaRequest _filaForm = new();
+    private int? _editingFilaId;
+
+    private bool _loadingTablas = true;
+    private bool _loadingFilas;
+    private bool _savingFila;
+    private string _message = string.Empty;
+    private string _error = string.Empty;
+
+    private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsSuperAdmin)
+        {
+            _loadingTablas = false;
+            return;
+        }
+
+        try
+        {
+            _tablas = (await TablasSvc.GetTablasAsync()).ToList();
+            if (_tablas.Count > 0)
+                await SelectTablaAsync(_tablas[0].Clave);
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+        }
+        finally
+        {
+            _loadingTablas = false;
+        }
+    }
+
+    private void GoHome()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/"));
+
+    private async Task SelectTablaAsync(string clave)
+    {
+        _selectedClave = clave;
+        _selectedTabla = _tablas.FirstOrDefault(t => t.Clave == clave);
+        StartNewFila();
+        await LoadFilasAsync();
+    }
+
+    private async Task LoadFilasAsync()
+    {
+        if (_selectedTabla is null)
+            return;
+
+        _loadingFilas = true;
+        _error = string.Empty;
+        try
+        {
+            _filas = (await TablasSvc.GetFilasAsync(_selectedTabla.Clave)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+            _filas = [];
+        }
+        finally
+        {
+            _loadingFilas = false;
+        }
+    }
+
+    private void StartNewFila()
+    {
+        _editingFilaId = null;
+        _filaForm.Id = null;
+        _filaForm.Codigo = string.Empty;
+        _filaForm.Descripcion = string.Empty;
+        _filaForm.ColorHex = "#888888";
+        _message = string.Empty;
+        _error = string.Empty;
+    }
+
+    private void EditFila(AlfaCore.Models.TablaReferenciaFilaDto fila)
+    {
+        _editingFilaId = fila.Id;
+        _filaForm.Id = fila.Id;
+        _filaForm.Codigo = fila.Codigo;
+        _filaForm.Descripcion = fila.Descripcion;
+        _filaForm.ColorHex = fila.ColorHex ?? "#888888";
+        _message = string.Empty;
+        _error = string.Empty;
+    }
+
+    private void OnColorChanged(ChangeEventArgs args)
+        => _filaForm.ColorHex = Convert.ToString(args.Value);
+
+    private async Task GuardarFilaAsync()
+    {
+        if (_selectedTabla is null)
+            return;
+
+        _savingFila = true;
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            await TablasSvc.GuardarFilaAsync(_selectedTabla.Clave, _filaForm);
+            await LoadFilasAsync();
+            _message = _editingFilaId.HasValue ? "Fila actualizada." : "Fila creada.";
+            StartNewFila();
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+        }
+        finally
+        {
+            _savingFila = false;
+        }
+    }
+
+    private async Task EliminarFilaAsync(int id)
+    {
+        if (_selectedTabla is null)
+            return;
+
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            await TablasSvc.EliminarFilaAsync(_selectedTabla.Clave, id);
+            await LoadFilasAsync();
+            _message = "Fila eliminada.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing ? userFacing.UserMessage : ex.Message;
+        }
+    }
+}
