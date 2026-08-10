@@ -66,7 +66,14 @@
                             </span>
 
                             <div class="contactos-kanban-card__identity">
-                                <h3 title="@item.NombreApellido">@item.NombreApellido</h3>
+                                <button type="button"
+                                        class="contactos-kanban-card__record-link"
+                                        title="@($"Abrir ficha de {item.NombreApellido}")"
+                                        @onclick="() => OnOpenRecord.InvokeAsync(item.Id)"
+                                        @onclick:stopPropagation="true"
+                                        @ondblclick:stopPropagation="true">
+                                    @item.NombreApellido
+                                </button>
                                 <div class="contactos-kanban-card__details" aria-label="Datos de contacto">
                                     @if (!string.IsNullOrWhiteSpace(location))
                                     {
@@ -133,6 +140,7 @@
     [Parameter] public string EmptyActionLabel { get; set; } = string.Empty;
     [Parameter] public string EmptyActionIcon { get; set; } = string.Empty;
     [Parameter] public EventCallback<int> OnToggleSelection { get; set; }
+    [Parameter] public EventCallback<int> OnOpenRecord { get; set; }
     [Parameter] public EventCallback<int> OnEdit { get; set; }
     [Parameter] public EventCallback<ContactoGridItemDto> OnOpenConversation { get; set; }
     [Parameter] public EventCallback<ContactoGridItemDto> OnCreateConversation { get; set; }
