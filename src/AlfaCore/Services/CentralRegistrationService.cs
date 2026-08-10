@@ -360,7 +360,8 @@ public sealed class CentralRegistrationService(
             Cuit = request.Cuit?.Trim() ?? string.Empty,
             Iva = request.Iva?.Trim() ?? string.Empty,
             RecaptchaToken = request.RecaptchaToken?.Trim() ?? string.Empty,
-            PublicBaseUrl = request.PublicBaseUrl?.Trim() ?? string.Empty
+            PublicBaseUrl = request.PublicBaseUrl?.Trim() ?? string.Empty,
+            ModuloSlug = string.IsNullOrWhiteSpace(request.ModuloSlug) ? null : request.ModuloSlug.Trim()
         };
 
     private static void ValidateRequest(PublicRegistrationRequest request)
