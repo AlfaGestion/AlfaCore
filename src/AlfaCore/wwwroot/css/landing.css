@@ -2,6 +2,7 @@
 .landing-showcase,
 .landing-features,
 .landing-testimonios,
+.landing-respaldo,
 .landing-deps,
 .landing-cta,
 .landing-footer,
@@ -285,6 +286,70 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
+}
+
+/* --- Respaldo AlfaNet --- */
+
+.landing-respaldo {
+    background: linear-gradient(135deg, #0f2138, #16324f);
+    padding: 56px 20px;
+}
+
+.landing-respaldo__inner {
+    max-width: 1080px;
+    margin: 0 auto;
+    text-align: center;
+}
+
+.landing-respaldo__inner h2 {
+    margin: 0 0 8px;
+    color: #ffffff;
+    font-size: clamp(1.4rem, 2.4vw, 1.9rem);
+}
+
+.landing-respaldo__lead {
+    margin: 0 0 32px;
+    color: rgba(255, 255, 255, 0.72);
+    font-size: 0.98rem;
+}
+
+.landing-respaldo__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+    text-align: left;
+}
+
+.landing-respaldo__item {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 20px;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.landing-respaldo__icon {
+    width: 40px;
+    height: 40px;
+    display: grid;
+    place-items: center;
+    border-radius: 12px;
+    background: rgba(127, 196, 255, 0.18);
+    color: #7fc4ff;
+    font-size: 1.15rem;
+}
+
+.landing-respaldo__item strong {
+    color: #ffffff;
+    font-size: 0.98rem;
+}
+
+.landing-respaldo__item span {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 0.88rem;
+    line-height: 1.45;
 }
 
 /* --- Dependencias --- */
