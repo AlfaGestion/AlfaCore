@@ -12,7 +12,9 @@ public sealed class ConversacionesConfigService(
     ISessionService sessionService,
     IAppEventService appEvents,
     IOptions<WhatsAppOptions> whatsAppOptions,
-    IHttpClientFactory httpClientFactory) : IConversacionesConfigService
+    IHttpClientFactory httpClientFactory,
+    IAppUserSessionService appUserSession,
+    IAutorizacionTareasService autorizacionTareasService) : IConversacionesConfigService
 {
     private const string ConfigGroup = "CONVERSACIONES";
     private const string DefaultWebhookPath = "/api/conversaciones/whatsapp/webhook";
@@ -790,6 +792,231 @@ public sealed class ConversacionesConfigService(
 
             return (IReadOnlyList<ConversacionClasificacionOptionDto>)result;
         }, "No se pudieron cargar las clasificaciones de clientes.", ct);
+
+    public Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(CancellationToken ct = default)
+        => autorizacionTareasService.GetUsuariosAsync(appUserSession.CurrentUser?.SystemCode ?? string.Empty, ct);
+
+    public Task<IReadOnlyList<ConversacionWhatsAppNumeroDto>> GetWhatsAppNumerosAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppNumeros", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+
+            var numeros = new List<ConversacionWhatsAppNumeroDto>();
+            const string sqlNumeros = """
+                SELECT IdNumero, ISNULL(PhoneNumberId, ''), ISNULL(Nombre, ''), Activo
+                FROM dbo.CONV_WHATSAPP_NUMEROS
+                ORDER BY Nombre;
+                """;
+            await using (var cmd = new SqlCommand(sqlNumeros, cn))
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    numeros.Add(new ConversacionWhatsAppNumeroDto
+                    {
+                        IdNumero = rd.GetInt32(0),
+                        PhoneNumberId = GetString(rd, 1),
+                        Nombre = GetString(rd, 2),
+                        Activo = rd.GetBoolean(3)
+                    });
+                }
+            }
+
+            var usuariosPorNumero = new Dictionary<int, List<string>>();
+            const string sqlUsuarios = """
+                SELECT IdNumero, Usuario
+                FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS
+                WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                """;
+            await using (var cmd = new SqlCommand(sqlUsuarios, cn))
+            {
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await using var rd = await cmd.ExecuteReaderAsync(token);
+                while (await rd.ReadAsync(token))
+                {
+                    var idNumero = rd.GetInt32(0);
+                    var usuario = GetString(rd, 1);
+                    if (!usuariosPorNumero.TryGetValue(idNumero, out var lista))
+                    {
+                        lista = [];
+                        usuariosPorNumero[idNumero] = lista;
+                    }
+                    lista.Add(usuario);
+                }
+            }
+
+            foreach (var numero in numeros)
+                numero.Usuarios = usuariosPorNumero.TryGetValue(numero.IdNumero, out var lista) ? lista : [];
+
+            return (IReadOnlyList<ConversacionWhatsAppNumeroDto>)numeros;
+        }, "No se pudieron cargar los números de WhatsApp.", ct);
+
+    public Task SaveWhatsAppNumeroAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(numero);
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveWhatsAppNumero", async token =>
+        {
+            var phoneNumberId = (numero.PhoneNumberId ?? string.Empty).Trim();
+            var nombre = (numero.Nombre ?? string.Empty).Trim();
+            if (phoneNumberId.Length == 0)
+                throw new InvalidOperationException("El Phone Number ID es obligatorio.");
+            if (nombre.Length == 0)
+                throw new InvalidOperationException("El nombre del número es obligatorio.");
+
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (sistema.Length == 0)
+                throw new InvalidOperationException("No se pudo determinar el sistema del usuario actual.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            int idNumero;
+            if (numero.IdNumero > 0)
+            {
+                const string sqlUpdate = """
+                    UPDATE dbo.CONV_WHATSAPP_NUMEROS
+                    SET PhoneNumberId = @PhoneNumberId, Nombre = @Nombre, Activo = @Activo, FechaHora_Modificacion = GETDATE()
+                    WHERE IdNumero = @IdNumero;
+                    """;
+                await using var cmd = new SqlCommand(sqlUpdate, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
+                cmd.Parameters.AddWithValue("@Nombre", nombre);
+                cmd.Parameters.AddWithValue("@Activo", numero.Activo);
+                cmd.Parameters.AddWithValue("@IdNumero", numero.IdNumero);
+                await cmd.ExecuteNonQueryAsync(token);
+                idNumero = numero.IdNumero;
+            }
+            else
+            {
+                const string sqlInsert = """
+                    INSERT INTO dbo.CONV_WHATSAPP_NUMEROS (PhoneNumberId, Nombre, Activo)
+                    OUTPUT INSERTED.IdNumero
+                    VALUES (@PhoneNumberId, @Nombre, @Activo);
+                    """;
+                await using var cmd = new SqlCommand(sqlInsert, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
+                cmd.Parameters.AddWithValue("@Nombre", nombre);
+                cmd.Parameters.AddWithValue("@Activo", numero.Activo);
+                idNumero = (int)(await cmd.ExecuteScalarAsync(token))!;
+            }
+
+            const string sqlDeleteUsuarios = """
+                DELETE FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS
+                WHERE IdNumero = @IdNumero AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                """;
+            await using (var cmd = new SqlCommand(sqlDeleteUsuarios, cn, (SqlTransaction)tx))
+            {
+                cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            foreach (var usuario in (numero.Usuarios ?? []).Select(u => (u ?? string.Empty).Trim()).Where(u => u.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                const string sqlInsertUsuario = """
+                    INSERT INTO dbo.CONV_WHATSAPP_NUMERO_USUARIOS (IdNumero, Usuario, Sistema)
+                    VALUES (@IdNumero, @Usuario, @Sistema);
+                    """;
+                await using var cmd = new SqlCommand(sqlInsertUsuario, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+                cmd.Parameters.AddWithValue("@Usuario", usuario);
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveWhatsAppNumero",
+                "CONV_WHATSAPP_NUMEROS",
+                phoneNumberId,
+                $"Número de WhatsApp '{nombre}' guardado.",
+                new { idNumero, phoneNumberId, nombre, numero.Activo, numero.Usuarios },
+                token);
+
+            return true;
+        }, "No se pudo guardar el número de WhatsApp.", ct);
+    }
+
+    public Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetConversacionAdministradores", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+
+            const string sql = """
+                SELECT Usuario
+                FROM dbo.CONV_ADMINISTRADORES
+                WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Sistema", sistema);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            var result = new List<string>();
+            while (await rd.ReadAsync(token))
+                result.Add(GetString(rd, 0));
+
+            return (IReadOnlyList<string>)result;
+        }, "No se pudieron cargar los administradores de conversaciones.", ct);
+
+    public Task SaveConversacionAdministradoresAsync(IReadOnlyList<string> usuarios, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(usuarios);
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveConversacionAdministradores", async token =>
+        {
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (sistema.Length == 0)
+                throw new InvalidOperationException("No se pudo determinar el sistema del usuario actual.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            const string sqlDelete = """
+                DELETE FROM dbo.CONV_ADMINISTRADORES
+                WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                """;
+            await using (var cmd = new SqlCommand(sqlDelete, cn, (SqlTransaction)tx))
+            {
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            foreach (var usuario in usuarios.Select(u => (u ?? string.Empty).Trim()).Where(u => u.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                const string sqlInsert = """
+                    INSERT INTO dbo.CONV_ADMINISTRADORES (Usuario, Sistema)
+                    VALUES (@Usuario, @Sistema);
+                    """;
+                await using var cmd = new SqlCommand(sqlInsert, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@Usuario", usuario);
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveConversacionAdministradores",
+                "CONV_ADMINISTRADORES",
+                sistema,
+                "Lista de administradores de conversaciones actualizada.",
+                new { Usuarios = usuarios },
+                token);
+
+            return true;
+        }, "No se pudieron guardar los administradores de conversaciones.", ct);
+    }
 
     public Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "TestAlfaKnowledgeConnection", async token =>

@@ -35,4 +35,15 @@ public interface IConversacionesConfigService
 
     /// <summary>Catálogo de dbo.TA_CLASIFICACIONES, para poblar los combos de prioridad.</summary>
     Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(CancellationToken ct = default);
+
+    /// <summary>Usuarios del sistema actual (dbo.TA_USUARIOS), para poblar checklists/multi-selects.</summary>
+    Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(CancellationToken ct = default);
+
+    /// <summary>Números de WhatsApp configurados y, para cada uno, los usuarios vinculados.</summary>
+    Task<IReadOnlyList<ConversacionWhatsAppNumeroDto>> GetWhatsAppNumerosAsync(CancellationToken ct = default);
+    Task SaveWhatsAppNumeroAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default);
+
+    /// <summary>Usuarios marcados como administradores de Conversaciones (ven/responden por cualquier número).</summary>
+    Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default);
+    Task SaveConversacionAdministradoresAsync(IReadOnlyList<string> usuarios, CancellationToken ct = default);
 }

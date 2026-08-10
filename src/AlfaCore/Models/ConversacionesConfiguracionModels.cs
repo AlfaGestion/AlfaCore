@@ -209,6 +209,22 @@ public sealed class ConversacionPrioridadConfigDto
     public string Clasifica3 { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// Un número de WhatsApp Business (Phone Number ID de Meta) con los usuarios del sistema
+/// vinculados a él. Una conversación queda fijada a uno de estos números apenas se crea (por la
+/// ventana de 24 h de Meta, que es por par número-cliente) y no vuelve a cambiar. Un usuario
+/// normal solo ve/responde conversaciones de los números donde está vinculado; un administrador
+/// de Conversaciones (dbo.CONV_ADMINISTRADORES) ve y responde por cualquiera.
+/// </summary>
+public sealed class ConversacionWhatsAppNumeroDto
+{
+    public int IdNumero { get; set; }
+    public string PhoneNumberId { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public bool Activo { get; set; } = true;
+    public List<string> Usuarios { get; set; } = [];
+}
+
 public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
 {
     public bool Success { get; set; }

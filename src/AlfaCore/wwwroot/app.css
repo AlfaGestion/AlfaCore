@@ -9186,10 +9186,24 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     margin: 0;
 }
 
-.conv-config-dias {
+.conv-config-dias,
+.conv-config-checklist {
     display: flex !important;
     flex-wrap: wrap;
     gap: .75rem 1rem;
+}
+
+.conv-whatsapp-numero-card {
+    display: grid;
+    gap: .75rem;
+    padding: .9rem;
+    border: 1px solid rgba(148, 163, 184, .25);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+}
+
+.conv-whatsapp-numero-card--nuevo {
+    border-style: dashed;
 }
 
 .conv-config-steps {
