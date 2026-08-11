@@ -1927,8 +1927,15 @@ else
             }
             _menuSearchLoaded = true;
         }
-        catch
+        catch (Exception ex)
         {
+            // LoadVisibleMenuAsync (dentro de MenuSvc) ya loguea sus propias excepciones y nunca
+            // debería dejar escapar una hasta acá -- si este catch se dispara, es casi seguro que
+            // el problema está en BuildSearchItems (fuera de ese try/catch interno). Se loguea acá
+            // porque, sin esto, el fallback quedaba en silencio total y no había forma de saber
+            // por qué "no respondió el menú dinámico".
+            await AppEvents.LogErrorAsync("Shell", "EnsureMenuSearchCatalog", ex, "No se pudo armar el catálogo de búsqueda del menú.");
+
             _mainMenuModules = GetFallbackMainMenuModules().ToList();
             _menuSearchCatalog = BuildSearchCatalogFromModules(_mainMenuModules).ToList();
             _menuSearchError = "Se usó un catálogo de respaldo porque no respondió el menú dinámico.";
