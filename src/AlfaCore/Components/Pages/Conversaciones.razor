@@ -427,6 +427,19 @@
                             @mode.Label
                         </button>
                     }
+                    <div class="conversations-mode-menu__divider"></div>
+                    <label for="conv-mode-tecnico" class="conversations-mode-menu__tecnico-label">Ver de un técnico</label>
+                    <select id="conv-mode-tecnico" class="conversations-mode-menu__tecnico-select" value="@_filters.IdTecnicoActual" @onchange="HandleTechnicianModeChangedAsync">
+                        <option value="">Todos</option>
+                        @if (CurrentUserTechnician is not null)
+                        {
+                            <option value="@CurrentUserTechnician.IdTecnico">Yo mismo (@CurrentUserTechnician.Nombre)</option>
+                        }
+                        @foreach (var tech in _technicians.Where(t => CurrentUserTechnician is null || !string.Equals(t.IdTecnico, CurrentUserTechnician.IdTecnico, StringComparison.OrdinalIgnoreCase)))
+                        {
+                            <option value="@tech.IdTecnico">@tech.Nombre (@tech.IdTecnico)</option>
+                        }
+                    </select>
                 </div>
             </div>
 
@@ -4083,8 +4096,40 @@
     private async Task SelectModeAsync(string mode)
         => await ChangeModeAsync(mode);
 
+    /// <summary>
+    /// Selector "Ver de un técnico" del mismo desplegable: independiente del Modo (estado), salvo
+    /// por los dos combos que serían contradictorios con un técnico puntual --"sin_asignar" (nadie
+    /// asignado) y "asignadas_a_mi" (que ya implica un técnico distinto, el propio)-- en esos casos
+    /// se resetea el Modo a "todas" para no terminar con un filtro que nunca puede traer resultados.
+    /// </summary>
+    private async Task HandleTechnicianModeChangedAsync(ChangeEventArgs args)
+    {
+        var idTecnico = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        _filters.IdTecnicoActual = idTecnico;
+
+        if (string.IsNullOrWhiteSpace(idTecnico))
+        {
+            if (string.Equals(_filters.Modo, "asignadas_a_mi", StringComparison.OrdinalIgnoreCase))
+                _filters.Modo = "todas";
+        }
+        else if (string.Equals(_filters.Modo, "sin_asignar", StringComparison.OrdinalIgnoreCase))
+        {
+            _filters.Modo = "todas";
+        }
+
+        await LoadInboxAsync();
+    }
+
     private string GetCurrentModeLabel()
-        => _modeOptions.FirstOrDefault(x => x.Value == _filters.Modo).Label ?? "Pendientes";
+    {
+        var baseLabel = _modeOptions.FirstOrDefault(x => x.Value == _filters.Modo).Label ?? "Pendientes";
+        if (string.Equals(_filters.Modo, "asignadas_a_mi", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(_filters.IdTecnicoActual))
+            return baseLabel;
+
+        var tecnico = _technicians.FirstOrDefault(t => string.Equals(t.IdTecnico, _filters.IdTecnicoActual, StringComparison.OrdinalIgnoreCase));
+        return tecnico is null ? baseLabel : $"{baseLabel} · {tecnico.Nombre}";
+    }
 
     /// <summary>Si la pestaña de canal activa es alguna de las que viven dentro del combo "Mensajes" (o el combinado "Todos").</summary>
     private bool IsSocialCanalActive
@@ -9421,18 +9466,13 @@
             _assignmentTechnicianId = previousValue;
     }
 
-    private void EnsureCurrentTechnicianFilter()
-    {
-        if (!string.IsNullOrWhiteSpace(_filters.IdTecnicoActual))
-            return;
-
-        _filters.IdTecnicoActual = CurrentUserTechnician?.IdTecnico ?? string.Empty;
-    }
-
     private void EnsureCurrentTechnicianFilterForCurrentMode()
     {
+        // Fuerza (no solo "si está vacío"): si el usuario ya había elegido otro técnico con el
+        // selector de "Ver de un técnico" y después hace clic en "Asignadas a mí", tiene que pisar
+        // esa elección con el técnico propio, no dejar el filtro anterior puesto.
         if (string.Equals(_filters.Modo, "asignadas_a_mi", StringComparison.OrdinalIgnoreCase))
-            EnsureCurrentTechnicianFilter();
+            _filters.IdTecnicoActual = CurrentUserTechnician?.IdTecnico ?? string.Empty;
     }
 
     private static string NormalizeComparable(string? value)

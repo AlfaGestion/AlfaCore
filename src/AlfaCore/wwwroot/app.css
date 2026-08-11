@@ -5268,6 +5268,34 @@ html[data-theme="light"] .menu__search-result:hover {
     font-weight: 850;
 }
 
+.conversations-mode-menu__divider {
+    height: 1px;
+    margin: .32rem .1rem;
+    background: rgba(148, 163, 184, .18);
+}
+
+.conversations-mode-menu__tecnico-label {
+    display: block;
+    padding: 0 .55rem .2rem;
+    font-size: .68rem;
+    font-weight: 650;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: .02em;
+}
+
+.conversations-mode-menu__tecnico-select {
+    width: 100%;
+    min-height: 30px;
+    border: 1px solid rgba(148, 163, 184, .28);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, .6);
+    color: var(--color-text);
+    padding: .3rem .5rem;
+    font: inherit;
+    font-size: .78rem;
+}
+
 .conversation-header-state__close {
     min-height: 28px;
     padding: .2rem .56rem;
