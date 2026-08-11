@@ -436,6 +436,88 @@ public sealed class CrmService(
                 """, new { IdTarea = idTarea }, cancellationToken: token));
         }, "No se pudo eliminar la acción.", ct);
 
+    public Task<CrmDashboardDto> GetDashboardAsync(int diasEstancamiento = 7, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetDashboard", async token =>
+        {
+            var dias = Math.Clamp(diasEstancamiento, 1, 365);
+            const string sql = """
+                -- Pipeline por etapa abierta (bruto y ponderado importe*probabilidad)
+                SELECT
+                    e.IdEtapa,
+                    ISNULL(e.Nombre, '') AS Nombre,
+                    ISNULL(e.Color, '') AS Color,
+                    COUNT(o.IdOportunidad) AS Cantidad,
+                    ISNULL(SUM(o.ImporteEstimado), 0) AS ImporteBruto,
+                    ISNULL(SUM(o.ImporteEstimado * o.Probabilidad / 100.0), 0) AS ImportePonderado
+                FROM dbo.CRM_ETAPAS e
+                LEFT JOIN dbo.CRM_OPORTUNIDADES o
+                    ON o.IdEtapa = e.IdEtapa AND ISNULL(o.Baja, 0) = 0
+                WHERE ISNULL(e.Activa, 1) = 1 AND ISNULL(e.EsGanada, 0) = 0 AND ISNULL(e.EsPerdida, 0) = 0
+                GROUP BY e.IdEtapa, e.Nombre, e.Color, e.Orden
+                ORDER BY e.Orden, e.IdEtapa;
+
+                -- Cerradas (ganadas / perdidas) para la tasa de conversión
+                SELECT
+                    ISNULL(SUM(CASE WHEN ISNULL(e.EsGanada, 0) = 1 THEN 1 ELSE 0 END), 0) AS Ganadas,
+                    ISNULL(SUM(CASE WHEN ISNULL(e.EsGanada, 0) = 1 THEN o.ImporteEstimado ELSE 0 END), 0) AS ImporteGanado,
+                    ISNULL(SUM(CASE WHEN ISNULL(e.EsPerdida, 0) = 1 THEN 1 ELSE 0 END), 0) AS Perdidas
+                FROM dbo.CRM_OPORTUNIDADES o
+                INNER JOIN dbo.CRM_ETAPAS e ON e.IdEtapa = o.IdEtapa
+                WHERE ISNULL(o.Baja, 0) = 0 AND (ISNULL(e.EsGanada, 0) = 1 OR ISNULL(e.EsPerdida, 0) = 1);
+
+                -- Ranking por técnico (abiertas)
+                SELECT
+                    LTRIM(RTRIM(ISNULL(o.IdTecnico, ''))) AS IdTecnico,
+                    ISNULL(t.Nombre, '') AS Nombre,
+                    COUNT(*) AS Abiertas,
+                    ISNULL(SUM(o.ImporteEstimado), 0) AS ImporteBruto,
+                    ISNULL(SUM(o.ImporteEstimado * o.Probabilidad / 100.0), 0) AS ImportePonderado
+                FROM dbo.CRM_OPORTUNIDADES o
+                INNER JOIN dbo.CRM_ETAPAS e ON e.IdEtapa = o.IdEtapa
+                LEFT JOIN dbo.V_TA_Tecnicos t ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(o.IdTecnico))
+                WHERE ISNULL(o.Baja, 0) = 0 AND ISNULL(e.EsGanada, 0) = 0 AND ISNULL(e.EsPerdida, 0) = 0
+                GROUP BY LTRIM(RTRIM(ISNULL(o.IdTecnico, ''))), t.Nombre
+                ORDER BY ImportePonderado DESC, Abiertas DESC;
+
+                -- Estancadas: abiertas sin actividad en más de @Dias días
+                SELECT COUNT(*)
+                FROM dbo.CRM_OPORTUNIDADES o
+                INNER JOIN dbo.CRM_ETAPAS e ON e.IdEtapa = o.IdEtapa
+                WHERE ISNULL(o.Baja, 0) = 0 AND ISNULL(e.EsGanada, 0) = 0 AND ISNULL(e.EsPerdida, 0) = 0
+                  AND ISNULL((SELECT MAX(a.FechaHora) FROM dbo.CRM_ACTIVIDAD a WHERE a.IdOportunidad = o.IdOportunidad), o.FechaHoraAlta)
+                      < DATEADD(day, -@Dias, GETDATE());
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            using var grid = await cn.QueryMultipleAsync(new CommandDefinition(sql, new { Dias = dias }, cancellationToken: token));
+
+            var porEtapa = (await grid.ReadAsync<CrmDashboardEtapaDto>()).AsList();
+            var cerradas = await grid.ReadFirstOrDefaultAsync();
+            var porTecnico = (await grid.ReadAsync<CrmDashboardTecnicoDto>()).AsList();
+            var estancadas = await grid.ReadFirstOrDefaultAsync<int>();
+
+            int ganadas = cerradas is null ? 0 : (int)cerradas.Ganadas;
+            decimal importeGanado = cerradas is null ? 0m : (decimal)cerradas.ImporteGanado;
+            int perdidas = cerradas is null ? 0 : (int)cerradas.Perdidas;
+            var cerradasTotal = ganadas + perdidas;
+
+            return new CrmDashboardDto
+            {
+                PorEtapa = porEtapa,
+                PorTecnico = porTecnico,
+                TotalAbiertas = porEtapa.Sum(x => x.Cantidad),
+                ImporteBruto = porEtapa.Sum(x => x.ImporteBruto),
+                ImportePonderado = porEtapa.Sum(x => x.ImportePonderado),
+                Ganadas = ganadas,
+                ImporteGanado = importeGanado,
+                Perdidas = perdidas,
+                Estancadas = estancadas,
+                DiasEstancamiento = dias,
+                TasaConversion = cerradasTotal == 0 ? 0 : (double)ganadas / cerradasTotal
+            };
+        }, "No se pudo cargar el tablero del CRM.", ct);
+
     public Task<CrmConversationPrefillDto?> GetConversationPrefillAsync(long idConversacion, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetConversationPrefill", async token =>
         {

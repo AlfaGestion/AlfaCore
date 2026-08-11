@@ -89,6 +89,40 @@ public sealed class CrmTareaSaveRequest
     public string? UsuarioAccion { get; set; }
 }
 
+public sealed class CrmDashboardDto
+{
+    public int TotalAbiertas { get; set; }
+    public decimal ImporteBruto { get; set; }
+    public decimal ImportePonderado { get; set; }
+    public int Ganadas { get; set; }
+    public decimal ImporteGanado { get; set; }
+    public int Perdidas { get; set; }
+    public int Estancadas { get; set; }
+    public int DiasEstancamiento { get; set; } = 7;
+    public double TasaConversion { get; set; }
+    public List<CrmDashboardEtapaDto> PorEtapa { get; set; } = [];
+    public List<CrmDashboardTecnicoDto> PorTecnico { get; set; } = [];
+}
+
+public sealed class CrmDashboardEtapaDto
+{
+    public int IdEtapa { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string Color { get; set; } = string.Empty;
+    public int Cantidad { get; set; }
+    public decimal ImporteBruto { get; set; }
+    public decimal ImportePonderado { get; set; }
+}
+
+public sealed class CrmDashboardTecnicoDto
+{
+    public string IdTecnico { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public int Abiertas { get; set; }
+    public decimal ImporteBruto { get; set; }
+    public decimal ImportePonderado { get; set; }
+}
+
 public sealed class CrmConversationPrefillDto
 {
     public long IdConversacion { get; set; }

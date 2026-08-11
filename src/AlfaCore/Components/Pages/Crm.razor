@@ -188,6 +188,96 @@
             </div>
         </section>
     }
+    else if (!_showEditor && _viewMode == "resumen")
+    {
+        <section class="crm-dashboard">
+            @if (_dashboard is null)
+            {
+                <div class="crm-empty-column">Sin datos para mostrar.</div>
+            }
+            else
+            {
+                <div class="crm-kpi-row">
+                    <div class="crm-kpi">
+                        <span class="crm-kpi__label">Pipeline abierto</span>
+                        <strong class="crm-kpi__value">@FormatMoney(_dashboard.ImporteBruto)</strong>
+                        <span class="crm-kpi__hint">@_dashboard.TotalAbiertas oportunidad(es)</span>
+                    </div>
+                    <div class="crm-kpi crm-kpi--accent">
+                        <span class="crm-kpi__label">Forecast ponderado</span>
+                        <strong class="crm-kpi__value">@FormatMoney(_dashboard.ImportePonderado)</strong>
+                        <span class="crm-kpi__hint">importe × probabilidad</span>
+                    </div>
+                    <div class="crm-kpi">
+                        <span class="crm-kpi__label">Tasa de conversión</span>
+                        <strong class="crm-kpi__value">@_dashboard.TasaConversion.ToString("P0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))</strong>
+                        <span class="crm-kpi__hint">@_dashboard.Ganadas ganada(s) / @_dashboard.Perdidas perdida(s)</span>
+                    </div>
+                    <div class="crm-kpi @(_dashboard.Estancadas > 0 ? "crm-kpi--warn" : string.Empty)">
+                        <span class="crm-kpi__label">Estancadas</span>
+                        <strong class="crm-kpi__value">@_dashboard.Estancadas</strong>
+                        <span class="crm-kpi__hint">sin actividad hace +@_dashboard.DiasEstancamiento días</span>
+                    </div>
+                </div>
+
+                <div class="crm-dashboard-grid">
+                    <div class="crm-panel">
+                        <h3>Pipeline por etapa</h3>
+                        @{
+                            var maxEtapa = _dashboard.PorEtapa.Count == 0 ? 0m : _dashboard.PorEtapa.Max(x => x.ImporteBruto);
+                        }
+                        @if (_dashboard.PorEtapa.Count == 0)
+                        {
+                            <p class="muted">Sin oportunidades abiertas.</p>
+                        }
+                        else
+                        {
+                            @foreach (var etapa in _dashboard.PorEtapa)
+                            {
+                                <div class="crm-bar-row">
+                                    <div class="crm-bar-row__head">
+                                        <span><span class="crm-bar-dot" style="background:@(string.IsNullOrWhiteSpace(etapa.Color) ? "#38BDF8" : etapa.Color)"></span>@etapa.Nombre</span>
+                                        <span>@FormatMoney(etapa.ImporteBruto) · @etapa.Cantidad</span>
+                                    </div>
+                                    <div class="crm-bar">
+                                        <div class="crm-bar__fill" style="width:@(BarWidth(etapa.ImporteBruto, maxEtapa))%;background:@(string.IsNullOrWhiteSpace(etapa.Color) ? "#38BDF8" : etapa.Color)"></div>
+                                    </div>
+                                    <small class="muted">Ponderado: @FormatMoney(etapa.ImportePonderado)</small>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    <div class="crm-panel">
+                        <h3>Ranking por vendedor</h3>
+                        @if (_dashboard.PorTecnico.Count == 0)
+                        {
+                            <p class="muted">Sin oportunidades abiertas.</p>
+                        }
+                        else
+                        {
+                            <table class="crm-rank-table">
+                                <thead>
+                                    <tr><th>Vendedor</th><th>Abiertas</th><th>Pipeline</th><th>Ponderado</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var tec in _dashboard.PorTecnico)
+                                    {
+                                        <tr>
+                                            <td>@(string.IsNullOrWhiteSpace(tec.Nombre) ? "Sin asignar" : tec.Nombre)</td>
+                                            <td>@tec.Abiertas</td>
+                                            <td>@FormatMoney(tec.ImporteBruto)</td>
+                                            <td>@FormatMoney(tec.ImportePonderado)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+    }
     else if (!_showEditor)
     {
         <section class="crm-list">
@@ -330,6 +420,7 @@
     private CrmFilters _filters = new();
     private PagedResult<CrmOpportunityDto> _page = new();
     private List<CrmOpportunityDto> _kanban = [];
+    private CrmDashboardDto? _dashboard;
     private CrmViewSettingsDto _viewSettings = new();
     private CrmViewSettingsDto _viewDraft = new();
     private string _viewMode = "kanban";
@@ -845,6 +936,15 @@
                         Active = _viewMode == "lista",
                         Disabled = _loading,
                         OnClick = () => RunHeaderActionAsync(() => SetModeAsync("lista"))
+                    },
+                    new PageHeaderViewButton
+                    {
+                        Key = "resumen",
+                        Label = "Resumen",
+                        Icon = "bi-bar-chart",
+                        Active = _viewMode == "resumen",
+                        Disabled = _loading,
+                        OnClick = () => RunHeaderActionAsync(() => SetModeAsync("resumen"))
                     }
                 ]
         });
@@ -1237,7 +1337,9 @@
     {
         if (resetPage)
             _filters.PageNumber = 1;
-        if (_viewMode == "kanban")
+        if (_viewMode == "resumen")
+            _dashboard = await CrmSvc.GetDashboardAsync();
+        else if (_viewMode == "kanban")
             _kanban = (await CrmSvc.GetKanbanAsync(_filters)).ToList();
         else
             _page = await CrmSvc.SearchAsync(_filters);
@@ -1551,6 +1653,9 @@
     private string GetModeClass(string mode) => _viewMode == mode ? "is-active" : string.Empty;
     private static string Display(string primary, string fallback, string empty) => !string.IsNullOrWhiteSpace(primary) ? primary : (!string.IsNullOrWhiteSpace(fallback) ? fallback : empty);
     private static string FormatMoney(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static int BarWidth(decimal value, decimal max)
+        => max <= 0 ? 0 : (int)Math.Round(Math.Clamp((double)(value / max) * 100.0, 2, 100));
     private static string FormatDate(DateTime value) => value == DateTime.MinValue ? "-" : value.ToString("dd/MM/yyyy HH:mm");
     private static string BuildQuickDescription(string email, string phone)
     {
