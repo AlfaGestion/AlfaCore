@@ -183,6 +183,7 @@ public class Program
         builder.Services.AddScoped<IPageHeaderNavigationService, PageHeaderNavigationService>();
         builder.Services.AddScoped<AlfaActionMenuCoordinator>();
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
+        builder.Services.AddScoped<IAppAuditRepository, AppAuditRepository>();
         builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();
         builder.Services.AddSingleton<AuditoriaExcelExporter>();

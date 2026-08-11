@@ -21,4 +21,15 @@ public interface IAppEventService
         string message,
         object? data = null,
         CancellationToken ct = default);
+
+    Task<Guid> WriteAuditAsync(AuditWriteRequest request, CancellationToken ct = default);
+
+    Task<AuditActivityPageDto> GetActivityAsync(
+        string entityType,
+        string recordId,
+        int pageNumber = 1,
+        int pageSize = 20,
+        CancellationToken ct = default);
+
+    Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(CancellationToken ct = default);
 }
