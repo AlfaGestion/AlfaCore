@@ -162,6 +162,7 @@ public class Program
         builder.Services.AddScoped<IViajePreviewStateService, ViajePreviewStateService>();
         builder.Services.AddScoped<IComprobanteViewerService, ComprobanteViewerService>();
         builder.Services.AddSingleton<AppUserSessionStore>();
+        builder.Services.AddScoped<IAppAuditActorAccessor, AppAuditActorAccessor>();
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();
         builder.Services.AddSingleton<UsuariosPasswordCodec>();
         builder.Services.AddSingleton<Vb6BridgeTicketStore>();

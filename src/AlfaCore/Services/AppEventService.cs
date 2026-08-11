@@ -13,7 +13,7 @@ public sealed class AppEventService(
     IHttpContextAccessor httpContextAccessor,
     IAuxErrRepository auxErrRepository,
     IAppAuditRepository auditRepository,
-    IAppUserSessionService appUserSession,
+    IAppAuditActorAccessor auditActor,
     ILogger<AppEventService> logger) : IAppEventService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -197,7 +197,7 @@ public sealed class AppEventService(
 
     private string ResolveFunctionalUser()
     {
-        var userName = appUserSession.GetCurrentUserName(string.Empty).Trim();
+        var userName = auditActor.UserName.Trim();
         if (!string.IsNullOrWhiteSpace(userName))
             return userName;
 
@@ -205,7 +205,7 @@ public sealed class AppEventService(
         if (!string.IsNullOrWhiteSpace(userName))
             return userName;
 
-        var centralLogin = appUserSession.CurrentUser?.CentralLogin?.Trim() ?? string.Empty;
+        var centralLogin = auditActor.CentralLogin.Trim();
         return string.IsNullOrWhiteSpace(centralLogin) ? "Sistema" : centralLogin;
     }
 

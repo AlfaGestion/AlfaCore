@@ -4,7 +4,8 @@ namespace AlfaCore.Services;
 
 public sealed class AppUserSessionService(
     ICentralAuthService centralAuthService,
-    AppUserSessionStore sessionStore) : IAppUserSessionService
+    AppUserSessionStore sessionStore,
+    IAppAuditActorAccessor auditActor) : IAppUserSessionService
 {
     private AppUserSessionInfo? _currentUser;
     private string? _sessionToken;
@@ -42,6 +43,7 @@ public sealed class AppUserSessionService(
         };
 
         _sessionToken = sessionStore.Store(_currentUser);
+        SyncAuditActor();
         StateChanged?.Invoke();
         return _currentUser;
     }
@@ -72,6 +74,7 @@ public sealed class AppUserSessionService(
         else
             _sessionToken = sessionStore.Store(_currentUser);
 
+        SyncAuditActor();
         StateChanged?.Invoke();
     }
 
@@ -82,6 +85,7 @@ public sealed class AppUserSessionService(
 
         _sessionToken = token;
         _currentUser = info;
+        SyncAuditActor();
         StateChanged?.Invoke();
         return true;
     }
@@ -95,6 +99,7 @@ public sealed class AppUserSessionService(
         }
 
         _currentUser = null;
+        auditActor.Clear();
         StateChanged?.Invoke();
     }
 
@@ -127,6 +132,7 @@ public sealed class AppUserSessionService(
         if (_sessionToken is not null)
             sessionStore.Upsert(_sessionToken, _currentUser);
 
+        SyncAuditActor();
         StateChanged?.Invoke();
     }
 
@@ -146,4 +152,10 @@ public sealed class AppUserSessionService(
 
     public string GetCurrentUserName(string fallback = "")
         => _currentUser?.UserName ?? fallback;
+
+    private void SyncAuditActor()
+    {
+        auditActor.UserName = _currentUser?.UserName?.Trim() ?? string.Empty;
+        auditActor.CentralLogin = _currentUser?.CentralLogin?.Trim() ?? string.Empty;
+    }
 }

@@ -7,12 +7,23 @@ namespace AlfaCore.Repositories;
 
 public sealed class AppAuditRepository(
     IConfiguration configuration,
-    ISessionService sessionService) : IAppAuditRepository
+    IHttpContextAccessor httpContextAccessor) : IAppAuditRepository
 {
-    private string ConnectionString => sessionService.GetConnectionString().Length > 0
-        ? sessionService.GetConnectionString()
-        : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+    private string ConnectionString
+    {
+        get
+        {
+            if (httpContextAccessor.HttpContext?.Items.TryGetValue("AlfaCore.ConnectionString", out var currentConnection) == true
+                && currentConnection is string itemConnection
+                && !string.IsNullOrWhiteSpace(itemConnection))
+            {
+                return itemConnection;
+            }
+
+            return configuration.GetConnectionString("AlfaGestion")
+                ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+        }
+    }
 
     public async Task WriteAsync(
         AppEventRecord auditEvent,
