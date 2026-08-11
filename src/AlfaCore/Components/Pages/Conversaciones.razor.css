@@ -967,6 +967,24 @@
     min-width: 0 !important;
 }
 
+.conversations-page--whatsapp .conversations-chat__identity {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: .65rem !important;
+    padding-left: 0 !important;
+}
+
+.conversations-page--whatsapp .conversation-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+}
+
+.conversations-page--whatsapp .conversation-profile-avatar + div,
+.conversations-page--whatsapp .conversations-chat__chips {
+    grid-column: 2;
+}
+
 .conversations-page--instagram .conversations-chat__identity {
     display: grid !important;
     grid-template-columns: 44px minmax(0, 1fr) !important;
@@ -2843,12 +2861,42 @@
     color: #1f2937 !important;
 }
 
-.conversations-page--odoo .conversation-abono-avatar {
-    border: 2px solid rgba(255, 255, 255, .42) !important;
+.conversations-page--odoo .conversation-row--facebook {
+    border-left: 3px solid rgba(59, 130, 246, .92) !important;
+    background:
+        linear-gradient(90deg, rgba(37, 99, 235, .18), rgba(14, 40, 72, .18) 46%, transparent 82%),
+        rgba(12, 29, 47, .18) !important;
     box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, .42),
-        0 0 0 3px rgba(148, 163, 184, .08),
-        0 10px 22px rgba(2, 6, 23, .18) !important;
+        inset 0 0 0 1px rgba(96, 165, 250, .18),
+        inset 0 18px 32px rgba(59, 130, 246, .035) !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook:hover,
+.conversations-page--odoo .conversation-row--facebook.has-technician:hover {
+    background:
+        linear-gradient(90deg, rgba(37, 99, 235, .26), rgba(14, 40, 72, .24) 52%, rgba(16, 36, 55, .72) 100%) !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook.is-selected,
+.conversations-page--odoo .conversation-row--facebook.has-technician.is-selected {
+    background:
+        linear-gradient(90deg, rgba(37, 99, 235, .34), rgba(23, 50, 83, .86) 82%) !important;
+    box-shadow:
+        inset 3px 0 0 #3b82f6,
+        inset 0 0 0 1px rgba(147, 197, 253, .28) !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook .conversation-row__avatar {
+    background: linear-gradient(135deg, #0756c7, #1877f2 58%, #7cc0ff) !important;
+    box-shadow: 0 0 0 3px rgba(24, 119, 242, .22), 0 10px 20px rgba(2, 6, 23, .22) !important;
+}
+
+.conversations-page--odoo .conversation-abono-avatar {
+    border: 2px solid rgba(255, 255, 255, .56) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .45),
+        0 0 0 3px rgba(148, 163, 184, .12),
+        0 10px 22px rgba(2, 6, 23, .24) !important;
 }
 
 .conversations-page--odoo .conversation-abono-avatar__letter {
@@ -2866,27 +2914,35 @@
 }
 
 .conversations-page--odoo .conversation-abono-avatar--a {
-    border-color: rgba(248, 113, 113, .58) !important;
+    border-color: rgba(248, 113, 113, .82) !important;
     background:
-        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .54), transparent 34%),
-        linear-gradient(135deg, #f9c7ca, #f2aeb5) !important;
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .48), transparent 34%),
+        linear-gradient(135deg, #fecaca, #fb7185 62%, #ef4444) !important;
     color: #7f1d1d !important;
 }
 
 .conversations-page--odoo .conversation-abono-avatar--b {
-    border-color: rgba(251, 146, 60, .55) !important;
+    border-color: rgba(251, 146, 60, .82) !important;
     background:
-        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .5), transparent 34%),
-        linear-gradient(135deg, #f9d9b4, #f2bf82) !important;
-    color: #7c3b10 !important;
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .46), transparent 34%),
+        linear-gradient(135deg, #fed7aa, #fb923c 62%, #f97316) !important;
+    color: #7c2d12 !important;
 }
 
 .conversations-page--odoo .conversation-abono-avatar--c {
-    border-color: rgba(74, 222, 128, .5) !important;
+    border-color: rgba(74, 222, 128, .78) !important;
     background:
-        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .5), transparent 34%),
-        linear-gradient(135deg, #c8ebd0, #9edfb3) !important;
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .44), transparent 34%),
+        linear-gradient(135deg, #bbf7d0, #4ade80 62%, #22c55e) !important;
     color: #14532d !important;
+}
+
+.conversations-page--odoo .conversation-abono-avatar--n {
+    border-color: rgba(148, 163, 184, .72) !important;
+    background:
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .34), transparent 34%),
+        linear-gradient(135deg, #cbd5e1, #94a3b8 62%, #64748b) !important;
+    color: #1e293b !important;
 }
 
 .conversations-page--instagram .message-card--incoming,

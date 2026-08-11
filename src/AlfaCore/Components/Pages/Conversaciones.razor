@@ -832,7 +832,7 @@
                                     {
                                         <img src="@item.FotoPerfilUrl" alt="" loading="lazy" referrerpolicy="no-referrer" />
                                     }
-                                    else if (item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var inboxAbonoAvatar))
+                                    else if (TryGetWhatsAppAvatarInfo(item, out var inboxAbonoAvatar))
                                     {
                                         <span class="conversation-abono-avatar__letter">@inboxAbonoAvatar.Label</span>
                                     }
@@ -1041,7 +1041,7 @@
                                     {
                                         <img src="@_selectedConversation.FotoPerfilUrl" alt="" referrerpolicy="no-referrer" />
                                     }
-                                    else if (_selectedConversation.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(_selectedConversation.ClasificacionDescripcion, out var selectedAbonoAvatar))
+                                    else if (TryGetWhatsAppAvatarInfo(_selectedConversation, out var selectedAbonoAvatar))
                                     {
                                         <span class="conversation-abono-avatar__letter">@selectedAbonoAvatar.Label</span>
                                     }
@@ -4519,7 +4519,7 @@
             ? "conversation-row__avatar--mercadolibre"
             : string.Empty;
 
-        if (item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var info))
+        if (TryGetWhatsAppAvatarInfo(item, out var info))
             classes = FirstNonEmpty(classes, $"conversation-abono-avatar conversation-abono-avatar--{info.Tier}");
 
         return classes;
@@ -4531,21 +4531,69 @@
             ? "conversation-profile-avatar--mercadolibre"
             : string.Empty;
 
-        if (item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var info))
+        if (TryGetWhatsAppAvatarInfo(item, out var info))
             classes = FirstNonEmpty(classes, $"conversation-abono-avatar conversation-abono-avatar--{info.Tier}");
 
         return classes;
     }
 
     private static string GetWhatsAppAbonoAvatarTitle(ConversacionInboxItemDto item)
-        => item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var info)
+        => TryGetWhatsAppAvatarInfo(item, out var info)
             ? $"{info.Label}: {info.Description}"
             : string.Empty;
 
     private static string GetWhatsAppAbonoAvatarTitle(ConversacionDetalleDto item)
-        => item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var info)
+        => TryGetWhatsAppAvatarInfo(item, out var info)
             ? $"{info.Label}: {info.Description}"
             : string.Empty;
+
+    private static bool TryGetWhatsAppAvatarInfo(ConversacionInboxItemDto item, out AbonoAvatarInfo info)
+    {
+        if (item.Canal != "WHATSAPP")
+        {
+            info = default;
+            return false;
+        }
+
+        if (TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out info))
+            return true;
+
+        if (IsConversationUnidentified(item))
+        {
+            info = new("n", "N", "No identificado");
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool TryGetWhatsAppAvatarInfo(ConversacionDetalleDto item, out AbonoAvatarInfo info)
+    {
+        if (item.Canal != "WHATSAPP")
+        {
+            info = default;
+            return false;
+        }
+
+        if (TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out info))
+            return true;
+
+        if (IsConversationUnidentified(item))
+        {
+            info = new("n", "N", "No identificado");
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool IsConversationUnidentified(ConversacionInboxItemDto item)
+        => string.IsNullOrWhiteSpace(item.ClienteCodigo)
+           && string.IsNullOrWhiteSpace(item.ClienteNombre);
+
+    private static bool IsConversationUnidentified(ConversacionDetalleDto item)
+        => string.IsNullOrWhiteSpace(item.ClienteCodigo)
+           && string.IsNullOrWhiteSpace(item.ClienteNombre);
 
     private static bool TryGetAbonoAvatarInfo(string? clasificacionDescripcion, out AbonoAvatarInfo info)
     {
