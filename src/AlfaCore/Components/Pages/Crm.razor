@@ -274,6 +274,33 @@
                             </table>
                         }
                     </div>
+
+                    <div class="crm-panel">
+                        <h3>Motivos de pérdida</h3>
+                        @{
+                            var totalPerdidas = _dashboard.MotivosPerdida.Sum(x => x.Cantidad);
+                            var maxMotivo = _dashboard.MotivosPerdida.Count == 0 ? 0 : _dashboard.MotivosPerdida.Max(x => x.Cantidad);
+                        }
+                        @if (_dashboard.MotivosPerdida.Count == 0)
+                        {
+                            <p class="muted">Todavía no hay oportunidades perdidas.</p>
+                        }
+                        else
+                        {
+                            @foreach (var motivo in _dashboard.MotivosPerdida)
+                            {
+                                <div class="crm-bar-row">
+                                    <div class="crm-bar-row__head">
+                                        <span>@motivo.Nombre</span>
+                                        <span>@motivo.Cantidad@(totalPerdidas > 0 ? $" · {((double)motivo.Cantidad / totalPerdidas).ToString("P0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}" : string.Empty)</span>
+                                    </div>
+                                    <div class="crm-bar">
+                                        <div class="crm-bar__fill" style="width:@(BarWidth(motivo.Cantidad, maxMotivo))%;background:#F87171"></div>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
                 </div>
             }
         </section>
@@ -382,6 +409,65 @@
     </div>
 }
 
+@if (_showLostReason)
+{
+    <div class="crm-modal-layer" @onmousedown="CancelLostReason">
+        <section class="panel-card crm-modal crm-modal--small" @onmousedown:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Motivo de pérdida</h3>
+                    <p class="panel-card__subtitle">Indicá por qué se perdió esta oportunidad.</p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CancelLostReason"><i class="bi bi-x-circle"></i> Cancelar</button>
+            </div>
+            <div class="field">
+                <label>Motivo <span class="crm-required">*</span></label>
+                <select @bind="_lostMotivoId" disabled="@_saving">
+                    <option value="">Elegí un motivo…</option>
+                    @foreach (var motivo in _lookups.MotivosPerdida)
+                    {
+                        <option value="@motivo.IdMotivo">@motivo.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn--primary" @onclick="ConfirmLostReasonAsync" disabled="@_saving"><i class="bi bi-check2"></i> Marcar como perdida</button>
+                <button type="button" class="btn btn--ghost" @onclick="CancelLostReason">Cancelar</button>
+            </div>
+        </section>
+    </div>
+}
+
+@if (_showMotivos)
+{
+    <div class="crm-modal-layer" @onclick="CloseMotivos">
+        <section class="panel-card crm-modal crm-modal--small" @onclick:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Motivos de pérdida</h3>
+                    <p class="panel-card__subtitle">Personalizá los motivos disponibles al perder una oportunidad.</p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CloseMotivos"><i class="bi bi-x-circle"></i> Cerrar</button>
+            </div>
+            <div class="crm-stage-form">
+                <input maxlength="100" placeholder="Nombre" @bind="_motivoDraft.Nombre" />
+                <input type="number" @bind="_motivoDraft.Orden" title="Orden" />
+                <button type="button" class="btn btn--primary btn--sm" @onclick="SaveMotivoAsync"><i class="bi bi-floppy"></i> Guardar</button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="NewMotivo">Nuevo</button>
+            </div>
+            @foreach (var motivo in _lookups.MotivosPerdida)
+            {
+                <div class="crm-admin-row">
+                    <strong>@motivo.Nombre</strong>
+                    <small>Orden @motivo.Orden</small>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditMotivo(motivo)">Editar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => DeleteMotivoAsync(motivo.IdMotivo)">Eliminar</button>
+                </div>
+            }
+        </section>
+    </div>
+}
+
 @if (_showViewSettings)
 {
     <div class="crm-modal-layer" @onclick="CloseViewSettings">
@@ -430,6 +516,12 @@
     private bool _showStages;
     private bool _showTags;
     private bool _showViewSettings;
+    private bool _showLostReason;
+    private long? _lostOpportunityId;
+    private int? _lostStageId;
+    private int? _lostMotivoId;
+    private CrmMotivoPerdidaSaveRequest _motivoDraft = new() { Orden = 10 };
+    private bool _showMotivos;
     private bool _searchPanelOpen;
     private bool _defaultFlowApplied;
     private int? _dragStageId;
@@ -461,6 +553,8 @@
         || string.Equals(x.IdTecnico, CurrentUserName, StringComparison.OrdinalIgnoreCase))?.IdTecnico;
     private bool IsMyFlowActive => !string.IsNullOrWhiteSpace(CurrentUserTechId)
         && string.Equals(_filters.IdTecnico, CurrentUserTechId, StringComparison.OrdinalIgnoreCase);
+    private bool FormStageIsLost => _form.IdEtapa is int idEtapa
+        && _lookups.Etapas.Any(x => x.IdEtapa == idEtapa && x.EsPerdida);
 
     private RenderFragment RenderCrmSmartSearch() => @<div class="smart-search crm-smart-search" @onclick:stopPropagation>
         <div class="smart-search__bar">
@@ -571,6 +665,19 @@
                             }
                         </select>
                     </div>
+                    @if (FormStageIsLost)
+                    {
+                        <div class="field">
+                            <label>Motivo de pérdida <span class="crm-required">*</span></label>
+                            <select @bind="_form.IdMotivoPerdida" disabled="@_saving">
+                                <option value="">Elegí un motivo…</option>
+                                @foreach (var motivo in _lookups.MotivosPerdida)
+                                {
+                                    <option value="@motivo.IdMotivo">@motivo.Nombre</option>
+                                }
+                            </select>
+                        </div>
+                    }
                     <div class="field">
                         <label>Asignado</label>
                         <select @bind="_form.IdTecnico" disabled="@_saving">
@@ -902,6 +1009,15 @@
                 Priority = PageHeaderActionPriority.Overflow,
                 OnClick = () => RunHeaderActionAsync(() => { OpenTags(); return Task.CompletedTask; })
             });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "motivos",
+                Label = "Motivos de pérdida",
+                Icon = "bi-emoji-frown",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                OnClick = () => RunHeaderActionAsync(() => { OpenMotivos(); return Task.CompletedTask; })
+            });
         }
 
         PageHeader.Set(new PageHeaderConfig
@@ -1125,6 +1241,17 @@
             return;
         }
 
+        // Si la etapa destino es "perdida", pedimos el motivo antes de mover.
+        if (_lookups.Etapas.Any(x => x.IdEtapa == targetStageId && x.EsPerdida))
+        {
+            _lostOpportunityId = opportunityId;
+            _lostStageId = targetStageId;
+            _lostMotivoId = null;
+            _showLostReason = true;
+            ClearDragState();
+            return;
+        }
+
         await RunAsync(async () =>
         {
             await CrmSvc.QuickUpdateAsync(new CrmQuickUpdateRequest
@@ -1138,6 +1265,43 @@
         });
         ClearDragState();
         UpdatePageHeader();
+    }
+
+    private async Task ConfirmLostReasonAsync()
+    {
+        if (_lostOpportunityId is not long opportunityId || _lostStageId is not int targetStageId)
+        {
+            CancelLostReason();
+            return;
+        }
+        if (_lostMotivoId is not > 0)
+        {
+            _feedback = new Feedback("Falta el motivo", "Elegí el motivo de pérdida para continuar.", null);
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            await CrmSvc.QuickUpdateAsync(new CrmQuickUpdateRequest
+            {
+                IdOportunidad = opportunityId,
+                IdEtapa = targetStageId,
+                IdMotivoPerdida = _lostMotivoId,
+                UsuarioAccion = CurrentUserName
+            });
+            await ReloadCurrentViewAsync(resetPage: false);
+            ShowOk("Oportunidad marcada como perdida", "Se registró el motivo de pérdida.");
+        });
+        CancelLostReason();
+        UpdatePageHeader();
+    }
+
+    private void CancelLostReason()
+    {
+        _showLostReason = false;
+        _lostOpportunityId = null;
+        _lostStageId = null;
+        _lostMotivoId = null;
     }
 
     private async Task MoveStageAsync(int sourceStageId, int targetStageId)
@@ -1600,6 +1764,30 @@
             await CrmSvc.DeleteEtiquetaAsync(id, AppUserSession.CurrentUser?.UserName);
             _lookups = await CrmSvc.GetLookupsAsync();
             await ReloadCurrentViewAsync(resetPage: false);
+        });
+    }
+
+    private void OpenMotivos() { NewMotivo(); _showMotivos = true; }
+    private void CloseMotivos() => _showMotivos = false;
+    private void NewMotivo() => _motivoDraft = new CrmMotivoPerdidaSaveRequest { Orden = (_lookups.MotivosPerdida.Count + 1) * 10 };
+    private void EditMotivo(CrmMotivoPerdidaDto motivo) => _motivoDraft = new CrmMotivoPerdidaSaveRequest { IdMotivo = motivo.IdMotivo, Nombre = motivo.Nombre, Orden = motivo.Orden };
+    private async Task SaveMotivoAsync()
+    {
+        await RunAsync(async () =>
+        {
+            _motivoDraft.UsuarioAccion = AppUserSession.CurrentUser?.UserName;
+            await CrmSvc.SaveMotivoPerdidaAsync(_motivoDraft);
+            _lookups = await CrmSvc.GetLookupsAsync();
+            NewMotivo();
+        });
+    }
+
+    private async Task DeleteMotivoAsync(int id)
+    {
+        await RunAsync(async () =>
+        {
+            await CrmSvc.DeleteMotivoPerdidaAsync(id, AppUserSession.CurrentUser?.UserName);
+            _lookups = await CrmSvc.GetLookupsAsync();
         });
     }
 

@@ -20,6 +20,8 @@ public interface ICrmService
     Task DeleteEtapaAsync(int idEtapa, string? usuarioAccion = null, CancellationToken ct = default);
     Task<int> SaveEtiquetaAsync(CrmEtiquetaSaveRequest request, CancellationToken ct = default);
     Task DeleteEtiquetaAsync(int idEtiqueta, string? usuarioAccion = null, CancellationToken ct = default);
+    Task<int> SaveMotivoPerdidaAsync(CrmMotivoPerdidaSaveRequest request, CancellationToken ct = default);
+    Task DeleteMotivoPerdidaAsync(int idMotivo, string? usuarioAccion = null, CancellationToken ct = default);
     Task<CrmViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default);
     Task SaveViewSettingsAsync(string userName, CrmViewSettingsDto settings, CancellationToken ct = default);
 }

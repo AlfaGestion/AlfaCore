@@ -922,3 +922,9 @@
         grid-template-columns: 1fr;
     }
 }
+
+.crm-required {
+    color: #ef4444;
+    font-weight: 700;
+    margin-left: .15rem;
+}

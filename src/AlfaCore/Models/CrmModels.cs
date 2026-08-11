@@ -41,6 +41,8 @@ public class CrmOpportunityDto
     public string CanalOrigen { get; set; } = string.Empty;
     public long? IdConversacion { get; set; }
     public int MensajesOrigen { get; set; }
+    public int? IdMotivoPerdida { get; set; }
+    public string MotivoPerdidaNombre { get; set; } = string.Empty;
     public string UsuarioAlta { get; set; } = string.Empty;
     public DateTime FechaHoraAlta { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }
@@ -102,6 +104,13 @@ public sealed class CrmDashboardDto
     public double TasaConversion { get; set; }
     public List<CrmDashboardEtapaDto> PorEtapa { get; set; } = [];
     public List<CrmDashboardTecnicoDto> PorTecnico { get; set; } = [];
+    public List<CrmDashboardMotivoDto> MotivosPerdida { get; set; } = [];
+}
+
+public sealed class CrmDashboardMotivoDto
+{
+    public string Nombre { get; set; } = string.Empty;
+    public int Cantidad { get; set; }
 }
 
 public sealed class CrmDashboardEtapaDto
@@ -185,6 +194,14 @@ public sealed class CrmLookupDto
     public List<CrmEtapaDto> Etapas { get; set; } = [];
     public List<ConversacionTecnicoOptionDto> Tecnicos { get; set; } = [];
     public List<CrmEtiquetaDto> Etiquetas { get; set; } = [];
+    public List<CrmMotivoPerdidaDto> MotivosPerdida { get; set; } = [];
+}
+
+public sealed class CrmMotivoPerdidaDto
+{
+    public int IdMotivo { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public int Orden { get; set; }
 }
 
 public sealed class CrmOpportunitySaveRequest
@@ -204,6 +221,7 @@ public sealed class CrmOpportunitySaveRequest
     public long? IdConversacion { get; set; }
     public List<long> IdMensajes { get; set; } = [];
     public List<int> IdEtiquetas { get; set; } = [];
+    public int? IdMotivoPerdida { get; set; }
     public string? UsuarioAccion { get; set; }
 }
 
@@ -214,6 +232,15 @@ public sealed class CrmQuickUpdateRequest
     public string? IdTecnico { get; set; }
     public int? Prioridad { get; set; }
     public int? Probabilidad { get; set; }
+    public int? IdMotivoPerdida { get; set; }
+    public string? UsuarioAccion { get; set; }
+}
+
+public sealed class CrmMotivoPerdidaSaveRequest
+{
+    public int IdMotivo { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public int Orden { get; set; }
     public string? UsuarioAccion { get; set; }
 }
 
