@@ -249,6 +249,8 @@ public sealed class ConversacionDetalleDto
     public bool VentanaWhatsAppActiva { get; set; }
     public DateTime? FechaHoraVencimientoVentanaWhatsApp { get; set; }
     public DateTime? FechaHoraCierre { get; set; }
+    /// <summary>Ver dbo.CONV_WHATSAPP_NUMEROS — null si la conversación no tiene un número propio fijado.</summary>
+    public int? IdNumeroWhatsApp { get; set; }
 }
 
 /// <summary>

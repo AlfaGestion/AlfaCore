@@ -2210,7 +2210,7 @@
                             <label for="conv-tech">Técnico</label>
                             <select id="conv-tech" value="@_assignmentTechnicianId" @onchange="OnAssignmentChangedAsync" disabled="@_busyAction">
                                 <option value="">Sin asignar</option>
-                                @foreach (var tech in _technicians)
+                                @foreach (var tech in GetAssignableTechnicians())
                                 {
                                     <option value="@tech.IdTecnico">@tech.Nombre (@tech.IdTecnico)</option>
                                 }
@@ -3578,6 +3578,12 @@
     private bool _ticketsModuloActivo = true;
     private bool _alfaKnowledgeModuloActivo = true;
 
+    // Multi-número de WhatsApp: cargados una vez al entrar. Si falla la carga (p.ej. cliente
+    // todavía sin la migración de multi-número), quedan vacíos y GetAssignableTechnicians() no
+    // filtra nada -- fail-open, mismo criterio que el resto de estos flags.
+    private IReadOnlyList<ConversacionWhatsAppNumeroDto> _whatsappNumeros = [];
+    private bool _esAdministradorConversaciones;
+
     protected override async Task OnInitializedAsync()
     {
         _floatingWindowRegistration = FloatingWindows.Register(AlfaCore.Services.FloatingWindowType.DropdownMenu, CloseFloatingWindowsAsync);
@@ -3585,6 +3591,7 @@
         ApplyStartupQuery();
         _ticketsModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("TICKETS");
         _alfaKnowledgeModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("ALFAKNOWLEDGE");
+        await LoadWhatsAppNumerosAndAdminStatusAsync();
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
         {
@@ -3949,6 +3956,41 @@
         {
             _loadError = ex.Message;
         }
+    }
+
+    private async Task LoadWhatsAppNumerosAndAdminStatusAsync()
+    {
+        try
+        {
+            _whatsappNumeros = await ConfigSvc.GetWhatsAppNumerosAsync();
+            var administradores = await ConfigSvc.GetConversacionAdministradoresAsync();
+            _esAdministradorConversaciones = administradores.Contains(CurrentUserNameForAudit, StringComparer.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            // Fail-open: si todavía no está la migración de multi-número (o falla la carga), se
+            // sigue viendo/asignando conversaciones como antes de esta funcionalidad.
+        }
+    }
+
+    /// <summary>
+    /// Técnicos para el combo "Asignar a": si la conversación tiene un número de WhatsApp propio
+    /// con usuarios vinculados, se filtra a esos usuarios (salvo administrador de conversaciones,
+    /// que ve la lista completa). Sin número fijado, sin usuarios vinculados, o sin poder resolver
+    /// nada de esto, se muestra la lista completa como siempre.
+    /// </summary>
+    private IReadOnlyList<ConversacionTecnicoOptionDto> GetAssignableTechnicians()
+    {
+        if (_esAdministradorConversaciones || _selectedConversation?.IdNumeroWhatsApp is not int idNumero)
+            return _technicians;
+
+        var numero = _whatsappNumeros.FirstOrDefault(n => n.IdNumero == idNumero);
+        if (numero is null || numero.Usuarios.Count == 0)
+            return _technicians;
+
+        var usuariosDelNumero = new HashSet<string>(numero.Usuarios, StringComparer.OrdinalIgnoreCase);
+        var filtrados = _technicians.Where(t => usuariosDelNumero.Contains(t.UsuarioAsociado ?? string.Empty)).ToList();
+        return filtrados.Count > 0 ? filtrados : _technicians;
     }
 
     private bool EsColaEspera => string.Equals(_filters.Orden, ConversacionesInboxOrden.ColaEspera, StringComparison.OrdinalIgnoreCase);
