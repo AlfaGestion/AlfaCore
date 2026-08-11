@@ -30,6 +30,28 @@ public sealed class AppAuditRepository(
         IReadOnlyList<AuditChangeWriteDto> changes,
         CancellationToken ct = default)
     {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = await cn.BeginTransactionAsync(ct);
+        try
+        {
+            await WriteAsync(auditEvent, changes, cn, (SqlTransaction)tx, ct);
+            await tx.CommitAsync(ct);
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
+    }
+
+    public async Task WriteAsync(
+        AppEventRecord auditEvent,
+        IReadOnlyList<AuditChangeWriteDto> changes,
+        SqlConnection connection,
+        SqlTransaction transaction,
+        CancellationToken ct = default)
+    {
         const string insertEventSql = """
             INSERT INTO dbo.SYS_EventosAplicacion
             (
@@ -54,12 +76,7 @@ public sealed class AppAuditRepository(
                 (@AuditEventId, @FieldName, @OldValue, @NewValue, @Order);
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
-        await cn.OpenAsync(ct);
-        await using var tx = await cn.BeginTransactionAsync(ct);
-        try
-        {
-            await cn.ExecuteAsync(new CommandDefinition(
+        await connection.ExecuteAsync(new CommandDefinition(
                 insertEventSql,
                 new
                 {
@@ -81,7 +98,7 @@ public sealed class AppAuditRepository(
                     auditEvent.UserMessage,
                     auditEvent.DataJson
                 },
-                tx,
+                transaction,
                 cancellationToken: ct));
 
             if (changes.Count > 0)
@@ -94,20 +111,12 @@ public sealed class AppAuditRepository(
                     change.NewValue,
                     change.Order
                 });
-                await cn.ExecuteAsync(new CommandDefinition(
+                await connection.ExecuteAsync(new CommandDefinition(
                     insertChangeSql,
                     parameters,
-                    tx,
+                    transaction,
                     cancellationToken: ct));
             }
-
-            await tx.CommitAsync(ct);
-        }
-        catch
-        {
-            await tx.RollbackAsync(CancellationToken.None);
-            throw;
-        }
     }
 
     public async Task<AuditActivityPageDto> GetActivityAsync(
@@ -191,6 +200,16 @@ public sealed class AppAuditRepository(
 
     public async Task<AuditSchemaAvailabilityDto> CheckAvailabilityAsync(CancellationToken ct = default)
     {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        return await CheckAvailabilityAsync(cn, null, ct);
+    }
+
+    public async Task<AuditSchemaAvailabilityDto> CheckAvailabilityAsync(
+        SqlConnection connection,
+        SqlTransaction? transaction = null,
+        CancellationToken ct = default)
+    {
         const string sql = """
             SELECT
                 CASE WHEN OBJECT_ID(N'dbo.SYS_EventosAplicacion', N'U') IS NOT NULL THEN 1 ELSE 0 END AS HasEvents,
@@ -216,9 +235,7 @@ public sealed class AppAuditRepository(
                 ) THEN 1 ELSE 0 END AS HasChangeShape;
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
-        await cn.OpenAsync(ct);
-        var state = await cn.QuerySingleAsync<SchemaState>(new CommandDefinition(sql, cancellationToken: ct));
+        var state = await connection.QuerySingleAsync<SchemaState>(new CommandDefinition(sql, transaction: transaction, cancellationToken: ct));
         var missing = new List<string>();
         if (!state.HasEvents) missing.Add("dbo.SYS_EventosAplicacion");
         if (!state.HasChanges) missing.Add("dbo.SYS_EventosAplicacionCambios");

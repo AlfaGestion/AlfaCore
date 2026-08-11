@@ -1,4 +1,5 @@
 using AlfaCore.Models;
+using Microsoft.Data.SqlClient;
 
 namespace AlfaCore.Services;
 
@@ -23,6 +24,7 @@ public interface IAppEventService
         CancellationToken ct = default);
 
     Task<Guid> WriteAuditAsync(AuditWriteRequest request, CancellationToken ct = default);
+    Task<Guid> WriteAuditAsync(AuditWriteRequest request, SqlConnection connection, SqlTransaction transaction, CancellationToken ct = default);
 
     Task<AuditActivityPageDto> GetActivityAsync(
         string entityType,
@@ -32,4 +34,5 @@ public interface IAppEventService
         CancellationToken ct = default);
 
     Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(CancellationToken ct = default);
+    Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(SqlConnection connection, SqlTransaction? transaction = null, CancellationToken ct = default);
 }

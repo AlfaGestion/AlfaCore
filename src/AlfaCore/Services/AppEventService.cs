@@ -94,6 +94,31 @@ public sealed class AppEventService(
 
     public async Task<Guid> WriteAuditAsync(AuditWriteRequest request, CancellationToken ct = default)
     {
+        var prepared = PrepareAudit(request);
+        var availability = await auditRepository.CheckAvailabilityAsync(ct);
+        if (!availability.Available)
+            throw new InvalidOperationException($"El esquema de auditoría no está disponible: {string.Join(", ", availability.MissingObjects)}.");
+
+        await auditRepository.WriteAsync(prepared.Record, prepared.Changes, ct);
+        await WriteAsync(prepared.Record, ct);
+        LogPersisted(prepared.Record, prepared.Changes.Length);
+        return prepared.Record.Id;
+    }
+
+    public async Task<Guid> WriteAuditAsync(
+        AuditWriteRequest request,
+        SqlConnection connection,
+        SqlTransaction transaction,
+        CancellationToken ct = default)
+    {
+        var prepared = PrepareAudit(request);
+        await auditRepository.WriteAsync(prepared.Record, prepared.Changes, connection, transaction, ct);
+        LogPersisted(prepared.Record, prepared.Changes.Length);
+        return prepared.Record.Id;
+    }
+
+    private (AppEventRecord Record, AuditChangeWriteDto[] Changes) PrepareAudit(AuditWriteRequest request)
+    {
         ArgumentNullException.ThrowIfNull(request);
         var entityType = Required(request.EntityType, nameof(request.EntityType), 80);
         var recordId = Required(request.RecordId, nameof(request.RecordId), 120);
@@ -117,10 +142,6 @@ public sealed class AppEventService(
                 item => Required(item.Key, "Metadata.Key", 120),
                 item => AuditDataProtector.ProtectValue(item.Key, item.Value, AuditDataProtector.MaxMetadataValueLength));
 
-        var availability = await auditRepository.CheckAvailabilityAsync(ct);
-        if (!availability.Available)
-            throw new InvalidOperationException($"El esquema de auditoría no está disponible: {string.Join(", ", availability.MissingObjects)}.");
-
         var eventId = Guid.NewGuid();
         var record = CreateBaseRecord(
             AppEventKind.Audit,
@@ -135,12 +156,14 @@ public sealed class AppEventService(
         record.Message = Truncate(request.Message, 1000);
         record.UserName = ResolveFunctionalUser();
 
-        await auditRepository.WriteAsync(record, changes, ct);
-        await WriteAsync(record, ct);
+        return (record, changes);
+    }
+
+    private void LogPersisted(AppEventRecord record, int changeCount)
+    {
         logger.LogInformation(
             "[{EventId}] AUDIT persistida {Module}/{Operation} {EntityType} {RecordId} con {ChangeCount} cambio(s).",
-            eventId, module, operation, entityType, recordId, changes.Length);
-        return eventId;
+            record.Id, record.Module, record.Action, record.EntityType, record.EntityId, changeCount);
     }
 
     /// <summary>
@@ -162,6 +185,12 @@ public sealed class AppEventService(
 
     public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(CancellationToken ct = default)
         => auditRepository.CheckAvailabilityAsync(ct);
+
+    public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(
+        SqlConnection connection,
+        SqlTransaction? transaction = null,
+        CancellationToken ct = default)
+        => auditRepository.CheckAvailabilityAsync(connection, transaction, ct);
 
     private AppEventRecord CreateBaseRecord(
         AppEventKind kind,

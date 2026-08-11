@@ -11,7 +11,8 @@ public sealed class ContactosService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
-    IContactosValidator validator) : IContactosService
+    IContactosValidator validator,
+    ILogger<ContactosService> logger) : IContactosService
 {
     private const string ModuleName       = "Contactos";
     private const string ConfigGroup      = "CONTACTOS";
@@ -472,8 +473,12 @@ public sealed class ContactosService(
             var hasActivo = await HasActivoColumnAsync(cn, token);
             var isNew = !normalized.Id.HasValue || normalized.Id.Value <= 0;
             var contactId = normalized.Id ?? 0;
+            var auditAvailability = await appEvents.CheckAuditAvailabilityAsync(cn, null, token);
+            if (!auditAvailability.Available)
+                LogAuditSchemaUnavailable("Save", auditAvailability);
 
             await using var tx = await cn.BeginTransactionAsync(token);
+            ContactoSaveRequest? previous = null;
 
             if (isNew)
             {
@@ -569,6 +574,9 @@ public sealed class ContactosService(
             }
             else
             {
+                previous = await GetAuditStateAsync(cn, (SqlTransaction)tx, contactId, token)
+                    ?? throw new InvalidOperationException("El contacto seleccionado ya no existe en la base activa.");
+
                 const string sql = """
                     UPDATE dbo.MA_CONTACTOS
                     SET
@@ -599,23 +607,24 @@ public sealed class ContactosService(
                     throw new InvalidOperationException("El contacto seleccionado ya no existe en la base activa.");
             }
 
-            await tx.CommitAsync(token);
-
-            await appEvents.LogAuditAsync(
-                ModuleName,
-                isNew ? "Create" : "Update",
-                "MA_CONTACTOS",
-                contactId.ToString(),
-                isNew ? "Contacto creado." : "Contacto actualizado.",
-                new
+            if (auditAvailability.Available)
+            {
+                IReadOnlyList<AuditChangeWriteDto> changes = isNew ? [] : BuildAuditChanges(previous!, normalized);
+                if (isNew || changes.Count > 0)
                 {
-                    Id = contactId,
-                    normalized.NombreApellido,
-                    normalized.Email,
-                    normalized.Localidad,
-                    normalized.ProvinciaCodigo
-                },
-                token);
+                    await WriteContactAuditAsync(new AuditWriteRequest
+                    {
+                        Module = ModuleName,
+                        EntityType = AuditEntityTypes.Contacto,
+                        RecordId = contactId.ToString(),
+                        Operation = isNew ? AuditOperations.Create : AuditOperations.Update,
+                        Message = isNew ? "Contacto creado" : "Contacto actualizado",
+                        Changes = changes
+                    }, cn, (SqlTransaction)tx, token);
+                }
+            }
+
+            await tx.CommitAsync(token);
 
             return contactId;
         }, "No se pudo guardar el contacto.", ct);
@@ -631,26 +640,61 @@ public sealed class ContactosService(
             if (!await HasActivoColumnAsync(cn, token))
                 throw new InvalidOperationException("La base activa no tiene la columna Activo en MA_CONTACTOS, por eso no se puede hacer baja lógica.");
 
+            var auditAvailability = await appEvents.CheckAuditAvailabilityAsync(cn, null, token);
+            if (!auditAvailability.Available)
+                LogAuditSchemaUnavailable("Deactivate", auditAvailability);
+
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            const string stateSql = "SELECT Activo FROM dbo.MA_CONTACTOS WITH (UPDLOCK, HOLDLOCK) WHERE id = @Id;";
+            await using (var stateCmd = new SqlCommand(stateSql, cn, (SqlTransaction)tx))
+            {
+                stateCmd.Parameters.AddWithValue("@Id", id);
+                var state = await stateCmd.ExecuteScalarAsync(token);
+                if (state is null || state is DBNull)
+                    throw new InvalidOperationException("El contacto seleccionado ya no existe en la base activa.");
+                if (!Convert.ToBoolean(state))
+                {
+                    await tx.CommitAsync(token);
+                    return;
+                }
+            }
+
             const string sql = """
                 UPDATE dbo.MA_CONTACTOS
                 SET Activo = 0
-                WHERE id = @Id;
+                WHERE id = @Id AND Activo = 1;
                 """;
 
-            await using var cmd = new SqlCommand(sql, cn);
+            await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
             cmd.Parameters.AddWithValue("@Id", id);
             var affected = await cmd.ExecuteNonQueryAsync(token);
             if (affected == 0)
                 throw new InvalidOperationException("El contacto seleccionado ya no existe en la base activa.");
 
-            await appEvents.LogAuditAsync(
-                ModuleName,
-                "Deactivate",
-                "MA_CONTACTOS",
-                id.ToString(),
-                "Contacto dado de baja.",
-                new { Id = id, Activo = false },
-                token);
+            if (auditAvailability.Available)
+            {
+                await WriteContactAuditAsync(new AuditWriteRequest
+                {
+                    Module = ModuleName,
+                    EntityType = AuditEntityTypes.Contacto,
+                    RecordId = id.ToString(),
+                    Operation = AuditOperations.Deactivate,
+                    Message = "Contacto dado de baja",
+                    Changes =
+                    [
+                        new AuditChangeWriteDto
+                        {
+                            FieldName = ContactoAuditFields.Activo,
+                            OldValue = bool.TrueString,
+                            NewValue = bool.FalseString,
+                            Order = 1
+                        }
+                    ]
+                }, cn, (SqlTransaction)tx, token);
+            }
+
+            await tx.CommitAsync(token);
         }, "No se pudo dar de baja el contacto.", ct);
 
     public Task<IReadOnlyList<ProvinciaOptionDto>> GetProvinciasAsync(CancellationToken ct = default)
@@ -877,6 +921,121 @@ public sealed class ContactosService(
             Cargo = request.Cargo?.Trim() ?? string.Empty,
             Observaciones = request.Observaciones?.Trim() ?? string.Empty
         };
+
+    private static async Task<ContactoSaveRequest?> GetAuditStateAsync(
+        SqlConnection cn,
+        SqlTransaction tx,
+        int id,
+        CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                ISNULL(Nombre_y_Apellido, ''), ISNULL(Domicilio, ''), ISNULL(Localidad, ''),
+                ISNULL(Provincia, ''), ISNULL(C_Postal, ''), ISNULL(NroDocumento, ''),
+                ISNULL(Telefono, ''), ISNULL(Fax, ''), ISNULL(Celular, ''), ISNULL(email, ''),
+                ISNULL(mailPGCB, 0), ISNULL(mailOC, 0), ISNULL(mailOT, 0),
+                ISNULL(WebSite, ''), ISNULL(Cargo, ''), ISNULL(Observaciones, '')
+            FROM dbo.MA_CONTACTOS WITH (UPDLOCK, HOLDLOCK)
+            WHERE id = @Id;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@Id", id);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return null;
+
+        return NormalizeRequest(new ContactoSaveRequest
+        {
+            Id = id,
+            NombreApellido = GetString(rd, 0),
+            Domicilio = GetString(rd, 1),
+            Localidad = GetString(rd, 2),
+            ProvinciaCodigo = GetString(rd, 3),
+            CodigoPostal = GetString(rd, 4),
+            NumeroDocumento = GetString(rd, 5),
+            Telefono = GetString(rd, 6),
+            TelefonoAlternativo = GetString(rd, 7),
+            Celular = GetString(rd, 8),
+            Email = GetString(rd, 9),
+            MailPagosCobranzas = GetBool(rd, 10),
+            MailOrdenCompra = GetBool(rd, 11),
+            MailOrdenTrabajo = GetBool(rd, 12),
+            Website = GetString(rd, 13),
+            Cargo = GetString(rd, 14),
+            Observaciones = GetString(rd, 15)
+        });
+    }
+
+    private static IReadOnlyList<AuditChangeWriteDto> BuildAuditChanges(
+        ContactoSaveRequest previous,
+        ContactoSaveRequest current)
+    {
+        var changes = new List<AuditChangeWriteDto>();
+        Add(ContactoAuditFields.NombreApellido, previous.NombreApellido, current.NombreApellido);
+        Add(ContactoAuditFields.Domicilio, previous.Domicilio, current.Domicilio);
+        Add(ContactoAuditFields.Localidad, previous.Localidad, current.Localidad);
+        Add(ContactoAuditFields.Provincia, previous.ProvinciaCodigo, current.ProvinciaCodigo);
+        Add(ContactoAuditFields.CodigoPostal, previous.CodigoPostal, current.CodigoPostal);
+        Add(ContactoAuditFields.NumeroDocumento, previous.NumeroDocumento, current.NumeroDocumento);
+        Add(ContactoAuditFields.Telefono, previous.Telefono, current.Telefono);
+        Add(ContactoAuditFields.TelefonoAlternativo, previous.TelefonoAlternativo, current.TelefonoAlternativo);
+        Add(ContactoAuditFields.Celular, previous.Celular, current.Celular);
+        Add(ContactoAuditFields.Email, previous.Email, current.Email);
+        Add(ContactoAuditFields.Website, previous.Website, current.Website);
+        Add(ContactoAuditFields.Cargo, previous.Cargo, current.Cargo);
+        Add(ContactoAuditFields.Observaciones, previous.Observaciones, current.Observaciones);
+        AddBool(ContactoAuditFields.MailPagosCobranzas, previous.MailPagosCobranzas, current.MailPagosCobranzas);
+        AddBool(ContactoAuditFields.MailOrdenCompra, previous.MailOrdenCompra, current.MailOrdenCompra);
+        AddBool(ContactoAuditFields.MailOrdenTrabajo, previous.MailOrdenTrabajo, current.MailOrdenTrabajo);
+        return changes;
+
+        void Add(string fieldName, string oldValue, string newValue)
+        {
+            if (string.Equals(oldValue, newValue, StringComparison.Ordinal))
+                return;
+            changes.Add(Change(fieldName, EmptyToNull(oldValue), EmptyToNull(newValue), changes.Count));
+        }
+
+        void AddBool(string fieldName, bool oldValue, bool newValue)
+        {
+            if (oldValue == newValue)
+                return;
+            changes.Add(Change(fieldName, oldValue.ToString(), newValue.ToString(), changes.Count));
+        }
+
+        static AuditChangeWriteDto Change(string fieldName, string? oldValue, string? newValue, int index)
+            => new() { FieldName = fieldName, OldValue = oldValue, NewValue = newValue, Order = checked((short)(index + 1)) };
+
+        static string? EmptyToNull(string value) => value.Length == 0 ? null : value;
+    }
+
+    private void LogAuditSchemaUnavailable(string operation, AuditSchemaAvailabilityDto availability)
+        => logger.LogWarning(
+            "SCHEMA_NOT_AVAILABLE: Contactos/{Operation} continúa sin auditoría persistente. Faltan: {MissingObjects}.",
+            operation,
+            string.Join(", ", availability.MissingObjects));
+
+    private async Task WriteContactAuditAsync(
+        AuditWriteRequest request,
+        SqlConnection connection,
+        SqlTransaction transaction,
+        CancellationToken ct)
+    {
+        try
+        {
+            await appEvents.WriteAuditAsync(request, connection, transaction, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(
+                ex,
+                "AUDIT_WRITE_FAILED: se revierte Contactos/{Operation} para el registro {RecordId}.",
+                request.Operation,
+                request.RecordId);
+            throw;
+        }
+    }
 
     private static async Task<IReadOnlyList<ContactoCuentaDto>> GetCuentasVinculadasCoreAsync(SqlConnection cn, int id, CancellationToken ct)
     {
