@@ -1041,6 +1041,9 @@
                                     {
                                         <span>@GetConversationInitials(_selectedConversation)</span>
                                     }
+                                    <span class="conversation-profile-avatar__channel conversation-profile-avatar__channel--@_selectedConversation.Canal.ToLowerInvariant()" title="@GetCanalLabel(_selectedConversation.Canal)">
+                                        <i class="bi @GetCanalIcon(_selectedConversation.Canal)"></i>
+                                    </span>
                                 </div>
                             }
                             <div>
@@ -4471,7 +4474,10 @@
 
     private string ConversationRowClass(ConversacionInboxItemDto item)
     {
-        var classes = "conversation-row";
+        var canal = (item.Canal ?? string.Empty).Trim().ToLowerInvariant();
+        var classes = string.IsNullOrWhiteSpace(canal)
+            ? "conversation-row"
+            : $"conversation-row conversation-row--{canal}";
         if (item.IdConversacion == _selectedConversationId
             || (item.Canal == "MERCADOLIBRE"
                 && _selectedConversationId.HasValue

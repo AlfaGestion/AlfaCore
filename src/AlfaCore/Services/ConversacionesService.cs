@@ -3326,7 +3326,21 @@ public sealed class ConversacionesService(
                 "CONV_WEBHOOK_LOG",
                 webhookLogId.ToString(CultureInfo.InvariantCulture),
                 "Webhook de WhatsApp procesado.",
-                new { Mensajes = parsedMessages.Count, Procesados = processed },
+                new
+                {
+                    Mensajes = parsedMessages.Count,
+                    Procesados = processed,
+                    Entrantes = parsedMessages
+                        .Select(x => new
+                        {
+                            x.Phone,
+                            x.PhoneNumberId,
+                            x.DisplayPhoneNumber,
+                            x.WhatsAppMessageId,
+                            x.MessageType
+                        })
+                        .ToList()
+                },
                 token);
 
             return new ConversacionWebhookResultDto
@@ -3675,13 +3689,13 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
 
             var contact = await TryFindContactByPhoneAsync(cn, phone, token);
-            var existing = await FindWhatsAppConversationByPhoneAsync(cn, phone, contact.IdContact, token);
+            var existing = await FindWhatsAppConversationByPhoneAsync(cn, phone, contact.IdContact, idNumeroWhatsApp: null, token);
             if (existing is not null)
             {
                 if (contact.IdContact.HasValue)
                     await AssociateContactIfMissingAsync(cn, existing.IdConversacion, contact, token);
 
-                await MergeDuplicateWhatsAppConversationsAsync(cn, existing.IdConversacion, phone, contact.IdContact, token);
+                await MergeDuplicateWhatsAppConversationsAsync(cn, existing.IdConversacion, phone, contact.IdContact, idNumeroWhatsApp: null, token);
 
                 await _appEvents.LogAuditAsync(
                     "Conversaciones",
@@ -5223,13 +5237,14 @@ public sealed class ConversacionesService(
         await cn.OpenAsync(ct);
 
         var contact = await TryFindContactByPhoneAsync(cn, incoming.Phone, ct);
-        var existing = await FindWhatsAppConversationByPhoneAsync(cn, incoming.Phone, contact.IdContact, ct);
+        var idNumeroWhatsApp = await ResolveNumeroWhatsAppIdAsync(cn, incoming.PhoneNumberId, ct);
+        var existing = await FindWhatsAppConversationByPhoneAsync(cn, incoming.Phone, contact.IdContact, idNumeroWhatsApp, ct);
         if (existing is not null)
         {
             if (contact.IdContact.HasValue)
                 await AssociateContactIfMissingAsync(cn, existing.IdConversacion, contact, ct);
 
-            await MergeDuplicateWhatsAppConversationsAsync(cn, existing.IdConversacion, incoming.Phone, contact.IdContact, ct);
+            await MergeDuplicateWhatsAppConversationsAsync(cn, existing.IdConversacion, incoming.Phone, contact.IdContact, idNumeroWhatsApp, ct);
 
             return existing.IdConversacion;
         }
@@ -5237,7 +5252,6 @@ public sealed class ConversacionesService(
         var displayName = !string.IsNullOrWhiteSpace(incoming.ContactName)
             ? incoming.ContactName
             : contact.Name;
-        var idNumeroWhatsApp = await ResolveNumeroWhatsAppIdAsync(cn, incoming.PhoneNumberId, ct);
 
         const string insertSql = """
             INSERT INTO dbo.CONV_CONVERSACIONES
@@ -5288,9 +5302,8 @@ public sealed class ConversacionesService(
 
     /// <summary>
     /// Resuelve a que fila de CONV_WHATSAPP_NUMEROS pertenece un phone_number_id entrante de Meta.
-    /// Devuelve null si el numero no esta registrado (cliente todavia sin migrar a multi-numero) o
-    /// si el webhook no trajo phone_number_id -- en ese caso la conversacion queda sin numero fijo,
-    /// visible para todos como pasaba antes de esta funcionalidad.
+    /// Si Meta envio un numero valido pero todavia no esta cargado, lo registra para no mezclar
+    /// conversaciones de dos numeros receptores distintos bajo el mismo cliente.
     /// </summary>
     private static async Task<int?> ResolveNumeroWhatsAppIdAsync(SqlConnection cn, string phoneNumberId, CancellationToken ct)
     {
@@ -5298,14 +5311,38 @@ public sealed class ConversacionesService(
             return null;
 
         const string sql = """
-            SELECT IdNumero
+            DECLARE @IdNumero int;
+
+            SELECT @IdNumero = IdNumero
             FROM dbo.CONV_WHATSAPP_NUMEROS
             WHERE PhoneNumberId = @PhoneNumberId;
+
+            IF @IdNumero IS NULL
+            BEGIN
+                INSERT INTO dbo.CONV_WHATSAPP_NUMEROS (PhoneNumberId, Nombre, Activo)
+                VALUES (@PhoneNumberId, @NombreDetectado, 1);
+
+                SET @IdNumero = CAST(SCOPE_IDENTITY() AS int);
+            END;
+
+            SELECT @IdNumero;
             """;
+
+        var normalizedPhoneNumberId = phoneNumberId.Trim();
         await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId.Trim());
+        cmd.Parameters.AddWithValue("@PhoneNumberId", normalizedPhoneNumberId);
+        cmd.Parameters.AddWithValue("@NombreDetectado", BuildDetectedWhatsAppNumberName(normalizedPhoneNumberId));
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is null or DBNull ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static string BuildDetectedWhatsAppNumberName(string phoneNumberId)
+    {
+        var normalized = phoneNumberId.Trim();
+        var suffix = normalized.Length <= 6 ? normalized : normalized[^6..];
+        return string.IsNullOrWhiteSpace(suffix)
+            ? "Numero WhatsApp detectado"
+            : $"Numero WhatsApp ...{suffix}";
     }
 
     private async Task<long> EnsureInstagramConversationAsync(
@@ -7278,7 +7315,7 @@ public sealed class ConversacionesService(
         };
     }
 
-    private static async Task<ConversationLookupResult?> FindWhatsAppConversationByPhoneAsync(SqlConnection cn, string phone, int? idContact, CancellationToken ct)
+    private static async Task<ConversationLookupResult?> FindWhatsAppConversationByPhoneAsync(SqlConnection cn, string phone, int? idContact, int? idNumeroWhatsApp, CancellationToken ct)
     {
         var normalizedPhone = NormalizePhone(phone);
         if (string.IsNullOrWhiteSpace(normalizedPhone))
@@ -7293,6 +7330,10 @@ public sealed class ConversacionesService(
             FROM dbo.CONV_CONVERSACIONES
             WHERE Canal = N'WHATSAPP'
               AND (
+                    (@IdNumeroWhatsApp IS NULL AND IdNumeroWhatsApp IS NULL)
+                    OR IdNumeroWhatsApp = @IdNumeroWhatsApp
+                  )
+              AND (
                     {SqlPhoneEquivalentPredicate("TelefonoWhatsApp", "@TelefonoWhatsApp", "@TelefonoWhatsAppTail")}
                     OR (@IdContacto IS NOT NULL AND IdContacto = @IdContacto)
                   )
@@ -7303,6 +7344,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@TelefonoWhatsApp", normalizedPhone);
         cmd.Parameters.AddWithValue("@TelefonoWhatsAppTail", DbNullable(phoneTail));
         cmd.Parameters.AddWithValue("@IdContacto", idContact.HasValue ? idContact.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@IdNumeroWhatsApp", idNumeroWhatsApp.HasValue ? idNumeroWhatsApp.Value : DBNull.Value);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         if (!await rd.ReadAsync(ct))
             return null;
@@ -7392,9 +7434,9 @@ public sealed class ConversacionesService(
         }
     }
 
-    private async Task MergeDuplicateWhatsAppConversationsAsync(SqlConnection cn, long canonicalId, string phone, int? idContact, CancellationToken ct)
+    private async Task MergeDuplicateWhatsAppConversationsAsync(SqlConnection cn, long canonicalId, string phone, int? idContact, int? idNumeroWhatsApp, CancellationToken ct)
     {
-        var duplicates = await FindDuplicateWhatsAppConversationIdsAsync(cn, canonicalId, phone, idContact, ct);
+        var duplicates = await FindDuplicateWhatsAppConversationIdsAsync(cn, canonicalId, phone, idContact, idNumeroWhatsApp, ct);
         foreach (var duplicateId in duplicates)
         {
             await MergeDuplicateWhatsAppConversationAsync(cn, canonicalId, duplicateId, ct);
@@ -7405,7 +7447,7 @@ public sealed class ConversacionesService(
                 "CONV_CONVERSACIONES",
                 canonicalId.ToString(CultureInfo.InvariantCulture),
                 "Conversación duplicada consolidada por teléfono equivalente.",
-                new { ConversacionConservada = canonicalId, ConversacionDuplicada = duplicateId, TelefonoWhatsApp = NormalizePhone(phone), IdContacto = idContact },
+                new { ConversacionConservada = canonicalId, ConversacionDuplicada = duplicateId, TelefonoWhatsApp = NormalizePhone(phone), IdContacto = idContact, IdNumeroWhatsApp = idNumeroWhatsApp },
                 ct);
         }
     }
@@ -7445,7 +7487,8 @@ public sealed class ConversacionesService(
             SELECT
                 IdConversacion,
                 ISNULL(TelefonoWhatsApp, ''),
-                IdContacto
+                IdContacto,
+                IdNumeroWhatsApp
             FROM dbo.CONV_CONVERSACIONES
             WHERE Canal = N'WHATSAPP'
             ORDER BY IdConversacion ASC
@@ -7460,7 +7503,8 @@ public sealed class ConversacionesService(
             {
                 IdConversacion = rd.GetInt64(0),
                 TelefonoWhatsApp = GetString(rd, 1),
-                IdContacto = rd.IsDBNull(2) ? null : rd.GetInt32(2)
+                IdContacto = rd.IsDBNull(2) ? null : rd.GetInt32(2),
+                IdNumeroWhatsApp = rd.IsDBNull(3) ? null : rd.GetInt32(3)
             });
         }
 
@@ -7474,24 +7518,29 @@ public sealed class ConversacionesService(
         foreach (var group in records
                      .Select(x => new { Item = x, Key = GetPhoneComparableTail(x.TelefonoWhatsApp) })
                      .Where(x => !string.IsNullOrWhiteSpace(x.Key))
-                     .GroupBy(x => x.Key!, StringComparer.OrdinalIgnoreCase))
+                     .GroupBy(x => $"{BuildNumeroWhatsAppMergeKey(x.Item.IdNumeroWhatsApp)}:TEL:{x.Key}", StringComparer.OrdinalIgnoreCase))
         {
             var items = group.Select(x => x.Item).OrderBy(x => x.IdConversacion).ToList();
-            if (items.Count > 1 && emitted.Add($"TEL:{group.Key}"))
+            if (items.Count > 1 && emitted.Add(group.Key))
                 yield return items;
         }
 
         foreach (var group in records
                      .Where(x => x.IdContacto.HasValue)
-                     .GroupBy(x => x.IdContacto!.Value))
+                     .GroupBy(x => $"{BuildNumeroWhatsAppMergeKey(x.IdNumeroWhatsApp)}:CONTACTO:{x.IdContacto!.Value.ToString(CultureInfo.InvariantCulture)}", StringComparer.OrdinalIgnoreCase))
         {
             var items = group.OrderBy(x => x.IdConversacion).ToList();
-            if (items.Count > 1 && emitted.Add($"CONTACTO:{group.Key.ToString(CultureInfo.InvariantCulture)}"))
+            if (items.Count > 1 && emitted.Add(group.Key))
                 yield return items;
         }
     }
 
-    private static async Task<List<long>> FindDuplicateWhatsAppConversationIdsAsync(SqlConnection cn, long canonicalId, string phone, int? idContact, CancellationToken ct)
+    private static string BuildNumeroWhatsAppMergeKey(int? idNumeroWhatsApp)
+        => idNumeroWhatsApp.HasValue
+            ? $"NUM:{idNumeroWhatsApp.Value.ToString(CultureInfo.InvariantCulture)}"
+            : "NUM:NULL";
+
+    private static async Task<List<long>> FindDuplicateWhatsAppConversationIdsAsync(SqlConnection cn, long canonicalId, string phone, int? idContact, int? idNumeroWhatsApp, CancellationToken ct)
     {
         var normalizedPhone = NormalizePhone(phone);
         if (string.IsNullOrWhiteSpace(normalizedPhone) && !idContact.HasValue)
@@ -7503,6 +7552,10 @@ public sealed class ConversacionesService(
             FROM dbo.CONV_CONVERSACIONES
             WHERE Canal = N'WHATSAPP'
               AND IdConversacion <> @CanonicalId
+              AND (
+                    (@IdNumeroWhatsApp IS NULL AND IdNumeroWhatsApp IS NULL)
+                    OR IdNumeroWhatsApp = @IdNumeroWhatsApp
+                  )
               AND (
                     {SqlPhoneEquivalentPredicate("TelefonoWhatsApp", "@TelefonoWhatsApp", "@TelefonoWhatsAppTail")}
                     OR (@IdContacto IS NOT NULL AND IdContacto = @IdContacto)
@@ -7516,6 +7569,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@TelefonoWhatsApp", DbNullable(normalizedPhone));
         cmd.Parameters.AddWithValue("@TelefonoWhatsAppTail", DbNullable(phoneTail));
         cmd.Parameters.AddWithValue("@IdContacto", idContact.HasValue ? idContact.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@IdNumeroWhatsApp", idNumeroWhatsApp.HasValue ? idNumeroWhatsApp.Value : DBNull.Value);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         while (await rd.ReadAsync(ct))
             result.Add(rd.GetInt64(0));
@@ -8767,6 +8821,10 @@ public sealed class ConversacionesService(
                     && metadata.TryGetProperty("phone_number_id", out var phoneNumberIdProp)
                         ? phoneNumberIdProp.GetString() ?? string.Empty
                         : string.Empty;
+                var displayPhoneNumber = value.TryGetProperty("metadata", out metadata)
+                    && metadata.TryGetProperty("display_phone_number", out var displayPhoneNumberProp)
+                        ? displayPhoneNumberProp.GetString() ?? string.Empty
+                        : string.Empty;
 
                 foreach (var message in messages.EnumerateArray())
                 {
@@ -8782,13 +8840,14 @@ public sealed class ConversacionesService(
                     {
                         Phone = NormalizePhone(phone),
                         PhoneNumberId = phoneNumberId,
+                        DisplayPhoneNumber = displayPhoneNumber,
                         ContactName = contactName,
                         MessageType = NormalizeMessageType(type),
                         WhatsAppMessageId = messageId,
                         WhatsAppReplyToMessageId = replyToMessageId,
                         Timestamp = timestamp,
                         Text = text,
-                        RawJson = message.GetRawText(),
+                        RawJson = BuildIncomingWhatsAppMessagePayloadJson(message, phoneNumberId, displayPhoneNumber),
                         Attachments = attachments
                     });
                 }
@@ -8796,6 +8855,19 @@ public sealed class ConversacionesService(
         }
 
         return items;
+    }
+
+    private static string BuildIncomingWhatsAppMessagePayloadJson(JsonElement message, string phoneNumberId, string displayPhoneNumber)
+    {
+        return JsonSerializer.Serialize(new
+        {
+            metadata = new
+            {
+                phone_number_id = phoneNumberId,
+                display_phone_number = displayPhoneNumber
+            },
+            message
+        });
     }
 
     private static List<IncomingWhatsAppStatus> ParseIncomingStatuses(JsonElement root)
@@ -10466,12 +10538,14 @@ public sealed class ConversacionesService(
         public long IdConversacion { get; init; }
         public string TelefonoWhatsApp { get; init; } = string.Empty;
         public int? IdContacto { get; init; }
+        public int? IdNumeroWhatsApp { get; init; }
     }
 
     private sealed class IncomingWhatsAppMessage
     {
         public string Phone { get; init; } = string.Empty;
         public string PhoneNumberId { get; init; } = string.Empty;
+        public string DisplayPhoneNumber { get; init; } = string.Empty;
         public string ContactName { get; init; } = string.Empty;
         public string MessageType { get; init; } = "TEXT";
         public string WhatsAppMessageId { get; init; } = string.Empty;

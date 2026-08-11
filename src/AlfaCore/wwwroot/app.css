@@ -25440,6 +25440,214 @@ html[data-theme="light"] .tickets-table-wrap {
     color: #8696a0 !important;
 }
 
+/* Conversaciones: identidad visual por canal. Mantener al final para ganar sobre
+   los ajustes Odoo/WhatsApp previos sin tocar el resto del sistema. */
+.conversations-page--odoo {
+    --conversation-accent: #25d366;
+    --conversation-accent-soft: rgba(37, 211, 102, .13);
+    --conversation-incoming: #202c33;
+    --conversation-outgoing: #005c4b;
+    --conversation-meta: #9fb0bb;
+}
+
+.conversations-page--instagram {
+    --conversation-accent: #e1306c;
+    --conversation-accent-2: #f59e0b;
+    --conversation-accent-soft: rgba(225, 48, 108, .16);
+    --conversation-incoming: linear-gradient(135deg, rgba(64, 28, 55, .94), rgba(34, 31, 45, .96));
+    --conversation-outgoing: linear-gradient(135deg, rgba(157, 23, 77, .84), rgba(194, 65, 12, .74));
+    --conversation-meta: #f9a8d4;
+}
+
+.conversations-page--facebook {
+    --conversation-accent: #1877f2;
+    --conversation-accent-2: #60a5fa;
+    --conversation-accent-soft: rgba(24, 119, 242, .16);
+    --conversation-incoming: linear-gradient(135deg, rgba(24, 48, 78, .96), rgba(25, 39, 60, .96));
+    --conversation-outgoing: linear-gradient(135deg, rgba(29, 78, 216, .86), rgba(14, 116, 144, .72));
+    --conversation-meta: #bfdbfe;
+}
+
+.conversations-page--mercadolibre {
+    --conversation-accent: #fee600;
+    --conversation-accent-2: #f59e0b;
+    --conversation-accent-soft: rgba(254, 230, 0, .13);
+    --conversation-incoming: linear-gradient(135deg, rgba(54, 48, 22, .95), rgba(38, 36, 31, .96));
+    --conversation-outgoing: linear-gradient(135deg, rgba(161, 98, 7, .78), rgba(180, 83, 9, .68));
+    --conversation-meta: #fde68a;
+}
+
+.conversations-page--internal {
+    --conversation-accent: #a78bfa;
+    --conversation-accent-2: #38bdf8;
+    --conversation-accent-soft: rgba(167, 139, 250, .14);
+    --conversation-incoming: linear-gradient(135deg, rgba(48, 38, 76, .94), rgba(31, 41, 55, .96));
+    --conversation-outgoing: linear-gradient(135deg, rgba(91, 33, 182, .8), rgba(8, 145, 178, .62));
+    --conversation-meta: #ddd6fe;
+}
+
+.conversations-page--odoo .conversations-list,
+.conversations-page--odoo .conversation-row,
+.conversations-page--odoo .conversation-row__avatar {
+    overflow: visible !important;
+}
+
+.conversations-page--odoo .conversations-list__items {
+    padding-left: .42rem !important;
+    padding-right: .28rem !important;
+}
+
+.conversations-page--odoo .conversation-row {
+    border-left: 3px solid transparent !important;
+}
+
+.conversations-page--odoo .conversation-row--instagram {
+    border-left-color: #e1306c !important;
+    background-image: linear-gradient(90deg, rgba(225, 48, 108, .08), transparent 42%) !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook {
+    border-left-color: #1877f2 !important;
+    background-image: linear-gradient(90deg, rgba(24, 119, 242, .08), transparent 42%) !important;
+}
+
+.conversations-page--odoo .conversation-row--mercadolibre {
+    border-left-color: #fee600 !important;
+    background-image: linear-gradient(90deg, rgba(254, 230, 0, .08), transparent 42%) !important;
+}
+
+.conversations-page--odoo .conversation-row__avatar {
+    z-index: 1 !important;
+}
+
+.conversations-page--odoo .conversation-row__channel-badge {
+    right: -7px !important;
+    bottom: -3px !important;
+    z-index: 3 !important;
+    border-width: 2px !important;
+    box-shadow: 0 4px 10px rgba(2, 6, 23, .32) !important;
+}
+
+.conversations-page--odoo .conversation-row--instagram .conversation-row__avatar {
+    background: linear-gradient(135deg, #833ab4, #e1306c, #f59e0b) !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook .conversation-row__avatar {
+    background: linear-gradient(135deg, #0f5bd8, #1877f2, #60a5fa) !important;
+}
+
+.conversations-page--odoo .conversation-row--mercadolibre .conversation-row__avatar {
+    background: linear-gradient(135deg, #fee600, #facc15) !important;
+    color: #1f2937 !important;
+}
+
+.conversations-page--odoo .conversation-row--instagram .conversation-badge {
+    background: rgba(131, 58, 180, .26) !important;
+    border-color: rgba(225, 48, 108, .34) !important;
+    color: #fbcfe8 !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook .conversation-badge {
+    background: rgba(24, 119, 242, .18) !important;
+    border-color: rgba(96, 165, 250, .36) !important;
+    color: #dbeafe !important;
+}
+
+.conversations-page--odoo .conversation-row--mercadolibre .conversation-badge {
+    background: rgba(254, 230, 0, .16) !important;
+    border-color: rgba(250, 204, 21, .35) !important;
+    color: #fde68a !important;
+}
+
+.conversations-page--odoo .conversations-chat__header {
+    border-top: 1px solid color-mix(in srgb, var(--conversation-accent) 34%, transparent) !important;
+    background:
+        linear-gradient(90deg, var(--conversation-accent-soft), transparent 52%),
+        #202c33 !important;
+}
+
+.conversations-page--instagram .conversation-profile-avatar,
+.conversations-page--facebook .conversation-profile-avatar,
+.conversations-page--mercadolibre .conversation-profile-avatar {
+    position: relative !important;
+    width: 48px !important;
+    height: 48px !important;
+    flex-basis: 48px !important;
+    border: 2px solid color-mix(in srgb, var(--conversation-accent) 82%, #ffffff 18%) !important;
+    box-shadow: 0 0 0 3px var(--conversation-accent-soft), 0 10px 24px rgba(2, 6, 23, .24) !important;
+}
+
+.conversations-page--odoo .conversation-profile-avatar__channel {
+    position: absolute;
+    right: -7px;
+    bottom: -5px;
+    width: 21px;
+    height: 21px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    border: 2px solid #202c33;
+    color: #fff;
+    font-size: .72rem;
+    line-height: 1;
+    box-shadow: 0 4px 10px rgba(2, 6, 23, .32);
+}
+
+.conversations-page--odoo .conversation-profile-avatar__channel i {
+    line-height: 1;
+}
+
+.conversations-page--odoo .conversation-profile-avatar__channel--instagram {
+    background: radial-gradient(circle at 30% 110%, #fdf497 0%, #fd5949 45%, #d6249f 60%, #285AEB 90%);
+}
+
+.conversations-page--odoo .conversation-profile-avatar__channel--facebook {
+    background: #1877f2;
+}
+
+.conversations-page--odoo .conversation-profile-avatar__channel--mercadolibre {
+    background: #fee600;
+    color: #2d3277;
+}
+
+.conversations-page--instagram .conversation-social-profile a {
+    color: #f9a8d4 !important;
+}
+
+.conversations-page--facebook .conversation-social-profile a {
+    color: #bfdbfe !important;
+}
+
+.conversations-page--mercadolibre .conversation-social-profile a {
+    color: #fde68a !important;
+}
+
+.conversations-page--odoo .message-card--incoming {
+    background: var(--conversation-incoming) !important;
+    border: 1px solid color-mix(in srgb, var(--conversation-accent) 18%, transparent) !important;
+}
+
+.conversations-page--odoo .message-card--outgoing {
+    background: var(--conversation-outgoing) !important;
+    border: 1px solid color-mix(in srgb, var(--conversation-accent) 24%, transparent) !important;
+}
+
+.conversations-page--odoo .message-card--incoming .message-card__meta,
+.conversations-page--odoo .message-card--outgoing .message-card__meta {
+    color: var(--conversation-meta) !important;
+}
+
+.conversations-page--odoo .conversations-composer {
+    background:
+        linear-gradient(90deg, var(--conversation-accent-soft), transparent 58%),
+        #202c33 !important;
+}
+
+.conversations-page--odoo .conversations-composer textarea {
+    border: 1px solid color-mix(in srgb, var(--conversation-accent) 22%, transparent) !important;
+    box-shadow: 0 0 0 3px var(--conversation-accent-soft) !important;
+}
+
 @media (max-width: 1100px) {
     .conversations-page--odoo .conversations-layout {
         grid-template-columns: minmax(260px, 330px) minmax(0, 1fr) !important;
