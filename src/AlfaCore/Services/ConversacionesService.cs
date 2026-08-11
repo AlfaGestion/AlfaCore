@@ -856,7 +856,8 @@ public sealed class ConversacionesService(
                     ISNULL(ultMsg.EstadoEnvio, N''),
                     ISNULL(ultMsg.MessageType, N''),
                     ISNULL(mlMeta.QuestionStatus, N''),
-                    ISNULL(mlMeta.ItemStatus, N'')
+                    ISNULL(mlMeta.ItemStatus, N''),
+                    ISNULL(clasificacionCliente.Descripcion, N'')
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
@@ -904,6 +905,11 @@ public sealed class ConversacionesService(
                     WHERE LTRIM(RTRIM(COALESCE(NULLIF(c.ClienteCodigo, ''), contactoCuenta.Cuenta, ''))) <> ''
                       AND UPPER(LTRIM(RTRIM(cliCls.CODIGO))) = UPPER(LTRIM(RTRIM(COALESCE(NULLIF(c.ClienteCodigo, ''), contactoCuenta.Cuenta, ''))))
                 ) clienteClasificacion
+                OUTER APPLY (
+                    SELECT TOP (1) ISNULL(cls.Descripcion, '') AS Descripcion
+                    FROM dbo.TA_CLASIFICACIONES cls
+                    WHERE UPPER(LTRIM(RTRIM(cls.Codigo))) = UPPER(LTRIM(RTRIM(clienteClasificacion.Codigo)))
+                ) clasificacionCliente
                 LEFT JOIN dbo.V_TA_Tecnicos t
                     ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
                 OUTER APPLY (
@@ -1255,7 +1261,8 @@ public sealed class ConversacionesService(
                     EstadoUltimoMensaje = GetString(rd, 26),
                     TipoUltimoMensaje = GetString(rd, 27),
                     MercadoLibreQuestionStatus = GetString(rd, 28),
-                    MercadoLibreItemStatus = GetString(rd, 29)
+                    MercadoLibreItemStatus = GetString(rd, 29),
+                    ClasificacionDescripcion = GetString(rd, 30)
                 });
             }
 
@@ -1616,6 +1623,7 @@ public sealed class ConversacionesService(
                 IdNumeroWhatsApp = rd.IsDBNull(41) ? null : rd.GetInt32(41)
             };
 
+            await TryRefreshFacebookConversationProfileAsync(item, token);
             ApplyWhatsAppWindow(item);
             return item;
         }, "No se pudo cargar la conversación.", ct);
@@ -5592,6 +5600,73 @@ public sealed class ConversacionesService(
         return conversationId;
     }
 
+    private async Task<bool> TryRefreshFacebookConversationProfileAsync(ConversacionDetalleDto item, CancellationToken ct)
+    {
+        if (!NeedsFacebookProfileRefresh(item))
+            return false;
+
+        try
+        {
+            var config = await conversacionesConfigService.GetFacebookConfigAsync(ct);
+            var profile = await TryGetFacebookProfileAsync(config, item.IdentificadorExternoContacto, ct);
+            if (!profile.HasData)
+                return false;
+
+            const string sql = """
+                UPDATE dbo.CONV_CONVERSACIONES
+                SET NombreVisible = CASE
+                        WHEN @NombreVisible IS NOT NULL
+                         AND (NULLIF(LTRIM(RTRIM(ISNULL(NombreVisible, N''))), N'') IS NULL
+                              OR NombreVisible LIKE N'Facebook %')
+                            THEN @NombreVisible
+                        ELSE NombreVisible
+                    END,
+                    FotoPerfilUrl = COALESCE(@FotoPerfilUrl, FotoPerfilUrl),
+                    FechaHoraPerfilExterno = GETDATE(),
+                    FechaHora_Modificacion = GETDATE()
+                WHERE IdConversacion = @IdConversacion
+                  AND Canal = N'FACEBOOK';
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(sql, cn);
+            AddFacebookProfileParameters(cmd, profile);
+            cmd.Parameters.AddWithValue("@IdConversacion", item.IdConversacion);
+            await cmd.ExecuteNonQueryAsync(ct);
+
+            if (!string.IsNullOrWhiteSpace(profile.DisplayName) && IsFacebookFallbackName(item.NombreVisible))
+                item.NombreVisible = profile.DisplayName;
+
+            if (string.IsNullOrWhiteSpace(item.FotoPerfilUrl) && !string.IsNullOrWhiteSpace(profile.ProfilePictureUrl))
+                item.FotoPerfilUrl = profile.ProfilePictureUrl;
+
+            item.FechaHoraPerfilExterno = BusinessNow();
+            return true;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones",
+                "RefreshFacebookConversationProfile",
+                ex,
+                "No se pudo actualizar el perfil de Facebook Messenger.",
+                new { item.IdConversacion, item.IdentificadorExternoContacto },
+                AppEventSeverity.Warning,
+                ct);
+            return false;
+        }
+    }
+
+    private static bool NeedsFacebookProfileRefresh(ConversacionDetalleDto item)
+        => string.Equals(item.Canal, "FACEBOOK", StringComparison.OrdinalIgnoreCase)
+           && !string.IsNullOrWhiteSpace(item.IdentificadorExternoContacto)
+           && (string.IsNullOrWhiteSpace(item.FotoPerfilUrl) || IsFacebookFallbackName(item.NombreVisible));
+
+    private static bool IsFacebookFallbackName(string? value)
+        => string.IsNullOrWhiteSpace(value)
+           || value.Trim().StartsWith("Facebook ", StringComparison.OrdinalIgnoreCase);
+
     private async Task<FacebookProfile> TryGetFacebookProfileAsync(
         ConversacionFacebookConfigDto config,
         string senderId,
@@ -5601,34 +5676,106 @@ public sealed class ConversacionesService(
             return FacebookProfile.Empty;
 
         var version = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v25.0" : config.ApiVersion.Trim();
-        var fields = "first_name,last_name,profile_pic";
-        var url = $"https://graph.facebook.com/{version}/{Uri.EscapeDataString(senderId)}?fields={fields}";
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+        string[] fieldSets =
+        [
+            "first_name,last_name,profile_pic",
+            "first_name,last_name,name,profile_pic",
+            "name,picture"
+        ];
 
         try
         {
             var client = httpClientFactory.CreateClient();
-            using var profileCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            profileCts.CancelAfter(TimeSpan.FromSeconds(3));
-            using var response = await client.SendAsync(request, profileCts.Token);
-            if (!response.IsSuccessStatusCode)
-                return FacebookProfile.Empty;
+            var failures = new List<string>();
 
-            var body = await response.Content.ReadAsStringAsync(ct);
-            using var doc = JsonDocument.Parse(body);
-            var root = doc.RootElement;
-            return new FacebookProfile
+            foreach (var fields in fieldSets)
             {
-                FirstName = root.TryGetProperty("first_name", out var firstName) ? firstName.GetString() ?? string.Empty : string.Empty,
-                LastName = root.TryGetProperty("last_name", out var lastName) ? lastName.GetString() ?? string.Empty : string.Empty,
-                ProfilePictureUrl = root.TryGetProperty("profile_pic", out var profilePicture) ? profilePicture.GetString() ?? string.Empty : string.Empty
-            };
+                var profile = await TryGetFacebookProfileAsync(client, version, config.AccessToken, senderId, fields, failures, ct);
+                if (profile.HasData)
+                    return profile;
+            }
+
+            if (failures.Count > 0)
+                await LogFacebookProfileLookupFailureAsync(senderId, failures, ct);
+
+            return FacebookProfile.Empty;
         }
         catch (Exception) when (!ct.IsCancellationRequested)
         {
             return FacebookProfile.Empty;
         }
+    }
+
+    private static async Task<FacebookProfile> TryGetFacebookProfileAsync(
+        HttpClient client,
+        string version,
+        string accessToken,
+        string senderId,
+        string fields,
+        List<string> failures,
+        CancellationToken ct)
+    {
+        var url = $"https://graph.facebook.com/{version}/{Uri.EscapeDataString(senderId)}?fields={Uri.EscapeDataString(fields)}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Trim());
+
+        using var profileCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        profileCts.CancelAfter(TimeSpan.FromSeconds(3));
+        using var response = await client.SendAsync(request, profileCts.Token);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            failures.Add($"fields={fields}; http={(int)response.StatusCode}; body={TrimForLog(body)}");
+            return FacebookProfile.Empty;
+        }
+
+        using var doc = JsonDocument.Parse(body);
+        var root = doc.RootElement;
+        return new FacebookProfile
+        {
+            Name = ReadJsonString(root, "name"),
+            FirstName = ReadJsonString(root, "first_name"),
+            LastName = ReadJsonString(root, "last_name"),
+            ProfilePictureUrl = FirstNonEmpty(ReadJsonString(root, "profile_pic"), ReadFacebookPictureUrl(root))
+        };
+    }
+
+    private async Task LogFacebookProfileLookupFailureAsync(string senderId, List<string> failures, CancellationToken ct)
+    {
+        try
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones",
+                "GetFacebookProfile",
+                new InvalidOperationException("Meta no devolvio el perfil de Facebook Messenger."),
+                "No se pudo obtener el nombre y foto de un contacto de Facebook Messenger.",
+                new { SenderId = senderId, Intentos = failures },
+                AppEventSeverity.Warning,
+                ct);
+        }
+        catch
+        {
+        }
+    }
+
+    private static string ReadFacebookPictureUrl(JsonElement root)
+    {
+        if (!root.TryGetProperty("picture", out var picture) || picture.ValueKind != JsonValueKind.Object)
+            return string.Empty;
+
+        if (!picture.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+            return string.Empty;
+
+        return ReadJsonString(data, "url");
+    }
+
+    private static string TrimForLog(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var normalized = value.Trim();
+        return normalized.Length <= 500 ? normalized : normalized[..500];
     }
 
     private async Task<long> EnsureMercadoLibreConversationAsync(MercadoLibreQuestion question, CancellationToken ct)
@@ -10696,13 +10843,15 @@ public sealed class ConversacionesService(
     {
         public static FacebookProfile Empty { get; } = new();
 
+        public string Name { get; init; } = string.Empty;
         public string FirstName { get; init; } = string.Empty;
         public string LastName { get; init; } = string.Empty;
         public string ProfilePictureUrl { get; init; } = string.Empty;
-        public bool HasData => !string.IsNullOrWhiteSpace(FirstName)
+        public bool HasData => !string.IsNullOrWhiteSpace(Name)
+                               || !string.IsNullOrWhiteSpace(FirstName)
                                || !string.IsNullOrWhiteSpace(LastName)
                                || !string.IsNullOrWhiteSpace(ProfilePictureUrl);
-        public string DisplayName => FirstNonEmpty($"{FirstName} {LastName}".Trim(), FirstName, LastName);
+        public string DisplayName => FirstNonEmpty(Name, $"{FirstName} {LastName}".Trim(), FirstName, LastName);
     }
 
     private sealed class IncomingWhatsAppStatus

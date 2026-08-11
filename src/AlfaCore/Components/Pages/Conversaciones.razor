@@ -827,10 +827,14 @@
                                  style="@GetInboxTechnicianStyle(item)"
                                  @onclick="() => SelectInboxItemAsync(item, showMobileChat: true)"
                                  @onkeydown="args => HandleInboxRowKeyDownAsync(args, item)">
-                                <span class="conversation-row__avatar @(item.Canal == "MERCADOLIBRE" ? "conversation-row__avatar--mercadolibre" : string.Empty)" aria-hidden="true">
+                                <span class="conversation-row__avatar @GetConversationAvatarClass(item)" title="@GetWhatsAppAbonoAvatarTitle(item)" aria-hidden="true">
                                     @if (!string.IsNullOrWhiteSpace(item.FotoPerfilUrl))
                                     {
                                         <img src="@item.FotoPerfilUrl" alt="" loading="lazy" referrerpolicy="no-referrer" />
+                                    }
+                                    else if (item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var inboxAbonoAvatar))
+                                    {
+                                        <span class="conversation-abono-avatar__letter">@inboxAbonoAvatar.Label</span>
                                     }
                                     else
                                     {
@@ -1030,20 +1034,27 @@
                                 <i class="bi bi-arrow-left"></i>
                                 <span>Volver</span>
                             </button>
-                            @if (_selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK" || _selectedConversation.Canal == "MERCADOLIBRE")
+                            @if (_selectedConversation.Canal == "WHATSAPP" || _selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK" || _selectedConversation.Canal == "MERCADOLIBRE")
                             {
-                                <div class="conversation-profile-avatar @(_selectedConversation.Canal == "MERCADOLIBRE" ? "conversation-profile-avatar--mercadolibre" : string.Empty)" aria-hidden="true">
+                                <div class="conversation-profile-avatar @GetConversationAvatarClass(_selectedConversation)" title="@GetWhatsAppAbonoAvatarTitle(_selectedConversation)" aria-hidden="true">
                                     @if (!string.IsNullOrWhiteSpace(_selectedConversation.FotoPerfilUrl))
                                     {
                                         <img src="@_selectedConversation.FotoPerfilUrl" alt="" referrerpolicy="no-referrer" />
+                                    }
+                                    else if (_selectedConversation.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(_selectedConversation.ClasificacionDescripcion, out var selectedAbonoAvatar))
+                                    {
+                                        <span class="conversation-abono-avatar__letter">@selectedAbonoAvatar.Label</span>
                                     }
                                     else
                                     {
                                         <span>@GetConversationInitials(_selectedConversation)</span>
                                     }
-                                    <span class="conversation-profile-avatar__channel conversation-profile-avatar__channel--@_selectedConversation.Canal.ToLowerInvariant()" title="@GetCanalLabel(_selectedConversation.Canal)">
-                                        <i class="bi @GetCanalIcon(_selectedConversation.Canal)"></i>
-                                    </span>
+                                    @if (_selectedConversation.Canal != "WHATSAPP")
+                                    {
+                                        <span class="conversation-profile-avatar__channel conversation-profile-avatar__channel--@_selectedConversation.Canal.ToLowerInvariant()" title="@GetCanalLabel(_selectedConversation.Canal)">
+                                            <i class="bi @GetCanalIcon(_selectedConversation.Canal)"></i>
+                                        </span>
+                                    }
                                 </div>
                             }
                             <div>
@@ -4501,6 +4512,73 @@
         => string.IsNullOrWhiteSpace(item.IdTecnico)
             ? string.Empty
             : $"--technician-color:{TechnicianColorPalette.Resolve(item.IdTecnico, item.TecnicoNombre)};";
+
+    private static string GetConversationAvatarClass(ConversacionInboxItemDto item)
+    {
+        var classes = item.Canal == "MERCADOLIBRE"
+            ? "conversation-row__avatar--mercadolibre"
+            : string.Empty;
+
+        if (item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var info))
+            classes = FirstNonEmpty(classes, $"conversation-abono-avatar conversation-abono-avatar--{info.Tier}");
+
+        return classes;
+    }
+
+    private static string GetConversationAvatarClass(ConversacionDetalleDto item)
+    {
+        var classes = item.Canal == "MERCADOLIBRE"
+            ? "conversation-profile-avatar--mercadolibre"
+            : string.Empty;
+
+        if (item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var info))
+            classes = FirstNonEmpty(classes, $"conversation-abono-avatar conversation-abono-avatar--{info.Tier}");
+
+        return classes;
+    }
+
+    private static string GetWhatsAppAbonoAvatarTitle(ConversacionInboxItemDto item)
+        => item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var info)
+            ? $"{info.Label}: {info.Description}"
+            : string.Empty;
+
+    private static string GetWhatsAppAbonoAvatarTitle(ConversacionDetalleDto item)
+        => item.Canal == "WHATSAPP" && TryGetAbonoAvatarInfo(item.ClasificacionDescripcion, out var info)
+            ? $"{info.Label}: {info.Description}"
+            : string.Empty;
+
+    private static bool TryGetAbonoAvatarInfo(string? clasificacionDescripcion, out AbonoAvatarInfo info)
+    {
+        var value = clasificacionDescripcion?.Trim() ?? string.Empty;
+        if (value.Length == 0)
+        {
+            info = default;
+            return false;
+        }
+
+        var normalized = value.ToUpperInvariant();
+        if (normalized.Contains("FULL", StringComparison.OrdinalIgnoreCase))
+        {
+            info = new("a", "A", value);
+            return true;
+        }
+
+        if (normalized.Contains("MEDIO", StringComparison.OrdinalIgnoreCase)
+            || normalized.Contains("INTERMED", StringComparison.OrdinalIgnoreCase))
+        {
+            info = new("b", "B", value);
+            return true;
+        }
+
+        if (normalized.Contains("BASE", StringComparison.OrdinalIgnoreCase))
+        {
+            info = new("c", "C", value);
+            return true;
+        }
+
+        info = default;
+        return false;
+    }
 
     private static string GetAbonoBadgeClass(string estadoAbono) => estadoAbono switch
     {
@@ -9060,6 +9138,7 @@
                     PerfilExternoVerificado = latest.PerfilExternoVerificado,
                     ClienteCodigo = latest.ClienteCodigo,
                     ClienteNombre = latest.ClienteNombre,
+                    ClasificacionDescripcion = latest.ClasificacionDescripcion,
                     IdContacto = latest.IdContacto,
                     ContactoNombre = latest.ContactoNombre,
                     CodigoEstado = latest.CodigoEstado,
@@ -9242,7 +9321,12 @@
         };
 
     private string GetChannelCssClass()
-        => _canalActivo switch
+    {
+        var canalVisual = !string.IsNullOrWhiteSpace(_selectedConversation?.Canal)
+            ? _selectedConversation.Canal
+            : _canalActivo;
+
+        return canalVisual switch
         {
             "INSTAGRAM" => "conversations-page--instagram",
             "FACEBOOK" => "conversations-page--facebook",
@@ -9250,6 +9334,7 @@
             "INTERNO" => "conversations-page--internal",
             _ => "conversations-page--whatsapp"
         };
+    }
 
     private string GetReplyPlaceholder()
         => _selectedConversation?.Canal switch
@@ -11106,6 +11191,8 @@
         public string LastAttemptAt { get; set; } = string.Empty;
         public string LastError { get; set; } = string.Empty;
     }
+
+    private readonly record struct AbonoAvatarInfo(string Tier, string Label, string Description);
 
     private static class ComposerToolTabs
     {

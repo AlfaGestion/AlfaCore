@@ -177,6 +177,7 @@ public sealed class ConversacionInboxItemDto
     public bool PerfilExternoVerificado { get; set; }
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
+    public string ClasificacionDescripcion { get; set; } = string.Empty;
     public int? IdContacto { get; set; }
     public string ContactoNombre { get; set; } = string.Empty;
     public string CodigoEstado { get; set; } = string.Empty;
