@@ -6597,6 +6597,14 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     font-weight: 800;
 }
 
+.conversations-module-actions .conversations-crm-button {
+    width: auto;
+    min-width: 138px;
+    padding: 0 .7rem;
+    gap: .42rem;
+    white-space: nowrap;
+}
+
 .conversations-module-actions .conversations-wait-time-button {
     width: auto;
     min-width: 118px;

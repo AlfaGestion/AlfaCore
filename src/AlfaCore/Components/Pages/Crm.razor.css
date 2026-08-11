@@ -795,3 +795,136 @@
 
 .crm-accion__check:hover { color: #16a34a; }
 .crm-accion__del:hover { color: #dc2626; }
+
+/* --- Dashboard / Resumen (Fase 2) --- */
+.crm-dashboard {
+    display: grid;
+    gap: 1rem;
+}
+
+.crm-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: .75rem;
+}
+
+.crm-kpi {
+    display: grid;
+    gap: .2rem;
+    padding: .85rem 1rem;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 12px;
+    background: var(--surface, #fff);
+}
+
+.crm-kpi--accent {
+    border-color: rgba(37, 99, 235, .45);
+    background: rgba(37, 99, 235, .06);
+}
+
+.crm-kpi--warn {
+    border-color: rgba(239, 68, 68, .45);
+    background: rgba(239, 68, 68, .06);
+}
+
+.crm-kpi__label {
+    font-size: .74rem;
+    font-weight: 600;
+    color: var(--color-muted, #64748b);
+    text-transform: uppercase;
+    letter-spacing: .02em;
+}
+
+.crm-kpi__value {
+    font-size: 1.5rem;
+    line-height: 1.1;
+}
+
+.crm-kpi__hint {
+    font-size: .74rem;
+    color: var(--color-muted, #64748b);
+}
+
+.crm-dashboard-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: start;
+}
+
+.crm-panel {
+    display: grid;
+    gap: .7rem;
+    padding: 1rem;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 12px;
+    background: var(--surface, #fff);
+}
+
+.crm-panel h3 {
+    margin: 0;
+    font-size: .95rem;
+}
+
+.crm-bar-row {
+    display: grid;
+    gap: .25rem;
+}
+
+.crm-bar-row__head {
+    display: flex;
+    justify-content: space-between;
+    gap: .5rem;
+    font-size: .82rem;
+    font-weight: 600;
+}
+
+.crm-bar-dot {
+    display: inline-block;
+    width: .6rem;
+    height: .6rem;
+    border-radius: 999px;
+    margin-right: .4rem;
+}
+
+.crm-bar {
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, .2);
+    overflow: hidden;
+}
+
+.crm-bar__fill {
+    height: 100%;
+    border-radius: 999px;
+}
+
+.crm-rank-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .84rem;
+}
+
+.crm-rank-table th,
+.crm-rank-table td {
+    text-align: left;
+    padding: .35rem .4rem;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.crm-rank-table th:not(:first-child),
+.crm-rank-table td:not(:first-child) {
+    text-align: right;
+}
+
+@media (max-width: 900px) {
+    .crm-dashboard-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.crm-required {
+    color: #ef4444;
+    font-weight: 700;
+    margin-left: .15rem;
+}

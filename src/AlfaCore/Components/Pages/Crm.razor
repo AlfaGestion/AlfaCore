@@ -188,6 +188,123 @@
             </div>
         </section>
     }
+    else if (!_showEditor && _viewMode == "resumen")
+    {
+        <section class="crm-dashboard">
+            @if (_dashboard is null)
+            {
+                <div class="crm-empty-column">Sin datos para mostrar.</div>
+            }
+            else
+            {
+                <div class="crm-kpi-row">
+                    <div class="crm-kpi">
+                        <span class="crm-kpi__label">Pipeline abierto</span>
+                        <strong class="crm-kpi__value">@FormatMoney(_dashboard.ImporteBruto)</strong>
+                        <span class="crm-kpi__hint">@_dashboard.TotalAbiertas oportunidad(es)</span>
+                    </div>
+                    <div class="crm-kpi crm-kpi--accent">
+                        <span class="crm-kpi__label">Forecast ponderado</span>
+                        <strong class="crm-kpi__value">@FormatMoney(_dashboard.ImportePonderado)</strong>
+                        <span class="crm-kpi__hint">importe × probabilidad</span>
+                    </div>
+                    <div class="crm-kpi">
+                        <span class="crm-kpi__label">Tasa de conversión</span>
+                        <strong class="crm-kpi__value">@_dashboard.TasaConversion.ToString("P0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))</strong>
+                        <span class="crm-kpi__hint">@_dashboard.Ganadas ganada(s) / @_dashboard.Perdidas perdida(s)</span>
+                    </div>
+                    <div class="crm-kpi @(_dashboard.Estancadas > 0 ? "crm-kpi--warn" : string.Empty)">
+                        <span class="crm-kpi__label">Estancadas</span>
+                        <strong class="crm-kpi__value">@_dashboard.Estancadas</strong>
+                        <span class="crm-kpi__hint">sin actividad hace +@_dashboard.DiasEstancamiento días</span>
+                    </div>
+                </div>
+
+                <div class="crm-dashboard-grid">
+                    <div class="crm-panel">
+                        <h3>Pipeline por etapa</h3>
+                        @{
+                            var maxEtapa = _dashboard.PorEtapa.Count == 0 ? 0m : _dashboard.PorEtapa.Max(x => x.ImporteBruto);
+                        }
+                        @if (_dashboard.PorEtapa.Count == 0)
+                        {
+                            <p class="muted">Sin oportunidades abiertas.</p>
+                        }
+                        else
+                        {
+                            @foreach (var etapa in _dashboard.PorEtapa)
+                            {
+                                <div class="crm-bar-row">
+                                    <div class="crm-bar-row__head">
+                                        <span><span class="crm-bar-dot" style="background:@(string.IsNullOrWhiteSpace(etapa.Color) ? "#38BDF8" : etapa.Color)"></span>@etapa.Nombre</span>
+                                        <span>@FormatMoney(etapa.ImporteBruto) · @etapa.Cantidad</span>
+                                    </div>
+                                    <div class="crm-bar">
+                                        <div class="crm-bar__fill" style="width:@(BarWidth(etapa.ImporteBruto, maxEtapa))%;background:@(string.IsNullOrWhiteSpace(etapa.Color) ? "#38BDF8" : etapa.Color)"></div>
+                                    </div>
+                                    <small class="muted">Ponderado: @FormatMoney(etapa.ImportePonderado)</small>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    <div class="crm-panel">
+                        <h3>Ranking por vendedor</h3>
+                        @if (_dashboard.PorTecnico.Count == 0)
+                        {
+                            <p class="muted">Sin oportunidades abiertas.</p>
+                        }
+                        else
+                        {
+                            <table class="crm-rank-table">
+                                <thead>
+                                    <tr><th>Vendedor</th><th>Abiertas</th><th>Pipeline</th><th>Ponderado</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var tec in _dashboard.PorTecnico)
+                                    {
+                                        <tr>
+                                            <td>@(string.IsNullOrWhiteSpace(tec.Nombre) ? "Sin asignar" : tec.Nombre)</td>
+                                            <td>@tec.Abiertas</td>
+                                            <td>@FormatMoney(tec.ImporteBruto)</td>
+                                            <td>@FormatMoney(tec.ImportePonderado)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+
+                    <div class="crm-panel">
+                        <h3>Motivos de pérdida</h3>
+                        @{
+                            var totalPerdidas = _dashboard.MotivosPerdida.Sum(x => x.Cantidad);
+                            var maxMotivo = _dashboard.MotivosPerdida.Count == 0 ? 0 : _dashboard.MotivosPerdida.Max(x => x.Cantidad);
+                        }
+                        @if (_dashboard.MotivosPerdida.Count == 0)
+                        {
+                            <p class="muted">Todavía no hay oportunidades perdidas.</p>
+                        }
+                        else
+                        {
+                            @foreach (var motivo in _dashboard.MotivosPerdida)
+                            {
+                                <div class="crm-bar-row">
+                                    <div class="crm-bar-row__head">
+                                        <span>@motivo.Nombre</span>
+                                        <span>@motivo.Cantidad@(totalPerdidas > 0 ? $" · {((double)motivo.Cantidad / totalPerdidas).ToString("P0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}" : string.Empty)</span>
+                                    </div>
+                                    <div class="crm-bar">
+                                        <div class="crm-bar__fill" style="width:@(BarWidth(motivo.Cantidad, maxMotivo))%;background:#F87171"></div>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </section>
+    }
     else if (!_showEditor)
     {
         <section class="crm-list">
@@ -292,6 +409,65 @@
     </div>
 }
 
+@if (_showLostReason)
+{
+    <div class="crm-modal-layer" @onmousedown="CancelLostReason">
+        <section class="panel-card crm-modal crm-modal--small" @onmousedown:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Motivo de pérdida</h3>
+                    <p class="panel-card__subtitle">Indicá por qué se perdió esta oportunidad.</p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CancelLostReason"><i class="bi bi-x-circle"></i> Cancelar</button>
+            </div>
+            <div class="field">
+                <label>Motivo <span class="crm-required">*</span></label>
+                <select @bind="_lostMotivoId" disabled="@_saving">
+                    <option value="">Elegí un motivo…</option>
+                    @foreach (var motivo in _lookups.MotivosPerdida)
+                    {
+                        <option value="@motivo.IdMotivo">@motivo.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn--primary" @onclick="ConfirmLostReasonAsync" disabled="@_saving"><i class="bi bi-check2"></i> Marcar como perdida</button>
+                <button type="button" class="btn btn--ghost" @onclick="CancelLostReason">Cancelar</button>
+            </div>
+        </section>
+    </div>
+}
+
+@if (_showMotivos)
+{
+    <div class="crm-modal-layer" @onclick="CloseMotivos">
+        <section class="panel-card crm-modal crm-modal--small" @onclick:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Motivos de pérdida</h3>
+                    <p class="panel-card__subtitle">Personalizá los motivos disponibles al perder una oportunidad.</p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CloseMotivos"><i class="bi bi-x-circle"></i> Cerrar</button>
+            </div>
+            <div class="crm-stage-form">
+                <input maxlength="100" placeholder="Nombre" @bind="_motivoDraft.Nombre" />
+                <input type="number" @bind="_motivoDraft.Orden" title="Orden" />
+                <button type="button" class="btn btn--primary btn--sm" @onclick="SaveMotivoAsync"><i class="bi bi-floppy"></i> Guardar</button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="NewMotivo">Nuevo</button>
+            </div>
+            @foreach (var motivo in _lookups.MotivosPerdida)
+            {
+                <div class="crm-admin-row">
+                    <strong>@motivo.Nombre</strong>
+                    <small>Orden @motivo.Orden</small>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditMotivo(motivo)">Editar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => DeleteMotivoAsync(motivo.IdMotivo)">Eliminar</button>
+                </div>
+            }
+        </section>
+    </div>
+}
+
 @if (_showViewSettings)
 {
     <div class="crm-modal-layer" @onclick="CloseViewSettings">
@@ -321,10 +497,16 @@
 }
 
 @code {
+    // Llega desde el botón "Crear oportunidad" de Conversaciones: /crm?conv={IdConversacion}.
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "conv")]
+    public long? Conv { get; set; }
+
     private CrmLookupDto _lookups = new();
     private CrmFilters _filters = new();
     private PagedResult<CrmOpportunityDto> _page = new();
     private List<CrmOpportunityDto> _kanban = [];
+    private CrmDashboardDto? _dashboard;
     private CrmViewSettingsDto _viewSettings = new();
     private CrmViewSettingsDto _viewDraft = new();
     private string _viewMode = "kanban";
@@ -334,6 +516,12 @@
     private bool _showStages;
     private bool _showTags;
     private bool _showViewSettings;
+    private bool _showLostReason;
+    private long? _lostOpportunityId;
+    private int? _lostStageId;
+    private int? _lostMotivoId;
+    private CrmMotivoPerdidaSaveRequest _motivoDraft = new() { Orden = 10 };
+    private bool _showMotivos;
     private bool _searchPanelOpen;
     private bool _defaultFlowApplied;
     private int? _dragStageId;
@@ -365,6 +553,8 @@
         || string.Equals(x.IdTecnico, CurrentUserName, StringComparison.OrdinalIgnoreCase))?.IdTecnico;
     private bool IsMyFlowActive => !string.IsNullOrWhiteSpace(CurrentUserTechId)
         && string.Equals(_filters.IdTecnico, CurrentUserTechId, StringComparison.OrdinalIgnoreCase);
+    private bool FormStageIsLost => _form.IdEtapa is int idEtapa
+        && _lookups.Etapas.Any(x => x.IdEtapa == idEtapa && x.EsPerdida);
 
     private RenderFragment RenderCrmSmartSearch() => @<div class="smart-search crm-smart-search" @onclick:stopPropagation>
         <div class="smart-search__bar">
@@ -475,6 +665,19 @@
                             }
                         </select>
                     </div>
+                    @if (FormStageIsLost)
+                    {
+                        <div class="field">
+                            <label>Motivo de pérdida <span class="crm-required">*</span></label>
+                            <select @bind="_form.IdMotivoPerdida" disabled="@_saving">
+                                <option value="">Elegí un motivo…</option>
+                                @foreach (var motivo in _lookups.MotivosPerdida)
+                                {
+                                    <option value="@motivo.IdMotivo">@motivo.Nombre</option>
+                                }
+                            </select>
+                        </div>
+                    }
                     <div class="field">
                         <label>Asignado</label>
                         <select @bind="_form.IdTecnico" disabled="@_saving">
@@ -674,6 +877,27 @@
     {
         UpdatePageHeader();
         await LoadAsync();
+        if (Conv is long idConv && idConv > 0)
+            await OpenNewFromConversationAsync(idConv);
+    }
+
+    private async Task OpenNewFromConversationAsync(long idConv)
+    {
+        await RunAsync(async () =>
+        {
+            var prefill = await CrmSvc.GetConversationPrefillAsync(idConv);
+            NewOpportunity();
+            _form.IdConversacion = idConv;
+            if (prefill is not null)
+            {
+                _form.Titulo = prefill.TituloSugerido;
+                _form.ClienteCodigo = string.IsNullOrWhiteSpace(prefill.ClienteCodigo) ? null : prefill.ClienteCodigo;
+                _form.IdContacto = prefill.IdContacto;
+                _form.CanalOrigen = string.IsNullOrWhiteSpace(prefill.CanalOrigen) ? null : prefill.CanalOrigen;
+            }
+            _form.IdTecnico ??= CurrentUserTechId;
+            UpdatePageHeader();
+        });
     }
 
     private async Task LoadAsync()
@@ -785,6 +1009,15 @@
                 Priority = PageHeaderActionPriority.Overflow,
                 OnClick = () => RunHeaderActionAsync(() => { OpenTags(); return Task.CompletedTask; })
             });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "motivos",
+                Label = "Motivos de pérdida",
+                Icon = "bi-emoji-frown",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                OnClick = () => RunHeaderActionAsync(() => { OpenMotivos(); return Task.CompletedTask; })
+            });
         }
 
         PageHeader.Set(new PageHeaderConfig
@@ -819,6 +1052,15 @@
                         Active = _viewMode == "lista",
                         Disabled = _loading,
                         OnClick = () => RunHeaderActionAsync(() => SetModeAsync("lista"))
+                    },
+                    new PageHeaderViewButton
+                    {
+                        Key = "resumen",
+                        Label = "Resumen",
+                        Icon = "bi-bar-chart",
+                        Active = _viewMode == "resumen",
+                        Disabled = _loading,
+                        OnClick = () => RunHeaderActionAsync(() => SetModeAsync("resumen"))
                     }
                 ]
         });
@@ -999,6 +1241,17 @@
             return;
         }
 
+        // Si la etapa destino es "perdida", pedimos el motivo antes de mover.
+        if (_lookups.Etapas.Any(x => x.IdEtapa == targetStageId && x.EsPerdida))
+        {
+            _lostOpportunityId = opportunityId;
+            _lostStageId = targetStageId;
+            _lostMotivoId = null;
+            _showLostReason = true;
+            ClearDragState();
+            return;
+        }
+
         await RunAsync(async () =>
         {
             await CrmSvc.QuickUpdateAsync(new CrmQuickUpdateRequest
@@ -1012,6 +1265,43 @@
         });
         ClearDragState();
         UpdatePageHeader();
+    }
+
+    private async Task ConfirmLostReasonAsync()
+    {
+        if (_lostOpportunityId is not long opportunityId || _lostStageId is not int targetStageId)
+        {
+            CancelLostReason();
+            return;
+        }
+        if (_lostMotivoId is not > 0)
+        {
+            _feedback = new Feedback("Falta el motivo", "Elegí el motivo de pérdida para continuar.", null);
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            await CrmSvc.QuickUpdateAsync(new CrmQuickUpdateRequest
+            {
+                IdOportunidad = opportunityId,
+                IdEtapa = targetStageId,
+                IdMotivoPerdida = _lostMotivoId,
+                UsuarioAccion = CurrentUserName
+            });
+            await ReloadCurrentViewAsync(resetPage: false);
+            ShowOk("Oportunidad marcada como perdida", "Se registró el motivo de pérdida.");
+        });
+        CancelLostReason();
+        UpdatePageHeader();
+    }
+
+    private void CancelLostReason()
+    {
+        _showLostReason = false;
+        _lostOpportunityId = null;
+        _lostStageId = null;
+        _lostMotivoId = null;
     }
 
     private async Task MoveStageAsync(int sourceStageId, int targetStageId)
@@ -1211,7 +1501,9 @@
     {
         if (resetPage)
             _filters.PageNumber = 1;
-        if (_viewMode == "kanban")
+        if (_viewMode == "resumen")
+            _dashboard = await CrmSvc.GetDashboardAsync();
+        else if (_viewMode == "kanban")
             _kanban = (await CrmSvc.GetKanbanAsync(_filters)).ToList();
         else
             _page = await CrmSvc.SearchAsync(_filters);
@@ -1475,6 +1767,30 @@
         });
     }
 
+    private void OpenMotivos() { NewMotivo(); _showMotivos = true; }
+    private void CloseMotivos() => _showMotivos = false;
+    private void NewMotivo() => _motivoDraft = new CrmMotivoPerdidaSaveRequest { Orden = (_lookups.MotivosPerdida.Count + 1) * 10 };
+    private void EditMotivo(CrmMotivoPerdidaDto motivo) => _motivoDraft = new CrmMotivoPerdidaSaveRequest { IdMotivo = motivo.IdMotivo, Nombre = motivo.Nombre, Orden = motivo.Orden };
+    private async Task SaveMotivoAsync()
+    {
+        await RunAsync(async () =>
+        {
+            _motivoDraft.UsuarioAccion = AppUserSession.CurrentUser?.UserName;
+            await CrmSvc.SaveMotivoPerdidaAsync(_motivoDraft);
+            _lookups = await CrmSvc.GetLookupsAsync();
+            NewMotivo();
+        });
+    }
+
+    private async Task DeleteMotivoAsync(int id)
+    {
+        await RunAsync(async () =>
+        {
+            await CrmSvc.DeleteMotivoPerdidaAsync(id, AppUserSession.CurrentUser?.UserName);
+            _lookups = await CrmSvc.GetLookupsAsync();
+        });
+    }
+
     private void ToggleColumn(string key, ChangeEventArgs args)
     {
         var col = _viewDraft.Columnas.FirstOrDefault(x => x.Key == key);
@@ -1525,6 +1841,9 @@
     private string GetModeClass(string mode) => _viewMode == mode ? "is-active" : string.Empty;
     private static string Display(string primary, string fallback, string empty) => !string.IsNullOrWhiteSpace(primary) ? primary : (!string.IsNullOrWhiteSpace(fallback) ? fallback : empty);
     private static string FormatMoney(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static int BarWidth(decimal value, decimal max)
+        => max <= 0 ? 0 : (int)Math.Round(Math.Clamp((double)(value / max) * 100.0, 2, 100));
     private static string FormatDate(DateTime value) => value == DateTime.MinValue ? "-" : value.ToString("dd/MM/yyyy HH:mm");
     private static string BuildQuickDescription(string email, string phone)
     {
