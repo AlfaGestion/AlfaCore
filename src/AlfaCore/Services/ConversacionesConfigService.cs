@@ -846,9 +846,9 @@ public sealed class ConversacionesConfigService(
                 {
                     Nombre = GetString(rd, 0),
                     Sistema = GetString(rd, 1),
-                    Activo = !rd.IsDBNull(2) && rd.GetBoolean(2),
-                    Administrador = !rd.IsDBNull(3) && rd.GetBoolean(3),
-                    EsGrupo = !rd.IsDBNull(4) && rd.GetBoolean(4)
+                    Activo = GetBool(rd, 2),
+                    Administrador = GetBool(rd, 3),
+                    EsGrupo = GetBool(rd, 4)
                 });
             }
 
@@ -1509,6 +1509,12 @@ public sealed class ConversacionesConfigService(
 
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index)) ?? string.Empty;
+
+    // Convert.ToBoolean (no rd.GetBoolean) a propósito: TA_USUARIOS es una tabla legacy y en
+    // algunas bases (ej. ALFANET2007) Administrador/EsGrupo/Activo están guardadas como int, no
+    // bit -- GetBoolean tira InvalidCastException ahí, Convert.ToBoolean tolera ambos.
+    private static bool GetBool(SqlDataReader rd, int index)
+        => !rd.IsDBNull(index) && Convert.ToBoolean(rd.GetValue(index), CultureInfo.InvariantCulture);
 
     private static string ReadJsonString(JsonElement root, string propertyName)
     {
