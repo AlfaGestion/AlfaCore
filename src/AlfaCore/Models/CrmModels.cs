@@ -46,12 +46,56 @@ public class CrmOpportunityDto
     public DateTime? FechaHoraModificacion { get; set; }
     public DateTime? FechaHoraCierre { get; set; }
     public List<CrmEtiquetaDto> Etiquetas { get; set; } = [];
+
+    // Próxima acción = tarea pendiente más próxima por vencimiento (null si no tiene ninguna).
+    public long? ProximaAccionId { get; set; }
+    public string ProximaAccionTipo { get; set; } = string.Empty;
+    public string ProximaAccionTitulo { get; set; } = string.Empty;
+    public DateTime? ProximaAccionVencimiento { get; set; }
+    public bool ProximaAccionVencida { get; set; }
 }
 
 public sealed class CrmOpportunityDetailDto : CrmOpportunityDto
 {
     public List<CrmActividadDto> Actividad { get; set; } = [];
     public List<CrmMensajeOrigenDto> MensajesOrigenDetalle { get; set; } = [];
+    public List<CrmTareaDto> Tareas { get; set; } = [];
+}
+
+public sealed class CrmTareaDto
+{
+    public long IdTarea { get; set; }
+    public long IdOportunidad { get; set; }
+    public string TipoAccion { get; set; } = CrmTareaTipos.Tarea;
+    public string Titulo { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+    public DateTime Vencimiento { get; set; }
+    public string IdTecnico { get; set; } = string.Empty;
+    public string TecnicoNombre { get; set; } = string.Empty;
+    public bool Completada { get; set; }
+    public DateTime? FechaHoraCompletada { get; set; }
+    public bool Vencida { get; set; }
+}
+
+public sealed class CrmTareaSaveRequest
+{
+    public long IdTarea { get; set; }
+    public long IdOportunidad { get; set; }
+    public string TipoAccion { get; set; } = CrmTareaTipos.Tarea;
+    public string Titulo { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+    public DateTime Vencimiento { get; set; }
+    public string? IdTecnico { get; set; }
+    public string? UsuarioAccion { get; set; }
+}
+
+public static class CrmTareaTipos
+{
+    public const string Llamada = "LLAMADA";
+    public const string Email = "EMAIL";
+    public const string Reunion = "REUNION";
+    public const string WhatsApp = "WHATSAPP";
+    public const string Tarea = "TAREA";
 }
 
 public sealed class CrmEtapaDto

@@ -154,6 +154,7 @@ public sealed class CrmService(
             await HydrateEtiquetasAsync(cn, new[] { item }, token);
             item.Actividad = (await GetActivityAsync(cn, idOportunidad, token)).ToList();
             item.MensajesOrigenDetalle = (await GetSourceMessagesAsync(cn, idOportunidad, token)).ToList();
+            item.Tareas = (await GetTareasAsync(cn, idOportunidad, token)).ToList();
             return item;
         }, "No se pudo cargar el detalle de la oportunidad.", ct);
 
@@ -325,6 +326,115 @@ public sealed class CrmService(
             await cn.OpenAsync(token);
             await AddActivityAsync(cn, null, request.IdOportunidad, "NOTA", text, request.UsuarioAccion, token);
         }, "No se pudo agregar la nota.", ct);
+
+    public Task<long> SaveTareaAsync(CrmTareaSaveRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SaveTarea", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdOportunidad <= 0)
+                throw new InvalidOperationException("La oportunidad es obligatoria.");
+            var titulo = NormalizeText(request.Titulo, 200, "El título de la acción es obligatorio.");
+            var detalle = string.IsNullOrWhiteSpace(request.Detalle) ? null : request.Detalle.Trim();
+            var tipo = NormalizeTareaTipo(request.TipoAccion);
+            if (request.Vencimiento == default)
+                throw new InvalidOperationException("La fecha de vencimiento es obligatoria.");
+            var idTecnico = string.IsNullOrWhiteSpace(request.IdTecnico) ? null : request.IdTecnico.Trim();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+            try
+            {
+                long id;
+                if (request.IdTarea > 0)
+                {
+                    await cn.ExecuteAsync(new CommandDefinition("""
+                        UPDATE dbo.CRM_TAREAS
+                        SET TipoAccion = @TipoAccion,
+                            Titulo = @Titulo,
+                            Detalle = @Detalle,
+                            Vencimiento = @Vencimiento,
+                            IdTecnico = @IdTecnico,
+                            FechaHoraModificacion = GETDATE()
+                        WHERE IdTarea = @IdTarea AND ISNULL(Baja, 0) = 0;
+                        """, new { request.IdTarea, TipoAccion = tipo, Titulo = titulo, Detalle = detalle, request.Vencimiento, IdTecnico = idTecnico }, tx, cancellationToken: token));
+                    id = request.IdTarea;
+                    await AddActivityAsync(cn, tx, request.IdOportunidad, "TAREA", $"Acción actualizada: {titulo}", request.UsuarioAccion, token);
+                }
+                else
+                {
+                    id = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
+                        INSERT INTO dbo.CRM_TAREAS (IdOportunidad, TipoAccion, Titulo, Detalle, Vencimiento, IdTecnico, UsuarioAlta)
+                        OUTPUT INSERTED.IdTarea
+                        VALUES (@IdOportunidad, @TipoAccion, @Titulo, @Detalle, @Vencimiento, @IdTecnico, @UsuarioAlta);
+                        """, new { request.IdOportunidad, TipoAccion = tipo, Titulo = titulo, Detalle = detalle, request.Vencimiento, IdTecnico = idTecnico, UsuarioAlta = NormalizeUser(request.UsuarioAccion) }, tx, cancellationToken: token));
+                    await AddActivityAsync(cn, tx, request.IdOportunidad, "TAREA", $"Próxima acción agendada: {titulo}", request.UsuarioAccion, token);
+                }
+
+                await tx.CommitAsync(token);
+                return id;
+            }
+            catch
+            {
+                await tx.RollbackAsync(token);
+                throw;
+            }
+        }, "No se pudo guardar la acción.", ct);
+
+    public Task CompleteTareaAsync(long idTarea, bool completada, string? usuarioAccion = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("CompleteTarea", async token =>
+        {
+            if (idTarea <= 0)
+                throw new InvalidOperationException("Seleccioná una acción válida.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+            try
+            {
+                var info = await cn.QueryFirstOrDefaultAsync(new CommandDefinition(
+                    "SELECT IdOportunidad, ISNULL(Titulo, '') AS Titulo FROM dbo.CRM_TAREAS WHERE IdTarea = @IdTarea AND ISNULL(Baja, 0) = 0;",
+                    new { IdTarea = idTarea }, tx, cancellationToken: token));
+                if (info is null)
+                    throw new InvalidOperationException("La acción indicada no existe.");
+                long idOportunidad = (long)info.IdOportunidad;
+                string tituloTarea = (string)info.Titulo;
+
+                await cn.ExecuteAsync(new CommandDefinition("""
+                    UPDATE dbo.CRM_TAREAS
+                    SET Completada = @Completada,
+                        FechaHoraCompletada = CASE WHEN @Completada = 1 THEN GETDATE() ELSE NULL END,
+                        UsuarioCompleta = CASE WHEN @Completada = 1 THEN @Usuario ELSE NULL END,
+                        FechaHoraModificacion = GETDATE()
+                    WHERE IdTarea = @IdTarea;
+                    """, new { IdTarea = idTarea, Completada = completada, Usuario = NormalizeUser(usuarioAccion) }, tx, cancellationToken: token));
+
+                if (completada)
+                    await AddActivityAsync(cn, tx, idOportunidad, "TAREA", $"Acción completada: {tituloTarea}", usuarioAccion, token);
+
+                await tx.CommitAsync(token);
+            }
+            catch
+            {
+                await tx.RollbackAsync(token);
+                throw;
+            }
+        }, "No se pudo actualizar la acción.", ct);
+
+    public Task DeleteTareaAsync(long idTarea, string? usuarioAccion = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("DeleteTarea", async token =>
+        {
+            if (idTarea <= 0)
+                throw new InvalidOperationException("Seleccioná una acción válida.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.CRM_TAREAS
+                SET Baja = 1, FechaHoraModificacion = GETDATE()
+                WHERE IdTarea = @IdTarea;
+                """, new { IdTarea = idTarea }, cancellationToken: token));
+        }, "No se pudo eliminar la acción.", ct);
 
     public Task<int> SaveEtapaAsync(CrmEtapaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("SaveEtapa", async token =>
@@ -500,7 +610,12 @@ public sealed class CrmService(
             ISNULL(o.UsuarioAlta, '') AS UsuarioAlta,
             o.FechaHoraAlta,
             o.FechaHoraModificacion,
-            o.FechaHoraCierre
+            o.FechaHoraCierre,
+            prox.IdTarea AS ProximaAccionId,
+            ISNULL(prox.TipoAccion, '') AS ProximaAccionTipo,
+            ISNULL(prox.Titulo, '') AS ProximaAccionTitulo,
+            prox.Vencimiento AS ProximaAccionVencimiento,
+            CASE WHEN prox.Vencimiento IS NOT NULL AND prox.Vencimiento < GETDATE() THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ProximaAccionVencida
         """;
 
     private static string OpportunityFromSql() => """
@@ -514,6 +629,14 @@ public sealed class CrmService(
             FROM dbo.CRM_OPORTUNIDAD_MENSAJES om
             WHERE om.IdOportunidad = o.IdOportunidad
         ) msg
+        OUTER APPLY (
+            SELECT TOP (1) t.IdTarea, t.TipoAccion, t.Titulo, t.Vencimiento
+            FROM dbo.CRM_TAREAS t
+            WHERE t.IdOportunidad = o.IdOportunidad
+              AND ISNULL(t.Completada, 0) = 0
+              AND ISNULL(t.Baja, 0) = 0
+            ORDER BY t.Vencimiento ASC, t.IdTarea ASC
+        ) prox
         """;
 
     private static string OpportunityWhereSql() => """
@@ -638,6 +761,39 @@ public sealed class CrmService(
             "SELECT ISNULL(MAX(Numero), 0) + 1 FROM dbo.CRM_OPORTUNIDADES WITH (UPDLOCK, HOLDLOCK);",
             transaction: tx,
             cancellationToken: ct));
+
+    private static Task<IEnumerable<CrmTareaDto>> GetTareasAsync(SqlConnection cn, long idOportunidad, CancellationToken ct)
+        => cn.QueryAsync<CrmTareaDto>(new CommandDefinition("""
+            SELECT
+                t.IdTarea,
+                t.IdOportunidad,
+                ISNULL(t.TipoAccion, '') AS TipoAccion,
+                ISNULL(t.Titulo, '') AS Titulo,
+                ISNULL(CAST(t.Detalle AS nvarchar(max)), '') AS Detalle,
+                t.Vencimiento,
+                ISNULL(t.IdTecnico, '') AS IdTecnico,
+                ISNULL(tec.Nombre, '') AS TecnicoNombre,
+                ISNULL(t.Completada, 0) AS Completada,
+                t.FechaHoraCompletada,
+                CASE WHEN ISNULL(t.Completada, 0) = 0 AND t.Vencimiento < GETDATE() THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Vencida
+            FROM dbo.CRM_TAREAS t
+            LEFT JOIN dbo.V_TA_Tecnicos tec ON LTRIM(RTRIM(tec.IdTecnico)) = LTRIM(RTRIM(t.IdTecnico))
+            WHERE t.IdOportunidad = @IdOportunidad AND ISNULL(t.Baja, 0) = 0
+            ORDER BY ISNULL(t.Completada, 0) ASC, t.Vencimiento ASC, t.IdTarea ASC;
+            """, new { IdOportunidad = idOportunidad }, cancellationToken: ct));
+
+    private static string NormalizeTareaTipo(string? tipo)
+    {
+        var value = (tipo ?? string.Empty).Trim().ToUpperInvariant();
+        return value switch
+        {
+            CrmTareaTipos.Llamada => CrmTareaTipos.Llamada,
+            CrmTareaTipos.Email => CrmTareaTipos.Email,
+            CrmTareaTipos.Reunion => CrmTareaTipos.Reunion,
+            CrmTareaTipos.WhatsApp => CrmTareaTipos.WhatsApp,
+            _ => CrmTareaTipos.Tarea
+        };
+    }
 
     private static Task AddActivityAsync(SqlConnection cn, SqlTransaction? tx, long idOportunidad, string type, string description, string? user, CancellationToken ct)
         => cn.ExecuteAsync(new CommandDefinition("""

@@ -140,6 +140,20 @@
                                         <span>@FormatMoney(item.ImporteEstimado)</span>
                                         <span>@item.Probabilidad%</span>
                                     </div>
+                                    @if (item.ProximaAccionVencimiento.HasValue)
+                                    {
+                                        <div class="crm-card__accion @(item.ProximaAccionVencida ? "is-vencida" : string.Empty)" title="@item.ProximaAccionTitulo">
+                                            <i class="bi @GetTareaIcon(item.ProximaAccionTipo)"></i>
+                                            <span>@FormatProximaAccion(item.ProximaAccionVencimiento.Value)</span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="crm-card__accion is-sin-accion" title="Sin próxima acción agendada">
+                                            <i class="bi bi-calendar-x"></i>
+                                            <span>Sin próxima acción</span>
+                                        </div>
+                                    }
                                     <div class="crm-tags">
                                         @foreach (var tag in item.Etiquetas.Take(3))
                                         {
@@ -339,6 +353,9 @@
     private CrmEtapaSaveRequest _stageDraft = new() { Color = "#2563EB", Orden = 10 };
     private CrmEtiquetaSaveRequest _tagDraft = new() { Color = "#14B8A6" };
     private string _noteText = string.Empty;
+    private string _nuevaTareaTipo = CrmTareaTipos.Tarea;
+    private string _nuevaTareaTitulo = string.Empty;
+    private DateTime _nuevaTareaVencimiento = DateTime.Today.AddDays(1).AddHours(9);
     private Feedback? _feedback;
 
     private IEnumerable<CrmViewColumnDto> VisibleColumns => _viewSettings.Columnas.Where(x => x.Visible).OrderBy(x => x.Order);
@@ -577,6 +594,53 @@
                     <div><dt>Prioridad</dt><dd>@GetPriorityLabel(_form.Prioridad)</dd></div>
                     <div><dt>Cierre</dt><dd>@(_form.FechaCierreEstimada?.ToString("dd/MM/yyyy") ?? "-")</dd></div>
                 </dl>
+            </section>
+
+            <section class="crm-side-panel">
+                <h3>Próximas acciones</h3>
+                @if (_detail is null)
+                {
+                    <p class="muted">Guardá la oportunidad para agendar su próxima acción.</p>
+                }
+                else
+                {
+                    <div class="crm-accion-form">
+                        <select @bind="_nuevaTareaTipo">
+                            <option value="TAREA">Tarea</option>
+                            <option value="LLAMADA">Llamada</option>
+                            <option value="EMAIL">Email</option>
+                            <option value="REUNION">Reunión</option>
+                            <option value="WHATSAPP">WhatsApp</option>
+                        </select>
+                        <input maxlength="200" placeholder="Qué hay que hacer..." @bind="_nuevaTareaTitulo" />
+                        <input type="datetime-local" @bind="_nuevaTareaVencimiento" />
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AddTareaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_nuevaTareaTitulo))">
+                            <i class="bi bi-plus-lg"></i> Agendar
+                        </button>
+                    </div>
+                    @if (_detail.Tareas.Count == 0)
+                    {
+                        <p class="muted">Sin próximas acciones agendadas.</p>
+                    }
+                    else
+                    {
+                        <div class="crm-accion-list">
+                            @foreach (var tarea in _detail.Tareas)
+                            {
+                                <article class="crm-accion @(tarea.Completada ? "is-done" : string.Empty) @(tarea.Vencida ? "is-vencida" : string.Empty)">
+                                    <button type="button" class="crm-accion__check" title="@(tarea.Completada ? "Reabrir" : "Completar")" @onclick="() => ToggleTareaAsync(tarea)">
+                                        <i class="bi @(tarea.Completada ? "bi-check-circle-fill" : "bi-circle")"></i>
+                                    </button>
+                                    <div class="crm-accion__body">
+                                        <strong><i class="bi @GetTareaIcon(tarea.TipoAccion)"></i> @tarea.Titulo</strong>
+                                        <small>@FormatDate(tarea.Vencimiento)@(string.IsNullOrWhiteSpace(tarea.TecnicoNombre) ? string.Empty : $" · {tarea.TecnicoNombre}")</small>
+                                    </div>
+                                    <button type="button" class="crm-accion__del" title="Eliminar" @onclick="() => DeleteTareaAsync(tarea)"><i class="bi bi-trash"></i></button>
+                                </article>
+                            }
+                        </div>
+                    }
+                }
             </section>
 
             <section class="crm-side-panel">
@@ -1275,6 +1339,72 @@
             _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
             UpdatePageHeader();
         });
+    }
+
+    private async Task AddTareaAsync()
+    {
+        if (_detail is null || string.IsNullOrWhiteSpace(_nuevaTareaTitulo))
+            return;
+        await RunAsync(async () =>
+        {
+            await CrmSvc.SaveTareaAsync(new CrmTareaSaveRequest
+            {
+                IdOportunidad = _detail.IdOportunidad,
+                TipoAccion = _nuevaTareaTipo,
+                Titulo = _nuevaTareaTitulo,
+                Vencimiento = _nuevaTareaVencimiento,
+                IdTecnico = string.IsNullOrWhiteSpace(_detail.IdTecnico) ? CurrentUserTechId : _detail.IdTecnico,
+                UsuarioAccion = AppUserSession.CurrentUser?.UserName
+            });
+            _nuevaTareaTitulo = string.Empty;
+            _nuevaTareaTipo = CrmTareaTipos.Tarea;
+            _nuevaTareaVencimiento = DateTime.Today.AddDays(1).AddHours(9);
+            _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+        });
+    }
+
+    private async Task ToggleTareaAsync(CrmTareaDto tarea)
+    {
+        if (_detail is null)
+            return;
+        await RunAsync(async () =>
+        {
+            await CrmSvc.CompleteTareaAsync(tarea.IdTarea, !tarea.Completada, AppUserSession.CurrentUser?.UserName);
+            _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+        });
+    }
+
+    private async Task DeleteTareaAsync(CrmTareaDto tarea)
+    {
+        if (_detail is null)
+            return;
+        await RunAsync(async () =>
+        {
+            await CrmSvc.DeleteTareaAsync(tarea.IdTarea, AppUserSession.CurrentUser?.UserName);
+            _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+        });
+    }
+
+    private static string GetTareaIcon(string tipo) => tipo switch
+    {
+        CrmTareaTipos.Llamada => "bi-telephone",
+        CrmTareaTipos.Email => "bi-envelope",
+        CrmTareaTipos.Reunion => "bi-people",
+        CrmTareaTipos.WhatsApp => "bi-whatsapp",
+        _ => "bi-check2-square"
+    };
+
+    private static string FormatProximaAccion(DateTime vencimiento)
+    {
+        var hoy = DateTime.Today;
+        var dia = vencimiento.Date;
+        if (dia == hoy)
+            return $"Hoy {vencimiento:HH:mm}";
+        if (dia == hoy.AddDays(1))
+            return $"Mañana {vencimiento:HH:mm}";
+        if (dia == hoy.AddDays(-1))
+            return $"Ayer {vencimiento:HH:mm}";
+        return vencimiento.ToString("dd/MM HH:mm");
     }
 
     private void ToggleTag(int id, ChangeEventArgs args)
