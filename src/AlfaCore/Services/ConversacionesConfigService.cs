@@ -2,6 +2,7 @@ using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
 
@@ -13,8 +14,7 @@ public sealed class ConversacionesConfigService(
     IAppEventService appEvents,
     IOptions<WhatsAppOptions> whatsAppOptions,
     IHttpClientFactory httpClientFactory,
-    IAppUserSessionService appUserSession,
-    IAutorizacionTareasService autorizacionTareasService) : IConversacionesConfigService
+    IAppUserSessionService appUserSession) : IConversacionesConfigService
 {
     private const string ConfigGroup = "CONVERSACIONES";
     private const string DefaultWebhookPath = "/api/conversaciones/whatsapp/webhook";
@@ -793,8 +793,67 @@ public sealed class ConversacionesConfigService(
             return (IReadOnlyList<ConversacionClasificacionOptionDto>)result;
         }, "No se pudieron cargar las clasificaciones de clientes.", ct);
 
+    // Consulta TA_USUARIOS directo acá (en vez de reusar AutorizacionTareasService) a propósito:
+    // AutorizacionTareasService depende de ICentralAdminService, que a su vez depende de
+    // IConversacionesConfigService -- inyectar AutorizacionTareasService acá cierra un ciclo en el
+    // contenedor de DI y tira "circular dependency detected" al arrancar la app.
     public Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(CancellationToken ct = default)
-        => autorizacionTareasService.GetUsuariosAsync(appUserSession.CurrentUser?.SystemCode ?? string.Empty, ct);
+        => ExecuteLoggedAsync("Conversaciones", "GetUsuariosSistema", async token =>
+        {
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (sistema.Length == 0)
+                return (IReadOnlyList<UsuarioSistemaDto>)Array.Empty<UsuarioSistemaDto>();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            const string tableExistsSql = "SELECT COUNT(1) FROM sys.tables WHERE object_id = OBJECT_ID(N'dbo.TA_USUARIOS');";
+            await using (var checkCmd = new SqlCommand(tableExistsSql, cn))
+            {
+                var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture) > 0;
+                if (!exists)
+                    return (IReadOnlyList<UsuarioSistemaDto>)Array.Empty<UsuarioSistemaDto>();
+            }
+
+            const string columnExistsSql = "SELECT COUNT(1) FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.TA_USUARIOS') AND LOWER(name) = 'activo';";
+            bool hasActivo;
+            await using (var checkCmd = new SqlCommand(columnExistsSql, cn))
+            {
+                hasActivo = Convert.ToInt32(await checkCmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture) > 0;
+            }
+
+            var sql = $"""
+                SELECT
+                    ISNULL(NOMBRE, ''),
+                    ISNULL(SISTEMA, ''),
+                    {(hasActivo ? "ISNULL(Activo, 1)" : "CAST(1 AS bit)")},
+                    ISNULL(Administrador, 0),
+                    ISNULL(EsGrupo, 0)
+                FROM dbo.TA_USUARIOS
+                WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
+                  AND ISNULL(EsGrupo, 0) = 0
+                  {(hasActivo ? "AND ISNULL(Activo, 1) = 1" : string.Empty)}
+                ORDER BY NOMBRE;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Sistema", sistema);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            var result = new List<UsuarioSistemaDto>();
+            while (await rd.ReadAsync(token))
+            {
+                result.Add(new UsuarioSistemaDto
+                {
+                    Nombre = GetString(rd, 0),
+                    Sistema = GetString(rd, 1),
+                    Activo = !rd.IsDBNull(2) && rd.GetBoolean(2),
+                    Administrador = !rd.IsDBNull(3) && rd.GetBoolean(3),
+                    EsGrupo = !rd.IsDBNull(4) && rd.GetBoolean(4)
+                });
+            }
+
+            return (IReadOnlyList<UsuarioSistemaDto>)result;
+        }, "No se pudieron cargar los usuarios del sistema.", ct);
 
     public Task<IReadOnlyList<ConversacionWhatsAppNumeroDto>> GetWhatsAppNumerosAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppNumeros", async token =>
