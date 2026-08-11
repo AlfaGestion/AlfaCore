@@ -436,6 +436,39 @@ public sealed class CrmService(
                 """, new { IdTarea = idTarea }, cancellationToken: token));
         }, "No se pudo eliminar la acción.", ct);
 
+    public Task<CrmConversationPrefillDto?> GetConversationPrefillAsync(long idConversacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetConversationPrefill", async token =>
+        {
+            if (idConversacion <= 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            // Guardado con OBJECT_ID: el CRM no depende físicamente de CONV_* (puede correr en una
+            // base sin Conversaciones); si no existe la tabla, simplemente no hay precarga.
+            var hasConv = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT CASE WHEN OBJECT_ID(N'dbo.CONV_CONVERSACIONES', N'U') IS NULL THEN 0 ELSE 1 END;",
+                cancellationToken: token)) == 1;
+            if (!hasConv)
+                return null;
+
+            return await cn.QueryFirstOrDefaultAsync<CrmConversationPrefillDto>(new CommandDefinition("""
+                SELECT TOP (1)
+                    c.IdConversacion,
+                    COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), NULLIF(mc.Nombre_y_Apellido, ''), NULLIF(c.NombreVisible, ''), N'Oportunidad') AS TituloSugerido,
+                    ISNULL(c.ClienteCodigo, '') AS ClienteCodigo,
+                    ISNULL(cli.RAZON_SOCIAL, '') AS ClienteNombre,
+                    c.IdContacto,
+                    ISNULL(mc.Nombre_y_Apellido, '') AS ContactoNombre,
+                    ISNULL(c.Canal, '') AS CanalOrigen
+                FROM dbo.CONV_CONVERSACIONES c
+                LEFT JOIN dbo.VT_CLIENTES cli ON LTRIM(RTRIM(cli.Codigo)) = LTRIM(RTRIM(c.ClienteCodigo))
+                LEFT JOIN dbo.MA_CONTACTOS mc ON mc.id = c.IdContacto
+                WHERE c.IdConversacion = @IdConversacion;
+                """, new { IdConversacion = idConversacion }, cancellationToken: token));
+        }, "No se pudo leer la conversación de origen.", ct);
+
     public Task<int> SaveEtapaAsync(CrmEtapaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("SaveEtapa", async token =>
         {

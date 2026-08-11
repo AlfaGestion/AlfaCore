@@ -321,6 +321,11 @@
 }
 
 @code {
+    // Llega desde el botón "Crear oportunidad" de Conversaciones: /crm?conv={IdConversacion}.
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "conv")]
+    public long? Conv { get; set; }
+
     private CrmLookupDto _lookups = new();
     private CrmFilters _filters = new();
     private PagedResult<CrmOpportunityDto> _page = new();
@@ -674,6 +679,27 @@
     {
         UpdatePageHeader();
         await LoadAsync();
+        if (Conv is long idConv && idConv > 0)
+            await OpenNewFromConversationAsync(idConv);
+    }
+
+    private async Task OpenNewFromConversationAsync(long idConv)
+    {
+        await RunAsync(async () =>
+        {
+            var prefill = await CrmSvc.GetConversationPrefillAsync(idConv);
+            NewOpportunity();
+            _form.IdConversacion = idConv;
+            if (prefill is not null)
+            {
+                _form.Titulo = prefill.TituloSugerido;
+                _form.ClienteCodigo = string.IsNullOrWhiteSpace(prefill.ClienteCodigo) ? null : prefill.ClienteCodigo;
+                _form.IdContacto = prefill.IdContacto;
+                _form.CanalOrigen = string.IsNullOrWhiteSpace(prefill.CanalOrigen) ? null : prefill.CanalOrigen;
+            }
+            _form.IdTecnico ??= CurrentUserTechId;
+            UpdatePageHeader();
+        });
     }
 
     private async Task LoadAsync()

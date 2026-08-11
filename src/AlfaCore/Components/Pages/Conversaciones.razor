@@ -387,6 +387,13 @@
                         <span>Crear ticket</span>
                     </button>
                 }
+                @if (_crmModuloActivo)
+                {
+                    <button type="button" class="btn btn--ghost btn--sm conversations-crm-button" @onclick="CrearOportunidadDesdeConversacion" disabled="@(_selectedConversation is null)" title="Crear oportunidad de CRM desde esta conversación">
+                        <i class="bi bi-graph-up-arrow"></i>
+                        <span>Crear oportunidad</span>
+                    </button>
+                }
                 @if (_alfaKnowledgeModuloActivo)
                 {
                     <button type="button" class="btn btn--ghost btn--sm conversations-ai-suggestion-button @(_showAiSuggestionPanel ? "is-active" : string.Empty)" @onclick="ToggleAiSuggestionPanel" disabled="@(_selectedConversation is null)" title="Sugerencia IA">
@@ -3604,6 +3611,7 @@
     // funcionalidad existente.
     private bool _ticketsModuloActivo = true;
     private bool _alfaKnowledgeModuloActivo = true;
+    private bool _crmModuloActivo = true;
 
     // Multi-número de WhatsApp: cargados una vez al entrar. Si falla la carga (p.ej. cliente
     // todavía sin la migración de multi-número), quedan vacíos y GetAssignableTechnicians() no
@@ -3618,6 +3626,7 @@
         ApplyStartupQuery();
         _ticketsModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("TICKETS");
         _alfaKnowledgeModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("ALFAKNOWLEDGE");
+        _crmModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("CRM");
         await LoadWhatsAppNumerosAndAdminStatusAsync();
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
@@ -4952,6 +4961,18 @@
             {
             }
         }
+    }
+
+    // Cambio mínimo del lado de Conversaciones a propósito: solo navega al CRM con el id de la
+    // conversación; toda la precarga (cliente/contacto/canal/título sugerido) vive en el módulo CRM
+    // (Crm.razor + CrmService), para no acoplar Conversaciones al CRM ni ampliar la superficie de
+    // conflicto en este archivo compartido.
+    private void CrearOportunidadDesdeConversacion()
+    {
+        if (_selectedConversation is null)
+            return;
+
+        Nav.NavigateTo($"/crm?conv={_selectedConversation.IdConversacion}");
     }
 
     private void StartTicketSelection()

@@ -89,6 +89,17 @@ public sealed class CrmTareaSaveRequest
     public string? UsuarioAccion { get; set; }
 }
 
+public sealed class CrmConversationPrefillDto
+{
+    public long IdConversacion { get; set; }
+    public string TituloSugerido { get; set; } = string.Empty;
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteNombre { get; set; } = string.Empty;
+    public int? IdContacto { get; set; }
+    public string ContactoNombre { get; set; } = string.Empty;
+    public string CanalOrigen { get; set; } = string.Empty;
+}
+
 public static class CrmTareaTipos
 {
     public const string Llamada = "LLAMADA";
