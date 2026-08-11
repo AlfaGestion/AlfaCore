@@ -9962,6 +9962,8 @@ public sealed class ConversacionesService(
 
         return """
             ORDER BY
+                CASE WHEN pin.IdConversacion IS NULL THEN 0 ELSE 1 END DESC,
+                pin.FechaHora_Grabacion DESC,
                 CASE WHEN ISNULL(ultMsg.Direction, N'') = N'ENTRANTE' THEN 0 ELSE 1 END ASC,
                 CASE
                     WHEN ISNULL(ultMsg.Direction, N'') <> N'ENTRANTE' THEN 99
