@@ -1049,9 +1049,9 @@
                                     {
                                         <input class="conversation-title-editor__input"
                                                @ref="_conversationNameInput"
-                                               value="@_conversationNameDraft"
+                                               @bind="_conversationNameDraft"
+                                               @bind:event="oninput"
                                                maxlength="120"
-                                               @oninput="OnConversationNameInput"
                                                @onkeydown="OnConversationNameKeyDownAsync"
                                                @onblur="SaveConversationNameAsync"
                                                disabled="@_savingConversationName"
@@ -2428,8 +2428,8 @@
 
 @if (_showAiCorrectionModal)
 {
-    <div class="modal-overlay conversations-ai-correction-overlay" @onclick="CloseAiCorrectionModal">
-        <div class="modal-card conversations-ai-correction-modal" role="dialog" aria-modal="true" aria-labelledby="ai-correction-title" @onclick:stopPropagation>
+    <div class="modal-overlay conversations-ai-correction-overlay" @onmousedown="CloseAiCorrectionModal">
+        <div class="modal-card conversations-ai-correction-modal" role="dialog" aria-modal="true" aria-labelledby="ai-correction-title" @onmousedown:stopPropagation @onclick:stopPropagation>
             <div class="conversations-ai-correction-modal__header">
                 <div>
                     <h3 id="ai-correction-title" class="modal-card__title">Corregir respuesta</h3>
@@ -2485,8 +2485,8 @@
 
 @if (_showContextNotesModal && HasContextNotes)
 {
-    <div class="modal-overlay" style="background:rgba(3,7,18,.78);backdrop-filter:blur(2px);" @onclick="CloseContextNotesModal">
-        <div class="modal-card" style="width:min(1180px,calc(100vw - 2rem));max-height:min(88vh,820px);overflow-y:auto;overflow-x:hidden;background:#071524;color:#e5f4ff;border:1px solid rgba(34,211,238,.45);box-shadow:0 22px 70px rgba(0,0,0,.65);" @onclick:stopPropagation>
+    <div class="modal-overlay" style="background:rgba(3,7,18,.78);backdrop-filter:blur(2px);" @onmousedown="CloseContextNotesModal">
+        <div class="modal-card" style="width:min(1180px,calc(100vw - 2rem));max-height:min(88vh,820px);overflow-y:auto;overflow-x:hidden;background:#071524;color:#e5f4ff;border:1px solid rgba(34,211,238,.45);box-shadow:0 22px 70px rgba(0,0,0,.65);" @onmousedown:stopPropagation @onclick:stopPropagation>
             <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Observaciones</h3>
@@ -2667,8 +2667,8 @@
 
 @if (_showNuevoHilo)
 {
-    <div class="modal-overlay conversations-new-thread-modal" @onclick="CerrarNuevoHilo">
-        <div class="modal-card conversations-new-thread-modal__card" @onclick:stopPropagation>
+    <div class="modal-overlay conversations-new-thread-modal" @onmousedown="CerrarNuevoHilo">
+        <div class="modal-card conversations-new-thread-modal__card" @onmousedown:stopPropagation @onclick:stopPropagation>
             <h3 class="modal-card__title">Nuevo hilo interno</h3>
             <div class="field">
                 <label for="hilo-nombre">Nombre del hilo</label>
@@ -10446,9 +10446,6 @@
         _editingConversationName = true;
         _focusConversationNameAfterRender = true;
     }
-
-    private void OnConversationNameInput(ChangeEventArgs args)
-        => _conversationNameDraft = args.Value?.ToString() ?? string.Empty;
 
     private async Task OnConversationNameKeyDownAsync(KeyboardEventArgs args)
     {
