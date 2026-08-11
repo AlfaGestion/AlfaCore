@@ -1557,11 +1557,14 @@ else
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
     {
         HeaderNavigation.Record(args.Location);
-        PageHeader.Clear();
         _mobileSidebarOpen = false;
         if (IsLauncherRoute)
             _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
+        var preserveContactosPilot = string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
+            && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+        if (!preserveContactosPilot)
+            PageHeader.Clear();
         if (EnforceDirectMode())
             return;
         if (ShowShellContext)

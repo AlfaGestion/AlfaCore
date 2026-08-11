@@ -323,7 +323,7 @@
                              ProvinciaDisplay="@GetRecordProvinciaDisplay()"
                              Loading="_loadingRecord"
                              ErrorMessage="@_recordErrorMessage"
-                             ActiveTab="_recordActiveTab"
+                             ActiveTab="@_recordActiveTab"
                              ActiveTabChanged="SetRecordTabAsync"
                              OnBack="VolverDesdeFichaAsync"
                              OnRetry="RecargarFichaAsync"
@@ -1460,8 +1460,12 @@
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        _ = InvokeAsync(DismissFeedbackAsync);
-        _ = InvokeAsync(ApplyCurrentLocationAsync);
+        _ = InvokeAsync(async () =>
+        {
+            await DismissFeedbackAsync();
+            await ApplyCurrentLocationAsync();
+            UpdatePageHeader();
+        });
     }
 
     private async Task ApplyCurrentLocationAsync()
@@ -2037,12 +2041,14 @@
         if (id <= 0)
             return;
 
+        var preserveRecordTab = _pageMode == ContactosPageMode.Record;
         CaptureBrowseReturnView();
         _pageMode = ContactosPageMode.Record;
         _selectedId = id;
         _isNewMode = false;
         _showViewSettings = false;
-        _recordActiveTab = ContactosRecordTabKeys.Informacion;
+        if (!preserveRecordTab)
+            _recordActiveTab = ContactosRecordTabKeys.Informacion;
         SetFeedback(null);
         if (updateUrl)
             NavigateToRecordUrl(id);

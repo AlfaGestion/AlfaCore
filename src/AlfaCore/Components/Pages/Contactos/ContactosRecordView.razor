@@ -1,4 +1,6 @@
 @namespace AlfaCore.Components.Pages
+@using AlfaCore.Services
+@inject IAppEventService AppEvents
 
 @if (Loading)
 {
@@ -74,15 +76,15 @@ else
                     @if (HasPhone(Contact))
                     {
                         <button type="button" class="contactos-record-smart__button" @onclick="HandleConversationActionAsync">
-                            <strong><i class="bi @(Contact.IdConversacionWhatsApp.HasValue ? "bi-chat-left-text" : "bi-plus-circle")" aria-hidden="true"></i></strong>
-                            <span>@(Contact.IdConversacionWhatsApp.HasValue ? "Abrir conversación" : "Crear conversación")</span>
+                            <strong><i class="bi @(Contact.IdConversacionWhatsApp.HasValue ? "bi-chat-left-text" : "bi-plus-circle")" aria-hidden="true"></i>@(Contact.IdConversacionWhatsApp.HasValue ? "Abrir" : "Crear")</strong>
+                            <span>Conversación</span>
                         </button>
                     }
                     @if (Contact.CuentasVinculadas.Count > 0)
                     {
                         <button type="button" class="contactos-record-smart__button" @onclick="() => SetTab(ContactosRecordTabKeys.Cuentas)">
                             <strong>@Contact.CuentasVinculadas.Count</strong>
-                            <span>Cuentas vinculadas</span>
+                            <span>Cuentas</span>
                         </button>
                     }
                 </div>
@@ -95,9 +97,12 @@ else
                     @foreach (var tab in AvailableTabs)
                     {
                         <button type="button"
+                                @key="tab.Key"
                                 class="contactos-record-tabs__item @(ActiveTab == tab.Key ? "is-active" : string.Empty)"
                                 aria-current="@(ActiveTab == tab.Key ? "page" : null)"
-                                @onclick="() => SetTab(tab.Key)">
+                                aria-selected="@(ActiveTab == tab.Key)"
+                                @onclick:stopPropagation
+                                @onclick="() => SelectTabAsync(tab.Key)">
                             <span>@tab.Label</span>
                             @if (!string.IsNullOrWhiteSpace(tab.Badge))
                             {
@@ -107,7 +112,92 @@ else
                     }
                 </nav>
 
-                @if (ActiveTab == ContactosRecordTabKeys.Observaciones)
+                @if (ActiveTab == ContactosRecordTabKeys.Actividad)
+                {
+                    <section class="activity-panel" aria-label="Actividad del contacto">
+                        <div class="activity-toolbar">
+                            <h3>Actividad</h3>
+                            <button type="button"
+                                    class="btn btn--ghost btn--sm"
+                                    disabled="@_activityLoading"
+                                    @onclick="RefreshActivityAsync">
+                                <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
+                                Recargar
+                            </button>
+                        </div>
+
+                        @if (_activityLoading && _activityItems.Count == 0)
+                        {
+                            <div class="activity-feedback" role="status">
+                                <span class="activity-spinner" aria-hidden="true"></span>
+                                <span>Cargando actividad...</span>
+                            </div>
+                        }
+                        else if (!string.IsNullOrWhiteSpace(_activityError))
+                        {
+                            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                            Title="No se pudo cargar la actividad"
+                                            Message="Reintentá la consulta en unos instantes."
+                                            ActionLabel="Reintentar"
+                                            ActionIcon="bi bi-arrow-clockwise"
+                                            OnAction="RetryActivityAsync" />
+                        }
+                        else if (_activityLoaded && _activityItems.Count == 0)
+                        {
+                            <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                                            Title="Todavía no hay actividad registrada para este contacto."
+                                            Message="El historial comienza a registrarse desde la incorporación de esta función." />
+                        }
+                        else
+                        {
+                            <div class="activity-list">
+                                @foreach (var item in _activityItems)
+                                {
+                                    <article class="activity-event">
+                                        <span class="activity-event__avatar @GetUserAvatarTone(item.UserName)" aria-hidden="true">
+                                            @GetUserInitials(item.UserName)
+                                        </span>
+                                        <div class="activity-event__content">
+                                            <div class="activity-event__meta">
+                                                <strong>@DisplayUser(item.UserName)</strong>
+                                                <span aria-hidden="true">·</span>
+                                                <time datetime="@item.CreatedAt.ToString("O")" title="@FormatFullDate(item.CreatedAt)">@FormatActivityDate(item.CreatedAt)</time>
+                                            </div>
+                                            <p class="activity-event__action">@GetOperationLabel(item)</p>
+
+                                            @if (item.Changes.Count > 0)
+                                            {
+                                                <div class="activity-changes">
+                                                    @foreach (var change in item.Changes)
+                                                    {
+                                                        <div class="activity-change">
+                                                            <strong>@GetFieldLabel(change.FieldName)</strong>
+                                                            <div class="activity-change__values">
+                                                                <span title="@FormatAuditValue(change.FieldName, change.OldValue)">@FormatAuditValue(change.FieldName, change.OldValue)</span>
+                                                                <i class="bi bi-arrow-right" aria-label="cambió a"></i>
+                                                                <span title="@FormatAuditValue(change.FieldName, change.NewValue)">@FormatAuditValue(change.FieldName, change.NewValue)</span>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+
+                            @if (_activityItems.Count < _activityTotal)
+                            {
+                                <div class="activity-load-more">
+                                    <button type="button" class="btn btn--ghost btn--sm" disabled="@_activityLoadingMore" @onclick="LoadMoreActivityAsync">
+                                        @(_activityLoadingMore ? "Cargando..." : "Cargar actividad anterior")
+                                    </button>
+                                </div>
+                            }
+                        }
+                    </section>
+                }
+                else if (ActiveTab == ContactosRecordTabKeys.Observaciones)
                 {
                     <section class="contactos-record-section" aria-label="Observaciones">
                         <h3>Observaciones</h3>
@@ -141,6 +231,7 @@ else
                 }
                 else
                 {
+                    <div class="record-information-content">
                     <section class="contactos-record-section" aria-label="Información principal">
                         <h3>Información principal</h3>
                         <div class="contactos-record-fields">
@@ -167,6 +258,7 @@ else
                             @ReadCheck("Órdenes de trabajo", Contact.MailOrdenTrabajo)
                         </div>
                     </section>
+                    </div>
                 }
             </article>
 
@@ -220,7 +312,11 @@ else
     {
         get
         {
-            var tabs = new List<RecordTab> { new(ContactosRecordTabKeys.Informacion, "Información") };
+            var tabs = new List<RecordTab>
+            {
+                new(ContactosRecordTabKeys.Informacion, "Información"),
+                new(ContactosRecordTabKeys.Actividad, "Actividad")
+            };
             if (!string.IsNullOrWhiteSpace(Contact?.Observaciones))
                 tabs.Add(new(ContactosRecordTabKeys.Observaciones, "Observaciones"));
             if (Contact?.CuentasVinculadas.Count > 0)
@@ -230,10 +326,98 @@ else
     }
 
     private async Task SetTab(string key)
+        => await SelectTabAsync(key);
+
+    private async Task SelectTabAsync(string key)
     {
         ActiveTab = key;
         await ActiveTabChanged.InvokeAsync(key);
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        if (key == ContactosRecordTabKeys.Actividad && !_activityLoaded)
+            await LoadActivityPageAsync(1, append: false);
     }
+
+    private const int ActivityPageSize = 20;
+    private readonly List<AuditActivityEventDto> _activityItems = [];
+    private int _activityRecordId;
+    private int _activityPage;
+    private int _activityTotal;
+    private long _activityLoadVersion;
+    private bool _activityLoaded;
+    private bool _activityLoading;
+    private bool _activityLoadingMore;
+    private string _activityError = string.Empty;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var recordId = Contact?.Id ?? 0;
+        if (recordId != _activityRecordId)
+        {
+            _activityLoadVersion++;
+            _activityRecordId = recordId;
+            _activityItems.Clear();
+            _activityPage = 0;
+            _activityTotal = 0;
+            _activityLoaded = false;
+            _activityLoading = false;
+            _activityLoadingMore = false;
+            _activityError = string.Empty;
+        }
+
+        if (recordId > 0 && ActiveTab == ContactosRecordTabKeys.Actividad && !_activityLoaded && !_activityLoading)
+            await LoadActivityPageAsync(1, append: false);
+    }
+
+    private async Task LoadActivityPageAsync(int page, bool append)
+    {
+        var recordId = Contact?.Id ?? 0;
+        if (recordId <= 0 || _activityLoading || _activityLoadingMore)
+            return;
+
+        if (append)
+            _activityLoadingMore = true;
+        else
+            _activityLoading = true;
+        _activityError = string.Empty;
+        var loadVersion = _activityLoadVersion;
+
+        try
+        {
+            var result = await AppEvents.GetActivityAsync(AuditEntityTypes.Contacto, recordId.ToString(), page, ActivityPageSize);
+            if (recordId != (Contact?.Id ?? 0) || loadVersion != _activityLoadVersion)
+                return;
+
+            if (!append)
+                _activityItems.Clear();
+            _activityItems.AddRange(result.Items.Where(candidate => _activityItems.All(existing => existing.Id != candidate.Id)));
+            _activityPage = result.PageNumber;
+            _activityTotal = result.Total;
+            _activityLoaded = true;
+        }
+        catch
+        {
+            if (loadVersion == _activityLoadVersion)
+                _activityError = "No se pudo cargar la actividad.";
+        }
+        finally
+        {
+            if (loadVersion == _activityLoadVersion)
+            {
+                _activityLoading = false;
+                _activityLoadingMore = false;
+            }
+        }
+    }
+
+    private Task RefreshActivityAsync()
+        => LoadActivityPageAsync(1, append: false);
+
+    private Task RetryActivityAsync(MouseEventArgs _)
+        => LoadActivityPageAsync(1, append: false);
+
+    private Task LoadMoreActivityAsync()
+        => LoadActivityPageAsync(_activityPage + 1, append: true);
 
     private Task HandleBackActionAsync(MouseEventArgs _)
         => OnBack.InvokeAsync();
@@ -307,6 +491,72 @@ else
             ? "/proveedores"
             : "/clientes";
         return $"{route}?editar={Uri.EscapeDataString(account.Codigo ?? string.Empty)}";
+    }
+
+    private static string GetOperationLabel(AuditActivityEventDto item)
+        => item.Operation switch
+        {
+            AuditOperations.Create => "Creó el contacto",
+            AuditOperations.Update => "Actualizó el contacto",
+            AuditOperations.Deactivate => "Dio de baja el contacto",
+            AuditOperations.Reactivate => "Reactivó el contacto",
+            AuditOperations.ConversationCreated => "Creó una conversación",
+            _ => string.IsNullOrWhiteSpace(item.Message) ? "Registró actividad en el contacto" : item.Message.Trim()
+        };
+
+    private static string GetFieldLabel(string? fieldName)
+    {
+        var key = fieldName?.Trim() ?? string.Empty;
+        if (key == ContactoAuditFields.Activo)
+            return "Estado";
+        return ContactoAuditFields.Labels.TryGetValue(key, out var label) ? label : key;
+    }
+
+    private static string FormatAuditValue(string? fieldName, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return "—";
+
+        var normalized = value.Trim();
+        if (bool.TryParse(normalized, out var boolean))
+        {
+            if (string.Equals(fieldName, ContactoAuditFields.Activo, StringComparison.Ordinal))
+                return boolean ? "Activo" : "Inactivo";
+            return boolean ? "Sí" : "No";
+        }
+
+        return normalized;
+    }
+
+    private static string FormatActivityDate(DateTime value)
+    {
+        var now = DateTime.Now;
+        var time = value.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
+        if (value.Date == now.Date)
+            return $"Hoy, {time}";
+        if (value.Date == now.Date.AddDays(-1))
+            return $"Ayer, {time}";
+        return value.ToString("d MMM yyyy, HH:mm", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+    }
+
+    private static string FormatFullDate(DateTime value)
+        => value.ToString("dd/MM/yyyy HH:mm:ss", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static string DisplayUser(string? userName)
+        => string.IsNullOrWhiteSpace(userName) ? "Sistema" : userName.Trim();
+
+    private static string GetUserInitials(string? userName)
+    {
+        var words = DisplayUser(userName).Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return string.Concat(words.Take(2).Select(word => char.ToUpperInvariant(word[0])));
+    }
+
+    private static string GetUserAvatarTone(string? userName)
+    {
+        var hash = 17;
+        foreach (var character in DisplayUser(userName))
+            hash = unchecked((hash * 31) + char.ToUpperInvariant(character));
+        return $"tone-{Math.Abs((long)hash) % 6}";
     }
 
     private sealed record HeaderSummaryItem(string Icon, string Text);

@@ -29,6 +29,7 @@
 }
 
 .contactos-record-header__identity {
+    width: min(100%, 760px);
     min-width: 0;
     display: flex;
     align-items: center;
@@ -36,20 +37,20 @@
 }
 
 .contactos-record-header__avatar {
-    width: 68px;
-    height: 68px;
+    width: 60px;
+    height: 60px;
     display: grid;
     place-items: center;
-    flex: 0 0 68px;
+    flex: 0 0 60px;
     border-radius: 50%;
     color: #fff;
-    font-size: 25px;
+    font-size: 23px;
     font-weight: 700;
     line-height: 1;
 }
 
 .contactos-record-header__avatar i {
-    font-size: 27px;
+    font-size: 24px;
 }
 
 .contactos-record-header__avatar.tone-0 { background: #397dcc; }
@@ -200,7 +201,7 @@
     border-bottom: 2px solid transparent;
     background: transparent;
     color: var(--alfa-text-secondary);
-    font-size: 11px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
 }
@@ -239,8 +240,8 @@
 .contactos-record-context h3 {
     margin: 0;
     color: var(--alfa-text-secondary);
-    font-size: 11px;
-    font-weight: 650;
+    font-size: 12px;
+    font-weight: 600;
     line-height: 16px;
 }
 
@@ -248,7 +249,8 @@
     min-width: 0;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 20px 32px;
+    column-gap: 40px;
+    row-gap: 20px;
 }
 
 .contactos-record-field {
@@ -259,8 +261,8 @@
 
 .contactos-record-field span {
     color: var(--alfa-text-secondary);
-    font-size: 11px;
-    line-height: 14px;
+    font-size: 12px;
+    line-height: 16px;
 }
 
 .contactos-record-field strong {
@@ -277,6 +279,7 @@
 .contactos-record-field strong.is-empty,
 .contactos-record-muted {
     color: var(--alfa-text-disabled);
+    font-size: 12.5px;
     font-weight: 400;
 }
 
@@ -310,6 +313,11 @@
 
 .contactos-record-check.is-checked i {
     color: var(--alfa-accent);
+}
+
+.record-information-content {
+    width: min(100%, 1120px);
+    max-width: 1120px;
 }
 
 .contactos-record-text {
@@ -359,6 +367,173 @@
     white-space: nowrap;
 }
 
+.activity-panel {
+    min-width: 0;
+    display: grid;
+    gap: 0;
+    padding: 0 20px 20px;
+}
+
+.activity-toolbar {
+    min-height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    max-width: 880px;
+    border-bottom: 1px solid var(--alfa-border-default);
+}
+
+.activity-toolbar h3 {
+    margin: 0;
+    color: var(--alfa-text-primary);
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+.activity-feedback {
+    min-height: 150px;
+    max-width: 880px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--alfa-text-secondary);
+    font-size: 12.5px;
+}
+
+.activity-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--alfa-border-strong);
+    border-top-color: var(--alfa-accent);
+    border-radius: 50%;
+    animation: activity-spin 0.8s linear infinite;
+}
+
+@keyframes activity-spin {
+    to { transform: rotate(360deg); }
+}
+
+.activity-list {
+    width: 100%;
+    max-width: 880px;
+}
+
+.activity-event {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 12px;
+    padding: 15px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--alfa-border-default) 72%, transparent);
+}
+
+.activity-event__avatar {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.activity-event__avatar.tone-0 { background: #397dcc; }
+.activity-event__avatar.tone-1 { background: #3a966c; }
+.activity-event__avatar.tone-2 { background: #7958b5; }
+.activity-event__avatar.tone-3 { background: #318f99; }
+.activity-event__avatar.tone-4 { background: #ad4f7d; }
+.activity-event__avatar.tone-5 { background: #a87936; }
+
+.activity-event__content {
+    min-width: 0;
+    display: grid;
+    gap: 5px;
+}
+
+.activity-event__meta {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    flex-wrap: wrap;
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    line-height: 15px;
+}
+
+.activity-event__meta strong {
+    color: var(--alfa-text-primary);
+    font-size: 12.5px;
+    font-weight: 650;
+}
+
+.activity-event__action {
+    margin: 0;
+    color: var(--alfa-text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 18px;
+}
+
+.activity-changes {
+    min-width: 0;
+    display: grid;
+    gap: 10px;
+    margin-top: 6px;
+    padding-left: 12px;
+    border-left: 2px solid color-mix(in srgb, var(--alfa-accent) 28%, var(--alfa-border-default));
+}
+
+.activity-change {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.activity-change > strong {
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 15px;
+}
+
+.activity-change__values {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    color: var(--alfa-text-primary);
+    font-size: 12px;
+    line-height: 19px;
+}
+
+.activity-change__values span {
+    min-width: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+}
+
+.activity-change__values i {
+    padding-top: 2px;
+    color: var(--alfa-accent);
+    font-size: 12px;
+}
+
+.activity-load-more {
+    max-width: 880px;
+    display: flex;
+    justify-content: center;
+    padding: 16px 0 0;
+}
+
 .contactos-record-account small {
     color: var(--alfa-text-secondary);
     font-size: 12px;
@@ -382,7 +557,7 @@
 
 .contactos-record-context__item span {
     color: var(--alfa-text-secondary);
-    font-size: 11px;
+    font-size: 12px;
 }
 
 .contactos-record-context__item strong {
@@ -433,4 +608,21 @@
     .contactos-record-smart__button {
         width: min(100%, 150px);
     }
+
+    .activity-panel {
+        padding-inline: 14px;
+    }
+
+    .activity-change__values {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 3px;
+    }
+
+    .activity-change__values i {
+        transform: rotate(90deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .activity-spinner { animation: none; }
 }

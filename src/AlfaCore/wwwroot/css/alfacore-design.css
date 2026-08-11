@@ -279,6 +279,29 @@
     transform: none;
 }
 
+/* El header legacy sin búsqueda fuerza dos filas con !important. En el shell piloto
+   Record/Edit/New deben conservar la Context Toolbar única de 44px. */
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--no-search {
+    height: var(--alfa-context-toolbar-height) !important;
+    min-height: 0 !important;
+    grid-template-columns: auto minmax(0, 1fr) auto 0 !important;
+    grid-template-areas: "actions search pagination view" !important;
+    row-gap: 0 !important;
+    padding-block: 0 !important;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--no-search .main-page-header__actions {
+    grid-area: actions !important;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--no-search .main-page-header__pagination {
+    grid-area: pagination !important;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--no-search .main-page-header__view {
+    grid-area: view !important;
+}
+
 .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__nav,
 .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__context {
     display: none;
