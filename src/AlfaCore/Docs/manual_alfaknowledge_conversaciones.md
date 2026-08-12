@@ -1,211 +1,259 @@
-# Manual — AlfaKnowledge en Conversaciones
-### Alfa Gestión · Asistente de IA para WhatsApp, Instagram, Facebook, Mercado Libre y Chat interno
+# Manual — Asistente de IA y Automatizaciones en Conversaciones
+### Alfa Gestión · WhatsApp, Instagram, Facebook, Mercado Libre y Chat interno
+
+> Manual de usuario con notas técnicas para el equipo de soporte. Cubre el copiloto de IA
+> (AlfaKnowledge), el análisis de la conversación, el envío asistido y el bot automático.
 
 ---
 
 ## Índice
 
-1. [¿Qué es AlfaKnowledge en Conversaciones?](#1-qué-es-alfaknowledge-en-conversaciones)
+1. [Panorama: qué hace la IA en Conversaciones](#1-panorama-qué-hace-la-ia-en-conversaciones)
 2. [Antes de empezar: asignate la conversación](#2-antes-de-empezar-asignate-la-conversación)
-3. [Abrir el panel de AlfaKnowledge](#3-abrir-el-panel-de-alfaknowledge)
-4. [El panel del asistente, parte por parte](#4-el-panel-del-asistente-parte-por-parte)
-5. [Elegir qué contexto lee la IA](#5-elegir-qué-contexto-lee-la-ia)
-6. [Trabajar con la respuesta sugerida](#6-trabajar-con-la-respuesta-sugerida)
-7. [Fuentes de la respuesta](#7-fuentes-de-la-respuesta)
-8. [Hablarle a la IA sobre el caso](#8-hablarle-a-la-ia-sobre-el-caso)
-9. [Abrir AlfaKnowledge completo](#9-abrir-alfaknowledge-completo)
-10. [Qué hace y qué NO hace el asistente](#10-qué-hace-y-qué-no-hace-el-asistente)
-11. [Buenas prácticas](#11-buenas-prácticas)
-12. [Preguntas frecuentes](#12-preguntas-frecuentes)
+3. [El panel del asistente (se abre solo)](#3-el-panel-del-asistente-se-abre-solo)
+4. [Análisis de la conversación (resumen, intención, sentimiento)](#4-análisis-de-la-conversación)
+5. [La respuesta sugerida y el indicador de confianza](#5-la-respuesta-sugerida-y-el-indicador-de-confianza)
+6. [Aprobar y enviar, o editar antes](#6-aprobar-y-enviar-o-editar-antes)
+7. [Tono y traducción del borrador](#7-tono-y-traducción-del-borrador)
+8. [Fuentes de la respuesta](#8-fuentes-de-la-respuesta)
+9. [Hablarle a la IA sobre el caso](#9-hablarle-a-la-ia-sobre-el-caso)
+10. [Configuración (admin/soporte): instrucciones del asistente](#10-configuración-instrucciones-del-asistente)
+11. [Automatizaciones: fuera de horario y bot autónomo](#11-automatizaciones-fuera-de-horario-y-bot-autónomo)
+12. [Prioridad, asignación automática e íconos del inbox](#12-prioridad-asignación-automática-e-íconos-del-inbox)
+13. [Qué hace y qué NO hace](#13-qué-hace-y-qué-no-hace)
+14. [Requisitos técnicos y diagnóstico](#14-requisitos-técnicos-y-diagnóstico)
+15. [Preguntas frecuentes](#15-preguntas-frecuentes)
 
 ---
 
-## 1. ¿Qué es AlfaKnowledge en Conversaciones?
+## 1. Panorama: qué hace la IA en Conversaciones
 
-**AlfaKnowledge** es el asistente de inteligencia artificial integrado al módulo **Conversaciones**
-(WhatsApp, Instagram, Facebook, Mercado Libre y Chat interno). Funciona como un copiloto para el
-agente: lee el hilo de la conversación, busca en la documentación indexada de Alfa Gestión y
-propone una respuesta redactada, con las fuentes que usó para armarla.
+El módulo tiene tres capas de ayuda, de menor a mayor autonomía:
 
-El agente **siempre decide**: puede usar la sugerencia tal cual, editarla antes de enviarla, o
-descartarla y responder por su cuenta. AlfaKnowledge nunca envía un mensaje al cliente por sí
-solo.
+- **Copiloto (asistente):** lee el hilo, **analiza** la conversación, busca en la base de
+  conocimiento (**AlfaKnowledge**) y **propone** una respuesta con fuentes. El agente decide.
+- **Envío asistido (supervisado):** el agente puede **aprobar y enviar** la respuesta del asistente
+  en un clic, con un **semáforo de confianza** que avisa cuándo conviene revisar o escalar.
+- **Bot automático (opcional):** si el admin lo habilita, el bot **responde solo** los WhatsApp
+  entrantes que cumplen guardarraíles estrictos; si no, **deja la conversación para un humano**.
 
 ---
 
 ## 2. Antes de empezar: asignate la conversación
 
-Antes de trabajar una conversación (con o sin IA), conviene tomarla para vos con el botón
-**Asignarme**, ubicado junto al nombre del contacto y el estado de la conversación.
+Conviene tomar la conversación con **Asignarme** (junto al nombre del contacto). Evita que dos
+agentes respondan a la vez y deja registro de quién atiende.
 
-Esto evita que dos agentes respondan al mismo cliente al mismo tiempo y deja registro de quién
-está atendiendo el caso.
+> **Novedad:** si respondés una conversación **sin asignar**, queda **asignada a vos
+> automáticamente** (auto-asignación al responder).
 
 ---
 
-## 3. Abrir el panel de AlfaKnowledge
+## 3. El panel del asistente (se abre solo)
 
-Hay dos accesos al asistente, pensados para que no tengas que cortar lo que estás haciendo:
+Al entrar a Conversaciones, si el módulo AlfaKnowledge está habilitado, el panel del asistente
+**se abre automáticamente** a la derecha (tercera columna en escritorio). Podés cerrarlo con la
+**X**; se vuelve a abrir la próxima vez que entrás (así se usa).
+
+Dos accesos:
 
 | Ubicación | Ícono | Qué hace |
 |---|---|---|
-| Barra superior de la conversación, junto a **Crear ticket** y **Pendientes** | ✨ (destello) | Abre o cierra el panel completo de AlfaKnowledge a la derecha de la pantalla |
-| Barra donde escribís la respuesta, junto al botón de enviar | ✨ (destello) | Mejora o corrige el borrador que ya escribiste, sin generar una respuesta nueva desde cero |
-
-En pantallas de escritorio, el panel de AlfaKnowledge se abre como una **tercera columna** al lado
-del hilo de mensajes: la conversación se acomoda para dejarle lugar, no queda ningún mensaje tapado
-detrás del asistente.
-
-El panel queda abierto hasta que lo cerrás vos mismo con la **X** de su encabezado. Si lo cerrás,
-se cancela cualquier consulta que estuviera en curso.
+| Barra superior de la conversación | ✨ | Abre/cierra el panel del asistente |
+| Barra del compositor (donde escribís) | ✨ | Mejora el borrador que ya escribiste |
 
 ---
 
-## 4. El panel del asistente, parte por parte
+## 4. Análisis de la conversación
 
-Cuando el panel está abierto, de arriba hacia abajo vas a encontrar:
+Arriba del panel, la tarjeta **Análisis de la conversación** resume el caso automáticamente:
 
-1. **Encabezado "AlfaKnowledge"** con el estado del asistente y el botón para cerrarlo.
-2. **Abrir AlfaKnowledge completo** — enlace a la aplicación completa de AlfaKnowledge (ver
-   [sección 9](#9-abrir-alfaknowledge-completo)).
-3. **Contexto que leerá la IA** — selector de qué parte de la conversación se usa para generar la
-   sugerencia (ver [sección 5](#5-elegir-qué-contexto-lee-la-ia)).
-4. **Respuesta sugerida** — el texto que propone la IA, con sus botones de acción.
-5. **Fuentes** — los documentos indexados que la IA usó para redactar la sugerencia.
-6. **Hablá con la IA sobre este caso** — campo de texto libre para pedirle otra cosa al asistente
-   (resumen, corrección, pregunta puntual).
+- **Resumen** — 1-2 frases de qué necesita/pasó.
+- **Intención** — etiqueta corta (Consulta de precio, Reclamo, Soporte, Pedido, Seguimiento…).
+- **Sentimiento** — Positivo / Neutro / Negativo del cliente (con color).
+
+Botón **↻** para volver a analizar. *Nota técnica: el análisis se genera con IA sobre el propio
+hilo (no usa la base de conocimiento) y necesita `OPENAI_API_KEY` en el server.*
 
 ---
 
-## 5. Elegir qué contexto lee la IA
+## 5. La respuesta sugerida y el indicador de confianza
 
-El desplegable **"Contexto que leerá la IA"** define qué mensajes del hilo se le envían al
-asistente para generar la respuesta:
+El asistente propone una **respuesta sugerida** basada en la base de conocimiento, con un
+**semáforo de confianza**:
 
-| Opción | Qué toma |
-|---|---|
-| **Tramo actual** | Los mensajes posteriores al último cierre de la conversación detectado. Si la conversación ya está cerrada, toma el tramo entre los dos últimos cierres. Es la opción por defecto y la más usada. |
-| **Toda la conversación** | Todo el historial cargado del hilo, sin recortar. Útil en casos largos o cuando el cliente hace referencia a algo de hace tiempo. |
-| **Mensaje marcado** | Un único mensaje puntual, elegido con la acción de estrella (⭐) sobre su burbuja. Sirve para pedirle a la IA que responda algo específico sin que el resto del hilo influya. |
+| Color | Significado | Qué conviene |
+|---|---|---|
+| 🟢 **Con respaldo** | Contexto suficiente + fuentes citadas | Podés aprobar y enviar |
+| 🟡 **Sin respaldo suficiente** | Falta base para el tema | Revisá bien antes de enviar |
+| 🔴 **Escalar** | La IA pidió una aclaración | Conviene pasar a un humano / pedir más datos |
 
-Debajo del selector, el panel indica cuántos mensajes va a recibir la IA con la opción elegida
-(por ejemplo: *"La IA recibirá 39 mensajes del tramo abierto desde el último cierre detectado"*).
+El semáforo es una guía: **la decisión de enviar siempre es del agente.**
 
 ---
 
-## 6. Trabajar con la respuesta sugerida
+## 6. Aprobar y enviar, o editar antes
 
-Al pedir una sugerencia (o automáticamente al abrir el panel, según el caso), aparece el bloque
-**RESPUESTA SUGERIDA** con el texto propuesto. Debajo tenés cuatro acciones:
+Debajo de la sugerencia:
 
 | Botón | Qué hace |
 |---|---|
-| **Llevar a respuesta** | Copia el texto sugerido al cuadro de **"Escribí una respuesta para WhatsApp..."**, donde podés revisarlo, editarlo y enviarlo cuando quieras. No se envía solo. |
-| **Regenerar** | Descarta la sugerencia actual y le pide a la IA una nueva, con el mismo contexto. |
-| **Corregir respuesta** | Permite indicarle a la IA qué está mal o qué cambiar, para que ajuste el texto sin perder lo que ya estaba bien. |
-| **Descartar** | Cierra la sugerencia sin usarla. El panel sigue abierto para pedir otra cosa. |
+| **Aprobar y enviar** | Manda la respuesta del asistente al cliente en un clic (respeta canal y la ventana de 24h de WhatsApp; se deshabilita si no corresponde). |
+| **Editar antes** | Copia la sugerencia al compositor para revisarla/ajustarla y enviar cuando quieras. |
+| **Regenerar** | Pide una sugerencia nueva con el mismo contexto. |
+| **Corregir respuesta** | Le indicás a la IA qué cambiar; la corrección se guarda en AlfaKnowledge (mejora la base). |
+| **Descartar** | Cierra la sugerencia sin usarla. |
 
-Usar o descartar una sugerencia **no cierra el panel** — podés seguir consultando a la IA sobre el
-mismo caso.
+> **Importante:** "Aprobar y enviar" **sí manda el mensaje** — es una decisión humana en un clic.
+> Si preferís revisar, usá **Editar antes**.
 
----
-
-## 7. Fuentes de la respuesta
-
-Debajo de la sugerencia, la sección **Fuentes** lista los documentos que la IA usó para redactar la
-respuesta (por ejemplo, guías internas o manuales de producto indexados en AlfaKnowledge).
-
-- Cada fuente abre en una pestaña nueva.
-- Si el documento es local, se abre en el visor propio de AlfaKnowledge.
-- Si una fuente no tiene una URL directa, se abre una búsqueda por su título.
-
-Revisar las fuentes es útil cuando querés confirmar que la sugerencia se basa en información
-correcta y actualizada antes de enviarla.
+También podés elegir **qué contexto lee la IA** (selector "Contexto que leerá la IA"): *Tramo
+actual* (por defecto), *Toda la conversación* o *Mensaje marcado* (marcado con ⭐).
 
 ---
 
-## 8. Hablarle a la IA sobre el caso
+## 7. Tono y traducción del borrador
 
-El campo **"Hablá con la IA sobre este caso"**, al final del panel, es un chat aparte de la
-conversación con el cliente. Ahí le podés pedir cosas como:
+En el compositor, junto al botón de "mejorar con IA" (✨), el botón **Aa** abre un menú para
+reescribir el borrador que estás escribiendo:
 
-- *"Resumime el problema."*
-- *"¿Qué información me falta pedirle al cliente?"*
-- *"Redactá una respuesta más breve."*
+- **Tono:** Formal · Cordial · Más breve · Más amable.
+- **Traducir:** Inglés · Portugués.
 
-Este intercambio con la IA queda separado de la charla real con el cliente: nunca se mezcla ni se
-envía por WhatsApp/Instagram/Facebook/Mercado Libre.
-
----
-
-## 9. Abrir AlfaKnowledge completo
-
-El enlace **"Abrir AlfaKnowledge completo"** lleva a la aplicación original de AlfaKnowledge, con
-sus módulos de **Chat**, **Historial**, **Buscar**, **Artículos**, **Curado** y
-**Administración**. Usalo cuando necesites algo que el panel resumido de Conversaciones no cubre,
-por ejemplo revisar o corregir la documentación indexada.
+Reescribe el texto manteniendo la intención y los datos (sin agregar cosas). Requiere tener algo
+escrito en el compositor.
 
 ---
 
-## 10. Qué hace y qué NO hace el asistente
+## 8. Fuentes de la respuesta
+
+La sección **Fuentes** lista los documentos de la base que la IA usó. Cada fuente abre en pestaña
+nueva. Revisá las fuentes cuando la respuesta trate **precios, condiciones o políticas**.
+
+---
+
+## 9. Hablarle a la IA sobre el caso
+
+El campo **"Hablá con la IA sobre este caso"** es un chat aparte (no se envía al cliente). Sirve
+para pedir resúmenes, aclaraciones o versiones alternativas.
+
+---
+
+## 10. Configuración: instrucciones del asistente
+
+*(Sección para admin/soporte — Configuración de Conversaciones → sección AlfaKnowledge.)*
+
+- **Base URL / API Key / Knowledge Base Id:** conexión con AlfaKnowledge. El **Knowledge Base Id**
+  es el "sector Conversaciones" — la base/colección de conocimiento que consulta el asistente.
+- **Instrucciones del asistente:** un texto donde definís **cómo debe actuar y responder** el
+  asistente: persona, tono, reglas, qué escalar, qué **no** decir. Ej: *"Sos el asistente de Alfa
+  Net. Respondé cordial y breve en español rioplatense. No inventes precios: si preguntan precio,
+  ofrecé pasar con un vendedor."* Se **anteponen** a cada sugerencia de respuesta.
+
+Cambiar estas instrucciones **no requiere tocar código**: se guardan en la configuración de la base
+activa (`TA_CONFIGURACION`, claves `CONV_ALFAKNOWLEDGE_*`).
+
+---
+
+## 11. Automatizaciones: fuera de horario y bot autónomo
+
+*(Sección para admin/soporte — Configuración de Conversaciones → Automatizaciones. Requiere el
+módulo AUTOMATIZACIONES activo.)*
+
+### Fuera de horario (Nivel 0, regla fija)
+Respuesta automática fija cuando llega un WhatsApp fuera del horario/días configurados. Sin IA.
+
+### Bot autónomo (Nivel 3, con IA) — **apagado por defecto**
+El bot responde WhatsApp entrantes **por sí solo**, pero **solo si cumple TODOS** estos
+guardarraíles; si falla cualquiera, **escala silenciosamente a un humano** (queda sin asignar):
+
+1. **Bot activo** (interruptor) + AlfaKnowledge configurado.
+2. **Sin palabras de escalado** en el mensaje (configurable: humano, persona, reclamo, operador…).
+3. **Conversación sin asignar** (si un humano la tomó, el bot calla) — opción recomendada.
+4. **Ventana de 24h de WhatsApp activa.**
+5. **No superó el tope** de respuestas por conversación (configurable, evita loops).
+6. **La IA tiene respaldo suficiente** (contexto + fuentes citadas, sin pedir aclaración).
+
+Cada respuesta automática (`BotAutoReply`) y cada escalado (`BotHandoff`) quedan **auditados**.
+
+> **Recomendación:** habilitarlo primero en una base de prueba, con el "sector Conversaciones"
+> curado y las **instrucciones del asistente** cargadas, y con **"solo sin asignar"** tildado.
+> Es la única función donde la IA **manda mensajes sin un humano** — usarla con criterio.
+
+---
+
+## 12. Prioridad, asignación automática e íconos del inbox
+
+- **Badge de prioridad P1-P4:** sobre el avatar, un badge con el **color de la clasificación** del
+  cliente (Archivos → Tablas → Clasificaciones). P1 = más importante. Sin clasificación → sin badge.
+- **Línea del usuario asignado:** una línea vertical de color a la izquierda de la fila indica el
+  técnico asignado (no se pinta toda la fila).
+- **Avatar:** contactos sin foto muestran las **iniciales** del nombre y un **color propio por
+  contacto**. El ícono de canal (WhatsApp/Instagram/…) va sobre el avatar con su color.
+- **Auto-asignación:** el primero que responde una conversación sin dueño queda asignado.
+
+---
+
+## 13. Qué hace y qué NO hace
 
 **Hace:**
-- Lee el contexto que elegiste de la conversación.
-- Busca en la documentación indexada de Alfa Gestión.
-- Propone una respuesta redactada, con sus fuentes.
-- Permite pedirle ajustes, resúmenes o aclaraciones.
+- Analiza la conversación (resumen, intención, sentimiento).
+- Propone respuestas con fuentes y un semáforo de confianza.
+- Permite aprobar-y-enviar, editar, cambiar el tono o traducir.
+- (Opcional) responde solo con guardarraíles, o escala a un humano.
 
 **No hace:**
-- No envía mensajes al cliente por su cuenta: la sugerencia siempre pasa por **Llevar a
-  respuesta** y el agente decide cuándo enviarla.
-- No reemplaza el criterio del agente ni el trato humano con el cliente.
-- No inventa políticas ni condiciones comerciales: si el contexto no alcanza, el asistente lo va a
-  indicar en vez de responder con algo incorrecto.
-- La atención normal de la conversación sigue funcionando igual aunque AlfaKnowledge no responda o
-  no esté disponible.
+- **En modo copiloto**, no envía nada solo: el agente aprueba o edita.
+- No inventa precios ni políticas: si no tiene respaldo, lo indica en vez de arriesgar.
+- No reemplaza el criterio del agente.
+- El **bot autónomo** sí puede enviar solo, pero **solo si está habilitado** y **solo** dentro de
+  los guardarraíles; ante la duda, escala.
 
 ---
 
-## 11. Buenas prácticas
+## 14. Requisitos técnicos y diagnóstico
 
-- Antes de mandar una sugerencia, leela: es un borrador, no una respuesta final automática.
-- Si el caso es puntual (una sola pregunta), marcá el mensaje con la estrella y usá **Mensaje
-  marcado** como contexto — vas a tener una respuesta más precisa.
-- Si el cliente retoma un tema de hace varios días, probá **Toda la conversación** en vez de
-  **Tramo actual**.
-- Revisá las **Fuentes** cuando la respuesta trate sobre precios, condiciones o políticas — así
-  confirmás que la IA se basó en lo correcto.
-- Si la sugerencia no sirve, usá **Corregir respuesta** en vez de reescribir todo de cero: suele
-  ser más rápido.
+| Función | Requiere |
+|---|---|
+| Panel del asistente | Módulo **ALFAKNOWLEDGE** activo |
+| Sugerencia de respuesta (RAG) + fuentes | AlfaKnowledge configurado (URL, API key, KB id) |
+| Análisis / tono / traducción / extracción a CRM | `OPENAI_API_KEY` en el server |
+| Fuera de horario / bot autónomo | Módulo **AUTOMATIZACIONES** activo |
+| Badge de prioridad | `TA_CLASIFICACIONES` con color |
+
+Diagnóstico rápido:
+- *No aparece el asistente* → módulo ALFAKNOWLEDGE inactivo o AlfaKnowledge sin configurar.
+- *"El análisis por IA no está configurado"* → falta `OPENAI_API_KEY` (reiniciar la app).
+- *La sugerencia no trae fuentes* → el sector de conocimiento no tiene contenido indexado.
+- *El bot no responde* → revisar los 6 guardarraíles y la auditoría `BotHandoff`.
 
 ---
 
-## 12. Preguntas frecuentes
+## 15. Preguntas frecuentes
 
-### ¿La IA le contesta al cliente directamente?
-No. Todo pasa por el agente. La IA solo redacta una propuesta que se lleva al cuadro de respuesta
-con **Llevar a respuesta**.
+**¿La IA le contesta al cliente sola?**
+En modo copiloto, no: el agente aprueba o edita. Solo el **bot autónomo** (si el admin lo habilita)
+responde solo, y únicamente dentro de sus guardarraíles.
 
-### ¿Puedo seguir atendiendo si AlfaKnowledge no responde?
-Sí. El panel puede fallar o no tener contexto suficiente y la conversación se sigue atendiendo
-normalmente, sin la sugerencia.
+**¿Qué diferencia hay entre "Aprobar y enviar" y "Editar antes"?**
+"Aprobar y enviar" manda la respuesta del asistente tal cual, en un clic. "Editar antes" la copia
+al compositor para que la ajustes y la envíes vos.
 
-### ¿El chat con la IA queda guardado en la conversación del cliente?
-No. Es un espacio aparte, pensado solo para el agente.
+**¿Cómo cambio la forma en que responde el asistente?**
+Con las **Instrucciones del asistente** (Config → AlfaKnowledge). No hace falta tocar código.
 
-### ¿Sirve para cualquier canal?
-Sí, está disponible en WhatsApp, Instagram, Facebook, Mercado Libre y Chat interno, de la misma
-forma en todos.
+**¿El bot puede mandar algo incorrecto?**
+Solo responde con respaldo de la base; ante baja confianza, palabras de escalado, ventana vencida o
+tope alcanzado, **no responde** y escala. Aun así, conviene curar bien el conocimiento antes de
+activarlo en producción.
 
-### ¿Qué hago si la respuesta sugerida está basada en información vieja o incorrecta?
-Revisá las fuentes citadas. Si el documento está desactualizado, es un tema a corregir en la
-documentación indexada de AlfaKnowledge (sección **Curado**, dentro de *Abrir AlfaKnowledge
-completo*), no algo que se solucione en la conversación puntual.
+**¿Puedo seguir atendiendo si la IA no está disponible?**
+Sí. La atención normal funciona igual aunque el asistente no responda.
 
 ---
 
 ## Cierre
 
-AlfaKnowledge en Conversaciones está para ahorrar tiempo de redacción y ayudar a no perder
-información importante, no para reemplazar el criterio del agente. Usalo como un compañero que
-propone un borrador y cita sus fuentes — la palabra final siempre es tuya.
+La IA en Conversaciones está para **ahorrar tiempo** y **no perder información**, no para reemplazar
+el criterio humano. En copiloto, la palabra final es del agente; el bot autónomo es una herramienta
+potente que se habilita con cuidado y guardarraíles.
