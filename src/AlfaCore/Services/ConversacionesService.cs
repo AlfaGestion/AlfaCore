@@ -857,7 +857,9 @@ public sealed class ConversacionesService(
                     ISNULL(ultMsg.MessageType, N''),
                     ISNULL(mlMeta.QuestionStatus, N''),
                     ISNULL(mlMeta.ItemStatus, N''),
-                    ISNULL(clasificacionCliente.Descripcion, N'')
+                    ISNULL(clasificacionCliente.Descripcion, N''),
+                    ISNULL(clienteClasificacion.Codigo, N''),
+                    ISNULL(clasificacionCliente.Color, 0)
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
@@ -906,7 +908,7 @@ public sealed class ConversacionesService(
                       AND UPPER(LTRIM(RTRIM(cliCls.CODIGO))) = UPPER(LTRIM(RTRIM(COALESCE(NULLIF(c.ClienteCodigo, ''), contactoCuenta.Cuenta, ''))))
                 ) clienteClasificacion
                 OUTER APPLY (
-                    SELECT TOP (1) ISNULL(cls.Descripcion, '') AS Descripcion
+                    SELECT TOP (1) ISNULL(cls.Descripcion, '') AS Descripcion, ISNULL(cls.Color, 0) AS Color
                     FROM dbo.TA_CLASIFICACIONES cls
                     WHERE UPPER(LTRIM(RTRIM(cls.Codigo))) = UPPER(LTRIM(RTRIM(clienteClasificacion.Codigo)))
                 ) clasificacionCliente
@@ -1262,7 +1264,9 @@ public sealed class ConversacionesService(
                     TipoUltimoMensaje = GetString(rd, 27),
                     MercadoLibreQuestionStatus = GetString(rd, 28),
                     MercadoLibreItemStatus = GetString(rd, 29),
-                    ClasificacionDescripcion = GetString(rd, 30)
+                    ClasificacionDescripcion = GetString(rd, 30),
+                    ClasificacionCodigo = GetString(rd, 31),
+                    ClasificacionColorHex = rd.IsDBNull(32) ? string.Empty : VbColorIntToHex(Convert.ToInt32(rd.GetValue(32)))
                 });
             }
 
@@ -2251,6 +2255,10 @@ public sealed class ConversacionesService(
                 SistemaAutor = request.SistemaAccion,
                 IdTecnicoAutor = request.IdTecnicoAutor
             }, token);
+
+            // Si nadie tenía la conversación, el primer técnico que responde queda asignado.
+            if (!isInternal && !string.IsNullOrWhiteSpace(request.IdTecnicoAutor))
+                await AutoAssignIfUnassignedAsync(request.IdConversacion, request.IdTecnicoAutor.Trim(), request.UsuarioAccion, request.SistemaAccion, token);
 
             string whatsAppMessageId = string.Empty;
             string externalMessageId = string.Empty;
@@ -6179,6 +6187,54 @@ public sealed class ConversacionesService(
         var normalized = senderId.Trim();
         var suffix = normalized.Length <= 6 ? normalized : normalized[^6..];
         return string.IsNullOrWhiteSpace(suffix) ? "Contacto de Facebook" : $"Facebook ...{suffix}";
+    }
+
+    // Asigna la conversación al técnico SOLO si todavía no tiene ninguno (update condicional
+    // atómico). Registra el movimiento en CONV_ASIGNACIONES. No pisa una asignación existente.
+    private async Task AutoAssignIfUnassignedAsync(long idConversacion, string idTecnico, string? usuarioAccion, string? sistemaAccion, CancellationToken ct)
+    {
+        var technicianId = await ResolveTechnicianIdOrNullAsync(idTecnico, ct);
+        if (string.IsNullOrWhiteSpace(technicianId))
+            return;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
+        try
+        {
+            int affected;
+            await using (var cmd = new SqlCommand("""
+                UPDATE dbo.CONV_CONVERSACIONES
+                SET IdTecnico = @IdTecnico, FechaHora_Modificacion = GETDATE()
+                WHERE IdConversacion = @IdConversacion
+                  AND NULLIF(LTRIM(RTRIM(ISNULL(IdTecnico, N''))), N'') IS NULL;
+                """, cn, tx))
+            {
+                cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+                cmd.Parameters.AddWithValue("@IdTecnico", technicianId);
+                affected = await cmd.ExecuteNonQueryAsync(ct);
+            }
+
+            if (affected > 0)
+            {
+                await using var histCmd = new SqlCommand("""
+                    INSERT INTO dbo.CONV_ASIGNACIONES (IdConversacion, FechaHora, IdTecnico, UsuarioAccion, SistemaAccion, Observaciones)
+                    VALUES (@IdConversacion, GETDATE(), @IdTecnico, @UsuarioAccion, @SistemaAccion, N'Auto-asignada al responder');
+                    """, cn, tx);
+                histCmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+                histCmd.Parameters.AddWithValue("@IdTecnico", technicianId);
+                histCmd.Parameters.AddWithValue("@UsuarioAccion", DbNullable(usuarioAccion));
+                histCmd.Parameters.AddWithValue("@SistemaAccion", DbNullable(sistemaAccion));
+                await histCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await tx.CommitAsync(ct);
+        }
+        catch
+        {
+            await tx.RollbackAsync(ct);
+            throw;
+        }
     }
 
     private async Task<ConversationIdentity> RequireConversationAsync(long idConversacion, CancellationToken ct)
@@ -10603,6 +10659,17 @@ public sealed class ConversacionesService(
 
     private static int GetInt(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? 0 : Convert.ToInt32(rd.GetValue(index), CultureInfo.InvariantCulture);
+
+    // TA_CLASIFICACIONES.Color guarda un long de VB6 (&H00BBGGRR, canales invertidos respecto a web).
+    private static string VbColorIntToHex(int value)
+    {
+        if (value == 0)
+            return string.Empty;
+        var r = value & 0xFF;
+        var g = (value >> 8) & 0xFF;
+        var b = (value >> 16) & 0xFF;
+        return $"#{r:X2}{g:X2}{b:X2}";
+    }
 
     private static TimeSpan? GetNullableTimeSpan(SqlDataReader rd, int index)
     {

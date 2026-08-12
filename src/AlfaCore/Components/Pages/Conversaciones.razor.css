@@ -2789,6 +2789,29 @@
     overflow: visible !important;
 }
 
+/* Prioridad de atención (P1-P4) = clasificación del cliente, con su color. Va en la
+   esquina superior del avatar, al lado del ícono de canal (que está abajo). */
+.conversations-page--odoo .conversation-row__priority {
+    position: absolute;
+    top: -6px;
+    right: -8px;
+    z-index: 6;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .64rem;
+    font-weight: 700;
+    line-height: 1;
+    color: #0b1822;
+    background: var(--priority-color, #64748b);
+    border: 2px solid #0b1822;
+    border-radius: 999px;
+    box-shadow: 0 4px 10px rgba(2, 6, 23, .36);
+}
+
 .conversations-page--instagram .conversation-row--instagram,
 .conversations-page--facebook .conversation-row--facebook,
 .conversations-page--mercadolibre .conversation-row--mercadolibre,

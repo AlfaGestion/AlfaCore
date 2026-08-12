@@ -178,6 +178,10 @@ public sealed class ConversacionInboxItemDto
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
     public string ClasificacionDescripcion { get; set; } = string.Empty;
+    /// <summary>Código de TA_CLASIFICACIONES del cliente (1..N) — se muestra como prioridad P{código}.</summary>
+    public string ClasificacionCodigo { get; set; } = string.Empty;
+    /// <summary>Color de la clasificación en "#RRGGBB", vacío si no hay clasificación.</summary>
+    public string ClasificacionColorHex { get; set; } = string.Empty;
     public int? IdContacto { get; set; }
     public string ContactoNombre { get; set; } = string.Empty;
     public string CodigoEstado { get; set; } = string.Empty;

@@ -850,6 +850,14 @@
                                     <span class="conversation-row__channel-badge conversation-row__channel-badge--@item.Canal.ToLowerInvariant()" title="@GetCanalLabel(item.Canal)">
                                         <i class="bi @GetCanalIcon(item.Canal)"></i>
                                     </span>
+                                    @if (!string.IsNullOrWhiteSpace(item.ClasificacionCodigo))
+                                    {
+                                        <span class="conversation-row__priority"
+                                              style="--priority-color:@(string.IsNullOrWhiteSpace(item.ClasificacionColorHex) ? "#64748b" : item.ClasificacionColorHex);"
+                                              title="@($"Prioridad P{item.ClasificacionCodigo} · {item.ClasificacionDescripcion}")">
+                                            P@item.ClasificacionCodigo
+                                        </span>
+                                    }
                                 </span>
                                 <div class="conversation-row__content">
                                 <div class="conversation-row__top">
