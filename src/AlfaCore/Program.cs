@@ -130,11 +130,13 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<ITablasReferenciaService, TablasReferenciaService>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
         builder.Services.AddScoped<INotificacionesPushService, NotificacionesPushService>();
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
         builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
         builder.Services.AddScoped<ICrmService, CrmService>();
+        builder.Services.AddScoped<ICrmCotizacionService, CrmCotizacionService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
         builder.Services.AddScoped<ITareasService, TareasService>();
@@ -313,6 +315,18 @@ public class Program
             if (!File.Exists(file.RutaCompleta)) return Results.NotFound("El archivo ya no existe en el servidor.");
             return Results.File(file.RutaCompleta, contentType, file.NombreArchivo);
         });
+
+        app.MapGet("/cotizacion/{idbase:int}/{token}", async (
+            int idbase,
+            string token,
+            ICrmCotizacionService cotizSvc,
+            CancellationToken ct) =>
+        {
+            var html = await cotizSvc.RenderPublicHtmlAsync(idbase, token, ct);
+            return html is null
+                ? Results.NotFound("La cotización no existe o el enlace expiró.")
+                : Results.Content(html, "text/html; charset=utf-8");
+        }).AllowAnonymous();
 
         app.MapGet("/api/usuarios/{nombre}/foto", async (
             string nombre,

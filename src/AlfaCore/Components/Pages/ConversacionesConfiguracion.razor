@@ -703,6 +703,216 @@
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
                     <div>
+                        <h3 class="panel-card__title">Prioridad de atención</h3>
+                        <p class="panel-card__subtitle">Qué clasificación de cliente cuenta como prioridad 1 (más importante), 2 o 3 para ordenar la cola de espera. El resto (sin clasificar o con otra clasificación) queda al final.</p>
+                    </div>
+                    <span class="panel-card__tag">CLASIFICA1/2/3</span>
+                </div>
+
+                <div class="conv-config-fields">
+                    <div class="field">
+                        <label for="prioridad-1">Prioridad 1 (más importante)</label>
+                        <select id="prioridad-1" @bind="_prioridadConfig.Clasifica1">
+                            <option value="">Sin asignar</option>
+                            @foreach (var opcion in _clasificaciones)
+                            {
+                                <option value="@opcion.Codigo">@opcion.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="prioridad-2">Prioridad 2 (media)</label>
+                        <select id="prioridad-2" @bind="_prioridadConfig.Clasifica2">
+                            <option value="">Sin asignar</option>
+                            @foreach (var opcion in _clasificaciones)
+                            {
+                                <option value="@opcion.Codigo">@opcion.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="prioridad-3">Prioridad 3 (baja)</label>
+                        <select id="prioridad-3" @bind="_prioridadConfig.Clasifica3">
+                            <option value="">Sin asignar</option>
+                            @foreach (var opcion in _clasificaciones)
+                            {
+                                <option value="@opcion.Codigo">@opcion.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="SavePrioridadAsync" disabled="@(Loading || Saving)">
+                        <i class="bi bi-floppy-fill"></i> Guardar prioridad
+                    </button>
+                </div>
+            </section>
+
+            <aside class="panel-card conv-config-help">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Cómo funciona</h3>
+                        <p class="panel-card__subtitle">Cómo se arma la cola de espera con esto.</p>
+                    </div>
+                    <span class="panel-card__tag">Cola de espera</span>
+                </div>
+
+                <ol class="conv-config-steps">
+                    <li>El inbox ordena primero por prioridad (1, 2, 3, resto) y dentro de cada grupo por cuánto tiempo lleva esperando respuesta.</li>
+                    <li>La clasificación de cada cliente se carga desde Clientes (Cuentas Comerciales) — acá solo se define qué clasificación pesa más.</li>
+                    <li>Estas claves (<code>CLASIFICA1/2/3</code>) son las mismas que ya usa Desktop, no son propias de Conversaciones: configurarlas acá también las cambia allá.</li>
+                </ol>
+            </aside>
+    </div>
+
+    <div class="conv-config-layout">
+            <section class="panel-card conv-config-form">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Números de WhatsApp</h3>
+                        <p class="panel-card__subtitle">Cada número queda atendido por los usuarios que marques. Un número sin usuarios queda visible solo para los administradores de conversaciones.</p>
+                    </div>
+                    <span class="panel-card__tag">CONV_WHATSAPP_NUMEROS</span>
+                </div>
+
+                @foreach (var numero in _numeros)
+                {
+                    <div class="conv-whatsapp-numero-card">
+                        <div class="conv-config-fields">
+                            <div class="field">
+                                <label>Nombre</label>
+                                <input @bind="numero.Nombre" placeholder="Ej: Ventas Norte" />
+                            </div>
+                            <div class="field">
+                                <label>Phone Number ID</label>
+                                <input @bind="numero.PhoneNumberId" placeholder="Ej: 109876543210" />
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="numero.Activo" />
+                                <span>Activo</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label>Usuarios con acceso a este número</label>
+                            <div class="conv-config-checklist">
+                                @foreach (var usuario in _usuariosSistema)
+                                {
+                                    <label class="conv-config-checkbox">
+                                        <input type="checkbox"
+                                               checked="@numero.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
+                                               @onchange="args => ToggleNumeroUsuario(numero, usuario.Nombre, args.Value is bool b && b)" />
+                                        <span>@usuario.Nombre</span>
+                                    </label>
+                                }
+                                @if (_usuariosSistema.Count == 0)
+                                {
+                                    <span class="panel-card__subtitle">No hay usuarios activos en este sistema.</span>
+                                }
+                            </div>
+                        </div>
+                        <div class="actions">
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="() => SaveNumeroAsync(numero)" disabled="@(Loading || Saving)">
+                                <i class="bi bi-floppy-fill"></i> Guardar número
+                            </button>
+                        </div>
+                    </div>
+                }
+
+                <div class="conv-whatsapp-numero-card conv-whatsapp-numero-card--nuevo">
+                    <div class="conv-config-fields">
+                        <div class="field">
+                            <label>Nombre del número nuevo</label>
+                            <input @bind="_nuevoNumero.Nombre" placeholder="Ej: Ventas Sur" />
+                        </div>
+                        <div class="field">
+                            <label>Phone Number ID</label>
+                            <input @bind="_nuevoNumero.PhoneNumberId" placeholder="Ej: 109876543211" />
+                        </div>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--ghost" @onclick="AddNumeroAsync" disabled="@(Loading || Saving)">
+                            <i class="bi bi-plus-circle"></i> Agregar número
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="panel-card conv-config-help">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Cómo funciona</h3>
+                        <p class="panel-card__subtitle">Qué cambia al tener más de un número.</p>
+                    </div>
+                    <span class="panel-card__tag">Multi-número</span>
+                </div>
+
+                <ol class="conv-config-steps">
+                    <li>Un usuario normal solo ve, en el inbox, las conversaciones de los números donde está marcado como usuario acá.</li>
+                    <li>Un administrador de conversaciones (sección de abajo) ve y puede responder por cualquier número, sin restricción.</li>
+                    <li>Apenas entra el primer mensaje de un cliente, la conversación queda fijada a ese número para siempre — Meta habilita 24 h de respuesta por par número-cliente, así que no conviene cambiarlo después.</li>
+                    <li>Desactivar un número (sin borrarlo) deja de mostrarlo para asignar usuarios nuevos, pero no toca las conversaciones que ya tiene.</li>
+                </ol>
+            </aside>
+    </div>
+
+    <div class="conv-config-layout">
+            <section class="panel-card conv-config-form">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Administradores de conversaciones</h3>
+                        <p class="panel-card__subtitle">Ven y pueden responder por cualquier número de WhatsApp, sin importar a cuáles estén vinculados.</p>
+                    </div>
+                    <span class="panel-card__tag">CONV_ADMINISTRADORES</span>
+                </div>
+
+                <div class="conv-config-checklist">
+                    @foreach (var usuario in _usuariosSistema)
+                    {
+                        <label class="conv-config-checkbox">
+                            <input type="checkbox"
+                                   checked="@_administradores.Contains(usuario.Nombre)"
+                                   @onchange="args => ToggleAdministrador(usuario.Nombre, args.Value is bool b && b)" />
+                            <span>@usuario.Nombre</span>
+                        </label>
+                    }
+                    @if (_usuariosSistema.Count == 0)
+                    {
+                        <span class="panel-card__subtitle">No hay usuarios activos en este sistema.</span>
+                    }
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="SaveAdministradoresAsync" disabled="@(Loading || Saving)">
+                        <i class="bi bi-floppy-fill"></i> Guardar administradores
+                    </button>
+                </div>
+            </section>
+
+            <aside class="panel-card conv-config-help">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Cómo funciona</h3>
+                        <p class="panel-card__subtitle">Es propio de Conversaciones, no el admin general del sistema.</p>
+                    </div>
+                    <span class="panel-card__tag">Solo este módulo</span>
+                </div>
+
+                <ol class="conv-config-steps">
+                    <li>Es independiente de "Administrador del sistema" (Autorización de tareas) — alguien puede ser admin de conversaciones sin serlo del sistema, y viceversa.</li>
+                    <li>Pensado para quien coordina el equipo de atención: supervisores, encargados de WhatsApp, etc.</li>
+                </ol>
+            </aside>
+    </div>
+
+    <div class="conv-config-layout">
+            <section class="panel-card conv-config-form">
+                <div class="panel-card__header">
+                    <div>
                         <h3 class="panel-card__title"><i class="bi bi-display"></i> AnyDesk</h3>
                         <p class="panel-card__subtitle">Generá un archivo para registrar AnyDesk en tu propia PC, no en el servidor.</p>
                     </div>
@@ -769,6 +979,12 @@
     private ConversacionMercadoLibreConfigDto _mercadoLibreConfig = new();
     private ConversacionAlfaKnowledgeConfigDto _alfaKnowledgeConfig = new();
     private ConversacionAutomatizacionesConfigDto _automatizacionesConfig = new();
+    private ConversacionPrioridadConfigDto _prioridadConfig = new();
+    private IReadOnlyList<ConversacionClasificacionOptionDto> _clasificaciones = [];
+    private IReadOnlyList<UsuarioSistemaDto> _usuariosSistema = [];
+    private IReadOnlyList<ConversacionWhatsAppNumeroDto> _numeros = [];
+    private ConversacionWhatsAppNumeroDto _nuevoNumero = new() { Activo = true };
+    private HashSet<string> _administradores = new(StringComparer.OrdinalIgnoreCase);
     private string _anyDeskPath = string.Empty;
     private bool Loading { get; set; }
     private bool Saving { get; set; }
@@ -930,7 +1146,186 @@
             _feedback ??= automatizacionesResult.Feedback;
         }
 
+        var clasificacionesResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetClasificacionesAsync(),
+            "No se pudieron cargar las clasificaciones de clientes.");
+
+        if (clasificacionesResult.Success && clasificacionesResult.Value is not null)
+        {
+            _clasificaciones = clasificacionesResult.Value;
+        }
+        else
+        {
+            _feedback ??= clasificacionesResult.Feedback;
+        }
+
+        var prioridadResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetPrioridadConfigAsync(),
+            "No se pudo cargar la configuración de prioridad de atención.");
+
+        if (prioridadResult.Success && prioridadResult.Value is not null)
+        {
+            _prioridadConfig = prioridadResult.Value;
+        }
+        else
+        {
+            _feedback ??= prioridadResult.Feedback;
+        }
+
+        var usuariosResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetUsuariosSistemaAsync(),
+            "No se pudieron cargar los usuarios del sistema.");
+
+        if (usuariosResult.Success && usuariosResult.Value is not null)
+        {
+            _usuariosSistema = usuariosResult.Value;
+        }
+        else
+        {
+            _feedback ??= usuariosResult.Feedback;
+        }
+
+        await LoadNumerosAsync();
+
+        var administradoresResult = await UiOps.RunAsync(
+            () => ConfigSvc.GetConversacionAdministradoresAsync(),
+            "No se pudieron cargar los administradores de conversaciones.");
+
+        if (administradoresResult.Success && administradoresResult.Value is not null)
+        {
+            _administradores = new HashSet<string>(administradoresResult.Value, StringComparer.OrdinalIgnoreCase);
+        }
+        else
+        {
+            _feedback ??= administradoresResult.Feedback;
+        }
+
         Loading = false;
+    }
+
+    private async Task LoadNumerosAsync()
+    {
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.GetWhatsAppNumerosAsync(),
+            "No se pudieron cargar los números de WhatsApp.");
+
+        if (result.Success && result.Value is not null)
+        {
+            _numeros = result.Value;
+        }
+        else
+        {
+            _feedback ??= result.Feedback;
+        }
+    }
+
+    private static void ToggleNumeroUsuario(ConversacionWhatsAppNumeroDto numero, string usuario, bool isChecked)
+    {
+        if (isChecked)
+        {
+            if (!numero.Usuarios.Contains(usuario, StringComparer.OrdinalIgnoreCase))
+                numero.Usuarios.Add(usuario);
+        }
+        else
+        {
+            numero.Usuarios.RemoveAll(u => string.Equals(u, usuario, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private async Task SaveNumeroAsync(ConversacionWhatsAppNumeroDto numero)
+    {
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWhatsAppNumeroAsync(numero),
+            "No se pudo guardar el número de WhatsApp.");
+
+        if (result.Success)
+        {
+            _feedback = AppUiMessage.Success("Número guardado", $"'{numero.Nombre}' quedó actualizado.");
+            await LoadNumerosAsync();
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
+    private async Task AddNumeroAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nuevoNumero.PhoneNumberId) || string.IsNullOrWhiteSpace(_nuevoNumero.Nombre))
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Faltan datos",
+                Message = "Completá nombre y Phone Number ID antes de agregar el número."
+            };
+            return;
+        }
+
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWhatsAppNumeroAsync(_nuevoNumero),
+            "No se pudo agregar el número de WhatsApp.");
+
+        if (result.Success)
+        {
+            _feedback = AppUiMessage.Success("Número agregado", $"'{_nuevoNumero.Nombre}' ya está disponible.");
+            _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
+            await LoadNumerosAsync();
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
+    private void ToggleAdministrador(string usuario, bool isChecked)
+    {
+        if (isChecked)
+            _administradores.Add(usuario);
+        else
+            _administradores.Remove(usuario);
+    }
+
+    private async Task SaveAdministradoresAsync()
+    {
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveConversacionAdministradoresAsync(_administradores.ToList()),
+            "No se pudieron guardar los administradores de conversaciones.");
+
+        _feedback = result.Success
+            ? AppUiMessage.Success("Administradores guardados", "Los usuarios marcados ya pueden ver y responder por cualquier número.")
+            : result.Feedback;
+
+        Saving = false;
+    }
+
+    private async Task SavePrioridadAsync()
+    {
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SavePrioridadConfigAsync(_prioridadConfig),
+            "No se pudo guardar la configuración de prioridad de atención.");
+
+        _feedback = result.Success
+            ? AppUiMessage.Success("Prioridad guardada", "La cola de espera del inbox ya usa este orden de prioridad.")
+            : result.Feedback;
+
+        Saving = false;
     }
 
     private async Task SaveAutomatizacionesAsync()

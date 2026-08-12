@@ -882,15 +882,15 @@
 
 .conversations-page--odoo .conversation-row__avatar {
     background: linear-gradient(135deg, #0ea5e9, #38bdf8) !important;
-    overflow: hidden !important;
 }
 
-.conversations-page--odoo .conversation-row__avatar img,
+.conversations-page--odoo .conversation-row__avatar:not(.conversation-row__avatar--mercadolibre) img,
 .conversations-page--odoo .conversation-profile-avatar img {
     display: block;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    border-radius: 999px;
 }
 
 .conversations-page--odoo .conversation-profile-avatar {
@@ -965,6 +965,24 @@
 
 .conversations-page--odoo .conversations-chat__identity {
     min-width: 0 !important;
+}
+
+.conversations-page--whatsapp .conversations-chat__identity {
+    display: grid !important;
+    grid-template-columns: 44px minmax(0, 1fr) !important;
+    align-items: center !important;
+    column-gap: .65rem !important;
+    padding-left: 0 !important;
+}
+
+.conversations-page--whatsapp .conversation-profile-avatar {
+    grid-column: 1;
+    grid-row: 1 / span 2;
+}
+
+.conversations-page--whatsapp .conversation-profile-avatar + div,
+.conversations-page--whatsapp .conversations-chat__chips {
+    grid-column: 2;
 }
 
 .conversations-page--instagram .conversations-chat__identity {
@@ -2665,4 +2683,308 @@
 .conversations-page--odoo .conversations-improve-ai i {
     margin: 0 !important;
     font-size: .82rem;
+}
+
+/* Overrides finales por canal: deben quedar al cierre del archivo para no ser
+   pisados por el color del tecnico asignado ni por el acabado WhatsApp base. */
+.conversations-page--instagram {
+    --channel-accent: #db2777;
+    --channel-accent-2: #f97316;
+    --channel-soft: rgba(219, 39, 119, .075);
+    --channel-row: rgba(219, 39, 119, .045);
+    --channel-row-selected: rgba(219, 39, 119, .095);
+    --channel-incoming: linear-gradient(135deg, rgba(40, 45, 62, .98), rgba(44, 37, 54, .98));
+    --channel-outgoing: linear-gradient(135deg, rgba(123, 55, 91, .78), rgba(114, 68, 49, .7));
+    --channel-meta: #e9a9c9;
+}
+
+.conversations-page--facebook {
+    --channel-accent: #1877f2;
+    --channel-accent-2: #60a5fa;
+    --channel-soft: rgba(24, 119, 242, .075);
+    --channel-row: rgba(24, 119, 242, .045);
+    --channel-row-selected: rgba(24, 119, 242, .105);
+    --channel-incoming: linear-gradient(135deg, rgba(31, 51, 72, .98), rgba(27, 43, 62, .98));
+    --channel-outgoing: linear-gradient(135deg, rgba(32, 87, 150, .78), rgba(25, 103, 132, .7));
+    --channel-meta: #b9d4f6;
+}
+
+.conversations-page--mercadolibre {
+    --channel-accent: #fee600;
+    --channel-accent-2: #f59e0b;
+    --channel-soft: rgba(254, 230, 0, .065);
+    --channel-row: rgba(254, 230, 0, .04);
+    --channel-row-selected: rgba(254, 230, 0, .09);
+    --channel-incoming: linear-gradient(135deg, rgba(48, 49, 42, .98), rgba(38, 40, 38, .98));
+    --channel-outgoing: linear-gradient(135deg, rgba(132, 112, 34, .76), rgba(137, 91, 26, .68));
+    --channel-meta: #eadc9a;
+}
+
+.conversations-page--whatsapp {
+    --channel-accent: #25d366;
+    --channel-accent-2: #00a884;
+    --channel-soft: rgba(37, 211, 102, .075);
+    --channel-row: rgba(37, 211, 102, .04);
+    --channel-row-selected: rgba(37, 211, 102, .09);
+    --channel-incoming: linear-gradient(135deg, rgba(31, 51, 49, .98), rgba(31, 44, 49, .98));
+    --channel-outgoing: linear-gradient(135deg, rgba(21, 102, 82, .82), rgba(16, 91, 79, .76));
+    --channel-meta: #a9d8c6;
+}
+
+.conversations-page--whatsapp .conversations-chat__identity::before,
+.conversations-page--instagram .conversations-chat__identity::before,
+.conversations-page--facebook .conversations-chat__identity::before,
+.conversations-page--mercadolibre .conversations-chat__identity::before {
+    display: none !important;
+}
+
+.conversations-page--instagram .conversations-chat__header,
+.conversations-page--facebook .conversations-chat__header,
+.conversations-page--mercadolibre .conversations-chat__header,
+.conversations-page--whatsapp .conversations-chat__header {
+    border-top: 1px solid color-mix(in srgb, var(--channel-accent) 22%, transparent) !important;
+    border-bottom-color: color-mix(in srgb, var(--channel-accent) 14%, rgba(134, 150, 160, .18)) !important;
+    background:
+        linear-gradient(90deg, var(--channel-soft), transparent 42%),
+        #202c33 !important;
+}
+
+.conversations-page--whatsapp .conversation-profile-avatar,
+.conversations-page--instagram .conversation-profile-avatar,
+.conversations-page--facebook .conversation-profile-avatar,
+.conversations-page--mercadolibre .conversation-profile-avatar {
+    position: relative !important;
+    width: 48px !important;
+    height: 48px !important;
+    flex-basis: 48px !important;
+    overflow: visible !important;
+    border: 2px solid color-mix(in srgb, var(--channel-accent) 82%, #ffffff 18%) !important;
+    box-shadow: 0 0 0 3px var(--channel-soft), 0 10px 24px rgba(2, 6, 23, .24) !important;
+}
+
+.conversations-page--instagram .conversation-profile-avatar img,
+.conversations-page--facebook .conversation-profile-avatar img,
+.conversations-page--mercadolibre .conversation-profile-avatar img {
+    border-radius: inherit !important;
+}
+
+.conversations-page--odoo .conversation-profile-avatar__channel {
+    position: absolute !important;
+    right: -8px !important;
+    bottom: -6px !important;
+    z-index: 4 !important;
+    width: 22px !important;
+    height: 22px !important;
+    display: grid !important;
+    place-items: center !important;
+    border: 2px solid #202c33 !important;
+    border-radius: 999px !important;
+    color: #fff !important;
+    box-shadow: 0 4px 10px rgba(2, 6, 23, .36) !important;
+}
+
+.conversations-page--odoo .conversation-profile-avatar__channel--instagram {
+    background: radial-gradient(circle at 30% 110%, #fdf497 0%, #fd5949 45%, #d6249f 60%, #285AEB 90%) !important;
+}
+
+.conversations-page--odoo .conversation-profile-avatar__channel--facebook {
+    background: #1877f2 !important;
+}
+
+.conversations-page--odoo .conversation-profile-avatar__channel--mercadolibre {
+    background: #fee600 !important;
+    color: #2d3277 !important;
+}
+
+.conversations-page--odoo .conversation-row__channel-badge {
+    right: -8px !important;
+    bottom: -4px !important;
+    z-index: 5 !important;
+    border-width: 2px !important;
+    box-shadow: 0 4px 10px rgba(2, 6, 23, .36) !important;
+}
+
+.conversations-page--odoo .conversation-row,
+.conversations-page--odoo .conversation-row__avatar,
+.conversations-page--odoo .conversations-list {
+    overflow: visible !important;
+}
+
+.conversations-page--instagram .conversation-row--instagram,
+.conversations-page--facebook .conversation-row--facebook,
+.conversations-page--mercadolibre .conversation-row--mercadolibre,
+.conversations-page--whatsapp .conversation-row--whatsapp {
+    border-left: 2px solid color-mix(in srgb, var(--channel-accent) 82%, transparent) !important;
+    background:
+        linear-gradient(90deg, var(--channel-row), transparent 38%),
+        transparent !important;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--channel-accent) 8%, transparent) !important;
+}
+
+.conversations-page--instagram .conversation-row--instagram:hover,
+.conversations-page--facebook .conversation-row--facebook:hover,
+.conversations-page--mercadolibre .conversation-row--mercadolibre:hover,
+.conversations-page--whatsapp .conversation-row--whatsapp:hover,
+.conversations-page--instagram .conversation-row--instagram.has-technician:hover,
+.conversations-page--facebook .conversation-row--facebook.has-technician:hover,
+.conversations-page--mercadolibre .conversation-row--mercadolibre.has-technician:hover,
+.conversations-page--whatsapp .conversation-row--whatsapp.has-technician:hover {
+    background:
+        linear-gradient(90deg, color-mix(in srgb, var(--channel-accent) 9%, #102431), #102431 80%) !important;
+}
+
+.conversations-page--instagram .conversation-row--instagram.is-selected,
+.conversations-page--facebook .conversation-row--facebook.is-selected,
+.conversations-page--mercadolibre .conversation-row--mercadolibre.is-selected,
+.conversations-page--whatsapp .conversation-row--whatsapp.is-selected,
+.conversations-page--instagram .conversation-row--instagram.has-technician.is-selected,
+.conversations-page--facebook .conversation-row--facebook.has-technician.is-selected,
+.conversations-page--mercadolibre .conversation-row--mercadolibre.has-technician.is-selected,
+.conversations-page--whatsapp .conversation-row--whatsapp.has-technician.is-selected {
+    background:
+        linear-gradient(90deg, var(--channel-row-selected), #173247 82%) !important;
+    box-shadow:
+        inset 3px 0 0 color-mix(in srgb, var(--channel-accent) 82%, transparent),
+        inset 0 0 0 1px color-mix(in srgb, var(--channel-accent) 14%, transparent) !important;
+}
+
+.conversations-page--instagram .conversation-row--instagram .conversation-row__avatar {
+    background: linear-gradient(135deg, #833ab4, #e1306c, #f59e0b) !important;
+}
+
+.conversations-page--facebook .conversation-row--facebook .conversation-row__avatar {
+    background: linear-gradient(135deg, #0f5bd8, #1877f2, #60a5fa) !important;
+}
+
+.conversations-page--mercadolibre .conversation-row--mercadolibre .conversation-row__avatar {
+    background: linear-gradient(135deg, #fee600, #facc15) !important;
+    color: #1f2937 !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook {
+    border-left: 3px solid rgba(59, 130, 246, .92) !important;
+    background:
+        linear-gradient(90deg, rgba(37, 99, 235, .18), rgba(14, 40, 72, .18) 46%, transparent 82%),
+        rgba(12, 29, 47, .18) !important;
+    box-shadow:
+        inset 0 0 0 1px rgba(96, 165, 250, .18),
+        inset 0 18px 32px rgba(59, 130, 246, .035) !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook:hover,
+.conversations-page--odoo .conversation-row--facebook.has-technician:hover {
+    background:
+        linear-gradient(90deg, rgba(37, 99, 235, .26), rgba(14, 40, 72, .24) 52%, rgba(16, 36, 55, .72) 100%) !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook.is-selected,
+.conversations-page--odoo .conversation-row--facebook.has-technician.is-selected {
+    background:
+        linear-gradient(90deg, rgba(37, 99, 235, .34), rgba(23, 50, 83, .86) 82%) !important;
+    box-shadow:
+        inset 3px 0 0 #3b82f6,
+        inset 0 0 0 1px rgba(147, 197, 253, .28) !important;
+}
+
+.conversations-page--odoo .conversation-row--facebook .conversation-row__avatar {
+    background: linear-gradient(135deg, #0756c7, #1877f2 58%, #7cc0ff) !important;
+    box-shadow: 0 0 0 3px rgba(24, 119, 242, .22), 0 10px 20px rgba(2, 6, 23, .22) !important;
+}
+
+.conversations-page--odoo .conversation-abono-avatar {
+    border: 2px solid rgba(255, 255, 255, .56) !important;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .45),
+        0 0 0 3px rgba(148, 163, 184, .12),
+        0 10px 22px rgba(2, 6, 23, .24) !important;
+}
+
+.conversations-page--odoo .conversation-abono-avatar__letter {
+    display: inline-grid !important;
+    place-items: center !important;
+    width: 100% !important;
+    height: 100% !important;
+    font-size: 1rem !important;
+    font-weight: 950 !important;
+    line-height: 1 !important;
+}
+
+.conversations-page--odoo .conversation-profile-avatar.conversation-abono-avatar .conversation-abono-avatar__letter {
+    font-size: 1.1rem !important;
+}
+
+.conversations-page--odoo .conversation-abono-avatar--a {
+    border-color: rgba(248, 113, 113, .82) !important;
+    background:
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .48), transparent 34%),
+        linear-gradient(135deg, #fecaca, #fb7185 62%, #ef4444) !important;
+    color: #7f1d1d !important;
+}
+
+.conversations-page--odoo .conversation-abono-avatar--b {
+    border-color: rgba(251, 146, 60, .82) !important;
+    background:
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .46), transparent 34%),
+        linear-gradient(135deg, #fed7aa, #fb923c 62%, #f97316) !important;
+    color: #7c2d12 !important;
+}
+
+.conversations-page--odoo .conversation-abono-avatar--c {
+    border-color: rgba(74, 222, 128, .78) !important;
+    background:
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .44), transparent 34%),
+        linear-gradient(135deg, #bbf7d0, #4ade80 62%, #22c55e) !important;
+    color: #14532d !important;
+}
+
+.conversations-page--odoo .conversation-abono-avatar--n {
+    border-color: rgba(148, 163, 184, .72) !important;
+    background:
+        radial-gradient(circle at 32% 24%, rgba(255, 255, 255, .34), transparent 34%),
+        linear-gradient(135deg, #cbd5e1, #94a3b8 62%, #64748b) !important;
+    color: #1e293b !important;
+}
+
+.conversations-page--instagram .message-card--incoming,
+.conversations-page--facebook .message-card--incoming,
+.conversations-page--mercadolibre .message-card--incoming,
+.conversations-page--whatsapp .message-card--incoming {
+    background: var(--channel-incoming) !important;
+    border: 1px solid color-mix(in srgb, var(--channel-accent) 11%, transparent) !important;
+}
+
+.conversations-page--instagram .message-card--outgoing,
+.conversations-page--facebook .message-card--outgoing,
+.conversations-page--mercadolibre .message-card--outgoing,
+.conversations-page--whatsapp .message-card--outgoing {
+    background: var(--channel-outgoing) !important;
+    border: 1px solid color-mix(in srgb, var(--channel-accent) 14%, transparent) !important;
+}
+
+.conversations-page--instagram .message-card__meta,
+.conversations-page--facebook .message-card__meta,
+.conversations-page--mercadolibre .message-card__meta,
+.conversations-page--whatsapp .message-card__meta,
+.conversations-page--instagram .conversation-social-profile a,
+.conversations-page--facebook .conversation-social-profile a,
+.conversations-page--mercadolibre .conversation-social-profile a {
+    color: var(--channel-meta) !important;
+}
+
+.conversations-page--instagram .conversations-composer,
+.conversations-page--facebook .conversations-composer,
+.conversations-page--mercadolibre .conversations-composer,
+.conversations-page--whatsapp .conversations-composer {
+    border-top-color: color-mix(in srgb, var(--channel-accent) 13%, rgba(134, 150, 160, .18)) !important;
+    background:
+        linear-gradient(90deg, var(--channel-soft), transparent 42%),
+        #202c33 !important;
+}
+
+.conversations-page--instagram .conversations-composer textarea,
+.conversations-page--facebook .conversations-composer textarea,
+.conversations-page--mercadolibre .conversations-composer textarea,
+.conversations-page--whatsapp .conversations-composer textarea {
+    border: 1px solid color-mix(in srgb, var(--channel-accent) 15%, transparent) !important;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--channel-soft) 70%, transparent) !important;
 }

@@ -192,6 +192,38 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);
 }
 
+/// <summary>
+/// Qué código de dbo.TA_CLASIFICACIONES cuenta como prioridad 1 (más importante), 2 o 3 para
+/// ordenar la cola de espera. Un cliente sin clasificación, o con una que no está en ninguna de
+/// las 3, cae en "el resto" (prioridad 4, la más baja). Se guarda en dbo.TA_CONFIGURACION con las
+/// claves CLASIFICA1/2/3 — las mismas, sin prefijo, que ya usa Desktop, no son propias de este
+/// módulo.
+/// </summary>
+public sealed record ConversacionClasificacionOptionDto(string Codigo, string Descripcion);
+
+public sealed class ConversacionPrioridadConfigDto
+{
+    public string Clasifica1 { get; set; } = string.Empty;
+    public string Clasifica2 { get; set; } = string.Empty;
+    public string Clasifica3 { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Un número de WhatsApp Business (Phone Number ID de Meta) con los usuarios del sistema
+/// vinculados a él. Una conversación queda fijada a uno de estos números apenas se crea (por la
+/// ventana de 24 h de Meta, que es por par número-cliente) y no vuelve a cambiar. Un usuario
+/// normal solo ve/responde conversaciones de los números donde está vinculado; un administrador
+/// de Conversaciones (dbo.CONV_ADMINISTRADORES) ve y responde por cualquiera.
+/// </summary>
+public sealed class ConversacionWhatsAppNumeroDto
+{
+    public int IdNumero { get; set; }
+    public string PhoneNumberId { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public bool Activo { get; set; } = true;
+    public List<string> Usuarios { get; set; } = [];
+}
+
 public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
 {
     public bool Success { get; set; }

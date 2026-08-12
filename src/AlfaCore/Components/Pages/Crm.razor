@@ -3,9 +3,14 @@
 @using AlfaCore.Models
 @using Microsoft.AspNetCore.Components.Web
 @inject AlfaCore.Services.ICrmService CrmSvc
+@inject AlfaCore.Services.ICrmCotizacionService CotizSvc
+@inject AlfaCore.Services.IConversacionesService ConvSvc
+@inject AlfaCore.Services.ICuentasComercialesService ClientesSvc
+@inject IConfiguration Config
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>CRM | Alfa Gestión</PageTitle>
@@ -140,6 +145,20 @@
                                         <span>@FormatMoney(item.ImporteEstimado)</span>
                                         <span>@item.Probabilidad%</span>
                                     </div>
+                                    @if (item.ProximaAccionVencimiento.HasValue)
+                                    {
+                                        <div class="crm-card__accion @(item.ProximaAccionVencida ? "is-vencida" : string.Empty)" title="@item.ProximaAccionTitulo">
+                                            <i class="bi @GetTareaIcon(item.ProximaAccionTipo)"></i>
+                                            <span>@FormatProximaAccion(item.ProximaAccionVencimiento.Value)</span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="crm-card__accion is-sin-accion" title="Sin próxima acción agendada">
+                                            <i class="bi bi-calendar-x"></i>
+                                            <span>Sin próxima acción</span>
+                                        </div>
+                                    }
                                     <div class="crm-tags">
                                         @foreach (var tag in item.Etiquetas.Take(3))
                                         {
@@ -172,6 +191,123 @@
                     </button>
                 }
             </div>
+        </section>
+    }
+    else if (!_showEditor && _viewMode == "resumen")
+    {
+        <section class="crm-dashboard">
+            @if (_dashboard is null)
+            {
+                <div class="crm-empty-column">Sin datos para mostrar.</div>
+            }
+            else
+            {
+                <div class="crm-kpi-row">
+                    <div class="crm-kpi">
+                        <span class="crm-kpi__label">Pipeline abierto</span>
+                        <strong class="crm-kpi__value">@FormatMoney(_dashboard.ImporteBruto)</strong>
+                        <span class="crm-kpi__hint">@_dashboard.TotalAbiertas oportunidad(es)</span>
+                    </div>
+                    <div class="crm-kpi crm-kpi--accent">
+                        <span class="crm-kpi__label">Forecast ponderado</span>
+                        <strong class="crm-kpi__value">@FormatMoney(_dashboard.ImportePonderado)</strong>
+                        <span class="crm-kpi__hint">importe × probabilidad</span>
+                    </div>
+                    <div class="crm-kpi">
+                        <span class="crm-kpi__label">Tasa de conversión</span>
+                        <strong class="crm-kpi__value">@_dashboard.TasaConversion.ToString("P0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))</strong>
+                        <span class="crm-kpi__hint">@_dashboard.Ganadas ganada(s) / @_dashboard.Perdidas perdida(s)</span>
+                    </div>
+                    <div class="crm-kpi @(_dashboard.Estancadas > 0 ? "crm-kpi--warn" : string.Empty)">
+                        <span class="crm-kpi__label">Estancadas</span>
+                        <strong class="crm-kpi__value">@_dashboard.Estancadas</strong>
+                        <span class="crm-kpi__hint">sin actividad hace +@_dashboard.DiasEstancamiento días</span>
+                    </div>
+                </div>
+
+                <div class="crm-dashboard-grid">
+                    <div class="crm-panel">
+                        <h3>Pipeline por etapa</h3>
+                        @{
+                            var maxEtapa = _dashboard.PorEtapa.Count == 0 ? 0m : _dashboard.PorEtapa.Max(x => x.ImporteBruto);
+                        }
+                        @if (_dashboard.PorEtapa.Count == 0)
+                        {
+                            <p class="muted">Sin oportunidades abiertas.</p>
+                        }
+                        else
+                        {
+                            @foreach (var etapa in _dashboard.PorEtapa)
+                            {
+                                <div class="crm-bar-row">
+                                    <div class="crm-bar-row__head">
+                                        <span><span class="crm-bar-dot" style="background:@(string.IsNullOrWhiteSpace(etapa.Color) ? "#38BDF8" : etapa.Color)"></span>@etapa.Nombre</span>
+                                        <span>@FormatMoney(etapa.ImporteBruto) · @etapa.Cantidad</span>
+                                    </div>
+                                    <div class="crm-bar">
+                                        <div class="crm-bar__fill" style="width:@(BarWidth(etapa.ImporteBruto, maxEtapa))%;background:@(string.IsNullOrWhiteSpace(etapa.Color) ? "#38BDF8" : etapa.Color)"></div>
+                                    </div>
+                                    <small class="muted">Ponderado: @FormatMoney(etapa.ImportePonderado)</small>
+                                </div>
+                            }
+                        }
+                    </div>
+
+                    <div class="crm-panel">
+                        <h3>Ranking por vendedor</h3>
+                        @if (_dashboard.PorTecnico.Count == 0)
+                        {
+                            <p class="muted">Sin oportunidades abiertas.</p>
+                        }
+                        else
+                        {
+                            <table class="crm-rank-table">
+                                <thead>
+                                    <tr><th>Vendedor</th><th>Abiertas</th><th>Pipeline</th><th>Ponderado</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var tec in _dashboard.PorTecnico)
+                                    {
+                                        <tr>
+                                            <td>@(string.IsNullOrWhiteSpace(tec.Nombre) ? "Sin asignar" : tec.Nombre)</td>
+                                            <td>@tec.Abiertas</td>
+                                            <td>@FormatMoney(tec.ImporteBruto)</td>
+                                            <td>@FormatMoney(tec.ImportePonderado)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                    </div>
+
+                    <div class="crm-panel">
+                        <h3>Motivos de pérdida</h3>
+                        @{
+                            var totalPerdidas = _dashboard.MotivosPerdida.Sum(x => x.Cantidad);
+                            var maxMotivo = _dashboard.MotivosPerdida.Count == 0 ? 0 : _dashboard.MotivosPerdida.Max(x => x.Cantidad);
+                        }
+                        @if (_dashboard.MotivosPerdida.Count == 0)
+                        {
+                            <p class="muted">Todavía no hay oportunidades perdidas.</p>
+                        }
+                        else
+                        {
+                            @foreach (var motivo in _dashboard.MotivosPerdida)
+                            {
+                                <div class="crm-bar-row">
+                                    <div class="crm-bar-row__head">
+                                        <span>@motivo.Nombre</span>
+                                        <span>@motivo.Cantidad@(totalPerdidas > 0 ? $" · {((double)motivo.Cantidad / totalPerdidas).ToString("P0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}" : string.Empty)</span>
+                                    </div>
+                                    <div class="crm-bar">
+                                        <div class="crm-bar__fill" style="width:@(BarWidth(motivo.Cantidad, maxMotivo))%;background:#F87171"></div>
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
         </section>
     }
     else if (!_showEditor)
@@ -278,6 +414,302 @@
     </div>
 }
 
+@if (_showLostReason)
+{
+    <div class="crm-modal-layer" @onmousedown="CancelLostReason">
+        <section class="panel-card crm-modal crm-modal--small" @onmousedown:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Motivo de pérdida</h3>
+                    <p class="panel-card__subtitle">Indicá por qué se perdió esta oportunidad.</p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CancelLostReason"><i class="bi bi-x-circle"></i> Cancelar</button>
+            </div>
+            <div class="field">
+                <label>Motivo <span class="crm-required">*</span></label>
+                <select @bind="_lostMotivoId" disabled="@_saving">
+                    <option value="">Elegí un motivo…</option>
+                    @foreach (var motivo in _lookups.MotivosPerdida)
+                    {
+                        <option value="@motivo.IdMotivo">@motivo.Nombre</option>
+                    }
+                </select>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn--primary" @onclick="ConfirmLostReasonAsync" disabled="@_saving"><i class="bi bi-check2"></i> Marcar como perdida</button>
+                <button type="button" class="btn btn--ghost" @onclick="CancelLostReason">Cancelar</button>
+            </div>
+        </section>
+    </div>
+}
+
+@if (_showMotivos)
+{
+    <div class="crm-modal-layer" @onclick="CloseMotivos">
+        <section class="panel-card crm-modal crm-modal--small" @onclick:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Motivos de pérdida</h3>
+                    <p class="panel-card__subtitle">Personalizá los motivos disponibles al perder una oportunidad.</p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CloseMotivos"><i class="bi bi-x-circle"></i> Cerrar</button>
+            </div>
+            <div class="crm-stage-form">
+                <input maxlength="100" placeholder="Nombre" @bind="_motivoDraft.Nombre" />
+                <input type="number" @bind="_motivoDraft.Orden" title="Orden" />
+                <button type="button" class="btn btn--primary btn--sm" @onclick="SaveMotivoAsync"><i class="bi bi-floppy"></i> Guardar</button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="NewMotivo">Nuevo</button>
+            </div>
+            @foreach (var motivo in _lookups.MotivosPerdida)
+            {
+                <div class="crm-admin-row">
+                    <strong>@motivo.Nombre</strong>
+                    <small>Orden @motivo.Orden</small>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditMotivo(motivo)">Editar</button>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => DeleteMotivoAsync(motivo.IdMotivo)">Eliminar</button>
+                </div>
+            }
+        </section>
+    </div>
+}
+
+@if (_showCotizEditor)
+{
+    <div class="crm-modal-layer" @onmousedown="CerrarCotizEditor">
+        <section class="panel-card crm-modal crm-modal--wide" @onmousedown:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">@(_cotizEditId > 0 ? "Editar cotización" : "Nueva cotización")</h3>
+                    <p class="panel-card__subtitle">
+                        @(_cotizPricing.EsConsumidorFinal ? "Consumidor final" : (string.IsNullOrWhiteSpace(_cotizPricing.ClienteNombre) ? "Sin cliente" : _cotizPricing.ClienteNombre))
+                        · Lista @(string.IsNullOrWhiteSpace(_cotizPricing.IdLista) ? "maestro" : _cotizPricing.IdLista) · Clase @_cotizPricing.ClasePrecio
+                        · @(_cotizPricing.PreciosConIva ? "precios con IVA" : "precios netos")
+                    </p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CerrarCotizEditor"><i class="bi bi-x-circle"></i> Cerrar</button>
+            </div>
+
+            <div class="crm-cotiz-toolbar">
+                <div class="field">
+                    <label>Cliente (código)</label>
+                    <div class="crm-inline-row">
+                        <input maxlength="30" @bind="_cotizClienteCodigo" placeholder="Vacío = consumidor final" />
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="AplicarClienteCotizAsync" disabled="@_saving">Aplicar</button>
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Estado</label>
+                    <select @bind="_cotizForm.Estado">
+                        <option value="BORRADOR">Borrador</option>
+                        <option value="ENVIADA">Enviada</option>
+                        <option value="ACEPTADA">Aceptada</option>
+                        <option value="RECHAZADA">Rechazada</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>Vence</label>
+                    <input type="date" @bind="_cotizForm.FechaVencimiento" />
+                </div>
+            </div>
+
+            @if (_cotizEsServicio)
+            {
+                <div class="crm-cotiz-ia">
+                    <label><i class="bi bi-stars"></i> Asistente de IA</label>
+                    <div class="crm-inline-row">
+                        <input placeholder="Ej: cotizar Alfa Gestión para 5 usuarios, con soporte y capacitación" @bind="_cotizIaPrompt" @onkeydown="OnCotizIaKeyDown" />
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="GenerarPropuestaIaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_cotizIaPrompt))">
+                            @if (_cotizIaCargando)
+                            {
+                                <span>Generando…</span>
+                            }
+                            else
+                            {
+                                <span><i class="bi bi-magic"></i> Generar</span>
+                            }
+                        </button>
+                    </div>
+                    <small class="muted">La IA redacta el texto de la propuesta. Los precios los cargás vos abajo (no los inventa).</small>
+                </div>
+
+                <div class="crm-richtext">
+                    <div class="crm-richtext__toolbar">
+                        <button type="button" title="Negrita" @onclick='() => RichExec("bold")'><i class="bi bi-type-bold"></i></button>
+                        <button type="button" title="Cursiva" @onclick='() => RichExec("italic")'><i class="bi bi-type-italic"></i></button>
+                        <button type="button" title="Subrayado" @onclick='() => RichExec("underline")'><i class="bi bi-type-underline"></i></button>
+                        <button type="button" title="Lista" @onclick='() => RichExec("insertUnorderedList")'><i class="bi bi-list-ul"></i></button>
+                        <button type="button" title="Lista numerada" @onclick='() => RichExec("insertOrderedList")'><i class="bi bi-list-ol"></i></button>
+                        <span class="crm-richtext__sep"></span>
+                        <button type="button" title="Insertar imagen" @onclick="RichInsertImageAsync"><i class="bi bi-image"></i></button>
+                        <button type="button" title="Check" @onclick='() => RichInsertText("✓ ")'>✓</button>
+                        <button type="button" title="Flecha" @onclick='() => RichInsertText("→ ")'>→</button>
+                        <button type="button" title="Estrella" @onclick='() => RichInsertText("★ ")'>★</button>
+                    </div>
+                    <div class="crm-richtext__area" contenteditable="true" @ref="_cotizEditorRef"></div>
+                </div>
+            }
+            else
+            {
+                <div class="crm-cotiz-ia">
+                    <label><i class="bi bi-stars"></i> Asistente de IA</label>
+                    <div class="crm-inline-row">
+                        <input placeholder="Ej: todos los tipos de harina, 10 kg de cada uno" @bind="_cotizIaPrompt" @onkeydown="OnCotizIaKeyDown" />
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="SugerirLineasIaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_cotizIaPrompt))">
+                            @if (_cotizIaCargando)
+                            {
+                                <span>Buscando…</span>
+                            }
+                            else
+                            {
+                                <span><i class="bi bi-magic"></i> Sugerir</span>
+                            }
+                        </button>
+                    </div>
+                    <small class="muted">La IA interpreta tu pedido y busca los artículos reales del catálogo. Los precios salen de la lista del cliente (no los inventa).</small>
+                </div>
+
+                @if (_cotizIaSugerencias.Count > 0)
+                {
+                    <div class="crm-cotiz-ia-sug">
+                        <div class="crm-cotiz-ia-sug__head">
+                            <strong>@_cotizIaSugerencias.Count sugerencia(s)</strong>
+                            <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleTodasSugerencias">@(_cotizIaSeleccion.Count == _cotizIaSugerencias.Count ? "Ninguno" : "Todos")</button>
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="AgregarSugerenciasSeleccionadas" disabled="@(_cotizIaSeleccion.Count == 0)"><i class="bi bi-plus-lg"></i> Agregar (@_cotizIaSeleccion.Count)</button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _cotizIaSugerencias.Clear()">Descartar</button>
+                            </div>
+                        </div>
+                        <div class="crm-cotiz-results">
+                            @foreach (var sug in _cotizIaSugerencias)
+                            {
+                                <label class="crm-cotiz-sug">
+                                    <input type="checkbox" checked="@_cotizIaSeleccion.Contains(sug.IdArticulo)" @onchange="args => ToggleSugerencia(sug.IdArticulo, args)" />
+                                    <span class="crm-cotiz-result__desc">@sug.Descripcion</span>
+                                    <input class="crm-cotiz-cell num crm-cotiz-sug__cant" type="number" step="0.01" min="0" @bind="sug.Cantidad" title="Cantidad" />
+                                    <span class="crm-cotiz-result__meta">@FormatMoney(_cotizPricing.PreciosConIva ? sug.PrecioUnitarioConIva : sug.PrecioUnitarioNeto)</span>
+                                </label>
+                            }
+                        </div>
+                    </div>
+                }
+
+                <div class="crm-cotiz-search">
+                    <input placeholder="Buscar artículo por código o descripción..." @bind="_cotizBusqueda" @bind:event="oninput" @onkeydown="OnCotizSearchKeyDown" />
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="BuscarArticulosCotizAsync" disabled="@_saving"><i class="bi bi-search"></i> Buscar</button>
+                </div>
+                @if (_cotizResultados.Count > 0)
+                {
+                    <div class="crm-cotiz-results">
+                        @foreach (var art in _cotizResultados)
+                        {
+                            <button type="button" class="crm-cotiz-result" @onclick="() => AgregarArticuloCotiz(art)">
+                                <span class="crm-cotiz-result__desc">@art.Descripcion</span>
+                                <span class="crm-cotiz-result__meta">@art.IdArticulo · @FormatMoney(_cotizPricing.PreciosConIva ? art.PrecioUnitarioConIva : art.PrecioUnitarioNeto)</span>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+
+            <table class="crm-cotiz-lines">
+                <thead>
+                    <tr>
+                        <th>Descripción</th>
+                        <th class="num">Cant.</th>
+                        <th class="num">P. unit. @(_cotizPricing.PreciosConIva ? "(c/IVA)" : "(neto)")</th>
+                        <th class="num">Subtotal</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @if (_cotizLineas.Count == 0)
+                    {
+                        <tr><td colspan="5" class="muted">@(_cotizEsServicio ? "Opcional: cargá el detalle de precios en líneas." : "Buscá y agregá artículos, o cargá una línea manual.")</td></tr>
+                    }
+                    else
+                    {
+                        @foreach (var l in _cotizLineas)
+                        {
+                            <tr>
+                                <td><input class="crm-cotiz-cell" maxlength="200" @bind="l.Descripcion" /></td>
+                                <td class="num"><input class="crm-cotiz-cell num" type="number" step="0.01" min="0" @bind="l.Cantidad" /></td>
+                                <td class="num"><input class="crm-cotiz-cell num" type="number" step="0.01" min="0" @bind="l.PrecioUnitario" /></td>
+                                <td class="num">@FormatMoney(Math.Round(l.Cantidad * l.PrecioUnitario, 2))</td>
+                                <td><button type="button" class="crm-accion__del" @onclick="() => QuitarLineaCotiz(l)"><i class="bi bi-trash"></i></button></td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+            <div class="crm-cotiz-add-manual">
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="AgregarLineaManualCotiz"><i class="bi bi-plus-lg"></i> Línea manual</button>
+            </div>
+
+            <div class="crm-cotiz-foot">
+                <textarea rows="2" maxlength="2000" placeholder="Observaciones..." @bind="_cotizForm.Observaciones"></textarea>
+                <div class="crm-cotiz-totals">
+                    <div><span>Neto</span><strong>@FormatMoney(CotizTotalNeto)</strong></div>
+                    <div><span>IVA</span><strong>@FormatMoney(CotizTotalIva)</strong></div>
+                    <div class="crm-cotiz-totals__grand"><span>Total</span><strong>@FormatMoney(CotizTotal)</strong></div>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button type="button" class="btn btn--primary" @onclick="GuardarCotizacionAsync" disabled="@(_saving || (!_cotizEsServicio && _cotizLineas.Count == 0))"><i class="bi bi-floppy"></i> Guardar cotización</button>
+                <button type="button" class="btn btn--ghost" @onclick="CerrarCotizEditor">Cancelar</button>
+            </div>
+        </section>
+    </div>
+}
+
+@if (_showCompartir && _compartirCot is not null)
+{
+    <div class="crm-modal-layer" @onmousedown="CerrarCompartir">
+        <section class="panel-card crm-modal crm-modal--small" @onmousedown:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Enviar @_compartirCot.CodigoVisible</h3>
+                    <p class="panel-card__subtitle">Compartí la cotización por email, WhatsApp o link.</p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CerrarCompartir"><i class="bi bi-x-circle"></i> Cerrar</button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_compartirUrl))
+            {
+                <div class="field">
+                    <label>Link público</label>
+                    <div class="crm-inline-row">
+                        <input readonly value="@_compartirUrl" />
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CopiarLinkAsync"><i class="bi bi-clipboard"></i> Copiar</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <p class="muted">El link web se genera solo en modo online (SaaS). Igual podés enviar la cotización por email o por WhatsApp (va como texto).</p>
+            }
+
+            <div class="field">
+                <label>Enviar por email</label>
+                <div class="crm-inline-row">
+                    <input type="email" placeholder="cliente@correo.com" @bind="_compartirEmail" />
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="EnviarEmailCotAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_compartirEmail))"><i class="bi bi-envelope"></i> Enviar</button>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button type="button" class="btn btn--primary" @onclick="EnviarWhatsAppCotAsync" disabled="@(_saving || _detail?.IdConversacion is null)">
+                    <i class="bi bi-whatsapp"></i> Enviar por WhatsApp
+                </button>
+                @if (_detail?.IdConversacion is null)
+                {
+                    <small class="muted">WhatsApp requiere una conversación de origen en la oportunidad.</small>
+                }
+            </div>
+        </section>
+    </div>
+}
+
 @if (_showViewSettings)
 {
     <div class="crm-modal-layer" @onclick="CloseViewSettings">
@@ -307,10 +739,16 @@
 }
 
 @code {
+    // Llega desde el botón "Crear oportunidad" de Conversaciones: /crm?conv={IdConversacion}.
+    [Parameter]
+    [SupplyParameterFromQuery(Name = "conv")]
+    public long? Conv { get; set; }
+
     private CrmLookupDto _lookups = new();
     private CrmFilters _filters = new();
     private PagedResult<CrmOpportunityDto> _page = new();
     private List<CrmOpportunityDto> _kanban = [];
+    private CrmDashboardDto? _dashboard;
     private CrmViewSettingsDto _viewSettings = new();
     private CrmViewSettingsDto _viewDraft = new();
     private string _viewMode = "kanban";
@@ -320,6 +758,36 @@
     private bool _showStages;
     private bool _showTags;
     private bool _showViewSettings;
+    private bool _showLostReason;
+    private long? _lostOpportunityId;
+    private int? _lostStageId;
+    private int? _lostMotivoId;
+    private CrmMotivoPerdidaSaveRequest _motivoDraft = new() { Orden = 10 };
+    private bool _showMotivos;
+    private bool _showCotizEditor;
+    private long _cotizEditId;
+    private List<CrmCotizacionDto> _cotizaciones = [];
+    private CrmCotizacionSaveRequest _cotizForm = new() { Estado = CrmCotizacionEstados.Borrador };
+    private List<CrmCotizacionLineRequest> _cotizLineas = [];
+    private CrmCotizacionPricingContextDto _cotizPricing = new();
+    private string _cotizClienteCodigo = string.Empty;
+    private string _cotizBusqueda = string.Empty;
+    private List<CrmCotizacionArticuloDto> _cotizResultados = [];
+    private bool _cotizEsServicio;
+    private string _cotizIaPrompt = string.Empty;
+    private bool _cotizIaCargando;
+    private List<CrmCotizacionAiLineaSugeridaDto> _cotizIaSugerencias = [];
+    private HashSet<string> _cotizIaSeleccion = [];
+    private bool _showCompartir;
+    private CrmCotizacionDto? _compartirCot;
+    private string _compartirUrl = string.Empty;
+    private string _compartirEmail = string.Empty;
+    private List<CuentaComercialGridItemDto> _clienteResultados = [];
+    private bool _clienteDropdownOpen;
+    private CancellationTokenSource? _clienteBuscarCts;
+    private ElementReference _cotizEditorRef;
+    private string? _cotizEditorPendingHtml;
+    private bool _cotizEditorNeedsSync;
     private bool _searchPanelOpen;
     private bool _defaultFlowApplied;
     private int? _dragStageId;
@@ -339,6 +807,9 @@
     private CrmEtapaSaveRequest _stageDraft = new() { Color = "#2563EB", Orden = 10 };
     private CrmEtiquetaSaveRequest _tagDraft = new() { Color = "#14B8A6" };
     private string _noteText = string.Empty;
+    private string _nuevaTareaTipo = CrmTareaTipos.Tarea;
+    private string _nuevaTareaTitulo = string.Empty;
+    private DateTime _nuevaTareaVencimiento = DateTime.Today.AddDays(1).AddHours(9);
     private Feedback? _feedback;
 
     private IEnumerable<CrmViewColumnDto> VisibleColumns => _viewSettings.Columnas.Where(x => x.Visible).OrderBy(x => x.Order);
@@ -348,6 +819,19 @@
         || string.Equals(x.IdTecnico, CurrentUserName, StringComparison.OrdinalIgnoreCase))?.IdTecnico;
     private bool IsMyFlowActive => !string.IsNullOrWhiteSpace(CurrentUserTechId)
         && string.Equals(_filters.IdTecnico, CurrentUserTechId, StringComparison.OrdinalIgnoreCase);
+    private bool FormStageIsLost => _form.IdEtapa is int idEtapa
+        && _lookups.Etapas.Any(x => x.IdEtapa == idEtapa && x.EsPerdida);
+
+    private (decimal neto, decimal conIva) CotizUnit(CrmCotizacionLineRequest l)
+    {
+        var factor = 1m + l.TasaIva / 100m;
+        if (_cotizPricing.PreciosConIva)
+            return (factor == 0 ? l.PrecioUnitario : Math.Round(l.PrecioUnitario / factor, 4), l.PrecioUnitario);
+        return (l.PrecioUnitario, Math.Round(l.PrecioUnitario * factor, 4));
+    }
+    private decimal CotizTotalNeto => _cotizLineas.Sum(l => Math.Round(CotizUnit(l).neto * l.Cantidad, 2));
+    private decimal CotizTotal => _cotizLineas.Sum(l => Math.Round(CotizUnit(l).conIva * l.Cantidad, 2));
+    private decimal CotizTotalIva => CotizTotal - CotizTotalNeto;
 
     private RenderFragment RenderCrmSmartSearch() => @<div class="smart-search crm-smart-search" @onclick:stopPropagation>
         <div class="smart-search__bar">
@@ -458,6 +942,19 @@
                             }
                         </select>
                     </div>
+                    @if (FormStageIsLost)
+                    {
+                        <div class="field">
+                            <label>Motivo de pérdida <span class="crm-required">*</span></label>
+                            <select @bind="_form.IdMotivoPerdida" disabled="@_saving">
+                                <option value="">Elegí un motivo…</option>
+                                @foreach (var motivo in _lookups.MotivosPerdida)
+                                {
+                                    <option value="@motivo.IdMotivo">@motivo.Nombre</option>
+                                }
+                            </select>
+                        </div>
+                    }
                     <div class="field">
                         <label>Asignado</label>
                         <select @bind="_form.IdTecnico" disabled="@_saving">
@@ -489,9 +986,21 @@
                         <label>Cierre estimado</label>
                         <input type="date" @bind="_form.FechaCierreEstimada" disabled="@_saving" />
                     </div>
-                    <div class="field">
+                    <div class="field crm-cliente-field">
                         <label>Código cliente</label>
-                        <input maxlength="20" @bind="_form.ClienteCodigo" disabled="@_saving" />
+                        <input maxlength="60" @bind="_form.ClienteCodigo" @bind:event="oninput" @bind:after="OnClienteBuscarAfter" disabled="@_saving" placeholder="Código o nombre..." autocomplete="off" />
+                        @if (_clienteDropdownOpen && _clienteResultados.Count > 0)
+                        {
+                            <div class="crm-cliente-drop">
+                                @foreach (var cli in _clienteResultados)
+                                {
+                                    <button type="button" class="crm-cliente-opt" @onclick="() => SeleccionarCliente(cli)">
+                                        <strong>@cli.RazonSocial</strong>
+                                        <small>@cli.Codigo</small>
+                                    </button>
+                                }
+                            </div>
+                        }
                     </div>
                     <div class="field">
                         <label>ID contacto</label>
@@ -580,6 +1089,92 @@
             </section>
 
             <section class="crm-side-panel">
+                <h3>Próximas acciones</h3>
+                @if (_detail is null)
+                {
+                    <p class="muted">Guardá la oportunidad para agendar su próxima acción.</p>
+                }
+                else
+                {
+                    <div class="crm-accion-form">
+                        <select @bind="_nuevaTareaTipo">
+                            <option value="TAREA">Tarea</option>
+                            <option value="LLAMADA">Llamada</option>
+                            <option value="EMAIL">Email</option>
+                            <option value="REUNION">Reunión</option>
+                            <option value="WHATSAPP">WhatsApp</option>
+                        </select>
+                        <input maxlength="200" placeholder="Qué hay que hacer..." @bind="_nuevaTareaTitulo" />
+                        <input type="datetime-local" @bind="_nuevaTareaVencimiento" />
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="AddTareaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_nuevaTareaTitulo))">
+                            <i class="bi bi-plus-lg"></i> Agendar
+                        </button>
+                    </div>
+                    @if (_detail.Tareas.Count == 0)
+                    {
+                        <p class="muted">Sin próximas acciones agendadas.</p>
+                    }
+                    else
+                    {
+                        <div class="crm-accion-list">
+                            @foreach (var tarea in _detail.Tareas)
+                            {
+                                <article class="crm-accion @(tarea.Completada ? "is-done" : string.Empty) @(tarea.Vencida ? "is-vencida" : string.Empty)">
+                                    <button type="button" class="crm-accion__check" title="@(tarea.Completada ? "Reabrir" : "Completar")" @onclick="() => ToggleTareaAsync(tarea)">
+                                        <i class="bi @(tarea.Completada ? "bi-check-circle-fill" : "bi-circle")"></i>
+                                    </button>
+                                    <div class="crm-accion__body">
+                                        <strong><i class="bi @GetTareaIcon(tarea.TipoAccion)"></i> @tarea.Titulo</strong>
+                                        <small>@FormatDate(tarea.Vencimiento)@(string.IsNullOrWhiteSpace(tarea.TecnicoNombre) ? string.Empty : $" · {tarea.TecnicoNombre}")</small>
+                                    </div>
+                                    <button type="button" class="crm-accion__del" title="Eliminar" @onclick="() => DeleteTareaAsync(tarea)"><i class="bi bi-trash"></i></button>
+                                </article>
+                            }
+                        </div>
+                    }
+                }
+            </section>
+
+            <section class="crm-side-panel">
+                <div class="crm-section-head">
+                    <h3>Cotizaciones</h3>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="() => NuevaCotizacionAsync(CrmCotizacionTipos.Articulos)" disabled="@(_saving || _detail is null)" title="Cotización de artículos">
+                            <i class="bi bi-box-seam"></i> Artículos
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => NuevaCotizacionAsync(CrmCotizacionTipos.Servicio)" disabled="@(_saving || _detail is null)" title="Cotización de servicio con IA">
+                            <i class="bi bi-stars"></i> Servicio (IA)
+                        </button>
+                    </div>
+                </div>
+                @if (_detail is null)
+                {
+                    <p class="muted">Guardá la oportunidad para crear cotizaciones.</p>
+                }
+                else if (_cotizaciones.Count == 0)
+                {
+                    <p class="muted">Sin cotizaciones todavía.</p>
+                }
+                else
+                {
+                    <div class="crm-cotiz-list">
+                        @foreach (var cot in _cotizaciones)
+                        {
+                            <article class="crm-cotiz-item">
+                                <div class="crm-cotiz-item__body" @onclick="() => EditarCotizacionAsync(cot.IdCotizacion)">
+                                    <strong>@cot.CodigoVisible <i class="bi @(cot.EsServicio ? "bi-stars" : "bi-box-seam")" title="@(cot.EsServicio ? "Servicio" : "Artículos")"></i></strong>
+                                    <span class="crm-cotiz-estado crm-cotiz-estado--@cot.Estado.ToLowerInvariant()">@cot.Estado</span>
+                                    <small>@FormatMoney(cot.Total) · @cot.Fecha.ToString("dd/MM/yyyy")@(cot.Vencida ? " · vencida" : string.Empty)</small>
+                                </div>
+                                <button type="button" class="crm-accion__del" title="Compartir / enviar" @onclick="() => AbrirCompartirAsync(cot)"><i class="bi bi-send"></i></button>
+                                <button type="button" class="crm-accion__del" title="Eliminar" @onclick="() => EliminarCotizacionAsync(cot.IdCotizacion)"><i class="bi bi-trash"></i></button>
+                            </article>
+                        }
+                    </div>
+                }
+            </section>
+
+            <section class="crm-side-panel">
                 <h3>Origen</h3>
                 @if (_detail?.IdConversacion is long idConv)
                 {
@@ -610,6 +1205,36 @@
     {
         UpdatePageHeader();
         await LoadAsync();
+        if (Conv is long idConv && idConv > 0)
+            await OpenNewFromConversationAsync(idConv);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_cotizEditorNeedsSync && _showCotizEditor && _cotizEsServicio)
+        {
+            _cotizEditorNeedsSync = false;
+            await JS.InvokeVoidAsync("crmCotizacion.setHtml", _cotizEditorRef, _cotizEditorPendingHtml ?? string.Empty);
+        }
+    }
+
+    private async Task OpenNewFromConversationAsync(long idConv)
+    {
+        await RunAsync(async () =>
+        {
+            var prefill = await CrmSvc.GetConversationPrefillAsync(idConv);
+            NewOpportunity();
+            _form.IdConversacion = idConv;
+            if (prefill is not null)
+            {
+                _form.Titulo = prefill.TituloSugerido;
+                _form.ClienteCodigo = string.IsNullOrWhiteSpace(prefill.ClienteCodigo) ? null : prefill.ClienteCodigo;
+                _form.IdContacto = prefill.IdContacto;
+                _form.CanalOrigen = string.IsNullOrWhiteSpace(prefill.CanalOrigen) ? null : prefill.CanalOrigen;
+            }
+            _form.IdTecnico ??= CurrentUserTechId;
+            UpdatePageHeader();
+        });
     }
 
     private async Task LoadAsync()
@@ -721,6 +1346,15 @@
                 Priority = PageHeaderActionPriority.Overflow,
                 OnClick = () => RunHeaderActionAsync(() => { OpenTags(); return Task.CompletedTask; })
             });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "motivos",
+                Label = "Motivos de pérdida",
+                Icon = "bi-emoji-frown",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                OnClick = () => RunHeaderActionAsync(() => { OpenMotivos(); return Task.CompletedTask; })
+            });
         }
 
         PageHeader.Set(new PageHeaderConfig
@@ -755,6 +1389,15 @@
                         Active = _viewMode == "lista",
                         Disabled = _loading,
                         OnClick = () => RunHeaderActionAsync(() => SetModeAsync("lista"))
+                    },
+                    new PageHeaderViewButton
+                    {
+                        Key = "resumen",
+                        Label = "Resumen",
+                        Icon = "bi-bar-chart",
+                        Active = _viewMode == "resumen",
+                        Disabled = _loading,
+                        OnClick = () => RunHeaderActionAsync(() => SetModeAsync("resumen"))
                     }
                 ]
         });
@@ -827,8 +1470,17 @@
 
     private async Task RunHeaderActionAsync(Func<Task> action)
     {
-        await action();
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            // Reconstruye el header con el estado actual (ej. Busy=false tras guardar),
+            // si no el botón queda "Procesando..." aunque la acción ya terminó.
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task OnStageFilterChangedAsync(ChangeEventArgs args)
@@ -935,6 +1587,17 @@
             return;
         }
 
+        // Si la etapa destino es "perdida", pedimos el motivo antes de mover.
+        if (_lookups.Etapas.Any(x => x.IdEtapa == targetStageId && x.EsPerdida))
+        {
+            _lostOpportunityId = opportunityId;
+            _lostStageId = targetStageId;
+            _lostMotivoId = null;
+            _showLostReason = true;
+            ClearDragState();
+            return;
+        }
+
         await RunAsync(async () =>
         {
             await CrmSvc.QuickUpdateAsync(new CrmQuickUpdateRequest
@@ -948,6 +1611,43 @@
         });
         ClearDragState();
         UpdatePageHeader();
+    }
+
+    private async Task ConfirmLostReasonAsync()
+    {
+        if (_lostOpportunityId is not long opportunityId || _lostStageId is not int targetStageId)
+        {
+            CancelLostReason();
+            return;
+        }
+        if (_lostMotivoId is not > 0)
+        {
+            _feedback = new Feedback("Falta el motivo", "Elegí el motivo de pérdida para continuar.", null);
+            return;
+        }
+
+        await RunAsync(async () =>
+        {
+            await CrmSvc.QuickUpdateAsync(new CrmQuickUpdateRequest
+            {
+                IdOportunidad = opportunityId,
+                IdEtapa = targetStageId,
+                IdMotivoPerdida = _lostMotivoId,
+                UsuarioAccion = CurrentUserName
+            });
+            await ReloadCurrentViewAsync(resetPage: false);
+            ShowOk("Oportunidad marcada como perdida", "Se registró el motivo de pérdida.");
+        });
+        CancelLostReason();
+        UpdatePageHeader();
+    }
+
+    private void CancelLostReason()
+    {
+        _showLostReason = false;
+        _lostOpportunityId = null;
+        _lostStageId = null;
+        _lostMotivoId = null;
     }
 
     private async Task MoveStageAsync(int sourceStageId, int targetStageId)
@@ -1147,7 +1847,9 @@
     {
         if (resetPage)
             _filters.PageNumber = 1;
-        if (_viewMode == "kanban")
+        if (_viewMode == "resumen")
+            _dashboard = await CrmSvc.GetDashboardAsync();
+        else if (_viewMode == "kanban")
             _kanban = (await CrmSvc.GetKanbanAsync(_filters)).ToList();
         else
             _page = await CrmSvc.SearchAsync(_filters);
@@ -1198,6 +1900,7 @@
         _detail = null;
         _selectedTags = [];
         _noteText = string.Empty;
+        _cotizaciones = [];
         _form = new CrmOpportunitySaveRequest
         {
             IdEtapa = idEtapa ?? _lookups.Etapas.FirstOrDefault()?.IdEtapa,
@@ -1236,6 +1939,7 @@
             _noteText = string.Empty;
             _showEditor = true;
             _searchPanelOpen = false;
+            await LoadCotizacionesAsync();
             UpdatePageHeader();
         });
     }
@@ -1249,6 +1953,7 @@
             _form.UsuarioAccion = AppUserSession.CurrentUser?.UserName;
             var id = await CrmSvc.SaveOpportunityAsync(_form);
             _detail = await CrmSvc.GetByIdAsync(id);
+            await LoadCotizacionesAsync();
             await ReloadCurrentViewAsync(resetPage: false);
             _form.IdOportunidad = id;
             if (_detail is not null)
@@ -1275,6 +1980,72 @@
             _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
             UpdatePageHeader();
         });
+    }
+
+    private async Task AddTareaAsync()
+    {
+        if (_detail is null || string.IsNullOrWhiteSpace(_nuevaTareaTitulo))
+            return;
+        await RunAsync(async () =>
+        {
+            await CrmSvc.SaveTareaAsync(new CrmTareaSaveRequest
+            {
+                IdOportunidad = _detail.IdOportunidad,
+                TipoAccion = _nuevaTareaTipo,
+                Titulo = _nuevaTareaTitulo,
+                Vencimiento = _nuevaTareaVencimiento,
+                IdTecnico = string.IsNullOrWhiteSpace(_detail.IdTecnico) ? CurrentUserTechId : _detail.IdTecnico,
+                UsuarioAccion = AppUserSession.CurrentUser?.UserName
+            });
+            _nuevaTareaTitulo = string.Empty;
+            _nuevaTareaTipo = CrmTareaTipos.Tarea;
+            _nuevaTareaVencimiento = DateTime.Today.AddDays(1).AddHours(9);
+            _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+        });
+    }
+
+    private async Task ToggleTareaAsync(CrmTareaDto tarea)
+    {
+        if (_detail is null)
+            return;
+        await RunAsync(async () =>
+        {
+            await CrmSvc.CompleteTareaAsync(tarea.IdTarea, !tarea.Completada, AppUserSession.CurrentUser?.UserName);
+            _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+        });
+    }
+
+    private async Task DeleteTareaAsync(CrmTareaDto tarea)
+    {
+        if (_detail is null)
+            return;
+        await RunAsync(async () =>
+        {
+            await CrmSvc.DeleteTareaAsync(tarea.IdTarea, AppUserSession.CurrentUser?.UserName);
+            _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+        });
+    }
+
+    private static string GetTareaIcon(string tipo) => tipo switch
+    {
+        CrmTareaTipos.Llamada => "bi-telephone",
+        CrmTareaTipos.Email => "bi-envelope",
+        CrmTareaTipos.Reunion => "bi-people",
+        CrmTareaTipos.WhatsApp => "bi-whatsapp",
+        _ => "bi-check2-square"
+    };
+
+    private static string FormatProximaAccion(DateTime vencimiento)
+    {
+        var hoy = DateTime.Today;
+        var dia = vencimiento.Date;
+        if (dia == hoy)
+            return $"Hoy {vencimiento:HH:mm}";
+        if (dia == hoy.AddDays(1))
+            return $"Mañana {vencimiento:HH:mm}";
+        if (dia == hoy.AddDays(-1))
+            return $"Ayer {vencimiento:HH:mm}";
+        return vencimiento.ToString("dd/MM HH:mm");
     }
 
     private void ToggleTag(int id, ChangeEventArgs args)
@@ -1345,6 +2116,375 @@
         });
     }
 
+    private void OpenMotivos() { NewMotivo(); _showMotivos = true; }
+    private void CloseMotivos() => _showMotivos = false;
+    private void NewMotivo() => _motivoDraft = new CrmMotivoPerdidaSaveRequest { Orden = (_lookups.MotivosPerdida.Count + 1) * 10 };
+    private void EditMotivo(CrmMotivoPerdidaDto motivo) => _motivoDraft = new CrmMotivoPerdidaSaveRequest { IdMotivo = motivo.IdMotivo, Nombre = motivo.Nombre, Orden = motivo.Orden };
+    private async Task SaveMotivoAsync()
+    {
+        await RunAsync(async () =>
+        {
+            _motivoDraft.UsuarioAccion = AppUserSession.CurrentUser?.UserName;
+            await CrmSvc.SaveMotivoPerdidaAsync(_motivoDraft);
+            _lookups = await CrmSvc.GetLookupsAsync();
+            NewMotivo();
+        });
+    }
+
+    private async Task DeleteMotivoAsync(int id)
+    {
+        await RunAsync(async () =>
+        {
+            await CrmSvc.DeleteMotivoPerdidaAsync(id, AppUserSession.CurrentUser?.UserName);
+            _lookups = await CrmSvc.GetLookupsAsync();
+        });
+    }
+
+    private async Task LoadCotizacionesAsync()
+    {
+        if (_detail is null)
+        {
+            _cotizaciones = [];
+            return;
+        }
+        _cotizaciones = (await CotizSvc.GetByOportunidadAsync(_detail.IdOportunidad)).ToList();
+    }
+
+    private async Task NuevaCotizacionAsync(string tipo)
+    {
+        if (_detail is null)
+            return;
+        await RunAsync(async () =>
+        {
+            _cotizEditId = 0;
+            _cotizEsServicio = string.Equals(tipo, CrmCotizacionTipos.Servicio, StringComparison.OrdinalIgnoreCase);
+            _cotizClienteCodigo = _detail.ClienteCodigo ?? string.Empty;
+            _cotizPricing = await CotizSvc.ResolvePricingContextAsync(_cotizClienteCodigo);
+            _cotizForm = new CrmCotizacionSaveRequest
+            {
+                IdOportunidad = _detail.IdOportunidad,
+                Tipo = tipo,
+                Estado = CrmCotizacionEstados.Borrador,
+                FechaVencimiento = DateTime.Today.AddDays(15)
+            };
+            _cotizLineas = [];
+            _cotizResultados = [];
+            _cotizIaSugerencias = [];
+            _cotizIaSeleccion = [];
+            _cotizBusqueda = string.Empty;
+            _cotizIaPrompt = string.Empty;
+            _cotizEditorPendingHtml = _cotizEsServicio ? string.Empty : null;
+            _cotizEditorNeedsSync = _cotizEsServicio;
+            _showCotizEditor = true;
+        });
+    }
+
+    private async Task EditarCotizacionAsync(long id)
+    {
+        if (_detail is null)
+            return;
+        await RunAsync(async () =>
+        {
+            var detalle = await CotizSvc.GetByIdAsync(id);
+            if (detalle is null)
+                return;
+            _cotizEditId = id;
+            _cotizEsServicio = detalle.EsServicio;
+            _cotizClienteCodigo = detalle.ClienteCodigo ?? string.Empty;
+            _cotizPricing = await CotizSvc.ResolvePricingContextAsync(_cotizClienteCodigo);
+            _cotizForm = new CrmCotizacionSaveRequest
+            {
+                IdCotizacion = id,
+                IdOportunidad = detalle.IdOportunidad,
+                Tipo = detalle.Tipo,
+                Estado = detalle.Estado,
+                FechaVencimiento = detalle.FechaVencimiento,
+                Observaciones = detalle.Observaciones
+            };
+            _cotizLineas = detalle.Lineas.Select(x => new CrmCotizacionLineRequest
+            {
+                IdArticulo = x.IdArticulo,
+                Descripcion = x.Descripcion,
+                Cantidad = x.Cantidad,
+                PrecioUnitario = _cotizPricing.PreciosConIva ? x.PrecioUnitarioConIva : x.PrecioUnitarioNeto,
+                TasaIva = x.TasaIva
+            }).ToList();
+            _cotizResultados = [];
+            _cotizIaSugerencias = [];
+            _cotizIaSeleccion = [];
+            _cotizBusqueda = string.Empty;
+            _cotizIaPrompt = string.Empty;
+            _cotizEditorPendingHtml = _cotizEsServicio ? detalle.CuerpoServicio : null;
+            _cotizEditorNeedsSync = _cotizEsServicio;
+            _showCotizEditor = true;
+        });
+    }
+
+    private async Task AplicarClienteCotizAsync()
+    {
+        await RunAsync(async () =>
+        {
+            _cotizPricing = await CotizSvc.ResolvePricingContextAsync(_cotizClienteCodigo);
+            _cotizResultados = [];
+        });
+    }
+
+    private async Task OnCotizSearchKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await BuscarArticulosCotizAsync();
+    }
+
+    private async Task BuscarArticulosCotizAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_cotizBusqueda))
+        {
+            _cotizResultados = [];
+            return;
+        }
+        await RunAsync(async () =>
+        {
+            _cotizResultados = (await CotizSvc.SearchArticulosAsync(_cotizClienteCodigo, _cotizBusqueda)).ToList();
+        });
+    }
+
+    private void AgregarArticuloCotiz(CrmCotizacionArticuloDto art)
+    {
+        _cotizLineas.Add(new CrmCotizacionLineRequest
+        {
+            IdArticulo = art.IdArticulo,
+            Descripcion = art.Descripcion,
+            Cantidad = 1m,
+            PrecioUnitario = _cotizPricing.PreciosConIva ? art.PrecioUnitarioConIva : art.PrecioUnitarioNeto,
+            TasaIva = art.TasaIva
+        });
+        _cotizResultados = [];
+        _cotizBusqueda = string.Empty;
+    }
+
+    private void AgregarLineaManualCotiz()
+        => _cotizLineas.Add(new CrmCotizacionLineRequest { Cantidad = 1m });
+
+    private void QuitarLineaCotiz(CrmCotizacionLineRequest l) => _cotizLineas.Remove(l);
+
+    private void CerrarCotizEditor()
+    {
+        _showCotizEditor = false;
+        _cotizResultados = [];
+    }
+
+    private async Task GuardarCotizacionAsync()
+    {
+        if (_detail is null)
+            return;
+        if (_cotizEsServicio)
+            _cotizForm.CuerpoServicio = await JS.InvokeAsync<string>("crmCotizacion.getHtml", _cotizEditorRef);
+        await RunAsync(async () =>
+        {
+            _cotizForm.IdOportunidad = _detail.IdOportunidad;
+            _cotizForm.ClienteCodigo = string.IsNullOrWhiteSpace(_cotizClienteCodigo) ? null : _cotizClienteCodigo.Trim();
+            _cotizForm.IdTecnico = _form.IdTecnico;
+            _cotizForm.Lineas = _cotizLineas;
+            _cotizForm.UsuarioAccion = AppUserSession.CurrentUser?.UserName;
+            await CotizSvc.SaveAsync(_cotizForm);
+            _showCotizEditor = false;
+            _cotizResultados = [];
+            await LoadCotizacionesAsync();
+            _detail = await CrmSvc.GetByIdAsync(_detail.IdOportunidad);
+            ShowOk("Cotización guardada", "La cotización se guardó correctamente.");
+        });
+    }
+
+    private async Task GenerarPropuestaIaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_cotizIaPrompt))
+            return;
+        _cotizIaCargando = true;
+        await RunAsync(async () =>
+        {
+            var html = await CotizSvc.GenerateServiceProposalAsync(_cotizIaPrompt, _cotizPricing.ClienteNombre);
+            if (!string.IsNullOrWhiteSpace(html))
+            {
+                // Anexa al contenido existente en el editor, sin pisar lo ya escrito.
+                var actual = await JS.InvokeAsync<string>("crmCotizacion.getHtml", _cotizEditorRef);
+                await JS.InvokeVoidAsync("crmCotizacion.setHtml", _cotizEditorRef, string.IsNullOrWhiteSpace(actual) ? html : actual + html);
+            }
+        });
+        _cotizIaCargando = false;
+    }
+
+    private async Task OnCotizIaKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key != "Enter")
+            return;
+        if (_cotizEsServicio)
+            await GenerarPropuestaIaAsync();
+        else
+            await SugerirLineasIaAsync();
+    }
+
+    private async Task SugerirLineasIaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_cotizIaPrompt))
+            return;
+        _cotizIaCargando = true;
+        await RunAsync(async () =>
+        {
+            var sugerencias = await CotizSvc.SuggestLinesFromPromptAsync(_cotizClienteCodigo, _cotizIaPrompt);
+            _cotizIaSugerencias = sugerencias.ToList();
+            _cotizIaSeleccion = _cotizIaSugerencias.Select(x => x.IdArticulo).ToHashSet();
+            if (_cotizIaSugerencias.Count == 0)
+                _feedback = new Feedback("Sin resultados", "El asistente no encontró artículos para ese pedido. Probá con otras palabras.", null);
+        });
+        _cotizIaCargando = false;
+    }
+
+    private void ToggleSugerencia(string idArticulo, ChangeEventArgs args)
+    {
+        if (args.Value is bool value && value)
+            _cotizIaSeleccion.Add(idArticulo);
+        else
+            _cotizIaSeleccion.Remove(idArticulo);
+    }
+
+    private void ToggleTodasSugerencias()
+    {
+        if (_cotizIaSeleccion.Count == _cotizIaSugerencias.Count)
+            _cotizIaSeleccion.Clear();
+        else
+            _cotizIaSeleccion = _cotizIaSugerencias.Select(x => x.IdArticulo).ToHashSet();
+    }
+
+    private void AgregarSugerenciasSeleccionadas()
+    {
+        foreach (var sug in _cotizIaSugerencias.Where(x => _cotizIaSeleccion.Contains(x.IdArticulo)))
+        {
+            _cotizLineas.Add(new CrmCotizacionLineRequest
+            {
+                IdArticulo = sug.IdArticulo,
+                Descripcion = sug.Descripcion,
+                Cantidad = sug.Cantidad > 0 ? sug.Cantidad : 1m,
+                PrecioUnitario = _cotizPricing.PreciosConIva ? sug.PrecioUnitarioConIva : sug.PrecioUnitarioNeto,
+                TasaIva = sug.TasaIva
+            });
+        }
+        _cotizIaSugerencias.Clear();
+        _cotizIaSeleccion.Clear();
+    }
+
+    private async Task RichExec(string command) => await JS.InvokeVoidAsync("crmCotizacion.exec", command);
+    private async Task RichInsertText(string text) => await JS.InvokeVoidAsync("crmCotizacion.insertText", text);
+    private async Task RichInsertImageAsync() => await JS.InvokeVoidAsync("crmCotizacion.insertImage", _cotizEditorRef);
+
+    private async Task EliminarCotizacionAsync(long id)
+    {
+        if (_detail is null)
+            return;
+        await RunAsync(async () =>
+        {
+            await CotizSvc.DeleteAsync(id, AppUserSession.CurrentUser?.UserName);
+            await LoadCotizacionesAsync();
+        });
+    }
+
+    private async Task OnClienteBuscarAfter()
+    {
+        var texto = (_form.ClienteCodigo ?? string.Empty).Trim();
+        if (texto.Length < 2)
+        {
+            _clienteResultados = [];
+            _clienteDropdownOpen = false;
+            return;
+        }
+
+        _clienteBuscarCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _clienteBuscarCts = cts;
+        try
+        {
+            await Task.Delay(250, cts.Token);
+            var page = await ClientesSvc.SearchAsync(CuentaComercialTipo.Cliente, new CuentaComercialFilters { Texto = texto, PageNumber = 1, PageSize = 8 }, cts.Token);
+            if (cts.Token.IsCancellationRequested)
+                return;
+            _clienteResultados = page.Items.ToList();
+            _clienteDropdownOpen = _clienteResultados.Count > 0;
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void SeleccionarCliente(CuentaComercialGridItemDto cli)
+    {
+        _form.ClienteCodigo = cli.Codigo;
+        _clienteResultados = [];
+        _clienteDropdownOpen = false;
+    }
+
+    private async Task AbrirCompartirAsync(CrmCotizacionDto cot)
+    {
+        _compartirCot = cot;
+        _compartirUrl = string.Empty;
+        _compartirEmail = string.Empty;
+        _showCompartir = true;
+        await RunAsync(async () =>
+        {
+            var share = await CotizSvc.EnsureShareAsync(cot.IdCotizacion);
+            if (!string.IsNullOrWhiteSpace(share.RelativeUrl))
+                _compartirUrl = BuildPublicBase().TrimEnd('/') + share.RelativeUrl;
+        });
+    }
+
+    private void CerrarCompartir()
+    {
+        _showCompartir = false;
+        _compartirCot = null;
+    }
+
+    private string BuildPublicBase()
+    {
+        var configured = Config["ServidorWeb:UrlBasePublica"];
+        return string.IsNullOrWhiteSpace(configured) ? Nav.BaseUri : configured;
+    }
+
+    private async Task EnviarEmailCotAsync()
+    {
+        if (_compartirCot is null || string.IsNullOrWhiteSpace(_compartirEmail))
+            return;
+        await RunAsync(async () =>
+        {
+            await CotizSvc.SendByEmailAsync(_compartirCot.IdCotizacion, _compartirEmail.Trim(), string.IsNullOrWhiteSpace(_compartirUrl) ? null : _compartirUrl);
+            _showCompartir = false;
+            await LoadCotizacionesAsync();
+            ShowOk("Email enviado", $"La cotización se envió a {_compartirEmail.Trim()}.");
+        });
+    }
+
+    private async Task EnviarWhatsAppCotAsync()
+    {
+        if (_compartirCot is null || _detail?.IdConversacion is not long idConv)
+            return;
+        await RunAsync(async () =>
+        {
+            var texto = string.IsNullOrWhiteSpace(_compartirUrl)
+                ? $"Hola, te comparto la cotización {_compartirCot.CodigoVisible} por un total de {FormatMoney(_compartirCot.Total)}."
+                : $"Hola, te comparto la cotización {_compartirCot.CodigoVisible}. La podés ver acá: {_compartirUrl}";
+            await ConvSvc.SendMessageAsync(new ConversacionSendMessageRequest
+            {
+                IdConversacion = idConv,
+                Texto = texto,
+                MessageType = "TEXT",
+                UsuarioAccion = AppUserSession.CurrentUser?.UserName
+            });
+            _showCompartir = false;
+            ShowOk("Enviado por WhatsApp", "La cotización se envió a la conversación del cliente.");
+        });
+    }
+
+    private async Task CopiarLinkAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_compartirUrl))
+            await JS.InvokeVoidAsync("crmCotizacion.copy", _compartirUrl);
+    }
+
     private void ToggleColumn(string key, ChangeEventArgs args)
     {
         var col = _viewDraft.Columnas.FirstOrDefault(x => x.Key == key);
@@ -1395,6 +2535,9 @@
     private string GetModeClass(string mode) => _viewMode == mode ? "is-active" : string.Empty;
     private static string Display(string primary, string fallback, string empty) => !string.IsNullOrWhiteSpace(primary) ? primary : (!string.IsNullOrWhiteSpace(fallback) ? fallback : empty);
     private static string FormatMoney(decimal value) => value.ToString("C0", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static int BarWidth(decimal value, decimal max)
+        => max <= 0 ? 0 : (int)Math.Round(Math.Clamp((double)(value / max) * 100.0, 2, 100));
     private static string FormatDate(DateTime value) => value == DateTime.MinValue ? "-" : value.ToString("dd/MM/yyyy HH:mm");
     private static string BuildQuickDescription(string email, string phone)
     {

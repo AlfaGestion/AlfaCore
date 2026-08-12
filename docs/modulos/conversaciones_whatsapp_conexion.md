@@ -143,6 +143,74 @@ Se usa para construir la URL del endpoint de envío.
 
 Se usa para mostrar la URL exacta que tenés que registrar en Meta.
 
+## Múltiples números de WhatsApp (opcional)
+
+Desde el `2026-08-10` el módulo soporta, de forma opcional y aditiva, **más de un número de
+WhatsApp Business** para el mismo cliente — por ejemplo, un número por vendedor o por equipo de
+ventas, cada uno atendido por uno o varios usuarios del sistema. Un cliente que solo usa un
+número no tiene que hacer nada distinto: sigue funcionando exactamente igual que antes.
+
+### Concepto
+
+- **1 número : N usuarios.** Un número puede estar atendido por varios usuarios a la vez (un
+  equipo compartiendo la misma línea), no es 1 a 1.
+- **El `Access Token` sigue siendo único y compartido.** Un solo System User de Meta suele cubrir
+  toda la WABA (WhatsApp Business Account), así que no hace falta un token por número — solo el
+  `Phone Number ID` cambia por número.
+- **Una conversación queda fijada a un número para siempre, desde el primer mensaje.** La
+  ventana de 24 h de respuesta de Meta es por par (número, cliente), así que el número de
+  origen de una conversación no se puede cambiar después sin romper esa ventana.
+- **Administrador de conversaciones**: un usuario marcado como tal ve y puede responder por
+  cualquier número, sin restricción. Es un permiso propio del módulo, independiente del
+  "Administrador del sistema" general (Autorización de tareas).
+- Un usuario que **no** es administrador de conversaciones solo ve, en el inbox, las
+  conversaciones de los números donde está vinculado.
+
+### Dónde se configura en AlfaCore
+
+Misma pantalla que el resto de la configuración del canal:
+
+- `/conversaciones/configuracion` → sección **"Números de WhatsApp"** (alta/edición de cada
+  número, con Phone Number ID, nombre y los usuarios vinculados) y sección **"Administradores de
+  conversaciones"** (checklist de usuarios).
+
+### Modelo de datos
+
+| Tabla | Qué guarda |
+|---|---|
+| `CONV_WHATSAPP_NUMEROS` | Cada número: `IdNumero`, `PhoneNumberId`, `Nombre`, `Activo` |
+| `CONV_WHATSAPP_NUMERO_USUARIOS` | Vínculo N a N entre número y usuario (`IdNumero`, `Usuario`, `Sistema`) |
+| `CONV_ADMINISTRADORES` | Usuarios marcados como administradores de conversaciones (`Usuario`, `Sistema`) |
+| `CONV_CONVERSACIONES.IdNumeroWhatsApp` | Columna nueva (nullable): número al que quedó fijada la conversación |
+
+Migración: `App_Data/updates/2026-08-10-003__conversaciones_whatsapp_multinumero.sql`. Si el
+cliente ya tenía `CONV_WHATSAPP_PHONE_NUMBER_ID` configurado en `TA_CONFIGURACION`, el script lo
+migra solo como primer número (mismo dato, sin que haya que cargarlo de nuevo).
+
+### Cómo se resuelve en tiempo de ejecución
+
+- **Webhook entrante**: se lee `metadata.phone_number_id` del payload de Meta y, si coincide con
+  algún `PhoneNumberId` registrado, la conversación nueva queda fijada a ese número
+  (`CONV_CONVERSACIONES.IdNumeroWhatsApp`). Si el payload no trae ese dato o el número no está
+  registrado, la conversación queda sin número fijo — visible para todos, igual que el
+  comportamiento de antes de esta funcionalidad.
+- **Envío saliente** (texto, plantilla, reacción, adjunto): si la conversación tiene un número
+  propio fijado, se usa ese `Phone Number ID` en la llamada a Meta en vez del único configurado
+  en `CONV_WHATSAPP_PHONE_NUMBER_ID`. El `Access Token` sigue siendo el compartido.
+- **Inbox**: una conversación con número fijado solo la ve el usuario vinculado a ese número o
+  un administrador de conversaciones. Sin número fijado, sigue visible para todos.
+- **"Asignar a"**: el combo de técnicos se filtra a los usuarios vinculados al número de esa
+  conversación (o a la lista completa si no hay vínculos cargados, para no bloquear la
+  asignación).
+
+### Requisito de despliegue
+
+Las consultas nuevas referencian `CONV_WHATSAPP_NUMEROS` / `CONV_WHATSAPP_NUMERO_USUARIOS` /
+`CONV_ADMINISTRADORES` / `CONV_CONVERSACIONES.IdNumeroWhatsApp` **sin guardas de
+compatibilidad** — hay que correr la migración `2026-08-10-003` (Actualizaciones → "Ejecutar
+pendientes") en cada base **antes** de desplegar esta versión del código, o el módulo
+Conversaciones se rompe por completo en esa base (tabla/columna inexistente).
+
 ## Recomendaciones operativas
 
 - Usar un token estable y no uno temporal de pruebas para producción.

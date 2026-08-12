@@ -41,17 +41,115 @@ public class CrmOpportunityDto
     public string CanalOrigen { get; set; } = string.Empty;
     public long? IdConversacion { get; set; }
     public int MensajesOrigen { get; set; }
+    public int? IdMotivoPerdida { get; set; }
+    public string MotivoPerdidaNombre { get; set; } = string.Empty;
     public string UsuarioAlta { get; set; } = string.Empty;
     public DateTime FechaHoraAlta { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }
     public DateTime? FechaHoraCierre { get; set; }
     public List<CrmEtiquetaDto> Etiquetas { get; set; } = [];
+
+    // Próxima acción = tarea pendiente más próxima por vencimiento (null si no tiene ninguna).
+    public long? ProximaAccionId { get; set; }
+    public string ProximaAccionTipo { get; set; } = string.Empty;
+    public string ProximaAccionTitulo { get; set; } = string.Empty;
+    public DateTime? ProximaAccionVencimiento { get; set; }
+    public bool ProximaAccionVencida { get; set; }
 }
 
 public sealed class CrmOpportunityDetailDto : CrmOpportunityDto
 {
     public List<CrmActividadDto> Actividad { get; set; } = [];
     public List<CrmMensajeOrigenDto> MensajesOrigenDetalle { get; set; } = [];
+    public List<CrmTareaDto> Tareas { get; set; } = [];
+}
+
+public sealed class CrmTareaDto
+{
+    public long IdTarea { get; set; }
+    public long IdOportunidad { get; set; }
+    public string TipoAccion { get; set; } = CrmTareaTipos.Tarea;
+    public string Titulo { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+    public DateTime Vencimiento { get; set; }
+    public string IdTecnico { get; set; } = string.Empty;
+    public string TecnicoNombre { get; set; } = string.Empty;
+    public bool Completada { get; set; }
+    public DateTime? FechaHoraCompletada { get; set; }
+    public bool Vencida { get; set; }
+}
+
+public sealed class CrmTareaSaveRequest
+{
+    public long IdTarea { get; set; }
+    public long IdOportunidad { get; set; }
+    public string TipoAccion { get; set; } = CrmTareaTipos.Tarea;
+    public string Titulo { get; set; } = string.Empty;
+    public string Detalle { get; set; } = string.Empty;
+    public DateTime Vencimiento { get; set; }
+    public string? IdTecnico { get; set; }
+    public string? UsuarioAccion { get; set; }
+}
+
+public sealed class CrmDashboardDto
+{
+    public int TotalAbiertas { get; set; }
+    public decimal ImporteBruto { get; set; }
+    public decimal ImportePonderado { get; set; }
+    public int Ganadas { get; set; }
+    public decimal ImporteGanado { get; set; }
+    public int Perdidas { get; set; }
+    public int Estancadas { get; set; }
+    public int DiasEstancamiento { get; set; } = 7;
+    public double TasaConversion { get; set; }
+    public List<CrmDashboardEtapaDto> PorEtapa { get; set; } = [];
+    public List<CrmDashboardTecnicoDto> PorTecnico { get; set; } = [];
+    public List<CrmDashboardMotivoDto> MotivosPerdida { get; set; } = [];
+}
+
+public sealed class CrmDashboardMotivoDto
+{
+    public string Nombre { get; set; } = string.Empty;
+    public int Cantidad { get; set; }
+}
+
+public sealed class CrmDashboardEtapaDto
+{
+    public int IdEtapa { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string Color { get; set; } = string.Empty;
+    public int Cantidad { get; set; }
+    public decimal ImporteBruto { get; set; }
+    public decimal ImportePonderado { get; set; }
+}
+
+public sealed class CrmDashboardTecnicoDto
+{
+    public string IdTecnico { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public int Abiertas { get; set; }
+    public decimal ImporteBruto { get; set; }
+    public decimal ImportePonderado { get; set; }
+}
+
+public sealed class CrmConversationPrefillDto
+{
+    public long IdConversacion { get; set; }
+    public string TituloSugerido { get; set; } = string.Empty;
+    public string ClienteCodigo { get; set; } = string.Empty;
+    public string ClienteNombre { get; set; } = string.Empty;
+    public int? IdContacto { get; set; }
+    public string ContactoNombre { get; set; } = string.Empty;
+    public string CanalOrigen { get; set; } = string.Empty;
+}
+
+public static class CrmTareaTipos
+{
+    public const string Llamada = "LLAMADA";
+    public const string Email = "EMAIL";
+    public const string Reunion = "REUNION";
+    public const string WhatsApp = "WHATSAPP";
+    public const string Tarea = "TAREA";
 }
 
 public sealed class CrmEtapaDto
@@ -96,6 +194,14 @@ public sealed class CrmLookupDto
     public List<CrmEtapaDto> Etapas { get; set; } = [];
     public List<ConversacionTecnicoOptionDto> Tecnicos { get; set; } = [];
     public List<CrmEtiquetaDto> Etiquetas { get; set; } = [];
+    public List<CrmMotivoPerdidaDto> MotivosPerdida { get; set; } = [];
+}
+
+public sealed class CrmMotivoPerdidaDto
+{
+    public int IdMotivo { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public int Orden { get; set; }
 }
 
 public sealed class CrmOpportunitySaveRequest
@@ -115,6 +221,7 @@ public sealed class CrmOpportunitySaveRequest
     public long? IdConversacion { get; set; }
     public List<long> IdMensajes { get; set; } = [];
     public List<int> IdEtiquetas { get; set; } = [];
+    public int? IdMotivoPerdida { get; set; }
     public string? UsuarioAccion { get; set; }
 }
 
@@ -125,6 +232,15 @@ public sealed class CrmQuickUpdateRequest
     public string? IdTecnico { get; set; }
     public int? Prioridad { get; set; }
     public int? Probabilidad { get; set; }
+    public int? IdMotivoPerdida { get; set; }
+    public string? UsuarioAccion { get; set; }
+}
+
+public sealed class CrmMotivoPerdidaSaveRequest
+{
+    public int IdMotivo { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public int Orden { get; set; }
     public string? UsuarioAccion { get; set; }
 }
 

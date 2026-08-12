@@ -2,6 +2,7 @@ using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using System.Globalization;
 using System.Net.Http;
 using System.Text.Json;
 
@@ -12,7 +13,8 @@ public sealed class ConversacionesConfigService(
     ISessionService sessionService,
     IAppEventService appEvents,
     IOptions<WhatsAppOptions> whatsAppOptions,
-    IHttpClientFactory httpClientFactory) : IConversacionesConfigService
+    IHttpClientFactory httpClientFactory,
+    IAppUserSessionService appUserSession) : IConversacionesConfigService
 {
     private const string ConfigGroup = "CONVERSACIONES";
     private const string DefaultWebhookPath = "/api/conversaciones/whatsapp/webhook";
@@ -686,6 +688,395 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo guardar la configuración de automatizaciones.", ct);
     }
 
+    public Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetPrioridadConfig", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            const string sql = """
+                SELECT
+                    UPPER(LTRIM(RTRIM(CLAVE))),
+                    ISNULL(VALOR, '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN ('CLASIFICA1', 'CLASIFICA2', 'CLASIFICA3')
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+                values[GetString(rd, 0)] = GetString(rd, 1);
+
+            return new ConversacionPrioridadConfigDto
+            {
+                Clasifica1 = ReadValue(values, "CLASIFICA1", string.Empty),
+                Clasifica2 = ReadValue(values, "CLASIFICA2", string.Empty),
+                Clasifica3 = ReadValue(values, "CLASIFICA3", string.Empty)
+            };
+        }, "No se pudo cargar la configuración de prioridad de atención.", ct);
+
+    public Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        return ExecuteLoggedAsync("Conversaciones", "SavePrioridadConfig", async token =>
+        {
+            var items = new[]
+            {
+                ("CLASIFICA1", (config.Clasifica1 ?? string.Empty).Trim()),
+                ("CLASIFICA2", (config.Clasifica2 ?? string.Empty).Trim()),
+                ("CLASIFICA3", (config.Clasifica3 ?? string.Empty).Trim())
+            };
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            foreach (var (clave, valor) in items)
+            {
+                // Grupo DATOS a proposito: son las mismas claves globales que ya usa Desktop
+                // (sp1_GrabaCfg), no exclusivas de Conversaciones — no las re-agrupamos.
+                var sql = $"""
+                    UPDATE dbo.TA_CONFIGURACION
+                    SET VALOR = @Valor
+                    WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                    IF @@ROWCOUNT = 0
+                    BEGIN
+                        INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, GRUPO)
+                        VALUES (@Clave, @Valor, 'DATOS');
+                    END;
+                    """;
+
+                await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@ClaveNormalizada", clave);
+                cmd.Parameters.AddWithValue("@Clave", clave);
+                cmd.Parameters.AddWithValue("@Valor", DbNullable(valor));
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SavePrioridadConfig",
+                "TA_CONFIGURACION",
+                "CLASIFICA1/2/3",
+                "Prioridad de atención por clasificación actualizada.",
+                new { config.Clasifica1, config.Clasifica2, config.Clasifica3 },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración de prioridad de atención.", ct);
+    }
+
+    public Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetClasificaciones", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            const string sql = """
+                SELECT DISTINCT ISNULL(Codigo, ''), ISNULL(Descripcion, '')
+                FROM dbo.TA_CLASIFICACIONES
+                WHERE LTRIM(RTRIM(ISNULL(Codigo, ''))) <> ''
+                ORDER BY 2, 1
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            var result = new List<ConversacionClasificacionOptionDto>();
+            while (await rd.ReadAsync(token))
+                result.Add(new ConversacionClasificacionOptionDto(GetString(rd, 0), GetString(rd, 1)));
+
+            return (IReadOnlyList<ConversacionClasificacionOptionDto>)result;
+        }, "No se pudieron cargar las clasificaciones de clientes.", ct);
+
+    // Consulta TA_USUARIOS directo acá (en vez de reusar AutorizacionTareasService) a propósito:
+    // AutorizacionTareasService depende de ICentralAdminService, que a su vez depende de
+    // IConversacionesConfigService -- inyectar AutorizacionTareasService acá cierra un ciclo en el
+    // contenedor de DI y tira "circular dependency detected" al arrancar la app.
+    public Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetUsuariosSistema", async token =>
+        {
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (sistema.Length == 0)
+                return (IReadOnlyList<UsuarioSistemaDto>)Array.Empty<UsuarioSistemaDto>();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            const string tableExistsSql = "SELECT COUNT(1) FROM sys.tables WHERE object_id = OBJECT_ID(N'dbo.TA_USUARIOS');";
+            await using (var checkCmd = new SqlCommand(tableExistsSql, cn))
+            {
+                var exists = Convert.ToInt32(await checkCmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture) > 0;
+                if (!exists)
+                    return (IReadOnlyList<UsuarioSistemaDto>)Array.Empty<UsuarioSistemaDto>();
+            }
+
+            const string columnExistsSql = "SELECT COUNT(1) FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.TA_USUARIOS') AND LOWER(name) = 'activo';";
+            bool hasActivo;
+            await using (var checkCmd = new SqlCommand(columnExistsSql, cn))
+            {
+                hasActivo = Convert.ToInt32(await checkCmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture) > 0;
+            }
+
+            var sql = $"""
+                SELECT
+                    ISNULL(NOMBRE, ''),
+                    ISNULL(SISTEMA, ''),
+                    {(hasActivo ? "ISNULL(Activo, 1)" : "CAST(1 AS bit)")},
+                    ISNULL(Administrador, 0),
+                    ISNULL(EsGrupo, 0)
+                FROM dbo.TA_USUARIOS
+                WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
+                  AND ISNULL(EsGrupo, 0) = 0
+                  {(hasActivo ? "AND ISNULL(Activo, 1) = 1" : string.Empty)}
+                ORDER BY NOMBRE;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Sistema", sistema);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            var result = new List<UsuarioSistemaDto>();
+            while (await rd.ReadAsync(token))
+            {
+                result.Add(new UsuarioSistemaDto
+                {
+                    Nombre = GetString(rd, 0),
+                    Sistema = GetString(rd, 1),
+                    Activo = GetBool(rd, 2),
+                    Administrador = GetBool(rd, 3),
+                    EsGrupo = GetBool(rd, 4)
+                });
+            }
+
+            return (IReadOnlyList<UsuarioSistemaDto>)result;
+        }, "No se pudieron cargar los usuarios del sistema.", ct);
+
+    public Task<IReadOnlyList<ConversacionWhatsAppNumeroDto>> GetWhatsAppNumerosAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppNumeros", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+
+            var numeros = new List<ConversacionWhatsAppNumeroDto>();
+            const string sqlNumeros = """
+                SELECT IdNumero, ISNULL(PhoneNumberId, ''), ISNULL(Nombre, ''), Activo
+                FROM dbo.CONV_WHATSAPP_NUMEROS
+                ORDER BY Nombre;
+                """;
+            await using (var cmd = new SqlCommand(sqlNumeros, cn))
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
+            {
+                while (await rd.ReadAsync(token))
+                {
+                    numeros.Add(new ConversacionWhatsAppNumeroDto
+                    {
+                        IdNumero = rd.GetInt32(0),
+                        PhoneNumberId = GetString(rd, 1),
+                        Nombre = GetString(rd, 2),
+                        Activo = rd.GetBoolean(3)
+                    });
+                }
+            }
+
+            var usuariosPorNumero = new Dictionary<int, List<string>>();
+            const string sqlUsuarios = """
+                SELECT IdNumero, Usuario
+                FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS
+                WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                """;
+            await using (var cmd = new SqlCommand(sqlUsuarios, cn))
+            {
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await using var rd = await cmd.ExecuteReaderAsync(token);
+                while (await rd.ReadAsync(token))
+                {
+                    var idNumero = rd.GetInt32(0);
+                    var usuario = GetString(rd, 1);
+                    if (!usuariosPorNumero.TryGetValue(idNumero, out var lista))
+                    {
+                        lista = [];
+                        usuariosPorNumero[idNumero] = lista;
+                    }
+                    lista.Add(usuario);
+                }
+            }
+
+            foreach (var numero in numeros)
+                numero.Usuarios = usuariosPorNumero.TryGetValue(numero.IdNumero, out var lista) ? lista : [];
+
+            return (IReadOnlyList<ConversacionWhatsAppNumeroDto>)numeros;
+        }, "No se pudieron cargar los números de WhatsApp.", ct);
+
+    public Task SaveWhatsAppNumeroAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(numero);
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveWhatsAppNumero", async token =>
+        {
+            var phoneNumberId = (numero.PhoneNumberId ?? string.Empty).Trim();
+            var nombre = (numero.Nombre ?? string.Empty).Trim();
+            if (phoneNumberId.Length == 0)
+                throw new InvalidOperationException("El Phone Number ID es obligatorio.");
+            if (nombre.Length == 0)
+                throw new InvalidOperationException("El nombre del número es obligatorio.");
+
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (sistema.Length == 0)
+                throw new InvalidOperationException("No se pudo determinar el sistema del usuario actual.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            int idNumero;
+            if (numero.IdNumero > 0)
+            {
+                const string sqlUpdate = """
+                    UPDATE dbo.CONV_WHATSAPP_NUMEROS
+                    SET PhoneNumberId = @PhoneNumberId, Nombre = @Nombre, Activo = @Activo, FechaHora_Modificacion = GETDATE()
+                    WHERE IdNumero = @IdNumero;
+                    """;
+                await using var cmd = new SqlCommand(sqlUpdate, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
+                cmd.Parameters.AddWithValue("@Nombre", nombre);
+                cmd.Parameters.AddWithValue("@Activo", numero.Activo);
+                cmd.Parameters.AddWithValue("@IdNumero", numero.IdNumero);
+                await cmd.ExecuteNonQueryAsync(token);
+                idNumero = numero.IdNumero;
+            }
+            else
+            {
+                const string sqlInsert = """
+                    INSERT INTO dbo.CONV_WHATSAPP_NUMEROS (PhoneNumberId, Nombre, Activo)
+                    OUTPUT INSERTED.IdNumero
+                    VALUES (@PhoneNumberId, @Nombre, @Activo);
+                    """;
+                await using var cmd = new SqlCommand(sqlInsert, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
+                cmd.Parameters.AddWithValue("@Nombre", nombre);
+                cmd.Parameters.AddWithValue("@Activo", numero.Activo);
+                idNumero = (int)(await cmd.ExecuteScalarAsync(token))!;
+            }
+
+            const string sqlDeleteUsuarios = """
+                DELETE FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS
+                WHERE IdNumero = @IdNumero AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                """;
+            await using (var cmd = new SqlCommand(sqlDeleteUsuarios, cn, (SqlTransaction)tx))
+            {
+                cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            foreach (var usuario in (numero.Usuarios ?? []).Select(u => (u ?? string.Empty).Trim()).Where(u => u.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                const string sqlInsertUsuario = """
+                    INSERT INTO dbo.CONV_WHATSAPP_NUMERO_USUARIOS (IdNumero, Usuario, Sistema)
+                    VALUES (@IdNumero, @Usuario, @Sistema);
+                    """;
+                await using var cmd = new SqlCommand(sqlInsertUsuario, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+                cmd.Parameters.AddWithValue("@Usuario", usuario);
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveWhatsAppNumero",
+                "CONV_WHATSAPP_NUMEROS",
+                phoneNumberId,
+                $"Número de WhatsApp '{nombre}' guardado.",
+                new { idNumero, phoneNumberId, nombre, numero.Activo, numero.Usuarios },
+                token);
+
+            return true;
+        }, "No se pudo guardar el número de WhatsApp.", ct);
+    }
+
+    public Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetConversacionAdministradores", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+
+            const string sql = """
+                SELECT Usuario
+                FROM dbo.CONV_ADMINISTRADORES
+                WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Sistema", sistema);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            var result = new List<string>();
+            while (await rd.ReadAsync(token))
+                result.Add(GetString(rd, 0));
+
+            return (IReadOnlyList<string>)result;
+        }, "No se pudieron cargar los administradores de conversaciones.", ct);
+
+    public Task SaveConversacionAdministradoresAsync(IReadOnlyList<string> usuarios, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(usuarios);
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveConversacionAdministradores", async token =>
+        {
+            var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+            if (sistema.Length == 0)
+                throw new InvalidOperationException("No se pudo determinar el sistema del usuario actual.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            const string sqlDelete = """
+                DELETE FROM dbo.CONV_ADMINISTRADORES
+                WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
+                """;
+            await using (var cmd = new SqlCommand(sqlDelete, cn, (SqlTransaction)tx))
+            {
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            foreach (var usuario in usuarios.Select(u => (u ?? string.Empty).Trim()).Where(u => u.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                const string sqlInsert = """
+                    INSERT INTO dbo.CONV_ADMINISTRADORES (Usuario, Sistema)
+                    VALUES (@Usuario, @Sistema);
+                    """;
+                await using var cmd = new SqlCommand(sqlInsert, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@Usuario", usuario);
+                cmd.Parameters.AddWithValue("@Sistema", sistema);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SaveConversacionAdministradores",
+                "CONV_ADMINISTRADORES",
+                sistema,
+                "Lista de administradores de conversaciones actualizada.",
+                new { Usuarios = usuarios },
+                token);
+
+            return true;
+        }, "No se pudieron guardar los administradores de conversaciones.", ct);
+    }
+
     public Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "TestAlfaKnowledgeConnection", async token =>
         {
@@ -1118,6 +1509,12 @@ public sealed class ConversacionesConfigService(
 
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index)) ?? string.Empty;
+
+    // Convert.ToBoolean (no rd.GetBoolean) a propósito: TA_USUARIOS es una tabla legacy y en
+    // algunas bases (ej. ALFANET2007) Administrador/EsGrupo/Activo están guardadas como int, no
+    // bit -- GetBoolean tira InvalidCastException ahí, Convert.ToBoolean tolera ambos.
+    private static bool GetBool(SqlDataReader rd, int index)
+        => !rd.IsDBNull(index) && Convert.ToBoolean(rd.GetValue(index), CultureInfo.InvariantCulture);
 
     private static string ReadJsonString(JsonElement root, string propertyName)
     {

@@ -144,19 +144,33 @@ window.conversacionesUi = {
     _lastSoundError: '',
     _soundInitialized: false,
 
-    // El disparador usa el atributo nativo `popovertarget` (sin round-trip a Blazor para abrir/cerrar).
-    // Este handler se cablea con un `onclick` HTML plano en el propio botón (no interop de Blazor),
-    // así corre siempre en el mismo click nativo que abre el popover, sin depender de que un bind
-    // previo (p.ej. en OnAfterRenderAsync) se haya registrado a tiempo.
+    // Los disparadores usan el atributo nativo `popovertarget` (sin round-trip a Blazor para abrir/
+    // cerrar) más un onclick plano que llama a esto. El onclick es lo robusto acá: Blazor re-renderiza
+    // esta pantalla constantemente (mensajes entrantes, timers), lo que reemplaza los nodos DOM del
+    // popover y del trigger, así que un listener 'toggle' enganchado una sola vez (vía JS interop en
+    // el primer render) queda huérfano apenas Blazor reemplaza el nodo. El onclick declarativo, en
+    // cambio, se vuelve a aplicar en cada render. El único riesgo real del onclick es de timing: el
+    // navegador puede no haber terminado de abrir el popover (y resuelto su layout) en el momento en
+    // que el handler corre, por eso se difiere el cálculo con requestAnimationFrame.
+    positionFilterMenu: function (triggerElement, popoverId) {
+        requestAnimationFrame(function () {
+            const menu = document.getElementById(popoverId);
+            if (!menu || !triggerElement || !menu.matches(':popover-open')) return;
+            const rect = triggerElement.getBoundingClientRect();
+            const menuWidth = menu.offsetWidth || 178;
+            const top = rect.bottom + 6;
+            const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+            menu.style.top = top + 'px';
+            menu.style.left = left + 'px';
+        });
+    },
+
     positionModeMenu: function (triggerElement) {
-        const menu = document.getElementById('conversations-mode-menu');
-        if (!menu || !triggerElement) return;
-        const rect = triggerElement.getBoundingClientRect();
-        const menuWidth = menu.offsetWidth || 178;
-        const top = rect.bottom + 6;
-        const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
-        menu.style.top = top + 'px';
-        menu.style.left = left + 'px';
+        this.positionFilterMenu(triggerElement, 'conversations-mode-menu');
+    },
+
+    positionCanalMenu: function (triggerElement) {
+        this.positionFilterMenu(triggerElement, 'conversations-canal-menu');
     },
 
     bindColumnResizers: function (rootId) {

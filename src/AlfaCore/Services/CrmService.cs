@@ -58,6 +58,11 @@ public sealed class CrmService(
                 FROM dbo.CRM_ETIQUETAS
                 WHERE ISNULL(Activa, 1) = 1
                 ORDER BY Nombre;
+
+                SELECT IdMotivo, Nombre, ISNULL(Orden, 0) AS Orden
+                FROM dbo.CRM_MOTIVOS_PERDIDA
+                WHERE ISNULL(Activo, 1) = 1
+                ORDER BY Orden, Nombre;
                 """;
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -67,7 +72,8 @@ public sealed class CrmService(
             {
                 Etapas = (await grid.ReadAsync<CrmEtapaDto>()).AsList(),
                 Tecnicos = (await grid.ReadAsync<ConversacionTecnicoOptionDto>()).AsList(),
-                Etiquetas = (await grid.ReadAsync<CrmEtiquetaDto>()).AsList()
+                Etiquetas = (await grid.ReadAsync<CrmEtiquetaDto>()).AsList(),
+                MotivosPerdida = (await grid.ReadAsync<CrmMotivoPerdidaDto>()).AsList()
             };
         }, "No se pudieron cargar los datos auxiliares de CRM.", ct);
 
@@ -154,6 +160,7 @@ public sealed class CrmService(
             await HydrateEtiquetasAsync(cn, new[] { item }, token);
             item.Actividad = (await GetActivityAsync(cn, idOportunidad, token)).ToList();
             item.MensajesOrigenDetalle = (await GetSourceMessagesAsync(cn, idOportunidad, token)).ToList();
+            item.Tareas = (await GetTareasAsync(cn, idOportunidad, token)).ToList();
             return item;
         }, "No se pudo cargar el detalle de la oportunidad.", ct);
 
@@ -172,6 +179,12 @@ public sealed class CrmService(
                 if (idEtapa <= 0)
                     idEtapa = await GetDefaultStageIdAsync(cn, tx, token);
 
+                // Motivo de pérdida: obligatorio si la etapa destino es "perdida"; se limpia si no lo es.
+                var esPerdida = await IsStageLostAsync(cn, tx, idEtapa, token);
+                int? idMotivoPerdida = esPerdida ? (request.IdMotivoPerdida is > 0 ? request.IdMotivoPerdida : null) : null;
+                if (esPerdida && idMotivoPerdida is null)
+                    throw new InvalidOperationException("Elegí el motivo de pérdida antes de marcar la oportunidad como perdida.");
+
                 var isNew = request.IdOportunidad <= 0;
                 var id = request.IdOportunidad;
                 if (isNew)
@@ -182,14 +195,16 @@ public sealed class CrmService(
                         (
                             Numero, Titulo, Descripcion, IdEtapa, Prioridad, Probabilidad, ImporteEstimado,
                             FechaCierreEstimada, IdTecnico, ClienteCodigo, IdContacto, CanalOrigen,
-                            IdConversacion, UsuarioAlta, FechaHoraAlta
+                            IdConversacion, IdMotivoPerdida, UsuarioAlta, FechaHoraAlta,
+                            FechaHoraCierre
                         )
                         OUTPUT INSERTED.IdOportunidad
                         VALUES
                         (
                             @Numero, @Titulo, @Descripcion, @IdEtapa, @Prioridad, @Probabilidad, @ImporteEstimado,
                             @FechaCierreEstimada, @IdTecnico, @ClienteCodigo, @IdContacto, @CanalOrigen,
-                            @IdConversacion, @UsuarioAlta, GETDATE()
+                            @IdConversacion, @IdMotivoPerdida, @UsuarioAlta, GETDATE(),
+                            CASE WHEN EXISTS (SELECT 1 FROM dbo.CRM_ETAPAS e WHERE e.IdEtapa = @IdEtapa AND (ISNULL(e.EsGanada, 0) = 1 OR ISNULL(e.EsPerdida, 0) = 1)) THEN GETDATE() ELSE NULL END
                         );
                         """, new
                         {
@@ -206,6 +221,7 @@ public sealed class CrmService(
                             request.IdContacto,
                             CanalOrigen = EmptyToNull(request.CanalOrigen),
                             request.IdConversacion,
+                            IdMotivoPerdida = idMotivoPerdida,
                             UsuarioAlta = NormalizeUser(request.UsuarioAccion)
                         }, tx, cancellationToken: token));
 
@@ -227,6 +243,7 @@ public sealed class CrmService(
                             IdContacto = @IdContacto,
                             CanalOrigen = @CanalOrigen,
                             IdConversacion = @IdConversacion,
+                            IdMotivoPerdida = @IdMotivoPerdida,
                             FechaHoraModificacion = GETDATE(),
                             FechaHoraCierre = CASE
                                 WHEN EXISTS (SELECT 1 FROM dbo.CRM_ETAPAS e WHERE e.IdEtapa = @IdEtapa AND (ISNULL(e.EsGanada, 0) = 1 OR ISNULL(e.EsPerdida, 0) = 1))
@@ -249,7 +266,8 @@ public sealed class CrmService(
                             ClienteCodigo = EmptyToNull(request.ClienteCodigo),
                             request.IdContacto,
                             CanalOrigen = EmptyToNull(request.CanalOrigen),
-                            request.IdConversacion
+                            request.IdConversacion,
+                            IdMotivoPerdida = idMotivoPerdida
                         }, tx, cancellationToken: token));
 
                     await AddActivityAsync(cn, tx, id, "EDICION", "Oportunidad actualizada.", request.UsuarioAccion, token);
@@ -280,12 +298,27 @@ public sealed class CrmService(
             await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
             try
             {
+                // Si se mueve a una etapa "perdida", el motivo es obligatorio; al salir de ella se limpia.
+                bool actualizarMotivo = request.IdEtapa is > 0;
+                int? idMotivoPerdida = null;
+                if (request.IdEtapa is > 0)
+                {
+                    var esPerdida = await IsStageLostAsync(cn, tx, request.IdEtapa.Value, token);
+                    if (esPerdida)
+                    {
+                        idMotivoPerdida = request.IdMotivoPerdida is > 0 ? request.IdMotivoPerdida : null;
+                        if (idMotivoPerdida is null)
+                            throw new InvalidOperationException("Elegí el motivo de pérdida antes de marcar la oportunidad como perdida.");
+                    }
+                }
+
                 await cn.ExecuteAsync(new CommandDefinition("""
                     UPDATE dbo.CRM_OPORTUNIDADES
                     SET IdEtapa = COALESCE(@IdEtapa, IdEtapa),
                         IdTecnico = CASE WHEN @ActualizarTecnico = 1 THEN @IdTecnico ELSE IdTecnico END,
                         Prioridad = COALESCE(@Prioridad, Prioridad),
                         Probabilidad = COALESCE(@Probabilidad, Probabilidad),
+                        IdMotivoPerdida = CASE WHEN @ActualizarMotivo = 1 THEN @IdMotivoPerdida ELSE IdMotivoPerdida END,
                         FechaHoraModificacion = GETDATE(),
                         FechaHoraCierre = CASE
                             WHEN @IdEtapa IS NOT NULL
@@ -303,7 +336,9 @@ public sealed class CrmService(
                         ActualizarTecnico = request.IdTecnico is not null,
                         IdTecnico = EmptyToNull(request.IdTecnico),
                         request.Prioridad,
-                        request.Probabilidad
+                        request.Probabilidad,
+                        ActualizarMotivo = actualizarMotivo,
+                        IdMotivoPerdida = idMotivoPerdida
                     }, tx, cancellationToken: token));
 
                 await AddActivityAsync(cn, tx, request.IdOportunidad, "MOVIMIENTO", "Oportunidad actualizada desde acción rápida.", request.UsuarioAccion, token);
@@ -325,6 +360,243 @@ public sealed class CrmService(
             await cn.OpenAsync(token);
             await AddActivityAsync(cn, null, request.IdOportunidad, "NOTA", text, request.UsuarioAccion, token);
         }, "No se pudo agregar la nota.", ct);
+
+    public Task<long> SaveTareaAsync(CrmTareaSaveRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SaveTarea", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdOportunidad <= 0)
+                throw new InvalidOperationException("La oportunidad es obligatoria.");
+            var titulo = NormalizeText(request.Titulo, 200, "El título de la acción es obligatorio.");
+            var detalle = string.IsNullOrWhiteSpace(request.Detalle) ? null : request.Detalle.Trim();
+            var tipo = NormalizeTareaTipo(request.TipoAccion);
+            if (request.Vencimiento == default)
+                throw new InvalidOperationException("La fecha de vencimiento es obligatoria.");
+            var idTecnico = string.IsNullOrWhiteSpace(request.IdTecnico) ? null : request.IdTecnico.Trim();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+            try
+            {
+                long id;
+                if (request.IdTarea > 0)
+                {
+                    await cn.ExecuteAsync(new CommandDefinition("""
+                        UPDATE dbo.CRM_TAREAS
+                        SET TipoAccion = @TipoAccion,
+                            Titulo = @Titulo,
+                            Detalle = @Detalle,
+                            Vencimiento = @Vencimiento,
+                            IdTecnico = @IdTecnico,
+                            FechaHoraModificacion = GETDATE()
+                        WHERE IdTarea = @IdTarea AND ISNULL(Baja, 0) = 0;
+                        """, new { request.IdTarea, TipoAccion = tipo, Titulo = titulo, Detalle = detalle, request.Vencimiento, IdTecnico = idTecnico }, tx, cancellationToken: token));
+                    id = request.IdTarea;
+                    await AddActivityAsync(cn, tx, request.IdOportunidad, "TAREA", $"Acción actualizada: {titulo}", request.UsuarioAccion, token);
+                }
+                else
+                {
+                    id = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
+                        INSERT INTO dbo.CRM_TAREAS (IdOportunidad, TipoAccion, Titulo, Detalle, Vencimiento, IdTecnico, UsuarioAlta)
+                        OUTPUT INSERTED.IdTarea
+                        VALUES (@IdOportunidad, @TipoAccion, @Titulo, @Detalle, @Vencimiento, @IdTecnico, @UsuarioAlta);
+                        """, new { request.IdOportunidad, TipoAccion = tipo, Titulo = titulo, Detalle = detalle, request.Vencimiento, IdTecnico = idTecnico, UsuarioAlta = NormalizeUser(request.UsuarioAccion) }, tx, cancellationToken: token));
+                    await AddActivityAsync(cn, tx, request.IdOportunidad, "TAREA", $"Próxima acción agendada: {titulo}", request.UsuarioAccion, token);
+                }
+
+                await tx.CommitAsync(token);
+                return id;
+            }
+            catch
+            {
+                await tx.RollbackAsync(token);
+                throw;
+            }
+        }, "No se pudo guardar la acción.", ct);
+
+    public Task CompleteTareaAsync(long idTarea, bool completada, string? usuarioAccion = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("CompleteTarea", async token =>
+        {
+            if (idTarea <= 0)
+                throw new InvalidOperationException("Seleccioná una acción válida.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
+            try
+            {
+                var info = await cn.QueryFirstOrDefaultAsync(new CommandDefinition(
+                    "SELECT IdOportunidad, ISNULL(Titulo, '') AS Titulo FROM dbo.CRM_TAREAS WHERE IdTarea = @IdTarea AND ISNULL(Baja, 0) = 0;",
+                    new { IdTarea = idTarea }, tx, cancellationToken: token));
+                if (info is null)
+                    throw new InvalidOperationException("La acción indicada no existe.");
+                long idOportunidad = (long)info.IdOportunidad;
+                string tituloTarea = (string)info.Titulo;
+
+                await cn.ExecuteAsync(new CommandDefinition("""
+                    UPDATE dbo.CRM_TAREAS
+                    SET Completada = @Completada,
+                        FechaHoraCompletada = CASE WHEN @Completada = 1 THEN GETDATE() ELSE NULL END,
+                        UsuarioCompleta = CASE WHEN @Completada = 1 THEN @Usuario ELSE NULL END,
+                        FechaHoraModificacion = GETDATE()
+                    WHERE IdTarea = @IdTarea;
+                    """, new { IdTarea = idTarea, Completada = completada, Usuario = NormalizeUser(usuarioAccion) }, tx, cancellationToken: token));
+
+                if (completada)
+                    await AddActivityAsync(cn, tx, idOportunidad, "TAREA", $"Acción completada: {tituloTarea}", usuarioAccion, token);
+
+                await tx.CommitAsync(token);
+            }
+            catch
+            {
+                await tx.RollbackAsync(token);
+                throw;
+            }
+        }, "No se pudo actualizar la acción.", ct);
+
+    public Task DeleteTareaAsync(long idTarea, string? usuarioAccion = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("DeleteTarea", async token =>
+        {
+            if (idTarea <= 0)
+                throw new InvalidOperationException("Seleccioná una acción válida.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.CRM_TAREAS
+                SET Baja = 1, FechaHoraModificacion = GETDATE()
+                WHERE IdTarea = @IdTarea;
+                """, new { IdTarea = idTarea }, cancellationToken: token));
+        }, "No se pudo eliminar la acción.", ct);
+
+    public Task<CrmDashboardDto> GetDashboardAsync(int diasEstancamiento = 7, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetDashboard", async token =>
+        {
+            var dias = Math.Clamp(diasEstancamiento, 1, 365);
+            const string sql = """
+                -- Pipeline por etapa abierta (bruto y ponderado importe*probabilidad)
+                SELECT
+                    e.IdEtapa,
+                    ISNULL(e.Nombre, '') AS Nombre,
+                    ISNULL(e.Color, '') AS Color,
+                    COUNT(o.IdOportunidad) AS Cantidad,
+                    ISNULL(SUM(o.ImporteEstimado), 0) AS ImporteBruto,
+                    ISNULL(SUM(o.ImporteEstimado * o.Probabilidad / 100.0), 0) AS ImportePonderado
+                FROM dbo.CRM_ETAPAS e
+                LEFT JOIN dbo.CRM_OPORTUNIDADES o
+                    ON o.IdEtapa = e.IdEtapa AND ISNULL(o.Baja, 0) = 0
+                WHERE ISNULL(e.Activa, 1) = 1 AND ISNULL(e.EsGanada, 0) = 0 AND ISNULL(e.EsPerdida, 0) = 0
+                GROUP BY e.IdEtapa, e.Nombre, e.Color, e.Orden
+                ORDER BY e.Orden, e.IdEtapa;
+
+                -- Cerradas (ganadas / perdidas) para la tasa de conversión
+                SELECT
+                    ISNULL(SUM(CASE WHEN ISNULL(e.EsGanada, 0) = 1 THEN 1 ELSE 0 END), 0) AS Ganadas,
+                    ISNULL(SUM(CASE WHEN ISNULL(e.EsGanada, 0) = 1 THEN o.ImporteEstimado ELSE 0 END), 0) AS ImporteGanado,
+                    ISNULL(SUM(CASE WHEN ISNULL(e.EsPerdida, 0) = 1 THEN 1 ELSE 0 END), 0) AS Perdidas
+                FROM dbo.CRM_OPORTUNIDADES o
+                INNER JOIN dbo.CRM_ETAPAS e ON e.IdEtapa = o.IdEtapa
+                WHERE ISNULL(o.Baja, 0) = 0 AND (ISNULL(e.EsGanada, 0) = 1 OR ISNULL(e.EsPerdida, 0) = 1);
+
+                -- Ranking por técnico (abiertas)
+                SELECT
+                    LTRIM(RTRIM(ISNULL(o.IdTecnico, ''))) AS IdTecnico,
+                    ISNULL(t.Nombre, '') AS Nombre,
+                    COUNT(*) AS Abiertas,
+                    ISNULL(SUM(o.ImporteEstimado), 0) AS ImporteBruto,
+                    ISNULL(SUM(o.ImporteEstimado * o.Probabilidad / 100.0), 0) AS ImportePonderado
+                FROM dbo.CRM_OPORTUNIDADES o
+                INNER JOIN dbo.CRM_ETAPAS e ON e.IdEtapa = o.IdEtapa
+                LEFT JOIN dbo.V_TA_Tecnicos t ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(o.IdTecnico))
+                WHERE ISNULL(o.Baja, 0) = 0 AND ISNULL(e.EsGanada, 0) = 0 AND ISNULL(e.EsPerdida, 0) = 0
+                GROUP BY LTRIM(RTRIM(ISNULL(o.IdTecnico, ''))), t.Nombre
+                ORDER BY ImportePonderado DESC, Abiertas DESC;
+
+                -- Estancadas: abiertas sin actividad en más de @Dias días
+                SELECT COUNT(*)
+                FROM dbo.CRM_OPORTUNIDADES o
+                INNER JOIN dbo.CRM_ETAPAS e ON e.IdEtapa = o.IdEtapa
+                WHERE ISNULL(o.Baja, 0) = 0 AND ISNULL(e.EsGanada, 0) = 0 AND ISNULL(e.EsPerdida, 0) = 0
+                  AND ISNULL((SELECT MAX(a.FechaHora) FROM dbo.CRM_ACTIVIDAD a WHERE a.IdOportunidad = o.IdOportunidad), o.FechaHoraAlta)
+                      < DATEADD(day, -@Dias, GETDATE());
+
+                -- Motivos de las oportunidades perdidas
+                SELECT
+                    COALESCE(NULLIF(mot.Nombre, ''), N'Sin motivo') AS Nombre,
+                    COUNT(*) AS Cantidad
+                FROM dbo.CRM_OPORTUNIDADES o
+                INNER JOIN dbo.CRM_ETAPAS e ON e.IdEtapa = o.IdEtapa
+                LEFT JOIN dbo.CRM_MOTIVOS_PERDIDA mot ON mot.IdMotivo = o.IdMotivoPerdida
+                WHERE ISNULL(o.Baja, 0) = 0 AND ISNULL(e.EsPerdida, 0) = 1
+                GROUP BY COALESCE(NULLIF(mot.Nombre, ''), N'Sin motivo')
+                ORDER BY Cantidad DESC;
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            using var grid = await cn.QueryMultipleAsync(new CommandDefinition(sql, new { Dias = dias }, cancellationToken: token));
+
+            var porEtapa = (await grid.ReadAsync<CrmDashboardEtapaDto>()).AsList();
+            var cerradas = await grid.ReadFirstOrDefaultAsync();
+            var porTecnico = (await grid.ReadAsync<CrmDashboardTecnicoDto>()).AsList();
+            var estancadas = await grid.ReadFirstOrDefaultAsync<int>();
+            var motivosPerdida = (await grid.ReadAsync<CrmDashboardMotivoDto>()).AsList();
+
+            int ganadas = cerradas is null ? 0 : (int)cerradas.Ganadas;
+            decimal importeGanado = cerradas is null ? 0m : (decimal)cerradas.ImporteGanado;
+            int perdidas = cerradas is null ? 0 : (int)cerradas.Perdidas;
+            var cerradasTotal = ganadas + perdidas;
+
+            return new CrmDashboardDto
+            {
+                PorEtapa = porEtapa,
+                PorTecnico = porTecnico,
+                TotalAbiertas = porEtapa.Sum(x => x.Cantidad),
+                ImporteBruto = porEtapa.Sum(x => x.ImporteBruto),
+                ImportePonderado = porEtapa.Sum(x => x.ImportePonderado),
+                Ganadas = ganadas,
+                ImporteGanado = importeGanado,
+                Perdidas = perdidas,
+                Estancadas = estancadas,
+                DiasEstancamiento = dias,
+                TasaConversion = cerradasTotal == 0 ? 0 : (double)ganadas / cerradasTotal,
+                MotivosPerdida = motivosPerdida
+            };
+        }, "No se pudo cargar el tablero del CRM.", ct);
+
+    public Task<CrmConversationPrefillDto?> GetConversationPrefillAsync(long idConversacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetConversationPrefill", async token =>
+        {
+            if (idConversacion <= 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            // Guardado con OBJECT_ID: el CRM no depende físicamente de CONV_* (puede correr en una
+            // base sin Conversaciones); si no existe la tabla, simplemente no hay precarga.
+            var hasConv = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT CASE WHEN OBJECT_ID(N'dbo.CONV_CONVERSACIONES', N'U') IS NULL THEN 0 ELSE 1 END;",
+                cancellationToken: token)) == 1;
+            if (!hasConv)
+                return null;
+
+            return await cn.QueryFirstOrDefaultAsync<CrmConversationPrefillDto>(new CommandDefinition("""
+                SELECT TOP (1)
+                    c.IdConversacion,
+                    COALESCE(NULLIF(cli.RAZON_SOCIAL, ''), NULLIF(mc.Nombre_y_Apellido, ''), NULLIF(c.NombreVisible, ''), N'Oportunidad') AS TituloSugerido,
+                    ISNULL(c.ClienteCodigo, '') AS ClienteCodigo,
+                    ISNULL(cli.RAZON_SOCIAL, '') AS ClienteNombre,
+                    c.IdContacto,
+                    ISNULL(mc.Nombre_y_Apellido, '') AS ContactoNombre,
+                    ISNULL(c.Canal, '') AS CanalOrigen
+                FROM dbo.CONV_CONVERSACIONES c
+                LEFT JOIN dbo.VT_CLIENTES cli ON LTRIM(RTRIM(cli.Codigo)) = LTRIM(RTRIM(c.ClienteCodigo))
+                LEFT JOIN dbo.MA_CONTACTOS mc ON mc.id = c.IdContacto
+                WHERE c.IdConversacion = @IdConversacion;
+                """, new { IdConversacion = idConversacion }, cancellationToken: token));
+        }, "No se pudo leer la conversación de origen.", ct);
 
     public Task<int> SaveEtapaAsync(CrmEtapaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("SaveEtapa", async token =>
@@ -422,6 +694,45 @@ public sealed class CrmService(
                 cancellationToken: token));
         }, "No se pudo eliminar la etiqueta.", ct);
 
+    public Task<int> SaveMotivoPerdidaAsync(CrmMotivoPerdidaSaveRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SaveMotivoPerdida", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            var name = NormalizeText(request.Nombre, 100, "El nombre del motivo es obligatorio.");
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (request.IdMotivo > 0)
+            {
+                await cn.ExecuteAsync(new CommandDefinition("""
+                    UPDATE dbo.CRM_MOTIVOS_PERDIDA
+                    SET Nombre = @Nombre,
+                        Orden = @Orden,
+                        Activo = 1
+                    WHERE IdMotivo = @IdMotivo;
+                    """, new { request.IdMotivo, Nombre = name, request.Orden }, cancellationToken: token));
+                return request.IdMotivo;
+            }
+
+            return await cn.ExecuteScalarAsync<int>(new CommandDefinition("""
+                INSERT INTO dbo.CRM_MOTIVOS_PERDIDA (Nombre, Orden, Activo)
+                OUTPUT INSERTED.IdMotivo
+                VALUES (@Nombre, @Orden, 1);
+                """, new { Nombre = name, request.Orden }, cancellationToken: token));
+        }, "No se pudo guardar el motivo de pérdida.", ct);
+
+    public Task DeleteMotivoPerdidaAsync(int idMotivo, string? usuarioAccion = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("DeleteMotivoPerdida", async token =>
+        {
+            if (idMotivo <= 0)
+                throw new InvalidOperationException("Seleccioná un motivo válido.");
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await cn.ExecuteAsync(new CommandDefinition(
+                "UPDATE dbo.CRM_MOTIVOS_PERDIDA SET Activo = 0 WHERE IdMotivo = @IdMotivo;",
+                new { IdMotivo = idMotivo },
+                cancellationToken: token));
+        }, "No se pudo eliminar el motivo de pérdida.", ct);
+
     public Task<CrmViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetViewSettings", async token =>
         {
@@ -497,10 +808,17 @@ public sealed class CrmService(
             ISNULL(o.CanalOrigen, '') AS CanalOrigen,
             o.IdConversacion,
             ISNULL(msg.CantidadMensajes, 0) AS MensajesOrigen,
+            o.IdMotivoPerdida,
+            ISNULL(mot.Nombre, '') AS MotivoPerdidaNombre,
             ISNULL(o.UsuarioAlta, '') AS UsuarioAlta,
             o.FechaHoraAlta,
             o.FechaHoraModificacion,
-            o.FechaHoraCierre
+            o.FechaHoraCierre,
+            prox.IdTarea AS ProximaAccionId,
+            ISNULL(prox.TipoAccion, '') AS ProximaAccionTipo,
+            ISNULL(prox.Titulo, '') AS ProximaAccionTitulo,
+            prox.Vencimiento AS ProximaAccionVencimiento,
+            CASE WHEN prox.Vencimiento IS NOT NULL AND prox.Vencimiento < GETDATE() THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ProximaAccionVencida
         """;
 
     private static string OpportunityFromSql() => """
@@ -509,11 +827,20 @@ public sealed class CrmService(
         LEFT JOIN dbo.V_TA_Tecnicos tec ON LTRIM(RTRIM(tec.IdTecnico)) = LTRIM(RTRIM(o.IdTecnico))
         LEFT JOIN dbo.VT_CLIENTES cli ON LTRIM(RTRIM(cli.Codigo)) = LTRIM(RTRIM(o.ClienteCodigo))
         LEFT JOIN dbo.MA_CONTACTOS mc ON mc.id = o.IdContacto
+        LEFT JOIN dbo.CRM_MOTIVOS_PERDIDA mot ON mot.IdMotivo = o.IdMotivoPerdida
         OUTER APPLY (
             SELECT COUNT(*) AS CantidadMensajes
             FROM dbo.CRM_OPORTUNIDAD_MENSAJES om
             WHERE om.IdOportunidad = o.IdOportunidad
         ) msg
+        OUTER APPLY (
+            SELECT TOP (1) t.IdTarea, t.TipoAccion, t.Titulo, t.Vencimiento
+            FROM dbo.CRM_TAREAS t
+            WHERE t.IdOportunidad = o.IdOportunidad
+              AND ISNULL(t.Completada, 0) = 0
+              AND ISNULL(t.Baja, 0) = 0
+            ORDER BY t.Vencimiento ASC, t.IdTarea ASC
+        ) prox
         """;
 
     private static string OpportunityWhereSql() => """
@@ -638,6 +965,44 @@ public sealed class CrmService(
             "SELECT ISNULL(MAX(Numero), 0) + 1 FROM dbo.CRM_OPORTUNIDADES WITH (UPDLOCK, HOLDLOCK);",
             transaction: tx,
             cancellationToken: ct));
+
+    private static async Task<bool> IsStageLostAsync(SqlConnection cn, SqlTransaction tx, int idEtapa, CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT CASE WHEN EXISTS (SELECT 1 FROM dbo.CRM_ETAPAS WHERE IdEtapa = @IdEtapa AND ISNULL(EsPerdida, 0) = 1) THEN 1 ELSE 0 END;",
+            new { IdEtapa = idEtapa }, tx, cancellationToken: ct)) == 1;
+
+    private static Task<IEnumerable<CrmTareaDto>> GetTareasAsync(SqlConnection cn, long idOportunidad, CancellationToken ct)
+        => cn.QueryAsync<CrmTareaDto>(new CommandDefinition("""
+            SELECT
+                t.IdTarea,
+                t.IdOportunidad,
+                ISNULL(t.TipoAccion, '') AS TipoAccion,
+                ISNULL(t.Titulo, '') AS Titulo,
+                ISNULL(CAST(t.Detalle AS nvarchar(max)), '') AS Detalle,
+                t.Vencimiento,
+                ISNULL(t.IdTecnico, '') AS IdTecnico,
+                ISNULL(tec.Nombre, '') AS TecnicoNombre,
+                ISNULL(t.Completada, 0) AS Completada,
+                t.FechaHoraCompletada,
+                CASE WHEN ISNULL(t.Completada, 0) = 0 AND t.Vencimiento < GETDATE() THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Vencida
+            FROM dbo.CRM_TAREAS t
+            LEFT JOIN dbo.V_TA_Tecnicos tec ON LTRIM(RTRIM(tec.IdTecnico)) = LTRIM(RTRIM(t.IdTecnico))
+            WHERE t.IdOportunidad = @IdOportunidad AND ISNULL(t.Baja, 0) = 0
+            ORDER BY ISNULL(t.Completada, 0) ASC, t.Vencimiento ASC, t.IdTarea ASC;
+            """, new { IdOportunidad = idOportunidad }, cancellationToken: ct));
+
+    private static string NormalizeTareaTipo(string? tipo)
+    {
+        var value = (tipo ?? string.Empty).Trim().ToUpperInvariant();
+        return value switch
+        {
+            CrmTareaTipos.Llamada => CrmTareaTipos.Llamada,
+            CrmTareaTipos.Email => CrmTareaTipos.Email,
+            CrmTareaTipos.Reunion => CrmTareaTipos.Reunion,
+            CrmTareaTipos.WhatsApp => CrmTareaTipos.WhatsApp,
+            _ => CrmTareaTipos.Tarea
+        };
+    }
 
     private static Task AddActivityAsync(SqlConnection cn, SqlTransaction? tx, long idOportunidad, string type, string description, string? user, CancellationToken ct)
         => cn.ExecuteAsync(new CommandDefinition("""

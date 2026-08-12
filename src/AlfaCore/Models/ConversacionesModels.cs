@@ -19,6 +19,8 @@ public sealed class ConversacionesInboxFilters
     public string ClienteCodigo { get; set; } = string.Empty;
     public string? IdTecnicoActual { get; set; }
     public string? CodigoEstado { get; set; }
+    /// <summary>Canal exacto (WHATSAPP/INSTAGRAM/FACEBOOK/MERCADOLIBRE/INTERNO), o "SOCIAL" como valor
+    /// especial que trae WhatsApp+Instagram+Facebook combinados (ver GetInboxAsync).</summary>
     public string? Canal { get; set; }
     public string? UsuarioActual { get; set; }
     public string? SistemaActual { get; set; }
@@ -28,6 +30,18 @@ public sealed class ConversacionesInboxFilters
     public string? TipoMensaje { get; set; }
     public int Limit { get; set; } = 50;
     public int Offset { get; set; }
+    /// <summary>"recientes" (default, actividad más reciente primero) o "cola_espera" (ver <see cref="ConversacionesInboxOrden"/>).</summary>
+    public string Orden { get; set; } = ConversacionesInboxOrden.Recientes;
+    /// <summary>Código de TA_CLASIFICACIONES que cuenta como prioridad 1/2/3 — solo se usan cuando Orden = "cola_espera".</summary>
+    public string? Clasifica1 { get; set; }
+    public string? Clasifica2 { get; set; }
+    public string? Clasifica3 { get; set; }
+}
+
+public static class ConversacionesInboxOrden
+{
+    public const string Recientes = "recientes";
+    public const string ColaEspera = "cola_espera";
 }
 
 public sealed class ConversacionesEstadisticasFilters
@@ -163,6 +177,7 @@ public sealed class ConversacionInboxItemDto
     public bool PerfilExternoVerificado { get; set; }
     public string ClienteCodigo { get; set; } = string.Empty;
     public string ClienteNombre { get; set; } = string.Empty;
+    public string ClasificacionDescripcion { get; set; } = string.Empty;
     public int? IdContacto { get; set; }
     public string ContactoNombre { get; set; } = string.Empty;
     public string CodigoEstado { get; set; } = string.Empty;
@@ -235,6 +250,8 @@ public sealed class ConversacionDetalleDto
     public bool VentanaWhatsAppActiva { get; set; }
     public DateTime? FechaHoraVencimientoVentanaWhatsApp { get; set; }
     public DateTime? FechaHoraCierre { get; set; }
+    /// <summary>Ver dbo.CONV_WHATSAPP_NUMEROS — null si la conversación no tiene un número propio fijado.</summary>
+    public int? IdNumeroWhatsApp { get; set; }
 }
 
 /// <summary>

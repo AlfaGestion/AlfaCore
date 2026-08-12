@@ -18,6 +18,36 @@ Funcionalidades disponibles hoy:
 - configuración del canal WhatsApp desde pantalla interna
 - copiloto de IA ("Sugerencia IA"): sugiere una respuesta al técnico usando la base de conocimiento de AlfaKnowledge, sin enviarla automáticamente
 
+> Nota: la lista de arriba (WHATSAPP/INTERNO) quedó desactualizada — ver "Novedades recientes"
+> debajo para los canales y funcionalidades agregados después.
+
+## Novedades recientes (2026-08)
+
+- **Canales sociales unificados**: Instagram, Facebook y WhatsApp se filtran desde un combo
+  único "Mensajes" (`Todos` / WhatsApp / Instagram / Facebook) en vez de una pestaña por canal.
+  Mercado Libre y Chat interno siguen como pestañas separadas por tener una lógica de trabajo
+  distinta. El módulo también soporta el canal `MERCADOLIBRE` (preguntas de publicaciones).
+- **Clasificación y abono del cliente** visibles en el header del chat (badge de clasificación de
+  `TA_CLASIFICACIONES` + estado Abonado/Suspendido/Sin abono/Contacto sin cuenta/Sin
+  identificar, resuelto desde `MA_CUENTAS_AUTOCPTES`).
+- **Cola de espera**: orden alternativo del inbox por prioridad de cliente (3 niveles,
+  configurables en `/conversaciones/configuracion` reusando las claves `CLASIFICA1/2/3` que ya
+  usa Desktop) y luego por tiempo esperando respuesta. Se activa con el botón "Tiempo de
+  espera"; cada fila muestra hace cuánto espera si el último mensaje fue entrante.
+  Badge de origen (WhatsApp/Instagram/Facebook/Mercado Libre/Interno) superpuesto en el avatar
+  de cada fila del inbox.
+- **Búsqueda dentro de una conversación abierta** (resaltado + navegación entre coincidencias),
+  además de la búsqueda de conversaciones/contactos ya existente.
+- **Filtro "Ver de un técnico"** dentro del combo "Pendientes ▾" (además de "Asignadas a mí"):
+  deja elegir cualquier técnico, no solo el propio.
+- **Múltiples números de WhatsApp** (opcional, un cliente con un solo número no nota nada
+  distinto): ver `docs/modulos/conversaciones_whatsapp_conexion.md#múltiples-números-de-whatsapp-opcional`
+  para la configuración completa.
+- **Módulo Archivos > Tablas**: editor genérico de tablas de referencia chicas (forma
+  Codigo/Descripcion/Color), sin costo/no licenciado, con `TA_CLASIFICACIONES` como primera
+  tabla registrada. No es parte de Conversaciones en sí, pero nació de esta misma tanda de
+  trabajo (la usa la configuración de clasificaciones/prioridad).
+
 Integra estructuras existentes del sistema:
 
 - clientes desde `VT_CLIENTES`
