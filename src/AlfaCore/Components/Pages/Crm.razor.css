@@ -1046,14 +1046,15 @@
 
 .crm-cotiz-cell {
     width: 100%;
-    border: 1px solid transparent;
-    background: transparent;
+    border: 1px solid var(--border, #cbd5e1);
+    background: var(--surface-1, #fff);
+    color: var(--color-text, #0f172a);
     border-radius: 6px;
     padding: .2rem .3rem;
-    color: inherit;
 }
 
-.crm-cotiz-cell:focus { border-color: var(--border, #cbd5e1); background: var(--surface, #fff); }
+.crm-cotiz-cell::placeholder { color: var(--color-muted, #64748b); }
+.crm-cotiz-cell:focus { border-color: var(--accent, #2563eb); outline: none; }
 .crm-cotiz-cell.num { text-align: right; max-width: 120px; }
 
 .crm-cotiz-add-manual { margin: .4rem 0; }
