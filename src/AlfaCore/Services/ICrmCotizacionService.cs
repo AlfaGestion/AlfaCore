@@ -13,4 +13,7 @@ public interface ICrmCotizacionService
     Task DeleteAsync(long idCotizacion, string? usuarioAccion = null, CancellationToken ct = default);
     Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default);
     Task<IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>> SuggestLinesFromPromptAsync(string? clienteCodigo, string prompt, CancellationToken ct = default);
+    Task<CrmCotizacionShareDto> EnsureShareAsync(long idCotizacion, CancellationToken ct = default);
+    Task SendByEmailAsync(long idCotizacion, string destinatario, string? publicUrl = null, CancellationToken ct = default);
+    Task<string?> RenderPublicHtmlAsync(int idBase, string token, CancellationToken ct = default);
 }

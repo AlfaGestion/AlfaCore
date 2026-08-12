@@ -124,6 +124,18 @@ public sealed class CrmCotizacionAiLineaSugeridaDto
     public decimal Cantidad { get; set; } = 1m;
 }
 
+// Datos para compartir la cotización por link (WhatsApp/email).
+public sealed class CrmCotizacionShareDto
+{
+    public long IdCotizacion { get; set; }
+    public int IdBase { get; set; }
+    public string Token { get; set; } = string.Empty;
+    // Ruta relativa a la página pública; el front antepone el host público.
+    public string RelativeUrl => IdBase > 0 && !string.IsNullOrWhiteSpace(Token)
+        ? $"/cotizacion/{IdBase}/{Token}"
+        : string.Empty;
+}
+
 // Contexto de precios resuelto para un cliente (o consumidor final).
 public sealed class CrmCotizacionPricingContextDto
 {

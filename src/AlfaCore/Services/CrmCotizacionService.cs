@@ -1,7 +1,9 @@
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Mail;
 using System.Text;
 using System.Text.Json;
 
@@ -11,7 +13,8 @@ public sealed class CrmCotizacionService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
-    IHttpClientFactory httpClientFactory) : ICrmCotizacionService
+    IHttpClientFactory httpClientFactory,
+    ICentralBasesService centralBasesService) : ICrmCotizacionService
 {
     private const string ModuleName = "CRM";
     private const string DefaultTc = "CTZ";
@@ -391,6 +394,240 @@ public sealed class CrmCotizacionService(
                 new { Id = idCotizacion }, cancellationToken: token));
         }, "No se pudo eliminar la cotización.", ct);
 
+    public Task<CrmCotizacionShareDto> EnsureShareAsync(long idCotizacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("EnsureShareCotizacion", async token =>
+        {
+            if (idCotizacion <= 0)
+                throw new InvalidOperationException("Seleccioná una cotización válida.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var actual = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT PublicToken FROM dbo.CRM_COTIZACION WHERE IdCotizacion = @Id AND ISNULL(Baja, 0) = 0;",
+                new { Id = idCotizacion }, cancellationToken: token));
+            if (actual is null)
+                throw new InvalidOperationException("La cotización indicada no existe.");
+
+            var tk = actual.Trim();
+            if (string.IsNullOrWhiteSpace(tk))
+            {
+                tk = Guid.NewGuid().ToString("N");
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE dbo.CRM_COTIZACION SET PublicToken = @Token WHERE IdCotizacion = @Id;",
+                    new { Id = idCotizacion, Token = tk }, cancellationToken: token));
+            }
+
+            return new CrmCotizacionShareDto
+            {
+                IdCotizacion = idCotizacion,
+                IdBase = sessionService.GetActiveSession()?.BaseId ?? 0,
+                Token = tk
+            };
+        }, "No se pudo preparar el enlace de la cotización.", ct);
+
+    public Task SendByEmailAsync(long idCotizacion, string destinatario, string? publicUrl = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SendCotizacionByEmail", async token =>
+        {
+            var to = (destinatario ?? string.Empty).Trim();
+            if (to.Length == 0)
+                throw new InvalidOperationException("Ingresá un email de destino.");
+            _ = new MailAddress(to);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var detail = await LoadDetailAsync(cn, "c.IdCotizacion = @Key", new { Key = idCotizacion }, token)
+                         ?? throw new InvalidOperationException("La cotización indicada no existe.");
+            var empresa = await LoadEmpresaAsync(cn, token);
+            var mail = await ResolveMailConfigAsync(cn, token);
+            var html = BuildCotizacionHtml(detail, empresa, publicUrl);
+
+            using var message = new MailMessage
+            {
+                From = new MailAddress(mail.From),
+                Subject = $"Cotización {detail.CodigoVisible} - {empresa.Nombre}",
+                Body = html,
+                IsBodyHtml = true
+            };
+            message.To.Add(to);
+
+            using var client = new SmtpClient(mail.Server, mail.Port)
+            {
+                EnableSsl = mail.EnableSsl,
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false,
+                Credentials = new NetworkCredential(mail.From, mail.Password)
+            };
+            await client.SendMailAsync(message, token);
+
+            if (detail.Estado == CrmCotizacionEstados.Borrador)
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE dbo.CRM_COTIZACION SET Estado = @Estado, FechaHoraModificacion = GETDATE() WHERE IdCotizacion = @Id AND Estado = 'BORRADOR';",
+                    new { Id = idCotizacion, Estado = CrmCotizacionEstados.Enviada }, cancellationToken: token));
+            await AddActivityAsync(cn, null, detail.IdOportunidad, "COTIZACION", $"Cotización {detail.CodigoVisible} enviada por email a {to}.", null, token);
+            return true;
+        }, "No se pudo enviar la cotización por email.", ct);
+
+    public Task<string?> RenderPublicHtmlAsync(int idBase, string token, CancellationToken ct = default)
+        => ExecuteLoggedAsync("RenderPublicCotizacion", async innerCt =>
+        {
+            var tk = (token ?? string.Empty).Trim();
+            if (idBase <= 0 || tk.Length == 0)
+                return null;
+
+            var baseInfo = await centralBasesService.GetByIdAsync(idBase, innerCt);
+            if (baseInfo is null)
+                return null;
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(innerCt);
+
+            var detail = await LoadDetailAsync(cn, "c.PublicToken = @Key", new { Key = tk }, innerCt);
+            if (detail is null)
+                return null;
+            var empresa = await LoadEmpresaAsync(cn, innerCt);
+            return BuildCotizacionHtml(detail, empresa, null, standalone: true);
+        }, "No se pudo mostrar la cotización.", ct);
+
+    private static async Task<CrmCotizacionDetailDto?> LoadDetailAsync(SqlConnection cn, string whereClause, object args, CancellationToken ct)
+    {
+        var header = await cn.QueryFirstOrDefaultAsync<CrmCotizacionDetailDto>(new CommandDefinition($"""
+            {HeaderSelectSql()}
+            FROM dbo.CRM_COTIZACION c
+            LEFT JOIN dbo.V_TA_Tecnicos t ON LTRIM(RTRIM(t.IdTecnico)) = LTRIM(RTRIM(c.IdTecnico))
+            WHERE {whereClause} AND ISNULL(c.Baja, 0) = 0;
+            """, args, cancellationToken: ct));
+        if (header is null)
+            return null;
+
+        header.Lineas = (await cn.QueryAsync<CrmCotizacionLineDto>(new CommandDefinition("""
+            SELECT IdDetalle, IdCotizacion, Orden, ISNULL(IdArticulo, '') AS IdArticulo, ISNULL(Descripcion, '') AS Descripcion,
+                   Cantidad, PrecioUnitarioNeto, TasaIva, PrecioUnitarioConIva, SubtotalNeto, SubtotalIva, Subtotal
+            FROM dbo.CRM_COTIZACION_DET
+            WHERE IdCotizacion = @Id
+            ORDER BY Orden, IdDetalle;
+            """, new { Id = header.IdCotizacion }, cancellationToken: ct))).AsList();
+        return header;
+    }
+
+    private async Task<EmpresaInfo> LoadEmpresaAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var nombre = await ReadConfigAsync(cn, "Nombre", ct);
+        var calle = await ReadConfigAsync(cn, "Calle", ct);
+        var localidad = await ReadConfigAsync(cn, "Localidad", ct);
+        var cuit = await ReadConfigAsync(cn, "CUIT", ct);
+        var telefono = await ReadConfigAsync(cn, "Telefono", ct);
+        return new EmpresaInfo(
+            string.IsNullOrWhiteSpace(nombre) ? "Cotización" : nombre.Trim(),
+            calle.Trim(),
+            localidad.Trim(),
+            cuit.Trim(),
+            telefono.Trim());
+    }
+
+    private async Task<MailInfo> ResolveMailConfigAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var server = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_SERVER", ct), "EMAIL_SERVER");
+        var port = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_PORT", ct), "EMAIL_PORT");
+        var account = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_CTA", ct), "EMAIL_CTA");
+        var password = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_PASS", ct), "EMAIL_PASS");
+        var ssl = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_SSL", ct), "EMAIL_SSL");
+
+        if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(port)
+            || string.IsNullOrWhiteSpace(account) || string.IsNullOrWhiteSpace(password))
+            throw new InvalidOperationException("Falta configurar el correo saliente. Revisá EMAIL_SERVER, EMAIL_PORT, EMAIL_CTA y EMAIL_PASS en Configuración.");
+        if (!int.TryParse(port, out var smtpPort) || smtpPort <= 0)
+            throw new InvalidOperationException("EMAIL_PORT no tiene un valor válido.");
+
+        var enableSsl = ssl.Equals("SI", StringComparison.OrdinalIgnoreCase)
+            || ssl.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+            || ssl.Equals("1", StringComparison.OrdinalIgnoreCase);
+        return new MailInfo(server, smtpPort, account, password, enableSsl);
+    }
+
+    private string ConfigOrAppSetting(string dbValue, string key)
+        => !string.IsNullOrWhiteSpace(dbValue) ? dbValue.Trim() : (configuration[key] ?? configuration[$"PuntoVenta:{key}"] ?? string.Empty);
+
+    private static string BuildCotizacionHtml(CrmCotizacionDetailDto d, EmpresaInfo empresa, string? publicUrl, bool standalone = false)
+    {
+        var ar = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+        string Money(decimal v) => v.ToString("C0", ar);
+        string E(string? s) => System.Net.WebUtility.HtmlEncode(s ?? string.Empty);
+
+        var sb = new StringBuilder();
+        if (standalone)
+            sb.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Cotización ").Append(E(d.CodigoVisible)).Append("</title></head><body style=\"margin:0;background:#f1f5f9;\">");
+
+        sb.Append("<div style=\"max-width:720px;margin:0 auto;padding:24px;font-family:Segoe UI,Arial,sans-serif;color:#0f172a;background:#ffffff;\">");
+        sb.Append("<div style=\"display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid #2563eb;padding-bottom:12px;margin-bottom:16px;\">");
+        sb.Append("<div><h1 style=\"margin:0;font-size:20px;\">").Append(E(empresa.Nombre)).Append("</h1>");
+        if (!string.IsNullOrWhiteSpace(empresa.Direccion) || !string.IsNullOrWhiteSpace(empresa.Localidad))
+            sb.Append("<div style=\"font-size:12px;color:#64748b;\">").Append(E(string.Join(" · ", new[] { empresa.Direccion, empresa.Localidad }.Where(x => !string.IsNullOrWhiteSpace(x))))).Append("</div>");
+        if (!string.IsNullOrWhiteSpace(empresa.Cuit)) sb.Append("<div style=\"font-size:12px;color:#64748b;\">CUIT: ").Append(E(empresa.Cuit)).Append("</div>");
+        if (!string.IsNullOrWhiteSpace(empresa.Telefono)) sb.Append("<div style=\"font-size:12px;color:#64748b;\">Tel: ").Append(E(empresa.Telefono)).Append("</div>");
+        sb.Append("</div>");
+        sb.Append("<div style=\"text-align:right;\"><div style=\"font-size:16px;font-weight:700;\">Cotización</div><div style=\"font-size:14px;\">").Append(E(d.CodigoVisible)).Append("</div>");
+        sb.Append("<div style=\"font-size:12px;color:#64748b;\">").Append(d.Fecha.ToString("dd/MM/yyyy", ar)).Append("</div>");
+        if (d.FechaVencimiento is { } v) sb.Append("<div style=\"font-size:12px;color:#64748b;\">Válida hasta ").Append(v.ToString("dd/MM/yyyy", ar)).Append("</div>");
+        sb.Append("</div></div>");
+
+        if (!string.IsNullOrWhiteSpace(d.ClienteNombre) || !string.IsNullOrWhiteSpace(d.ClienteCodigo))
+            sb.Append("<div style=\"margin-bottom:12px;font-size:14px;\"><strong>Cliente:</strong> ").Append(E(string.IsNullOrWhiteSpace(d.ClienteNombre) ? d.ClienteCodigo : d.ClienteNombre)).Append("</div>");
+
+        if (d.EsServicio && !string.IsNullOrWhiteSpace(d.CuerpoServicio))
+            sb.Append("<div style=\"font-size:14px;line-height:1.5;margin-bottom:16px;\">").Append(d.CuerpoServicio).Append("</div>");
+
+        if (d.Lineas.Count > 0)
+        {
+            sb.Append("<table style=\"width:100%;border-collapse:collapse;font-size:13px;margin-bottom:12px;\">");
+            sb.Append("<thead><tr style=\"background:#f1f5f9;\">");
+            sb.Append("<th style=\"text-align:left;padding:6px 8px;border-bottom:1px solid #e2e8f0;\">Detalle</th>");
+            sb.Append("<th style=\"text-align:right;padding:6px 8px;border-bottom:1px solid #e2e8f0;\">Cant.</th>");
+            sb.Append("<th style=\"text-align:right;padding:6px 8px;border-bottom:1px solid #e2e8f0;\">P. unit.</th>");
+            sb.Append("<th style=\"text-align:right;padding:6px 8px;border-bottom:1px solid #e2e8f0;\">Subtotal</th></tr></thead><tbody>");
+            foreach (var l in d.Lineas)
+            {
+                sb.Append("<tr>");
+                sb.Append("<td style=\"padding:6px 8px;border-bottom:1px solid #f1f5f9;\">").Append(E(l.Descripcion)).Append("</td>");
+                sb.Append("<td style=\"padding:6px 8px;border-bottom:1px solid #f1f5f9;text-align:right;\">").Append(l.Cantidad.ToString("0.##", ar)).Append("</td>");
+                sb.Append("<td style=\"padding:6px 8px;border-bottom:1px solid #f1f5f9;text-align:right;\">").Append(Money(l.PrecioUnitarioConIva)).Append("</td>");
+                sb.Append("<td style=\"padding:6px 8px;border-bottom:1px solid #f1f5f9;text-align:right;\">").Append(Money(l.Subtotal)).Append("</td>");
+                sb.Append("</tr>");
+            }
+            sb.Append("</tbody></table>");
+        }
+
+        sb.Append("<div style=\"text-align:right;font-size:14px;\">");
+        sb.Append("<div>Neto: <strong>").Append(Money(d.TotalNeto)).Append("</strong></div>");
+        sb.Append("<div>IVA: <strong>").Append(Money(d.TotalIva)).Append("</strong></div>");
+        sb.Append("<div style=\"font-size:18px;margin-top:4px;\">Total: <strong>").Append(Money(d.Total)).Append("</strong></div>");
+        sb.Append("</div>");
+
+        if (!string.IsNullOrWhiteSpace(d.Observaciones))
+            sb.Append("<div style=\"margin-top:16px;font-size:12px;color:#64748b;\">").Append(E(d.Observaciones)).Append("</div>");
+
+        if (!string.IsNullOrWhiteSpace(publicUrl))
+            sb.Append("<div style=\"margin-top:20px;\"><a href=\"").Append(E(publicUrl)).Append("\" style=\"display:inline-block;background:#2563eb;color:#fff;padding:10px 18px;border-radius:8px;text-decoration:none;font-size:14px;\">Ver cotización online</a></div>");
+
+        sb.Append("</div>");
+        if (standalone)
+            sb.Append("</body></html>");
+        return sb.ToString();
+    }
+
+    private sealed record EmpresaInfo(string Nombre, string Direccion, string Localidad, string Cuit, string Telefono);
+    private sealed record MailInfo(string Server, int Port, string From, string Password, bool EnableSsl);
+
     public Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default)
         => ExecuteLoggedAsync("GenerateServiceProposal", async token =>
         {
@@ -670,7 +907,7 @@ public sealed class CrmCotizacionService(
     private static string NormalizeUser(string? user)
         => string.IsNullOrWhiteSpace(user) ? "web" : user.Trim();
 
-    private static Task AddActivityAsync(SqlConnection cn, SqlTransaction tx, long idOportunidad, string tipo, string descripcion, string? usuario, CancellationToken ct)
+    private static Task AddActivityAsync(SqlConnection cn, SqlTransaction? tx, long idOportunidad, string tipo, string descripcion, string? usuario, CancellationToken ct)
         => cn.ExecuteAsync(new CommandDefinition("""
             INSERT INTO dbo.CRM_ACTIVIDAD (IdOportunidad, TipoActividad, Descripcion, Usuario, FechaHora)
             VALUES (@IdOportunidad, @Tipo, @Descripcion, @Usuario, GETDATE());

@@ -4,6 +4,8 @@
 @using Microsoft.AspNetCore.Components.Web
 @inject AlfaCore.Services.ICrmService CrmSvc
 @inject AlfaCore.Services.ICrmCotizacionService CotizSvc
+@inject AlfaCore.Services.IConversacionesService ConvSvc
+@inject IConfiguration Config
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject NavigationManager Nav
@@ -659,6 +661,54 @@
     </div>
 }
 
+@if (_showCompartir && _compartirCot is not null)
+{
+    <div class="crm-modal-layer" @onmousedown="CerrarCompartir">
+        <section class="panel-card crm-modal crm-modal--small" @onmousedown:stopPropagation>
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Enviar @_compartirCot.CodigoVisible</h3>
+                    <p class="panel-card__subtitle">Compartí la cotización por email, WhatsApp o link.</p>
+                </div>
+                <button type="button" class="btn btn--ghost" @onclick="CerrarCompartir"><i class="bi bi-x-circle"></i> Cerrar</button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_compartirUrl))
+            {
+                <div class="field">
+                    <label>Link público</label>
+                    <div class="crm-inline-row">
+                        <input readonly value="@_compartirUrl" />
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CopiarLinkAsync"><i class="bi bi-clipboard"></i> Copiar</button>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <p class="muted">El link público no está disponible (esta base no tiene identificador central). El email igual funciona.</p>
+            }
+
+            <div class="field">
+                <label>Enviar por email</label>
+                <div class="crm-inline-row">
+                    <input type="email" placeholder="cliente@correo.com" @bind="_compartirEmail" />
+                    <button type="button" class="btn btn--primary btn--sm" @onclick="EnviarEmailCotAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_compartirEmail))"><i class="bi bi-envelope"></i> Enviar</button>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button type="button" class="btn btn--primary" @onclick="EnviarWhatsAppCotAsync" disabled="@(_saving || _detail?.IdConversacion is null || string.IsNullOrWhiteSpace(_compartirUrl))">
+                    <i class="bi bi-whatsapp"></i> Enviar por WhatsApp
+                </button>
+                @if (_detail?.IdConversacion is null)
+                {
+                    <small class="muted">WhatsApp requiere una conversación de origen en la oportunidad.</small>
+                }
+            </div>
+        </section>
+    </div>
+}
+
 @if (_showViewSettings)
 {
     <div class="crm-modal-layer" @onclick="CloseViewSettings">
@@ -727,6 +777,10 @@
     private bool _cotizIaCargando;
     private List<CrmCotizacionAiLineaSugeridaDto> _cotizIaSugerencias = [];
     private HashSet<string> _cotizIaSeleccion = [];
+    private bool _showCompartir;
+    private CrmCotizacionDto? _compartirCot;
+    private string _compartirUrl = string.Empty;
+    private string _compartirEmail = string.Empty;
     private ElementReference _cotizEditorRef;
     private string? _cotizEditorPendingHtml;
     private bool _cotizEditorNeedsSync;
@@ -1096,6 +1150,7 @@
                                     <span class="crm-cotiz-estado crm-cotiz-estado--@cot.Estado.ToLowerInvariant()">@cot.Estado</span>
                                     <small>@FormatMoney(cot.Total) · @cot.Fecha.ToString("dd/MM/yyyy")@(cot.Vencida ? " · vencida" : string.Empty)</small>
                                 </div>
+                                <button type="button" class="crm-accion__del" title="Compartir / enviar" @onclick="() => AbrirCompartirAsync(cot)"><i class="bi bi-send"></i></button>
                                 <button type="button" class="crm-accion__del" title="Eliminar" @onclick="() => EliminarCotizacionAsync(cot.IdCotizacion)"><i class="bi bi-trash"></i></button>
                             </article>
                         }
@@ -2305,6 +2360,70 @@
             await CotizSvc.DeleteAsync(id, AppUserSession.CurrentUser?.UserName);
             await LoadCotizacionesAsync();
         });
+    }
+
+    private async Task AbrirCompartirAsync(CrmCotizacionDto cot)
+    {
+        _compartirCot = cot;
+        _compartirUrl = string.Empty;
+        _compartirEmail = string.Empty;
+        _showCompartir = true;
+        await RunAsync(async () =>
+        {
+            var share = await CotizSvc.EnsureShareAsync(cot.IdCotizacion);
+            if (!string.IsNullOrWhiteSpace(share.RelativeUrl))
+                _compartirUrl = BuildPublicBase().TrimEnd('/') + share.RelativeUrl;
+        });
+    }
+
+    private void CerrarCompartir()
+    {
+        _showCompartir = false;
+        _compartirCot = null;
+    }
+
+    private string BuildPublicBase()
+    {
+        var configured = Config["ServidorWeb:UrlBasePublica"];
+        return string.IsNullOrWhiteSpace(configured) ? Nav.BaseUri : configured;
+    }
+
+    private async Task EnviarEmailCotAsync()
+    {
+        if (_compartirCot is null || string.IsNullOrWhiteSpace(_compartirEmail))
+            return;
+        await RunAsync(async () =>
+        {
+            await CotizSvc.SendByEmailAsync(_compartirCot.IdCotizacion, _compartirEmail.Trim(), string.IsNullOrWhiteSpace(_compartirUrl) ? null : _compartirUrl);
+            _showCompartir = false;
+            await LoadCotizacionesAsync();
+            ShowOk("Email enviado", $"La cotización se envió a {_compartirEmail.Trim()}.");
+        });
+    }
+
+    private async Task EnviarWhatsAppCotAsync()
+    {
+        if (_compartirCot is null || _detail?.IdConversacion is not long idConv || string.IsNullOrWhiteSpace(_compartirUrl))
+            return;
+        await RunAsync(async () =>
+        {
+            var texto = $"Hola, te comparto la cotización {_compartirCot.CodigoVisible}. La podés ver acá: {_compartirUrl}";
+            await ConvSvc.SendMessageAsync(new ConversacionSendMessageRequest
+            {
+                IdConversacion = idConv,
+                Texto = texto,
+                MessageType = "TEXT",
+                UsuarioAccion = AppUserSession.CurrentUser?.UserName
+            });
+            _showCompartir = false;
+            ShowOk("Enviado por WhatsApp", "La cotización se envió a la conversación del cliente.");
+        });
+    }
+
+    private async Task CopiarLinkAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(_compartirUrl))
+            await JS.InvokeVoidAsync("crmCotizacion.copy", _compartirUrl);
     }
 
     private void ToggleColumn(string key, ChangeEventArgs args)

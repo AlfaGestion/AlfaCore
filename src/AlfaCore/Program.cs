@@ -312,6 +312,18 @@ public class Program
             return Results.File(file.RutaCompleta, contentType, file.NombreArchivo);
         });
 
+        app.MapGet("/cotizacion/{idbase:int}/{token}", async (
+            int idbase,
+            string token,
+            ICrmCotizacionService cotizSvc,
+            CancellationToken ct) =>
+        {
+            var html = await cotizSvc.RenderPublicHtmlAsync(idbase, token, ct);
+            return html is null
+                ? Results.NotFound("La cotización no existe o el enlace expiró.")
+                : Results.Content(html, "text/html; charset=utf-8");
+        }).AllowAnonymous();
+
         app.MapGet("/api/usuarios/{nombre}/foto", async (
             string nombre,
             IUsuariosService usuariosSvc,

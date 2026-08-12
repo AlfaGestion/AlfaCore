@@ -14,6 +14,18 @@ window.crmCotizacion = {
     focus: function (el) {
         if (el) el.focus();
     },
+    copy: function (text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).catch(function () { });
+        } else {
+            var ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            try { document.execCommand('copy'); } catch (e) { }
+            document.body.removeChild(ta);
+        }
+    },
     insertImage: function (el) {
         if (!el) return;
         var input = document.createElement('input');
