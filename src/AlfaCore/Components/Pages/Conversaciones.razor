@@ -839,9 +839,9 @@
                                     {
                                         <img src="@item.FotoPerfilUrl" alt="" loading="lazy" referrerpolicy="no-referrer" />
                                     }
-                                    else if (TryGetWhatsAppAvatarInfo(item, out var inboxAbonoAvatar))
+                                    else if (TryGetWhatsAppAvatarInfo(item, out _))
                                     {
-                                        <span class="conversation-abono-avatar__letter">@inboxAbonoAvatar.Label</span>
+                                        <span class="conversation-abono-avatar__letter">@GetConversationInitials(item)</span>
                                     }
                                     else
                                     {
@@ -1056,9 +1056,9 @@
                                     {
                                         <img src="@_selectedConversation.FotoPerfilUrl" alt="" referrerpolicy="no-referrer" />
                                     }
-                                    else if (TryGetWhatsAppAvatarInfo(_selectedConversation, out var selectedAbonoAvatar))
+                                    else if (TryGetWhatsAppAvatarInfo(_selectedConversation, out _))
                                     {
-                                        <span class="conversation-abono-avatar__letter">@selectedAbonoAvatar.Label</span>
+                                        <span class="conversation-abono-avatar__letter">@GetConversationInitials(_selectedConversation)</span>
                                     }
                                     else
                                     {
