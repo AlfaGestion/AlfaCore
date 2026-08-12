@@ -20,6 +20,7 @@ public sealed class ConversacionesService(
     IConversacionesConfigService conversacionesConfigService,
     INotificacionesPushService notificacionesPushService,
     ICentralAdminService centralAdminService,
+    IAlfaKnowledgeSuggestionService alfaKnowledgeService,
     IWebHostEnvironment environment) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
@@ -3330,6 +3331,7 @@ public sealed class ConversacionesService(
                     await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
                     await NotifyIncomingMessageAsync(conversationId, messageId, token);
                     await TryAutoReplyOutOfHoursAsync(conversationId, token);
+                    await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
                 }
                 processed++;
             }
@@ -6445,6 +6447,147 @@ public sealed class ConversacionesService(
                 AppEventSeverity.Warning,
                 ct).ConfigureAwait(false);
         }
+    }
+
+    // Nivel 3 - bot autónomo con guardarraíles. Solo responde si: el bot está activo, AlfaKnowledge
+    // configurado, no hay palabras de escalado, la conversación está sin asignar (si corresponde), la
+    // ventana de WhatsApp está activa, no se superó el tope de respuestas, y la IA tiene respaldo
+    // suficiente (contexto + citas, sin pedir aclaración). Si no, escala silenciosamente a un humano.
+    private async Task TryAutoReplyBotAsync(long idConversacion, string? incomingText, CancellationToken ct)
+    {
+        try
+        {
+            if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+                return;
+
+            var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+            if (!config.BotActivo || !alfaKnowledgeService.IsConfigured)
+                return;
+
+            var texto = (incomingText ?? string.Empty).Trim();
+            if (texto.Length == 0)
+                return;
+
+            if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+                return;
+
+            if (config.BotSoloSinAsignar)
+            {
+                var tecnico = await GetConversationTechnicianIdAsync(idConversacion, ct).ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(tecnico))
+                    return;
+            }
+
+            if (!await IsWhatsAppWindowActiveAsync(idConversacion, ct).ConfigureAwait(false))
+                return;
+
+            var (botCount, lastSistema) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
+            if (botCount >= Math.Max(1, config.BotMaxRespuestas))
+                return;
+            if (string.Equals(lastSistema, "AUTOMATIZACION", StringComparison.OrdinalIgnoreCase))
+                return;
+
+            var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
+            var result = await alfaKnowledgeService.SuggestReplyAsync(
+                texto, mensajes, idConversacion, AlfaKnowledgeSuggestionModes.ReplySuggestion,
+                null, null, null, null, ct).ConfigureAwait(false);
+
+            var puedeResponder = result is not null
+                && !result.NeedsClarification
+                && result.HasSufficientContext
+                && result.Citations.Count > 0
+                && !string.IsNullOrWhiteSpace(result.SuggestedReply);
+
+            if (!puedeResponder)
+            {
+                await _appEvents.LogAuditAsync(
+                    "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
+                    idConversacion.ToString(CultureInfo.InvariantCulture),
+                    "El bot escaló a un humano (sin respaldo suficiente).",
+                    new { idConversacion }, ct).ConfigureAwait(false);
+                return;
+            }
+
+            await SendMessageAsync(new ConversacionSendMessageRequest
+            {
+                IdConversacion = idConversacion,
+                Texto = result!.SuggestedReply.Trim(),
+                MessageType = "TEXT",
+                UsuarioAccion = "AlfaCore",
+                SistemaAccion = "BOT"
+            }, ct).ConfigureAwait(false);
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "El bot respondió automáticamente con respaldo de la base.",
+                new { idConversacion, fuentes = result.Citations.Count }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones", "BotAutoReply", ex,
+                "No se pudo procesar la respuesta automática del bot.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static bool ContienePalabraEscalado(string texto, string? palabras)
+    {
+        if (string.IsNullOrWhiteSpace(palabras))
+            return false;
+        var lower = texto.ToLowerInvariant();
+        return palabras
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Any(p => lower.Contains(p.ToLowerInvariant()));
+    }
+
+    private async Task<(int Count, string LastSistema)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT
+                (SELECT COUNT(1) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') = N'BOT'),
+                ISNULL((SELECT TOP (1) ISNULL(SistemaAutor, '') FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' ORDER BY FechaHora DESC, IdMensaje DESC), '');
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (await rd.ReadAsync(ct))
+            return (rd.IsDBNull(0) ? 0 : rd.GetInt32(0), GetString(rd, 1));
+        return (0, string.Empty);
+    }
+
+    private async Task<IReadOnlyList<ConversacionMensajeDto>> GetRecentMessagesForBotAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (40)
+                ISNULL(Direction, '') AS Direction,
+                ISNULL(CAST(Texto AS nvarchar(max)), '') AS Texto,
+                FechaHora
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id
+              AND Direction IN (N'ENTRANTE', N'SALIENTE')
+              AND ISNULL(CAST(Texto AS nvarchar(max)), '') <> ''
+            ORDER BY FechaHora DESC, IdMensaje DESC;
+            """;
+        var result = new List<ConversacionMensajeDto>();
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            result.Add(new ConversacionMensajeDto
+            {
+                Direction = GetString(rd, 0),
+                Texto = GetString(rd, 1),
+                FechaHora = rd.IsDBNull(2) ? DateTime.MinValue : rd.GetDateTime(2)
+            });
+        }
+        return result;
     }
 
     private static bool IsOutsideBusinessHours(ConversacionAutomatizacionesConfigDto config, DateTime now)

@@ -193,9 +193,21 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public bool Domingo { get; set; }
     public string HoraDesde { get; set; } = "09:00";
     public string HoraHasta { get; set; } = "18:00";
+
+    // Nivel 3 - bot autónomo con guardarraíles. Apagado por defecto: responde solo cuando está
+    // explícitamente activo y con contexto suficiente; si no, deja la conversación para un humano.
+    public bool BotActivo { get; set; }
+    /// <summary>El bot solo responde conversaciones sin técnico asignado (si un humano la tomó, calla).</summary>
+    public bool BotSoloSinAsignar { get; set; } = true;
+    /// <summary>Palabras (separadas por coma) en el mensaje del cliente que fuerzan escalar a un humano.</summary>
+    public string BotPalabrasEscalado { get; set; } = "humano, persona, reclamo, operador, hablar con alguien";
+    /// <summary>Tope de respuestas automáticas por conversación antes de escalar (evita loops).</summary>
+    public int BotMaxRespuestas { get; set; } = 5;
+
     public string ConfigSource { get; set; } = string.Empty;
 
     public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);
+    public bool BotIsConfigured => BotActivo;
 }
 
 /// <summary>

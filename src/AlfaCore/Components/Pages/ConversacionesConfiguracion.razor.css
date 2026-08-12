@@ -1,0 +1,13 @@
+.conv-bot-config {
+    margin-top: .9rem;
+    padding-top: .9rem;
+    border-top: 1px dashed var(--border, #e2e8f0);
+}
+
+.conv-bot-config__title {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    margin: 0 0 .2rem;
+    font-size: 1rem;
+}

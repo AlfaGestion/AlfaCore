@@ -614,6 +614,11 @@ public sealed class ConversacionesConfigService(
                 Domingo = diasSet.Contains("DOM"),
                 HoraDesde = ReadValue(values, "CONV_AUTOMATIZACIONES_HORA_DESDE", string.Empty, "09:00"),
                 HoraHasta = ReadValue(values, "CONV_AUTOMATIZACIONES_HORA_HASTA", string.Empty, "18:00"),
+                BotActivo = ReadValue(values, "CONV_BOT_ACTIVO", string.Empty) == "1",
+                BotSoloSinAsignar = ReadValue(values, "CONV_BOT_SOLO_SIN_ASIGNAR", string.Empty, "1") != "0",
+                BotPalabrasEscalado = ReadValue(values, "CONV_BOT_PALABRAS_ESCALADO", string.Empty,
+                    "humano, persona, reclamo, operador, hablar con alguien"),
+                BotMaxRespuestas = ReadIntValue(values, "CONV_BOT_MAX_RESPUESTAS", 0, 5),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
         }, "No se pudo cargar la configuración de automatizaciones.", ct);
@@ -639,7 +644,11 @@ public sealed class ConversacionesConfigService(
                 ("CONV_AUTOMATIZACIONES_MENSAJE", (config.MensajeFueraHorario ?? string.Empty).Trim()),
                 ("CONV_AUTOMATIZACIONES_DIAS", string.Join(',', dias)),
                 ("CONV_AUTOMATIZACIONES_HORA_DESDE", (config.HoraDesde ?? string.Empty).Trim()),
-                ("CONV_AUTOMATIZACIONES_HORA_HASTA", (config.HoraHasta ?? string.Empty).Trim())
+                ("CONV_AUTOMATIZACIONES_HORA_HASTA", (config.HoraHasta ?? string.Empty).Trim()),
+                ("CONV_BOT_ACTIVO", config.BotActivo ? "1" : "0"),
+                ("CONV_BOT_SOLO_SIN_ASIGNAR", config.BotSoloSinAsignar ? "1" : "0"),
+                ("CONV_BOT_PALABRAS_ESCALADO", (config.BotPalabrasEscalado ?? string.Empty).Trim()),
+                ("CONV_BOT_MAX_RESPUESTAS", (config.BotMaxRespuestas <= 0 ? 5 : config.BotMaxRespuestas).ToString(System.Globalization.CultureInfo.InvariantCulture))
             };
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -1265,7 +1274,11 @@ public sealed class ConversacionesConfigService(
                 'CONV_AUTOMATIZACIONES_MENSAJE',
                 'CONV_AUTOMATIZACIONES_DIAS',
                 'CONV_AUTOMATIZACIONES_HORA_DESDE',
-                'CONV_AUTOMATIZACIONES_HORA_HASTA'
+                'CONV_AUTOMATIZACIONES_HORA_HASTA',
+                'CONV_BOT_ACTIVO',
+                'CONV_BOT_SOLO_SIN_ASIGNAR',
+                'CONV_BOT_PALABRAS_ESCALADO',
+                'CONV_BOT_MAX_RESPUESTAS'
             )
             """;
 
