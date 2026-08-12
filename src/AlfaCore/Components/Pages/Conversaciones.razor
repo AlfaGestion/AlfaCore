@@ -3731,26 +3731,15 @@
             {
             }
 
-            // Restaura si el usuario había dejado el asistente de IA abierto la última vez
-            // (preferencia global guardada en localStorage, no ligada a una conversación puntual).
-            // Si todavía no hay preferencia guardada (primera vez) y el cliente tiene AlfaKnowledge
-            // activo, arranca abierto — una vez que el usuario lo cierra o abre a mano, se respeta
-            // esa elección de ahí en más.
-            if (!_showAiSuggestionPanel && _alfaKnowledgeModuloActivo && _selectedConversationId is not null)
+            // Al entrar a Conversaciones el asistente arranca SIEMPRE abierto si el módulo
+            // AlfaKnowledge está activo (si no, la gente no lo usa). El usuario puede cerrarlo
+            // durante la sesión, pero se vuelve a abrir la próxima vez que entra.
+            if (!_showAiSuggestionPanel && _alfaKnowledgeModuloActivo)
             {
-                try
-                {
-                    var storedOpen = await JS.InvokeAsync<string?>("localStorage.getItem", AiPanelOpenStorageKey);
-                    if (storedOpen == "1" || storedOpen is null)
-                    {
-                        _showAiSuggestionPanel = true;
-                        await OpenAiSuggestionPanelAsync();
-                        StateHasChanged();
-                    }
-                }
-                catch
-                {
-                }
+                _showAiSuggestionPanel = true;
+                if (_selectedConversationId is not null)
+                    await OpenAiSuggestionPanelAsync();
+                StateHasChanged();
             }
         }
 
