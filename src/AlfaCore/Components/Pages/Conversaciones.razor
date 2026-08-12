@@ -2437,12 +2437,25 @@
                             }
                         }
 
+                        <div class="conv-confianza conv-confianza--@GetConfianzaEstado()">
+                            <i class="bi @GetConfianzaIcon(GetConfianzaEstado())"></i>
+                            <span>@GetConfianzaTexto(GetConfianzaEstado())</span>
+                        </div>
+
                         <div class="conversations-ai-suggestion-actions">
                             <button type="button"
                                     class="btn btn--primary btn--sm"
+                                    @onclick="ApproveAndSendAsync"
+                                    disabled="@(!CanApproveAndSend)"
+                                    title="Aprobar la respuesta del asistente y enviarla">
+                                <i class="bi bi-send-check"></i> Aprobar y enviar
+                            </button>
+                            <button type="button"
+                                    class="btn btn--ghost btn--sm"
                                     @onclick="UseAiSuggestionAsync"
-                                    disabled="@string.IsNullOrWhiteSpace(GetAiTransferText())">
-                                <i class="bi bi-check2"></i> Llevar a respuesta
+                                    disabled="@string.IsNullOrWhiteSpace(GetAiTransferText())"
+                                    title="Copiar a la respuesta para editar antes de enviar">
+                                <i class="bi bi-pencil"></i> Editar antes
                             </button>
                             <button type="button" class="btn btn--ghost btn--sm" @onclick="RegenerateAiSuggestionAsync">
                                 <i class="bi bi-arrow-repeat"></i> Regenerar
@@ -8433,6 +8446,51 @@
         await SetReplyTextareaValueAsync(transferText, focus: true);
         await SendAiSuggestionFeedbackAsync(isHelpful: true);
     }
+
+    // Nivel 2 (bot supervisado): el operador aprueba la respuesta del asistente y la envía en un clic.
+    private bool CanApproveAndSend
+        => _aiSuggestion is not null
+           && !_busyAction
+           && _selectedConversation is not null
+           && IsSelectedChannelSendEnabled
+           && !IsWhatsAppWindowExpired
+           && !string.IsNullOrWhiteSpace(GetAiTransferText());
+
+    private async Task ApproveAndSendAsync()
+    {
+        if (!CanApproveAndSend)
+            return;
+
+        var text = GetAiTransferText().Trim();
+        _replyText = text;
+        await SetReplyTextareaValueAsync(text, focus: false);
+        await SendAiSuggestionFeedbackAsync(isHelpful: true);
+        await SendReplyAsync();
+    }
+
+    // "alta" = con respaldo (contexto suficiente + citas); "baja" = revisar; "escalar" = pasar a humano.
+    private string GetConfianzaEstado()
+    {
+        if (_aiSuggestion is null)
+            return "baja";
+        if (_aiSuggestion.NeedsClarification)
+            return "escalar";
+        return _aiSuggestion.HasSufficientContext && _aiSuggestion.Citations.Count > 0 ? "alta" : "baja";
+    }
+
+    private static string GetConfianzaIcon(string estado) => estado switch
+    {
+        "alta" => "bi-patch-check-fill",
+        "escalar" => "bi-person-raised-hand",
+        _ => "bi-exclamation-triangle-fill"
+    };
+
+    private static string GetConfianzaTexto(string estado) => estado switch
+    {
+        "alta" => "Respuesta con respaldo de la base — podés aprobar y enviar.",
+        "escalar" => "La IA no está segura — conviene pasar a un humano.",
+        _ => "Sin respaldo suficiente — revisá antes de enviar."
+    };
 
     private string GetAiTransferText()
     {

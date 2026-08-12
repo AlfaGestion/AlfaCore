@@ -3096,3 +3096,34 @@
 .conversations-tone-menu > button:hover {
     background: var(--hover, #f1f5f9);
 }
+
+/* Indicador de confianza de la sugerencia (Nivel 2 - bot supervisado) */
+.conv-confianza {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .8rem;
+    font-weight: 600;
+    padding: .4rem .6rem;
+    border-radius: 8px;
+    margin: .5rem 0;
+    border: 1px solid transparent;
+}
+
+.conv-confianza--alta {
+    background: #dcfce7;
+    color: #15803d;
+    border-color: rgba(34, 197, 94, .35);
+}
+
+.conv-confianza--baja {
+    background: #fef3c7;
+    color: #b45309;
+    border-color: rgba(245, 158, 11, .35);
+}
+
+.conv-confianza--escalar {
+    background: #fee2e2;
+    color: #b91c1c;
+    border-color: rgba(239, 68, 68, .35);
+}
