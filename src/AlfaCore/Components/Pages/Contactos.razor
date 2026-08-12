@@ -18,6 +18,11 @@
 
 <div class="@GetContactosPageClass()" @onclick="HandlePageClickAsync">
 
+    @if (_pageMode == ContactosPageMode.Edit)
+    {
+        <NavigationLock OnBeforeInternalNavigation="ProtectDirtyEditNavigation" />
+    }
+
     @if (_feedback is not null)
     {
         <section class="contactos-feedback" aria-live="polite">
@@ -98,6 +103,43 @@
 
     @if (_showEditor)
     {
+        @if (!_isNewMode)
+        {
+            @if (_loadingEdit)
+            {
+                <section class="contactos-edit-shell">
+                    <AlfaEmptyState Title="Cargando contacto"
+                                    Message="Estamos preparando los datos para editar en la base activa." />
+                </section>
+            }
+            else if (!string.IsNullOrWhiteSpace(_editErrorMessage))
+            {
+                <section class="contactos-edit-shell">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                    Title="No se pudo cargar el contacto"
+                                    Message="@_editErrorMessage"
+                                    ActionLabel="Volver"
+                                    ActionIcon="bi bi-arrow-left"
+                                    OnAction="ReturnFromEditLoadErrorAsync" />
+                </section>
+            }
+            else if (_editLoadedId == _selectedId && _selectedId > 0)
+            {
+                <ContactosEditView Model="_form"
+                                   Active="_selectedActivo"
+                                   Saving="_saving"
+                                   LoadingProvinces="_loadingProvincias"
+                                   Provinces="_provincias"
+                                   LinkedAccounts="_linkedAccounts"
+                                   FieldErrors="_fieldErrors"
+                                   ActiveTab="(int)_activeTab"
+                                   ActiveTabChanged="SetEditTabAsync"
+                                   OnFieldChanged="HandleEditFieldChangedAsync"
+                                   BuildAccountLink="BuildCuentaLink" />
+            }
+        }
+        else
+        {
         <section class="panel-card contactos-editor-panel">
             <div class="panel-card__header">
                 <div>
@@ -316,6 +358,7 @@
             </div>
 
         </section>
+        }
     }
     else if (_showRecordView)
     {
@@ -707,6 +750,14 @@
                    OnConfirm="ConfirmDeactivateAsync"
                    OnCancel="CloseDeactivateConfirm" />
 
+<AlfaConfirmDialog Open="@_showDiscardEditConfirm"
+                   Title="Descartar cambios"
+                   Message="Hay cambios sin guardar. Si salís ahora, se perderán."
+                   ConfirmLabel="Descartar cambios"
+                   CancelLabel="Seguir editando"
+                   OnConfirm="DiscardEditChangesAsync"
+                   OnCancel="ContinueEditing" />
+
 @if (_showBulkTemplateConfirm)
 {
     <div class="cuentas-modal-backdrop" @onclick="CloseBulkTemplateConfirm">
@@ -769,6 +820,14 @@
     private bool _navigatingRecord;
     private bool _loadingRecordNavigation;
     private bool _selectedActivo = true;
+    private bool _loadingEdit;
+    private bool _editDirty;
+    private bool _showDiscardEditConfirm;
+    private bool _allowEditNavigation;
+    private string _editInitialState = string.Empty;
+    private string _editErrorMessage = string.Empty;
+    private string _pendingEditNavigationUri = string.Empty;
+    private int _editLoadedId;
     private int _selectedId;
     private int _pagedTotal;
     private int _pageNumber = 1;
@@ -992,6 +1051,8 @@
         }
         else if (_showEditor)
         {
+            var editUnavailable = !_isNewMode
+                && (_loadingEdit || _editLoadedId != _selectedId || !string.IsNullOrWhiteSpace(_editErrorMessage));
             actions.Add(new PageHeaderAction
             {
                 Key = "guardar",
@@ -1010,14 +1071,12 @@
                 Icon = "bi-x-circle",
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Essential,
-                Disabled = _saving,
-                OnClick = () =>
-                {
-                    CerrarEditor();
-                    return Task.CompletedTask;
-                }
+                Disabled = _saving || editUnavailable,
+                OnClick = _isNewMode
+                    ? () => { CerrarEditor(); return Task.CompletedTask; }
+                    : RequestCancelEditAsync
             });
-            if (!_isNewMode && _selectedActivo)
+            if (!_isNewMode && _selectedActivo && !editUnavailable)
             {
                 actions.Add(new PageHeaderAction
                 {
@@ -1030,18 +1089,8 @@
                     OnClick = DarDeBajaAsync
                 });
             }
-            if (!_isNewMode)
+            if (!_isNewMode && !editUnavailable)
             {
-                actions.Add(new PageHeaderAction
-                {
-                    Key = "conversacion",
-                    Label = GetConversationActionLabel(_selectedConversationId),
-                    Icon = "bi-whatsapp",
-                    Style = PageHeaderActionStyle.Primary,
-                    Priority = PageHeaderActionPriority.Essential,
-                    Disabled = _saving || _openingConversation,
-                    OnClick = OpenConversationForSelectedAsync
-                });
                 actions.Add(new PageHeaderAction
                 {
                     Key = "unificar",
@@ -1181,7 +1230,7 @@
                 : _showRecordView
                     ? (_loadingRecord ? PageHeaderState.Loading : PageHeaderState.ReadOnly)
                     : _showEditor
-                    ? (_isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing)
+                    ? (_loadingEdit ? PageHeaderState.Loading : _isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing)
                     : _selectedIds.Count > 0
                         ? PageHeaderState.Selection
                         : _viewMode == ContactosViewModeKeys.Kanban ? PageHeaderState.Kanban : PageHeaderState.List,
@@ -1254,7 +1303,7 @@
                 Icon = "bi-person-dash",
                 Style = PageHeaderActionStyle.Danger,
                 Priority = PageHeaderActionPriority.Overflow,
-                Disabled = _saving,
+                Disabled = _saving || _loadingEdit,
                 OnClick = DarDeBajaAsync
             });
         }
@@ -2207,6 +2256,137 @@
     private void CerrarEditor()
         => CerrarEditor(useReturnUrl: true);
 
+    private Task SetEditTabAsync(int tab)
+    {
+        _activeTab = tab switch
+        {
+            1 => ContactoTab.Observaciones,
+            2 => ContactoTab.Cuentas,
+            _ => ContactoTab.Datos
+        };
+        return Task.CompletedTask;
+    }
+
+    private Task HandleEditFieldChangedAsync(string propertyName)
+    {
+        var fieldKey = propertyName switch
+        {
+            nameof(ContactoSaveRequest.NombreApellido) => "nombre",
+            nameof(ContactoSaveRequest.Domicilio) => "domicilio",
+            nameof(ContactoSaveRequest.Localidad) => "localidad",
+            nameof(ContactoSaveRequest.ProvinciaCodigo) => "provincia",
+            nameof(ContactoSaveRequest.CodigoPostal) => "codigo-postal",
+            nameof(ContactoSaveRequest.NumeroDocumento) => "numero-documento",
+            nameof(ContactoSaveRequest.Telefono) => "telefono",
+            nameof(ContactoSaveRequest.TelefonoAlternativo) => "telefono-alternativo",
+            nameof(ContactoSaveRequest.Celular) => "celular",
+            nameof(ContactoSaveRequest.Email) => "email",
+            nameof(ContactoSaveRequest.Website) => "website",
+            nameof(ContactoSaveRequest.Cargo) => "cargo",
+            nameof(ContactoSaveRequest.Observaciones) => "observaciones",
+            _ => string.Empty
+        };
+        if (!string.IsNullOrWhiteSpace(fieldKey))
+            _fieldErrors.Remove(fieldKey);
+        _editDirty = !string.Equals(_editInitialState, CaptureEditState(), StringComparison.Ordinal);
+        return Task.CompletedTask;
+    }
+
+    private Task RequestCancelEditAsync()
+    {
+        if (_editDirty)
+        {
+            _showDiscardEditConfirm = true;
+            return Task.CompletedTask;
+        }
+
+        return ReturnFromEditToRecordAsync();
+    }
+
+    private void ContinueEditing()
+    {
+        _showDiscardEditConfirm = false;
+        _pendingEditNavigationUri = string.Empty;
+    }
+
+    private async Task DiscardEditChangesAsync()
+    {
+        _showDiscardEditConfirm = false;
+        if (!string.IsNullOrWhiteSpace(_pendingEditNavigationUri))
+        {
+            var target = _pendingEditNavigationUri;
+            _pendingEditNavigationUri = string.Empty;
+            _editDirty = false;
+            _allowEditNavigation = true;
+            Nav.NavigateTo(target);
+            return;
+        }
+
+        await ReturnFromEditToRecordAsync();
+    }
+
+    private void ProtectDirtyEditNavigation(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    {
+        if (_allowEditNavigation)
+        {
+            _allowEditNavigation = false;
+            return;
+        }
+
+        if (!_editDirty)
+            return;
+
+        context.PreventNavigation();
+        _pendingEditNavigationUri = context.TargetLocation;
+        _showDiscardEditConfirm = true;
+    }
+
+    private async Task ReturnFromEditToRecordAsync()
+    {
+        if (_selectedId <= 0)
+        {
+            CerrarEditor(useReturnUrl: false);
+            return;
+        }
+
+        ClearFieldErrors();
+        SetFeedback(null);
+        _editDirty = false;
+        _pageMode = ContactosPageMode.Record;
+        _recordActiveTab = ContactosRecordTabKeys.Informacion;
+        _allowEditNavigation = true;
+        NavigateToContactosState(ContactosUrlState.Record, _selectedId, replace: true);
+        await CargarFichaAsync(_selectedId);
+    }
+
+    private Task ReturnFromEditLoadErrorAsync()
+        => ReturnFromEditToRecordAsync();
+
+    private string CaptureEditState()
+    {
+        static string Normalize(string? value) => (value ?? string.Empty).Trim();
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            _form.Id,
+            NombreApellido = Normalize(_form.NombreApellido),
+            Domicilio = Normalize(_form.Domicilio),
+            Localidad = Normalize(_form.Localidad),
+            ProvinciaCodigo = Normalize(_form.ProvinciaCodigo),
+            CodigoPostal = Normalize(_form.CodigoPostal),
+            NumeroDocumento = Normalize(_form.NumeroDocumento),
+            Telefono = Normalize(_form.Telefono),
+            TelefonoAlternativo = Normalize(_form.TelefonoAlternativo),
+            Celular = Normalize(_form.Celular),
+            Email = Normalize(_form.Email),
+            Website = Normalize(_form.Website),
+            Cargo = Normalize(_form.Cargo),
+            Observaciones = Normalize(_form.Observaciones),
+            _form.MailPagosCobranzas,
+            _form.MailOrdenCompra,
+            _form.MailOrdenTrabajo
+        });
+    }
+
     private void CerrarEditor(bool useReturnUrl)
     {
         if (useReturnUrl && !string.IsNullOrWhiteSpace(_returnUrl))
@@ -2443,9 +2623,20 @@
                 SetFeedback(AppUiMessage.Success("Contacto guardado", $"El contacto #{savedId} se guardó correctamente."));
                 await BuscarAsync();
                 _selectedId = savedId;
-                ReturnToBrowseState();
                 _isNewMode = false;
-                NavigateToContactosState(ContactosUrlState.Base, replace: true);
+                if (_pageMode == ContactosPageMode.Edit)
+                {
+                    _editDirty = false;
+                    _pageMode = ContactosPageMode.Record;
+                    _allowEditNavigation = true;
+                    NavigateToContactosState(ContactosUrlState.Record, savedId, replace: true);
+                    await CargarFichaAsync(savedId);
+                }
+                else
+                {
+                    ReturnToBrowseState();
+                    NavigateToContactosState(ContactosUrlState.Base, replace: true);
+                }
             }
             catch (AppValidationException validationEx)
             {
@@ -2479,11 +2670,36 @@
         _pageMode = ContactosPageMode.Edit;
         _selectedId = id;
         _isNewMode = false;
+        _loadingEdit = true;
+        _editLoadedId = 0;
+        _editErrorMessage = string.Empty;
+        _editDirty = false;
         SetFeedback(null);
         if (updateUrl)
             NavigateToContactUrl(id);
-        await SeleccionarAsync(id);
         UpdatePageHeader();
+        try
+        {
+            var result = await UiOps.RunAsync(() => ContactosSvc.GetByIdAsync(id), "No se pudo cargar el contacto.");
+            if (!result.Success)
+            {
+                _editErrorMessage = result.Feedback?.Message ?? "No se pudo cargar el contacto.";
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _editErrorMessage = "El contacto solicitado no existe o ya no está disponible en la base activa.";
+                return;
+            }
+
+            MapDetailToForm(result.Value);
+        }
+        finally
+        {
+            _loadingEdit = false;
+            UpdatePageHeader();
+        }
     }
 
     private void CaptureBrowseReturnView()
@@ -2972,6 +3188,12 @@
         _isNewMode = false;
         _pageMode = ContactosPageMode.Edit;
         _activeTab = ContactoTab.Datos;
+        _editLoadedId = detail.Id;
+        _editErrorMessage = string.Empty;
+        _editInitialState = CaptureEditState();
+        _editDirty = false;
+        _showDiscardEditConfirm = false;
+        _pendingEditNavigationUri = string.Empty;
     }
 
     private void ApplyDetailState(ContactoDetailDto detail)

@@ -14,6 +14,7 @@
            type="@Type"
            value="@Value"
            placeholder="@Placeholder"
+           maxlength="@MaxLength"
            disabled="@Disabled"
            required="@Required"
            aria-invalid="@HasError.ToString().ToLowerInvariant()"
@@ -37,6 +38,7 @@
     [Parameter] public EventCallback<string?> ValueChanged { get; set; }
     [Parameter] public string Type { get; set; } = "text";
     [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public int? MaxLength { get; set; }
     [Parameter] public string? HelpText { get; set; }
     [Parameter] public string? ErrorText { get; set; }
     [Parameter] public bool Required { get; set; }
