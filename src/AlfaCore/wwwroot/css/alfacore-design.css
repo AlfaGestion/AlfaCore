@@ -302,6 +302,30 @@
     grid-area: view !important;
 }
 
+/* Record mantiene acciones y navegación dentro de una única Context Toolbar de 44px. */
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--record {
+    height: 44px !important;
+    min-height: 44px !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    grid-template-areas: "actions filler pagination" !important;
+    align-items: center !important;
+    gap: var(--alfa-space-8) !important;
+    padding: 0 var(--alfa-space-16) !important;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--record .main-page-header__actions {
+    grid-area: actions !important;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--record .main-page-header__pagination {
+    grid-area: pagination !important;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--record .main-page-header__search,
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--record .main-page-header__view {
+    display: none !important;
+}
+
 .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__nav,
 .shell.shell--alfa-design .main-page-header.main-page-header--alfa-design .main-page-header__context {
     display: none;

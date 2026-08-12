@@ -76,15 +76,15 @@ else
                     @if (HasPhone(Contact))
                     {
                         <button type="button" class="contactos-record-smart__button" @onclick="HandleConversationActionAsync">
-                            <strong><i class="bi @(Contact.IdConversacionWhatsApp.HasValue ? "bi-chat-left-text" : "bi-plus-circle")" aria-hidden="true"></i>@(Contact.IdConversacionWhatsApp.HasValue ? "Abrir" : "Crear")</strong>
-                            <span>Conversación</span>
+                            <strong><i class="bi @(Contact.IdConversacionWhatsApp.HasValue ? "bi-chat-left-text" : "bi-plus-circle")" aria-hidden="true"></i>Conversación</strong>
+                            <span>@(Contact.IdConversacionWhatsApp.HasValue ? "Abrir" : "Crear")</span>
                         </button>
                     }
                     @if (Contact.CuentasVinculadas.Count > 0)
                     {
                         <button type="button" class="contactos-record-smart__button" @onclick="() => SetTab(ContactosRecordTabKeys.Cuentas)">
-                            <strong>@Contact.CuentasVinculadas.Count</strong>
-                            <span>Cuentas</span>
+                            <strong><i class="bi bi-link-45deg" aria-hidden="true"></i>Cuentas</strong>
+                            <span>@Contact.CuentasVinculadas.Count vinculada@(Contact.CuentasVinculadas.Count == 1 ? string.Empty : "s")</span>
                         </button>
                     }
                 </div>

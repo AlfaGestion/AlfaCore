@@ -175,6 +175,127 @@ public sealed class ContactosService(
             };
         }, "No se pudieron cargar los contactos.", ct);
 
+    public Task<ContactoNavigationContextDto?> GetNavigationContextAsync(
+        int contactId,
+        ContactosFilters filters,
+        CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetNavigationContext", async token =>
+        {
+            if (contactId <= 0)
+                return null;
+
+            filters ??= new ContactosFilters();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var hasActivo = await HasActivoColumnAsync(cn, token);
+            var activoExpr = hasActivo ? "ISNULL(c.Activo, 1)" : "CAST(1 AS bit)";
+            var activoFilterSql = !hasActivo && filters.Activo == false
+                ? "AND 1 = 0"
+                : "AND (@Activo IS NULL OR " + activoExpr + " = @Activo)";
+            var advancedFilterSql = BuildAdvancedFilterSql(filters, BuildConversationMatchSql("c"));
+            var ruleFilterSql = BuildRuleFilterSql(filters.Reglas, GetContactosRuleFieldSql);
+            var navigationOrderSql = BuildContactosOrderBy(
+                filters,
+                "n",
+                "COALESCE(NULLIF(n.ProvinciaDescripcion, ''), n.ProvinciaCodigo)",
+                "Id");
+            var fullNavigationOrderSql = hasActivo
+                ? $"n.Activo DESC, {navigationOrderSql}"
+                : navigationOrderSql;
+
+            var sql = $"""
+                WITH BaseContacts AS
+                (
+                    SELECT
+                        c.id AS Id,
+                        ISNULL(c.Nombre_y_Apellido, '') AS NombreApellido,
+                        ISNULL(c.Localidad, '') AS Localidad,
+                        ISNULL(c.Provincia, '') AS ProvinciaCodigo,
+                        ISNULL(e.DESCRIPCION, '') AS ProvinciaDescripcion,
+                        ISNULL(c.Telefono, '') AS Telefono,
+                        ISNULL(c.Celular, '') AS Celular,
+                        ISNULL(c.email, '') AS Email,
+                        ISNULL(c.Cargo, '') AS Cargo,
+                        {activoExpr} AS Activo
+                    FROM dbo.MA_CONTACTOS c
+                    LEFT JOIN dbo.TA_ESTADOS e
+                        ON UPPER(LTRIM(RTRIM(e.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(c.Provincia, ''))))
+                ),
+                FilteredIds AS
+                (
+                    SELECT c.id AS Id
+                    FROM dbo.MA_CONTACTOS c
+                    WHERE (
+                            @TextoLike = ''
+                            OR ISNULL(c.Nombre_y_Apellido, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(c.email, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(c.Localidad, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(c.Telefono, '') LIKE @TextoLike
+                            OR ISNULL(c.Celular, '') LIKE @TextoLike
+                            OR ISNULL(c.Cargo, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                      )
+                      {activoFilterSql}
+                      {advancedFilterSql}
+                      {ruleFilterSql}
+                ),
+                ContextChoice AS
+                (
+                    SELECT CAST(CASE WHEN EXISTS
+                    (
+                        SELECT 1 FROM FilteredIds WHERE Id = @ContactId
+                    ) THEN 1 ELSE 0 END AS bit) AS UsesFilteredContext
+                ),
+                NavigationSet AS
+                (
+                    SELECT b.*
+                    FROM BaseContacts b
+                    CROSS JOIN ContextChoice choice
+                    WHERE choice.UsesFilteredContext = 0
+                       OR EXISTS (SELECT 1 FROM FilteredIds f WHERE f.Id = b.Id)
+                ),
+                OrderedContacts AS
+                (
+                    SELECT
+                        n.Id,
+                        LAG(n.Id) OVER (ORDER BY {fullNavigationOrderSql}) AS PreviousId,
+                        LEAD(n.Id) OVER (ORDER BY {fullNavigationOrderSql}) AS NextId,
+                        ROW_NUMBER() OVER (ORDER BY {fullNavigationOrderSql}) AS Position,
+                        COUNT(*) OVER () AS Total
+                    FROM NavigationSet n
+                )
+                SELECT
+                    ordered.PreviousId,
+                    ordered.NextId,
+                    ordered.Position,
+                    ordered.Total,
+                    choice.UsesFilteredContext
+                FROM OrderedContacts ordered
+                CROSS JOIN ContextChoice choice
+                WHERE ordered.Id = @ContactId;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@ContactId", contactId);
+            cmd.Parameters.AddWithValue("@TextoLike", SearchTextHelper.LikeContains(filters.Texto));
+            cmd.Parameters.AddWithValue("@Activo", filters.Activo.HasValue ? filters.Activo.Value : DBNull.Value);
+            AddAdvancedFilterParameters(cmd, filters);
+            AddRuleFilterParameters(cmd, filters.Reglas, GetContactosRuleFieldSql);
+
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            if (!await rd.ReadAsync(token))
+                return null;
+
+            return new ContactoNavigationContextDto
+            {
+                PreviousId = rd.IsDBNull(0) ? null : GetInt(rd, 0),
+                NextId = rd.IsDBNull(1) ? null : GetInt(rd, 1),
+                Position = GetInt(rd, 2),
+                Total = GetInt(rd, 3),
+                UsesFilteredContext = GetBool(rd, 4)
+            };
+        }, "No se pudo resolver la navegación del contacto.", ct);
+
     private static string BuildContactosOrderBy(
         ContactosFilters filters,
         string alias,

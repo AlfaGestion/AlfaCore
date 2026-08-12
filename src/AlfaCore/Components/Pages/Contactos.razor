@@ -767,6 +767,7 @@
     private bool _viewSettingsLoaded;
     private bool _loadingRecord;
     private bool _navigatingRecord;
+    private bool _loadingRecordNavigation;
     private bool _selectedActivo = true;
     private int _selectedId;
     private int _pagedTotal;
@@ -781,9 +782,11 @@
     private string _bulkAction = BulkActionDeactivate;
     private ContactoTab _activeTab = ContactoTab.Datos;
     private ContactoDetailDto? _recordDetail;
+    private ContactoNavigationContextDto? _recordNavigation;
     private string _recordActiveTab = ContactosRecordTabKeys.Informacion;
     private string _recordReturnViewMode = ContactosViewModeKeys.Listado;
     private string _recordErrorMessage = string.Empty;
+    private string _recordNavigationError = string.Empty;
     private string? _returnUrl;
     private long? _selectedConversationId;
     private bool _showSearchPanel;
@@ -1183,6 +1186,7 @@
                         ? PageHeaderState.Selection
                         : _viewMode == ContactosViewModeKeys.Kanban ? PageHeaderState.Kanban : PageHeaderState.List,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            RecordToolbar = _showRecordView,
             TopNavigationItems = BuildTopNavigationItems(),
             OnBack = _showRecordView
                 ? VolverDesdeFichaAsync
@@ -1366,60 +1370,42 @@
 
     private PageHeaderPaginationConfig BuildRecordPagination()
     {
-        var localIndex = GetCurrentRecordLocalIndex();
-        var position = localIndex >= 0
-            ? ((_pageNumber - 1) * _filters.PageSize) + localIndex + 1
-            : 0;
+        var positionLabel = _loadingRecordNavigation
+            ? "Cargando..."
+            : !string.IsNullOrWhiteSpace(_recordNavigationError)
+                ? "Navegación no disponible"
+                : _recordNavigation is not null
+                    ? $"{_recordNavigation.Position} / {_recordNavigation.Total}"
+                    : "Sin contexto";
 
         return new PageHeaderPaginationConfig
         {
-            PageLabel = position > 0 ? $"{position} / {_pagedTotal}" : $"— / {_pagedTotal}",
-            HasPrevious = position > 1,
-            HasNext = position > 0 && position < _pagedTotal,
-            Disabled = _loadingRecord || _navigatingRecord,
+            PageLabel = positionLabel,
+            HasPrevious = _recordNavigation?.PreviousId is not null,
+            HasNext = _recordNavigation?.NextId is not null,
+            Disabled = _loadingRecord || _loadingRecordNavigation || _navigatingRecord || !string.IsNullOrWhiteSpace(_recordNavigationError),
             OnPrevious = () => NavigateRecordAsync(-1),
             OnNext = () => NavigateRecordAsync(1)
         };
     }
-
-    private int GetCurrentRecordLocalIndex()
-        => _selectedId > 0 ? _items.FindIndex(item => item.Id == _selectedId) : -1;
 
     private async Task NavigateRecordAsync(int direction)
     {
         if (_navigatingRecord || _loadingRecord || direction is not (-1 or 1))
             return;
 
-        var localIndex = GetCurrentRecordLocalIndex();
-        if (localIndex < 0)
+        var targetId = direction < 0
+            ? _recordNavigation?.PreviousId
+            : _recordNavigation?.NextId;
+        if (targetId is not int id || id <= 0)
             return;
 
         _navigatingRecord = true;
         UpdatePageHeader();
         try
         {
-            var targetIndex = localIndex + direction;
-            if (targetIndex >= 0 && targetIndex < _items.Count)
-            {
-                await OpenRecordAsync(_items[targetIndex].Id, updateUrl: false);
-                NavigateToContactosState(ContactosUrlState.Record, _selectedId, replace: true);
-                return;
-            }
-
-            var targetPage = _pageNumber + direction;
-            if (targetPage < 1 || targetPage > _totalPages)
-                return;
-
-            var preservedSelection = _selectedIds.ToArray();
-            _filters.PageNumber = targetPage;
-            await BuscarAsync();
-            _selectedIds.UnionWith(preservedSelection);
-            if (!string.IsNullOrWhiteSpace(_listErrorMessage) || _items.Count == 0)
-                return;
-
-            var target = direction > 0 ? _items[0] : _items[^1];
-            await OpenRecordAsync(target.Id, updateUrl: false);
-            NavigateToContactosState(ContactosUrlState.Record, target.Id, replace: true);
+            await OpenRecordAsync(id, updateUrl: false);
+            NavigateToContactosState(ContactosUrlState.Record, id, replace: true);
         }
         finally
         {
@@ -2061,6 +2047,9 @@
         _loadingRecord = true;
         _recordErrorMessage = string.Empty;
         _recordDetail = null;
+        _recordNavigation = null;
+        _recordNavigationError = string.Empty;
+        _loadingRecordNavigation = true;
         _selectedId = id;
         UpdatePageHeader();
 
@@ -2083,12 +2072,32 @@
             _recordDetail = result.Value;
             ApplyDetailState(result.Value);
             _isNewMode = false;
+            await CargarNavegacionFichaAsync(id);
         }
         finally
         {
             _loadingRecord = false;
+            _loadingRecordNavigation = false;
             UpdatePageHeader();
         }
+    }
+
+    private async Task CargarNavegacionFichaAsync(int id)
+    {
+        var navigationFilters = CloneContactFilters(_filters);
+        var result = await UiOps.RunAsync(
+            () => ContactosSvc.GetNavigationContextAsync(id, navigationFilters),
+            "No se pudo resolver la navegación del contacto.");
+
+        if (!result.Success || result.Value is null)
+        {
+            _recordNavigation = null;
+            _recordNavigationError = result.Feedback?.Message ?? "No se pudo resolver la navegación del contacto.";
+            return;
+        }
+
+        _recordNavigation = result.Value;
+        _recordNavigationError = string.Empty;
     }
 
     private Task RecargarFichaAsync()
@@ -2492,6 +2501,9 @@
         _pageMode = ContactosPageMode.Browse;
         _recordDetail = null;
         _recordErrorMessage = string.Empty;
+        _recordNavigation = null;
+        _recordNavigationError = string.Empty;
+        _loadingRecordNavigation = false;
         _loadingRecord = false;
         _viewMode = _recordReturnViewMode == ContactosViewModeKeys.Kanban
             ? ContactosViewModeKeys.Kanban

@@ -96,8 +96,8 @@
     gap: 5px;
     overflow: hidden;
     color: var(--alfa-text-secondary);
-    font-size: 12px;
-    line-height: 16px;
+    font-size: 13px;
+    line-height: 18px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
@@ -142,8 +142,9 @@
     display: inline-flex;
     align-items: center;
     gap: var(--alfa-space-6);
-    font-size: 16px;
-    line-height: 20px;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 18px;
 }
 
 .contactos-record-smart__button span {
@@ -248,8 +249,9 @@
 .contactos-record-fields {
     min-width: 0;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    column-gap: 40px;
+    grid-template-columns: repeat(2, minmax(300px, 460px));
+    justify-content: start;
+    column-gap: 48px;
     row-gap: 20px;
 }
 
@@ -269,9 +271,9 @@
     min-width: 0;
     overflow: hidden;
     color: var(--alfa-text-primary);
-    font-size: 13px;
+    font-size: 14px;
     font-weight: 500;
-    line-height: 17px;
+    line-height: 19px;
     overflow-wrap: anywhere;
     text-overflow: ellipsis;
 }
@@ -296,7 +298,7 @@
     align-items: center;
     gap: var(--alfa-space-8);
     color: var(--alfa-text-secondary);
-    font-size: 12px;
+    font-size: 13px;
 }
 
 .contactos-record-check i {
@@ -316,15 +318,14 @@
 }
 
 .record-information-content {
-    width: min(100%, 1120px);
-    max-width: 1120px;
+    width: min(100%, 1000px);
 }
 
 .contactos-record-text {
     margin: 0;
     color: var(--alfa-text-primary);
-    font-size: 13px;
-    line-height: 1.55;
+    font-size: 14px;
+    line-height: 19px;
     white-space: pre-wrap;
 }
 
@@ -562,7 +563,7 @@
 
 .contactos-record-context__item strong {
     color: var(--alfa-text-primary);
-    font-size: 13px;
+    font-size: 13.5px;
     font-weight: 600;
 }
 

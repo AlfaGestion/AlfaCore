@@ -39,6 +39,15 @@ public sealed class ContactoGridItemDto
     public long? IdConversacionWhatsApp { get; set; }
 }
 
+public sealed class ContactoNavigationContextDto
+{
+    public int? PreviousId { get; set; }
+    public int? NextId { get; set; }
+    public int Position { get; set; }
+    public int Total { get; set; }
+    public bool UsesFilteredContext { get; set; }
+}
+
 public sealed class ContactoDetailDto
 {
     public int Id { get; set; }
