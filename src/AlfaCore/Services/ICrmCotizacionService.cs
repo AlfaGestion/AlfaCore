@@ -11,4 +11,5 @@ public interface ICrmCotizacionService
     Task<long> SaveAsync(CrmCotizacionSaveRequest request, CancellationToken ct = default);
     Task ChangeEstadoAsync(long idCotizacion, string estado, string? usuarioAccion = null, CancellationToken ct = default);
     Task DeleteAsync(long idCotizacion, string? usuarioAccion = null, CancellationToken ct = default);
+    Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default);
 }

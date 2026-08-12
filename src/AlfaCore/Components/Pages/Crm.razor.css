@@ -1092,3 +1092,81 @@
     .crm-cotiz-toolbar { grid-template-columns: 1fr; }
     .crm-cotiz-foot { grid-template-columns: 1fr; }
 }
+
+/* Cotización servicio: asistente IA + editor enriquecido */
+.crm-cotiz-ia {
+    display: flex;
+    flex-direction: column;
+    gap: .35rem;
+    padding: .6rem;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--accent, #2563eb) 8%, transparent);
+    margin-bottom: .6rem;
+}
+
+.crm-cotiz-ia > label {
+    font-weight: 600;
+    font-size: .85rem;
+}
+
+.crm-cotiz-ia .crm-inline-row input { flex: 1; }
+
+.crm-richtext {
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: .6rem;
+}
+
+.crm-richtext__toolbar {
+    display: flex;
+    align-items: center;
+    gap: .15rem;
+    padding: .3rem .4rem;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    background: var(--surface-1, #f8fafc);
+    flex-wrap: wrap;
+}
+
+.crm-richtext__toolbar button {
+    min-width: 1.9rem;
+    height: 1.9rem;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--color-text, #0f172a);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.crm-richtext__toolbar button:hover {
+    background: var(--hover, #e2e8f0);
+    border-color: var(--border, #cbd5e1);
+}
+
+.crm-richtext__sep {
+    width: 1px;
+    height: 1.2rem;
+    background: var(--border, #cbd5e1);
+    margin: 0 .25rem;
+}
+
+.crm-richtext__area {
+    min-height: 220px;
+    max-height: 420px;
+    overflow-y: auto;
+    padding: .7rem .8rem;
+    background: var(--surface-1, #fff);
+    color: var(--color-text, #0f172a);
+    font-size: .9rem;
+    line-height: 1.5;
+}
+
+.crm-richtext__area:focus { outline: none; }
+.crm-richtext__area h3 { margin: .6rem 0 .3rem; font-size: 1.05rem; }
+.crm-richtext__area p { margin: .3rem 0; }
+.crm-richtext__area ul, .crm-richtext__area ol { margin: .3rem 0 .3rem 1.2rem; }
+.crm-richtext__area img { max-width: 100%; height: auto; border-radius: 6px; margin: .3rem 0; }

@@ -1,13 +1,17 @@
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace AlfaCore.Services;
 
 public sealed class CrmCotizacionService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : ICrmCotizacionService
+    IAppEventService appEvents,
+    IHttpClientFactory httpClientFactory) : ICrmCotizacionService
 {
     private const string ModuleName = "CRM";
     private const string DefaultTc = "CTZ";
@@ -141,11 +145,15 @@ public sealed class CrmCotizacionService(
             if (request.IdOportunidad <= 0)
                 throw new InvalidOperationException("La cotización debe pertenecer a una oportunidad.");
 
+            var tipo = NormalizeTipo(request.Tipo);
+            var cuerpoServicio = string.IsNullOrWhiteSpace(request.CuerpoServicio) ? null : request.CuerpoServicio.Trim();
             var lineas = request.Lineas
                 .Where(x => !string.IsNullOrWhiteSpace(x.Descripcion) && x.Cantidad != 0)
                 .ToList();
-            if (lineas.Count == 0)
+            if (tipo == CrmCotizacionTipos.Articulos && lineas.Count == 0)
                 throw new InvalidOperationException("Agregá al menos un artículo a la cotización.");
+            if (tipo == CrmCotizacionTipos.Servicio && lineas.Count == 0 && string.IsNullOrWhiteSpace(cuerpoServicio))
+                throw new InvalidOperationException("Escribí la propuesta de servicio o agregá al menos una línea.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -187,6 +195,8 @@ public sealed class CrmCotizacionService(
                 var header = new
                 {
                     request.IdOportunidad,
+                    Tipo = tipo,
+                    CuerpoServicio = cuerpoServicio,
                     UNegocio = unegocio,
                     ClienteCodigo = string.IsNullOrWhiteSpace(request.ClienteCodigo) ? pricing.ClienteCodigo : request.ClienteCodigo.Trim(),
                     ClienteNombre = clienteNombre,
@@ -212,18 +222,20 @@ public sealed class CrmCotizacionService(
                         transaction: tx, cancellationToken: token));
                     id = await cn.ExecuteScalarAsync<long>(new CommandDefinition("""
                         INSERT INTO dbo.CRM_COTIZACION
-                        (Numero, TC, UNEGOCIO, IdOportunidad, ClienteCodigo, ClienteNombre, EsConsumidorFinal,
+                        (Numero, TC, Tipo, CuerpoServicio, UNEGOCIO, IdOportunidad, ClienteCodigo, ClienteNombre, EsConsumidorFinal,
                          IdLista, ClasePrecio, PreciosConIva, IdTecnico, Fecha, FechaVencimiento, Estado, Observaciones,
                          TotalNeto, TotalIva, Total, UsuarioAlta, FechaHoraAlta)
                         OUTPUT INSERTED.IdCotizacion
                         VALUES
-                        (@Numero, @TC, @UNegocio, @IdOportunidad, @ClienteCodigo, @ClienteNombre, @EsConsumidorFinal,
+                        (@Numero, @TC, @Tipo, @CuerpoServicio, @UNegocio, @IdOportunidad, @ClienteCodigo, @ClienteNombre, @EsConsumidorFinal,
                          @IdLista, @ClasePrecio, @PreciosConIva, @IdTecnico, @Fecha, @FechaVencimiento, @Estado, @Observaciones,
                          @TotalNeto, @TotalIva, @Total, @Usuario, GETDATE());
                         """, new
                     {
                         Numero = numero,
                         TC = DefaultTc,
+                        header.Tipo,
+                        header.CuerpoServicio,
                         header.UNegocio,
                         header.IdOportunidad,
                         header.ClienteCodigo,
@@ -249,7 +261,9 @@ public sealed class CrmCotizacionService(
                 {
                     await cn.ExecuteAsync(new CommandDefinition("""
                         UPDATE dbo.CRM_COTIZACION
-                        SET UNEGOCIO = @UNegocio,
+                        SET Tipo = @Tipo,
+                            CuerpoServicio = @CuerpoServicio,
+                            UNEGOCIO = @UNegocio,
                             ClienteCodigo = @ClienteCodigo,
                             ClienteNombre = @ClienteNombre,
                             EsConsumidorFinal = @EsConsumidorFinal,
@@ -269,6 +283,8 @@ public sealed class CrmCotizacionService(
                         """, new
                     {
                         IdCotizacion = id,
+                        header.Tipo,
+                        header.CuerpoServicio,
                         header.UNegocio,
                         header.ClienteCodigo,
                         header.ClienteNombre,
@@ -370,9 +386,74 @@ public sealed class CrmCotizacionService(
                 new { Id = idCotizacion }, cancellationToken: token));
         }, "No se pudo eliminar la cotización.", ct);
 
+    public Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GenerateServiceProposal", async token =>
+        {
+            var pedido = (prompt ?? string.Empty).Trim();
+            if (pedido.Length == 0)
+                throw new InvalidOperationException("Escribí qué querés cotizar para que el asistente arme la propuesta.");
+
+            var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+            if (string.IsNullOrWhiteSpace(apiKey))
+                throw new InvalidOperationException("El asistente de IA no está configurado (falta OPENAI_API_KEY en el servidor).");
+
+            var model = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+            if (string.IsNullOrWhiteSpace(model))
+                model = "gpt-4o-mini";
+
+            var cliente = string.IsNullOrWhiteSpace(clienteNombre) ? "el cliente" : clienteNombre.Trim();
+
+            var client = httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(40);
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+            var payload = new
+            {
+                model,
+                temperature = 0.5,
+                messages = new object[]
+                {
+                    new
+                    {
+                        role = "system",
+                        content = """
+                            Sos un asistente comercial que redacta propuestas de cotización de servicios,
+                            profesionales, claras y persuasivas, en español rioplatense (voseo).
+                            Devolvés SOLO HTML simple para insertar en un editor: usá <h3>, <p>, <ul>, <li>,
+                            <strong> y <em>. No uses <html>, <head>, <body>, <script> ni estilos inline.
+                            Estructura sugerida: título, breve introducción, alcance/qué incluye (lista),
+                            y cierre. NO inventes precios ni importes: si hacen falta, dejá un marcador
+                            como <strong>[completar importe]</strong>.
+                            """
+                    },
+                    new
+                    {
+                        role = "user",
+                        content = $"Redactá una propuesta de servicio para {cliente}. Pedido: {pedido}"
+                    }
+                }
+            };
+
+            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, token);
+            var body = await response.Content.ReadAsStringAsync(token);
+            if (!response.IsSuccessStatusCode)
+                throw new InvalidOperationException("El asistente de IA no pudo generar la propuesta en este momento. Probá de nuevo en unos segundos.");
+
+            using var document = JsonDocument.Parse(body);
+            var texto = document.RootElement
+                .GetProperty("choices")[0]
+                .GetProperty("message")
+                .GetProperty("content")
+                .GetString();
+            return string.IsNullOrWhiteSpace(texto) ? string.Empty : texto.Trim();
+        }, "No se pudo generar la propuesta con el asistente de IA.", ct);
+
     private static string HeaderSelectSql() => """
         SELECT
-            c.IdCotizacion, c.Numero, ISNULL(c.TC, 'CTZ') AS TC, ISNULL(c.UNEGOCIO, '') AS UNegocio,
+            c.IdCotizacion, c.Numero, ISNULL(c.TC, 'CTZ') AS TC,
+            ISNULL(c.Tipo, 'ARTICULOS') AS Tipo, ISNULL(c.CuerpoServicio, '') AS CuerpoServicio,
+            ISNULL(c.UNEGOCIO, '') AS UNegocio,
             c.IdOportunidad, ISNULL(c.ClienteCodigo, '') AS ClienteCodigo, ISNULL(c.ClienteNombre, '') AS ClienteNombre,
             c.EsConsumidorFinal, ISNULL(c.IdLista, '') AS IdLista, c.ClasePrecio, c.PreciosConIva,
             ISNULL(c.IdTecnico, '') AS IdTecnico, ISNULL(t.Nombre, '') AS TecnicoNombre,
@@ -474,6 +555,11 @@ public sealed class CrmCotizacionService(
             _ => CrmCotizacionEstados.Borrador
         };
     }
+
+    private static string NormalizeTipo(string? tipo)
+        => string.Equals((tipo ?? string.Empty).Trim(), CrmCotizacionTipos.Servicio, StringComparison.OrdinalIgnoreCase)
+            ? CrmCotizacionTipos.Servicio
+            : CrmCotizacionTipos.Articulos;
 
     private static string NormalizeUser(string? user)
         => string.IsNullOrWhiteSpace(user) ? "web" : user.Trim();

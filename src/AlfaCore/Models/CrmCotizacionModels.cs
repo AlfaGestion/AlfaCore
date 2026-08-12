@@ -9,12 +9,21 @@ public static class CrmCotizacionEstados
     public const string Vencida = "VENCIDA";
 }
 
+public static class CrmCotizacionTipos
+{
+    public const string Articulos = "ARTICULOS";
+    public const string Servicio = "SERVICIO";
+}
+
 public class CrmCotizacionDto
 {
     public long IdCotizacion { get; set; }
     public int Numero { get; set; }
     public string TC { get; set; } = "CTZ";
     public string CodigoVisible => $"{TC}-{Numero:00000000}";
+    public string Tipo { get; set; } = CrmCotizacionTipos.Articulos;
+    public string CuerpoServicio { get; set; } = string.Empty;
+    public bool EsServicio => string.Equals(Tipo, CrmCotizacionTipos.Servicio, StringComparison.OrdinalIgnoreCase);
     public string UNegocio { get; set; } = string.Empty;
     public long IdOportunidad { get; set; }
     public string ClienteCodigo { get; set; } = string.Empty;
@@ -65,6 +74,8 @@ public sealed class CrmCotizacionSaveRequest
 {
     public long IdCotizacion { get; set; }
     public long IdOportunidad { get; set; }
+    public string? Tipo { get; set; }
+    public string? CuerpoServicio { get; set; }
     public string? UNegocio { get; set; }
     public string? ClienteCodigo { get; set; }
     public string? ClienteNombre { get; set; }

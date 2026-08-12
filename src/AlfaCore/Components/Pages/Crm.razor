@@ -7,6 +7,7 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>CRM | Alfa Gestión</PageTitle>
@@ -508,21 +509,60 @@
                 </div>
             </div>
 
-            <div class="crm-cotiz-search">
-                <input placeholder="Buscar artículo por código o descripción..." @bind="_cotizBusqueda" @bind:event="oninput" @onkeydown="OnCotizSearchKeyDown" />
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="BuscarArticulosCotizAsync" disabled="@_saving"><i class="bi bi-search"></i> Buscar</button>
-            </div>
-            @if (_cotizResultados.Count > 0)
+            @if (_cotizEsServicio)
             {
-                <div class="crm-cotiz-results">
-                    @foreach (var art in _cotizResultados)
-                    {
-                        <button type="button" class="crm-cotiz-result" @onclick="() => AgregarArticuloCotiz(art)">
-                            <span class="crm-cotiz-result__desc">@art.Descripcion</span>
-                            <span class="crm-cotiz-result__meta">@art.IdArticulo · @FormatMoney(_cotizPricing.PreciosConIva ? art.PrecioUnitarioConIva : art.PrecioUnitarioNeto)</span>
+                <div class="crm-cotiz-ia">
+                    <label><i class="bi bi-stars"></i> Asistente de IA</label>
+                    <div class="crm-inline-row">
+                        <input placeholder="Ej: cotizar Alfa Gestión para 5 usuarios, con soporte y capacitación" @bind="_cotizIaPrompt" @onkeydown="OnCotizIaKeyDown" />
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="GenerarPropuestaIaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_cotizIaPrompt))">
+                            @if (_cotizIaCargando)
+                            {
+                                <span>Generando…</span>
+                            }
+                            else
+                            {
+                                <span><i class="bi bi-magic"></i> Generar</span>
+                            }
                         </button>
-                    }
+                    </div>
+                    <small class="muted">La IA redacta el texto de la propuesta. Los precios los cargás vos abajo (no los inventa).</small>
                 </div>
+
+                <div class="crm-richtext">
+                    <div class="crm-richtext__toolbar">
+                        <button type="button" title="Negrita" @onclick='() => RichExec("bold")'><i class="bi bi-type-bold"></i></button>
+                        <button type="button" title="Cursiva" @onclick='() => RichExec("italic")'><i class="bi bi-type-italic"></i></button>
+                        <button type="button" title="Subrayado" @onclick='() => RichExec("underline")'><i class="bi bi-type-underline"></i></button>
+                        <button type="button" title="Lista" @onclick='() => RichExec("insertUnorderedList")'><i class="bi bi-list-ul"></i></button>
+                        <button type="button" title="Lista numerada" @onclick='() => RichExec("insertOrderedList")'><i class="bi bi-list-ol"></i></button>
+                        <span class="crm-richtext__sep"></span>
+                        <button type="button" title="Insertar imagen" @onclick="RichInsertImageAsync"><i class="bi bi-image"></i></button>
+                        <button type="button" title="Check" @onclick='() => RichInsertText("✓ ")'>✓</button>
+                        <button type="button" title="Flecha" @onclick='() => RichInsertText("→ ")'>→</button>
+                        <button type="button" title="Estrella" @onclick='() => RichInsertText("★ ")'>★</button>
+                    </div>
+                    <div class="crm-richtext__area" contenteditable="true" @ref="_cotizEditorRef"></div>
+                </div>
+            }
+            else
+            {
+                <div class="crm-cotiz-search">
+                    <input placeholder="Buscar artículo por código o descripción..." @bind="_cotizBusqueda" @bind:event="oninput" @onkeydown="OnCotizSearchKeyDown" />
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="BuscarArticulosCotizAsync" disabled="@_saving"><i class="bi bi-search"></i> Buscar</button>
+                </div>
+                @if (_cotizResultados.Count > 0)
+                {
+                    <div class="crm-cotiz-results">
+                        @foreach (var art in _cotizResultados)
+                        {
+                            <button type="button" class="crm-cotiz-result" @onclick="() => AgregarArticuloCotiz(art)">
+                                <span class="crm-cotiz-result__desc">@art.Descripcion</span>
+                                <span class="crm-cotiz-result__meta">@art.IdArticulo · @FormatMoney(_cotizPricing.PreciosConIva ? art.PrecioUnitarioConIva : art.PrecioUnitarioNeto)</span>
+                            </button>
+                        }
+                    </div>
+                }
             }
 
             <table class="crm-cotiz-lines">
@@ -538,7 +578,7 @@
                 <tbody>
                     @if (_cotizLineas.Count == 0)
                     {
-                        <tr><td colspan="5" class="muted">Buscá y agregá artículos, o cargá una línea manual.</td></tr>
+                        <tr><td colspan="5" class="muted">@(_cotizEsServicio ? "Opcional: cargá el detalle de precios en líneas." : "Buscá y agregá artículos, o cargá una línea manual.")</td></tr>
                     }
                     else
                     {
@@ -569,7 +609,7 @@
             </div>
 
             <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="GuardarCotizacionAsync" disabled="@(_saving || _cotizLineas.Count == 0)"><i class="bi bi-floppy"></i> Guardar cotización</button>
+                <button type="button" class="btn btn--primary" @onclick="GuardarCotizacionAsync" disabled="@(_saving || (!_cotizEsServicio && _cotizLineas.Count == 0))"><i class="bi bi-floppy"></i> Guardar cotización</button>
                 <button type="button" class="btn btn--ghost" @onclick="CerrarCotizEditor">Cancelar</button>
             </div>
         </section>
@@ -639,6 +679,12 @@
     private string _cotizClienteCodigo = string.Empty;
     private string _cotizBusqueda = string.Empty;
     private List<CrmCotizacionArticuloDto> _cotizResultados = [];
+    private bool _cotizEsServicio;
+    private string _cotizIaPrompt = string.Empty;
+    private bool _cotizIaCargando;
+    private ElementReference _cotizEditorRef;
+    private string? _cotizEditorPendingHtml;
+    private bool _cotizEditorNeedsSync;
     private bool _searchPanelOpen;
     private bool _defaultFlowApplied;
     private int? _dragStageId;
@@ -977,9 +1023,14 @@
             <section class="crm-side-panel">
                 <div class="crm-section-head">
                     <h3>Cotizaciones</h3>
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="NuevaCotizacionAsync" disabled="@(_saving || _detail is null)">
-                        <i class="bi bi-plus-lg"></i> Nueva
-                    </button>
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="() => NuevaCotizacionAsync(CrmCotizacionTipos.Articulos)" disabled="@(_saving || _detail is null)" title="Cotización de artículos">
+                            <i class="bi bi-box-seam"></i> Artículos
+                        </button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => NuevaCotizacionAsync(CrmCotizacionTipos.Servicio)" disabled="@(_saving || _detail is null)" title="Cotización de servicio con IA">
+                            <i class="bi bi-stars"></i> Servicio (IA)
+                        </button>
+                    </div>
                 </div>
                 @if (_detail is null)
                 {
@@ -996,7 +1047,7 @@
                         {
                             <article class="crm-cotiz-item">
                                 <div class="crm-cotiz-item__body" @onclick="() => EditarCotizacionAsync(cot.IdCotizacion)">
-                                    <strong>@cot.CodigoVisible</strong>
+                                    <strong>@cot.CodigoVisible <i class="bi @(cot.EsServicio ? "bi-stars" : "bi-box-seam")" title="@(cot.EsServicio ? "Servicio" : "Artículos")"></i></strong>
                                     <span class="crm-cotiz-estado crm-cotiz-estado--@cot.Estado.ToLowerInvariant()">@cot.Estado</span>
                                     <small>@FormatMoney(cot.Total) · @cot.Fecha.ToString("dd/MM/yyyy")@(cot.Vencida ? " · vencida" : string.Empty)</small>
                                 </div>
@@ -1040,6 +1091,15 @@
         await LoadAsync();
         if (Conv is long idConv && idConv > 0)
             await OpenNewFromConversationAsync(idConv);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_cotizEditorNeedsSync && _showCotizEditor && _cotizEsServicio)
+        {
+            _cotizEditorNeedsSync = false;
+            await JS.InvokeVoidAsync("crmCotizacion.setHtml", _cotizEditorRef, _cotizEditorPendingHtml ?? string.Empty);
+        }
     }
 
     private async Task OpenNewFromConversationAsync(long idConv)
@@ -1965,24 +2025,29 @@
         _cotizaciones = (await CotizSvc.GetByOportunidadAsync(_detail.IdOportunidad)).ToList();
     }
 
-    private async Task NuevaCotizacionAsync()
+    private async Task NuevaCotizacionAsync(string tipo)
     {
         if (_detail is null)
             return;
         await RunAsync(async () =>
         {
             _cotizEditId = 0;
+            _cotizEsServicio = string.Equals(tipo, CrmCotizacionTipos.Servicio, StringComparison.OrdinalIgnoreCase);
             _cotizClienteCodigo = _detail.ClienteCodigo ?? string.Empty;
             _cotizPricing = await CotizSvc.ResolvePricingContextAsync(_cotizClienteCodigo);
             _cotizForm = new CrmCotizacionSaveRequest
             {
                 IdOportunidad = _detail.IdOportunidad,
+                Tipo = tipo,
                 Estado = CrmCotizacionEstados.Borrador,
                 FechaVencimiento = DateTime.Today.AddDays(15)
             };
             _cotizLineas = [];
             _cotizResultados = [];
             _cotizBusqueda = string.Empty;
+            _cotizIaPrompt = string.Empty;
+            _cotizEditorPendingHtml = _cotizEsServicio ? string.Empty : null;
+            _cotizEditorNeedsSync = _cotizEsServicio;
             _showCotizEditor = true;
         });
     }
@@ -1997,12 +2062,14 @@
             if (detalle is null)
                 return;
             _cotizEditId = id;
+            _cotizEsServicio = detalle.EsServicio;
             _cotizClienteCodigo = detalle.ClienteCodigo ?? string.Empty;
             _cotizPricing = await CotizSvc.ResolvePricingContextAsync(_cotizClienteCodigo);
             _cotizForm = new CrmCotizacionSaveRequest
             {
                 IdCotizacion = id,
                 IdOportunidad = detalle.IdOportunidad,
+                Tipo = detalle.Tipo,
                 Estado = detalle.Estado,
                 FechaVencimiento = detalle.FechaVencimiento,
                 Observaciones = detalle.Observaciones
@@ -2017,6 +2084,9 @@
             }).ToList();
             _cotizResultados = [];
             _cotizBusqueda = string.Empty;
+            _cotizIaPrompt = string.Empty;
+            _cotizEditorPendingHtml = _cotizEsServicio ? detalle.CuerpoServicio : null;
+            _cotizEditorNeedsSync = _cotizEsServicio;
             _showCotizEditor = true;
         });
     }
@@ -2078,6 +2148,8 @@
     {
         if (_detail is null)
             return;
+        if (_cotizEsServicio)
+            _cotizForm.CuerpoServicio = await JS.InvokeAsync<string>("crmCotizacion.getHtml", _cotizEditorRef);
         await RunAsync(async () =>
         {
             _cotizForm.IdOportunidad = _detail.IdOportunidad;
@@ -2093,6 +2165,34 @@
             ShowOk("Cotización guardada", "La cotización se guardó correctamente.");
         });
     }
+
+    private async Task GenerarPropuestaIaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_cotizIaPrompt))
+            return;
+        _cotizIaCargando = true;
+        await RunAsync(async () =>
+        {
+            var html = await CotizSvc.GenerateServiceProposalAsync(_cotizIaPrompt, _cotizPricing.ClienteNombre);
+            if (!string.IsNullOrWhiteSpace(html))
+            {
+                // Anexa al contenido existente en el editor, sin pisar lo ya escrito.
+                var actual = await JS.InvokeAsync<string>("crmCotizacion.getHtml", _cotizEditorRef);
+                await JS.InvokeVoidAsync("crmCotizacion.setHtml", _cotizEditorRef, string.IsNullOrWhiteSpace(actual) ? html : actual + html);
+            }
+        });
+        _cotizIaCargando = false;
+    }
+
+    private async Task OnCotizIaKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await GenerarPropuestaIaAsync();
+    }
+
+    private async Task RichExec(string command) => await JS.InvokeVoidAsync("crmCotizacion.exec", command);
+    private async Task RichInsertText(string text) => await JS.InvokeVoidAsync("crmCotizacion.insertText", text);
+    private async Task RichInsertImageAsync() => await JS.InvokeVoidAsync("crmCotizacion.insertImage", _cotizEditorRef);
 
     private async Task EliminarCotizacionAsync(long id)
     {
