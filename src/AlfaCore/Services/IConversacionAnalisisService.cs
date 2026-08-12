@@ -11,4 +11,6 @@ public interface IConversacionAnalisisService
     bool IsConfigured { get; }
     Task<ConversacionAnalisisDto?> AnalizarAsync(IReadOnlyList<ConversacionMensajeDto> mensajes, CancellationToken ct = default);
     Task<ConversacionExtraccionDto?> ExtraerOportunidadAsync(IReadOnlyList<ConversacionMensajeDto> mensajes, CancellationToken ct = default);
+    /// <summary>Reescribe un borrador según una instrucción (tono, traducción). Devuelve solo el texto final.</summary>
+    Task<string?> TransformarTextoAsync(string texto, string instruccion, CancellationToken ct = default);
 }

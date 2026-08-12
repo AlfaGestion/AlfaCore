@@ -3052,3 +3052,47 @@
     line-height: 1.4;
     color: var(--color-text, #0f172a);
 }
+
+/* Menú de tono / traducción del borrador */
+.conversations-tone-wrap {
+    position: relative;
+    display: inline-flex;
+}
+
+.conversations-tone-menu {
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 0;
+    z-index: 40;
+    display: grid;
+    gap: .12rem;
+    min-width: 11rem;
+    padding: .35rem;
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 10px;
+    background: var(--surface-1, #fff);
+    box-shadow: 0 14px 28px rgba(15, 23, 42, .22);
+}
+
+.conversations-tone-menu > strong {
+    font-size: .68rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--color-muted, #64748b);
+    padding: .2rem .45rem 0;
+}
+
+.conversations-tone-menu > button {
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: .38rem .5rem;
+    font-size: .85rem;
+    color: var(--color-text, #0f172a);
+    cursor: pointer;
+}
+
+.conversations-tone-menu > button:hover {
+    background: var(--hover, #f1f5f9);
+}

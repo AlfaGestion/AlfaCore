@@ -38,6 +38,21 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
         return ParseExtraccion(texto);
     }
 
+    public async Task<string?> TransformarTextoAsync(string texto, string instruccion, CancellationToken ct = default)
+    {
+        var borrador = (texto ?? string.Empty).Trim();
+        if (borrador.Length == 0)
+            return null;
+
+        var system = $"""
+            Reescribí el texto del usuario según esta instrucción: {instruccion}.
+            Mantené la intención y los datos; no agregues información, saludos ni explicaciones nuevas.
+            Devolvé SOLO el texto final, sin comillas ni comentarios.
+            """;
+        var resultado = await CallOpenAiAsync(system, borrador, ct);
+        return string.IsNullOrWhiteSpace(resultado) ? null : resultado.Trim();
+    }
+
     private async Task<string?> CallOpenAiAsync(string systemPrompt, string transcript, CancellationToken ct)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");

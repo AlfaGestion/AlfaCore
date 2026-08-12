@@ -2020,6 +2020,30 @@
                                         disabled="@(_improvingReplyWithAi || !HasReplyText || !AlfaKnowledgeSvc.IsConfigured)">
                                     <i class="bi @(_improvingReplyWithAi ? "bi-hourglass-split" : "bi-stars")"></i>
                                 </button>
+                                <div class="conversations-tone-wrap">
+                                    <button type="button"
+                                            class="btn btn--ghost conversations-improve-ai"
+                                            title="Tono / Traducir"
+                                            aria-label="Tono / Traducir"
+                                            @onclick="() => _showToneMenu = !_showToneMenu"
+                                            @onclick:stopPropagation
+                                            disabled="@(_transformandoReply || !HasReplyText || !AnalisisSvc.IsConfigured)">
+                                        <i class="bi @(_transformandoReply ? "bi-hourglass-split" : "bi-fonts")"></i>
+                                    </button>
+                                    @if (_showToneMenu)
+                                    {
+                                        <div class="panel-card conversations-tone-menu" @onclick:stopPropagation>
+                                            <strong class="context-card__label">Tono</strong>
+                                            <button type="button" @onclick='() => TransformReplyAsync("reescribí en tono formal y profesional")'>Formal</button>
+                                            <button type="button" @onclick='() => TransformReplyAsync("reescribí en tono cordial y cercano")'>Cordial</button>
+                                            <button type="button" @onclick='() => TransformReplyAsync("acortá y hacelo más directo, sin perder lo importante")'>Más breve</button>
+                                            <button type="button" @onclick='() => TransformReplyAsync("hacelo más amable y empático")'>Más amable</button>
+                                            <strong class="context-card__label">Traducir</strong>
+                                            <button type="button" @onclick='() => TransformReplyAsync("traducí al inglés, manteniendo el sentido")'>Inglés</button>
+                                            <button type="button" @onclick='() => TransformReplyAsync("traducí al portugués, manteniendo el sentido")'>Portugués</button>
+                                        </div>
+                                    }
+                                </div>
                                 <button type="button" class="btn btn--primary" @onclick="SendReplyAsync" disabled="@(!_canSendReply)" title="@GetReplyButtonTitle()">
                                     <i class="bi @(HasPendingAttachmentError ? "bi-arrow-clockwise" : "bi-send-fill")"></i>
                                 </button>
@@ -3303,6 +3327,8 @@
     private bool _showAiSuggestionPanel;
     private bool _loadingAiSuggestion;
     private bool _improvingReplyWithAi;
+    private bool _transformandoReply;
+    private bool _showToneMenu;
     private CancellationTokenSource? _aiSuggestionRequestCts;
     private AlfaKnowledgeSuggestionResult? _aiSuggestion;
     private long? _aiSuggestionConversationId;
@@ -8134,6 +8160,41 @@
         finally
         {
             _improvingReplyWithAi = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task TransformReplyAsync(string instruccion)
+    {
+        _showToneMenu = false;
+        if (_transformandoReply || !AnalisisSvc.IsConfigured)
+            return;
+
+        var draft = (await GetReplyTextareaValueAsync()).Trim();
+        if (draft.Length == 0)
+            return;
+
+        _transformandoReply = true;
+        StateHasChanged();
+        try
+        {
+            var result = await AnalisisSvc.TransformarTextoAsync(draft, instruccion);
+            if (string.IsNullOrWhiteSpace(result))
+                return;
+
+            var current = (await GetReplyTextareaValueAsync()).Trim();
+            if (!string.Equals(current, draft, StringComparison.Ordinal))
+                return;
+
+            _replyText = result.Trim();
+            await SetReplyTextareaValueAsync(_replyText, focus: true);
+        }
+        catch
+        {
+        }
+        finally
+        {
+            _transformandoReply = false;
             StateHasChanged();
         }
     }
