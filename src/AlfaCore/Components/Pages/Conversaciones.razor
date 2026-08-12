@@ -855,7 +855,7 @@
                                         <span class="conversation-row__priority"
                                               style="--priority-color:@(string.IsNullOrWhiteSpace(item.ClasificacionColorHex) ? "#64748b" : item.ClasificacionColorHex);"
                                               title="@($"Prioridad P{item.ClasificacionCodigo} · {item.ClasificacionDescripcion}")">
-                                            P@item.ClasificacionCodigo
+                                            @($"P{item.ClasificacionCodigo}")
                                         </span>
                                     }
                                 </span>
