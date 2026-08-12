@@ -5,6 +5,7 @@
 @inject AlfaCore.Services.ICrmService CrmSvc
 @inject AlfaCore.Services.ICrmCotizacionService CotizSvc
 @inject AlfaCore.Services.IConversacionesService ConvSvc
+@inject AlfaCore.Services.ICuentasComercialesService ClientesSvc
 @inject IConfiguration Config
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
@@ -685,7 +686,7 @@
             }
             else
             {
-                <p class="muted">El link público no está disponible (esta base no tiene identificador central). El email igual funciona.</p>
+                <p class="muted">El link web se genera solo en modo online (SaaS). Igual podés enviar la cotización por email o por WhatsApp (va como texto).</p>
             }
 
             <div class="field">
@@ -697,7 +698,7 @@
             </div>
 
             <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="EnviarWhatsAppCotAsync" disabled="@(_saving || _detail?.IdConversacion is null || string.IsNullOrWhiteSpace(_compartirUrl))">
+                <button type="button" class="btn btn--primary" @onclick="EnviarWhatsAppCotAsync" disabled="@(_saving || _detail?.IdConversacion is null)">
                     <i class="bi bi-whatsapp"></i> Enviar por WhatsApp
                 </button>
                 @if (_detail?.IdConversacion is null)
@@ -781,6 +782,9 @@
     private CrmCotizacionDto? _compartirCot;
     private string _compartirUrl = string.Empty;
     private string _compartirEmail = string.Empty;
+    private List<CuentaComercialGridItemDto> _clienteResultados = [];
+    private bool _clienteDropdownOpen;
+    private CancellationTokenSource? _clienteBuscarCts;
     private ElementReference _cotizEditorRef;
     private string? _cotizEditorPendingHtml;
     private bool _cotizEditorNeedsSync;
@@ -982,9 +986,21 @@
                         <label>Cierre estimado</label>
                         <input type="date" @bind="_form.FechaCierreEstimada" disabled="@_saving" />
                     </div>
-                    <div class="field">
+                    <div class="field crm-cliente-field">
                         <label>Código cliente</label>
-                        <input maxlength="20" @bind="_form.ClienteCodigo" disabled="@_saving" />
+                        <input maxlength="60" @bind="_form.ClienteCodigo" @bind:event="oninput" @bind:after="OnClienteBuscarAfter" disabled="@_saving" placeholder="Código o nombre..." autocomplete="off" />
+                        @if (_clienteDropdownOpen && _clienteResultados.Count > 0)
+                        {
+                            <div class="crm-cliente-drop">
+                                @foreach (var cli in _clienteResultados)
+                                {
+                                    <button type="button" class="crm-cliente-opt" @onclick="() => SeleccionarCliente(cli)">
+                                        <strong>@cli.RazonSocial</strong>
+                                        <small>@cli.Codigo</small>
+                                    </button>
+                                }
+                            </div>
+                        }
                     </div>
                     <div class="field">
                         <label>ID contacto</label>
@@ -2362,6 +2378,38 @@
         });
     }
 
+    private async Task OnClienteBuscarAfter()
+    {
+        var texto = (_form.ClienteCodigo ?? string.Empty).Trim();
+        if (texto.Length < 2)
+        {
+            _clienteResultados = [];
+            _clienteDropdownOpen = false;
+            return;
+        }
+
+        _clienteBuscarCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _clienteBuscarCts = cts;
+        try
+        {
+            await Task.Delay(250, cts.Token);
+            var page = await ClientesSvc.SearchAsync(CuentaComercialTipo.Cliente, new CuentaComercialFilters { Texto = texto, PageNumber = 1, PageSize = 8 }, cts.Token);
+            if (cts.Token.IsCancellationRequested)
+                return;
+            _clienteResultados = page.Items.ToList();
+            _clienteDropdownOpen = _clienteResultados.Count > 0;
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    private void SeleccionarCliente(CuentaComercialGridItemDto cli)
+    {
+        _form.ClienteCodigo = cli.Codigo;
+        _clienteResultados = [];
+        _clienteDropdownOpen = false;
+    }
+
     private async Task AbrirCompartirAsync(CrmCotizacionDto cot)
     {
         _compartirCot = cot;
@@ -2403,11 +2451,13 @@
 
     private async Task EnviarWhatsAppCotAsync()
     {
-        if (_compartirCot is null || _detail?.IdConversacion is not long idConv || string.IsNullOrWhiteSpace(_compartirUrl))
+        if (_compartirCot is null || _detail?.IdConversacion is not long idConv)
             return;
         await RunAsync(async () =>
         {
-            var texto = $"Hola, te comparto la cotización {_compartirCot.CodigoVisible}. La podés ver acá: {_compartirUrl}";
+            var texto = string.IsNullOrWhiteSpace(_compartirUrl)
+                ? $"Hola, te comparto la cotización {_compartirCot.CodigoVisible} por un total de {FormatMoney(_compartirCot.Total)}."
+                : $"Hola, te comparto la cotización {_compartirCot.CodigoVisible}. La podés ver acá: {_compartirUrl}";
             await ConvSvc.SendMessageAsync(new ConversacionSendMessageRequest
             {
                 IdConversacion = idConv,

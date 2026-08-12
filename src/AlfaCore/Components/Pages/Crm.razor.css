@@ -1200,3 +1200,41 @@
 .crm-cotiz-sug:hover { background: var(--hover, #f1f5f9); }
 .crm-cotiz-sug .crm-cotiz-result__desc { flex: 1; min-width: 0; }
 .crm-cotiz-sug__cant { max-width: 84px; }
+
+/* Autocompletar cliente en el editor de oportunidad */
+.crm-cliente-field {
+    position: relative;
+}
+
+.crm-cliente-drop {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    margin-top: 2px;
+    background: var(--surface-1, #fff);
+    border: 1px solid var(--border, #cbd5e1);
+    border-radius: 8px;
+    box-shadow: 0 14px 28px rgba(15, 23, 42, .18);
+    max-height: 240px;
+    overflow-y: auto;
+}
+
+.crm-cliente-opt {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border, #e2e8f0);
+    padding: .4rem .6rem;
+    cursor: pointer;
+    color: var(--color-text, #0f172a);
+}
+
+.crm-cliente-opt:last-child { border-bottom: none; }
+.crm-cliente-opt:hover { background: var(--hover, #f1f5f9); }
+.crm-cliente-opt small { color: var(--color-muted, #64748b); }
