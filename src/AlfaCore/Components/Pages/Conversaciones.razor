@@ -834,18 +834,14 @@
                                  style="@GetInboxTechnicianStyle(item)"
                                  @onclick="() => SelectInboxItemAsync(item, showMobileChat: true)"
                                  @onkeydown="args => HandleInboxRowKeyDownAsync(args, item)">
-                                <span class="conversation-row__avatar @GetConversationAvatarClass(item)" title="@GetWhatsAppAbonoAvatarTitle(item)" aria-hidden="true">
+                                <span class="conversation-row__avatar @GetConversationAvatarClass(item)" style="--avatar-color:@GetAvatarColorHex(item);" title="@GetDisplayName(item)" aria-hidden="true">
                                     @if (!string.IsNullOrWhiteSpace(item.FotoPerfilUrl))
                                     {
                                         <img src="@item.FotoPerfilUrl" alt="" loading="lazy" referrerpolicy="no-referrer" />
                                     }
-                                    else if (TryGetWhatsAppAvatarInfo(item, out _))
-                                    {
-                                        <span class="conversation-abono-avatar__letter">@GetConversationInitials(item)</span>
-                                    }
                                     else
                                     {
-                                        @GetConversationInitials(item)
+                                        <span class="conversation-abono-avatar__letter">@GetConversationInitials(item)</span>
                                     }
                                     <span class="conversation-row__channel-badge conversation-row__channel-badge--@item.Canal.ToLowerInvariant()" title="@GetCanalLabel(item.Canal)">
                                         <i class="bi @GetCanalIcon(item.Canal)"></i>
@@ -1051,18 +1047,14 @@
                             </button>
                             @if (_selectedConversation.Canal == "WHATSAPP" || _selectedConversation.Canal == "INSTAGRAM" || _selectedConversation.Canal == "FACEBOOK" || _selectedConversation.Canal == "MERCADOLIBRE")
                             {
-                                <div class="conversation-profile-avatar @GetConversationAvatarClass(_selectedConversation)" title="@GetWhatsAppAbonoAvatarTitle(_selectedConversation)" aria-hidden="true">
+                                <div class="conversation-profile-avatar @GetConversationAvatarClass(_selectedConversation)" style="--avatar-color:@GetAvatarColorHex(_selectedConversation);" title="@GetConversationHeader(_selectedConversation)" aria-hidden="true">
                                     @if (!string.IsNullOrWhiteSpace(_selectedConversation.FotoPerfilUrl))
                                     {
                                         <img src="@_selectedConversation.FotoPerfilUrl" alt="" referrerpolicy="no-referrer" />
                                     }
-                                    else if (TryGetWhatsAppAvatarInfo(_selectedConversation, out _))
-                                    {
-                                        <span class="conversation-abono-avatar__letter">@GetConversationInitials(_selectedConversation)</span>
-                                    }
                                     else
                                     {
-                                        <span>@GetConversationInitials(_selectedConversation)</span>
+                                        <span class="conversation-abono-avatar__letter">@GetConversationInitials(_selectedConversation)</span>
                                     }
                                     @if (_selectedConversation.Canal != "WHATSAPP")
                                     {
@@ -4532,26 +4524,17 @@
 
     private static string GetConversationAvatarClass(ConversacionInboxItemDto item)
     {
-        var classes = item.Canal == "MERCADOLIBRE"
-            ? "conversation-row__avatar--mercadolibre"
-            : string.Empty;
-
-        if (TryGetWhatsAppAvatarInfo(item, out var info))
-            classes = FirstNonEmpty(classes, $"conversation-abono-avatar conversation-abono-avatar--{info.Tier}");
-
-        return classes;
+        if (item.Canal == "MERCADOLIBRE")
+            return "conversation-row__avatar--mercadolibre";
+        // Avatar sin foto: estilo genérico (borde/sombra + color por nombre). Sin tier de abono.
+        return string.IsNullOrWhiteSpace(item.FotoPerfilUrl) ? "conversation-abono-avatar" : string.Empty;
     }
 
     private static string GetConversationAvatarClass(ConversacionDetalleDto item)
     {
-        var classes = item.Canal == "MERCADOLIBRE"
-            ? "conversation-profile-avatar--mercadolibre"
-            : string.Empty;
-
-        if (TryGetWhatsAppAvatarInfo(item, out var info))
-            classes = FirstNonEmpty(classes, $"conversation-abono-avatar conversation-abono-avatar--{info.Tier}");
-
-        return classes;
+        if (item.Canal == "MERCADOLIBRE")
+            return "conversation-profile-avatar--mercadolibre";
+        return string.IsNullOrWhiteSpace(item.FotoPerfilUrl) ? "conversation-abono-avatar" : string.Empty;
     }
 
     private static string GetWhatsAppAbonoAvatarTitle(ConversacionInboxItemDto item)
@@ -9339,6 +9322,28 @@
 
         return string.Concat(parts.Select(x => char.ToUpperInvariant(x[0])));
     }
+
+    // Color de fondo del avatar derivado del nombre: mismo contacto → siempre el mismo color.
+    // La clasificación/abono ya no se muestra acá (va en el badge P1-P4).
+    private static readonly string[] AvatarColors =
+    {
+        "#ef4444", "#f97316", "#f59e0b", "#22c55e", "#10b981", "#06b6d4",
+        "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899", "#14b8a6", "#64748b"
+    };
+
+    private static string GetAvatarColorHex(string? nombre)
+    {
+        var value = (nombre ?? string.Empty).Trim().ToUpperInvariant();
+        if (value.Length == 0)
+            return AvatarColors[^1];
+        var hash = 0;
+        foreach (var ch in value)
+            hash = (hash * 31 + ch) & 0x7fffffff;
+        return AvatarColors[hash % AvatarColors.Length];
+    }
+
+    private string GetAvatarColorHex(ConversacionInboxItemDto item) => GetAvatarColorHex(GetDisplayName(item));
+    private static string GetAvatarColorHex(ConversacionDetalleDto item) => GetAvatarColorHex(GetConversationHeader(item));
 
     private bool IsClosedInboxItem(ConversacionInboxItemDto item)
         => _states.Any(x => x.EsCerrado && string.Equals(x.CodigoEstado, item.CodigoEstado, StringComparison.OrdinalIgnoreCase));
