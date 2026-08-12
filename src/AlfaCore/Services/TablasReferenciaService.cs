@@ -52,7 +52,7 @@ public sealed class TablasReferenciaService(
 
         var colorSelect = registro.ColumnaColor is null ? "NULL" : $"t.[{registro.ColumnaColor}]";
         var sql = $"""
-            SELECT ISNULL(t.[{registro.ColumnaCodigo}], ''), ISNULL(t.[{registro.ColumnaDescripcion}], ''), {colorSelect}
+            SELECT ISNULL(LTRIM(RTRIM(t.[{registro.ColumnaCodigo}])), ''), ISNULL(t.[{registro.ColumnaDescripcion}], ''), {colorSelect}
             FROM dbo.[{registro.TablaFisica}] t
             ORDER BY t.[{registro.ColumnaDescripcion}], t.[{registro.ColumnaCodigo}]
             """;
@@ -93,8 +93,9 @@ public sealed class TablasReferenciaService(
         var codigoOriginal = (request.CodigoOriginal ?? string.Empty).Trim();
         var esEdicion = codigoOriginal.Length > 0;
 
-        // El código no puede chocar con otra fila existente (salvo consigo mismo al editar).
-        var existeSql = $"SELECT COUNT(*) FROM dbo.[{registro.TablaFisica}] WHERE [{registro.ColumnaCodigo}] = @Codigo;";
+        // Los códigos pueden venir con espacios (ej. right-justified "   1"); se comparan
+        // siempre con LTRIM/RTRIM. El código no puede chocar con otra fila existente.
+        var existeSql = $"SELECT COUNT(*) FROM dbo.[{registro.TablaFisica}] WHERE LTRIM(RTRIM([{registro.ColumnaCodigo}])) = @Codigo;";
         await using (var existeCmd = new SqlCommand(existeSql, cn))
         {
             existeCmd.Parameters.AddWithValue("@Codigo", codigo);
@@ -107,11 +108,13 @@ public sealed class TablasReferenciaService(
         string sql;
         if (esEdicion)
         {
+            // En edición NO se toca la columna Código (mantiene su padding original para no
+            // romper referencias como VT_CLIENTES.Clasificacion). Solo descripción y color.
             var colorSet = registro.ColumnaColor is null ? string.Empty : $", t.[{registro.ColumnaColor}] = @Color";
             sql = $"""
-                UPDATE t SET t.[{registro.ColumnaCodigo}] = @Codigo, t.[{registro.ColumnaDescripcion}] = @Descripcion{colorSet}
+                UPDATE t SET t.[{registro.ColumnaDescripcion}] = @Descripcion{colorSet}
                 FROM dbo.[{registro.TablaFisica}] t
-                WHERE t.[{registro.ColumnaCodigo}] = @CodigoOriginal;
+                WHERE LTRIM(RTRIM(t.[{registro.ColumnaCodigo}])) = @CodigoOriginal;
                 """;
         }
         else
@@ -154,7 +157,7 @@ public sealed class TablasReferenciaService(
         await cn.OpenAsync(ct);
         var registro = await LoadRegistroAsync(cn, clave, ct);
 
-        var sql = $"DELETE t FROM dbo.[{registro.TablaFisica}] t WHERE t.[{registro.ColumnaCodigo}] = @Codigo;";
+        var sql = $"DELETE t FROM dbo.[{registro.TablaFisica}] t WHERE LTRIM(RTRIM(t.[{registro.ColumnaCodigo}])) = @Codigo;";
 
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Codigo", codigoNormalizado);

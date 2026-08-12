@@ -858,7 +858,7 @@ public sealed class ConversacionesService(
                     ISNULL(mlMeta.QuestionStatus, N''),
                     ISNULL(mlMeta.ItemStatus, N''),
                     ISNULL(clasificacionCliente.Descripcion, N''),
-                    ISNULL(clienteClasificacion.Codigo, N''),
+                    ISNULL(LTRIM(RTRIM(clienteClasificacion.Codigo)), N''),
                     ISNULL(clasificacionCliente.Color, 0)
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
