@@ -12,5 +12,5 @@ public interface ITablasReferenciaService
     Task<IReadOnlyList<TablaReferenciaDto>> GetTablasAsync(CancellationToken ct = default);
     Task<IReadOnlyList<TablaReferenciaFilaDto>> GetFilasAsync(string clave, CancellationToken ct = default);
     Task GuardarFilaAsync(string clave, GuardarFilaTablaReferenciaRequest request, CancellationToken ct = default);
-    Task EliminarFilaAsync(string clave, int id, CancellationToken ct = default);
+    Task EliminarFilaAsync(string clave, string codigo, CancellationToken ct = default);
 }

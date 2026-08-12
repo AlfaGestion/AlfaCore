@@ -52,7 +52,7 @@ public sealed class TablasReferenciaService(
 
         var colorSelect = registro.ColumnaColor is null ? "NULL" : $"t.[{registro.ColumnaColor}]";
         var sql = $"""
-            SELECT t.[{registro.ColumnaId}], ISNULL(t.[{registro.ColumnaCodigo}], ''), ISNULL(t.[{registro.ColumnaDescripcion}], ''), {colorSelect}
+            SELECT ISNULL(t.[{registro.ColumnaCodigo}], ''), ISNULL(t.[{registro.ColumnaDescripcion}], ''), {colorSelect}
             FROM dbo.[{registro.TablaFisica}] t
             ORDER BY t.[{registro.ColumnaDescripcion}], t.[{registro.ColumnaCodigo}]
             """;
@@ -65,10 +65,9 @@ public sealed class TablasReferenciaService(
         {
             result.Add(new TablaReferenciaFilaDto
             {
-                Id = Convert.ToInt32(rd.GetValue(0)),
-                Codigo = GetString(rd, 1),
-                Descripcion = GetString(rd, 2),
-                ColorHex = registro.ColumnaColor is null || rd.IsDBNull(3) ? null : ColorIntToHex(Convert.ToInt32(rd.GetValue(3)))
+                Codigo = GetString(rd, 0),
+                Descripcion = GetString(rd, 1),
+                ColorHex = registro.ColumnaColor is null || rd.IsDBNull(2) ? null : ColorIntToHex(Convert.ToInt32(rd.GetValue(2)))
             });
         }
 
@@ -91,15 +90,28 @@ public sealed class TablasReferenciaService(
         var registro = await LoadRegistroAsync(cn, clave, ct);
 
         var colorValue = registro.ColumnaColor is null ? (int?)null : ColorHexToInt(request.ColorHex);
+        var codigoOriginal = (request.CodigoOriginal ?? string.Empty).Trim();
+        var esEdicion = codigoOriginal.Length > 0;
+
+        // El código no puede chocar con otra fila existente (salvo consigo mismo al editar).
+        var existeSql = $"SELECT COUNT(*) FROM dbo.[{registro.TablaFisica}] WHERE [{registro.ColumnaCodigo}] = @Codigo;";
+        await using (var existeCmd = new SqlCommand(existeSql, cn))
+        {
+            existeCmd.Parameters.AddWithValue("@Codigo", codigo);
+            var yaExiste = Convert.ToInt32(await existeCmd.ExecuteScalarAsync(ct)) > 0;
+            var chocaConOtra = yaExiste && !string.Equals(codigo, codigoOriginal, StringComparison.OrdinalIgnoreCase);
+            if (chocaConOtra || (!esEdicion && yaExiste))
+                throw new AppUserFacingException($"Ya existe una fila con el código '{codigo}'.", "TABLAS_REF_CODIGO_DUPLICADO");
+        }
 
         string sql;
-        if (request.Id.HasValue)
+        if (esEdicion)
         {
             var colorSet = registro.ColumnaColor is null ? string.Empty : $", t.[{registro.ColumnaColor}] = @Color";
             sql = $"""
                 UPDATE t SET t.[{registro.ColumnaCodigo}] = @Codigo, t.[{registro.ColumnaDescripcion}] = @Descripcion{colorSet}
                 FROM dbo.[{registro.TablaFisica}] t
-                WHERE t.[{registro.ColumnaId}] = @Id;
+                WHERE t.[{registro.ColumnaCodigo}] = @CodigoOriginal;
                 """;
         }
         else
@@ -115,8 +127,8 @@ public sealed class TablasReferenciaService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Codigo", codigo);
         cmd.Parameters.AddWithValue("@Descripcion", descripcion);
-        if (request.Id.HasValue)
-            cmd.Parameters.AddWithValue("@Id", request.Id.Value);
+        if (esEdicion)
+            cmd.Parameters.AddWithValue("@CodigoOriginal", codigoOriginal);
         if (registro.ColumnaColor is not null)
             cmd.Parameters.AddWithValue("@Color", colorValue.HasValue ? colorValue.Value : DBNull.Value);
 
@@ -124,24 +136,28 @@ public sealed class TablasReferenciaService(
 
         await appEvents.LogAuditAsync(
             "TablasReferencia",
-            request.Id.HasValue ? "EditarFila" : "CrearFila",
+            esEdicion ? "EditarFila" : "CrearFila",
             registro.TablaFisica,
-            request.Id?.ToString() ?? codigo,
-            $"{(request.Id.HasValue ? "Editada" : "Creada")} fila de {registro.NombreVisible}.",
+            codigo,
+            $"{(esEdicion ? "Editada" : "Creada")} fila de {registro.NombreVisible}.",
             new { clave, codigo, descripcion },
             ct);
     }
 
-    public async Task EliminarFilaAsync(string clave, int id, CancellationToken ct = default)
+    public async Task EliminarFilaAsync(string clave, string codigo, CancellationToken ct = default)
     {
+        var codigoNormalizado = (codigo ?? string.Empty).Trim();
+        if (codigoNormalizado.Length == 0)
+            throw new AppUserFacingException("Falta indicar qué fila borrar.", "TABLAS_REF_CODIGO");
+
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
         var registro = await LoadRegistroAsync(cn, clave, ct);
 
-        var sql = $"DELETE t FROM dbo.[{registro.TablaFisica}] t WHERE t.[{registro.ColumnaId}] = @Id;";
+        var sql = $"DELETE t FROM dbo.[{registro.TablaFisica}] t WHERE t.[{registro.ColumnaCodigo}] = @Codigo;";
 
         await using var cmd = new SqlCommand(sql, cn);
-        cmd.Parameters.AddWithValue("@Id", id);
+        cmd.Parameters.AddWithValue("@Codigo", codigoNormalizado);
 
         try
         {
@@ -158,9 +174,9 @@ public sealed class TablasReferenciaService(
             "TablasReferencia",
             "EliminarFila",
             registro.TablaFisica,
-            id.ToString(),
+            codigoNormalizado,
             $"Eliminada fila de {registro.NombreVisible}.",
-            new { clave, id },
+            new { clave, codigo = codigoNormalizado },
             ct);
     }
 
@@ -171,7 +187,7 @@ public sealed class TablasReferenciaService(
             throw new AppUserFacingException("Falta indicar qué tabla de referencia editar.", "TABLAS_REF_CLAVE");
 
         const string sql = """
-            SELECT NombreVisible, TablaFisica, ColumnaId, ColumnaCodigo, ColumnaDescripcion, ColumnaColor
+            SELECT NombreVisible, TablaFisica, ColumnaCodigo, ColumnaDescripcion, ColumnaColor
             FROM dbo.ALFACORE_TABLAS_REFERENCIA
             WHERE UPPER(LTRIM(RTRIM(Clave))) = UPPER(LTRIM(RTRIM(@Clave)))
               AND Activo = 1
@@ -187,16 +203,14 @@ public sealed class TablasReferenciaService(
         {
             NombreVisible = GetString(rd, 0),
             TablaFisica = GetString(rd, 1),
-            ColumnaId = GetString(rd, 2),
-            ColumnaCodigo = GetString(rd, 3),
-            ColumnaDescripcion = GetString(rd, 4),
-            ColumnaColor = rd.IsDBNull(5) ? null : GetString(rd, 5)
+            ColumnaCodigo = GetString(rd, 2),
+            ColumnaDescripcion = GetString(rd, 3),
+            ColumnaColor = rd.IsDBNull(4) ? null : GetString(rd, 4)
         };
 
         // Defensa en profundidad: aunque el registro solo lo carga un admin, nunca se interpolan
         // nombres de tabla/columna en SQL dinámico sin validar que sean identificadores seguros.
         EnsureSafeIdentifier(registro.TablaFisica, "tabla física");
-        EnsureSafeIdentifier(registro.ColumnaId, "columna Id");
         EnsureSafeIdentifier(registro.ColumnaCodigo, "columna Código");
         EnsureSafeIdentifier(registro.ColumnaDescripcion, "columna Descripción");
         if (registro.ColumnaColor is not null)
@@ -246,7 +260,6 @@ public sealed class TablasReferenciaService(
     {
         public string NombreVisible { get; set; } = string.Empty;
         public string TablaFisica { get; set; } = string.Empty;
-        public string ColumnaId { get; set; } = string.Empty;
         public string ColumnaCodigo { get; set; } = string.Empty;
         public string ColumnaDescripcion { get; set; } = string.Empty;
         public string? ColumnaColor { get; set; }

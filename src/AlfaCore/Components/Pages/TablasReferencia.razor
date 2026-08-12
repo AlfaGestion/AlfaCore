@@ -71,14 +71,14 @@
                         <div class="panel-card">
                             <div class="panel-card__header">
                                 <div>
-                                    <h2 class="panel-card__title">@(_editingFilaId.HasValue ? $"Editar #{_editingFilaId}" : "Nueva fila")</h2>
+                                    <h2 class="panel-card__title">@(_editingCodigo is not null ? $"Editar {_editingCodigo}" : "Nueva fila")</h2>
                                     <p class="panel-card__subtitle">@_selectedTabla.NombreVisible</p>
                                 </div>
                             </div>
 
                             <div class="mb-3">
                                 <label class="form-label">Código</label>
-                                <input class="form-control" @bind="_filaForm.Codigo" maxlength="8" />
+                                <input class="form-control" @bind="_filaForm.Codigo" maxlength="8" readonly="@(_editingCodigo is not null)" />
                             </div>
                             <div class="mb-3">
                                 <label class="form-label">Descripción</label>
@@ -94,7 +94,7 @@
 
                             <div class="d-flex gap-2">
                                 <button type="button" class="btn btn-primary" @onclick="GuardarFilaAsync" disabled="@_savingFila">
-                                    @(_editingFilaId.HasValue ? "Guardar cambios" : "Crear fila")
+                                    @(_editingCodigo is not null ? "Guardar cambios" : "Crear fila")
                                 </button>
                                 <button type="button" class="btn btn-outline-light" @onclick="StartNewFila">Limpiar</button>
                             </div>
@@ -139,7 +139,7 @@
                                                     <td class="text-end">
                                                         <div class="d-inline-flex gap-2">
                                                             <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => EditFila(fila)">Editar</button>
-                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarFilaAsync(fila.Id)">Eliminar</button>
+                                                            <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => EliminarFilaAsync(fila.Codigo)">Eliminar</button>
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -163,7 +163,7 @@
     private AlfaCore.Models.TablaReferenciaDto? _selectedTabla;
     private string _selectedClave = string.Empty;
     private readonly AlfaCore.Models.GuardarFilaTablaReferenciaRequest _filaForm = new();
-    private int? _editingFilaId;
+    private string? _editingCodigo;
 
     private bool _loadingTablas = true;
     private bool _loadingFilas;
@@ -197,8 +197,8 @@
     {
         _selectedClave = clave;
         _selectedTabla = _tablas.FirstOrDefault(t => t.Clave == clave);
-        StartNewFila();
         await LoadFilasAsync();
+        StartNewFila();
     }
 
     private async Task LoadFilasAsync()
@@ -225,19 +225,37 @@
 
     private void StartNewFila()
     {
-        _editingFilaId = null;
-        _filaForm.Id = null;
-        _filaForm.Codigo = string.Empty;
+        _editingCodigo = null;
+        _filaForm.CodigoOriginal = null;
+        _filaForm.Codigo = ProponerCodigo();
         _filaForm.Descripcion = string.Empty;
         _filaForm.ColorHex = "#888888";
         _message = string.Empty;
         _error = string.Empty;
     }
 
+    private string ProponerCodigo()
+    {
+        var max = 0;
+        var hayNumericos = false;
+        foreach (var f in _filas)
+        {
+            if (int.TryParse(f.Codigo.Trim(), out var n))
+            {
+                hayNumericos = true;
+                if (n > max)
+                    max = n;
+            }
+        }
+        if (hayNumericos)
+            return (max + 1).ToString();
+        return _filas.Count == 0 ? "1" : string.Empty;
+    }
+
     private void EditFila(AlfaCore.Models.TablaReferenciaFilaDto fila)
     {
-        _editingFilaId = fila.Id;
-        _filaForm.Id = fila.Id;
+        _editingCodigo = fila.Codigo;
+        _filaForm.CodigoOriginal = fila.Codigo;
         _filaForm.Codigo = fila.Codigo;
         _filaForm.Descripcion = fila.Descripcion;
         _filaForm.ColorHex = fila.ColorHex ?? "#888888";
@@ -259,10 +277,11 @@
 
         try
         {
+            var eraEdicion = _editingCodigo is not null;
             await TablasSvc.GuardarFilaAsync(_selectedTabla.Clave, _filaForm);
             await LoadFilasAsync();
-            _message = _editingFilaId.HasValue ? "Fila actualizada." : "Fila creada.";
             StartNewFila();
+            _message = eraEdicion ? "Fila actualizada." : "Fila creada.";
         }
         catch (Exception ex)
         {
@@ -274,7 +293,7 @@
         }
     }
 
-    private async Task EliminarFilaAsync(int id)
+    private async Task EliminarFilaAsync(string codigo)
     {
         if (_selectedTabla is null)
             return;
@@ -284,7 +303,7 @@
 
         try
         {
-            await TablasSvc.EliminarFilaAsync(_selectedTabla.Clave, id);
+            await TablasSvc.EliminarFilaAsync(_selectedTabla.Clave, codigo);
             await LoadFilasAsync();
             _message = "Fila eliminada.";
         }

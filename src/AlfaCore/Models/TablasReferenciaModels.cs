@@ -11,7 +11,7 @@ public sealed class TablaReferenciaDto
 /// <summary>Una fila de la tabla física detrás de una <see cref="TablaReferenciaDto"/>.</summary>
 public sealed class TablaReferenciaFilaDto
 {
-    public int Id { get; set; }
+    /// <summary>Estas tablas se identifican por su Código (no tienen Id entero).</summary>
     public string Codigo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
     /// <summary>Color en formato "#RRGGBB", o null si la tabla no tiene columna de color.</summary>
@@ -20,8 +20,8 @@ public sealed class TablaReferenciaFilaDto
 
 public sealed class GuardarFilaTablaReferenciaRequest
 {
-    /// <summary>Null = alta nueva; con valor = edición de la fila existente.</summary>
-    public int? Id { get; set; }
+    /// <summary>Null/vacío = alta nueva; con valor = edición de la fila con ese código.</summary>
+    public string? CodigoOriginal { get; set; }
     public string Codigo { get; set; } = string.Empty;
     public string Descripcion { get; set; } = string.Empty;
     public string? ColorHex { get; set; }
