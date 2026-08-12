@@ -16,6 +16,7 @@
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IFloatingWindowService FloatingWindows
 @inject AlfaCore.Services.IAlfaKnowledgeSuggestionService AlfaKnowledgeSvc
+@inject AlfaCore.Services.IConversacionAnalisisService AnalisisSvc
 @inject AlfaCore.Services.INotificacionesPushService PushSvc
 @inject IJSRuntime JS
 @inject NavigationManager Nav
@@ -2303,6 +2304,41 @@
                 }
                 else
                 {
+                    <div class="conversations-ai-analysis">
+                        <div class="conversations-ai-analysis__head">
+                            <strong><i class="bi bi-clipboard-data"></i> Análisis de la conversación</strong>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RequestAnalisisAsync(force: true)" disabled="@_analisisCargando" title="Volver a analizar">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        </div>
+                        @if (_analisisCargando)
+                        {
+                            <p class="muted">Analizando…</p>
+                        }
+                        else if (_analisis is not null)
+                        {
+                            <div class="conversations-ai-analysis__tags">
+                                @if (!string.IsNullOrWhiteSpace(_analisis.Intencion))
+                                {
+                                    <span class="conv-analisis-tag"><i class="bi bi-bullseye"></i> @_analisis.Intencion</span>
+                                }
+                                <span class="conv-analisis-sent conv-analisis-sent--@_analisis.Sentimiento.ToLowerInvariant()">@GetSentimientoLabel(_analisis.Sentimiento)</span>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_analisis.Resumen))
+                            {
+                                <p class="conversations-ai-analysis__resumen">@_analisis.Resumen</p>
+                            }
+                        }
+                        else if (!AnalisisSvc.IsConfigured)
+                        {
+                            <p class="muted">El análisis por IA no está configurado (falta OPENAI_API_KEY).</p>
+                        }
+                        else
+                        {
+                            <p class="muted">Todavía sin análisis para esta conversación.</p>
+                        }
+                    </div>
+
                     <div class="conversations-ai-context">
                         <label for="ai-context-scope">Contexto que leerá la IA</label>
                         <select id="ai-context-scope" value="@_aiContextScope" @onchange="OnAiContextScopeChangedAsync" disabled="@_loadingAiSuggestion">
@@ -3270,6 +3306,10 @@
     private CancellationTokenSource? _aiSuggestionRequestCts;
     private AlfaKnowledgeSuggestionResult? _aiSuggestion;
     private long? _aiSuggestionConversationId;
+    private ConversacionAnalisisDto? _analisis;
+    private bool _analisisCargando;
+    private long? _analisisConversationId;
+    private CancellationTokenSource? _analisisCts;
     private string? _aiSuggestionError;
     private string _aiContextScope = AiContextScopes.CurrentCycle;
     private long? _aiFocusedMessageId;
@@ -4722,6 +4762,7 @@
         if (_showAiSuggestionPanel)
         {
             await RequestAiSuggestionAsync();
+            await RequestAnalisisAsync();
         }
     }
 
@@ -7561,7 +7602,56 @@
         {
             await RequestAiSuggestionAsync();
         }
+
+        await RequestAnalisisAsync();
     }
+
+    private async Task RequestAnalisisAsync(bool force = false)
+    {
+        if (_selectedConversationId is not { } conversationId)
+            return;
+        if (!force && _analisis is not null && _analisisConversationId == conversationId)
+            return;
+        if (!AnalisisSvc.IsConfigured)
+            return;
+
+        _analisisCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        _analisisCts = cts;
+        if (_analisisConversationId != conversationId || force)
+            _analisis = null;
+        _analisisConversationId = conversationId;
+        _analisisCargando = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await AnalisisSvc.AnalizarAsync(GetAiContextMessages(), cts.Token);
+            if (cts.Token.IsCancellationRequested
+                || _selectedConversationId != conversationId
+                || !ReferenceEquals(_analisisCts, cts))
+                return;
+            _analisis = result;
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            if (ReferenceEquals(_analisisCts, cts))
+            {
+                _analisisCargando = false;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private static string GetSentimientoLabel(string sentimiento) => sentimiento switch
+    {
+        "POSITIVO" => "Positivo",
+        "NEGATIVO" => "Negativo",
+        _ => "Neutro"
+    };
 
     private long? ActiveMessageSearchId
         => _messageSearchActiveIndex >= 0 && _messageSearchActiveIndex < _messageSearchMatchIds.Count

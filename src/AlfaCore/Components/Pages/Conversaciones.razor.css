@@ -2995,3 +2995,60 @@
     border: 1px solid color-mix(in srgb, var(--channel-accent) 15%, transparent) !important;
     box-shadow: 0 0 0 2px color-mix(in srgb, var(--channel-soft) 70%, transparent) !important;
 }
+
+/* Análisis IA de la conversación (Nivel 1) */
+.conversations-ai-analysis {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 10px;
+    padding: .6rem .7rem;
+    margin-bottom: .7rem;
+    background: color-mix(in srgb, var(--accent, #2563eb) 6%, transparent);
+}
+
+.conversations-ai-analysis__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .35rem;
+    font-size: .9rem;
+}
+
+.conversations-ai-analysis__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    margin-bottom: .35rem;
+}
+
+.conv-analisis-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    font-size: .74rem;
+    font-weight: 600;
+    padding: .12rem .5rem;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, .18);
+    color: var(--color-text, #0f172a);
+}
+
+.conv-analisis-sent {
+    display: inline-flex;
+    align-items: center;
+    font-size: .74rem;
+    font-weight: 700;
+    padding: .12rem .55rem;
+    border-radius: 999px;
+}
+
+.conv-analisis-sent--positivo { background: #dcfce7; color: #15803d; }
+.conv-analisis-sent--neutro   { background: #e2e8f0; color: #334155; }
+.conv-analisis-sent--negativo { background: #fee2e2; color: #b91c1c; }
+
+.conversations-ai-analysis__resumen {
+    margin: 0;
+    font-size: .86rem;
+    line-height: 1.4;
+    color: var(--color-text, #0f172a);
+}

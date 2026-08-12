@@ -285,6 +285,19 @@ public sealed class ConversacionRelacionarClienteRequest
     public string ClienteCodigo { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// Análisis IA (Nivel 1 del roadmap de automatizaciones) de una conversación:
+/// resumen breve, intención del cliente y sentimiento. No usa la base de conocimiento
+/// (es análisis del propio hilo), se genera con una llamada directa a OpenAI.
+/// </summary>
+public sealed class ConversacionAnalisisDto
+{
+    public string Resumen { get; set; } = string.Empty;
+    public string Intencion { get; set; } = string.Empty;
+    /// <summary>POSITIVO / NEUTRO / NEGATIVO.</summary>
+    public string Sentimiento { get; set; } = "NEUTRO";
+}
+
 public sealed class ConversacionMensajeDto
 {
     public long IdMensaje { get; set; }

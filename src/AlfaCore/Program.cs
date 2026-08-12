@@ -202,6 +202,7 @@ public class Program
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
         builder.Services.Configure<PushNotificationsOptions>(builder.Configuration.GetSection(PushNotificationsOptions.SectionName));
         builder.Services.AddScoped<IAlfaKnowledgeSuggestionService, AlfaKnowledgeSuggestionService>();
+        builder.Services.AddScoped<IConversacionAnalisisService, ConversacionAnalisisService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
