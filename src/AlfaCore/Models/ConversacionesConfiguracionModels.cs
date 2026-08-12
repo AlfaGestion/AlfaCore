@@ -158,6 +158,11 @@ public sealed class ConversacionAlfaKnowledgeConfigDto
     public string BaseUrl { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty;
     public string KnowledgeBaseId { get; set; } = string.Empty;
+    /// <summary>
+    /// Instrucciones curadas de cómo debe actuar/responder el asistente (persona, tono, reglas,
+    /// qué escalar). Se anteponen a la sugerencia de respuesta. Editable por el admin.
+    /// </summary>
+    public string Instrucciones { get; set; } = string.Empty;
     public int TimeoutSeconds { get; set; } = 15;
     public string ConfigSource { get; set; } = string.Empty;
 

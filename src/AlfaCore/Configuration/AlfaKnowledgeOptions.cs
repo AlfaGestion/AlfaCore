@@ -12,6 +12,8 @@ public sealed class AlfaKnowledgeOptions
     public string BaseUrl { get; set; } = string.Empty;
     public string ApiKey { get; set; } = string.Empty;
     public string KnowledgeBaseId { get; set; } = string.Empty;
+    /// <summary>Instrucciones curadas del asistente (persona/tono/reglas). Se anteponen a la sugerencia.</summary>
+    public string Instrucciones { get; set; } = string.Empty;
     public int TimeoutSeconds { get; set; } = 15;
 
     public bool IsConfigured

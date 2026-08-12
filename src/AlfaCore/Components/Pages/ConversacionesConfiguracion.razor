@@ -571,7 +571,15 @@
 
                     <div class="field conv-config-fields__full">
                         <label for="ak-kb-id">Knowledge Base Id</label>
-                        <input id="ak-kb-id" @bind="_alfaKnowledgeConfig.KnowledgeBaseId" placeholder="GUID de la base en AlfaKnowledgeMaster" />
+                        <input id="ak-kb-id" @bind="_alfaKnowledgeConfig.KnowledgeBaseId" placeholder="GUID de la base/sector en AlfaKnowledgeMaster" />
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="ak-instrucciones">Instrucciones del asistente</label>
+                        <textarea id="ak-instrucciones" rows="6" maxlength="4000"
+                                  @bind="_alfaKnowledgeConfig.Instrucciones"
+                                  placeholder="Cómo debe actuar y responder el asistente: persona, tono, reglas, qué escalar a un humano, qué NO responder. Ej: 'Sos el asistente de Alfa Net. Respondé cordial y breve, en español rioplatense. No inventes precios: si preguntan precio, ofrecé pasar con un vendedor...'"></textarea>
+                        <small>Se anteponen a cada sugerencia de respuesta. Es el "sector Conversaciones": combinalas con la base de conocimiento (Knowledge Base Id) para guiar al asistente.</small>
                     </div>
 
                     <div class="field">

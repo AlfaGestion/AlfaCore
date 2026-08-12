@@ -505,6 +505,7 @@ public sealed class ConversacionesConfigService(
                 BaseUrl = ReadValue(values, "CONV_ALFAKNOWLEDGE_BASE_URL", string.Empty),
                 ApiKey = ReadValue(values, "CONV_ALFAKNOWLEDGE_API_KEY", string.Empty),
                 KnowledgeBaseId = ReadValue(values, "CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID", string.Empty),
+                Instrucciones = ReadValue(values, "CONV_ALFAKNOWLEDGE_INSTRUCCIONES", string.Empty),
                 TimeoutSeconds = ReadIntValue(values, "CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS", 0, 15),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
@@ -1246,6 +1247,7 @@ public sealed class ConversacionesConfigService(
                 'CONV_ALFAKNOWLEDGE_BASE_URL',
                 'CONV_ALFAKNOWLEDGE_API_KEY',
                 'CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID',
+                'CONV_ALFAKNOWLEDGE_INSTRUCCIONES',
                 'CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS'
             )
             """;
@@ -1324,6 +1326,7 @@ public sealed class ConversacionesConfigService(
         yield return ("CONV_ALFAKNOWLEDGE_BASE_URL", config.BaseUrl);
         yield return ("CONV_ALFAKNOWLEDGE_API_KEY", config.ApiKey);
         yield return ("CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID", config.KnowledgeBaseId);
+        yield return ("CONV_ALFAKNOWLEDGE_INSTRUCCIONES", config.Instrucciones);
         yield return ("CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS", config.TimeoutSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
@@ -1428,6 +1431,7 @@ public sealed class ConversacionesConfigService(
             BaseUrl = NormalizeBaseUrl(config.BaseUrl),
             ApiKey = (config.ApiKey ?? string.Empty).Trim(),
             KnowledgeBaseId = (config.KnowledgeBaseId ?? string.Empty).Trim(),
+            Instrucciones = (config.Instrucciones ?? string.Empty).Trim(),
             TimeoutSeconds = timeoutSeconds,
             ConfigSource = string.Empty
         };

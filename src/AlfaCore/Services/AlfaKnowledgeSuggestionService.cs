@@ -85,12 +85,23 @@ public sealed class AlfaKnowledgeSuggestionService(
                 })
                 .ToArray();
 
+            // Instrucciones curadas del asistente (persona/tono/reglas): se anteponen SOLO a la
+            // sugerencia de respuesta, no a transformaciones puntuales (mejorar/AnyDesk).
+            var effectiveInstruction = instruction;
+            if (string.Equals(mode, AlfaKnowledgeSuggestionModes.ReplySuggestion, StringComparison.Ordinal)
+                && !string.IsNullOrWhiteSpace(settings.Instrucciones))
+            {
+                effectiveInstruction = string.IsNullOrWhiteSpace(instruction)
+                    ? settings.Instrucciones.Trim()
+                    : $"{settings.Instrucciones.Trim()}\n\n{instruction.Trim()}";
+            }
+
             var payload = new
             {
                 customerMessage,
                 mode,
                 history,
-                instruction,
+                instruction = effectiveInstruction,
                 assistantHistory = (assistantHistory ?? [])
                     .Where(static message => !string.IsNullOrWhiteSpace(message.Content))
                     .TakeLast(12)
@@ -421,6 +432,7 @@ public sealed class AlfaKnowledgeSuggestionService(
             BaseUrl = ReadValue(values, "CONV_ALFAKNOWLEDGE_BASE_URL", string.Empty),
             ApiKey = ReadValue(values, "CONV_ALFAKNOWLEDGE_API_KEY", string.Empty),
             KnowledgeBaseId = ReadValue(values, "CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID", string.Empty),
+            Instrucciones = ReadValue(values, "CONV_ALFAKNOWLEDGE_INSTRUCCIONES", string.Empty),
             TimeoutSeconds = ReadIntValue(values, "CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS", 0, 15)
         };
     }
@@ -496,6 +508,7 @@ public sealed class AlfaKnowledgeSuggestionService(
                 'CONV_ALFAKNOWLEDGE_BASE_URL',
                 'CONV_ALFAKNOWLEDGE_API_KEY',
                 'CONV_ALFAKNOWLEDGE_KNOWLEDGE_BASE_ID',
+                'CONV_ALFAKNOWLEDGE_INSTRUCCIONES',
                 'CONV_ALFAKNOWLEDGE_TIMEOUT_SECONDS'
             )
             """;
