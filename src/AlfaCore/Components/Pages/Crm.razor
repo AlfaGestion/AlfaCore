@@ -1470,8 +1470,17 @@
 
     private async Task RunHeaderActionAsync(Func<Task> action)
     {
-        await action();
-        await InvokeAsync(StateHasChanged);
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            // Reconstruye el header con el estado actual (ej. Busy=false tras guardar),
+            // si no el botón queda "Procesando..." aunque la acción ya terminó.
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private async Task OnStageFilterChangedAsync(ChangeEventArgs args)

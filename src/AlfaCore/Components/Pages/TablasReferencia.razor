@@ -24,13 +24,6 @@
     {
         <p>Cargando tablas...</p>
     }
-    else if (!IsSuperAdmin)
-    {
-        <div class="editor-msg editor-msg--warning">
-            <strong>Acceso restringido</strong>
-            <p>Solo los superadmin pueden editar tablas de referencia.</p>
-        </div>
-    }
     else
     {
         @if (!string.IsNullOrWhiteSpace(_message))
@@ -178,16 +171,9 @@
     private string _message = string.Empty;
     private string _error = string.Empty;
 
-    private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
 
     protected override async Task OnInitializedAsync()
     {
-        if (!IsSuperAdmin)
-        {
-            _loadingTablas = false;
-            return;
-        }
-
         try
         {
             _tablas = (await TablasSvc.GetTablasAsync()).ToList();
