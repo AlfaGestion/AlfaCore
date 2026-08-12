@@ -11,12 +11,37 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
 
     public async Task<ConversacionAnalisisDto?> AnalizarAsync(IReadOnlyList<ConversacionMensajeDto> mensajes, CancellationToken ct = default)
     {
-        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-        if (string.IsNullOrWhiteSpace(apiKey))
-            return null;
+        const string system = """
+            Analizás una conversación de atención al cliente y devolvés SOLO JSON válido
+            con esta forma exacta: {"resumen":"...","intencion":"...","sentimiento":"..."}.
+            - resumen: 1-2 frases, en español rioplatense, qué necesita/pasó.
+            - intencion: etiqueta corta (ej. "Consulta de precio", "Reclamo", "Soporte técnico",
+              "Pedido", "Seguimiento", "Otro").
+            - sentimiento: exactamente uno de POSITIVO, NEUTRO o NEGATIVO (del cliente).
+            No inventes datos que no estén en la conversación.
+            """;
+        var texto = await CallOpenAiAsync(system, BuildTranscript(mensajes), ct);
+        return ParseAnalisis(texto);
+    }
 
-        var transcript = BuildTranscript(mensajes);
-        if (transcript.Length == 0)
+    public async Task<ConversacionExtraccionDto?> ExtraerOportunidadAsync(IReadOnlyList<ConversacionMensajeDto> mensajes, CancellationToken ct = default)
+    {
+        const string system = """
+            De esta conversación de atención al cliente extraés datos para crear una oportunidad
+            comercial. Devolvés SOLO JSON válido con la forma: {"titulo":"...","descripcion":"..."}.
+            - titulo: título corto (máx ~60 caracteres) que resuma qué busca/necesita el cliente.
+            - descripcion: 1-3 frases con el detalle de lo que pide (productos, servicio, cantidades,
+              contexto). En español rioplatense.
+            No inventes datos que no estén en la conversación; si no hay pedido claro, dejá campos vacíos.
+            """;
+        var texto = await CallOpenAiAsync(system, BuildTranscript(mensajes), ct);
+        return ParseExtraccion(texto);
+    }
+
+    private async Task<string?> CallOpenAiAsync(string systemPrompt, string transcript, CancellationToken ct)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey) || transcript.Length == 0)
             return null;
 
         var model = Environment.GetEnvironmentVariable("OPENAI_MODEL");
@@ -29,19 +54,7 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
             temperature = 0.2,
             messages = new object[]
             {
-                new
-                {
-                    role = "system",
-                    content = """
-                        Analizás una conversación de atención al cliente y devolvés SOLO JSON válido
-                        con esta forma exacta: {"resumen":"...","intencion":"...","sentimiento":"..."}.
-                        - resumen: 1-2 frases, en español rioplatense, qué necesita/pasó.
-                        - intencion: etiqueta corta (ej. "Consulta de precio", "Reclamo", "Soporte técnico",
-                          "Pedido", "Seguimiento", "Otro").
-                        - sentimiento: exactamente uno de POSITIVO, NEUTRO o NEGATIVO (del cliente).
-                        No inventes datos que no estén en la conversación.
-                        """
-                },
+                new { role = "system", content = systemPrompt },
                 new { role = "user", content = transcript }
             }
         };
@@ -59,14 +72,44 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
 
             var body = await response.Content.ReadAsStringAsync(ct);
             using var document = JsonDocument.Parse(body);
-            var texto = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
-            return ParseAnalisis(texto);
+            return document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
         }
         catch (OperationCanceledException)
         {
             throw;
         }
         catch
+        {
+            return null;
+        }
+    }
+
+    private static ConversacionExtraccionDto? ParseExtraccion(string? json)
+    {
+        var obj = TryGetJsonObject(json);
+        if (obj is null)
+            return null;
+        var titulo = (obj.Value.TryGetProperty("titulo", out var t) ? t.GetString() ?? "" : "").Trim();
+        var descripcion = (obj.Value.TryGetProperty("descripcion", out var d) ? d.GetString() ?? "" : "").Trim();
+        if (titulo.Length == 0 && descripcion.Length == 0)
+            return null;
+        return new ConversacionExtraccionDto { Titulo = titulo, Descripcion = descripcion };
+    }
+
+    private static JsonElement? TryGetJsonObject(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+        var start = json.IndexOf('{');
+        var end = json.LastIndexOf('}');
+        if (start < 0 || end <= start)
+            return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(json.Substring(start, end - start + 1));
+            return doc.RootElement.Clone();
+        }
+        catch (JsonException)
         {
             return null;
         }

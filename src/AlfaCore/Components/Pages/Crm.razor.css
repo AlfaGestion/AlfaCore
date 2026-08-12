@@ -1238,3 +1238,10 @@
 .crm-cliente-opt:last-child { border-bottom: none; }
 .crm-cliente-opt:hover { background: var(--hover, #f1f5f9); }
 .crm-cliente-opt small { color: var(--color-muted, #64748b); }
+
+.crm-ia-hint {
+    font-size: .72rem;
+    font-weight: 600;
+    color: var(--accent, #2563eb);
+    margin-left: .4rem;
+}

@@ -789,6 +789,7 @@
     private string? _cotizEditorPendingHtml;
     private bool _cotizEditorNeedsSync;
     private bool _searchPanelOpen;
+    private bool _extrayendoDatosIa;
     private bool _defaultFlowApplied;
     private int? _dragStageId;
     private int? _dropStageId;
@@ -1021,7 +1022,7 @@
                         <input type="number" @bind="_form.IdConversacion" disabled="@_saving" />
                     </div>
                     <div class="field field--wide">
-                        <label>Descripción</label>
+                        <label>Descripción @if (_extrayendoDatosIa) { <span class="crm-ia-hint"><i class="bi bi-stars"></i> completando con IA…</span> }</label>
                         <textarea rows="6" maxlength="4000" @bind="_form.Descripcion" disabled="@_saving"></textarea>
                     </div>
                 </div>
@@ -1235,6 +1236,32 @@
             _form.IdTecnico ??= CurrentUserTechId;
             UpdatePageHeader();
         });
+
+        // La IA lee la conversación y completa título/descripción (no bloquea la apertura).
+        if (_showEditor && _form.IdOportunidad <= 0)
+        {
+            _extrayendoDatosIa = true;
+            StateHasChanged();
+            try
+            {
+                var extra = await CrmSvc.ExtractOportunidadDesdeConversacionAsync(idConv);
+                if (extra is not null)
+                {
+                    if (!string.IsNullOrWhiteSpace(extra.Titulo))
+                        _form.Titulo = extra.Titulo;
+                    if (!string.IsNullOrWhiteSpace(extra.Descripcion) && string.IsNullOrWhiteSpace(_form.Descripcion))
+                        _form.Descripcion = extra.Descripcion;
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                _extrayendoDatosIa = false;
+                StateHasChanged();
+            }
+        }
     }
 
     private async Task LoadAsync()

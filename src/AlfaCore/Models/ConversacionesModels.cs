@@ -298,6 +298,16 @@ public sealed class ConversacionAnalisisDto
     public string Sentimiento { get; set; } = "NEUTRO";
 }
 
+/// <summary>
+/// Datos extraídos por IA de una conversación para prellenar una oportunidad/cotización:
+/// un título corto y la descripción de lo que necesita el cliente.
+/// </summary>
+public sealed class ConversacionExtraccionDto
+{
+    public string Titulo { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+}
+
 public sealed class ConversacionMensajeDto
 {
     public long IdMensaje { get; set; }

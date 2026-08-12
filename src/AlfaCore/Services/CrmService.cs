@@ -13,7 +13,8 @@ namespace AlfaCore.Services;
 public sealed class CrmService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : ICrmService
+    IAppEventService appEvents,
+    IConversacionAnalisisService analisisService) : ICrmService
 {
     private const string ModuleName = "CRM";
     private const string ConfigGroup = "CRM";
@@ -597,6 +598,39 @@ public sealed class CrmService(
                 WHERE c.IdConversacion = @IdConversacion;
                 """, new { IdConversacion = idConversacion }, cancellationToken: token));
         }, "No se pudo leer la conversación de origen.", ct);
+
+    public Task<ConversacionExtraccionDto?> ExtractOportunidadDesdeConversacionAsync(long idConversacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("ExtractOportunidadDesdeConversacion", async token =>
+        {
+            if (idConversacion <= 0 || !analisisService.IsConfigured)
+                return (ConversacionExtraccionDto?)null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var hasMsg = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT CASE WHEN OBJECT_ID(N'dbo.CONV_MENSAJES', N'U') IS NULL THEN 0 ELSE 1 END;",
+                cancellationToken: token)) == 1;
+            if (!hasMsg)
+                return null;
+
+            var mensajes = (await cn.QueryAsync<ConversacionMensajeDto>(new CommandDefinition("""
+                SELECT TOP (60)
+                    ISNULL(Direction, '') AS Direction,
+                    ISNULL(CAST(Texto AS nvarchar(max)), '') AS Texto,
+                    FechaHora
+                FROM dbo.CONV_MENSAJES
+                WHERE IdConversacion = @IdConversacion
+                  AND Direction IN (N'ENTRANTE', N'SALIENTE')
+                  AND ISNULL(CAST(Texto AS nvarchar(max)), '') <> ''
+                ORDER BY FechaHora DESC;
+                """, new { IdConversacion = idConversacion }, cancellationToken: token))).AsList();
+
+            if (mensajes.Count == 0)
+                return null;
+
+            return await analisisService.ExtraerOportunidadAsync(mensajes, token);
+        }, "No se pudo extraer los datos de la conversación.", ct);
 
     public Task<int> SaveEtapaAsync(CrmEtapaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("SaveEtapa", async token =>

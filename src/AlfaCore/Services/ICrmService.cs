@@ -15,6 +15,7 @@ public interface ICrmService
     Task CompleteTareaAsync(long idTarea, bool completada, string? usuarioAccion = null, CancellationToken ct = default);
     Task DeleteTareaAsync(long idTarea, string? usuarioAccion = null, CancellationToken ct = default);
     Task<CrmConversationPrefillDto?> GetConversationPrefillAsync(long idConversacion, CancellationToken ct = default);
+    Task<ConversacionExtraccionDto?> ExtractOportunidadDesdeConversacionAsync(long idConversacion, CancellationToken ct = default);
     Task<CrmDashboardDto> GetDashboardAsync(int diasEstancamiento = 7, CancellationToken ct = default);
     Task<int> SaveEtapaAsync(CrmEtapaSaveRequest request, CancellationToken ct = default);
     Task DeleteEtapaAsync(int idEtapa, string? usuarioAccion = null, CancellationToken ct = default);

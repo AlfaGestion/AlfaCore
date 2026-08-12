@@ -10,4 +10,5 @@ public interface IConversacionAnalisisService
 {
     bool IsConfigured { get; }
     Task<ConversacionAnalisisDto?> AnalizarAsync(IReadOnlyList<ConversacionMensajeDto> mensajes, CancellationToken ct = default);
+    Task<ConversacionExtraccionDto?> ExtraerOportunidadAsync(IReadOnlyList<ConversacionMensajeDto> mensajes, CancellationToken ct = default);
 }
