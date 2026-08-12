@@ -12,4 +12,5 @@ public interface ICrmCotizacionService
     Task ChangeEstadoAsync(long idCotizacion, string estado, string? usuarioAccion = null, CancellationToken ct = default);
     Task DeleteAsync(long idCotizacion, string? usuarioAccion = null, CancellationToken ct = default);
     Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default);
+    Task<IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>> SuggestLinesFromPromptAsync(string? clienteCodigo, string prompt, CancellationToken ct = default);
 }

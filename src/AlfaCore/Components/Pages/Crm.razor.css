@@ -1170,3 +1170,33 @@
 .crm-richtext__area p { margin: .3rem 0; }
 .crm-richtext__area ul, .crm-richtext__area ol { margin: .3rem 0 .3rem 1.2rem; }
 .crm-richtext__area img { max-width: 100%; height: auto; border-radius: 6px; margin: .3rem 0; }
+
+/* Sugerencias de artículos por IA */
+.crm-cotiz-ia-sug {
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 8px;
+    padding: .5rem;
+    margin-bottom: .6rem;
+}
+
+.crm-cotiz-ia-sug__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .4rem;
+    flex-wrap: wrap;
+}
+
+.crm-cotiz-sug {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .3rem .4rem;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.crm-cotiz-sug:hover { background: var(--hover, #f1f5f9); }
+.crm-cotiz-sug .crm-cotiz-result__desc { flex: 1; min-width: 0; }
+.crm-cotiz-sug__cant { max-width: 84px; }

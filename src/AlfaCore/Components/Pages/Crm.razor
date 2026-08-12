@@ -547,6 +547,49 @@
             }
             else
             {
+                <div class="crm-cotiz-ia">
+                    <label><i class="bi bi-stars"></i> Asistente de IA</label>
+                    <div class="crm-inline-row">
+                        <input placeholder="Ej: todos los tipos de harina, 10 kg de cada uno" @bind="_cotizIaPrompt" @onkeydown="OnCotizIaKeyDown" />
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="SugerirLineasIaAsync" disabled="@(_saving || string.IsNullOrWhiteSpace(_cotizIaPrompt))">
+                            @if (_cotizIaCargando)
+                            {
+                                <span>Buscando…</span>
+                            }
+                            else
+                            {
+                                <span><i class="bi bi-magic"></i> Sugerir</span>
+                            }
+                        </button>
+                    </div>
+                    <small class="muted">La IA interpreta tu pedido y busca los artículos reales del catálogo. Los precios salen de la lista del cliente (no los inventa).</small>
+                </div>
+
+                @if (_cotizIaSugerencias.Count > 0)
+                {
+                    <div class="crm-cotiz-ia-sug">
+                        <div class="crm-cotiz-ia-sug__head">
+                            <strong>@_cotizIaSugerencias.Count sugerencia(s)</strong>
+                            <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleTodasSugerencias">@(_cotizIaSeleccion.Count == _cotizIaSugerencias.Count ? "Ninguno" : "Todos")</button>
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="AgregarSugerenciasSeleccionadas" disabled="@(_cotizIaSeleccion.Count == 0)"><i class="bi bi-plus-lg"></i> Agregar (@_cotizIaSeleccion.Count)</button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _cotizIaSugerencias.Clear()">Descartar</button>
+                            </div>
+                        </div>
+                        <div class="crm-cotiz-results">
+                            @foreach (var sug in _cotizIaSugerencias)
+                            {
+                                <label class="crm-cotiz-sug">
+                                    <input type="checkbox" checked="@_cotizIaSeleccion.Contains(sug.IdArticulo)" @onchange="args => ToggleSugerencia(sug.IdArticulo, args)" />
+                                    <span class="crm-cotiz-result__desc">@sug.Descripcion</span>
+                                    <input class="crm-cotiz-cell num crm-cotiz-sug__cant" type="number" step="0.01" min="0" @bind="sug.Cantidad" title="Cantidad" />
+                                    <span class="crm-cotiz-result__meta">@FormatMoney(_cotizPricing.PreciosConIva ? sug.PrecioUnitarioConIva : sug.PrecioUnitarioNeto)</span>
+                                </label>
+                            }
+                        </div>
+                    </div>
+                }
+
                 <div class="crm-cotiz-search">
                     <input placeholder="Buscar artículo por código o descripción..." @bind="_cotizBusqueda" @bind:event="oninput" @onkeydown="OnCotizSearchKeyDown" />
                     <button type="button" class="btn btn--ghost btn--sm" @onclick="BuscarArticulosCotizAsync" disabled="@_saving"><i class="bi bi-search"></i> Buscar</button>
@@ -682,6 +725,8 @@
     private bool _cotizEsServicio;
     private string _cotizIaPrompt = string.Empty;
     private bool _cotizIaCargando;
+    private List<CrmCotizacionAiLineaSugeridaDto> _cotizIaSugerencias = [];
+    private HashSet<string> _cotizIaSeleccion = [];
     private ElementReference _cotizEditorRef;
     private string? _cotizEditorPendingHtml;
     private bool _cotizEditorNeedsSync;
@@ -2044,6 +2089,8 @@
             };
             _cotizLineas = [];
             _cotizResultados = [];
+            _cotizIaSugerencias = [];
+            _cotizIaSeleccion = [];
             _cotizBusqueda = string.Empty;
             _cotizIaPrompt = string.Empty;
             _cotizEditorPendingHtml = _cotizEsServicio ? string.Empty : null;
@@ -2083,6 +2130,8 @@
                 TasaIva = x.TasaIva
             }).ToList();
             _cotizResultados = [];
+            _cotizIaSugerencias = [];
+            _cotizIaSeleccion = [];
             _cotizBusqueda = string.Empty;
             _cotizIaPrompt = string.Empty;
             _cotizEditorPendingHtml = _cotizEsServicio ? detalle.CuerpoServicio : null;
@@ -2186,8 +2235,61 @@
 
     private async Task OnCotizIaKeyDown(KeyboardEventArgs args)
     {
-        if (args.Key == "Enter")
+        if (args.Key != "Enter")
+            return;
+        if (_cotizEsServicio)
             await GenerarPropuestaIaAsync();
+        else
+            await SugerirLineasIaAsync();
+    }
+
+    private async Task SugerirLineasIaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_cotizIaPrompt))
+            return;
+        _cotizIaCargando = true;
+        await RunAsync(async () =>
+        {
+            var sugerencias = await CotizSvc.SuggestLinesFromPromptAsync(_cotizClienteCodigo, _cotizIaPrompt);
+            _cotizIaSugerencias = sugerencias.ToList();
+            _cotizIaSeleccion = _cotizIaSugerencias.Select(x => x.IdArticulo).ToHashSet();
+            if (_cotizIaSugerencias.Count == 0)
+                _feedback = new Feedback("Sin resultados", "El asistente no encontró artículos para ese pedido. Probá con otras palabras.", null);
+        });
+        _cotizIaCargando = false;
+    }
+
+    private void ToggleSugerencia(string idArticulo, ChangeEventArgs args)
+    {
+        if (args.Value is bool value && value)
+            _cotizIaSeleccion.Add(idArticulo);
+        else
+            _cotizIaSeleccion.Remove(idArticulo);
+    }
+
+    private void ToggleTodasSugerencias()
+    {
+        if (_cotizIaSeleccion.Count == _cotizIaSugerencias.Count)
+            _cotizIaSeleccion.Clear();
+        else
+            _cotizIaSeleccion = _cotizIaSugerencias.Select(x => x.IdArticulo).ToHashSet();
+    }
+
+    private void AgregarSugerenciasSeleccionadas()
+    {
+        foreach (var sug in _cotizIaSugerencias.Where(x => _cotizIaSeleccion.Contains(x.IdArticulo)))
+        {
+            _cotizLineas.Add(new CrmCotizacionLineRequest
+            {
+                IdArticulo = sug.IdArticulo,
+                Descripcion = sug.Descripcion,
+                Cantidad = sug.Cantidad > 0 ? sug.Cantidad : 1m,
+                PrecioUnitario = _cotizPricing.PreciosConIva ? sug.PrecioUnitarioConIva : sug.PrecioUnitarioNeto,
+                TasaIva = sug.TasaIva
+            });
+        }
+        _cotizIaSugerencias.Clear();
+        _cotizIaSeleccion.Clear();
     }
 
     private async Task RichExec(string command) => await JS.InvokeVoidAsync("crmCotizacion.exec", command);

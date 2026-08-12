@@ -109,6 +109,21 @@ public sealed class CrmCotizacionArticuloDto
     public decimal PrecioUnitarioConIva { get; set; }
 }
 
+// Línea sugerida por el asistente de IA a partir de un pedido en lenguaje natural.
+// El artículo y su precio salen SIEMPRE del maestro/resolutor; la IA solo aporta
+// el término a buscar y la cantidad.
+public sealed class CrmCotizacionAiLineaSugeridaDto
+{
+    public string Termino { get; set; } = string.Empty;
+    public string IdArticulo { get; set; } = string.Empty;
+    public string Codigo { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
+    public decimal PrecioUnitarioNeto { get; set; }
+    public decimal PrecioUnitarioConIva { get; set; }
+    public decimal TasaIva { get; set; }
+    public decimal Cantidad { get; set; } = 1m;
+}
+
 // Contexto de precios resuelto para un cliente (o consumidor final).
 public sealed class CrmCotizacionPricingContextDto
 {

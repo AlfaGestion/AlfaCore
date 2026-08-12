@@ -34,70 +34,75 @@ public sealed class CrmCotizacionService(
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-
             var pricing = await ResolvePricingContextInternalAsync(cn, clienteCodigo, token);
-            var clase = Math.Clamp(pricing.ClasePrecio, 1, 8);
-            var limit = Math.Clamp(take, 1, 100);
-
-            var palabras = (texto ?? string.Empty).ToUpperInvariant()
-                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-            var wordFilters = new System.Text.StringBuilder();
-            var parameters = new DynamicParameters();
-            parameters.Add("IdLista", pricing.IdLista);
-            parameters.Add("Take", limit);
-            for (var i = 0; i < palabras.Length; i++)
-            {
-                parameters.Add($"Like{i}", $"%{palabras[i]}%");
-                wordFilters.Append($"""
-
-                  AND (
-                        UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @Like{i}
-                        OR UPPER(LTRIM(RTRIM(a.DESCRIPCION))) LIKE @Like{i}
-                        OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, '')))) LIKE @Like{i}
-                  )
-                """);
-            }
-
-            var sql = $"""
-                SELECT TOP (@Take)
-                    LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
-                    ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS Codigo,
-                    ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS Descripcion,
-                    ISNULL(CAST(a.TasaIVA AS decimal(9,4)), 0) AS TasaIva,
-                    ISNULL(a.PRECIO{clase}, 0) AS PrecioMaestro,
-                    ISNULL(p.Precio{clase}, 0) AS PrecioLista
-                FROM dbo.V_MA_ARTICULOS a
-                LEFT JOIN dbo.V_MA_Precios p
-                    ON p.IdArticulo = a.IDARTICULO
-                   AND p.IdLista = @IdLista
-                   AND p.TipoLista = 'V'
-                WHERE ISNULL(a.Suspendido, 0) <> 1
-                  AND ISNULL(a.SuspendidoV, 0) <> 1
-                  {wordFilters}
-                ORDER BY a.DESCRIPCION, a.IDARTICULO;
-                """;
-
-            var rows = await cn.QueryAsync<ArticuloPrecioRow>(new CommandDefinition(sql, parameters, cancellationToken: token));
-
-            var result = new List<CrmCotizacionArticuloDto>();
-            foreach (var row in rows)
-            {
-                var bruto = pricing.UsaListas && row.PrecioLista > 0 ? row.PrecioLista : row.PrecioMaestro;
-                var (neto, conIva) = SplitPrice(bruto, row.TasaIva, pricing.PreciosConIva);
-                result.Add(new CrmCotizacionArticuloDto
-                {
-                    IdArticulo = row.IdArticulo,
-                    Codigo = row.Codigo,
-                    Descripcion = row.Descripcion,
-                    TasaIva = decimal.Round(row.TasaIva, 4),
-                    PrecioUnitarioNeto = neto,
-                    PrecioUnitarioConIva = conIva
-                });
-            }
-
-            return (IReadOnlyList<CrmCotizacionArticuloDto>)result;
+            return await SearchArticulosCoreAsync(cn, pricing, texto, take, token);
         }, "No se pudieron cargar los artículos para la cotización.", ct);
+
+    private static async Task<IReadOnlyList<CrmCotizacionArticuloDto>> SearchArticulosCoreAsync(
+        SqlConnection cn, CrmCotizacionPricingContextDto pricing, string texto, int take, CancellationToken token)
+    {
+        var clase = Math.Clamp(pricing.ClasePrecio, 1, 8);
+        var limit = Math.Clamp(take, 1, 100);
+
+        var palabras = (texto ?? string.Empty).ToUpperInvariant()
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var wordFilters = new StringBuilder();
+        var parameters = new DynamicParameters();
+        parameters.Add("IdLista", pricing.IdLista);
+        parameters.Add("Take", limit);
+        for (var i = 0; i < palabras.Length; i++)
+        {
+            parameters.Add($"Like{i}", $"%{palabras[i]}%");
+            wordFilters.Append($"""
+
+              AND (
+                    UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @Like{i}
+                    OR UPPER(LTRIM(RTRIM(a.DESCRIPCION))) LIKE @Like{i}
+                    OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, '')))) LIKE @Like{i}
+              )
+            """);
+        }
+
+        var sql = $"""
+            SELECT TOP (@Take)
+                LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
+                ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS Codigo,
+                ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS Descripcion,
+                ISNULL(CAST(a.TasaIVA AS decimal(9,4)), 0) AS TasaIva,
+                ISNULL(a.PRECIO{clase}, 0) AS PrecioMaestro,
+                ISNULL(p.Precio{clase}, 0) AS PrecioLista
+            FROM dbo.V_MA_ARTICULOS a
+            LEFT JOIN dbo.V_MA_Precios p
+                ON p.IdArticulo = a.IDARTICULO
+               AND p.IdLista = @IdLista
+               AND p.TipoLista = 'V'
+            WHERE ISNULL(a.Suspendido, 0) <> 1
+              AND ISNULL(a.SuspendidoV, 0) <> 1
+              {wordFilters}
+            ORDER BY a.DESCRIPCION, a.IDARTICULO;
+            """;
+
+        var rows = await cn.QueryAsync<ArticuloPrecioRow>(new CommandDefinition(sql, parameters, cancellationToken: token));
+
+        var result = new List<CrmCotizacionArticuloDto>();
+        foreach (var row in rows)
+        {
+            var bruto = pricing.UsaListas && row.PrecioLista > 0 ? row.PrecioLista : row.PrecioMaestro;
+            var (neto, conIva) = SplitPrice(bruto, row.TasaIva, pricing.PreciosConIva);
+            result.Add(new CrmCotizacionArticuloDto
+            {
+                IdArticulo = row.IdArticulo,
+                Codigo = row.Codigo,
+                Descripcion = row.Descripcion,
+                TasaIva = decimal.Round(row.TasaIva, 4),
+                PrecioUnitarioNeto = neto,
+                PrecioUnitarioConIva = conIva
+            });
+        }
+
+        return result;
+    }
 
     public Task<IReadOnlyList<CrmCotizacionDto>> GetByOportunidadAsync(long idOportunidad, CancellationToken ct = default)
         => ExecuteLoggedAsync("CotizacionesPorOportunidad", async token =>
@@ -393,61 +398,162 @@ public sealed class CrmCotizacionService(
             if (pedido.Length == 0)
                 throw new InvalidOperationException("Escribí qué querés cotizar para que el asistente arme la propuesta.");
 
-            var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
-            if (string.IsNullOrWhiteSpace(apiKey))
-                throw new InvalidOperationException("El asistente de IA no está configurado (falta OPENAI_API_KEY en el servidor).");
-
-            var model = Environment.GetEnvironmentVariable("OPENAI_MODEL");
-            if (string.IsNullOrWhiteSpace(model))
-                model = "gpt-4o-mini";
-
             var cliente = string.IsNullOrWhiteSpace(clienteNombre) ? "el cliente" : clienteNombre.Trim();
-
-            var client = httpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(40);
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-            var payload = new
+            var messages = new object[]
             {
-                model,
-                temperature = 0.5,
-                messages = new object[]
+                new
                 {
-                    new
-                    {
-                        role = "system",
-                        content = """
-                            Sos un asistente comercial que redacta propuestas de cotización de servicios,
-                            profesionales, claras y persuasivas, en español rioplatense (voseo).
-                            Devolvés SOLO HTML simple para insertar en un editor: usá <h3>, <p>, <ul>, <li>,
-                            <strong> y <em>. No uses <html>, <head>, <body>, <script> ni estilos inline.
-                            Estructura sugerida: título, breve introducción, alcance/qué incluye (lista),
-                            y cierre. NO inventes precios ni importes: si hacen falta, dejá un marcador
-                            como <strong>[completar importe]</strong>.
-                            """
-                    },
-                    new
-                    {
-                        role = "user",
-                        content = $"Redactá una propuesta de servicio para {cliente}. Pedido: {pedido}"
-                    }
+                    role = "system",
+                    content = """
+                        Sos un asistente comercial que redacta propuestas de cotización de servicios,
+                        profesionales, claras y persuasivas, en español rioplatense (voseo).
+                        Devolvés SOLO HTML simple para insertar en un editor: usá <h3>, <p>, <ul>, <li>,
+                        <strong> y <em>. No uses <html>, <head>, <body>, <script> ni estilos inline.
+                        Estructura sugerida: título, breve introducción, alcance/qué incluye (lista),
+                        y cierre. NO inventes precios ni importes: si hacen falta, dejá un marcador
+                        como <strong>[completar importe]</strong>.
+                        """
+                },
+                new
+                {
+                    role = "user",
+                    content = $"Redactá una propuesta de servicio para {cliente}. Pedido: {pedido}"
                 }
             };
 
-            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, token);
-            var body = await response.Content.ReadAsStringAsync(token);
-            if (!response.IsSuccessStatusCode)
-                throw new InvalidOperationException("El asistente de IA no pudo generar la propuesta en este momento. Probá de nuevo en unos segundos.");
-
-            using var document = JsonDocument.Parse(body);
-            var texto = document.RootElement
-                .GetProperty("choices")[0]
-                .GetProperty("message")
-                .GetProperty("content")
-                .GetString();
+            var texto = await CallOpenAiChatAsync(messages, 0.5, token);
             return string.IsNullOrWhiteSpace(texto) ? string.Empty : texto.Trim();
         }, "No se pudo generar la propuesta con el asistente de IA.", ct);
+
+    public Task<IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>> SuggestLinesFromPromptAsync(string? clienteCodigo, string prompt, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SuggestLinesFromPrompt", async token =>
+        {
+            var pedido = (prompt ?? string.Empty).Trim();
+            if (pedido.Length == 0)
+                throw new InvalidOperationException("Escribí qué querés cotizar para que el asistente busque los artículos.");
+
+            var messages = new object[]
+            {
+                new
+                {
+                    role = "system",
+                    content = """
+                        Interpretás un pedido comercial y extraés los ítems a cotizar contra un catálogo
+                        de artículos. Devolvés SOLO JSON válido con esta forma exacta:
+                        {"items":[{"buscar":"palabra clave para buscar en el catálogo","cantidad":number}]}.
+                        'buscar' debe ser un término corto y genérico (ej. "harina", "aceite 900"), NO el
+                        pedido entero. Si el pedido menciona varias categorías, generá un item por cada una.
+                        Si no se indica cantidad, usá 1. NO inventes códigos, artículos ni precios.
+                        """
+                },
+                new { role = "user", content = pedido }
+            };
+
+            var json = await CallOpenAiChatAsync(messages, 0.2, token);
+            var intents = ParseIntents(json);
+            if (intents.Count == 0)
+                return (IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>)Array.Empty<CrmCotizacionAiLineaSugeridaDto>();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var pricing = await ResolvePricingContextInternalAsync(cn, clienteCodigo, token);
+
+            var sugerencias = new List<CrmCotizacionAiLineaSugeridaDto>();
+            var vistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var intent in intents.Take(10))
+            {
+                if (string.IsNullOrWhiteSpace(intent.Buscar))
+                    continue;
+                var articulos = await SearchArticulosCoreAsync(cn, pricing, intent.Buscar, 15, token);
+                foreach (var art in articulos)
+                {
+                    if (!vistos.Add(art.IdArticulo))
+                        continue;
+                    sugerencias.Add(new CrmCotizacionAiLineaSugeridaDto
+                    {
+                        Termino = intent.Buscar,
+                        IdArticulo = art.IdArticulo,
+                        Codigo = art.Codigo,
+                        Descripcion = art.Descripcion,
+                        PrecioUnitarioNeto = art.PrecioUnitarioNeto,
+                        PrecioUnitarioConIva = art.PrecioUnitarioConIva,
+                        TasaIva = art.TasaIva,
+                        Cantidad = intent.Cantidad > 0 ? intent.Cantidad : 1m
+                    });
+                    if (sugerencias.Count >= 80)
+                        break;
+                }
+                if (sugerencias.Count >= 80)
+                    break;
+            }
+
+            return (IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>)sugerencias;
+        }, "No se pudieron sugerir artículos con el asistente de IA.", ct);
+
+    private async Task<string> CallOpenAiChatAsync(object[] messages, double temperature, CancellationToken ct)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey))
+            throw new InvalidOperationException("El asistente de IA no está configurado (falta OPENAI_API_KEY en el servidor).");
+
+        var model = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        if (string.IsNullOrWhiteSpace(model))
+            model = "gpt-4o-mini";
+
+        var client = httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(40);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+        var payload = new { model, temperature, messages };
+        using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+        using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException("El asistente de IA no respondió en este momento. Probá de nuevo en unos segundos.");
+
+        using var document = JsonDocument.Parse(body);
+        return document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
+    }
+
+    private static List<(string Buscar, decimal Cantidad)> ParseIntents(string json)
+    {
+        var result = new List<(string, decimal)>();
+        if (string.IsNullOrWhiteSpace(json))
+            return result;
+
+        // El modelo a veces envuelve el JSON en ```json ... ```; recortamos al primer objeto.
+        var start = json.IndexOf('{');
+        var end = json.LastIndexOf('}');
+        if (start < 0 || end <= start)
+            return result;
+        var slice = json.Substring(start, end - start + 1);
+
+        try
+        {
+            using var doc = JsonDocument.Parse(slice);
+            if (!doc.RootElement.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                return result;
+            foreach (var item in items.EnumerateArray())
+            {
+                var buscar = item.TryGetProperty("buscar", out var b) ? b.GetString()?.Trim() ?? string.Empty : string.Empty;
+                decimal cantidad = 1m;
+                if (item.TryGetProperty("cantidad", out var c))
+                {
+                    if (c.ValueKind == JsonValueKind.Number && c.TryGetDecimal(out var cd))
+                        cantidad = cd;
+                    else if (c.ValueKind == JsonValueKind.String && decimal.TryParse(c.GetString(), out var cs))
+                        cantidad = cs;
+                }
+                if (!string.IsNullOrWhiteSpace(buscar))
+                    result.Add((buscar, cantidad));
+            }
+        }
+        catch (JsonException)
+        {
+            // Si el modelo no devolvió JSON válido, no sugerimos nada (el usuario puede reintentar).
+        }
+        return result;
+    }
 
     private static string HeaderSelectSql() => """
         SELECT
