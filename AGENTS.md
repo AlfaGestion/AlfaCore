@@ -45,6 +45,7 @@ Usar cuando:
 - Priorizar objetos definidos como “oficiales”
 - Todo error relevante debe registrarse en `AUX_ERR`, usando un servicio centralizado de logging.
 - Si una URL entra con `?directo=1`, AlfaCore debe quedar encerrado en ese módulo: no debe mostrar `Aplicaciones` ni accesos a otros módulos. Esta regla aplica a todos los módulos actuales y a cualquier módulo nuevo.
+- **Códigos-PK de texto (ancho fijo):** al grabar un PK de texto de un maestro/tabla de referencia (TA_/V_TA_/C_TA_, artículos, vendedores, etc.) se formatea al ancho del campo con la lógica estándar del sistema: **numérico → alineado a la derecha (blancos a la izquierda); alfanumérico → a la izquierda**. Usar `AlfaCore.Common.CodigoPk.Format(codigo, ancho)`. Para comparar/leer, hacerlo siempre con `LTRIM(RTRIM(...))`. Detalle y excepción (plan de cuentas `MA_CUENTAS`, siempre a la izquierda) en `docs/DATABASE_TABLES_SUMMARY.md`.
 
 ---
 

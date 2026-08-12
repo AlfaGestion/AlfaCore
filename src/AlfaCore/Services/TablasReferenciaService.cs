@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using AlfaCore.Common;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 
@@ -119,6 +120,11 @@ public sealed class TablasReferenciaService(
         }
         else
         {
+            // Al dar de alta, el código-PK se graba con el formato estándar del sistema
+            // (numérico a la derecha, alfanumérico a la izquierda), al ancho real del campo.
+            var ancho = await GetColumnCharLengthAsync(cn, registro.TablaFisica, registro.ColumnaCodigo, ct);
+            codigo = CodigoPk.Format(codigo, ancho);
+
             var colorColumn = registro.ColumnaColor is null ? string.Empty : $", [{registro.ColumnaColor}]";
             var colorParam = registro.ColumnaColor is null ? string.Empty : ", @Color";
             sql = $"""
@@ -220,6 +226,21 @@ public sealed class TablasReferenciaService(
             EnsureSafeIdentifier(registro.ColumnaColor, "columna Color");
 
         return registro;
+    }
+
+    private static async Task<int> GetColumnCharLengthAsync(SqlConnection cn, string tabla, string columna, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) CHARACTER_MAXIMUM_LENGTH
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = @Tabla AND COLUMN_NAME = @Columna;
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Tabla", tabla);
+        cmd.Parameters.AddWithValue("@Columna", columna);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        // -1 = MAX; null = no encontrada. En ambos casos no rellenamos (ancho 0).
+        return result is int len && len > 0 ? len : 0;
     }
 
     private static void EnsureSafeIdentifier(string value, string label)
