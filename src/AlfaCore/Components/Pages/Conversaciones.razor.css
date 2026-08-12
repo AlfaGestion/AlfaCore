@@ -773,6 +773,9 @@
     padding: .72rem .78rem .9rem !important;
     gap: .68rem !important;
     border-bottom-color: rgba(56, 189, 248, .1) !important;
+    /* Borde izquierdo reservado siempre (transparente) para que las filas asignadas,
+       que lo pintan con el color del usuario, no desplacen su contenido. */
+    border-left: 4px solid transparent !important;
     overflow: hidden !important;
 }
 
@@ -2551,39 +2554,15 @@
     }
 }
 
-/* Identidad visual compartida con Calendario para conversaciones asignadas. */
+/* Conversación asignada: solo una línea vertical izquierda con el color del usuario,
+   sin teñir toda la fila (así no se confunde con el estado seleccionado). */
 .conversations-page--odoo .conversation-row.has-technician {
-    border-left: 3px solid var(--technician-color) !important;
-    background:
-        linear-gradient(
-            90deg,
-            color-mix(in srgb, var(--technician-color) 27%, #0b1822),
-            color-mix(in srgb, var(--technician-color) 13%, #0b1822) 78%
-        ) !important;
-    box-shadow:
-        inset 3px 0 0 var(--technician-color),
-        inset 0 1px 0 color-mix(in srgb, var(--technician-color) 20%, transparent) !important;
-}
-
-.conversations-page--odoo .conversation-row.has-technician:hover {
-    background:
-        linear-gradient(
-            90deg,
-            color-mix(in srgb, var(--technician-color) 34%, #102431),
-            color-mix(in srgb, var(--technician-color) 18%, #102431) 78%
-        ) !important;
+    border-left: 4px solid var(--technician-color) !important;
 }
 
 .conversations-page--odoo .conversation-row.has-technician.is-selected {
-    background:
-        linear-gradient(
-            90deg,
-            color-mix(in srgb, var(--technician-color) 38%, #173247),
-            color-mix(in srgb, var(--technician-color) 21%, #173247) 82%
-        ) !important;
-    box-shadow:
-        inset 4px 0 0 var(--technician-color),
-        inset 0 0 0 1px color-mix(in srgb, var(--technician-color) 24%, transparent) !important;
+    border-left-width: 4px !important;
+    border-left-color: var(--technician-color) !important;
 }
 
 .conversations-page--odoo .conversation-badge--technician {
