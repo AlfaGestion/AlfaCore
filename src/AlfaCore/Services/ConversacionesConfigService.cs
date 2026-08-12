@@ -787,8 +787,11 @@ public sealed class ConversacionesConfigService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
+            // El código se devuelve SIN espacios: los códigos de TA_CLASIFICACIONES vienen
+            // right-justified ("   1") y el valor guardado en CLASIFICA1/2/3 se guarda trimmeado,
+            // así que el <option> debe usar el código trimmeado para que el select seleccione bien.
             const string sql = """
-                SELECT DISTINCT ISNULL(Codigo, ''), ISNULL(Descripcion, '')
+                SELECT DISTINCT ISNULL(LTRIM(RTRIM(Codigo)), ''), ISNULL(Descripcion, '')
                 FROM dbo.TA_CLASIFICACIONES
                 WHERE LTRIM(RTRIM(ISNULL(Codigo, ''))) <> ''
                 ORDER BY 2, 1
