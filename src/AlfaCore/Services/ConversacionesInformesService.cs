@@ -337,7 +337,14 @@ public sealed class ConversacionesInformesService(
                 return vacio;
             }
 
-            var resumen = await asistenteService.ResumirAsync(BuildResumenInstrucciones(det), BuildConversacionesTexto(det), token);
+            string tono;
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(token);
+                tono = (await ReadConfigAsync(cn, "CONV_INFORME_INSTRUCCIONES", token)).Trim();
+            }
+
+            var resumen = await asistenteService.ResumirAsync(BuildResumenInstrucciones(det, tono), BuildConversacionesTexto(det), token);
             if (string.IsNullOrWhiteSpace(resumen))
                 throw new InvalidOperationException("No se pudo generar el resumen. Verificá que OPENAI_API_KEY esté configurada en el servidor.");
 
@@ -445,15 +452,18 @@ public sealed class ConversacionesInformesService(
     private static string TextoAEnviar(ConversacionInformeFilaDto fila)
         => !string.IsNullOrWhiteSpace(fila.ResumenEditado) ? fila.ResumenEditado.Trim() : (fila.ResumenBorrador ?? string.Empty).Trim();
 
-    private static string BuildResumenInstrucciones(ConversacionInformeDetalleDto det)
+    private static string BuildResumenInstrucciones(ConversacionInformeDetalleDto det, string tono)
     {
         var meses = new[] { "", "enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre" };
         var mesNombre = det.Mes >= 1 && det.Mes <= 12 ? meses[det.Mes] : det.Mes.ToString();
         var rubro = string.IsNullOrWhiteSpace(det.Fila.CategoriaDesc) ? string.Empty : $" (rubro: {det.Fila.CategoriaDesc})";
+        // Tono/persona configurable por el usuario; el formato y las reglas de abajo quedan fijas.
+        var persona = string.IsNullOrWhiteSpace(tono)
+            ? ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones
+            : tono.Trim();
         return
-            $"Sos parte del equipo de soporte técnico de software y le escribís AL CLIENTE \"{det.Fila.NombreMostrar}\"{rubro} " +
-            $"un resumen de la atención que le dimos durante {mesNombre}. Escribís en primera persona del plural (\"trabajamos\", " +
-            "\"resolvimos\", \"quedamos\"), en español rioplatense, tono profesional y cercano.\n\n" +
+            persona + "\n\n" +
+            $"Le estás escribiendo al cliente \"{det.Fila.NombreMostrar}\"{rubro}, sobre la atención que le dimos durante {mesNombre}.\n\n" +
             "FORMATO (respetalo):\n" +
             "- Arrancá con UNA sola línea de introducción (ej: \"Te dejamos un resumen de lo que trabajamos este mes:\").\n" +
             "- Después, entre 3 y 6 viñetas, cada una empezando con \"• \", una por tema/consulta concreta, diciendo qué se hizo " +

@@ -813,6 +813,18 @@
                     </div>
                 </div>
 
+                <div class="conv-config-fields conv-bot-config">
+                    <div class="conv-config-fields__full">
+                        <h4 class="conv-bot-config__title"><i class="bi bi-file-earmark-bar-graph-fill"></i> Informe mensual (resumen IA)</h4>
+                        <p class="panel-card__subtitle">Tono e instrucciones que usa la IA al redactar el resumen de atención por cliente en Informes. Definís solo el estilo; el formato (viñetas, largo, no inventar, sin saludo/firma) queda fijo para que siempre salga prolijo. Si lo dejás vacío, se usa el texto por defecto.</p>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label for="informe-instrucciones">Instrucciones del informe (tono / persona)</label>
+                        <textarea id="informe-instrucciones" rows="4" @bind="_automatizacionesConfig.InformeInstrucciones"
+                                  placeholder="@AlfaCore.Models.ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones"></textarea>
+                    </div>
+                </div>
+
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="SaveAutomatizacionesAsync" disabled="@(Loading || Saving)">
                         <i class="bi bi-floppy-fill"></i> Guardar automatizaciones
