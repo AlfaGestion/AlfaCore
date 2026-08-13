@@ -62,18 +62,18 @@
                             {
                                 <div class="rubros-compare__row">
                                     <div class="rubros-compare__head">
-                                        <strong>@rubro.Rubro</strong>
+                                        <strong>@RubroTexto(rubro.Rubro)</strong>
                                         <span>@Moneda(rubro.TotalVendido)</span>
                                     </div>
                                     <div class="rubros-compare__track">
                                         @foreach (var unidad in _page.UnidadesNegocio.Select((item, index) => new { item, index }))
                                         {
-                                            var valorUnidad = ValorUnidad(rubro, unidad.item.Codigo);
-                                            if (valorUnidad > 0 && rubro.TotalVendido > 0)
+                                            var detalleUnidad = DetalleUnidad(rubro, unidad.item.Codigo);
+                                            if (detalleUnidad.TotalVendido > 0 && rubro.TotalVendido > 0)
                                             {
-                                                var ancho = Math.Max((double)(valorUnidad / rubro.TotalVendido) * 100d, 2d);
+                                                var ancho = Math.Max((double)(detalleUnidad.TotalVendido / rubro.TotalVendido) * 100d, 2d);
                                                 <div class="rubros-compare__segment"
-                                                     title="@unidad.item.Descripcion: @Moneda(valorUnidad)"
+                                                     title="@unidad.item.Descripcion: @Moneda(detalleUnidad.TotalVendido) - @Porcentaje(detalleUnidad.Participacion)"
                                                      style="width:@ancho.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%;background:@ColorUnidad(unidad.index)">
                                                 </div>
                                             }
@@ -123,10 +123,16 @@
                         @foreach (var item in _page.Rubros)
                         {
                             <tr>
-                                <td><strong>@item.Rubro</strong></td>
+                                <td><strong>@RubroTexto(item.Rubro)</strong></td>
                                 @foreach (var unidad in _page.UnidadesNegocio)
                                 {
-                                    <td style="text-align:right;">@Moneda(ValorUnidad(item, unidad.Codigo))</td>
+                                    var detalleUnidad = DetalleUnidad(item, unidad.Codigo);
+                                    <td style="text-align:right;">
+                                        <span class="rubros-unit-cell">
+                                            <strong>@Moneda(detalleUnidad.TotalVendido)</strong>
+                                            <small>@Porcentaje(detalleUnidad.Participacion)</small>
+                                        </span>
+                                    </td>
                                 }
                                 <td style="text-align:right;"><strong>@Moneda(item.TotalVendido)</strong></td>
                             </tr>
@@ -145,7 +151,7 @@
                         @foreach (var item in _page.Rubros)
                         {
                             <tr>
-                                <td><strong>@item.Rubro</strong></td>
+                                <td><strong>@RubroTexto(item.Rubro)</strong></td>
                                 <td style="text-align:right;">@Moneda(item.TotalVendido)</td>
                                 <td style="text-align:right;">@Porcentaje(item.Participacion)</td>
                                 <td style="text-align:right;">@item.CantidadArticulos.ToString("N0")</td>
@@ -193,8 +199,14 @@
     private static decimal ValorUnidad(VentasRubroResumenDto rubro, string codigo)
         => rubro.UnidadesNegocio.FirstOrDefault(x => x.Codigo == codigo)?.TotalVendido ?? 0;
 
+    private static VentasRubroUnidadNegocioDto DetalleUnidad(VentasRubroResumenDto rubro, string codigo)
+        => rubro.UnidadesNegocio.FirstOrDefault(x => x.Codigo == codigo) ?? new VentasRubroUnidadNegocioDto();
+
     private decimal TotalUnidad(string codigo)
         => _page?.Rubros.Sum(r => ValorUnidad(r, codigo)) ?? 0;
+
+    private static string RubroTexto(string? rubro)
+        => string.IsNullOrWhiteSpace(rubro) ? "Sin rubro" : rubro;
 
     private static string ColorUnidad(int index)
     {

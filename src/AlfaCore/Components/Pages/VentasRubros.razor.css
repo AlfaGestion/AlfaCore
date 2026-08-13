@@ -11,6 +11,19 @@
     min-width: 0;
 }
 
+.rubros-unit-cell {
+    display: inline-grid;
+    gap: 0.1rem;
+    justify-items: end;
+    line-height: 1.15;
+}
+
+.rubros-unit-cell small {
+    color: var(--color-muted);
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
 .rubros-compare__legend {
     display: flex;
     flex-wrap: wrap;
