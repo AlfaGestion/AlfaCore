@@ -163,20 +163,30 @@ public sealed class ActualizacionesService(
                         await InsertHistoryAsync(cn, script, versionAnterior, script.VersionKey, source.RutaOrigenActiva, "OK",
                             "Actualización aplicada correctamente.", actor, pc, null, token);
 
-                        await appEvents.LogAuditAsync(
-                            "Actualizaciones",
-                            "ApplyScript",
-                            HistoryTable,
-                            script.Archivo,
-                            "Actualización SQL aplicada.",
-                            new
-                            {
+                        // El log de auditoría es informativo: si falla (p.ej. permisos del archivo de
+                        // diagnóstico), no debe hacer pasar por "ERROR" una actualización que ya se
+                        // aplicó y ya quedó registrada como OK arriba.
+                        try
+                        {
+                            await appEvents.LogAuditAsync(
+                                "Actualizaciones",
+                                "ApplyScript",
+                                HistoryTable,
                                 script.Archivo,
-                                VersionAnterior = versionAnterior,
-                                VersionNueva = script.VersionKey,
-                                RutaOrigen = source.RutaOrigenActiva
-                            },
-                            token);
+                                "Actualización SQL aplicada.",
+                                new
+                                {
+                                    script.Archivo,
+                                    VersionAnterior = versionAnterior,
+                                    VersionNueva = script.VersionKey,
+                                    RutaOrigen = source.RutaOrigenActiva
+                                },
+                                token);
+                        }
+                        catch
+                        {
+                            // Ignorado a propósito: ver comentario arriba.
+                        }
 
                         versionAnterior = script.VersionKey;
                         applied.Add(script.Archivo);
