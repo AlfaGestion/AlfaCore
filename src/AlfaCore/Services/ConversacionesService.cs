@@ -3330,9 +3330,12 @@ public sealed class ConversacionesService(
                 {
                     await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
                     await NotifyIncomingMessageAsync(conversationId, messageId, token);
-                    await TryAutoReplyWelcomeAsync(conversationId, token);
-                    await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                    await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                    if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                    {
+                        await TryAutoReplyWelcomeAsync(conversationId, token);
+                        await TryAutoReplyOutOfHoursAsync(conversationId, token);
+                        await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                    }
                 }
                 processed++;
             }
@@ -3403,7 +3406,15 @@ public sealed class ConversacionesService(
 
                     await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: true);
                     if (storedMessage.Created)
+                    {
                         await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        {
+                            await TryAutoReplyWelcomeAsync(conversationId, token);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                        }
+                    }
                     processed++;
                 }
 
@@ -3464,7 +3475,15 @@ public sealed class ConversacionesService(
 
                     await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: true);
                     if (storedMessage.Created)
+                    {
                         await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        {
+                            await TryAutoReplyWelcomeAsync(conversationId, token);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                        }
+                    }
                     processed++;
                 }
 
@@ -3528,7 +3547,15 @@ public sealed class ConversacionesService(
 
                     await RefreshConversationAsync(conversationId, incoming.Timestamp, incoming.Text, token, reopenIfClosed: true);
                     if (storedMessage.Created)
+                    {
                         await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        {
+                            await TryAutoReplyWelcomeAsync(conversationId, token);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                        }
+                    }
                     processed++;
                 }
 
@@ -6479,7 +6506,8 @@ public sealed class ConversacionesService(
                     return;
             }
 
-            if (!await IsWhatsAppWindowActiveAsync(idConversacion, ct).ConfigureAwait(false))
+            var canalBot = await GetConversationChannelAsync(idConversacion, ct).ConfigureAwait(false);
+            if (!await IsSendWindowActiveAsync(idConversacion, canalBot, ct).ConfigureAwait(false))
                 return;
 
             var (botCount, lastSistema) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
@@ -6891,11 +6919,169 @@ public sealed class ConversacionesService(
 
     private static readonly HashSet<string> AutomaticSystems = new(StringComparer.OrdinalIgnoreCase)
     {
-        "AUTOMATIZACION", "BIENVENIDA", "BOT", "AUTOCIERRE_AVISO", "AUTOCIERRE"
+        "AUTOMATIZACION", "BIENVENIDA", "BOT", "AUTOCIERRE_AVISO", "AUTOCIERRE", "REGLA"
     };
 
     private static bool IsAutomaticSystem(string? sistema)
         => !string.IsNullOrWhiteSpace(sistema) && AutomaticSystems.Contains(sistema.Trim());
+
+    // Motor de reglas / palabras clave. Corre en cada mensaje entrante (todos los canales), antes de
+    // bienvenida/bot. Evalúa las reglas activas por Orden; la primera que coincide aplica sus acciones
+    // (responder, derivar a un técnico, fijar prioridad) y, si tiene Detener=1, corta el resto — incluidas
+    // las auto-respuestas de bienvenida/bot. Devuelve true si alguna regla pidió detener.
+    private async Task<bool> TryAutoReplyReglasAsync(long idConversacion, string? incomingText, CancellationToken ct)
+    {
+        try
+        {
+            if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+                return false;
+
+            var texto = (incomingText ?? string.Empty).Trim();
+            if (texto.Length == 0)
+                return false;
+
+            var reglas = await conversacionesConfigService.GetReglasAsync(ct).ConfigureAwait(false);
+            if (reglas.Count == 0)
+                return false;
+
+            var conversation = await RequireConversationAsync(idConversacion, ct).ConfigureAwait(false);
+            var canal = (conversation.Canal ?? string.Empty).Trim();
+            var textoLower = texto.ToLowerInvariant();
+            string? tecnicoActual = null;
+
+            foreach (var regla in reglas.Where(r => r.Activa).OrderBy(r => r.Orden).ThenBy(r => r.IdRegla))
+            {
+                if (!string.IsNullOrWhiteSpace(regla.Canal)
+                    && !string.Equals(regla.Canal, canal, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!CoincideRegla(textoLower, regla))
+                    continue;
+
+                if (regla.SoloSinAsignar)
+                {
+                    tecnicoActual ??= await GetConversationTechnicianIdAsync(idConversacion, ct).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(tecnicoActual))
+                        continue;
+                }
+
+                // Etiquetar: fijar prioridad de la conversación.
+                if (!string.IsNullOrWhiteSpace(regla.Prioridad))
+                    await SetConversationPrioridadAsync(idConversacion, regla.Prioridad, ct).ConfigureAwait(false);
+
+                // Derivar: asignar a un técnico.
+                if (!string.IsNullOrWhiteSpace(regla.AsignarTecnico))
+                {
+                    await AssignConversationAsync(new ConversacionAsignacionRequest
+                    {
+                        IdConversacion = idConversacion,
+                        IdTecnico = regla.AsignarTecnico.Trim(),
+                        UsuarioAccion = "AlfaCore",
+                        SistemaAccion = "REGLA",
+                        Observaciones = $"Asignada por la regla '{regla.Nombre}'."
+                    }, ct).ConfigureAwait(false);
+                    tecnicoActual = regla.AsignarTecnico.Trim();
+                }
+
+                // Responder: auto-respuesta de texto (si el canal/ventana lo permiten).
+                if (!string.IsNullOrWhiteSpace(regla.RespuestaTexto))
+                {
+                    try
+                    {
+                        await SendMessageAsync(new ConversacionSendMessageRequest
+                        {
+                            IdConversacion = idConversacion,
+                            Texto = regla.RespuestaTexto.Trim(),
+                            MessageType = "TEXT",
+                            UsuarioAccion = "AlfaCore",
+                            SistemaAccion = "REGLA"
+                        }, ct).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        // Ventana vencida / canal sin envío: la derivación y la prioridad ya se aplicaron.
+                        await _appEvents.LogErrorAsync(
+                            "Conversaciones", "ReglaRespuesta", ex,
+                            "No se pudo enviar la respuesta automática de una regla.",
+                            new { idConversacion, regla.Nombre }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+                    }
+                }
+
+                await _appEvents.LogAuditAsync(
+                    "Conversaciones", "ReglaAplicada", "CONV_CONVERSACIONES",
+                    idConversacion.ToString(CultureInfo.InvariantCulture),
+                    $"Se aplicó la regla '{regla.Nombre}'.",
+                    new { idConversacion, regla.IdRegla, regla.Nombre, regla.Detener }, ct).ConfigureAwait(false);
+
+                if (regla.Detener)
+                    return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones", "ReglasMotor", ex,
+                "No se pudieron procesar las reglas de palabras clave.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    private static bool CoincideRegla(string textoLower, ConversacionReglaDto regla)
+    {
+        var palabras = (regla.Palabras ?? string.Empty)
+            .Split(new[] { ',', ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (palabras.Length == 0)
+            return false;
+
+        var tipo = (regla.TipoCoincidencia ?? string.Empty).Trim().ToUpperInvariant();
+        foreach (var palabra in palabras)
+        {
+            var kw = palabra.Trim().ToLowerInvariant();
+            if (kw.Length == 0)
+                continue;
+
+            var coincide = tipo switch
+            {
+                "IGUAL" => string.Equals(textoLower, kw, StringComparison.Ordinal),
+                "EMPIEZA" => textoLower.StartsWith(kw, StringComparison.Ordinal),
+                _ => textoLower.Contains(kw, StringComparison.Ordinal)
+            };
+
+            if (coincide)
+                return true;
+        }
+
+        return false;
+    }
+
+    private async Task SetConversationPrioridadAsync(long idConversacion, string prioridad, CancellationToken ct)
+    {
+        var p = (prioridad ?? string.Empty).Trim().ToUpperInvariant();
+        if (p is not ("BAJA" or "MEDIA" or "ALTA" or "URGENTE"))
+            return;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(
+            "UPDATE dbo.CONV_CONVERSACIONES SET Prioridad = @Prioridad WHERE IdConversacion = @Id;", cn);
+        cmd.Parameters.AddWithValue("@Prioridad", p);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    // Ventana de envío según el canal: WhatsApp e Instagram/Facebook tienen ventana de 24 h; Mercado
+    // Libre e INTERNO no. Se usa para no gastar una llamada de IA del bot si igual no se podría enviar.
+    private async Task<bool> IsSendWindowActiveAsync(long idConversacion, string canal, CancellationToken ct)
+    {
+        if (string.Equals(canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase))
+            return await IsWhatsAppWindowActiveAsync(idConversacion, ct).ConfigureAwait(false);
+        if (string.Equals(canal, "INSTAGRAM", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(canal, "FACEBOOK", StringComparison.OrdinalIgnoreCase))
+            return await IsInstagramWindowActiveAsync(idConversacion, ct).ConfigureAwait(false);
+        return true;
+    }
 
     // Bienvenida al primer contacto: cuando llega el primer mensaje de una conversación de WhatsApp
     // y todavía no le respondimos nada, manda una sola vez el mensaje de bienvenida.
@@ -8648,6 +8834,24 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is not null && result is not DBNull && Convert.ToBoolean(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<string> GetConversationChannelAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(Canal, '')
+            FROM dbo.CONV_CONVERSACIONES
+            WHERE IdConversacion = @IdConversacion
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null || result is DBNull
+            ? string.Empty
+            : Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty;
     }
 
     private async Task<string> GetConversationTechnicianIdAsync(long idConversacion, CancellationToken ct)

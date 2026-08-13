@@ -278,3 +278,39 @@ public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
     public string Message { get; set; } = string.Empty;
 }
 
+
+/// <summary>
+/// Regla del motor de palabras clave de Conversaciones. Vigila los mensajes entrantes
+/// de cualquier canal y, si coincide una palabra clave, aplica sus acciones (responder,
+/// derivar a un técnico, fijar prioridad). Ver CONV_REGLAS.
+/// </summary>
+public sealed class ConversacionReglaDto
+{
+    public int IdRegla { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public bool Activa { get; set; } = true;
+    public int Orden { get; set; } = 100;
+
+    /// <summary>CONTIENE | IGUAL | EMPIEZA.</summary>
+    public string TipoCoincidencia { get; set; } = "CONTIENE";
+
+    /// <summary>Palabras/frases separadas por coma o salto de línea (coincide con cualquiera).</summary>
+    public string Palabras { get; set; } = string.Empty;
+
+    /// <summary>'' = todos los canales; o WHATSAPP/INSTAGRAM/FACEBOOK/MERCADOLIBRE.</summary>
+    public string Canal { get; set; } = string.Empty;
+
+    /// <summary>Solo actúa si la conversación no tiene un técnico asignado.</summary>
+    public bool SoloSinAsignar { get; set; } = true;
+
+    public string RespuestaTexto { get; set; } = string.Empty;
+
+    /// <summary>IdTecnico a asignar (derivar); vacío = no deriva.</summary>
+    public string AsignarTecnico { get; set; } = string.Empty;
+
+    /// <summary>BAJA | MEDIA | ALTA | URGENTE; vacío = no cambia la prioridad.</summary>
+    public string Prioridad { get; set; } = string.Empty;
+
+    /// <summary>Si coincide, detiene el resto de reglas y las auto-respuestas (bienvenida/bot).</summary>
+    public bool Detener { get; set; } = true;
+}

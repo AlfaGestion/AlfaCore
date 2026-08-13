@@ -1,6 +1,7 @@
 @page "/conversaciones/configuracion"
 @page "/{idweb}/{idbase:int}/conversaciones/configuracion"
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
+@inject AlfaCore.Services.IConversacionesService ConvSvc
 @inject AlfaCore.Services.IAnyDeskLocalSettingsService AnyDeskSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppModeService AppMode
@@ -805,6 +806,164 @@
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
                     <div>
+                        <h3 class="panel-card__title">Reglas / palabras clave</h3>
+                        <p class="panel-card__subtitle">Cuando llega un mensaje entrante (cualquier canal) y coincide una palabra clave, la regla puede responder, derivar a un técnico y/o fijar la prioridad. Se evalúan por orden; la primera que coincide y tiene «detener» corta el resto.</p>
+                    </div>
+                    <span class="panel-card__tag">CONV_REGLAS</span>
+                </div>
+
+                @if (_reglas.Count == 0)
+                {
+                    <p class="panel-card__subtitle">Todavía no hay reglas cargadas. El motor está inactivo hasta que agregues al menos una.</p>
+                }
+                else
+                {
+                    @foreach (var regla in _reglas)
+                    {
+                        <div class="conv-whatsapp-numero-card">
+                            <div class="conv-config-fields__full">
+                                <strong>#@regla.Orden — @regla.Nombre</strong>
+                                @if (!regla.Activa)
+                                {
+                                    <span class="panel-card__tag">inactiva</span>
+                                }
+                                <p class="panel-card__subtitle">@DescribirCanalRegla(regla.Canal) · @regla.TipoCoincidencia.ToLowerInvariant(): @regla.Palabras · @DescribirAccionesRegla(regla)@(regla.Detener ? " · detiene" : "")</p>
+                            </div>
+                            <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarRegla(regla)" disabled="@(Loading || Saving)">
+                                    <i class="bi bi-pencil"></i> Editar
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EliminarReglaAsync(regla)" disabled="@(Loading || Saving)">
+                                    <i class="bi bi-trash"></i> Eliminar
+                                </button>
+                            </div>
+                        </div>
+                    }
+                }
+
+                @if (_reglaEdicion is null)
+                {
+                    <div class="actions">
+                        <button type="button" class="btn btn--primary" @onclick="NuevaRegla" disabled="@(Loading || Saving)">
+                            <i class="bi bi-plus-lg"></i> Nueva regla
+                        </button>
+                    </div>
+                }
+                else
+                {
+                    <div class="conv-whatsapp-numero-card conv-whatsapp-numero-card--nuevo">
+                        <div class="conv-config-fields conv-bot-config">
+                            <div class="conv-config-fields__full">
+                                <h4 class="conv-bot-config__title"><i class="bi bi-sliders"></i> @(_reglaEsNueva ? "Nueva regla" : $"Editar regla: {_reglaEdicion.Nombre}")</h4>
+                            </div>
+                            <div class="field">
+                                <label>Nombre</label>
+                                <input @bind="_reglaEdicion.Nombre" placeholder="Ej: Horarios de atención" />
+                            </div>
+                            <div class="field">
+                                <label>Orden (menor = mayor prioridad)</label>
+                                <input type="number" min="1" @bind="_reglaEdicion.Orden" />
+                            </div>
+                            <div class="field">
+                                <label>Canal</label>
+                                <select @bind="_reglaEdicion.Canal">
+                                    <option value="">Todos los canales</option>
+                                    <option value="WHATSAPP">WhatsApp</option>
+                                    <option value="INSTAGRAM">Instagram</option>
+                                    <option value="FACEBOOK">Facebook</option>
+                                    <option value="MERCADOLIBRE">Mercado Libre</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>Tipo de coincidencia</label>
+                                <select @bind="_reglaEdicion.TipoCoincidencia">
+                                    <option value="CONTIENE">El mensaje contiene…</option>
+                                    <option value="EMPIEZA">El mensaje empieza con…</option>
+                                    <option value="IGUAL">El mensaje es exactamente…</option>
+                                </select>
+                            </div>
+                            <div class="field conv-config-fields__full">
+                                <label>Palabras / frases (separadas por coma; coincide con cualquiera)</label>
+                                <input @bind="_reglaEdicion.Palabras" placeholder="turnos, horario, atención" />
+                            </div>
+                            <div class="field conv-config-fields__full">
+                                <label>Respuesta automática (opcional)</label>
+                                <textarea rows="2" @bind="_reglaEdicion.RespuestaTexto" placeholder="Atendemos de 9 a 18 h. ¿En qué te ayudamos?"></textarea>
+                            </div>
+                            <div class="field">
+                                <label>Derivar a técnico (opcional)</label>
+                                <select @bind="_reglaEdicion.AsignarTecnico">
+                                    <option value="">No derivar</option>
+                                    @foreach (var t in _tecnicos)
+                                    {
+                                        <option value="@t.IdTecnico">@t.Nombre</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>Fijar prioridad (opcional)</label>
+                                <select @bind="_reglaEdicion.Prioridad">
+                                    <option value="">No cambiar</option>
+                                    <option value="BAJA">Baja</option>
+                                    <option value="MEDIA">Media</option>
+                                    <option value="ALTA">Alta</option>
+                                    <option value="URGENTE">Urgente</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label class="conv-config-checkbox">
+                                    <input type="checkbox" @bind="_reglaEdicion.Activa" />
+                                    <span>Activa</span>
+                                </label>
+                            </div>
+                            <div class="field">
+                                <label class="conv-config-checkbox">
+                                    <input type="checkbox" @bind="_reglaEdicion.SoloSinAsignar" />
+                                    <span>Solo si nadie la tiene asignada</span>
+                                </label>
+                            </div>
+                            <div class="field">
+                                <label class="conv-config-checkbox">
+                                    <input type="checkbox" @bind="_reglaEdicion.Detener" />
+                                    <span>Detener otras reglas y auto-respuestas si coincide</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="actions">
+                            <button type="button" class="btn btn--primary" @onclick="GuardarReglaAsync" disabled="@(Loading || Saving)">
+                                <i class="bi bi-floppy-fill"></i> Guardar regla
+                            </button>
+                            <button type="button" class="btn btn--ghost" @onclick="CancelarEdicionRegla" disabled="@(Loading || Saving)">
+                                Cancelar
+                            </button>
+                        </div>
+                    </div>
+                }
+            </section>
+
+            <aside class="panel-card conv-config-help">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Cómo funciona</h3>
+                        <p class="panel-card__subtitle">Menú por palabras clave, sin IA.</p>
+                    </div>
+                    <span class="panel-card__tag">Todos los canales</span>
+                </div>
+
+                <ol class="conv-config-steps">
+                    <li>En cada mensaje entrante se evalúan las reglas activas por orden (menor primero).</li>
+                    <li>La primera que coincide aplica sus acciones: responde, deriva a un técnico y/o fija la prioridad.</li>
+                    <li>Si esa regla tiene «detener», no se evalúan más reglas ni se dispara la bienvenida/bot.</li>
+                    <li>«Solo si nadie la tiene asignada» evita pisar una conversación que ya atiende una persona.</li>
+                    <li>La respuesta se manda si el canal/ventana lo permiten; la derivación y la prioridad se aplican igual.</li>
+                </ol>
+            </aside>
+    </div>
+
+    <div class="conv-config-layout">
+            <section class="panel-card conv-config-form">
+                <div class="panel-card__header">
+                    <div>
                         <h3 class="panel-card__title">Prioridad de atención</h3>
                         <p class="panel-card__subtitle">Qué clasificación de cliente cuenta como prioridad 1 (más importante), 2 o 3 para ordenar la cola de espera. El resto (sin clasificar o con otra clasificación) queda al final.</p>
                     </div>
@@ -1081,6 +1240,10 @@
     private ConversacionMercadoLibreConfigDto _mercadoLibreConfig = new();
     private ConversacionAlfaKnowledgeConfigDto _alfaKnowledgeConfig = new();
     private ConversacionAutomatizacionesConfigDto _automatizacionesConfig = new();
+    private IReadOnlyList<ConversacionReglaDto> _reglas = [];
+    private IReadOnlyList<ConversacionTecnicoOptionDto> _tecnicos = [];
+    private ConversacionReglaDto? _reglaEdicion;
+    private bool _reglaEsNueva;
     private ConversacionPrioridadConfigDto _prioridadConfig = new();
     private IReadOnlyList<ConversacionClasificacionOptionDto> _clasificaciones = [];
     private IReadOnlyList<UsuarioSistemaDto> _usuariosSistema = [];
@@ -1302,7 +1465,159 @@
             _feedback ??= administradoresResult.Feedback;
         }
 
+        await LoadReglasAsync();
+
+        var tecnicosResult = await UiOps.RunAsync(
+            () => ConvSvc.GetTechniciansAsync(),
+            "No se pudieron cargar los técnicos.");
+
+        if (tecnicosResult.Success && tecnicosResult.Value is not null)
+        {
+            _tecnicos = tecnicosResult.Value;
+        }
+        else
+        {
+            _feedback ??= tecnicosResult.Feedback;
+        }
+
         Loading = false;
+    }
+
+    private async Task LoadReglasAsync()
+    {
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.GetReglasAsync(),
+            "No se pudieron cargar las reglas de palabras clave.");
+
+        if (result.Success && result.Value is not null)
+        {
+            _reglas = result.Value;
+        }
+        else
+        {
+            _feedback ??= result.Feedback;
+        }
+    }
+
+    private void NuevaRegla()
+    {
+        _reglaEsNueva = true;
+        _reglaEdicion = new ConversacionReglaDto
+        {
+            Nombre = string.Empty,
+            Activa = true,
+            Orden = (_reglas.Count == 0 ? 0 : _reglas.Max(r => r.Orden)) + 10,
+            TipoCoincidencia = "CONTIENE",
+            SoloSinAsignar = true,
+            Detener = true
+        };
+    }
+
+    private void EditarRegla(ConversacionReglaDto regla)
+    {
+        _reglaEsNueva = false;
+        _reglaEdicion = new ConversacionReglaDto
+        {
+            IdRegla = regla.IdRegla,
+            Nombre = regla.Nombre,
+            Activa = regla.Activa,
+            Orden = regla.Orden,
+            TipoCoincidencia = regla.TipoCoincidencia,
+            Palabras = regla.Palabras,
+            Canal = regla.Canal,
+            SoloSinAsignar = regla.SoloSinAsignar,
+            RespuestaTexto = regla.RespuestaTexto,
+            AsignarTecnico = regla.AsignarTecnico,
+            Prioridad = regla.Prioridad,
+            Detener = regla.Detener
+        };
+    }
+
+    private void CancelarEdicionRegla()
+    {
+        _reglaEdicion = null;
+        _reglaEsNueva = false;
+    }
+
+    private async Task GuardarReglaAsync()
+    {
+        if (_reglaEdicion is null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(_reglaEdicion.Nombre))
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Falta el nombre",
+                Message = "Poné un nombre para identificar la regla."
+            };
+            return;
+        }
+
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveReglaAsync(_reglaEdicion),
+            "No se pudo guardar la regla.");
+
+        if (result.Success)
+        {
+            _feedback = AppUiMessage.Success("Regla guardada", $"'{_reglaEdicion.Nombre}' quedó actualizada.");
+            _reglaEdicion = null;
+            _reglaEsNueva = false;
+            await LoadReglasAsync();
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
+    private async Task EliminarReglaAsync(ConversacionReglaDto regla)
+    {
+        Saving = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.DeleteReglaAsync(regla.IdRegla),
+            "No se pudo eliminar la regla.");
+
+        if (result.Success)
+        {
+            _feedback = AppUiMessage.Success("Regla eliminada", $"'{regla.Nombre}' fue eliminada.");
+            if (_reglaEdicion?.IdRegla == regla.IdRegla)
+                _reglaEdicion = null;
+            await LoadReglasAsync();
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+    }
+
+    private static string DescribirCanalRegla(string? canal)
+        => (canal ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "WHATSAPP" => "WhatsApp",
+            "INSTAGRAM" => "Instagram",
+            "FACEBOOK" => "Facebook",
+            "MERCADOLIBRE" => "Mercado Libre",
+            _ => "Todos los canales"
+        };
+
+    private static string DescribirAccionesRegla(ConversacionReglaDto regla)
+    {
+        var acciones = new List<string>();
+        if (!string.IsNullOrWhiteSpace(regla.RespuestaTexto)) acciones.Add("responde");
+        if (!string.IsNullOrWhiteSpace(regla.AsignarTecnico)) acciones.Add("deriva");
+        if (!string.IsNullOrWhiteSpace(regla.Prioridad)) acciones.Add($"prioridad {regla.Prioridad.ToLowerInvariant()}");
+        return acciones.Count == 0 ? "—" : string.Join(" · ", acciones);
     }
 
     private async Task LoadNumerosAsync()

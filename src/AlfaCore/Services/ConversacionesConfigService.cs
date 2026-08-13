@@ -721,6 +721,152 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo guardar la configuración de automatizaciones.", ct);
     }
 
+    public Task<IReadOnlyList<ConversacionReglaDto>> GetReglasAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetReglas", async token =>
+        {
+            var reglas = new List<ConversacionReglaDto>();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            // La tabla puede no existir todavía en bases donde no corrió la migración: devolvemos vacío.
+            const string sql = """
+                IF OBJECT_ID(N'dbo.CONV_REGLAS', N'U') IS NULL
+                    SELECT TOP (0) 0 AS IdRegla, N'' AS Nombre, CAST(0 AS bit) AS Activa, 0 AS Orden,
+                        N'' AS TipoCoincidencia, N'' AS Palabras, N'' AS Canal, CAST(0 AS bit) AS SoloSinAsignar,
+                        N'' AS RespuestaTexto, N'' AS AsignarTecnico, N'' AS Prioridad, CAST(0 AS bit) AS Detener
+                ELSE
+                    SELECT IdRegla, ISNULL(Nombre, N''), ISNULL(Activa, 0), ISNULL(Orden, 100),
+                        ISNULL(TipoCoincidencia, N'CONTIENE'), ISNULL(Palabras, N''), ISNULL(Canal, N''),
+                        ISNULL(SoloSinAsignar, 1), ISNULL(RespuestaTexto, N''), ISNULL(LTRIM(RTRIM(AsignarTecnico)), N''),
+                        ISNULL(Prioridad, N''), ISNULL(Detener, 1)
+                    FROM dbo.CONV_REGLAS
+                    ORDER BY Orden, IdRegla;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                reglas.Add(new ConversacionReglaDto
+                {
+                    IdRegla = rd.GetInt32(0),
+                    Nombre = GetString(rd, 1),
+                    Activa = GetBool(rd, 2),
+                    Orden = rd.IsDBNull(3) ? 100 : rd.GetInt32(3),
+                    TipoCoincidencia = GetString(rd, 4),
+                    Palabras = GetString(rd, 5),
+                    Canal = GetString(rd, 6),
+                    SoloSinAsignar = GetBool(rd, 7),
+                    RespuestaTexto = GetString(rd, 8),
+                    AsignarTecnico = GetString(rd, 9),
+                    Prioridad = GetString(rd, 10),
+                    Detener = GetBool(rd, 11)
+                });
+            }
+
+            return (IReadOnlyList<ConversacionReglaDto>)reglas;
+        }, "No se pudieron cargar las reglas de conversaciones.", ct);
+
+    public Task<int> SaveReglaAsync(ConversacionReglaDto regla, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(regla);
+        if (string.IsNullOrWhiteSpace(regla.Nombre))
+            throw new InvalidOperationException("La regla necesita un nombre.");
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveRegla", async token =>
+        {
+            var tipo = NormalizeTipoCoincidencia(regla.TipoCoincidencia);
+            var canal = NormalizeReglaCanal(regla.Canal);
+            var prioridad = NormalizeReglaPrioridad(regla.Prioridad);
+            var tecnico = string.IsNullOrWhiteSpace(regla.AsignarTecnico) ? null : regla.AsignarTecnico.Trim();
+            var usuario = appUserSession.GetCurrentUserName("SYSTEM");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            await using var cmd = new SqlCommand(regla.IdRegla > 0
+                ? """
+                    UPDATE dbo.CONV_REGLAS SET
+                        Nombre = @Nombre, Activa = @Activa, Orden = @Orden, TipoCoincidencia = @Tipo,
+                        Palabras = @Palabras, Canal = @Canal, SoloSinAsignar = @SoloSinAsignar,
+                        RespuestaTexto = @Respuesta, AsignarTecnico = @Tecnico, Prioridad = @Prioridad,
+                        Detener = @Detener, FechaModificacion = GETDATE(), UsuarioModificacion = @Usuario
+                    WHERE IdRegla = @IdRegla;
+                    SELECT @IdRegla;
+                    """
+                : """
+                    INSERT INTO dbo.CONV_REGLAS
+                        (Nombre, Activa, Orden, TipoCoincidencia, Palabras, Canal, SoloSinAsignar,
+                         RespuestaTexto, AsignarTecnico, Prioridad, Detener, FechaAlta, UsuarioAlta)
+                    VALUES
+                        (@Nombre, @Activa, @Orden, @Tipo, @Palabras, @Canal, @SoloSinAsignar,
+                         @Respuesta, @Tecnico, @Prioridad, @Detener, GETDATE(), @Usuario);
+                    SELECT CAST(SCOPE_IDENTITY() AS int);
+                    """, cn);
+
+            cmd.Parameters.AddWithValue("@Nombre", regla.Nombre.Trim());
+            cmd.Parameters.AddWithValue("@Activa", regla.Activa);
+            cmd.Parameters.AddWithValue("@Orden", regla.Orden <= 0 ? 100 : regla.Orden);
+            cmd.Parameters.AddWithValue("@Tipo", tipo);
+            cmd.Parameters.AddWithValue("@Palabras", (regla.Palabras ?? string.Empty).Trim());
+            cmd.Parameters.AddWithValue("@Canal", canal);
+            cmd.Parameters.AddWithValue("@SoloSinAsignar", regla.SoloSinAsignar);
+            cmd.Parameters.AddWithValue("@Respuesta", (regla.RespuestaTexto ?? string.Empty).Trim());
+            cmd.Parameters.AddWithValue("@Tecnico", DbNullable(tecnico));
+            cmd.Parameters.AddWithValue("@Prioridad", string.IsNullOrEmpty(prioridad) ? (object)DBNull.Value : prioridad);
+            cmd.Parameters.AddWithValue("@Detener", regla.Detener);
+            cmd.Parameters.AddWithValue("@Usuario", usuario);
+            if (regla.IdRegla > 0)
+                cmd.Parameters.AddWithValue("@IdRegla", regla.IdRegla);
+
+            var result = await cmd.ExecuteScalarAsync(token);
+            var id = result is int i ? i : regla.IdRegla;
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones", "SaveRegla", "CONV_REGLAS",
+                id.ToString(CultureInfo.InvariantCulture),
+                regla.IdRegla > 0 ? "Regla de conversaciones actualizada." : "Regla de conversaciones creada.",
+                new { id, regla.Nombre, regla.Activa }, token);
+
+            return id;
+        }, "No se pudo guardar la regla de conversaciones.", ct);
+    }
+
+    public Task DeleteReglaAsync(int idRegla, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "DeleteRegla", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand("DELETE FROM dbo.CONV_REGLAS WHERE IdRegla = @IdRegla;", cn);
+            cmd.Parameters.AddWithValue("@IdRegla", idRegla);
+            await cmd.ExecuteNonQueryAsync(token);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones", "DeleteRegla", "CONV_REGLAS",
+                idRegla.ToString(CultureInfo.InvariantCulture),
+                "Regla de conversaciones eliminada.", new { idRegla }, token);
+
+            return true;
+        }, "No se pudo eliminar la regla de conversaciones.", ct);
+
+    private static string NormalizeTipoCoincidencia(string? tipo)
+    {
+        var t = (tipo ?? string.Empty).Trim().ToUpperInvariant();
+        return t is "IGUAL" or "EMPIEZA" ? t : "CONTIENE";
+    }
+
+    private static string NormalizeReglaCanal(string? canal)
+    {
+        var c = (canal ?? string.Empty).Trim().ToUpperInvariant();
+        return c is "WHATSAPP" or "INSTAGRAM" or "FACEBOOK" or "MERCADOLIBRE" ? c : string.Empty;
+    }
+
+    private static string NormalizeReglaPrioridad(string? prioridad)
+    {
+        var p = (prioridad ?? string.Empty).Trim().ToUpperInvariant();
+        return p is "BAJA" or "MEDIA" or "ALTA" or "URGENTE" ? p : string.Empty;
+    }
+
     public Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetPrioridadConfig", async token =>
         {
