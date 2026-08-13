@@ -6601,6 +6601,243 @@ public sealed class ConversacionesService(
         }
     }
 
+    // ===================== Mensajes programados (envío diferido) =====================
+
+    public Task<long> ProgramarMensajeAsync(ConversacionProgramarRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "ProgramarMensaje", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.IdConversacion <= 0)
+                throw new InvalidOperationException("La conversación es obligatoria.");
+
+            var tipo = string.Equals(request.TipoEnvio, "PLANTILLA", StringComparison.OrdinalIgnoreCase) ? "PLANTILLA" : "TEXTO";
+            if (tipo == "TEXTO" && string.IsNullOrWhiteSpace(request.Texto))
+                throw new InvalidOperationException("Escribí el mensaje a programar.");
+            if (tipo == "PLANTILLA" && (request.IdPlantilla is null || request.IdPlantilla <= 0))
+                throw new InvalidOperationException("Elegí una plantilla para programar fuera de la ventana de 24 h.");
+            if (request.FechaProgramada <= BusinessNow())
+                throw new InvalidOperationException("La fecha y hora deben ser futuras.");
+
+            var conversation = await RequireConversationAsync(request.IdConversacion, token);
+            if (!string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("Por ahora solo se pueden programar mensajes de WhatsApp.");
+
+            var valoresJson = JsonSerializer.Serialize(request.ValoresVariables ?? []);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            const string sql = """
+                INSERT INTO dbo.CONV_MENSAJES_PROGRAMADOS
+                    (IdConversacion, FechaProgramada, TipoEnvio, Texto, IdPlantilla, ValoresVariables,
+                     Estado, IdTecnicoAutor, UsuarioAutor, FechaCreacion)
+                VALUES
+                    (@IdConversacion, @FechaProgramada, @TipoEnvio, @Texto, @IdPlantilla, @ValoresVariables,
+                     N'PENDIENTE', @IdTecnicoAutor, @UsuarioAutor, GETDATE());
+                SELECT CAST(SCOPE_IDENTITY() AS bigint);
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
+            cmd.Parameters.AddWithValue("@FechaProgramada", request.FechaProgramada);
+            cmd.Parameters.AddWithValue("@TipoEnvio", tipo);
+            cmd.Parameters.AddWithValue("@Texto", (request.Texto ?? string.Empty).Trim());
+            cmd.Parameters.AddWithValue("@IdPlantilla", tipo == "PLANTILLA" ? request.IdPlantilla!.Value : (object)DBNull.Value);
+            cmd.Parameters.AddWithValue("@ValoresVariables", valoresJson);
+            cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullable(request.IdTecnicoAutor));
+            cmd.Parameters.AddWithValue("@UsuarioAutor", DbNullable(request.UsuarioAccion));
+            var result = await cmd.ExecuteScalarAsync(token);
+            var id = result is long l ? l : Convert.ToInt64(result, CultureInfo.InvariantCulture);
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "ProgramarMensaje", "CONV_MENSAJES_PROGRAMADOS",
+                id.ToString(CultureInfo.InvariantCulture),
+                "Se programó un mensaje para envío diferido.",
+                new { request.IdConversacion, request.FechaProgramada, tipo }, token);
+
+            return id;
+        }, "No se pudo programar el mensaje.", ct);
+
+    public Task<IReadOnlyList<ConversacionMensajeProgramadoDto>> GetMensajesProgramadosAsync(long idConversacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetMensajesProgramados", async token =>
+        {
+            var items = new List<ConversacionMensajeProgramadoDto>();
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            const string sql = """
+                IF OBJECT_ID(N'dbo.CONV_MENSAJES_PROGRAMADOS', N'U') IS NULL
+                    SELECT TOP (0) CAST(0 AS bigint) AS IdProgramado, CAST(0 AS bigint) AS IdConversacion,
+                        CAST(GETDATE() AS datetime) AS FechaProgramada, N'' AS TipoEnvio, N'' AS Texto,
+                        CAST(NULL AS bigint) AS IdPlantilla, N'' AS PlantillaNombre, N'' AS Estado,
+                        N'' AS MotivoError, N'' AS UsuarioAutor, CAST(GETDATE() AS datetime) AS FechaCreacion
+                ELSE
+                    SELECT p.IdProgramado, p.IdConversacion, p.FechaProgramada, p.TipoEnvio, ISNULL(p.Texto, N''),
+                        p.IdPlantilla, ISNULL(t.NombreVisible, N''), p.Estado, ISNULL(p.MotivoError, N''),
+                        ISNULL(p.UsuarioAutor, N''), p.FechaCreacion
+                    FROM dbo.CONV_MENSAJES_PROGRAMADOS p
+                    LEFT JOIN dbo.CONV_PLANTILLAS t ON t.IdPlantilla = p.IdPlantilla
+                    WHERE p.IdConversacion = @IdConversacion
+                      AND (p.Estado = N'PENDIENTE' OR p.FechaCreacion >= DATEADD(day, -7, GETDATE()))
+                    ORDER BY CASE WHEN p.Estado = N'PENDIENTE' THEN 0 ELSE 1 END, p.FechaProgramada;
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                items.Add(new ConversacionMensajeProgramadoDto
+                {
+                    IdProgramado = rd.GetInt64(0),
+                    IdConversacion = rd.GetInt64(1),
+                    FechaProgramada = rd.GetDateTime(2),
+                    TipoEnvio = GetString(rd, 3),
+                    Texto = GetString(rd, 4),
+                    IdPlantilla = rd.IsDBNull(5) ? null : rd.GetInt64(5),
+                    PlantillaNombre = GetString(rd, 6),
+                    Estado = GetString(rd, 7),
+                    MotivoError = GetString(rd, 8),
+                    UsuarioAutor = GetString(rd, 9),
+                    FechaCreacion = rd.GetDateTime(10)
+                });
+            }
+
+            return (IReadOnlyList<ConversacionMensajeProgramadoDto>)items;
+        }, "No se pudieron cargar los mensajes programados.", ct);
+
+    public Task CancelarMensajeProgramadoAsync(long idProgramado, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "CancelarMensajeProgramado", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(
+                "UPDATE dbo.CONV_MENSAJES_PROGRAMADOS SET Estado = N'CANCELADO' WHERE IdProgramado = @Id AND Estado = N'PENDIENTE';", cn);
+            cmd.Parameters.AddWithValue("@Id", idProgramado);
+            await cmd.ExecuteNonQueryAsync(token);
+            return true;
+        }, "No se pudo cancelar el mensaje programado.", ct);
+
+    public async Task<DateTime?> GetVentanaCierreWhatsAppAsync(long idConversacion, CancellationToken ct = default)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand("""
+            SELECT TOP (1) FechaHora FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'
+            ORDER BY FechaHora DESC, IdMensaje DESC;
+            """, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        if (result is null || result is DBNull)
+            return null;
+        return NormalizeStoredConversationTime(Convert.ToDateTime(result, CultureInfo.InvariantCulture)).AddHours(24);
+    }
+
+    // Job en segundo plano: envía los mensajes programados que llegaron a su hora. TEXTO solo si la
+    // ventana de WhatsApp sigue abierta; si está cerrada, marca error (debería haberse programado como
+    // PLANTILLA). PLANTILLA se envía siempre (es lo válido fuera de la ventana).
+    public async Task<int> ProcesarMensajesProgramadosAsync(CancellationToken ct = default)
+    {
+        int enviados = 0;
+        List<(long Id, long IdConv, string Tipo, string Texto, long? IdPlantilla, string Valores, string IdTecnico, string Usuario)> pendientes = new();
+        try
+        {
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(ct);
+                const string sql = """
+                    IF OBJECT_ID(N'dbo.CONV_MENSAJES_PROGRAMADOS', N'U') IS NULL RETURN;
+                    SELECT TOP (50) IdProgramado, IdConversacion, TipoEnvio, ISNULL(Texto, N''), IdPlantilla,
+                        ISNULL(ValoresVariables, N'[]'), ISNULL(LTRIM(RTRIM(IdTecnicoAutor)), N''), ISNULL(UsuarioAutor, N'')
+                    FROM dbo.CONV_MENSAJES_PROGRAMADOS
+                    WHERE Estado = N'PENDIENTE' AND FechaProgramada <= GETDATE()
+                    ORDER BY FechaProgramada;
+                    """;
+                await using var cmd = new SqlCommand(sql, cn);
+                await using var rd = await cmd.ExecuteReaderAsync(ct);
+                while (await rd.ReadAsync(ct))
+                    pendientes.Add((rd.GetInt64(0), rd.GetInt64(1), GetString(rd, 2), GetString(rd, 3),
+                        rd.IsDBNull(4) ? null : rd.GetInt64(4), GetString(rd, 5), GetString(rd, 6), GetString(rd, 7)));
+            }
+
+            foreach (var p in pendientes)
+            {
+                try
+                {
+                    if (string.Equals(p.Tipo, "PLANTILLA", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var valores = JsonSerializer.Deserialize<List<string>>(p.Valores) ?? [];
+                        await SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+                        {
+                            IdConversacion = p.IdConv,
+                            IdPlantilla = p.IdPlantilla ?? 0,
+                            ValoresVariables = valores,
+                            IdTecnicoAutor = string.IsNullOrWhiteSpace(p.IdTecnico) ? null : p.IdTecnico,
+                            UsuarioAccion = string.IsNullOrWhiteSpace(p.Usuario) ? "AlfaCore" : p.Usuario,
+                            SistemaAccion = "PROGRAMADO"
+                        }, ct).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        if (!await IsWhatsAppWindowActiveAsync(p.IdConv, ct).ConfigureAwait(false))
+                        {
+                            await MarcarProgramadoAsync(p.Id, "ERROR",
+                                "La ventana de 24 h de WhatsApp está vencida; no se pudo enviar el mensaje programado (no se eligió plantilla).", ct).ConfigureAwait(false);
+                            await AddInternalEventCoreAsync(p.IdConv,
+                                "⏰ No se pudo enviar un mensaje programado: la ventana de WhatsApp estaba vencida y no se eligió una plantilla.",
+                                null, null, "AlfaCore", "PROGRAMADO", ct).ConfigureAwait(false);
+                            continue;
+                        }
+
+                        await SendMessageAsync(new ConversacionSendMessageRequest
+                        {
+                            IdConversacion = p.IdConv,
+                            Texto = p.Texto,
+                            MessageType = "TEXT",
+                            UsuarioAccion = string.IsNullOrWhiteSpace(p.Usuario) ? "AlfaCore" : p.Usuario,
+                            SistemaAccion = "PROGRAMADO",
+                            IdTecnicoAutor = string.IsNullOrWhiteSpace(p.IdTecnico) ? null : p.IdTecnico
+                        }, ct).ConfigureAwait(false);
+                    }
+
+                    await MarcarProgramadoAsync(p.Id, "ENVIADO", null, ct).ConfigureAwait(false);
+                    enviados++;
+                }
+                catch (Exception ex)
+                {
+                    await MarcarProgramadoAsync(p.Id, "ERROR", Truncar(ex.Message, 480), ct).ConfigureAwait(false);
+                    try
+                    {
+                        await AddInternalEventCoreAsync(p.IdConv,
+                            $"⏰ No se pudo enviar un mensaje programado: {Truncar(ex.Message, 200)}",
+                            null, null, "AlfaCore", "PROGRAMADO", ct).ConfigureAwait(false);
+                    }
+                    catch { /* la nota es best-effort */ }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "ProcesarProgramados", ex,
+                "No se pudieron procesar los mensajes programados.", null, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+        return enviados;
+    }
+
+    private async Task MarcarProgramadoAsync(long idProgramado, string estado, string? motivoError, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand("""
+            UPDATE dbo.CONV_MENSAJES_PROGRAMADOS
+            SET Estado = @Estado, MotivoError = @Motivo,
+                FechaEnvio = CASE WHEN @Estado = N'ENVIADO' THEN GETDATE() ELSE FechaEnvio END
+            WHERE IdProgramado = @Id;
+            """, cn);
+        cmd.Parameters.AddWithValue("@Estado", estado);
+        cmd.Parameters.AddWithValue("@Motivo", DbNullable(motivoError));
+        cmd.Parameters.AddWithValue("@Id", idProgramado);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     // Auto-cierre por inactividad. Para conversaciones donde estamos esperando al cliente (último
     // mensaje nuestro) y no responde: a las N horas manda un aviso previo; si sigue sin responder,
     // a las M horas del aviso cierra. Aplica a todos los canales; el aviso/cierre solo se envían si

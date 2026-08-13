@@ -627,6 +627,35 @@ public sealed class ConversacionPlantillaSendRequest
     public string? SistemaAccion { get; set; }
 }
 
+public sealed class ConversacionProgramarRequest
+{
+    public long IdConversacion { get; set; }
+    public DateTime FechaProgramada { get; set; }
+
+    /// <summary>TEXTO | PLANTILLA (plantilla obligatoria si la ventana estará cerrada a la hora objetivo).</summary>
+    public string TipoEnvio { get; set; } = "TEXTO";
+    public string Texto { get; set; } = string.Empty;
+    public long? IdPlantilla { get; set; }
+    public List<string> ValoresVariables { get; set; } = [];
+    public string? IdTecnicoAutor { get; set; }
+    public string? UsuarioAccion { get; set; }
+}
+
+public sealed class ConversacionMensajeProgramadoDto
+{
+    public long IdProgramado { get; set; }
+    public long IdConversacion { get; set; }
+    public DateTime FechaProgramada { get; set; }
+    public string TipoEnvio { get; set; } = "TEXTO";
+    public string Texto { get; set; } = string.Empty;
+    public long? IdPlantilla { get; set; }
+    public string PlantillaNombre { get; set; } = string.Empty;
+    public string Estado { get; set; } = "PENDIENTE";
+    public string MotivoError { get; set; } = string.Empty;
+    public string UsuarioAutor { get; set; } = string.Empty;
+    public DateTime FechaCreacion { get; set; }
+}
+
 public sealed class ConversacionPlantillaMessageResultDto
 {
     public long IdMensaje { get; set; }

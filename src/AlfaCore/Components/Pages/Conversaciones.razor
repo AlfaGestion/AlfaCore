@@ -2047,6 +2047,17 @@
                                 <button type="button" class="btn btn--primary" @onclick="SendReplyAsync" disabled="@(!_canSendReply)" title="@GetReplyButtonTitle()">
                                     <i class="bi @(HasPendingAttachmentError ? "bi-arrow-clockwise" : "bi-send-fill")"></i>
                                 </button>
+                                @if (_selectedConversation is not null && _selectedConversation.Canal == "WHATSAPP")
+                                {
+                                    <button type="button"
+                                            class="btn btn--ghost"
+                                            title="Programar envío"
+                                            aria-label="Programar envío"
+                                            @onclick="ToggleProgramarPanelAsync"
+                                            @onclick:stopPropagation>
+                                        <i class="bi bi-clock-history"></i>
+                                    </button>
+                                }
                                 <button type="button"
                                         class="btn btn--ghost"
                                         title="Más opciones"
@@ -2055,6 +2066,82 @@
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
+                            @if (_showProgramarPanel)
+                            {
+                                <div class="panel-card conversations-tools-panel conversations-tools-panel--composer" @onclick:stopPropagation>
+                                    <strong class="context-card__label"><i class="bi bi-clock-history"></i> Programar envío</strong>
+                                    <div class="field">
+                                        <label for="prog-fecha">Fecha y hora</label>
+                                        <input id="prog-fecha" type="datetime-local" @bind="_programarFecha" @bind:after="StateHasChanged" />
+                                    </div>
+                                    @if (_ventanaCierre.HasValue)
+                                    {
+                                        <p class="panel-card__subtitle">La ventana de WhatsApp se cierra el @_ventanaCierre.Value.ToString("dd/MM 'a las' HH:mm"). Después de esa hora solo se puede enviar una plantilla aprobada.</p>
+                                    }
+                                    else
+                                    {
+                                        <p class="panel-card__subtitle">El cliente todavía no escribió (o pasaron 24 h): fuera de la ventana. Tenés que elegir una plantilla.</p>
+                                    }
+                                    @if (ProgramarFueraDeVentana)
+                                    {
+                                        <div class="field">
+                                            <label for="prog-plantilla">Plantilla aprobada</label>
+                                            <select id="prog-plantilla" @bind="_programarIdPlantillaStr" @bind:after="OnProgramarTemplateChanged">
+                                                <option value="">Elegí una plantilla…</option>
+                                                @foreach (var t in _programarTemplates)
+                                                {
+                                                    <option value="@t.IdPlantilla">@t.NombreVisible</option>
+                                                }
+                                            </select>
+                                            @if (_programarTemplates.Count == 0)
+                                            {
+                                                <span class="panel-card__subtitle">No hay plantillas aprobadas. Creá una en Plantillas.</span>
+                                            }
+                                        </div>
+                                        @for (var i = 0; i < _programarVariables.Count; i++)
+                                        {
+                                            var idx = i;
+                                            <div class="field">
+                                                <label>Variable @(idx + 1) (@("{{")@(idx + 1)@("}}"))</label>
+                                                <input @bind="_programarVariables[idx]" />
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <p class="panel-card__subtitle">Se enviará el texto que escribiste en el cuadro de arriba.</p>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(_programarError))
+                                    {
+                                        <p class="panel-card__subtitle" style="color:var(--color-danger, #f87171);">@_programarError</p>
+                                    }
+                                    <div class="conversations-composer__actions">
+                                        <button type="button" class="btn btn--primary btn--sm" @onclick="ConfirmarProgramarAsync" disabled="@_programarBusy">
+                                            <i class="bi bi-clock-history"></i> Programar
+                                        </button>
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _showProgramarPanel = false">Cerrar</button>
+                                    </div>
+                                    @if (_mensajesProgramados.Count > 0)
+                                    {
+                                        <strong class="context-card__label">Programados</strong>
+                                        @foreach (var m in _mensajesProgramados)
+                                        {
+                                            <div class="conversations-pending-attachment @(m.Estado == "ERROR" ? "has-error" : string.Empty)">
+                                                <i class="bi @(m.Estado == "PENDIENTE" ? "bi-clock" : m.Estado == "ENVIADO" ? "bi-check2" : m.Estado == "CANCELADO" ? "bi-slash-circle" : "bi-exclamation-triangle")"></i>
+                                                <span title="@(string.IsNullOrWhiteSpace(m.Texto) ? m.PlantillaNombre : m.Texto)">
+                                                    @m.FechaProgramada.ToString("dd/MM HH:mm") · @ProgramadoEstadoLabel(m.Estado) · @(m.TipoEnvio == "PLANTILLA" ? $"Plantilla: {m.PlantillaNombre}" : TruncarUi(m.Texto, 50))
+                                                </span>
+                                                @if (m.Estado == "PENDIENTE")
+                                                {
+                                                    <button type="button" class="btn btn--ghost btn--sm" title="Cancelar" @onclick="() => CancelarProgramadoAsync(m.IdProgramado)">
+                                                        <i class="bi bi-x-lg"></i>
+                                                    </button>
+                                                }
+                                            </div>
+                                        }
+                                    }
+                                </div>
+                            }
                             @if (_showComposerTools && !_reactionEmojiMessageId.HasValue)
                             {
                                 <div class="panel-card conversations-tools-panel conversations-tools-panel--composer" @onclick:stopPropagation>
@@ -3415,6 +3502,18 @@
     private DateTime _noticeSetAtUtc = DateTime.MinValue;
     private string _noticeSignature = string.Empty;
     private string _replyText = string.Empty;
+
+    // Mensajes programados (envío diferido)
+    private bool _showProgramarPanel;
+    private bool _programarBusy;
+    private DateTime? _programarFecha;
+    private DateTime? _ventanaCierre;
+    private IReadOnlyList<ConversacionPlantillaDto> _programarTemplates = [];
+    private string _programarIdPlantillaStr = string.Empty;
+    private List<string> _programarVariables = new();
+    private IReadOnlyList<ConversacionMensajeProgramadoDto> _mensajesProgramados = [];
+    private string? _programarError;
+    private bool ProgramarFueraDeVentana => !_ventanaCierre.HasValue || (_programarFecha.HasValue && _programarFecha.Value > _ventanaCierre.Value);
     private readonly HashSet<string> _mencionSeleccionados = new(StringComparer.OrdinalIgnoreCase);
     private string _internalNoteText = string.Empty;
     private string _assignmentTechnicianId = string.Empty;
@@ -7076,6 +7175,173 @@
             _busyAction = false;
             await ClearTypingAsync();
         }
+    }
+
+    // ===================== Mensajes programados (envío diferido) =====================
+
+    private async Task ToggleProgramarPanelAsync()
+    {
+        _showProgramarPanel = !_showProgramarPanel;
+        if (!_showProgramarPanel || _selectedConversation is null)
+            return;
+
+        _programarError = null;
+        _showComposerTools = false;
+        _programarFecha ??= DateTime.Now.AddHours(1);
+        try
+        {
+            _ventanaCierre = await ConversacionesSvc.GetVentanaCierreWhatsAppAsync(_selectedConversation.IdConversacion);
+        }
+        catch
+        {
+            _ventanaCierre = null;
+        }
+        await LoadProgramadosAsync();
+        await EnsureProgramarTemplatesAsync();
+    }
+
+    private async Task EnsureProgramarTemplatesAsync()
+    {
+        if (_programarTemplates.Count > 0)
+            return;
+        try
+        {
+            var all = await ConversacionesSvc.GetTemplatesAsync(new ConversacionPlantillaFilters { EstadoMeta = "APPROVED" });
+            _programarTemplates = all
+                .Where(t => t.Activa && string.Equals(t.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+        catch
+        {
+            _programarTemplates = [];
+        }
+    }
+
+    private async Task LoadProgramadosAsync()
+    {
+        if (_selectedConversation is null)
+        {
+            _mensajesProgramados = [];
+            return;
+        }
+        try
+        {
+            _mensajesProgramados = await ConversacionesSvc.GetMensajesProgramadosAsync(_selectedConversation.IdConversacion);
+        }
+        catch
+        {
+            _mensajesProgramados = [];
+        }
+    }
+
+    private void OnProgramarTemplateChanged()
+    {
+        _programarVariables = new();
+        if (!long.TryParse(_programarIdPlantillaStr, out var id))
+            return;
+        var t = _programarTemplates.FirstOrDefault(x => x.IdPlantilla == id);
+        if (t is null)
+            return;
+        var n = CountTemplateVariables(t.CuerpoTexto);
+        for (var i = 0; i < n; i++)
+            _programarVariables.Add(string.Empty);
+    }
+
+    private async Task ConfirmarProgramarAsync()
+    {
+        if (_selectedConversation is null)
+            return;
+        _programarError = null;
+
+        if (_programarFecha is null || _programarFecha <= DateTime.Now)
+        {
+            _programarError = "Elegí una fecha y hora futura.";
+            return;
+        }
+
+        var fuera = ProgramarFueraDeVentana;
+        long? idPlantilla = null;
+        var texto = string.Empty;
+        if (fuera)
+        {
+            if (!long.TryParse(_programarIdPlantillaStr, out var idp) || idp <= 0)
+            {
+                _programarError = "A esa hora la ventana estará cerrada: elegí una plantilla aprobada.";
+                return;
+            }
+            idPlantilla = idp;
+        }
+        else
+        {
+            texto = (await GetReplyTextareaValueAsync()).Trim();
+            if (string.IsNullOrWhiteSpace(texto))
+            {
+                _programarError = "Escribí el mensaje en el cuadro de arriba antes de programar.";
+                return;
+            }
+        }
+
+        _programarBusy = true;
+        try
+        {
+            await ConversacionesSvc.ProgramarMensajeAsync(new ConversacionProgramarRequest
+            {
+                IdConversacion = _selectedConversation.IdConversacion,
+                FechaProgramada = _programarFecha.Value,
+                TipoEnvio = fuera ? "PLANTILLA" : "TEXTO",
+                Texto = texto,
+                IdPlantilla = idPlantilla,
+                ValoresVariables = _programarVariables.ToList(),
+                IdTecnicoAutor = CurrentMessageTechnicianId,
+                UsuarioAccion = CurrentUserNameForAudit
+            });
+
+            _actionMessage = "Mensaje programado.";
+            if (!fuera)
+            {
+                _replyText = string.Empty;
+                await SetReplyTextareaValueAsync(string.Empty, focus: false);
+            }
+            _programarIdPlantillaStr = string.Empty;
+            _programarVariables = new();
+            await LoadProgramadosAsync();
+        }
+        catch (Exception ex)
+        {
+            _programarError = ex.Message;
+        }
+        finally
+        {
+            _programarBusy = false;
+        }
+    }
+
+    private async Task CancelarProgramadoAsync(long idProgramado)
+    {
+        try
+        {
+            await ConversacionesSvc.CancelarMensajeProgramadoAsync(idProgramado);
+            await LoadProgramadosAsync();
+        }
+        catch (Exception ex)
+        {
+            _programarError = ex.Message;
+        }
+    }
+
+    private static string ProgramadoEstadoLabel(string estado) => estado switch
+    {
+        "PENDIENTE" => "Pendiente",
+        "ENVIADO" => "Enviado",
+        "CANCELADO" => "Cancelado",
+        "ERROR" => "Error",
+        _ => estado
+    };
+
+    private static string TruncarUi(string? texto, int max)
+    {
+        var t = (texto ?? string.Empty).Trim();
+        return t.Length <= max ? t : t[..max] + "…";
     }
 
     private void ToggleMencion(string userName, ChangeEventArgs args)

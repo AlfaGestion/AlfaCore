@@ -41,6 +41,14 @@ public interface IConversacionesService
     Task<int> ProcesarAutoCierreAsync(CancellationToken ct = default);
 
     Task<int> ProcesarSeguimientosSlaAsync(CancellationToken ct = default);
+
+    // Mensajes programados (envío diferido)
+    Task<long> ProgramarMensajeAsync(ConversacionProgramarRequest request, CancellationToken ct = default);
+    Task<IReadOnlyList<ConversacionMensajeProgramadoDto>> GetMensajesProgramadosAsync(long idConversacion, CancellationToken ct = default);
+    Task CancelarMensajeProgramadoAsync(long idProgramado, CancellationToken ct = default);
+    /// <summary>Momento en que se cierra la ventana de 24 h de WhatsApp (último entrante + 24 h); null si no hay entrante.</summary>
+    Task<DateTime?> GetVentanaCierreWhatsAppAsync(long idConversacion, CancellationToken ct = default);
+    Task<int> ProcesarMensajesProgramadosAsync(CancellationToken ct = default);
     Task SetConversationPinAsync(long idConversacion, string usuario, string? sistema, bool fijada, CancellationToken ct = default);
     Task MarkConversationReadAsync(long idConversacion, string usuario, string? sistema, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
