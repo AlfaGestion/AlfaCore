@@ -41,6 +41,8 @@
     /* Capa compartida para Action Menu: backdrop 1998, panel 1999. */
     --alfa-z-action-menu-backdrop: 1998;
     --alfa-z-action-menu: 1999;
+    --alfa-z-modal: 2100;
+    --alfa-z-notification: 2200;
 }
 
 .shell.shell--alfa-design {

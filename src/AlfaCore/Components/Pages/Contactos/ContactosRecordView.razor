@@ -80,13 +80,10 @@ else
                             <span>@(Contact.IdConversacionWhatsApp.HasValue ? "Abrir" : "Crear")</span>
                         </button>
                     }
-                    @if (Contact.CuentasVinculadas.Count > 0)
-                    {
-                        <button type="button" class="contactos-record-smart__button" @onclick="() => SetTab(ContactosRecordTabKeys.Cuentas)">
-                            <strong><i class="bi bi-link-45deg" aria-hidden="true"></i>Cuentas</strong>
-                            <span>@Contact.CuentasVinculadas.Count vinculada@(Contact.CuentasVinculadas.Count == 1 ? string.Empty : "s")</span>
-                        </button>
-                    }
+                    <button type="button" class="contactos-record-smart__button" @onclick="() => SetTab(ContactosRecordTabKeys.Cuentas)">
+                        <strong><i class="bi bi-link-45deg" aria-hidden="true"></i>Cuentas</strong>
+                        <span>@(Contact.CuentasVinculadas.Count == 0 ? "Vincular" : $"{Contact.CuentasVinculadas.Count} vinculada{(Contact.CuentasVinculadas.Count == 1 ? string.Empty : "s")}")</span>
+                    </button>
                 </div>
             }
         </header>
@@ -117,13 +114,11 @@ else
                     <section class="activity-panel" aria-label="Actividad del contacto">
                         <div class="activity-toolbar">
                             <h3>Actividad</h3>
-                            <button type="button"
-                                    class="btn btn--ghost btn--sm"
-                                    disabled="@_activityLoading"
-                                    @onclick="RefreshActivityAsync">
-                                <i class="bi bi-arrow-clockwise" aria-hidden="true"></i>
-                                Recargar
-                            </button>
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                        Size="AlfaSize.Sm"
+                                        Icon="bi bi-arrow-clockwise"
+                                        Disabled="@_activityLoading"
+                                        OnClick="_ => RefreshActivityAsync()">Recargar</AlfaButton>
                         </div>
 
                         @if (_activityLoading && _activityItems.Count == 0)
@@ -189,9 +184,10 @@ else
                             @if (_activityItems.Count < _activityTotal)
                             {
                                 <div class="activity-load-more">
-                                    <button type="button" class="btn btn--ghost btn--sm" disabled="@_activityLoadingMore" @onclick="LoadMoreActivityAsync">
-                                        @(_activityLoadingMore ? "Cargando..." : "Cargar actividad anterior")
-                                    </button>
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                                Size="AlfaSize.Sm"
+                                                Loading="@_activityLoadingMore"
+                                                OnClick="_ => LoadMoreActivityAsync()">Cargar actividad anterior</AlfaButton>
                                 </div>
                             }
                         }
@@ -210,7 +206,11 @@ else
                         <h3>Cuentas vinculadas</h3>
                         @if (Contact.CuentasVinculadas.Count == 0)
                         {
-                            <p class="contactos-record-muted">Este contacto no tiene clientes o proveedores vinculados.</p>
+                            <AlfaEmptyState Title="Sin cuentas vinculadas"
+                                            Message="Este contacto todavía no tiene clientes o proveedores vinculados."
+                                            ActionLabel="Vincular cuenta existente"
+                                            ActionIcon="bi bi-link-45deg"
+                                            OnAction="OpenAccountDialogAsync" />
                         }
                         else
                         {
@@ -225,6 +225,12 @@ else
                                         <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
                                     </a>
                                 }
+                            </div>
+                            <div class="contactos-record-accounts__actions">
+                                <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                                            Size="AlfaSize.Sm"
+                                            Icon="bi bi-link-45deg"
+                                            OnClick="OpenAccountDialogAsync">Vincular otra cuenta</AlfaButton>
                             </div>
                         }
                     </section>
@@ -271,26 +277,66 @@ else
                         <div class="contactos-record-context__item">
                             <span>WhatsApp</span>
                             <strong>@(Contact.IdConversacionWhatsApp.HasValue ? "Conversación existente" : "Sin conversación abierta")</strong>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="HandleConversationActionAsync">
-                                <i class="bi @(Contact.IdConversacionWhatsApp.HasValue ? "bi-chat-left-text" : "bi-plus-circle")"></i>
-                                @(Contact.IdConversacionWhatsApp.HasValue ? "Abrir" : "Crear")
-                            </button>
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                        Size="AlfaSize.Sm"
+                                        Icon="@(Contact.IdConversacionWhatsApp.HasValue ? "bi bi-chat-left-text" : "bi bi-plus-circle")"
+                                        OnClick="_ => HandleConversationActionAsync()">
+                                @(Contact.IdConversacionWhatsApp.HasValue ? "Abrir conversación" : "Crear conversación")
+                            </AlfaButton>
                         </div>
                     }
-                    @if (Contact.CuentasVinculadas.Count > 0)
-                    {
-                        <div class="contactos-record-context__item">
-                            <span>Cuentas vinculadas</span>
-                            <strong>@Contact.CuentasVinculadas.Count cliente(s) / proveedor(es)</strong>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => SetTab(ContactosRecordTabKeys.Cuentas)">
-                                <i class="bi bi-link-45deg"></i>
-                                Ver cuentas
-                            </button>
-                        </div>
-                    }
+                    <div class="contactos-record-context__item">
+                        <span>Cuentas vinculadas</span>
+                        <strong>@(Contact.CuentasVinculadas.Count == 0 ? "Sin clientes o proveedores" : $"{Contact.CuentasVinculadas.Count} cliente(s) / proveedor(es)")</strong>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                    Size="AlfaSize.Sm"
+                                    Icon="bi bi-link-45deg"
+                                    OnClick="_ => SetTab(ContactosRecordTabKeys.Cuentas)">
+                            @(Contact.CuentasVinculadas.Count == 0 ? "Vincular cuenta" : "Ver cuentas")
+                        </AlfaButton>
+                    </div>
                 </aside>
             }
         </div>
+
+        <AlfaDialog Open="@_showAccountDialog"
+                    Title="Vincular cuenta existente"
+                    Eyebrow="Cuentas vinculadas"
+                    Description="Buscá un cliente o proveedor activo y vinculalo con este contacto."
+                    ErrorMessage="@_accountDialogError"
+                    Loading="@(LinkingAccount || _linkingSelectedAccount)"
+                    OnClose="CloseAccountDialog">
+            <ChildContent>
+                <AlfaLookup TItem="ContactoCuentaLookupOptionDto"
+                            Label="Cliente o proveedor"
+                            Placeholder="Buscar por código, razón social o documento..."
+                            EmptyText="No encontramos clientes o proveedores disponibles con ese texto."
+                            SearchText="@_accountSearchText"
+                            SearchTextChanged="SetAccountSearchText"
+                            SearchFunc="SearchAccountsAsync"
+                            ItemKey="account => account.Key"
+                            SelectedItem="@_selectedAccount"
+                            SelectedItemChanged="SetSelectedAccount"
+                            Disabled="@(LinkingAccount || _linkingSelectedAccount)">
+                    <ItemTemplate Context="account">
+                        <span class="contactos-account-option">
+                            <strong>@DisplayValue(account.RazonSocial, account.Codigo)</strong>
+                            <small>@FormatAccountOption(account)</small>
+                        </span>
+                    </ItemTemplate>
+                </AlfaLookup>
+            </ChildContent>
+            <Footer>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                            Disabled="@(LinkingAccount || _linkingSelectedAccount)"
+                            OnClick="_ => CloseAccountDialog()">Cancelar</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary"
+                            Icon="bi bi-link-45deg"
+                            Loading="@(LinkingAccount || _linkingSelectedAccount)"
+                            Disabled="@(_selectedAccount is null)"
+                            OnClick="LinkSelectedAccountAsync">Vincular</AlfaButton>
+            </Footer>
+        </AlfaDialog>
     </section>
 }
 
@@ -304,9 +350,14 @@ else
     [Parameter] public EventCallback OnBack { get; set; }
     [Parameter] public EventCallback OnRetry { get; set; }
     [Parameter] public EventCallback OnConversation { get; set; }
+    [Parameter] public Func<string, CancellationToken, Task<IReadOnlyList<ContactoCuentaLookupOptionDto>>>? SearchAccounts { get; set; }
+    [Parameter] public Func<ContactoCuentaLookupOptionDto, Task<bool>>? LinkAccount { get; set; }
+    [Parameter] public EventCallback<ContactoCuentaLookupOptionDto> AccountLinked { get; set; }
+    [Parameter] public bool LinkingAccount { get; set; }
 
-    private bool HasContextPanel => Contact is not null && (HasPhone(Contact) || Contact.CuentasVinculadas.Count > 0);
-    private bool HasAnySmartButton => Contact is not null && (HasPhone(Contact) || Contact.CuentasVinculadas.Count > 0);
+    private bool HasContextPanel => Contact is not null
+        && (HasPhone(Contact) || Contact.CuentasVinculadas.Count > 0);
+    private bool HasAnySmartButton => Contact is not null;
 
     private IReadOnlyList<RecordTab> AvailableTabs
     {
@@ -319,10 +370,93 @@ else
             };
             if (!string.IsNullOrWhiteSpace(Contact?.Observaciones))
                 tabs.Add(new(ContactosRecordTabKeys.Observaciones, "Observaciones"));
-            if (Contact?.CuentasVinculadas.Count > 0)
+            if (Contact is not null)
                 tabs.Add(new(ContactosRecordTabKeys.Cuentas, "Cuentas vinculadas", Contact.CuentasVinculadas.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)));
             return tabs;
         }
+    }
+
+    private bool _showAccountDialog;
+    private bool _linkingSelectedAccount;
+    private string _accountSearchText = string.Empty;
+    private string _accountDialogError = string.Empty;
+    private ContactoCuentaLookupOptionDto? _selectedAccount;
+
+    private Task OpenAccountDialogAsync(MouseEventArgs _)
+    {
+        _showAccountDialog = true;
+        _accountSearchText = string.Empty;
+        _accountDialogError = string.Empty;
+        _selectedAccount = null;
+        return Task.CompletedTask;
+    }
+
+    private void CloseAccountDialog()
+    {
+        if (LinkingAccount || _linkingSelectedAccount)
+            return;
+
+        _showAccountDialog = false;
+        _accountDialogError = string.Empty;
+        _selectedAccount = null;
+    }
+
+    private Task SetAccountSearchText(string value)
+    {
+        _accountSearchText = value;
+        _accountDialogError = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task SetSelectedAccount(ContactoCuentaLookupOptionDto? account)
+    {
+        _selectedAccount = account;
+        _accountDialogError = string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task<IReadOnlyList<ContactoCuentaLookupOptionDto>> SearchAccountsAsync(string text, CancellationToken ct)
+        => SearchAccounts is null
+            ? Task.FromResult<IReadOnlyList<ContactoCuentaLookupOptionDto>>([])
+            : SearchAccounts.Invoke(text, ct);
+
+    private async Task LinkSelectedAccountAsync(MouseEventArgs _)
+    {
+        if (_selectedAccount is null || LinkAccount is null || LinkingAccount || _linkingSelectedAccount)
+            return;
+
+        _linkingSelectedAccount = true;
+        _accountDialogError = string.Empty;
+        try
+        {
+            if (await LinkAccount.Invoke(_selectedAccount))
+            {
+                var linkedAccount = _selectedAccount;
+                CloseAccountDialogAfterSuccess();
+                await AccountLinked.InvokeAsync(linkedAccount);
+            }
+            else
+                _accountDialogError = "No se pudo vincular la cuenta seleccionada.";
+        }
+        finally
+        {
+            _linkingSelectedAccount = false;
+        }
+    }
+
+    private void CloseAccountDialogAfterSuccess()
+    {
+        _showAccountDialog = false;
+        _accountSearchText = string.Empty;
+        _accountDialogError = string.Empty;
+        _selectedAccount = null;
+    }
+
+    private static string FormatAccountOption(ContactoCuentaLookupOptionDto account)
+    {
+        var details = new[] { account.TipoLabel, account.Codigo, account.Localidad, account.NumeroDocumento }
+            .Where(value => !string.IsNullOrWhiteSpace(value));
+        return string.Join(" · ", details);
     }
 
     private async Task SetTab(string key)

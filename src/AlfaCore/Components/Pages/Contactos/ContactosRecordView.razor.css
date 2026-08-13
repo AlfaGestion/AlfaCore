@@ -627,3 +627,30 @@
 @media (prefers-reduced-motion: reduce) {
     .activity-spinner { animation: none; }
 }
+.contactos-record-accounts__actions {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 14px;
+}
+
+.contactos-account-option {
+    display: grid;
+    gap: 3px;
+}
+
+.contactos-account-option strong {
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-account-option small {
+    overflow: hidden;
+    color: var(--alfa-text-secondary);
+    font-size: 11.5px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

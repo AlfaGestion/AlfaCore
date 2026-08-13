@@ -108,6 +108,18 @@ public sealed class ContactoCuentaDto
     public bool VinculadoPorCuentaRel { get; set; }
 }
 
+public sealed class ContactoCuentaLookupOptionDto
+{
+    public CuentaComercialTipo Tipo { get; set; }
+    public string Codigo { get; set; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
+    public string Localidad { get; set; } = string.Empty;
+    public string NumeroDocumento { get; set; } = string.Empty;
+
+    public string Key => $"{Tipo}:{Codigo}";
+    public string TipoLabel => Tipo == CuentaComercialTipo.Cliente ? "Cliente" : "Proveedor";
+}
+
 public sealed class ContactoMergeCandidateDto
 {
     public int Id { get; set; }

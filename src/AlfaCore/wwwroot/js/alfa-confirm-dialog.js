@@ -1,9 +1,15 @@
-let activeState = null;
+const activeStates = new WeakMap();
 
 export function activate(dialog, cancelButton, dotNetReference) {
     const previousFocus = document.activeElement;
     const keydown = async event => {
         if (event.key === "Escape") {
+            const escapeScope = event.target instanceof Element
+                ? event.target.closest("[data-alfa-escape-scope]")
+                : null;
+            if (escapeScope && escapeScope.getAttribute("aria-expanded") === "true")
+                return;
+
             event.preventDefault();
             await dotNetReference.invokeMethodAsync("RequestCancelAsync");
             return;
@@ -29,15 +35,15 @@ export function activate(dialog, cancelButton, dotNetReference) {
     };
 
     dialog.addEventListener("keydown", keydown);
-    activeState = { dialog, previousFocus, keydown };
+    activeStates.set(dialog, { previousFocus, keydown });
     requestAnimationFrame(() => cancelButton?.focus());
 }
 
 export function deactivate(dialog) {
-    const state = activeState;
+    const state = activeStates.get(dialog);
     if (!state) return;
-    state.dialog.removeEventListener("keydown", state.keydown);
-    activeState = null;
+    dialog.removeEventListener("keydown", state.keydown);
+    activeStates.delete(dialog);
     if (state.previousFocus instanceof HTMLElement && state.previousFocus.isConnected) {
         state.previousFocus.focus();
     }

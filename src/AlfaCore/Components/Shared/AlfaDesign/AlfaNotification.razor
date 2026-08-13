@@ -1,0 +1,149 @@
+@implements IDisposable
+
+@if (Message is not null)
+{
+    <section class="@NotificationClass"
+             role="@LiveRole"
+             aria-live="@LiveMode"
+             aria-atomic="true"
+             @onmouseenter="PauseAutoDismiss"
+             @onmouseleave="ResumeAutoDismiss"
+             @onclick:stopPropagation="true">
+        <span class="alfa-notification__signal" aria-hidden="true"></span>
+        <div class="alfa-notification__content">
+            <strong>@Message.Title</strong>
+            <p>@Message.Message</p>
+            @if (Message.HasSuggestion)
+            {
+                <small>@Message.Suggestion</small>
+            }
+            @if (Message.HasCode)
+            {
+                <small>Código: @Message.Code</small>
+            }
+        </div>
+        <AlfaIconButton Icon="bi bi-x-lg"
+                        Label="Cerrar notificación"
+                        Size="AlfaSize.Sm"
+                        OnClick="DismissFromButtonAsync" />
+    </section>
+}
+
+@code {
+    [Parameter] public AppUiMessage? Message { get; set; }
+    [Parameter] public EventCallback OnDismiss { get; set; }
+    [Parameter] public TimeSpan? Duration { get; set; }
+
+    private AppUiMessage? _scheduledMessage;
+    private CancellationTokenSource? _dismissCts;
+    private DateTime _scheduledAtUtc;
+    private TimeSpan _remaining;
+    private bool _leaving;
+    private bool _paused;
+
+    private string NotificationClass => string.Join(" ", new[]
+    {
+        "alfa-notification",
+        $"alfa-notification--{Message?.Severity.ToString().ToLowerInvariant()}",
+        _leaving ? "is-leaving" : null
+    }.Where(static value => !string.IsNullOrWhiteSpace(value)));
+    private bool IsAssertive => Message?.Severity is AppUiFeedbackSeverity.Warning or AppUiFeedbackSeverity.Error;
+    private string LiveRole => IsAssertive ? "alert" : "status";
+    private string LiveMode => IsAssertive ? "assertive" : "polite";
+
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(Message, _scheduledMessage))
+            return;
+
+        CancelTimer();
+        _scheduledMessage = Message;
+        _leaving = false;
+        _paused = false;
+        if (Message is null)
+            return;
+
+        _remaining = Duration ?? GetDefaultDuration(Message.Severity);
+        ScheduleAutoDismiss();
+    }
+
+    private static TimeSpan GetDefaultDuration(AppUiFeedbackSeverity severity)
+        => severity switch
+        {
+            AppUiFeedbackSeverity.Success => TimeSpan.FromSeconds(4),
+            AppUiFeedbackSeverity.Info => TimeSpan.FromSeconds(5),
+            AppUiFeedbackSeverity.Warning => TimeSpan.FromSeconds(8),
+            _ => TimeSpan.FromSeconds(8)
+        };
+
+    private void ScheduleAutoDismiss()
+    {
+        if (Message is null || _remaining <= TimeSpan.Zero || _paused)
+            return;
+
+        CancelTimer();
+        _scheduledAtUtc = DateTime.UtcNow;
+        var cts = new CancellationTokenSource();
+        _dismissCts = cts;
+        _ = AutoDismissAsync(cts.Token);
+    }
+
+    private async Task AutoDismissAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(_remaining, token);
+            if (!token.IsCancellationRequested)
+                await InvokeAsync(DismissAsync);
+        }
+        catch (TaskCanceledException)
+        {
+        }
+    }
+
+    private void PauseAutoDismiss()
+    {
+        if (_paused || Message is null)
+            return;
+
+        _paused = true;
+        _remaining -= DateTime.UtcNow - _scheduledAtUtc;
+        if (_remaining < TimeSpan.Zero)
+            _remaining = TimeSpan.Zero;
+        CancelTimer();
+    }
+
+    private void ResumeAutoDismiss()
+    {
+        if (!_paused || Message is null)
+            return;
+
+        _paused = false;
+        ScheduleAutoDismiss();
+    }
+
+    private Task DismissFromButtonAsync(MouseEventArgs _)
+        => DismissAsync();
+
+    private async Task DismissAsync()
+    {
+        if (Message is null || _leaving)
+            return;
+
+        CancelTimer();
+        _leaving = true;
+        StateHasChanged();
+        await Task.Delay(180);
+        await OnDismiss.InvokeAsync();
+    }
+
+    private void CancelTimer()
+    {
+        _dismissCts?.Cancel();
+        _dismissCts?.Dispose();
+        _dismissCts = null;
+    }
+
+    public void Dispose()
+        => CancelTimer();
+}

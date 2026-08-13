@@ -33,43 +33,6 @@
     overscroll-behavior: contain;
 }
 
-.contactos-feedback {
-    position: fixed;
-    top: calc(var(--alfa-topbar-height) + var(--alfa-context-toolbar-height) + var(--alfa-space-12));
-    right: var(--alfa-space-16);
-    z-index: 1880;
-    width: min(420px, calc(100vw - 32px));
-    pointer-events: none;
-}
-
-.contactos-feedback ::deep .editor-msg {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: var(--alfa-space-12);
-    margin: 0;
-    pointer-events: auto;
-}
-
-.contactos-feedback__close {
-    width: 30px;
-    height: 30px;
-    display: inline-grid;
-    place-items: center;
-    flex: 0 0 auto;
-    border: 1px solid color-mix(in srgb, currentColor 28%, transparent);
-    border-radius: var(--alfa-radius-sm);
-    background: transparent;
-    color: var(--alfa-text-secondary);
-    cursor: pointer;
-}
-
-.contactos-feedback__close:hover,
-.contactos-feedback__close:focus-visible {
-    background: color-mix(in srgb, currentColor 12%, transparent);
-    outline: 0;
-}
-
 .contactos-list-shell {
     height: 100%;
     min-height: 0;
@@ -385,13 +348,6 @@
         gap: var(--alfa-space-12);
     }
 
-    .contactos-feedback {
-        top: calc(var(--alfa-topbar-height) + var(--alfa-context-toolbar-height) + var(--alfa-space-8));
-        right: var(--alfa-space-8);
-        left: var(--alfa-space-8);
-        width: auto;
-    }
-
     .contactos-list-shell__summary {
         align-items: flex-start;
         flex-direction: column;
@@ -423,4 +379,54 @@
 .contactos-list-table__identity span,
 .contactos-list-shell ::deep .usuarios-group-row td {
     font-size: var(--alfa-font-small);
+}
+.contactos-view-settings {
+    display: grid;
+    gap: var(--alfa-space-16);
+}
+
+.contactos-view-settings__list {
+    display: grid;
+    gap: 6px;
+}
+
+.contactos-view-settings__item {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    padding: 6px 8px 6px 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+}
+
+.contactos-view-settings__order {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 4px;
+}
+
+.contactos-control {
+    width: 100%;
+    min-height: var(--alfa-control-md);
+    padding: 7px 10px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+    font: inherit;
+    font-size: var(--alfa-font-body);
+    outline: none;
+}
+
+.contactos-control:focus-visible {
+    border-color: var(--alfa-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--alfa-accent) 22%, transparent);
+}
+
+textarea.contactos-control {
+    min-height: 96px;
+    resize: vertical;
 }

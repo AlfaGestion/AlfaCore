@@ -14,6 +14,13 @@ public enum AlfaSize
     Md
 }
 
+public enum AlfaDialogSize
+{
+    Sm,
+    Md,
+    Lg
+}
+
 public enum AlfaTagTone
 {
     Neutral,
