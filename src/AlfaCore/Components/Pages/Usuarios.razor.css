@@ -1,0 +1,288 @@
+.usuarios-page--list {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--alfa-bg-canvas);
+}
+
+.usuarios-list-shell {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
+}
+
+.usuarios-list-shell__summary {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    padding: var(--alfa-space-4) var(--alfa-space-12);
+    border-bottom: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-surface);
+}
+
+.usuarios-list-shell__summary > div {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.usuarios-list-shell__eyebrow {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+    font-weight: 700;
+    line-height: 1;
+    text-transform: uppercase;
+}
+
+.usuarios-list-shell__summary strong {
+    overflow: hidden;
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-body);
+    font-weight: 600;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.usuarios-list-shell__summary ::deep .usuarios-list-shell__page-size {
+    width: 132px;
+    flex: 0 0 132px;
+}
+
+.usuarios-list-shell__summary ::deep .usuarios-list-shell__page-size .alfa-select__control {
+    height: var(--alfa-control-sm);
+    min-height: var(--alfa-control-sm);
+    font-size: var(--alfa-font-small);
+}
+
+.usuarios-list-shell__state {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--alfa-space-16);
+    overflow: auto;
+}
+
+.usuarios-list-shell__table-scroll {
+    position: relative;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    width: 100%;
+    max-width: 100%;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.usuarios-list-table {
+    width: 100%;
+    min-width: 980px;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+}
+
+.usuarios-list-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    height: 32px;
+    padding: 0 var(--alfa-space-8);
+    border-bottom: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-table-header);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+    font-weight: 700;
+    line-height: 12px;
+    text-align: left;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+.usuarios-list-table td {
+    height: 32px;
+    padding: 0 var(--alfa-space-8);
+    border-bottom: 1px solid var(--alfa-border-subtle);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    line-height: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.usuarios-list-table__row {
+    background: var(--alfa-bg-surface);
+    cursor: pointer;
+}
+
+.usuarios-list-table__row:nth-child(even) {
+    background: var(--alfa-bg-row-alt);
+}
+
+.usuarios-list-table__row:hover {
+    background: var(--alfa-bg-row-hover);
+}
+
+.usuarios-list-table__row.is-selected {
+    background: color-mix(in srgb, var(--alfa-state-selected) 44%, var(--alfa-bg-surface));
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--alfa-accent) 72%, transparent);
+}
+
+.usuarios-list-table__select {
+    width: 40px;
+    padding: 0;
+    text-align: center;
+}
+
+.usuarios-list-table__checkbox {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: var(--alfa-accent);
+    cursor: pointer;
+}
+
+.usuarios-list-table__checkbox:focus-visible {
+    outline: 2px solid var(--alfa-accent-hover);
+    outline-offset: 2px;
+}
+
+.usuarios-list-table__identity {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-8);
+}
+
+.usuarios-list-table__identity strong {
+    overflow: hidden;
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-small);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.usuarios-list-table__avatar {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-full);
+    background: var(--alfa-bg-raised);
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+}
+
+.usuarios-list-table__avatar--filled {
+    border-color: color-mix(in srgb, var(--alfa-accent) 48%, var(--alfa-border-default));
+    background: color-mix(in srgb, var(--alfa-accent) 16%, var(--alfa-bg-raised));
+    color: var(--alfa-accent-hover);
+}
+
+.usuarios-list-table__actions {
+    width: 44px;
+    overflow: visible;
+    padding: 0;
+    text-align: center;
+}
+
+.usuarios-list-table__actions ::deep .alfa-icon-button,
+.usuarios-list-table__actions ::deep .alfa-action-menu__trigger {
+    width: 28px;
+    height: 28px;
+}
+
+.usuarios-list-table__group td {
+    height: 30px;
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    font-weight: 700;
+}
+
+.usuarios-list-table__col {
+    min-width: 0;
+}
+
+.usuarios-list-table__col--nombre {
+    width: 26%;
+}
+
+.usuarios-list-table__col--email {
+    width: 28%;
+}
+
+.usuarios-list-table__col--tipo,
+.usuarios-list-table__col--activo {
+    width: 110px;
+}
+
+.usuarios-list-table__col--cambiar-clave {
+    width: 170px;
+}
+
+.usuarios-list-table__col--alta,
+.usuarios-list-table__col--modificacion {
+    width: 160px;
+}
+
+.usuarios-list-table td ::deep .alfa-tag {
+    max-width: 100%;
+}
+
+.usuarios-view-settings-alfa {
+    display: grid;
+    gap: var(--alfa-space-16);
+}
+
+.usuarios-view-settings-alfa__list {
+    display: grid;
+    gap: 6px;
+}
+
+.usuarios-view-settings-alfa__item {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    padding: 6px var(--alfa-space-8) 6px var(--alfa-space-12);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+}
+
+.usuarios-view-settings-alfa__order {
+    display: flex;
+    flex: 0 0 auto;
+    gap: var(--alfa-space-4);
+}
+
+@media (max-width: 1024px) {
+    .usuarios-list-table {
+        min-width: 980px;
+    }
+
+    .usuarios-list-shell__summary {
+        min-height: 48px;
+    }
+}
