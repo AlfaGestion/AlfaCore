@@ -1,7 +1,10 @@
 @page "/ventas/rubros"
 @page "/{idweb}/{idbase:int}/ventas/rubros"
+@using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.GestionFilterStateService FilterState
+@inject AlfaCore.Services.IRouteContextService RouteCtx
+@inject IJSRuntime Js
 
 <PageTitle>Rubros | Ventas</PageTitle>
 
@@ -94,6 +97,12 @@
 
             <div class="rubros-list">
                 <DataTable Titulo="Listado de rubros" Subtitulo="Participación comercial por categoría">
+                <Toolbar>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarExcelAsync">
+                        <i class="bi bi-file-earmark-excel"></i>
+                        <span>Excel</span>
+                    </button>
+                </Toolbar>
                 <Header>
                     @if (MostrarComparativoUnidadNegocio)
                     {
@@ -186,6 +195,40 @@
         _error = null;
         try { _page = await GestionSvc.GetVentasRubrosAsync(_filters); }
         catch (Exception ex) { _error = ex.Message; }
+    }
+
+    private async Task ExportarExcelAsync()
+    {
+        await Js.InvokeVoidAsync("dashboardExport.downloadFile", await GetExcelUrlAsync());
+    }
+
+    private async Task<string> GetExcelUrlAsync()
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["fechaDesde"] = _filters.FechaDesde?.ToString("yyyy-MM-dd"),
+            ["fechaHasta"] = _filters.FechaHasta?.ToString("yyyy-MM-dd"),
+            ["cliente"] = _filters.Cliente,
+            ["usuario"] = _filters.Usuario,
+            ["unidades"] = _filters.UnidadesNegocio.Count == 0 ? null : string.Join(",", _filters.UnidadesNegocio),
+            ["deposito"] = _filters.Deposito,
+            ["tc"] = _filters.TipoComprobante,
+            ["token"] = await GetUserTokenAsync()
+        };
+
+        return QueryHelpers.AddQueryString(RouteCtx.BuildRoute("/ventas/rubros/descargar-excel"), query!);
+    }
+
+    private async Task<string?> GetUserTokenAsync()
+    {
+        try
+        {
+            return await Js.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));

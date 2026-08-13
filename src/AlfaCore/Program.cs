@@ -189,6 +189,7 @@ public class Program
         builder.Services.AddSingleton<AuditoriaExcelExporter>();
         builder.Services.AddSingleton<ReporteComprasExcelExporter>();
         builder.Services.AddSingleton<ArticulosComprasExcelExporter>();
+        builder.Services.AddSingleton<VentasRubrosExcelExporter>();
         builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
         builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
         builder.Services.AddSingleton<CargaViajesViajesExcelExporter>();
@@ -815,6 +816,51 @@ public class Program
 
         app.MapGet("/compras/articulos/descargar-excel", DescargarArticulosComprasExcel);
         app.MapGet("/{idweb}/{idbase:int}/compras/articulos/descargar-excel", DescargarArticulosComprasExcel);
+
+        async Task<IResult> DescargarVentasRubrosExcel(
+            HttpRequest request,
+            IGestionDashboardService gestionSvc,
+            IAppUserSessionService appUserSession,
+            VentasRubrosExcelExporter exporter,
+            CancellationToken ct)
+        {
+            RestoreUserSessionFromToken(request, appUserSession);
+
+            static DateTime? ParseDate(string? value)
+                => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+            static string? NullIfEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+            static List<string> ParseCodes(string? value)
+                => string.IsNullOrWhiteSpace(value)
+                    ? []
+                    : value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                        .Where(x => x.Length > 0)
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+
+            var filters = new VentasDashboardFilters
+            {
+                FechaDesde = ParseDate(request.Query["fechaDesde"]),
+                FechaHasta = ParseDate(request.Query["fechaHasta"]),
+                Cliente = NullIfEmpty(request.Query["cliente"]),
+                Usuario = NullIfEmpty(request.Query["usuario"]),
+                UnidadesNegocio = ParseCodes(request.Query["unidades"]),
+                Deposito = NullIfEmpty(request.Query["deposito"]),
+                TipoComprobante = NullIfEmpty(request.Query["tc"])
+            };
+
+            var page = await gestionSvc.GetVentasRubrosAsync(filters, ct);
+            var bytes = exporter.Exportar(page, filters);
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                VentasRubrosExcelExporter.NombreArchivo());
+        }
+
+        app.MapGet("/ventas/rubros/descargar-excel", DescargarVentasRubrosExcel);
+        app.MapGet("/{idweb}/{idbase:int}/ventas/rubros/descargar-excel", DescargarVentasRubrosExcel);
 
         static void RestoreUserSessionFromToken(HttpRequest request, IAppUserSessionService appUserSession)
         {
