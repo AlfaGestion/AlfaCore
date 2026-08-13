@@ -2041,6 +2041,9 @@
                                             <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Programar ? "is-active" : string.Empty)" @onclick="SelectProgramarTabAsync"><i class="bi bi-clock-history"></i> Programar</button>
                                         }
                                         <button type="button" class="conversations-filter-pill mobile-only @(_composerToolTab == ComposerToolTabs.Notas ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Notas'><i class="bi bi-journal-text"></i> Nota</button>
+                                        <button type="button" class="btn btn--ghost btn--sm" style="margin-left:auto;" title="Cerrar" aria-label="Cerrar" @onclick="MinimizeComposerTools">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
                                     </div>
                                     @if (_composerToolTab == ComposerToolTabs.Emojis)
                                     {
