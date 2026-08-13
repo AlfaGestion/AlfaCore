@@ -188,6 +188,7 @@ public class Program
         builder.Services.AddSingleton<ConsultasExcelExporter>();
         builder.Services.AddSingleton<AuditoriaExcelExporter>();
         builder.Services.AddSingleton<ReporteComprasExcelExporter>();
+        builder.Services.AddSingleton<ArticulosComprasExcelExporter>();
         builder.Services.AddSingleton<CargaViajesLiquidacionExcelExporter>();
         builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
         builder.Services.AddSingleton<CargaViajesViajesExcelExporter>();
@@ -720,6 +721,82 @@ public class Program
                     ReporteComprasExcelExporter.NombreArchivoResumen());
             }
         });
+
+        async Task<IResult> DescargarArticulosComprasExcel(
+            HttpRequest request,
+            IComprasDashboardService dashboardSvc,
+            IAppUserSessionService appUserSession,
+            ArticulosComprasExcelExporter exporter,
+            CancellationToken ct)
+        {
+            RestoreUserSessionFromToken(request, appUserSession);
+
+            static DateTime? ParseDate(string? value)
+                => DateTime.TryParse(value, out var parsed) ? parsed : null;
+
+            static string? NullIfEmpty(string? value)
+                => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+            static bool MatchVariacion(ArticuloResumenDto item, string variacion)
+                => variacion switch
+                {
+                    "subio" => item.VariacionPrecio > 0.005m,
+                    "bajo" => item.VariacionPrecio < -0.005m,
+                    "plano" => item.VariacionPrecio.HasValue && item.VariacionPrecio >= -0.005m && item.VariacionPrecio <= 0.005m,
+                    "nuevo" => item.EsNuevo,
+                    _ => true
+                };
+
+            static bool MatchTexto(ArticuloResumenDto item, string texto)
+            {
+                if (string.IsNullOrWhiteSpace(texto))
+                    return true;
+
+                return Contains(item.IdArticulo, texto)
+                    || Contains(item.DescripcionArticulo, texto)
+                    || Contains(item.ProveedorPrincipal, texto)
+                    || Contains(item.FechaAlta?.ToString("dd/MM/yyyy"), texto)
+                    || Contains(item.UltimaCompra?.ToString("dd/MM/yyyy"), texto);
+            }
+
+            static bool Contains(string? value, string text)
+                => !string.IsNullOrWhiteSpace(value)
+                   && value.Contains(text, StringComparison.CurrentCultureIgnoreCase);
+
+            var filters = new DashboardFilters
+            {
+                FechaDesde = ParseDate(request.Query["fechaDesde"]),
+                FechaHasta = ParseDate(request.Query["fechaHasta"]),
+                Proveedor = NullIfEmpty(request.Query["proveedor"]),
+                Articulo = NullIfEmpty(request.Query["articulo"]),
+                ArticuloCodigo = NullIfEmpty(request.Query["articuloCodigo"]),
+                ArticuloDescripcion = NullIfEmpty(request.Query["articuloDescripcion"]),
+                Rubro = NullIfEmpty(request.Query["rubro"]),
+                Familia = NullIfEmpty(request.Query["familia"]),
+                Usuario = NullIfEmpty(request.Query["usuario"]),
+                Sucursal = NullIfEmpty(request.Query["sucursal"]),
+                Deposito = NullIfEmpty(request.Query["deposito"]),
+                Estado = NullIfEmpty(request.Query["estado"]),
+                TipoComprobante = NullIfEmpty(request.Query["tc"])
+            };
+
+            var texto = request.Query["texto"].ToString().Trim();
+            var variacion = request.Query["variacion"].ToString().Trim();
+            var page = await dashboardSvc.GetArticulosPageDataAsync(filters, ct);
+            var rows = page.Articulos
+                .Where(x => MatchVariacion(x, variacion))
+                .Where(x => MatchTexto(x, texto))
+                .ToList();
+
+            var bytes = exporter.Exportar(rows, filters, texto, variacion);
+            return Results.File(
+                bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ArticulosComprasExcelExporter.NombreArchivo());
+        }
+
+        app.MapGet("/compras/articulos/descargar-excel", DescargarArticulosComprasExcel);
+        app.MapGet("/{idweb}/{idbase:int}/compras/articulos/descargar-excel", DescargarArticulosComprasExcel);
 
         static void RestoreUserSessionFromToken(HttpRequest request, IAppUserSessionService appUserSession)
         {

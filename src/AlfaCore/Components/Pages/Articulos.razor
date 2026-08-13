@@ -1,11 +1,15 @@
 @page "/compras/articulos"
 @page "/{idweb}/{idbase:int}/compras/articulos"
+@inherits SaaSRoutePageBase
+@using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
 @inject AlfaCore.Services.FilterStateService FilterState
+@inject AlfaCore.Services.IRouteContextService RouteCtx
+@inject IJSRuntime Js
 
 <PageTitle>Artículos | Dashboard de Compras</PageTitle>
 
-<section class="page-grid">
+<section class="page-grid articulos-page">
     <div class="page-intro"><div><h2 class="page-intro__title">Artículos</h2><p class="page-intro__text">Impacto económico, variación de precio, proveedor principal y últimas compras por artículo. <a class="help-link" href="/ayuda#9-artículos">Ver ayuda</a></p></div></div>
     <GlobalFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" />
 
@@ -62,12 +66,26 @@
             </div>
         }
 
-        <div class="split-grid">
+        <section class="articulos-table-section">
+            <div class="articulos-toolbar">
+                <div class="field articulos-search">
+                    <label>Buscar en el listado</label>
+                    <input @bind="_textoListado" @bind:event="oninput" placeholder="Código, descripción, proveedor o fecha" />
+                </div>
+                <div class="articulos-toolbar__meta">
+                    <span>@ArticulosFiltrados.Count().ToString("N0") de @_page.Articulos.Count.ToString("N0") artículo(s)</span>
+                    <button type="button" class="btn btn--ghost" @onclick="ExportarExcelAsync">
+                        <i class="bi bi-file-earmark-excel"></i> Exportar Excel
+                    </button>
+                </div>
+            </div>
+
             <DataTable Titulo="Artículos" Subtitulo="Análisis ejecutivo por impacto, precio y proveedor principal">
                 <Header>
                     <tr>
                         <th>Código</th>
                         <th>Descripción</th>
+                        <th>Fecha alta</th>
                         <th style="text-align:right;">Cantidad</th>
                         <th style="text-align:right;">Total</th>
                         <th style="text-align:right;">Costo prom.</th>
@@ -92,6 +110,7 @@
                                     <div class="text-muted">@item.ProveedorPrincipal</div>
                                 }
                             </td>
+                            <td>@Fecha(item.FechaAlta)</td>
                             <td style="text-align:right;">@item.CantidadComprada.ToString("N2")</td>
                             <td style="text-align:right;">@Moneda(item.TotalComprado)</td>
                             <td style="text-align:right;">@Moneda(item.CostoPromedio)</td>
@@ -112,42 +131,55 @@
                     }
                 </Rows>
             </DataTable>
-
-            @if (_detalle is not null)
-            {
-                <DetailCard Titulo="@_detalle.Resumen.DescripcionArticulo" Subtitulo="Resumen del artículo">
-                    <div class="detail-row"><span class="detail-row__label">Código</span><strong style="text-align:@GetCodigoAlign(_detalle.Resumen.IdArticulo); display:inline-block; min-width:100%;">@_detalle.Resumen.IdArticulo</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Cantidad</span><strong>@_detalle.Resumen.CantidadComprada.ToString("N2")</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Total</span><strong>@Moneda(_detalle.Resumen.TotalComprado)</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Costo promedio</span><strong>@Moneda(_detalle.Resumen.CostoPromedio)</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Precio anterior</span><strong>@MonedaNullable(_detalle.Resumen.PrecioAnterior)</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Precio actual</span><strong>@Moneda(_detalle.Resumen.PrecioActual)</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Variación</span><strong>@((MarkupString)RenderVariacionBadge(_detalle.Resumen.VariacionPrecio, _detalle.Resumen.EsNuevo))</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Última compra</span><strong>@Fecha(_detalle.Resumen.UltimaCompra)</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Proveedor principal</span><strong>@(string.IsNullOrWhiteSpace(_detalle.Resumen.ProveedorPrincipal) ? "Sin dato" : _detalle.Resumen.ProveedorPrincipal)</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Participación proveedor</span><strong>@(_detalle.Resumen.ParticipacionProveedorPrincipal > 0 ? $"{(_detalle.Resumen.ParticipacionProveedorPrincipal * 100m):N1}%" : "Sin dato")</strong></div>
-                    <div class="detail-row"><span class="detail-row__label">Cantidad de compras</span><strong>@_detalle.Resumen.CantidadCompras.ToString("N0")</strong></div>
-                </DetailCard>
-            }
-        </div>
+        </section>
 
         @if (_detalle is not null)
         {
-            <div class="three-grid">
-                <section class="panel-card"><LineChart Data="_detalle.EvolucionCosto" Titulo="Evolución del precio" Subtitulo="Costo promedio mensual del artículo" /></section>
-                <section class="panel-card"><HorizontalBarChart Data="_detalle.Proveedores" Titulo="Proveedores asociados" Subtitulo="Participación por total comprado" /></section>
-                <section class="panel-card">
-                    <div class="panel-card__header"><div><h3 class="panel-card__title">Historial</h3><p class="panel-card__subtitle">Últimos comprobantes del artículo</p></div></div>
-                    <div class="detail-list">
-                        @foreach (var item in _detalle.Historial)
-                        {
-                            <div class="detail-row">
-                                <span class="detail-row__label">@item.Fecha.ToString("dd/MM/yy") · @item.Tc @item.IdComprobante</span>
-                                <a class="action-link" href="/compras/comprobantes?tc=@item.Tc&id=@item.IdComprobante&cuenta=@Uri.EscapeDataString(item.Cuenta)">Abrir</a>
-                            </div>
-                        }
+            <div class="articulos-modal-backdrop" @onclick="CerrarDetalle"></div>
+            <div class="articulos-modal" role="dialog" aria-modal="true" aria-labelledby="articulo-detalle-title">
+                <div class="articulos-modal__card">
+                    <div class="articulos-modal__header">
+                        <div>
+                            <h3 id="articulo-detalle-title">@_detalle.Resumen.DescripcionArticulo</h3>
+                            <p>@_detalle.Resumen.IdArticulo · resumen del artículo</p>
+                        </div>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarDetalle">
+                            <i class="bi bi-x-lg"></i> Cerrar
+                        </button>
                     </div>
-                </section>
+
+                    <div class="articulos-modal__summary">
+                        <div class="detail-row"><span class="detail-row__label">Código</span><strong style="text-align:@GetCodigoAlign(_detalle.Resumen.IdArticulo); display:inline-block; min-width:100%;">@_detalle.Resumen.IdArticulo</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Fecha alta</span><strong>@Fecha(_detalle.Resumen.FechaAlta)</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Cantidad</span><strong>@_detalle.Resumen.CantidadComprada.ToString("N2")</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Total</span><strong>@Moneda(_detalle.Resumen.TotalComprado)</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Costo promedio</span><strong>@Moneda(_detalle.Resumen.CostoPromedio)</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Precio anterior</span><strong>@MonedaNullable(_detalle.Resumen.PrecioAnterior)</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Precio actual</span><strong>@Moneda(_detalle.Resumen.PrecioActual)</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Variación</span><strong>@((MarkupString)RenderVariacionBadge(_detalle.Resumen.VariacionPrecio, _detalle.Resumen.EsNuevo))</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Última compra</span><strong>@Fecha(_detalle.Resumen.UltimaCompra)</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Proveedor principal</span><strong>@(string.IsNullOrWhiteSpace(_detalle.Resumen.ProveedorPrincipal) ? "Sin dato" : _detalle.Resumen.ProveedorPrincipal)</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Participación proveedor</span><strong>@(_detalle.Resumen.ParticipacionProveedorPrincipal > 0 ? $"{(_detalle.Resumen.ParticipacionProveedorPrincipal * 100m):N1}%" : "Sin dato")</strong></div>
+                        <div class="detail-row"><span class="detail-row__label">Cantidad de compras</span><strong>@_detalle.Resumen.CantidadCompras.ToString("N0")</strong></div>
+                    </div>
+
+                    <div class="articulos-modal__grid">
+                        <section class="panel-card"><LineChart Data="_detalle.EvolucionCosto" Titulo="Evolución del precio" Subtitulo="Costo promedio mensual del artículo" /></section>
+                        <section class="panel-card"><HorizontalBarChart Data="_detalle.Proveedores" Titulo="Proveedores asociados" Subtitulo="Participación por total comprado" /></section>
+                        <section class="panel-card">
+                            <div class="panel-card__header"><div><h3 class="panel-card__title">Historial</h3><p class="panel-card__subtitle">Últimos comprobantes del artículo</p></div></div>
+                            <div class="detail-list">
+                                @foreach (var item in _detalle.Historial)
+                                {
+                                    <div class="detail-row">
+                                        <span class="detail-row__label">@item.Fecha.ToString("dd/MM/yy") · @item.Tc @item.IdComprobante</span>
+                                        <a class="action-link" href="@RouteCtx.BuildRoute($"/compras/comprobantes?tc={item.Tc}&id={item.IdComprobante}&cuenta={Uri.EscapeDataString(item.Cuenta)}")">Abrir</a>
+                                    </div>
+                                }
+                            </div>
+                        </section>
+                    </div>
+                </div>
             </div>
         }
     }
@@ -161,6 +193,7 @@
     private ArticulosPageDto? _page;
     private ArticuloDetalleDto? _detalle;
     private string _filtroVar = "";
+    private string _textoListado = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -176,18 +209,20 @@
     private async Task LoadAsync()
     {
         _filtroVar = "";
+        _textoListado = "";
         _page = await DashboardService.GetArticulosPageDataAsync(_filters);
         _detalle = !string.IsNullOrWhiteSpace(_filters.Articulo) ? await DashboardService.GetArticuloDetalleAsync(_filters.Articulo, _filters) : null;
     }
 
-    private IEnumerable<ArticuloResumenDto> ArticulosFiltrados => _filtroVar switch
-    {
-        "subio"  => _page!.Articulos.Where(x => x.VariacionPrecio > 0.005m),
-        "bajo"   => _page!.Articulos.Where(x => x.VariacionPrecio < -0.005m),
-        "plano"  => _page!.Articulos.Where(x => x.VariacionPrecio.HasValue && x.VariacionPrecio >= -0.005m && x.VariacionPrecio <= 0.005m),
-        "nuevo"  => _page!.Articulos.Where(x => x.EsNuevo),
-        _        => _page!.Articulos
-    };
+    private IEnumerable<ArticuloResumenDto> ArticulosFiltrados
+        => (_filtroVar switch
+        {
+            "subio"  => _page!.Articulos.Where(x => x.VariacionPrecio > 0.005m),
+            "bajo"   => _page!.Articulos.Where(x => x.VariacionPrecio < -0.005m),
+            "plano"  => _page!.Articulos.Where(x => x.VariacionPrecio.HasValue && x.VariacionPrecio >= -0.005m && x.VariacionPrecio <= 0.005m),
+            "nuevo"  => _page!.Articulos.Where(x => x.EsNuevo),
+            _        => _page!.Articulos
+        }).Where(MatchesTextoListado);
 
     private async Task SelectAsync(string articulo)
     {
@@ -195,11 +230,72 @@
         _detalle = await DashboardService.GetArticuloDetalleAsync(articulo, _filters);
     }
 
+    private void CerrarDetalle() => _detalle = null;
+
+    private async Task ExportarExcelAsync()
+    {
+        await Js.InvokeVoidAsync("dashboardExport.downloadFile", await GetExcelUrlAsync());
+    }
+
+    private async Task<string> GetExcelUrlAsync()
+    {
+        var query = new Dictionary<string, string?>
+        {
+            ["fechaDesde"] = _filters.FechaDesde?.ToString("yyyy-MM-dd"),
+            ["fechaHasta"] = _filters.FechaHasta?.ToString("yyyy-MM-dd"),
+            ["proveedor"] = _filters.Proveedor,
+            ["articulo"] = _filters.Articulo,
+            ["articuloCodigo"] = _filters.ArticuloCodigo,
+            ["articuloDescripcion"] = _filters.ArticuloDescripcion,
+            ["rubro"] = _filters.Rubro,
+            ["familia"] = _filters.Familia,
+            ["usuario"] = _filters.Usuario,
+            ["sucursal"] = _filters.Sucursal,
+            ["deposito"] = _filters.Deposito,
+            ["estado"] = _filters.Estado,
+            ["tc"] = _filters.TipoComprobante,
+            ["texto"] = _textoListado,
+            ["variacion"] = _filtroVar,
+            ["token"] = await GetUserTokenAsync()
+        };
+
+        return QueryHelpers.AddQueryString(RouteCtx.BuildRoute("/compras/articulos/descargar-excel"), query!);
+    }
+
+    private async Task<string?> GetUserTokenAsync()
+    {
+        try
+        {
+            return await Js.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private string QfClass(string key) => key == _filtroVar ? "btn btn--primary" : "btn btn--ghost";
 
     private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
     private static string MonedaNullable(decimal? valor) => valor.HasValue ? Moneda(valor.Value) : "Sin dato";
     private static string Fecha(DateTime? fecha) => fecha?.ToString("dd/MM/yyyy") ?? "Sin dato";
+
+    private bool MatchesTextoListado(ArticuloResumenDto item)
+    {
+        var texto = _textoListado.Trim();
+        if (texto.Length == 0)
+            return true;
+
+        return Contains(item.IdArticulo, texto)
+            || Contains(item.DescripcionArticulo, texto)
+            || Contains(item.ProveedorPrincipal, texto)
+            || Contains(Fecha(item.FechaAlta), texto)
+            || Contains(Fecha(item.UltimaCompra), texto);
+    }
+
+    private static bool Contains(string? value, string text)
+        => !string.IsNullOrWhiteSpace(value)
+           && value.Contains(text, StringComparison.CurrentCultureIgnoreCase);
 
     private static string RenderMayorVariacion(string? articulo, decimal? variacion)
     {

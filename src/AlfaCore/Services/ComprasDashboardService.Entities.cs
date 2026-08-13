@@ -917,6 +917,7 @@ public sealed partial class ComprasDashboardService
         return await MeasureAsync("GetArticulosPage", filters, async () =>
         {
             await using var connection = await OpenConnectionAsync(cancellationToken);
+            var fechaAltaExpr = await GetArticuloFechaAltaExpressionAsync(connection, cancellationToken);
 
             var currentRows = await ReadListAsync(connection, $"""
                 SELECT
@@ -927,6 +928,7 @@ public sealed partial class ComprasDashboardService
                     AVG(CAST(d.COSTO AS decimal(18,4))) AS CostoPromedio,
                     MAX(CAST(d.COSTO AS decimal(18,4))) AS PrecioActual,
                     MAX(d.FECHA) AS UltimaCompra,
+                    {fechaAltaExpr} AS FechaAlta,
                     COUNT(DISTINCT (ISNULL(d.TC, '') + '|' + ISNULL(d.IDCOMPROBANTE, '') + '|' + ISNULL(d.CUENTA, ''))) AS CantidadCompras
                 {DetailFromClause}
                 GROUP BY d.IDARTICULO, d.DESCRIPCION_ARTICULO
@@ -940,6 +942,7 @@ public sealed partial class ComprasDashboardService
                 CostoPromedio = reader.GetDecimal("CostoPromedio"),
                 PrecioActual = reader.GetDecimal("PrecioActual"),
                 UltimaCompra = reader.GetNullableDateTime("UltimaCompra"),
+                FechaAlta = reader.GetNullableDateTime("FechaAlta"),
                 CantidadCompras = reader.GetInt32("CantidadCompras")
             }, cancellationToken);
 
@@ -1044,6 +1047,7 @@ public sealed partial class ComprasDashboardService
                     ProveedorPrincipalCuenta = proveedor?.ProveedorPrincipalCuenta ?? string.Empty,
                     ParticipacionProveedorPrincipal = item.TotalComprado > 0 ? (proveedor?.TotalProveedor ?? 0m) / item.TotalComprado : 0m,
                     UltimaCompra = item.UltimaCompra,
+                    FechaAlta = item.FechaAlta,
                     CantidadCompras = item.CantidadCompras,
                     EsNuevo = esNuevo
                 };
@@ -1101,6 +1105,29 @@ public sealed partial class ComprasDashboardService
 
     public async Task<IReadOnlyList<ArticuloResumenDto>> GetArticulosAsync(DashboardFilters filters, CancellationToken cancellationToken = default)
         => (await GetArticulosPageDataAsync(filters, cancellationToken)).Articulos;
+
+    private async Task<string> GetArticuloFechaAltaExpressionAsync(SqlConnection connection, CancellationToken cancellationToken)
+    {
+        var exists = await ReadSingleAsync(connection, """
+            SELECT CASE
+                WHEN EXISTS (
+                    SELECT 1
+                    FROM INFORMATION_SCHEMA.COLUMNS
+                    WHERE TABLE_SCHEMA = 'dbo'
+                      AND TABLE_NAME = 'V_MA_ARTICULOS'
+                      AND COLUMN_NAME = 'FHALTA'
+                ) THEN 1
+                ELSE 0
+            END AS Existe;
+            """,
+            _ => { },
+            reader => reader.GetInt32("Existe"),
+            cancellationToken);
+
+        return exists == 1
+            ? "(SELECT MIN(a.FHALTA) FROM dbo.V_MA_ARTICULOS a WHERE LTRIM(RTRIM(a.IDARTICULO)) = LTRIM(RTRIM(d.IDARTICULO)))"
+            : "CAST(NULL AS datetime)";
+    }
 
     public async Task<ArticuloDetalleDto?> GetArticuloDetalleAsync(string idArticulo, DashboardFilters filters, CancellationToken cancellationToken = default)
     {

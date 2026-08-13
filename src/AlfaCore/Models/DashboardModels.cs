@@ -332,6 +332,7 @@ public sealed class ArticuloResumenDto
     public string ProveedorPrincipalCuenta { get; init; } = string.Empty;
     public decimal ParticipacionProveedorPrincipal { get; init; }
     public DateTime? UltimaCompra { get; init; }
+    public DateTime? FechaAlta { get; init; }
     public int CantidadCompras { get; init; }
     /// <summary>True si el artículo no tiene ninguna compra anterior a FechaDesde del período actual.</summary>
     public bool EsNuevo { get; init; }

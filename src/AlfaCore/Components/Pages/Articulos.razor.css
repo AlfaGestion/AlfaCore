@@ -1,0 +1,138 @@
+.articulos-page {
+    width: min(100%, 1920px);
+    max-width: none;
+}
+
+.articulos-page .three-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.articulos-table-section {
+    min-width: 0;
+}
+
+.articulos-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: end;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+
+.articulos-search {
+    width: min(520px, 100%);
+}
+
+.articulos-toolbar__meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    color: rgba(226, 232, 240, 0.72);
+    font-size: 0.92rem;
+}
+
+.articulos-page ::deep .data-table {
+    min-width: 1320px;
+}
+
+.articulos-page ::deep .table-responsive {
+    max-height: min(68vh, 760px);
+}
+
+.articulos-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1040;
+    background: rgba(2, 6, 23, 0.72);
+}
+
+.articulos-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+}
+
+.articulos-modal__card {
+    width: min(1480px, 100%);
+    max-height: min(92vh, 980px);
+    overflow: auto;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 18px;
+    background: rgba(7, 13, 26, 0.98);
+    box-shadow: 0 26px 90px rgba(0, 0, 0, 0.46);
+    padding: 1rem;
+}
+
+.articulos-modal__header {
+    display: flex;
+    align-items: start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.articulos-modal__header h3 {
+    margin: 0;
+    font-size: 1.15rem;
+}
+
+.articulos-modal__header p {
+    margin: 0.25rem 0 0;
+    color: rgba(226, 232, 240, 0.72);
+}
+
+.articulos-modal__summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.articulos-modal__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1rem;
+}
+
+@media (max-width: 1200px) {
+    .articulos-page .three-grid,
+    .articulos-modal__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .articulos-modal__summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 768px) {
+    .articulos-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .articulos-toolbar__meta {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .articulos-page .three-grid,
+    .articulos-modal__grid,
+    .articulos-modal__summary {
+        grid-template-columns: 1fr;
+    }
+
+    .articulos-modal {
+        place-items: stretch;
+        padding: 0.5rem;
+    }
+
+    .articulos-modal__card {
+        max-height: calc(100vh - 1rem);
+        border-radius: 14px;
+    }
+}
