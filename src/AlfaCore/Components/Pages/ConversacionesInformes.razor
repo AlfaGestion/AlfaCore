@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/conversaciones/informes"
 @inject AlfaCore.Services.IConversacionesInformesService InformesSvc
 @inject NavigationManager Nav
+@inject Microsoft.JSInterop.IJSRuntime Js
 @using AlfaCore.Models
 
 <PageTitle>Informes de conversaciones | Alfa Gestion</PageTitle>
@@ -96,7 +97,12 @@
         <div class="panel-card" style="padding:1rem;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.6rem; flex-wrap:wrap; gap:.5rem;">
                 <strong>Período @_informe.PeriodoLabel — @_informe.Filas.Count clientes/contactos</strong>
-                <span class="panel-card__subtitle" style="margin:0;">Generado @_informe.FechaGeneracion.ToString("dd/MM/yyyy HH:mm")</span>
+                <div style="display:flex; align-items:center; gap:.6rem;">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ExportarExcelAsync" title="Descargar el informe en Excel">
+                        <i class="bi bi-file-earmark-excel"></i> Excel
+                    </button>
+                    <span class="panel-card__subtitle" style="margin:0;">Generado @_informe.FechaGeneracion.ToString("dd/MM/yyyy HH:mm")</span>
+                </div>
             </div>
             <div class="conv-informes-grid-wrap">
                 <table class="conv-informes-grid">
@@ -277,6 +283,16 @@
         => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
             ? $"/{idweb}/{idbase}/conversaciones/informes/detalle/{fila.IdDetalle}"
             : $"/conversaciones/informes/detalle/{fila.IdDetalle}");
+
+    private async Task ExportarExcelAsync()
+    {
+        if (_informe is null)
+            return;
+        var url = idbase.HasValue && !string.IsNullOrEmpty(idweb)
+            ? $"/{idweb}/{idbase}/conversaciones/informes/{_informe.IdInforme}/excel"
+            : $"/conversaciones/informes/{_informe.IdInforme}/excel";
+        await Js.InvokeVoidAsync("dashboardExport.downloadFile", url);
+    }
 
     private async Task CargarTendenciaAsync()
     {
