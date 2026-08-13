@@ -619,6 +619,13 @@ public sealed class ConversacionesConfigService(
                 BotPalabrasEscalado = ReadValue(values, "CONV_BOT_PALABRAS_ESCALADO", string.Empty,
                     "humano, persona, reclamo, operador, hablar con alguien"),
                 BotMaxRespuestas = ReadIntValue(values, "CONV_BOT_MAX_RESPUESTAS", 0, 5),
+                AutoCierreActivo = ReadValue(values, "CONV_AUTOCIERRE_ACTIVO", string.Empty) == "1",
+                AutoCierreHorasAviso = ReadIntValue(values, "CONV_AUTOCIERRE_HORAS_AVISO", 0, 23),
+                AutoCierreHorasCierre = ReadIntValue(values, "CONV_AUTOCIERRE_HORAS_CIERRE", 0, 24),
+                AutoCierreMensajeAviso = ReadValue(values, "CONV_AUTOCIERRE_MENSAJE_AVISO", string.Empty,
+                    "¿Seguís ahí? Si no tenemos novedades, vamos a cerrar esta conversación. Escribinos cuando quieras. 🙂"),
+                AutoCierreMensajeCierre = ReadValue(values, "CONV_AUTOCIERRE_MENSAJE_CIERRE", string.Empty,
+                    "Cerramos esta conversación por inactividad. Cuando lo necesites, escribinos de nuevo. ¡Gracias!"),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
         }, "No se pudo cargar la configuración de automatizaciones.", ct);
@@ -648,7 +655,12 @@ public sealed class ConversacionesConfigService(
                 ("CONV_BOT_ACTIVO", config.BotActivo ? "1" : "0"),
                 ("CONV_BOT_SOLO_SIN_ASIGNAR", config.BotSoloSinAsignar ? "1" : "0"),
                 ("CONV_BOT_PALABRAS_ESCALADO", (config.BotPalabrasEscalado ?? string.Empty).Trim()),
-                ("CONV_BOT_MAX_RESPUESTAS", (config.BotMaxRespuestas <= 0 ? 5 : config.BotMaxRespuestas).ToString(System.Globalization.CultureInfo.InvariantCulture))
+                ("CONV_BOT_MAX_RESPUESTAS", (config.BotMaxRespuestas <= 0 ? 5 : config.BotMaxRespuestas).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                ("CONV_AUTOCIERRE_ACTIVO", config.AutoCierreActivo ? "1" : "0"),
+                ("CONV_AUTOCIERRE_HORAS_AVISO", (config.AutoCierreHorasAviso <= 0 ? 23 : config.AutoCierreHorasAviso).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                ("CONV_AUTOCIERRE_HORAS_CIERRE", (config.AutoCierreHorasCierre <= 0 ? 24 : config.AutoCierreHorasCierre).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                ("CONV_AUTOCIERRE_MENSAJE_AVISO", (config.AutoCierreMensajeAviso ?? string.Empty).Trim()),
+                ("CONV_AUTOCIERRE_MENSAJE_CIERRE", (config.AutoCierreMensajeCierre ?? string.Empty).Trim())
             };
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -1281,7 +1293,12 @@ public sealed class ConversacionesConfigService(
                 'CONV_BOT_ACTIVO',
                 'CONV_BOT_SOLO_SIN_ASIGNAR',
                 'CONV_BOT_PALABRAS_ESCALADO',
-                'CONV_BOT_MAX_RESPUESTAS'
+                'CONV_BOT_MAX_RESPUESTAS',
+                'CONV_AUTOCIERRE_ACTIVO',
+                'CONV_AUTOCIERRE_HORAS_AVISO',
+                'CONV_AUTOCIERRE_HORAS_CIERRE',
+                'CONV_AUTOCIERRE_MENSAJE_AVISO',
+                'CONV_AUTOCIERRE_MENSAJE_CIERRE'
             )
             """;
 

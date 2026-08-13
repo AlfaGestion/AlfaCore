@@ -204,6 +204,19 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>Tope de respuestas automáticas por conversación antes de escalar (evita loops).</summary>
     public int BotMaxRespuestas { get; set; } = 5;
 
+    // Auto-cierre por inactividad. Cierra conversaciones donde estamos esperando al cliente
+    // (último mensaje nuestro) y no responde. Manda un aviso previo antes de cerrar. Apagado por
+    // defecto. Aplica a todos los canales; el aviso/cierre solo se envían si el canal lo permite.
+    public bool AutoCierreActivo { get; set; }
+    /// <summary>Horas de inactividad (esperando al cliente) para mandar el aviso previo. 23 deja
+    /// la ventana de 24h de WhatsApp todavía abierta para poder escribirle.</summary>
+    public int AutoCierreHorasAviso { get; set; } = 23;
+    /// <summary>Horas tras el aviso, sin respuesta del cliente, para cerrar la conversación.</summary>
+    public int AutoCierreHorasCierre { get; set; } = 24;
+    public string AutoCierreMensajeAviso { get; set; } = "¿Seguís ahí? Si no tenemos novedades, vamos a cerrar esta conversación. Escribinos cuando quieras. 🙂";
+    /// <summary>Mensaje al cerrar (opcional; vacío = cierra sin mensaje).</summary>
+    public string AutoCierreMensajeCierre { get; set; } = "Cerramos esta conversación por inactividad. Cuando lo necesites, escribinos de nuevo. ¡Gracias!";
+
     public string ConfigSource { get; set; } = string.Empty;
 
     public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);

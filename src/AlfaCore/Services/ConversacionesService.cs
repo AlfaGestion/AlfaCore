@@ -6532,6 +6532,160 @@ public sealed class ConversacionesService(
         }
     }
 
+    // Auto-cierre por inactividad. Para conversaciones donde estamos esperando al cliente (último
+    // mensaje nuestro) y no responde: a las N horas manda un aviso previo; si sigue sin responder,
+    // a las M horas del aviso cierra. Aplica a todos los canales; el aviso/cierre solo se envían si
+    // el canal/ventana lo permiten. Corre desde un job en segundo plano, una vez por base.
+    public async Task<int> ProcesarAutoCierreAsync(CancellationToken ct = default)
+    {
+        int acciones = 0;
+        try
+        {
+            if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+                return 0;
+
+            var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+            if (!config.AutoCierreActivo)
+                return 0;
+
+            var horasAviso = Math.Max(1, config.AutoCierreHorasAviso);
+            var horasCierre = Math.Max(1, config.AutoCierreHorasCierre);
+
+            var candidatos = new List<(long Id, string Canal, string SistemaAutor)>();
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(ct);
+                const string sql = """
+                    SELECT TOP (200) c.IdConversacion, ISNULL(c.Canal, '') AS Canal, m.SistemaAutor
+                    FROM dbo.CONV_CONVERSACIONES c
+                    INNER JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
+                    OUTER APPLY (
+                        SELECT TOP (1) ISNULL(mm.Direction, '') AS Direction, ISNULL(mm.SistemaAutor, '') AS SistemaAutor, mm.FechaHora
+                        FROM dbo.CONV_MENSAJES mm
+                        WHERE mm.IdConversacion = c.IdConversacion AND mm.Direction IN (N'ENTRANTE', N'SALIENTE')
+                        ORDER BY mm.FechaHora DESC, mm.IdMensaje DESC
+                    ) m
+                    WHERE ISNULL(c.Archivada, 0) = 0
+                      AND ISNULL(e.EsCerrado, 0) = 0
+                      AND m.Direction = N'SALIENTE'
+                      AND (
+                            (m.SistemaAutor <> N'AUTOCIERRE_AVISO' AND m.FechaHora <= DATEADD(hour, -@HorasAviso, GETDATE()))
+                         OR (m.SistemaAutor =  N'AUTOCIERRE_AVISO' AND m.FechaHora <= DATEADD(hour, -@HorasCierre, GETDATE()))
+                      );
+                    """;
+                await using var cmd = new SqlCommand(sql, cn);
+                cmd.Parameters.AddWithValue("@HorasAviso", horasAviso);
+                cmd.Parameters.AddWithValue("@HorasCierre", horasCierre);
+                await using var rd = await cmd.ExecuteReaderAsync(ct);
+                while (await rd.ReadAsync(ct))
+                    candidatos.Add((rd.GetInt64(0), GetString(rd, 1), GetString(rd, 2)));
+            }
+
+            if (candidatos.Count == 0)
+                return 0;
+
+            var estadoCerrado = await GetClosedStateCodeAsync(ct).ConfigureAwait(false);
+
+            foreach (var cand in candidatos)
+            {
+                try
+                {
+                    var yaAvisado = string.Equals(cand.SistemaAutor, "AUTOCIERRE_AVISO", StringComparison.OrdinalIgnoreCase);
+                    if (yaAvisado)
+                    {
+                        await CerrarPorInactividadAsync(cand.Id, estadoCerrado, config.AutoCierreMensajeCierre, ct).ConfigureAwait(false);
+                        acciones++;
+                    }
+                    else if (!string.IsNullOrWhiteSpace(config.AutoCierreMensajeAviso))
+                    {
+                        try
+                        {
+                            await SendMessageAsync(new ConversacionSendMessageRequest
+                            {
+                                IdConversacion = cand.Id,
+                                Texto = config.AutoCierreMensajeAviso.Trim(),
+                                MessageType = "TEXT",
+                                UsuarioAccion = "AlfaCore",
+                                SistemaAccion = "AUTOCIERRE_AVISO"
+                            }, ct).ConfigureAwait(false);
+                            acciones++;
+                        }
+                        catch
+                        {
+                            // No se pudo avisar (ventana vencida / canal sin envío): se cierra directo.
+                            await CerrarPorInactividadAsync(cand.Id, estadoCerrado, string.Empty, ct).ConfigureAwait(false);
+                            acciones++;
+                        }
+                    }
+                    else
+                    {
+                        // Sin mensaje de aviso configurado: cierra directo.
+                        await CerrarPorInactividadAsync(cand.Id, estadoCerrado, config.AutoCierreMensajeCierre, ct).ConfigureAwait(false);
+                        acciones++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await _appEvents.LogErrorAsync("Conversaciones", "AutoCierreItem", ex,
+                        "No se pudo procesar el auto-cierre de una conversación.",
+                        new { cand.Id }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "AutoCierre", ex,
+                "No se pudo procesar el auto-cierre por inactividad.", null, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+        return acciones;
+    }
+
+    private async Task<string> GetClosedStateCodeAsync(CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(
+            "SELECT TOP (1) LTRIM(RTRIM(CodigoEstado)) FROM dbo.CONV_ESTADOS WHERE ISNULL(EsCerrado, 0) = 1 ORDER BY ISNULL(Orden, 999), CodigoEstado;", cn);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is string s && !string.IsNullOrWhiteSpace(s) ? s : "CERRADA";
+    }
+
+    private async Task CerrarPorInactividadAsync(long idConversacion, string estadoCerrado, string? mensajeCierre, CancellationToken ct)
+    {
+        // Intentar mandar el mensaje de cierre (si el canal/ventana lo permiten). No frena el cierre.
+        if (!string.IsNullOrWhiteSpace(mensajeCierre))
+        {
+            try
+            {
+                await SendMessageAsync(new ConversacionSendMessageRequest
+                {
+                    IdConversacion = idConversacion,
+                    Texto = mensajeCierre.Trim(),
+                    MessageType = "TEXT",
+                    UsuarioAccion = "AlfaCore",
+                    SistemaAccion = "AUTOCIERRE"
+                }, ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Ventana vencida o canal sin envío: se cierra igual, sin mensaje.
+            }
+        }
+
+        await ChangeStatusAsync(new ConversacionEstadoRequest
+        {
+            IdConversacion = idConversacion,
+            CodigoEstado = estadoCerrado,
+            UsuarioAccion = "AlfaCore",
+            SistemaAccion = "AUTOCIERRE"
+        }, ct).ConfigureAwait(false);
+
+        await _appEvents.LogAuditAsync("Conversaciones", "AutoCierre", "CONV_CONVERSACIONES",
+            idConversacion.ToString(CultureInfo.InvariantCulture),
+            "Conversación cerrada automáticamente por inactividad.",
+            new { idConversacion }, ct).ConfigureAwait(false);
+    }
+
     private static bool ContienePalabraEscalado(string texto, string? palabras)
     {
         if (string.IsNullOrWhiteSpace(palabras))

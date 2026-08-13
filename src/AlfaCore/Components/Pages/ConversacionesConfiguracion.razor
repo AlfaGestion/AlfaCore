@@ -710,6 +710,35 @@
                     </div>
                 </div>
 
+                <div class="conv-config-fields conv-bot-config">
+                    <div class="conv-config-fields__full">
+                        <h4 class="conv-bot-config__title"><i class="bi bi-door-closed"></i> Auto-cierre por inactividad</h4>
+                        <p class="panel-card__subtitle">Cierra conversaciones donde estamos esperando al cliente (último mensaje nuestro) y no responde. Manda un aviso previo y, si sigue sin responder, cierra. Aplica a todos los canales. Apagado por defecto.</p>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label class="conv-config-checkbox">
+                            <input type="checkbox" @bind="_automatizacionesConfig.AutoCierreActivo" />
+                            <span>Activar auto-cierre por inactividad</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label for="ac-aviso">Horas de inactividad para el aviso</label>
+                        <input id="ac-aviso" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasAviso" />
+                    </div>
+                    <div class="field">
+                        <label for="ac-cierre">Horas tras el aviso para cerrar</label>
+                        <input id="ac-cierre" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasCierre" />
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label for="ac-msg-aviso">Mensaje de aviso</label>
+                        <textarea id="ac-msg-aviso" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeAviso"></textarea>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label for="ac-msg-cierre">Mensaje de cierre (opcional)</label>
+                        <textarea id="ac-msg-cierre" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeCierre"></textarea>
+                    </div>
+                </div>
+
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="SaveAutomatizacionesAsync" disabled="@(Loading || Saving)">
                         <i class="bi bi-floppy-fill"></i> Guardar automatizaciones

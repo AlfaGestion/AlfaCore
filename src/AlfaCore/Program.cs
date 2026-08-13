@@ -207,6 +207,7 @@ public class Program
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
         builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
+        builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
 
         var app = builder.Build();
 
