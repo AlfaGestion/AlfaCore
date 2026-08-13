@@ -18,7 +18,7 @@
 
 <div class="@GetContactosPageClass()" @onclick="HandlePageClickAsync">
 
-    @if (_pageMode == ContactosPageMode.Edit)
+    @if (_pageMode is ContactosPageMode.Edit or ContactosPageMode.New)
     {
         <NavigationLock OnBeforeInternalNavigation="ProtectDirtyEditNavigation" />
     }
@@ -140,224 +140,16 @@
         }
         else
         {
-        <section class="panel-card contactos-editor-panel">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Datos principales</h3>
-                    <p class="panel-card__subtitle">@(_isNewMode ? "Completá los datos principales del contacto." : $"Código interno: {_selectedId} · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
-                </div>
-            </div>
-
-            <div class="contactos-editor-scroll">
-                <div class="contactos-tabs">
-                    <button type="button"
-                            class="btn @(_activeTab == ContactoTab.Datos ? "btn--primary" : "btn--ghost")"
-                            @onclick="() => _activeTab = ContactoTab.Datos">
-                        Datos generales
-                    </button>
-                    <button type="button"
-                            class="btn @(_activeTab == ContactoTab.Observaciones ? "btn--primary" : "btn--ghost")"
-                            @onclick="() => _activeTab = ContactoTab.Observaciones">
-                        Observaciones
-                    </button>
-                    <button type="button"
-                            class="btn @(_activeTab == ContactoTab.Cuentas ? "btn--primary" : "btn--ghost")"
-                            @onclick="() => _activeTab = ContactoTab.Cuentas">
-                        Clientes / proveedores
-                    </button>
-                </div>
-
-                @if (_activeTab == ContactoTab.Datos)
-                {
-                    <div class="contactos-form">
-                        <div class="contactos-form__grid">
-                        <div class="field">
-                            <label>Nombre y apellido</label>
-                            <input type="text" class="@GetFieldInputClass("nombre")" maxlength="100" @bind="_form.NombreApellido" disabled="@_saving" />
-                            @if (HasFieldError("nombre"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("nombre")</small>
-                            }
-                        </div>
-                        <div class="field">
-                            <label>Domicilio</label>
-                            <input type="text" class="@GetFieldInputClass("domicilio")" maxlength="100" @bind="_form.Domicilio" disabled="@_saving" />
-                            @if (HasFieldError("domicilio"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("domicilio")</small>
-                            }
-                        </div>
-                        <div class="field">
-                            <label>Localidad</label>
-                            <input type="text" class="@GetFieldInputClass("localidad")" maxlength="100" @bind="_form.Localidad" disabled="@_saving" />
-                            @if (HasFieldError("localidad"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("localidad")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Código postal</label>
-                            <input type="text" class="@GetFieldInputClass("codigo-postal")" maxlength="20" @bind="_form.CodigoPostal" disabled="@_saving" />
-                            @if (HasFieldError("codigo-postal"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("codigo-postal")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Provincia</label>
-                            <select class="@GetFieldInputClass("provincia")" @bind="_form.ProvinciaCodigo" disabled="@(_saving || _loadingProvincias)">
-                                <option value="">Seleccionar...</option>
-                                @foreach (var item in _provincias)
-                                {
-                                    <option value="@item.Codigo">@item.Descripcion</option>
-                                }
-                            </select>
-                            @if (HasFieldError("provincia"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("provincia")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Nro. documento</label>
-                            <input type="text" class="@GetFieldInputClass("numero-documento")" maxlength="13" @bind="_form.NumeroDocumento" disabled="@_saving" />
-                            @if (HasFieldError("numero-documento"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("numero-documento")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Teléfono</label>
-                            <input type="text" class="@GetFieldInputClass("telefono")" maxlength="100" @bind="_form.Telefono" disabled="@_saving" />
-                            @if (HasFieldError("telefono"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("telefono")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Tel. alternativo</label>
-                            <input type="text" class="@GetFieldInputClass("telefono-alternativo")" maxlength="100" @bind="_form.TelefonoAlternativo" disabled="@_saving" />
-                            @if (HasFieldError("telefono-alternativo"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("telefono-alternativo")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Celular</label>
-                            <input type="text" class="@GetFieldInputClass("celular")" maxlength="100" @bind="_form.Celular" disabled="@_saving" />
-                            @if (HasFieldError("celular"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("celular")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>E-mail</label>
-                            <input type="email" class="@GetFieldInputClass("email")" maxlength="100" @bind="_form.Email" disabled="@_saving" />
-                            @if (HasFieldError("email"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("email")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Página web</label>
-                            <input type="text" class="@GetFieldInputClass("website")" maxlength="100" @bind="_form.Website" disabled="@_saving" />
-                            @if (HasFieldError("website"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("website")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Cargo</label>
-                            <input type="text" class="@GetFieldInputClass("cargo")" maxlength="100" @bind="_form.Cargo" disabled="@_saving" />
-                            @if (HasFieldError("cargo"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("cargo")</small>
-                            }
-                        </div>
-                        </div>
-
-                        <div class="contactos-flags">
-                            <label class="checkbox">
-                                <input type="checkbox" @bind="_form.MailPagosCobranzas" disabled="@_saving" />
-                                <span>Pagos/Cobranzas</span>
-                            </label>
-                            <label class="checkbox">
-                                <input type="checkbox" @bind="_form.MailOrdenCompra" disabled="@_saving" />
-                                <span>Órdenes de compra</span>
-                            </label>
-                            <label class="checkbox">
-                                <input type="checkbox" @bind="_form.MailOrdenTrabajo" disabled="@_saving" />
-                                <span>Órdenes de trabajo</span>
-                            </label>
-                        </div>
-                    </div>
-                }
-                else if (_activeTab == ContactoTab.Observaciones)
-                {
-                    <div class="field">
-                        <label>Observaciones</label>
-                        <textarea class="contactos-observaciones" @bind="_form.Observaciones" disabled="@_saving"></textarea>
-                    </div>
-                }
-                else
-                {
-                    <div class="contactos-form">
-                        <div class="panel-card__header">
-                            <div>
-                                <h3 class="panel-card__title">Cuentas vinculadas</h3>
-                                <p class="panel-card__subtitle">Clientes y proveedores relacionados con este contacto.</p>
-                            </div>
-                        </div>
-                        @if (_linkedAccounts.Count == 0)
-                        {
-                            <div class="usuarios-empty">Este contacto no tiene clientes o proveedores vinculados.</div>
-                        }
-                        else
-                        {
-                            <div class="usuarios-table-wrap">
-                                <table class="data-table usuarios-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Tipo</th>
-                                            <th>C&oacute;digo</th>
-                                            <th>Cuenta</th>
-                                            <th>Relaci&oacute;n</th>
-                                            <th>Acciones</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (var account in _linkedAccounts)
-                                        {
-                                            <tr>
-                                                <td>@account.Tipo</td>
-                                                <td>@account.Codigo</td>
-                                                <td><strong>@DisplayOrFallback(account.RazonSocial, account.Codigo)</strong></td>
-                                                <td>
-                                                    @if (account.VinculadoPorTabla)
-                                                    {
-                                                        <span>Relaci&oacute;n m&uacute;ltiple</span>
-                                                    }
-                                                    @if (account.VinculadoPorCuentaRel)
-                                                    {
-                                                        <span>@(account.VinculadoPorTabla ? " / " : string.Empty)CuentaRel</span>
-                                                    }
-                                                </td>
-                                                <td>
-                                                    <a class="btn btn--ghost btn--sm" href="@BuildCuentaLink(account)">
-                                                        <i class="bi bi-box-arrow-up-right"></i>
-                                                        Ver / editar
-                                                    </a>
-                                                </td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            </div>
-                        }
-                    </div>
-                }
-            </div>
-
-        </section>
+        <ContactosEditView Model="_form"
+                           CreateMode="true"
+                           Saving="_saving"
+                           LoadingProvinces="_loadingProvincias"
+                           Provinces="_provincias"
+                           FieldErrors="_fieldErrors"
+                           ActiveTab="(int)_activeTab"
+                           ActiveTabChanged="SetEditTabAsync"
+                           OnFieldChanged="HandleEditFieldChangedAsync"
+                           BuildAccountLink="BuildCuentaLink" />
         }
     }
     else if (_showRecordView)
@@ -751,9 +543,9 @@
                    OnCancel="CloseDeactivateConfirm" />
 
 <AlfaConfirmDialog Open="@_showDiscardEditConfirm"
-                   Title="Descartar cambios"
+                   Title="@(_pageMode == ContactosPageMode.New ? "Descartar contacto nuevo" : "Descartar cambios")"
                    Message="Hay cambios sin guardar. Si salís ahora, se perderán."
-                   ConfirmLabel="Descartar cambios"
+                   ConfirmLabel="@(_pageMode == ContactosPageMode.New ? "Descartar" : "Descartar cambios")"
                    CancelLabel="Seguir editando"
                    OnConfirm="DiscardEditChangesAsync"
                    OnCancel="ContinueEditing" />
@@ -1073,7 +865,7 @@
                 Priority = PageHeaderActionPriority.Essential,
                 Disabled = _saving || editUnavailable,
                 OnClick = _isNewMode
-                    ? () => { CerrarEditor(); return Task.CompletedTask; }
+                    ? RequestCancelNewAsync
                     : RequestCancelEditAsync
             });
             if (!_isNewMode && _selectedActivo && !editUnavailable)
@@ -1237,9 +1029,7 @@
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             RecordToolbar = _showRecordView,
             TopNavigationItems = BuildTopNavigationItems(),
-            OnBack = _showRecordView
-                ? VolverDesdeFichaAsync
-                : _showEditor && _isNewMode ? new Func<Task>(() => { CerrarEditor(); return Task.CompletedTask; }) : null,
+            OnBack = _showRecordView ? VolverDesdeFichaAsync : null,
             Search = _showEditor || _showRecordView
                 ? null
                 : new PageHeaderSearchConfig(),
@@ -2221,6 +2011,7 @@
         _form.Website = string.Empty;
         _form.Cargo = string.Empty;
         _form.Observaciones = string.Empty;
+        ResetEditorDirtyState();
         UpdatePageHeader();
     }
 
@@ -2244,6 +2035,7 @@
         if (query.TryGetValue("email", out var email))
             _form.Email = email.ToString();
 
+        ResetEditorDirtyState();
         _filters.Texto = _form.NombreApellido;
         SetFeedback(new AppUiMessage
         {
@@ -2303,6 +2095,18 @@
         return ReturnFromEditToRecordAsync();
     }
 
+    private Task RequestCancelNewAsync()
+    {
+        if (_editDirty)
+        {
+            _showDiscardEditConfirm = true;
+            return Task.CompletedTask;
+        }
+
+        ReturnFromNewToBrowse();
+        return Task.CompletedTask;
+    }
+
     private void ContinueEditing()
     {
         _showDiscardEditConfirm = false;
@@ -2319,6 +2123,12 @@
             _editDirty = false;
             _allowEditNavigation = true;
             Nav.NavigateTo(target);
+            return;
+        }
+
+        if (_pageMode == ContactosPageMode.New)
+        {
+            ReturnFromNewToBrowse();
             return;
         }
 
@@ -2339,6 +2149,19 @@
         context.PreventNavigation();
         _pendingEditNavigationUri = context.TargetLocation;
         _showDiscardEditConfirm = true;
+    }
+
+    private void ReturnFromNewToBrowse()
+    {
+        ClearFieldErrors();
+        SetFeedback(null);
+        _editDirty = false;
+        _showDiscardEditConfirm = false;
+        _pageMode = ContactosPageMode.Browse;
+        _isNewMode = false;
+        _allowEditNavigation = true;
+        NavigateToContactosState(ContactosUrlState.Base, replace: true);
+        UpdatePageHeader();
     }
 
     private async Task ReturnFromEditToRecordAsync()
@@ -2385,6 +2208,14 @@
             _form.MailOrdenCompra,
             _form.MailOrdenTrabajo
         });
+    }
+
+    private void ResetEditorDirtyState()
+    {
+        _editInitialState = CaptureEditState();
+        _editDirty = false;
+        _showDiscardEditConfirm = false;
+        _pendingEditNavigationUri = string.Empty;
     }
 
     private void CerrarEditor(bool useReturnUrl)
@@ -2612,6 +2443,9 @@
 
     private async Task GuardarAsync()
     {
+        if (_saving)
+            return;
+
         ClearFieldErrors();
         _saving = true;
         UpdatePageHeader();
@@ -2624,18 +2458,13 @@
                 await BuscarAsync();
                 _selectedId = savedId;
                 _isNewMode = false;
-                if (_pageMode == ContactosPageMode.Edit)
+                if (_pageMode is ContactosPageMode.Edit or ContactosPageMode.New)
                 {
                     _editDirty = false;
                     _pageMode = ContactosPageMode.Record;
                     _allowEditNavigation = true;
                     NavigateToContactosState(ContactosUrlState.Record, savedId, replace: true);
                     await CargarFichaAsync(savedId);
-                }
-                else
-                {
-                    ReturnToBrowseState();
-                    NavigateToContactosState(ContactosUrlState.Base, replace: true);
                 }
             }
             catch (AppValidationException validationEx)
