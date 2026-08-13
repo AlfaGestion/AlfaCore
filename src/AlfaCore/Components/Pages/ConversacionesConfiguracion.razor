@@ -685,6 +685,23 @@
 
                 <div class="conv-config-fields conv-bot-config">
                     <div class="conv-config-fields__full">
+                        <h4 class="conv-bot-config__title"><i class="bi bi-hand-thumbs-up"></i> Bienvenida al primer contacto</h4>
+                        <p class="panel-card__subtitle">Se manda una sola vez, cuando llega el primer mensaje de una conversación nueva de WhatsApp y todavía no le respondimos nada.</p>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label class="conv-config-checkbox">
+                            <input type="checkbox" @bind="_automatizacionesConfig.BienvenidaActivo" />
+                            <span>Activar mensaje de bienvenida</span>
+                        </label>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label for="bienvenida-msg">Mensaje de bienvenida</label>
+                        <textarea id="bienvenida-msg" rows="2" @bind="_automatizacionesConfig.BienvenidaMensaje"></textarea>
+                    </div>
+                </div>
+
+                <div class="conv-config-fields conv-bot-config">
+                    <div class="conv-config-fields__full">
                         <h4 class="conv-bot-config__title"><i class="bi bi-robot"></i> Bot autónomo (IA) — Nivel 3</h4>
                         <p class="panel-card__subtitle">Responde solo, con guardarraíles. Apagado por defecto. Requiere AlfaKnowledge configurado y las instrucciones del asistente cargadas. Solo responde cuando tiene respaldo de la base; si no, deja la conversación para un humano.</p>
                     </div>

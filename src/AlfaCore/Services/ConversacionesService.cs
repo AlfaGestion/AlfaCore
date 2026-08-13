@@ -3330,6 +3330,7 @@ public sealed class ConversacionesService(
                 {
                     await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
                     await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                    await TryAutoReplyWelcomeAsync(conversationId, token);
                     await TryAutoReplyOutOfHoursAsync(conversationId, token);
                     await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
                 }
@@ -6484,7 +6485,8 @@ public sealed class ConversacionesService(
             var (botCount, lastSistema) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
             if (botCount >= Math.Max(1, config.BotMaxRespuestas))
                 return;
-            if (string.Equals(lastSistema, "AUTOMATIZACION", StringComparison.OrdinalIgnoreCase))
+            // No encimar sobre otra automática (bienvenida, fuera de horario, auto-cierre, etc.).
+            if (IsAutomaticSystem(lastSistema))
                 return;
 
             var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
@@ -6784,7 +6786,69 @@ public sealed class ConversacionesService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         var result = await cmd.ExecuteScalarAsync(ct);
-        return result is string sistemaAutor && string.Equals(sistemaAutor, "AUTOMATIZACION", StringComparison.OrdinalIgnoreCase);
+        // Ya respondimos automáticamente (bienvenida / fuera de horario / bot / auto-cierre): no encimar.
+        return result is string sistemaAutor && IsAutomaticSystem(sistemaAutor);
+    }
+
+    private static readonly HashSet<string> AutomaticSystems = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "AUTOMATIZACION", "BIENVENIDA", "BOT", "AUTOCIERRE_AVISO", "AUTOCIERRE"
+    };
+
+    private static bool IsAutomaticSystem(string? sistema)
+        => !string.IsNullOrWhiteSpace(sistema) && AutomaticSystems.Contains(sistema.Trim());
+
+    // Bienvenida al primer contacto: cuando llega el primer mensaje de una conversación de WhatsApp
+    // y todavía no le respondimos nada, manda una sola vez el mensaje de bienvenida.
+    private async Task TryAutoReplyWelcomeAsync(long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+                return;
+
+            var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+            if (!config.BienvenidaActivo || string.IsNullOrWhiteSpace(config.BienvenidaMensaje))
+                return;
+
+            int entrantes, salientes;
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(ct);
+                await using var cmd = new SqlCommand("""
+                    SELECT
+                        SUM(CASE WHEN Direction = N'ENTRANTE' THEN 1 ELSE 0 END),
+                        SUM(CASE WHEN Direction = N'SALIENTE' THEN 1 ELSE 0 END)
+                    FROM dbo.CONV_MENSAJES
+                    WHERE IdConversacion = @Id AND Direction IN (N'ENTRANTE', N'SALIENTE');
+                    """, cn);
+                cmd.Parameters.AddWithValue("@Id", idConversacion);
+                await using var rd = await cmd.ExecuteReaderAsync(ct);
+                if (!await rd.ReadAsync(ct))
+                    return;
+                entrantes = rd.IsDBNull(0) ? 0 : rd.GetInt32(0);
+                salientes = rd.IsDBNull(1) ? 0 : rd.GetInt32(1);
+            }
+
+            // Primer contacto real: exactamente un mensaje del cliente y ninguno nuestro todavía.
+            if (entrantes != 1 || salientes != 0)
+                return;
+
+            await SendMessageAsync(new ConversacionSendMessageRequest
+            {
+                IdConversacion = idConversacion,
+                Texto = config.BienvenidaMensaje.Trim(),
+                MessageType = "TEXT",
+                UsuarioAccion = "AlfaCore",
+                SistemaAccion = "BIENVENIDA"
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "AutoReplyWelcome", ex,
+                "No se pudo enviar el mensaje de bienvenida.", new { idConversacion },
+                AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
     }
 
     private async Task<long> InsertMessageAsync(PendingMessageInsert message, CancellationToken ct)

@@ -194,6 +194,11 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public string HoraDesde { get; set; } = "09:00";
     public string HoraHasta { get; set; } = "18:00";
 
+    // Bienvenida al primer contacto (Nivel 0, regla fija). Se manda una sola vez, cuando llega el
+    // primer mensaje de una conversación nueva de WhatsApp y todavía no le respondimos nada.
+    public bool BienvenidaActivo { get; set; }
+    public string BienvenidaMensaje { get; set; } = "¡Hola! Gracias por escribirnos. En un momento te atendemos. 🙂";
+
     // Nivel 3 - bot autónomo con guardarraíles. Apagado por defecto: responde solo cuando está
     // explícitamente activo y con contexto suficiente; si no, deja la conversación para un humano.
     public bool BotActivo { get; set; }
