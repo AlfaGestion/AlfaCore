@@ -733,12 +733,14 @@ public sealed class ConversacionesConfigService(
                 IF OBJECT_ID(N'dbo.CONV_REGLAS', N'U') IS NULL
                     SELECT TOP (0) 0 AS IdRegla, N'' AS Nombre, CAST(0 AS bit) AS Activa, 0 AS Orden,
                         N'' AS TipoCoincidencia, N'' AS Palabras, N'' AS Canal, CAST(0 AS bit) AS SoloSinAsignar,
-                        N'' AS RespuestaTexto, N'' AS AsignarTecnico, N'' AS Prioridad, CAST(0 AS bit) AS Detener
+                        N'' AS RespuestaTexto, N'' AS AsignarTecnico, N'' AS Prioridad, CAST(0 AS bit) AS Detener,
+                        N'SIEMPRE' AS Horario, CAST(0 AS bit) AS SoloPrimerContacto
                 ELSE
                     SELECT IdRegla, ISNULL(Nombre, N''), ISNULL(Activa, 0), ISNULL(Orden, 100),
                         ISNULL(TipoCoincidencia, N'CONTIENE'), ISNULL(Palabras, N''), ISNULL(Canal, N''),
                         ISNULL(SoloSinAsignar, 1), ISNULL(RespuestaTexto, N''), ISNULL(LTRIM(RTRIM(AsignarTecnico)), N''),
-                        ISNULL(Prioridad, N''), ISNULL(Detener, 1)
+                        ISNULL(Prioridad, N''), ISNULL(Detener, 1),
+                        ISNULL(Horario, N'SIEMPRE'), ISNULL(SoloPrimerContacto, 0)
                     FROM dbo.CONV_REGLAS
                     ORDER BY Orden, IdRegla;
                 """;
@@ -760,7 +762,9 @@ public sealed class ConversacionesConfigService(
                     RespuestaTexto = GetString(rd, 8),
                     AsignarTecnico = GetString(rd, 9),
                     Prioridad = GetString(rd, 10),
-                    Detener = GetBool(rd, 11)
+                    Detener = GetBool(rd, 11),
+                    Horario = GetString(rd, 12),
+                    SoloPrimerContacto = GetBool(rd, 13)
                 });
             }
 
@@ -778,6 +782,7 @@ public sealed class ConversacionesConfigService(
             var tipo = NormalizeTipoCoincidencia(regla.TipoCoincidencia);
             var canal = NormalizeReglaCanal(regla.Canal);
             var prioridad = NormalizeReglaPrioridad(regla.Prioridad);
+            var horario = NormalizeReglaHorario(regla.Horario);
             var tecnico = string.IsNullOrWhiteSpace(regla.AsignarTecnico) ? null : regla.AsignarTecnico.Trim();
             var usuario = appUserSession.GetCurrentUserName("SYSTEM");
 
@@ -790,17 +795,20 @@ public sealed class ConversacionesConfigService(
                         Nombre = @Nombre, Activa = @Activa, Orden = @Orden, TipoCoincidencia = @Tipo,
                         Palabras = @Palabras, Canal = @Canal, SoloSinAsignar = @SoloSinAsignar,
                         RespuestaTexto = @Respuesta, AsignarTecnico = @Tecnico, Prioridad = @Prioridad,
-                        Detener = @Detener, FechaModificacion = GETDATE(), UsuarioModificacion = @Usuario
+                        Detener = @Detener, Horario = @Horario, SoloPrimerContacto = @SoloPrimerContacto,
+                        FechaModificacion = GETDATE(), UsuarioModificacion = @Usuario
                     WHERE IdRegla = @IdRegla;
                     SELECT @IdRegla;
                     """
                 : """
                     INSERT INTO dbo.CONV_REGLAS
                         (Nombre, Activa, Orden, TipoCoincidencia, Palabras, Canal, SoloSinAsignar,
-                         RespuestaTexto, AsignarTecnico, Prioridad, Detener, FechaAlta, UsuarioAlta)
+                         RespuestaTexto, AsignarTecnico, Prioridad, Detener, Horario, SoloPrimerContacto,
+                         FechaAlta, UsuarioAlta)
                     VALUES
                         (@Nombre, @Activa, @Orden, @Tipo, @Palabras, @Canal, @SoloSinAsignar,
-                         @Respuesta, @Tecnico, @Prioridad, @Detener, GETDATE(), @Usuario);
+                         @Respuesta, @Tecnico, @Prioridad, @Detener, @Horario, @SoloPrimerContacto,
+                         GETDATE(), @Usuario);
                     SELECT CAST(SCOPE_IDENTITY() AS int);
                     """, cn);
 
@@ -815,6 +823,8 @@ public sealed class ConversacionesConfigService(
             cmd.Parameters.AddWithValue("@Tecnico", DbNullable(tecnico));
             cmd.Parameters.AddWithValue("@Prioridad", string.IsNullOrEmpty(prioridad) ? (object)DBNull.Value : prioridad);
             cmd.Parameters.AddWithValue("@Detener", regla.Detener);
+            cmd.Parameters.AddWithValue("@Horario", horario);
+            cmd.Parameters.AddWithValue("@SoloPrimerContacto", regla.SoloPrimerContacto);
             cmd.Parameters.AddWithValue("@Usuario", usuario);
             if (regla.IdRegla > 0)
                 cmd.Parameters.AddWithValue("@IdRegla", regla.IdRegla);
@@ -865,6 +875,12 @@ public sealed class ConversacionesConfigService(
     {
         var p = (prioridad ?? string.Empty).Trim().ToUpperInvariant();
         return p is "BAJA" or "MEDIA" or "ALTA" or "URGENTE" ? p : string.Empty;
+    }
+
+    private static string NormalizeReglaHorario(string? horario)
+    {
+        var h = (horario ?? string.Empty).Trim().ToUpperInvariant();
+        return h is "DENTRO" or "FUERA" ? h : "SIEMPRE";
     }
 
     public Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default)

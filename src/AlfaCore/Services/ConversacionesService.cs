@@ -6948,6 +6948,8 @@ public sealed class ConversacionesService(
             var canal = (conversation.Canal ?? string.Empty).Trim();
             var textoLower = texto.ToLowerInvariant();
             string? tecnicoActual = null;
+            ConversacionAutomatizacionesConfigDto? autoConfig = null;
+            int? entrantes = null;
 
             foreach (var regla in reglas.Where(r => r.Activa).OrderBy(r => r.Orden).ThenBy(r => r.IdRegla))
             {
@@ -6957,6 +6959,28 @@ public sealed class ConversacionesService(
 
                 if (!CoincideRegla(textoLower, regla))
                     continue;
+
+                // Solo en el primer contacto: exactamente un mensaje entrante en la conversación.
+                if (regla.SoloPrimerContacto)
+                {
+                    entrantes ??= await GetIncomingCountAsync(idConversacion, ct).ConfigureAwait(false);
+                    if (entrantes != 1)
+                        continue;
+                }
+
+                // Condición de horario (dentro/fuera del configurado en Automatizaciones). Si el horario
+                // no está configurado, no se puede evaluar: la condición se ignora.
+                if (!string.Equals(regla.Horario, "SIEMPRE", StringComparison.OrdinalIgnoreCase))
+                {
+                    autoConfig ??= await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+                    if (autoConfig.IsConfigured)
+                    {
+                        var fueraDeHorario = IsOutsideBusinessHours(autoConfig, BusinessNow());
+                        var quiereFuera = string.Equals(regla.Horario, "FUERA", StringComparison.OrdinalIgnoreCase);
+                        if (fueraDeHorario != quiereFuera)
+                            continue;
+                    }
+                }
 
                 if (regla.SoloSinAsignar)
                 {
@@ -8834,6 +8858,22 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is not null && result is not DBNull && Convert.ToBoolean(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<int> GetIncomingCountAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT COUNT(*)
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @IdConversacion AND Direction = N'ENTRANTE'
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is null || result is DBNull ? 0 : Convert.ToInt32(result, CultureInfo.InvariantCulture);
     }
 
     private async Task<string> GetConversationChannelAsync(long idConversacion, CancellationToken ct)

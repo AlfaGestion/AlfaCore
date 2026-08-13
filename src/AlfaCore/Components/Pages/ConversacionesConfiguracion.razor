@@ -827,7 +827,7 @@
                                 {
                                     <span class="panel-card__tag">inactiva</span>
                                 }
-                                <p class="panel-card__subtitle">@DescribirCanalRegla(regla.Canal) · @regla.TipoCoincidencia.ToLowerInvariant(): @regla.Palabras · @DescribirAccionesRegla(regla)@(regla.Detener ? " · detiene" : "")</p>
+                                <p class="panel-card__subtitle">@DescribirCanalRegla(regla.Canal) · @regla.TipoCoincidencia.ToLowerInvariant(): @regla.Palabras · @DescribirAccionesRegla(regla)@DescribirCondicionesRegla(regla)@(regla.Detener ? " · detiene" : "")</p>
                             </div>
                             <div class="actions">
                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarRegla(regla)" disabled="@(Loading || Saving)">
@@ -926,6 +926,20 @@
                                 <label class="conv-config-checkbox">
                                     <input type="checkbox" @bind="_reglaEdicion.Detener" />
                                     <span>Detener otras reglas y auto-respuestas si coincide</span>
+                                </label>
+                            </div>
+                            <div class="field">
+                                <label>Horario</label>
+                                <select @bind="_reglaEdicion.Horario">
+                                    <option value="SIEMPRE">Siempre</option>
+                                    <option value="DENTRO">Solo dentro del horario</option>
+                                    <option value="FUERA">Solo fuera del horario</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label class="conv-config-checkbox">
+                                    <input type="checkbox" @bind="_reglaEdicion.SoloPrimerContacto" />
+                                    <span>Solo en el primer contacto</span>
                                 </label>
                             </div>
                         </div>
@@ -1618,6 +1632,15 @@
         if (!string.IsNullOrWhiteSpace(regla.AsignarTecnico)) acciones.Add("deriva");
         if (!string.IsNullOrWhiteSpace(regla.Prioridad)) acciones.Add($"prioridad {regla.Prioridad.ToLowerInvariant()}");
         return acciones.Count == 0 ? "—" : string.Join(" · ", acciones);
+    }
+
+    private static string DescribirCondicionesRegla(ConversacionReglaDto regla)
+    {
+        var cond = new List<string>();
+        if (string.Equals(regla.Horario, "DENTRO", StringComparison.OrdinalIgnoreCase)) cond.Add("dentro de horario");
+        else if (string.Equals(regla.Horario, "FUERA", StringComparison.OrdinalIgnoreCase)) cond.Add("fuera de horario");
+        if (regla.SoloPrimerContacto) cond.Add("primer contacto");
+        return cond.Count == 0 ? string.Empty : " · " + string.Join(" · ", cond);
     }
 
     private async Task LoadNumerosAsync()

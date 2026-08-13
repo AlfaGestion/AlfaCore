@@ -313,4 +313,10 @@ public sealed class ConversacionReglaDto
 
     /// <summary>Si coincide, detiene el resto de reglas y las auto-respuestas (bienvenida/bot).</summary>
     public bool Detener { get; set; } = true;
+
+    /// <summary>SIEMPRE | DENTRO | FUERA del horario configurado en Automatizaciones.</summary>
+    public string Horario { get; set; } = "SIEMPRE";
+
+    /// <summary>La regla solo dispara en el primer mensaje entrante de la conversación.</summary>
+    public bool SoloPrimerContacto { get; set; }
 }
