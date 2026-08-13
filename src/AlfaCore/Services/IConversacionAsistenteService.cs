@@ -22,6 +22,12 @@ public interface IConversacionAsistenteService
         string? conocimientoBase = null,
         string? contextoCliente = null,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Resumen genérico con IA (salida en texto plano): se le pasan instrucciones (system) y el
+    /// contenido a resumir (user). Devuelve null si no hay API key o si falla la llamada.
+    /// </summary>
+    Task<string?> ResumirAsync(string instrucciones, string contenido, CancellationToken ct = default);
 }
 
 public sealed class ConversacionAsistenteRespuesta

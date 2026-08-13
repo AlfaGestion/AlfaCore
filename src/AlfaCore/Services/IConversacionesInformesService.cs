@@ -19,4 +19,19 @@ public interface IConversacionesInformesService
 
     /// <summary>Carga el informe de un período (Año/Mes) con sus filas, si existe.</summary>
     Task<ConversacionInformeMensualDto?> GetByPeriodoAsync(int anio, int mes, CancellationToken ct = default);
+
+    /// <summary>Detalle de una fila: sus datos, el email del cliente y las conversaciones del mes.</summary>
+    Task<ConversacionInformeDetalleDto?> GetDetalleAsync(int idDetalle, CancellationToken ct = default);
+
+    /// <summary>Genera con IA el resumen (cara al cliente) de las conversaciones del mes y lo guarda como borrador.</summary>
+    Task<string> GenerarResumenAsync(int idDetalle, CancellationToken ct = default);
+
+    /// <summary>Guarda el texto del resumen editado por el operador.</summary>
+    Task GuardarResumenEditadoAsync(int idDetalle, string texto, CancellationToken ct = default);
+
+    /// <summary>Envía el resumen por email al destinatario y marca la fila como enviada.</summary>
+    Task EnviarPorEmailAsync(int idDetalle, string destinatario, CancellationToken ct = default);
+
+    /// <summary>Envía el resumen por WhatsApp a la conversación del cliente (si la ventana está abierta).</summary>
+    Task EnviarPorWhatsAppAsync(int idDetalle, CancellationToken ct = default);
 }

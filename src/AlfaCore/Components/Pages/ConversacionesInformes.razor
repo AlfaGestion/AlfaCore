@@ -239,9 +239,9 @@
     }
 
     private void AbrirDetalle(ConversacionInformeFilaDto fila)
-    {
-        // Fase 2: pantalla de detalle con el resumen IA + envío. Por ahora, no-op.
-    }
+        => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
+            ? $"/{idweb}/{idbase}/conversaciones/informes/detalle/{fila.IdDetalle}"
+            : $"/conversaciones/informes/detalle/{fila.IdDetalle}");
 
     private void VolverAConversaciones()
         => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)

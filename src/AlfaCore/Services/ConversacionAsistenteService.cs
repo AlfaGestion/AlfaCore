@@ -79,6 +79,52 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
     }
 
+    public async Task<string?> ResumirAsync(string instrucciones, string contenido, CancellationToken ct = default)
+    {
+        var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
+        if (string.IsNullOrWhiteSpace(apiKey) || string.IsNullOrWhiteSpace(contenido))
+            return null;
+
+        var model = Environment.GetEnvironmentVariable("OPENAI_MODEL");
+        if (string.IsNullOrWhiteSpace(model))
+            model = "gpt-4o-mini";
+
+        var payload = new
+        {
+            model,
+            temperature = 0.4,
+            messages = new object[]
+            {
+                new { role = "system", content = string.IsNullOrWhiteSpace(instrucciones) ? "Resumí el siguiente contenido de forma clara y breve." : instrucciones },
+                new { role = "user", content = contenido }
+            }
+        };
+
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(45);
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+
+            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+            using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var body = await response.Content.ReadAsStringAsync(ct);
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()?.Trim();
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? contextoCliente)
     {

@@ -65,6 +65,30 @@ public sealed class ConversacionInformeFilaDto
     }
 }
 
+/// <summary>Un mensaje del mes de un cliente/contacto, para mostrar y para alimentar el resumen IA.</summary>
+public sealed class ConversacionInformeMensajeDto
+{
+    public DateTime FechaHora { get; set; }
+    public string Canal { get; set; } = string.Empty;
+    public string Direction { get; set; } = string.Empty;
+    public string Texto { get; set; } = string.Empty;
+
+    public bool EsEntrante => string.Equals(Direction, "ENTRANTE", StringComparison.OrdinalIgnoreCase);
+}
+
+/// <summary>Detalle de una fila del informe: sus datos, contacto y las conversaciones del mes.</summary>
+public sealed class ConversacionInformeDetalleDto
+{
+    public ConversacionInformeFilaDto Fila { get; set; } = new();
+    public int Anio { get; set; }
+    public int Mes { get; set; }
+    public string ClienteEmail { get; set; } = string.Empty;
+    public long? IdConversacionWhatsApp { get; set; }
+    public List<ConversacionInformeMensajeDto> Mensajes { get; set; } = [];
+
+    public string PeriodoLabel => $"{Mes:00}/{Anio}";
+}
+
 /// <summary>Ítem del listado de informes ya generados (para elegir cuál abrir).</summary>
 public sealed class ConversacionInformeListItemDto
 {
