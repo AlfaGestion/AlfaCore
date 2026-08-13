@@ -2999,8 +2999,8 @@
                             <div class="carga-viajes-viaje__tarifas-block">
                                 <button type="button"
                                         class="btn btn--ghost btn--sm carga-viajes-viaje__tarifas-trigger"
-                                        disabled="@(!_canOpenTarifasClienteSelector)"
-                                        title="@(_canOpenTarifasClienteSelector ? "Ver tarifas del cliente" : "Seleccioná un cliente de la lista antes de ver sus tarifas")"
+                                        disabled="@_viajeReadOnly"
+                                        title="@(_viajeReadOnly ? "Modo solo lectura" : "Ver tarifas del cliente")"
                                         @onclick="AbrirTarifasClienteAsync">
                                     <i class="bi bi-receipt"></i>
                                     <span>Tarifas</span>
@@ -6789,7 +6789,7 @@
 
     private async Task AbrirTarifasClienteAsync()
     {
-        if (!_canOpenTarifasClienteSelector)
+        if (_viajeReadOnly)
             return;
 
         _showViajeTarifasClientePanel = true;
@@ -6798,6 +6798,19 @@
         _viajeTarifasSearch = string.Empty;
         _viajeTarifasLoading = true;
         await InvokeAsync(StateHasChanged);
+
+        if (string.IsNullOrWhiteSpace(_viajeForm.Cliente))
+        {
+            _viajeTarifasLoading = false;
+            _viajeTarifasFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Seleccioná un cliente",
+                Message = "Primero elegí un cliente desde la lista para cargar sus tarifas."
+            };
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
 
         try
         {
