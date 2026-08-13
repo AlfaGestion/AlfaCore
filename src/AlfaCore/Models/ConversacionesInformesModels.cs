@@ -76,6 +76,13 @@ public sealed class ConversacionInformeMensajeDto
     public bool EsEntrante => string.Equals(Direction, "ENTRANTE", StringComparison.OrdinalIgnoreCase);
 }
 
+/// <summary>Un contacto que participó en el período, con cuántos mensajes tuvo.</summary>
+public sealed class ConversacionInformeContactoDto
+{
+    public string Nombre { get; set; } = string.Empty;
+    public int CantMensajes { get; set; }
+}
+
 /// <summary>Detalle de una fila del informe: sus datos, contacto y las conversaciones del mes.</summary>
 public sealed class ConversacionInformeDetalleDto
 {
@@ -85,8 +92,19 @@ public sealed class ConversacionInformeDetalleDto
     public string ClienteEmail { get; set; } = string.Empty;
     public long? IdConversacionWhatsApp { get; set; }
     public List<ConversacionInformeMensajeDto> Mensajes { get; set; } = [];
+    public List<ConversacionInformeContactoDto> Contactos { get; set; } = [];
 
     public string PeriodoLabel => $"{Mes:00}/{Anio}";
+}
+
+/// <summary>Cantidad de mensajes de un mes, para el gráfico de tendencia de los últimos 12 meses.</summary>
+public sealed class ConversacionInformeTendenciaDto
+{
+    public int Anio { get; set; }
+    public int Mes { get; set; }
+    public int CantMensajes { get; set; }
+
+    public string Label => $"{Mes:00}/{Anio % 100:00}";
 }
 
 /// <summary>Ítem del listado de informes ya generados (para elegir cuál abrir).</summary>

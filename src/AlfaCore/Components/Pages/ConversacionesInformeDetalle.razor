@@ -22,6 +22,11 @@
     .conv-infdet-msg.in .who { color: #93c5fd; }
     .conv-infdet-msg.out .who { color: #34d399; }
     .conv-infdet-msg .ts { color: var(--color-muted); font-size: .72rem; margin-right: .35rem; }
+    .conv-infdet-chart { display: flex; align-items: flex-end; gap: .4rem; height: 170px; margin-top: .8rem; }
+    .conv-infdet-bar-wrap { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+    .conv-infdet-bar { width: 70%; max-width: 40px; background: linear-gradient(180deg, #38bdf8, #0ea5e9); border-radius: 5px 5px 0 0; }
+    .conv-infdet-bar-val { font-size: .62rem; color: var(--color-muted); margin-bottom: .15rem; }
+    .conv-infdet-bar-lbl { font-size: .6rem; color: var(--color-muted); margin-top: .25rem; white-space: nowrap; }
 </style>
 
 <div class="conv-infdet-page">
@@ -99,28 +104,24 @@
             <p class="panel-card__subtitle" style="margin:.5rem 0 0;">WhatsApp solo funciona si el cliente escribió en las últimas 24 h; si no, usá email (o una plantilla aprobada).</p>
         </div>
 
-        <div class="panel-card" style="padding:1rem;">
-            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _verMensajes = !_verMensajes">
-                <i class="bi @(_verMensajes ? "bi-chevron-down" : "bi-chevron-right")"></i> Conversaciones del mes (@_det.Mensajes.Count mensajes)
-            </button>
-            @if (_verMensajes)
-            {
-                <div class="conv-infdet-msgs" style="margin-top:.6rem;">
-                    @if (_det.Mensajes.Count == 0)
+        @if (_tendencia.Count > 0)
+        {
+            <div class="panel-card" style="padding:1rem; margin-top:1rem;">
+                <strong><i class="bi bi-graph-up"></i> Evolución de mensajes — últimos 12 meses</strong>
+                <p class="panel-card__subtitle" style="margin:.15rem 0 0;">Actividad de este cliente mes a mes.</p>
+                <div class="conv-infdet-chart">
+                    @foreach (var t in _tendencia)
                     {
-                        <span class="panel-card__subtitle">No hay mensajes registrados en este período.</span>
-                    }
-                    @foreach (var m in _det.Mensajes)
-                    {
-                        <div class="conv-infdet-msg @(m.EsEntrante ? "in" : "out")">
-                            <span class="ts">@m.FechaHora.ToString("dd/MM HH:mm")</span>
-                            <span class="who">@(m.EsEntrante ? "Cliente" : "Nosotros"):</span>
-                            @m.Texto
+                        var h = _tendenciaMax > 0 ? (int)Math.Round(100.0 * t.CantMensajes / _tendenciaMax) : 0;
+                        <div class="conv-infdet-bar-wrap" title="@t.Label: @t.CantMensajes mensajes">
+                            <span class="conv-infdet-bar-val">@t.CantMensajes</span>
+                            <div class="conv-infdet-bar" style="height:@Math.Max(h, 2)%;"></div>
+                            <span class="conv-infdet-bar-lbl">@t.Label</span>
                         </div>
                     }
                 </div>
-            }
-        </div>
+            </div>
+        }
     }
 </div>
 
@@ -130,7 +131,8 @@
     private ConversacionInformeDetalleDto? _det;
     private string _texto = string.Empty;
     private string _email = string.Empty;
-    private bool _verMensajes;
+    private List<ConversacionInformeTendenciaDto> _tendencia = [];
+    private int _tendenciaMax;
     private bool _trabajando;
     private string? _error;
     private string? _feedback;
@@ -150,6 +152,12 @@
             }
             _texto = !string.IsNullOrWhiteSpace(_det.Fila.ResumenEditado) ? _det.Fila.ResumenEditado : _det.Fila.ResumenBorrador;
             _email = _det.ClienteEmail;
+            try
+            {
+                _tendencia = (await InformesSvc.GetTendenciaClienteAsync(IdDetalle)).ToList();
+                _tendenciaMax = _tendencia.Count > 0 ? _tendencia.Max(t => t.CantMensajes) : 0;
+            }
+            catch { _tendencia = []; _tendenciaMax = 0; }
         }
         catch (Exception ex)
         {
@@ -210,9 +218,12 @@
     }
 
     private void Volver()
-        => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
-            ? $"/{idweb}/{idbase}/conversaciones/informes"
-            : "/conversaciones/informes");
+    {
+        var qs = _det is not null ? $"?anio={_det.Anio}&mes={_det.Mes}" : string.Empty;
+        Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
+            ? $"/{idweb}/{idbase}/conversaciones/informes{qs}"
+            : $"/conversaciones/informes{qs}");
+    }
 
     private void SetFeedback(bool ok, string msg) { _feedbackOk = ok; _feedback = msg; }
 }

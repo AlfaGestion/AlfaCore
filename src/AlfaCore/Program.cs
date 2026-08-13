@@ -195,6 +195,7 @@ public class Program
         builder.Services.AddSingleton<CargaViajesTarifasExcelExporter>();
         builder.Services.AddSingleton<CargaViajesViajesExcelExporter>();
         builder.Services.AddSingleton<CargaViajesReporteExcelExporter>();
+        builder.Services.AddSingleton<ConversacionesInformeExcelExporter>();
         builder.Services.AddSingleton<InformesIaHistoryStore>();
         builder.Services.AddSingleton<InformesIaResultStore>();
         builder.Services.AddScoped<FilterStateService>();
@@ -574,6 +575,22 @@ public class Program
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 filename);
         });
+
+        var descargarInformeConversacionesExcel = async (
+            int idInforme,
+            IConversacionesInformesService svc,
+            ConversacionesInformeExcelExporter exporter,
+            CancellationToken ct) =>
+        {
+            var informe = await svc.GetAsync(idInforme, ct);
+            if (informe is null) return Results.NotFound();
+            var bytes = exporter.Exportar(informe);
+            return Results.File(bytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                ConversacionesInformeExcelExporter.NombreArchivo(informe));
+        };
+        app.MapGet("/conversaciones/informes/{idInforme:int}/excel", descargarInformeConversacionesExcel);
+        app.MapGet("/{idweb}/{idbase:int}/conversaciones/informes/{idInforme:int}/excel", descargarInformeConversacionesExcel);
 
         app.MapGet("/auditoria/usuarios/descargar-excel", async (
             HttpRequest request,

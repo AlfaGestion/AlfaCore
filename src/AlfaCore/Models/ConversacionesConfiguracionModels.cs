@@ -248,6 +248,21 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>Usar AlfaKnowledge (documentos/archivos) como fuente adicional para responder.</summary>
     public bool AsistenteUsaKnowledge { get; set; } = true;
 
+    /// <summary>
+    /// Tono/persona que usa la IA al redactar el resumen mensual por cliente (Informes). Solo define
+    /// el estilo: el formato (viñetas, tope de palabras, no inventar, sin saludo/firma) queda fijo en
+    /// código. Si está vacío, se usa <see cref="DefaultInformeInstrucciones"/>.
+    /// </summary>
+    public string InformeInstrucciones { get; set; } = DefaultInformeInstrucciones;
+
+    public const string DefaultInformeInstrucciones =
+        "Sos parte del equipo de soporte técnico de software y le escribís al cliente un resumen de la " +
+        "atención que le dimos durante el mes. El objetivo es poner en valor nuestro trabajo: dejá claro " +
+        "todo lo que hicimos por él y cómo lo ayudamos, resaltando lo resuelto y la dedicación del equipo " +
+        "(sin exagerar ni inventar). Tono profesional, cercano y positivo, en español rioplatense: tratalo " +
+        "de \"vos\" y escribí en primera persona del plural (trabajamos, resolvimos, quedamos). Mostrate " +
+        "servicial y dejá la puerta abierta a seguir ayudándolo.";
+
     public string ConfigSource { get; set; } = string.Empty;
 
     public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);

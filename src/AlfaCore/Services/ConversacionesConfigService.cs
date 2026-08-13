@@ -646,6 +646,7 @@ public sealed class ConversacionesConfigService(
                 AsistenteFueraHorario = ReadValue(values, "CONV_ASISTENTE_FUERA_HORARIO", string.Empty) == "1",
                 AsistenteUrgenciaPalabras = ReadValue(values, "CONV_ASISTENTE_URGENCIA_PALABRAS", string.Empty, DefaultUrgenciaPalabras),
                 AsistenteUsaKnowledge = ReadValue(values, "CONV_ASISTENTE_USA_KNOWLEDGE", string.Empty, "1") != "0",
+                InformeInstrucciones = ReadValue(values, "CONV_INFORME_INSTRUCCIONES", string.Empty, ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
         }, "No se pudo cargar la configuración de automatizaciones.", ct);
@@ -688,7 +689,8 @@ public sealed class ConversacionesConfigService(
                 ("CONV_SLA_HORAS_REASIGNAR", (config.SlaHorasReasignar <= 0 ? 4 : config.SlaHorasReasignar).ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 ("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"),
                 ("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim()),
-                ("CONV_ASISTENTE_USA_KNOWLEDGE", config.AsistenteUsaKnowledge ? "1" : "0")
+                ("CONV_ASISTENTE_USA_KNOWLEDGE", config.AsistenteUsaKnowledge ? "1" : "0"),
+                ("CONV_INFORME_INSTRUCCIONES", (config.InformeInstrucciones ?? string.Empty).Trim())
             };
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -1548,7 +1550,8 @@ public sealed class ConversacionesConfigService(
                 'CONV_SLA_HORAS_REASIGNAR',
                 'CONV_ASISTENTE_FUERA_HORARIO',
                 'CONV_ASISTENTE_URGENCIA_PALABRAS',
-                'CONV_ASISTENTE_USA_KNOWLEDGE'
+                'CONV_ASISTENTE_USA_KNOWLEDGE',
+                'CONV_INFORME_INSTRUCCIONES'
             )
             """;
 
