@@ -144,3 +144,16 @@ Legacy restante: ninguno visual dentro de Contactos salvo excepciones documentad
 ```
 
 Responsive quedó validado en sesión autenticada a 2048, 1440 y 1024 px: Context panel lateral en 2048/1440, debajo del contenido en 1024, sin solapamientos ni scroll horizontal global. `AlfaDialog`, `AlfaLookup` y `AlfaNotification` permanecen contenidos y el scroll vertical funciona correctamente.
+
+## Resultado Fase 8.4 — Usuarios (2026-08-13)
+
+```text
+AlfaDesign checklist
+Cumple: 13/13
+Excepciones: ninguna dentro del alcance aprobado.
+Deuda visual: ninguna.
+Regresiones: ninguna detectada.
+Legacy restante: ninguno visual dentro de Usuarios; tabla/Smart Search y selector de archivo son patrones nativos justificados.
+```
+
+Los 13 puntos están respaldados por la validación manual aprobada de Browse/New/Edit/dirty state/acciones, la auditoría técnica de Fase 8.4 y la comprobación autenticada responsive a 2048, 1440 y 1024 px. En 1024 el editor pasa a una columna, la tabla conserva overflow exclusivamente interno, dialogs y notifications quedan contenidos y no aparece scroll horizontal global.

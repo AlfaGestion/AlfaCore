@@ -1,6 +1,6 @@
 # Mapa Figma ↔ código
 
-[Índice](./README.md) · [Componentes](./alfadesign-components.md) · [Contactos](./alfadesign-contactos-reference.md)
+[Índice](./README.md) · [Componentes](./alfadesign-components.md) · [Contactos](./alfadesign-contactos-reference.md) · [Usuarios](./alfadesign-usuarios-reference.md)
 
 ## Archivo oficial
 
@@ -64,6 +64,20 @@ Todas son frames 1440×900 en `04 — Modules`:
 | Validación | `68:1242` | App Top Bar `68:1243`, Context Toolbar `68:1268`, banner `68:1277`, form `68:1281` |
 
 También existen prototipos y flows de Contactos en `05 — Prototype`, y coverage `Coverage / Contactos / V1` (`70:2`).
+
+## Pantallas Usuarios reales
+
+La auditoría directa de Fase 8.4 revisó estos frames de `04 — Modules`:
+
+| Pantalla | Nodo | Intención Figma | Adaptación productiva deliberada |
+|---|---:|---|---|
+| Listado | `107:1363` | tabla compacta, búsqueda, filtro Activos, acción Nuevo y columnas nombre/usuario/correo/rol/estado | conserva sólo campos reales; no muestra nombre completo ni rol ficticios |
+| Nuevo | `108:1640` | split list/editor, Datos generales/Permisos, nombre completo, rol y permisos integrados | editor de página completa con Información/Acceso; usa Nombre, `EsGrupo`, `EsTecnico`, próximo cambio y foto reales |
+| Edición | `108:1840` | mismo split, datos personales, rol, permisos y cambio opcional de contraseña | conserva compatibilidad real de contraseña, metadata y clasificación/relación técnica existentes |
+| Validación | `108:2036` | banner y errores inline sin destruir el formulario | errores inline y `AlfaNotification`; abre Acceso cuando el error pertenece a esa sección |
+| Confirmación de baja | `108:2235` | scrim y Confirmation Dialog con Cancelar/Dar de baja | `AlfaConfirmDialog` compartido para baja individual/masiva y descarte; baja lógica real |
+
+Figma expresa intención visual, no contrato de dominio. Sus conceptos “Nombre y apellido”, “Rol”, “Permisos” y “Usuario activo” no se implementan si el backend actual no los ofrece de esa forma. La lista lateral de New/Edit tampoco se replica: AlfaCore usa App Top Bar + Context Toolbar + editor de página completa para evitar un Browse paralelo dentro del formulario.
 
 ## Cuándo consultar Figma
 

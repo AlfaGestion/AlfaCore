@@ -35,3 +35,25 @@ Antes de crear button, input, select, checkbox, tabs, tag, menú, confirmación,
 5. solo si falta y el patrón es general, crear un componente compartido, tokenizado y documentado.
 
 No crear barras locales que dupliquen App Top Bar o Context Toolbar. Data View Header solo pertenece a List/Table/Grid.
+
+## Guardas de dominio para Usuarios y seguridad
+
+Una referencia visual no autoriza a inventar modelo de seguridad. Antes de trasladar patrones de Usuarios:
+
+- confirmar los campos y operaciones reales de `TA_USUARIOS` y los servicios oficiales;
+- tratar `EsGrupo` como la clasificación legacy que es, no como un rol;
+- mantener roles y permisos fuera del editor mientras no exista un contrato backend explícito;
+- no deducir permisos a partir de una maqueta Figma ni crear opciones sin persistencia real;
+- no ampliar la exposición de contraseñas, logs, auditoría, JavaScript, documentación o snapshots serializados;
+- documentar por separado las deudas funcionales y de seguridad que una migración visual no resuelve.
+
+La [referencia de Usuarios](./alfadesign-usuarios-reference.md) registra las diferencias deliberadas entre Figma y el dominio productivo actual.
+
+## Elegir arquitectura según el dominio real
+
+AlfaDesign no impone un único recorrido:
+
+- CRUD con ficha: `Browse → Record → Edit/New`. Referencia: [Contactos](./alfadesign-contactos-reference.md).
+- ABM administrativo: `Browse → Edit/New`, sin Record artificial. Referencia: [Usuarios](./alfadesign-usuarios-reference.md).
+
+El inventario funcional determina qué estados existen. No agregar una Ficha, lista lateral, Smart Search, permisos o navegación intermedia sólo para imitar otro módulo o un frame de Figma.
