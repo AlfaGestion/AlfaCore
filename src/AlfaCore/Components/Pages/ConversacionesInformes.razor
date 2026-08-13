@@ -1,0 +1,277 @@
+@page "/conversaciones/informes"
+@page "/{idweb}/{idbase:int}/conversaciones/informes"
+@inject AlfaCore.Services.IConversacionesInformesService InformesSvc
+@inject NavigationManager Nav
+@using AlfaCore.Models
+
+<PageTitle>Informes de conversaciones | Alfa Gestion</PageTitle>
+
+<style>
+    .conv-informes-page { padding: 1.25rem 1.5rem 3rem; max-width: 1400px; margin: 0 auto; }
+    .conv-informes-toolbar { display: flex; flex-wrap: wrap; align-items: end; gap: .75rem; margin-bottom: 1rem; }
+    .conv-informes-toolbar .field { display: grid; gap: .25rem; }
+    .conv-informes-toolbar label { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--color-muted); }
+    .conv-informes-toolbar select, .conv-informes-toolbar input { min-height: 34px; padding: .3rem .55rem; border-radius: 8px; border: 1px solid var(--color-border); background: var(--surface-1, #0f172a); color: var(--color-text); }
+    .conv-informes-grid-wrap { overflow-x: auto; }
+    table.conv-informes-grid { width: 100%; border-collapse: collapse; font-size: .82rem; }
+    table.conv-informes-grid th, table.conv-informes-grid td { padding: .45rem .6rem; border-bottom: 1px solid rgba(148,163,184,.14); text-align: left; white-space: nowrap; }
+    table.conv-informes-grid th { font-size: .68rem; text-transform: uppercase; letter-spacing: .03em; color: var(--color-muted); position: sticky; top: 0; background: var(--surface-1, #0f172a); }
+    table.conv-informes-grid td.num, table.conv-informes-grid th.num { text-align: right; }
+    table.conv-informes-grid tbody tr:hover { background: rgba(14,165,233,.07); cursor: pointer; }
+    .conv-informes-badge { display: inline-flex; align-items: center; gap: .25rem; padding: .08rem .4rem; border-radius: 999px; font-size: .68rem; font-weight: 700; border: 1px solid transparent; }
+    .abono-Abonado { background: rgba(16,185,129,.16); color: #34d399; border-color: rgba(16,185,129,.4); }
+    .abono-Suspendido { background: rgba(245,158,11,.16); color: #fbbf24; border-color: rgba(245,158,11,.4); }
+    .abono-SinAbono { background: rgba(148,163,184,.14); color: #94a3b8; border-color: rgba(148,163,184,.3); }
+    .conv-informes-empty { padding: 2rem; text-align: center; color: var(--color-muted); }
+    .conv-informes-total-row td { font-weight: 800; border-top: 2px solid rgba(148,163,184,.3); background: rgba(148,163,184,.05); }
+</style>
+
+<div class="conv-informes-page">
+    <div class="page-intro">
+        <div>
+            <h2 class="panel-card__title" style="margin:0;"><i class="bi bi-bar-chart-line-fill"></i> Informes mensuales</h2>
+            <p class="panel-card__subtitle" style="margin:.2rem 0 0;">Resumen de atención por cliente. Se genera una vez por mes y queda guardado.</p>
+        </div>
+        <button type="button" class="btn btn--ghost btn--sm" @onclick="VolverAConversaciones" title="Volver a Conversaciones">
+            <i class="bi bi-arrow-left"></i> Conversaciones
+        </button>
+    </div>
+
+    <div class="conv-informes-toolbar panel-card" style="padding:.85rem 1rem;">
+        <div class="field">
+            <label for="inf-mes">Mes</label>
+            <select id="inf-mes" @bind="_mes">
+                @for (var m = 1; m <= 12; m++)
+                {
+                    var mm = m;
+                    <option value="@mm">@MesNombre(mm)</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="inf-anio">Año</label>
+            <select id="inf-anio" @bind="_anio">
+                @for (var y = DateTime.Today.Year; y >= DateTime.Today.Year - 4; y--)
+                {
+                    var yy = y;
+                    <option value="@yy">@yy</option>
+                }
+            </select>
+        </div>
+        <button type="button" class="btn btn--primary btn--sm" @onclick="GenerarAsync" disabled="@_trabajando">
+            <i class="bi @(_trabajando ? "bi-hourglass-split" : "bi-gear-fill")"></i> @(_yaGenerado ? "Regenerar" : "Generar")
+        </button>
+        @if (_informes.Count > 0)
+        {
+            <div class="field">
+                <label for="inf-guardados">Informes guardados</label>
+                <select id="inf-guardados" @onchange="AbrirGuardadoAsync">
+                    <option value="">Elegí uno…</option>
+                    @foreach (var it in _informes)
+                    {
+                        <option value="@it.IdInforme">@it.PeriodoLabel · @it.CantFilas clientes</option>
+                    }
+                </select>
+            </div>
+        }
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="panel-card" style="padding:.7rem 1rem; margin-bottom:1rem; border-color:@(_feedbackOk ? "rgba(16,185,129,.4)" : "rgba(239,68,68,.4)");">
+            @_feedback
+        </div>
+    }
+
+    @if (_informe is not null)
+    {
+        <div class="panel-card" style="padding:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.6rem; flex-wrap:wrap; gap:.5rem;">
+                <strong>Período @_informe.PeriodoLabel — @_informe.Filas.Count clientes/contactos</strong>
+                <span class="panel-card__subtitle" style="margin:0;">Generado @_informe.FechaGeneracion.ToString("dd/MM/yyyy HH:mm")</span>
+            </div>
+            <div class="conv-informes-grid-wrap">
+                <table class="conv-informes-grid">
+                    <thead>
+                        <tr>
+                            <th>Cliente / Contacto</th>
+                            <th>Clasificación</th>
+                            <th>Categoría</th>
+                            <th>Abono</th>
+                            <th class="num">Conv.</th>
+                            <th class="num">Días</th>
+                            <th class="num">Mensajes</th>
+                            <th class="num">Horas</th>
+                            <th class="num">Hs. fact.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var f in _informe.Filas)
+                        {
+                            <tr @onclick="() => AbrirDetalle(f)">
+                                <td>
+                                    @f.NombreMostrar
+                                    @if (f.TipoFila == "CONTACTO")
+                                    {
+                                        <span class="conv-informes-badge" style="background:rgba(59,130,246,.15);color:#93c5fd;border-color:rgba(59,130,246,.35);">contacto</span>
+                                    }
+                                    else if (f.TipoFila == "SININDENT")
+                                    {
+                                        <span class="conv-informes-badge" style="background:rgba(148,163,184,.14);color:#94a3b8;">sin identificar</span>
+                                    }
+                                </td>
+                                <td>@f.ClasificacionDesc</td>
+                                <td>@f.CategoriaDesc</td>
+                                <td><span class="conv-informes-badge abono-@f.EstadoAbono">@AbonoLabel(f.EstadoAbono)</span></td>
+                                <td class="num">@f.CantConversaciones</td>
+                                <td class="num">@f.CantDias</td>
+                                <td class="num">@f.CantMensajes</td>
+                                <td class="num">@f.HorasTotalesLabel</td>
+                                <td class="num">@f.HorasFacturablesLabel</td>
+                            </tr>
+                        }
+                        @if (_informe.Filas.Count == 0)
+                        {
+                            <tr><td colspan="9" class="conv-informes-empty">No hay clientes con abono ni movimientos en este período.</td></tr>
+                        }
+                        else
+                        {
+                            <tr class="conv-informes-total-row">
+                                <td>TOTALES (@_informe.Filas.Count)</td>
+                                <td></td><td></td><td></td>
+                                <td class="num">@_informe.Filas.Sum(x => x.CantConversaciones)</td>
+                                <td class="num">—</td>
+                                <td class="num">@_informe.Filas.Sum(x => x.CantMensajes)</td>
+                                <td class="num">@FormatHoras(_informe.Filas.Sum(x => x.MinutosTotales))</td>
+                                <td class="num">@FormatHoras(_informe.Filas.Sum(x => x.MinutosFacturables))</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+    else if (!_trabajando)
+    {
+        <div class="panel-card conv-informes-empty">
+            Elegí un mes y tocá <strong>Generar</strong>, o abrí un informe guardado.
+        </div>
+    }
+</div>
+
+@code {
+    private int _mes;
+    private int _anio;
+    private bool _trabajando;
+    private bool _yaGenerado;
+    private string? _feedback;
+    private bool _feedbackOk;
+    private ConversacionInformeMensualDto? _informe;
+    private List<ConversacionInformeListItemDto> _informes = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Por defecto, el mes anterior (se informa sobre un mes ya terminado).
+        var previo = DateTime.Today.AddMonths(-1);
+        _mes = previo.Month;
+        _anio = previo.Year;
+        await CargarListaAsync();
+    }
+
+    private async Task CargarListaAsync()
+    {
+        try
+        {
+            _informes = (await InformesSvc.ListarAsync()).ToList();
+            _yaGenerado = _informes.Any(i => i.Anio == _anio && i.Mes == _mes);
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(false, $"No se pudo cargar la lista de informes: {ex.Message}");
+        }
+    }
+
+    private async Task GenerarAsync()
+    {
+        _trabajando = true;
+        _feedback = null;
+        StateHasChanged();
+        try
+        {
+            _informe = await InformesSvc.GenerarAsync(_anio, _mes, null);
+            await CargarListaAsync();
+            SetFeedback(true, $"Informe de {MesNombre(_mes)} {_anio} generado: {_informe.Filas.Count} clientes/contactos.");
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(false, $"No se pudo generar el informe: {ex.Message}");
+        }
+        finally
+        {
+            _trabajando = false;
+        }
+    }
+
+    private async Task AbrirGuardadoAsync(ChangeEventArgs e)
+    {
+        if (!int.TryParse(e.Value?.ToString(), out var id) || id <= 0)
+            return;
+        _trabajando = true;
+        StateHasChanged();
+        try
+        {
+            _informe = await InformesSvc.GetAsync(id);
+            if (_informe is not null)
+            {
+                _mes = _informe.Mes;
+                _anio = _informe.Anio;
+                _yaGenerado = true;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(false, $"No se pudo abrir el informe: {ex.Message}");
+        }
+        finally
+        {
+            _trabajando = false;
+        }
+    }
+
+    private void AbrirDetalle(ConversacionInformeFilaDto fila)
+        => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
+            ? $"/{idweb}/{idbase}/conversaciones/informes/detalle/{fila.IdDetalle}"
+            : $"/conversaciones/informes/detalle/{fila.IdDetalle}");
+
+    private void VolverAConversaciones()
+        => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
+            ? $"/{idweb}/{idbase}/conversaciones"
+            : "/conversaciones");
+
+    private void SetFeedback(bool ok, string msg)
+    {
+        _feedbackOk = ok;
+        _feedback = msg;
+    }
+
+    private static string MesNombre(int mes)
+    {
+        var nombres = new[] { "", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre" };
+        return mes >= 1 && mes <= 12 ? nombres[mes] : mes.ToString();
+    }
+
+    private static string AbonoLabel(string estado) => estado switch
+    {
+        "Abonado" => "Abonado",
+        "Suspendido" => "Suspendido",
+        _ => "Sin abono"
+    };
+
+    private static string FormatHoras(int minutos)
+    {
+        if (minutos <= 0) return "0h";
+        var h = minutos / 60;
+        var m = minutos % 60;
+        return m == 0 ? $"{h}h" : $"{h}h {m}m";
+    }
+}

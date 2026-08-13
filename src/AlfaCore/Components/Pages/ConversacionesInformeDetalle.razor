@@ -1,0 +1,218 @@
+@page "/conversaciones/informes/detalle/{idDetalle:int}"
+@page "/{idweb}/{idbase:int}/conversaciones/informes/detalle/{idDetalle:int}"
+@inject AlfaCore.Services.IConversacionesInformesService InformesSvc
+@inject NavigationManager Nav
+@using AlfaCore.Models
+
+<PageTitle>Detalle de informe | Alfa Gestion</PageTitle>
+
+<style>
+    .conv-infdet-page { padding: 1.25rem 1.5rem 3rem; max-width: 1100px; margin: 0 auto; }
+    .conv-infdet-head { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; margin-bottom: .3rem; }
+    .conv-infdet-metrics { display: flex; flex-wrap: wrap; gap: .5rem; margin: .6rem 0 1rem; }
+    .conv-infdet-metric { background: rgba(148,163,184,.08); border: 1px solid rgba(148,163,184,.16); border-radius: 8px; padding: .35rem .7rem; font-size: .8rem; }
+    .conv-infdet-metric strong { display: block; font-size: 1.05rem; }
+    .conv-infdet-resumen { width: 100%; min-height: 220px; border-radius: 10px; border: 1px solid var(--color-border); background: var(--surface-1, #0f172a); color: var(--color-text); padding: .7rem .85rem; font: inherit; line-height: 1.5; resize: vertical; }
+    .conv-infdet-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; margin-top: .6rem; }
+    .conv-infdet-envio { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
+    .conv-infdet-envio input { min-height: 34px; padding: .3rem .55rem; border-radius: 8px; border: 1px solid var(--color-border); background: var(--surface-1, #0f172a); color: var(--color-text); min-width: 240px; }
+    .conv-infdet-msgs { max-height: 340px; overflow-y: auto; border: 1px solid rgba(148,163,184,.16); border-radius: 10px; padding: .5rem .7rem; }
+    .conv-infdet-msg { padding: .25rem 0; border-bottom: 1px dashed rgba(148,163,184,.12); font-size: .82rem; }
+    .conv-infdet-msg .who { font-weight: 700; }
+    .conv-infdet-msg.in .who { color: #93c5fd; }
+    .conv-infdet-msg.out .who { color: #34d399; }
+    .conv-infdet-msg .ts { color: var(--color-muted); font-size: .72rem; margin-right: .35rem; }
+</style>
+
+<div class="conv-infdet-page">
+    @if (_det is null)
+    {
+        <div class="panel-card" style="padding:2rem; text-align:center; color:var(--color-muted);">
+            @(_error ?? "Cargando…")
+            <div style="margin-top:1rem;"><button type="button" class="btn btn--ghost btn--sm" @onclick="Volver"><i class="bi bi-arrow-left"></i> Volver</button></div>
+        </div>
+    }
+    else
+    {
+        <div class="conv-infdet-head">
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="Volver" title="Volver al informe"><i class="bi bi-arrow-left"></i></button>
+            <div>
+                <h2 class="panel-card__title" style="margin:0;">@_det.Fila.NombreMostrar</h2>
+                <p class="panel-card__subtitle" style="margin:.15rem 0 0;">
+                    Período @_det.PeriodoLabel
+                    @if (!string.IsNullOrWhiteSpace(_det.Fila.ClienteCodigo)) { <span> · N° @_det.Fila.ClienteCodigo</span> }
+                    @if (!string.IsNullOrWhiteSpace(_det.Fila.ClasificacionDesc)) { <span> · @_det.Fila.ClasificacionDesc</span> }
+                    @if (!string.IsNullOrWhiteSpace(_det.Fila.CategoriaDesc)) { <span> · @_det.Fila.CategoriaDesc</span> }
+                </p>
+            </div>
+        </div>
+
+        <div class="conv-infdet-metrics">
+            <div class="conv-infdet-metric"><strong>@_det.Fila.CantConversaciones</strong>conversaciones</div>
+            <div class="conv-infdet-metric"><strong>@_det.Fila.CantDias</strong>días</div>
+            <div class="conv-infdet-metric"><strong>@_det.Fila.CantMensajes</strong>mensajes</div>
+            <div class="conv-infdet-metric"><strong>@_det.Fila.HorasTotalesLabel</strong>horas</div>
+            <div class="conv-infdet-metric"><strong>@_det.Fila.HorasFacturablesLabel</strong>facturables</div>
+            @if (_det.Fila.EstadoEnvio == "ENVIADO")
+            {
+                <div class="conv-infdet-metric" style="border-color:rgba(16,185,129,.4);color:#34d399;"><strong><i class="bi bi-check2-circle"></i></strong>enviado @_det.Fila.CanalEnvio.ToLower()</div>
+            }
+        </div>
+
+        @if (_feedback is not null)
+        {
+            <div class="panel-card" style="padding:.6rem .9rem; margin-bottom:.9rem; border-color:@(_feedbackOk ? "rgba(16,185,129,.4)" : "rgba(239,68,68,.4)");">@_feedback</div>
+        }
+
+        <div class="panel-card" style="padding:1rem; margin-bottom:1rem;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:.5rem; flex-wrap:wrap; gap:.4rem;">
+                <strong><i class="bi bi-stars"></i> Resumen para el cliente</strong>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="GenerarAsync" disabled="@_trabajando">
+                    <i class="bi @(_trabajando ? "bi-hourglass-split" : "bi-arrow-repeat")"></i> @(string.IsNullOrWhiteSpace(_texto) ? "Generar con IA" : "Regenerar")
+                </button>
+            </div>
+            <textarea class="conv-infdet-resumen" @bind="_texto" @bind:event="oninput"
+                      placeholder="Tocá &quot;Generar con IA&quot; para que redacte el resumen del mes, o escribilo vos. Después podés editarlo antes de enviar."></textarea>
+            <div class="conv-infdet-actions">
+                <button type="button" class="btn btn--primary btn--sm" @onclick="GuardarAsync" disabled="@(_trabajando || string.IsNullOrWhiteSpace(_texto))">
+                    <i class="bi bi-save"></i> Guardar cambios
+                </button>
+                <span class="panel-card__subtitle" style="margin:0;">Se envía el texto que quede acá.</span>
+            </div>
+        </div>
+
+        <div class="panel-card" style="padding:1rem; margin-bottom:1rem;">
+            <strong style="display:block; margin-bottom:.6rem;"><i class="bi bi-send"></i> Enviar</strong>
+            <div class="conv-infdet-envio">
+                <div>
+                    <input type="email" placeholder="email@cliente.com" @bind="_email" />
+                </div>
+                <button type="button" class="btn btn--primary btn--sm" @onclick="EnviarEmailAsync" disabled="@(_trabajando || string.IsNullOrWhiteSpace(_texto))">
+                    <i class="bi bi-envelope-fill"></i> Enviar por email
+                </button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="EnviarWhatsAppAsync"
+                        disabled="@(_trabajando || string.IsNullOrWhiteSpace(_texto) || !_det.IdConversacionWhatsApp.HasValue)"
+                        title="@(_det.IdConversacionWhatsApp.HasValue ? "Enviar a la conversación de WhatsApp (si la ventana de 24 h está abierta)" : "Este cliente no tiene conversación de WhatsApp")">
+                    <i class="bi bi-whatsapp"></i> Enviar por WhatsApp
+                </button>
+            </div>
+            <p class="panel-card__subtitle" style="margin:.5rem 0 0;">WhatsApp solo funciona si el cliente escribió en las últimas 24 h; si no, usá email (o una plantilla aprobada).</p>
+        </div>
+
+        <div class="panel-card" style="padding:1rem;">
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _verMensajes = !_verMensajes">
+                <i class="bi @(_verMensajes ? "bi-chevron-down" : "bi-chevron-right")"></i> Conversaciones del mes (@_det.Mensajes.Count mensajes)
+            </button>
+            @if (_verMensajes)
+            {
+                <div class="conv-infdet-msgs" style="margin-top:.6rem;">
+                    @if (_det.Mensajes.Count == 0)
+                    {
+                        <span class="panel-card__subtitle">No hay mensajes registrados en este período.</span>
+                    }
+                    @foreach (var m in _det.Mensajes)
+                    {
+                        <div class="conv-infdet-msg @(m.EsEntrante ? "in" : "out")">
+                            <span class="ts">@m.FechaHora.ToString("dd/MM HH:mm")</span>
+                            <span class="who">@(m.EsEntrante ? "Cliente" : "Nosotros"):</span>
+                            @m.Texto
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public int IdDetalle { get; set; }
+
+    private ConversacionInformeDetalleDto? _det;
+    private string _texto = string.Empty;
+    private string _email = string.Empty;
+    private bool _verMensajes;
+    private bool _trabajando;
+    private string? _error;
+    private string? _feedback;
+    private bool _feedbackOk;
+
+    protected override async Task OnParametersSetAsync() => await CargarAsync();
+
+    private async Task CargarAsync()
+    {
+        try
+        {
+            _det = await InformesSvc.GetDetalleAsync(IdDetalle);
+            if (_det is null)
+            {
+                _error = "No se encontró el detalle del informe.";
+                return;
+            }
+            _texto = !string.IsNullOrWhiteSpace(_det.Fila.ResumenEditado) ? _det.Fila.ResumenEditado : _det.Fila.ResumenBorrador;
+            _email = _det.ClienteEmail;
+        }
+        catch (Exception ex)
+        {
+            _error = $"No se pudo cargar el detalle: {ex.Message}";
+        }
+    }
+
+    private async Task GenerarAsync()
+    {
+        _trabajando = true; _feedback = null; StateHasChanged();
+        try
+        {
+            _texto = await InformesSvc.GenerarResumenAsync(IdDetalle);
+            SetFeedback(true, "Resumen generado. Revisalo y ajustalo antes de enviar.");
+        }
+        catch (Exception ex) { SetFeedback(false, ex.Message); }
+        finally { _trabajando = false; }
+    }
+
+    private async Task GuardarAsync()
+    {
+        _trabajando = true; _feedback = null; StateHasChanged();
+        try
+        {
+            await InformesSvc.GuardarResumenEditadoAsync(IdDetalle, _texto);
+            SetFeedback(true, "Cambios guardados.");
+        }
+        catch (Exception ex) { SetFeedback(false, ex.Message); }
+        finally { _trabajando = false; }
+    }
+
+    private async Task EnviarEmailAsync()
+    {
+        _trabajando = true; _feedback = null; StateHasChanged();
+        try
+        {
+            await InformesSvc.GuardarResumenEditadoAsync(IdDetalle, _texto);
+            await InformesSvc.EnviarPorEmailAsync(IdDetalle, _email);
+            await CargarAsync();
+            SetFeedback(true, $"Enviado por email a {_email}.");
+        }
+        catch (Exception ex) { SetFeedback(false, ex.Message); }
+        finally { _trabajando = false; }
+    }
+
+    private async Task EnviarWhatsAppAsync()
+    {
+        _trabajando = true; _feedback = null; StateHasChanged();
+        try
+        {
+            await InformesSvc.GuardarResumenEditadoAsync(IdDetalle, _texto);
+            await InformesSvc.EnviarPorWhatsAppAsync(IdDetalle);
+            await CargarAsync();
+            SetFeedback(true, "Enviado por WhatsApp.");
+        }
+        catch (Exception ex) { SetFeedback(false, ex.Message); }
+        finally { _trabajando = false; }
+    }
+
+    private void Volver()
+        => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
+            ? $"/{idweb}/{idbase}/conversaciones/informes"
+            : "/conversaciones/informes");
+
+    private void SetFeedback(bool ok, string msg) { _feedbackOk = ok; _feedback = msg; }
+}
