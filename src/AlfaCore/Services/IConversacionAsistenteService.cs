@@ -20,6 +20,7 @@ public interface IConversacionAsistenteService
         bool fueraDeHorario = false,
         bool esUrgente = false,
         string? conocimientoBase = null,
+        string? contextoCliente = null,
         CancellationToken ct = default);
 }
 

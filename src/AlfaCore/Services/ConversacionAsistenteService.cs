@@ -18,6 +18,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         bool fueraDeHorario = false,
         bool esUrgente = false,
         string? conocimientoBase = null,
+        string? contextoCliente = null,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -28,7 +29,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         if (string.IsNullOrWhiteSpace(model))
             model = "gpt-4o-mini";
 
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         foreach (var m in historial
@@ -79,13 +80,21 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     }
 
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
-        bool fueraDeHorario, bool esUrgente, string? conocimientoBase)
+        bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? contextoCliente)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
         sb.AppendLine(comp.Length > 0
             ? comp
             : "Sos un asistente de atención al cliente. Respondés de forma cordial, breve y clara, en español rioplatense.");
+
+        var cliente = (contextoCliente ?? string.Empty).Trim();
+        if (cliente.Length > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("DATOS DEL CLIENTE (usalos para ajustar y razonar la respuesta según su rubro y prioridad):");
+            sb.AppendLine(cliente);
+        }
 
         var info = (informacion ?? string.Empty).Trim();
         if (info.Length > 0)

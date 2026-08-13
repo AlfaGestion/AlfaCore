@@ -6525,15 +6525,27 @@ public sealed class ConversacionesService(
                 return;
 
             var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
-            var esUrgente = fueraDeHorario && ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
+            var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
 
-            // Urgencia fuera de horario: subimos prioridad y dejamos nota para que el operador decida
-            // atender ahora (facturación caída / sistema que no anda son casos que se atienden siempre).
+            // Datos del cliente: rubro (para razonar la respuesta) y si es un cliente prioritario
+            // (su clasificación está entre las configuradas como prioridad de atención).
+            var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, ct).ConfigureAwait(false);
+
+            // Prioridad de la conversación (solo sube, nunca baja): urgencia -> URGENTE; cliente
+            // prioritario -> ALTA. A los clientes prioritarios (restaurantes/POS, etc.) siempre se los prioriza.
             if (esUrgente)
+                await SubirPrioridadAsync(idConversacion, "URGENTE", ct).ConfigureAwait(false);
+            else if (esPrioritario)
+                await SubirPrioridadAsync(idConversacion, "ALTA", ct).ConfigureAwait(false);
+
+            // Fuera de horario, dejamos nota para que un operador decida atender ahora (las urgencias y
+            // los clientes prioritarios se atienden en cualquier horario).
+            if (fueraDeHorario && (esUrgente || esPrioritario))
             {
-                await SetConversationPrioridadAsync(idConversacion, "URGENTE", ct).ConfigureAwait(false);
+                var motivo = esUrgente ? "posible URGENCIA" : "cliente prioritario";
+                var conRubro = string.IsNullOrWhiteSpace(rubro) ? string.Empty : $" (rubro: {rubro})";
                 await AddInternalEventCoreAsync(idConversacion,
-                    $"⏰🚨 Posible URGENCIA fuera de horario. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
+                    $"⏰🚨 Fuera de horario, {motivo}{conRubro}. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
                     null, null, "AlfaCore", "URGENCIA", ct).ConfigureAwait(false);
             }
 
@@ -6545,9 +6557,11 @@ public sealed class ConversacionesService(
             if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
                 conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, ct).ConfigureAwait(false);
 
+            var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
+
             var result = await asistenteService.ResponderAsync(
                 config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-                texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, ct).ConfigureAwait(false);
+                texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, ct).ConfigureAwait(false);
 
             // En horario, respeta la política (si no puede resolver, escala en silencio). Fuera de horario,
             // siempre contesta la contención (nunca deja al cliente sin respuesta), aunque no resuelva.
@@ -6854,6 +6868,89 @@ public sealed class ConversacionesService(
     {
         var t = (texto ?? string.Empty).Trim();
         return t.Length <= max ? t : t[..max] + "…";
+    }
+
+    private static string ConstruirContextoCliente(string rubro, bool esPrioritario)
+    {
+        var partes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(rubro))
+            partes.Add($"Rubro del negocio del cliente: {rubro.Trim()}.");
+        if (esPrioritario)
+            partes.Add("Es un cliente prioritario: tratalo con atención preferencial.");
+        return string.Join(" ", partes);
+    }
+
+    // Lee el rubro del cliente (VT_CLIENTES.IdCategoria -> v_ta_categoria.Descripcion) y determina si
+    // es un cliente prioritario (su clasificación está entre las configuradas como prioridad de atención).
+    private async Task<(string Rubro, bool EsPrioritario)> ObtenerContextoClienteAsync(long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            string rubro = string.Empty, clasif = string.Empty;
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(ct);
+                const string sql = """
+                    SELECT TOP (1)
+                        ISNULL(cat.Descripcion, N''),
+                        ISNULL(LTRIM(RTRIM(cli.Clasificacion)), N'')
+                    FROM dbo.CONV_CONVERSACIONES c
+                    LEFT JOIN dbo.VT_CLIENTES cli
+                        ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N''))))
+                    LEFT JOIN dbo.v_ta_categoria cat ON cat.IdCategoria = cli.IdCategoria
+                    WHERE c.IdConversacion = @Id;
+                    """;
+                await using var cmd = new SqlCommand(sql, cn);
+                cmd.Parameters.AddWithValue("@Id", idConversacion);
+                await using var rd = await cmd.ExecuteReaderAsync(ct);
+                if (await rd.ReadAsync(ct))
+                {
+                    rubro = GetString(rd, 0);
+                    clasif = GetString(rd, 1);
+                }
+            }
+
+            var esPrioritario = false;
+            if (!string.IsNullOrWhiteSpace(clasif))
+            {
+                var prio = await conversacionesConfigService.GetPrioridadConfigAsync(ct).ConfigureAwait(false);
+                esPrioritario = new[] { prio.Clasifica1, prio.Clasifica2, prio.Clasifica3 }
+                    .Any(p => !string.IsNullOrWhiteSpace(p) && string.Equals(p.Trim(), clasif, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return (rubro, esPrioritario);
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones", "ContextoCliente", ex,
+                "No se pudo leer el rubro/clasificación del cliente para el asistente.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return (string.Empty, false);
+        }
+    }
+
+    // Sube la prioridad de la conversación solo si la nueva es mayor que la actual (nunca la baja).
+    private async Task SubirPrioridadAsync(long idConversacion, string prioridad, CancellationToken ct)
+    {
+        var p = (prioridad ?? string.Empty).Trim().ToUpperInvariant();
+        var rank = p switch { "URGENTE" => 4, "ALTA" => 3, "MEDIA" => 2, "BAJA" => 1, _ => 0 };
+        if (rank == 0)
+            return;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        const string sql = """
+            UPDATE dbo.CONV_CONVERSACIONES SET Prioridad = @P
+            WHERE IdConversacion = @Id
+              AND @Rank > CASE UPPER(ISNULL(Prioridad, ''))
+                    WHEN 'URGENTE' THEN 4 WHEN 'ALTA' THEN 3 WHEN 'MEDIA' THEN 2 WHEN 'BAJA' THEN 1 ELSE 0 END;
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@P", p);
+        cmd.Parameters.AddWithValue("@Rank", rank);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     // Recupera de AlfaKnowledge los fragmentos relevantes (plainText de las citas) y arma un bloque
