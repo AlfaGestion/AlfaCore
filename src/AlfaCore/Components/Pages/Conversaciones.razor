@@ -2017,44 +2017,9 @@
                                         disabled="@(_improvingReplyWithAi || !HasReplyText || !AlfaKnowledgeSvc.IsConfigured)">
                                     <i class="bi @(_improvingReplyWithAi ? "bi-hourglass-split" : "bi-stars")"></i>
                                 </button>
-                                <div class="conversations-tone-wrap">
-                                    <button type="button"
-                                            class="btn btn--ghost conversations-improve-ai"
-                                            title="Tono / Traducir"
-                                            aria-label="Tono / Traducir"
-                                            @onclick="() => _showToneMenu = !_showToneMenu"
-                                            @onclick:stopPropagation
-                                            disabled="@(_transformandoReply || !HasReplyText || !AnalisisSvc.IsConfigured)">
-                                        <i class="bi @(_transformandoReply ? "bi-hourglass-split" : "bi-fonts")"></i>
-                                    </button>
-                                    @if (_showToneMenu)
-                                    {
-                                        <div class="panel-card conversations-tone-menu" @onclick:stopPropagation>
-                                            <strong class="context-card__label">Tono</strong>
-                                            <button type="button" @onclick='() => TransformReplyAsync("reescribí en tono formal y profesional")'>Formal</button>
-                                            <button type="button" @onclick='() => TransformReplyAsync("reescribí en tono cordial y cercano")'>Cordial</button>
-                                            <button type="button" @onclick='() => TransformReplyAsync("acortá y hacelo más directo, sin perder lo importante")'>Más breve</button>
-                                            <button type="button" @onclick='() => TransformReplyAsync("hacelo más amable y empático")'>Más amable</button>
-                                            <strong class="context-card__label">Traducir</strong>
-                                            <button type="button" @onclick='() => TransformReplyAsync("traducí al inglés, manteniendo el sentido")'>Inglés</button>
-                                            <button type="button" @onclick='() => TransformReplyAsync("traducí al portugués, manteniendo el sentido")'>Portugués</button>
-                                        </div>
-                                    }
-                                </div>
                                 <button type="button" class="btn btn--primary" @onclick="SendReplyAsync" disabled="@(!_canSendReply)" title="@GetReplyButtonTitle()">
                                     <i class="bi @(HasPendingAttachmentError ? "bi-arrow-clockwise" : "bi-send-fill")"></i>
                                 </button>
-                                @if (_selectedConversation is not null && _selectedConversation.Canal == "WHATSAPP")
-                                {
-                                    <button type="button"
-                                            class="btn btn--ghost"
-                                            title="Programar envío"
-                                            aria-label="Programar envío"
-                                            @onclick="ToggleProgramarPanelAsync"
-                                            @onclick:stopPropagation>
-                                        <i class="bi bi-clock-history"></i>
-                                    </button>
-                                }
                                 <button type="button"
                                         class="btn btn--ghost"
                                         title="Más opciones"
@@ -2063,82 +2028,6 @@
                                     <i class="bi bi-plus-lg"></i>
                                 </button>
                             </div>
-                            @if (_showProgramarPanel)
-                            {
-                                <div class="panel-card conversations-tools-panel conversations-tools-panel--composer" @onclick:stopPropagation>
-                                    <strong class="context-card__label"><i class="bi bi-clock-history"></i> Programar envío</strong>
-                                    <div class="field">
-                                        <label for="prog-fecha">Fecha y hora</label>
-                                        <input id="prog-fecha" type="datetime-local" @bind="_programarFecha" @bind:after="StateHasChanged" />
-                                    </div>
-                                    @if (_ventanaCierre.HasValue)
-                                    {
-                                        <p class="panel-card__subtitle">La ventana de WhatsApp se cierra el @_ventanaCierre.Value.ToString("dd/MM 'a las' HH:mm"). Después de esa hora solo se puede enviar una plantilla aprobada.</p>
-                                    }
-                                    else
-                                    {
-                                        <p class="panel-card__subtitle">El cliente todavía no escribió (o pasaron 24 h): fuera de la ventana. Tenés que elegir una plantilla.</p>
-                                    }
-                                    @if (ProgramarFueraDeVentana)
-                                    {
-                                        <div class="field">
-                                            <label for="prog-plantilla">Plantilla aprobada</label>
-                                            <select id="prog-plantilla" @bind="_programarIdPlantillaStr" @bind:after="OnProgramarTemplateChanged">
-                                                <option value="">Elegí una plantilla…</option>
-                                                @foreach (var t in _programarTemplates)
-                                                {
-                                                    <option value="@t.IdPlantilla">@t.NombreVisible</option>
-                                                }
-                                            </select>
-                                            @if (_programarTemplates.Count == 0)
-                                            {
-                                                <span class="panel-card__subtitle">No hay plantillas aprobadas. Creá una en Plantillas.</span>
-                                            }
-                                        </div>
-                                        @for (var i = 0; i < _programarVariables.Count; i++)
-                                        {
-                                            var idx = i;
-                                            <div class="field">
-                                                <label>Variable @(idx + 1) (@("{{")@(idx + 1)@("}}"))</label>
-                                                <input @bind="_programarVariables[idx]" />
-                                            </div>
-                                        }
-                                    }
-                                    else
-                                    {
-                                        <p class="panel-card__subtitle">Se enviará el texto que escribiste en el cuadro de arriba.</p>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(_programarError))
-                                    {
-                                        <p class="panel-card__subtitle" style="color:var(--color-danger, #f87171);">@_programarError</p>
-                                    }
-                                    <div class="conversations-composer__actions">
-                                        <button type="button" class="btn btn--primary btn--sm" @onclick="ConfirmarProgramarAsync" disabled="@_programarBusy">
-                                            <i class="bi bi-clock-history"></i> Programar
-                                        </button>
-                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _showProgramarPanel = false">Cerrar</button>
-                                    </div>
-                                    @if (_mensajesProgramados.Count > 0)
-                                    {
-                                        <strong class="context-card__label">Programados</strong>
-                                        @foreach (var m in _mensajesProgramados)
-                                        {
-                                            <div class="conversations-pending-attachment @(m.Estado == "ERROR" ? "has-error" : string.Empty)">
-                                                <i class="bi @(m.Estado == "PENDIENTE" ? "bi-clock" : m.Estado == "ENVIADO" ? "bi-check2" : m.Estado == "CANCELADO" ? "bi-slash-circle" : "bi-exclamation-triangle")"></i>
-                                                <span title="@(string.IsNullOrWhiteSpace(m.Texto) ? m.PlantillaNombre : m.Texto)">
-                                                    @m.FechaProgramada.ToString("dd/MM HH:mm") · @ProgramadoEstadoLabel(m.Estado) · @(m.TipoEnvio == "PLANTILLA" ? $"Plantilla: {m.PlantillaNombre}" : TruncarUi(m.Texto, 50))
-                                                </span>
-                                                @if (m.Estado == "PENDIENTE")
-                                                {
-                                                    <button type="button" class="btn btn--ghost btn--sm" title="Cancelar" @onclick="() => CancelarProgramadoAsync(m.IdProgramado)">
-                                                        <i class="bi bi-x-lg"></i>
-                                                    </button>
-                                                }
-                                            </div>
-                                        }
-                                    }
-                                </div>
-                            }
                             @if (_showComposerTools && !_reactionEmojiMessageId.HasValue)
                             {
                                 <div class="panel-card conversations-tools-panel conversations-tools-panel--composer" @onclick:stopPropagation>
@@ -2146,6 +2035,11 @@
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Emojis ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Emojis'><i class="bi bi-emoji-smile"></i> Emojis</button>
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Stickers ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Stickers'><i class="bi bi-star-fill"></i> Stickers</button>
                                         <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Adjuntos ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Adjuntos'><i class="bi bi-paperclip"></i> Adjuntos</button>
+                                        <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Tono ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Tono' disabled="@(!HasReplyText || !AnalisisSvc.IsConfigured)"><i class="bi bi-fonts"></i> Tono</button>
+                                        @if (_selectedConversation is not null && _selectedConversation.Canal == "WHATSAPP")
+                                        {
+                                            <button type="button" class="conversations-filter-pill @(_composerToolTab == ComposerToolTabs.Programar ? "is-active" : string.Empty)" @onclick="SelectProgramarTabAsync"><i class="bi bi-clock-history"></i> Programar</button>
+                                        }
                                         <button type="button" class="conversations-filter-pill mobile-only @(_composerToolTab == ComposerToolTabs.Notas ? "is-active" : string.Empty)" @onclick='() => _composerToolTab = ComposerToolTabs.Notas'><i class="bi bi-journal-text"></i> Nota</button>
                                     </div>
                                     @if (_composerToolTab == ComposerToolTabs.Emojis)
@@ -2199,6 +2093,93 @@
                                                 <i class="bi @(_recording ? "bi-stop-circle-fill" : "bi-mic-fill")"></i>
                                                 <span>Audio</span>
                                             </button>
+                                        </div>
+                                    }
+                                    else if (_composerToolTab == ComposerToolTabs.Tono)
+                                    {
+                                        <div @key="ComposerToolTabs.Tono" class="conversations-tone-menu conversations-tone-menu--tab">
+                                            <strong class="context-card__label">Tono</strong>
+                                            <button type="button" disabled="@_transformandoReply" @onclick='() => TransformReplyAsync("reescribí en tono formal y profesional")'>Formal</button>
+                                            <button type="button" disabled="@_transformandoReply" @onclick='() => TransformReplyAsync("reescribí en tono cordial y cercano")'>Cordial</button>
+                                            <button type="button" disabled="@_transformandoReply" @onclick='() => TransformReplyAsync("acortá y hacelo más directo, sin perder lo importante")'>Más breve</button>
+                                            <button type="button" disabled="@_transformandoReply" @onclick='() => TransformReplyAsync("hacelo más amable y empático")'>Más amable</button>
+                                            <strong class="context-card__label">Traducir</strong>
+                                            <button type="button" disabled="@_transformandoReply" @onclick='() => TransformReplyAsync("traducí al inglés, manteniendo el sentido")'>Inglés</button>
+                                            <button type="button" disabled="@_transformandoReply" @onclick='() => TransformReplyAsync("traducí al portugués, manteniendo el sentido")'>Portugués</button>
+                                        </div>
+                                    }
+                                    else if (_composerToolTab == ComposerToolTabs.Programar)
+                                    {
+                                        <div @key="ComposerToolTabs.Programar" class="conversations-tools-panel__group">
+                                            <div class="field">
+                                                <label for="prog-fecha">Fecha y hora</label>
+                                                <input id="prog-fecha" type="datetime-local" @bind="_programarFecha" @bind:after="StateHasChanged" />
+                                            </div>
+                                            @if (_ventanaCierre.HasValue)
+                                            {
+                                                <p class="panel-card__subtitle">La ventana de WhatsApp se cierra el @_ventanaCierre.Value.ToString("dd/MM 'a las' HH:mm"). Después de esa hora solo se puede enviar una plantilla aprobada.</p>
+                                            }
+                                            else
+                                            {
+                                                <p class="panel-card__subtitle">El cliente todavía no escribió (o pasaron 24 h): fuera de la ventana. Tenés que elegir una plantilla.</p>
+                                            }
+                                            @if (ProgramarFueraDeVentana)
+                                            {
+                                                <div class="field">
+                                                    <label for="prog-plantilla">Plantilla aprobada</label>
+                                                    <select id="prog-plantilla" @bind="_programarIdPlantillaStr" @bind:after="OnProgramarTemplateChanged">
+                                                        <option value="">Elegí una plantilla…</option>
+                                                        @foreach (var t in _programarTemplates)
+                                                        {
+                                                            <option value="@t.IdPlantilla">@t.NombreVisible</option>
+                                                        }
+                                                    </select>
+                                                    @if (_programarTemplates.Count == 0)
+                                                    {
+                                                        <span class="panel-card__subtitle">No hay plantillas aprobadas. Creá una en Plantillas.</span>
+                                                    }
+                                                </div>
+                                                @for (var i = 0; i < _programarVariables.Count; i++)
+                                                {
+                                                    var idx = i;
+                                                    <div class="field">
+                                                        <label>Variable @(idx + 1) (@("{{")@(idx + 1)@("}}"))</label>
+                                                        <input @bind="_programarVariables[idx]" />
+                                                    </div>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <p class="panel-card__subtitle">Se enviará el texto que escribiste en el cuadro de arriba.</p>
+                                            }
+                                            @if (!string.IsNullOrWhiteSpace(_programarError))
+                                            {
+                                                <p class="panel-card__subtitle" style="color:var(--color-danger, #f87171);">@_programarError</p>
+                                            }
+                                            <div class="conversations-composer__actions">
+                                                <button type="button" class="btn btn--primary btn--sm" @onclick="ConfirmarProgramarAsync" disabled="@_programarBusy">
+                                                    <i class="bi bi-clock-history"></i> Programar
+                                                </button>
+                                            </div>
+                                            @if (_mensajesProgramados.Count > 0)
+                                            {
+                                                <strong class="context-card__label">Programados</strong>
+                                                @foreach (var m in _mensajesProgramados)
+                                                {
+                                                    <div class="conversations-pending-attachment @(m.Estado == "ERROR" ? "has-error" : string.Empty)">
+                                                        <i class="bi @(m.Estado == "PENDIENTE" ? "bi-clock" : m.Estado == "ENVIADO" ? "bi-check2" : m.Estado == "CANCELADO" ? "bi-slash-circle" : "bi-exclamation-triangle")"></i>
+                                                        <span title="@(string.IsNullOrWhiteSpace(m.Texto) ? m.PlantillaNombre : m.Texto)">
+                                                            @m.FechaProgramada.ToString("dd/MM HH:mm") · @ProgramadoEstadoLabel(m.Estado) · @(m.TipoEnvio == "PLANTILLA" ? $"Plantilla: {m.PlantillaNombre}" : TruncarUi(m.Texto, 50))
+                                                        </span>
+                                                        @if (m.Estado == "PENDIENTE")
+                                                        {
+                                                            <button type="button" class="btn btn--ghost btn--sm" title="Cancelar" @onclick="() => CancelarProgramadoAsync(m.IdProgramado)">
+                                                                <i class="bi bi-x-lg"></i>
+                                                            </button>
+                                                        }
+                                                    </div>
+                                                }
+                                            }
                                         </div>
                                     }
                                     else
@@ -3425,7 +3406,6 @@
     private bool _loadingAiSuggestion;
     private bool _improvingReplyWithAi;
     private bool _transformandoReply;
-    private bool _showToneMenu;
     private CancellationTokenSource? _aiSuggestionRequestCts;
     private AlfaKnowledgeSuggestionResult? _aiSuggestion;
     private long? _aiSuggestionConversationId;
@@ -3501,7 +3481,6 @@
     private string _replyText = string.Empty;
 
     // Mensajes programados (envío diferido)
-    private bool _showProgramarPanel;
     private bool _programarBusy;
     private DateTime? _programarFecha;
     private DateTime? _ventanaCierre;
@@ -7176,14 +7155,13 @@
 
     // ===================== Mensajes programados (envío diferido) =====================
 
-    private async Task ToggleProgramarPanelAsync()
+    private async Task SelectProgramarTabAsync()
     {
-        _showProgramarPanel = !_showProgramarPanel;
-        if (!_showProgramarPanel || _selectedConversation is null)
+        _composerToolTab = ComposerToolTabs.Programar;
+        if (_selectedConversation is null)
             return;
 
         _programarError = null;
-        _showComposerTools = false;
         _programarFecha ??= DateTime.Now.AddHours(1);
         try
         {
@@ -8442,7 +8420,6 @@
 
     private async Task TransformReplyAsync(string instruccion)
     {
-        _showToneMenu = false;
         if (_transformandoReply || !AnalisisSvc.IsConfigured)
             return;
 
@@ -11742,6 +11719,8 @@
         public const string Emojis = "emojis";
         public const string Stickers = "stickers";
         public const string Adjuntos = "adjuntos";
+        public const string Tono = "tono";
+        public const string Programar = "programar";
         public const string Notas = "notas";
     }
 }

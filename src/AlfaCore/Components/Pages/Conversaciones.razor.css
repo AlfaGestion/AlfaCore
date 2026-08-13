@@ -3097,6 +3097,19 @@
     background: var(--hover, #f1f5f9);
 }
 
+/* Variante embebida como pestaña del panel "+" del compositor (ya no es popup flotante) */
+.conversations-tone-menu--tab {
+    position: static;
+    bottom: auto;
+    left: auto;
+    z-index: auto;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+    box-shadow: none;
+}
+
 /* Indicador de confianza de la sugerencia (Nivel 2 - bot supervisado) */
 .conv-confianza {
     display: flex;
