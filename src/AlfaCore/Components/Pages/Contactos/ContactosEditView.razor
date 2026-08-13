@@ -1,6 +1,5 @@
 @namespace AlfaCore.Components.Pages
 @using AlfaCore.Models
-@inject ILogger<ContactosEditView> Logger
 
 <section class="contactos-edit-shell" aria-label="@(CreateMode ? "Nuevo contacto" : "Editar contacto")">
     <header class="contactos-edit-header">
@@ -34,30 +33,30 @@
                 <section class="contactos-edit-section">
                     <h3>Datos principales y contacto</h3>
                     <div class="contactos-edit-grid">
-                        <AlfaInput Label="Nombre y apellido" MaxLength="100" UpdateOnInput Value="@Model.NombreApellido" ValueChanged="@(v => SetTextAsync(nameof(Model.NombreApellido), v))" ErrorText="@(Error("nombre"))" Required Disabled="@Saving" />
-                        <AlfaInput Label="Nro. documento" MaxLength="13" UpdateOnInput Value="@Model.NumeroDocumento" ValueChanged="@(v => SetTextAsync(nameof(Model.NumeroDocumento), v))" ErrorText="@(Error("numero-documento"))" Disabled="@Saving" />
-                        <AlfaInput Label="Teléfono" MaxLength="100" UpdateOnInput Value="@Model.Telefono" ValueChanged="@(v => SetTextAsync(nameof(Model.Telefono), v))" ErrorText="@(Error("telefono"))" Disabled="@Saving" />
-                        <AlfaInput Label="Tel. alternativo" MaxLength="100" UpdateOnInput Value="@Model.TelefonoAlternativo" ValueChanged="@(v => SetTextAsync(nameof(Model.TelefonoAlternativo), v))" ErrorText="@(Error("telefono-alternativo"))" Disabled="@Saving" />
-                        <AlfaInput Label="Celular" MaxLength="100" UpdateOnInput Value="@Model.Celular" ValueChanged="@(v => SetTextAsync(nameof(Model.Celular), v))" ErrorText="@(Error("celular"))" Disabled="@Saving" />
-                        <AlfaInput Label="E-mail" Type="email" MaxLength="100" UpdateOnInput Value="@Model.Email" ValueChanged="@(v => SetTextAsync(nameof(Model.Email), v))" ErrorText="@(Error("email"))" Disabled="@Saving" />
+                        <AlfaInput Label="Nombre y apellido" MaxLength="100" Value="@Model.NombreApellido" ValueChanged="@(v => SetTextAsync(nameof(Model.NombreApellido), v))" ErrorText="@(Error("nombre"))" Required Disabled="@Saving" />
+                        <AlfaInput Label="Nro. documento" MaxLength="13" Value="@Model.NumeroDocumento" ValueChanged="@(v => SetTextAsync(nameof(Model.NumeroDocumento), v))" ErrorText="@(Error("numero-documento"))" Disabled="@Saving" />
+                        <AlfaInput Label="Teléfono" MaxLength="100" Value="@Model.Telefono" ValueChanged="@(v => SetTextAsync(nameof(Model.Telefono), v))" ErrorText="@(Error("telefono"))" Disabled="@Saving" />
+                        <AlfaInput Label="Tel. alternativo" MaxLength="100" Value="@Model.TelefonoAlternativo" ValueChanged="@(v => SetTextAsync(nameof(Model.TelefonoAlternativo), v))" ErrorText="@(Error("telefono-alternativo"))" Disabled="@Saving" />
+                        <AlfaInput Label="Celular" MaxLength="100" Value="@Model.Celular" ValueChanged="@(v => SetTextAsync(nameof(Model.Celular), v))" ErrorText="@(Error("celular"))" Disabled="@Saving" />
+                        <AlfaInput Label="E-mail" Type="email" MaxLength="100" Value="@Model.Email" ValueChanged="@(v => SetTextAsync(nameof(Model.Email), v))" ErrorText="@(Error("email"))" Disabled="@Saving" />
                     </div>
                 </section>
 
                 <section class="contactos-edit-section">
                     <h3>Ubicación</h3>
                     <div class="contactos-edit-grid">
-                        <AlfaInput Label="Domicilio" MaxLength="100" UpdateOnInput Value="@Model.Domicilio" ValueChanged="@(v => SetTextAsync(nameof(Model.Domicilio), v))" ErrorText="@(Error("domicilio"))" Disabled="@Saving" />
-                        <AlfaInput Label="Localidad" MaxLength="100" UpdateOnInput Value="@Model.Localidad" ValueChanged="@(v => SetTextAsync(nameof(Model.Localidad), v))" ErrorText="@(Error("localidad"))" Disabled="@Saving" />
+                        <AlfaInput Label="Domicilio" MaxLength="100" Value="@Model.Domicilio" ValueChanged="@(v => SetTextAsync(nameof(Model.Domicilio), v))" ErrorText="@(Error("domicilio"))" Disabled="@Saving" />
+                        <AlfaInput Label="Localidad" MaxLength="100" Value="@Model.Localidad" ValueChanged="@(v => SetTextAsync(nameof(Model.Localidad), v))" ErrorText="@(Error("localidad"))" Disabled="@Saving" />
                         <AlfaSelect Label="Provincia" Value="@Model.ProvinciaCodigo" ValueChanged="@(v => SetTextAsync(nameof(Model.ProvinciaCodigo), v))" Options="@ProvinceOptions" Placeholder="Seleccionar..." ErrorText="@(Error("provincia"))" Disabled="@(Saving || LoadingProvinces)" />
-                        <AlfaInput Label="Código postal" MaxLength="20" UpdateOnInput Value="@Model.CodigoPostal" ValueChanged="@(v => SetTextAsync(nameof(Model.CodigoPostal), v))" ErrorText="@(Error("codigo-postal"))" Disabled="@Saving" />
+                        <AlfaInput Label="Código postal" MaxLength="20" Value="@Model.CodigoPostal" ValueChanged="@(v => SetTextAsync(nameof(Model.CodigoPostal), v))" ErrorText="@(Error("codigo-postal"))" Disabled="@Saving" />
                     </div>
                 </section>
 
                 <section class="contactos-edit-section">
                     <h3>Información adicional y comercial</h3>
                     <div class="contactos-edit-grid">
-                        <AlfaInput Label="Cargo" MaxLength="100" UpdateOnInput Value="@Model.Cargo" ValueChanged="@(v => SetTextAsync(nameof(Model.Cargo), v))" ErrorText="@(Error("cargo"))" Disabled="@Saving" />
-                        <AlfaInput Label="Página web" MaxLength="100" UpdateOnInput Value="@Model.Website" ValueChanged="@(v => SetTextAsync(nameof(Model.Website), v))" ErrorText="@(Error("website"))" Disabled="@Saving" />
+                        <AlfaInput Label="Cargo" MaxLength="100" Value="@Model.Cargo" ValueChanged="@(v => SetTextAsync(nameof(Model.Cargo), v))" ErrorText="@(Error("cargo"))" Disabled="@Saving" />
+                        <AlfaInput Label="Página web" MaxLength="100" Value="@Model.Website" ValueChanged="@(v => SetTextAsync(nameof(Model.Website), v))" ErrorText="@(Error("website"))" Disabled="@Saving" />
                     </div>
                 </section>
 
@@ -158,7 +157,6 @@
 
     private async Task SetTextAsync(string property, string? value)
     {
-        Logger.LogInformation("ContactosEditView input recibido. Property={Property}, Length={Length}", property, value?.Length ?? 0);
         typeof(ContactoSaveRequest).GetProperty(property)?.SetValue(Model, value ?? string.Empty);
         await OnFieldChanged.InvokeAsync(property);
     }

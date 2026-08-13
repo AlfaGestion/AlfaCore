@@ -26,7 +26,7 @@
     @if (_feedback is not null)
     {
         <section class="contactos-feedback" aria-live="polite">
-            <div class="editor-msg editor-msg--animated @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)">
+            <div class="editor-msg editor-msg--floating-surface editor-msg--animated @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)">
                 <div>
                     <strong>@_feedback.Title</strong>
                     <p>@_feedback.Message</p>
@@ -2081,37 +2081,38 @@
         if (!string.IsNullOrWhiteSpace(fieldKey))
             _fieldErrors.Remove(fieldKey);
         _editDirty = !string.Equals(_editInitialState, CaptureEditState(), StringComparison.Ordinal);
-        Logger.LogInformation("Contactos dirty recalculado. Mode={Mode}, Property={Property}, Dirty={Dirty}", _pageMode, propertyName, _editDirty);
         return Task.CompletedTask;
     }
 
-    private Task RequestCancelEditAsync()
+    private async Task RequestCancelEditAsync()
     {
         if (_editDirty)
         {
             _showDiscardEditConfirm = true;
-            return Task.CompletedTask;
+            await InvokeAsync(StateHasChanged);
+            return;
         }
 
-        return ReturnFromEditToRecordAsync();
+        await ReturnFromEditToRecordAsync();
     }
 
-    private Task RequestCancelNewAsync()
+    private async Task RequestCancelNewAsync()
     {
         if (_editDirty)
         {
             _showDiscardEditConfirm = true;
-            return Task.CompletedTask;
+            await InvokeAsync(StateHasChanged);
+            return;
         }
 
         ReturnFromNewToBrowse();
-        return Task.CompletedTask;
     }
 
     private void ContinueEditing()
     {
         _showDiscardEditConfirm = false;
         _pendingEditNavigationUri = string.Empty;
+        StateHasChanged();
     }
 
     private async Task DiscardEditChangesAsync()

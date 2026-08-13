@@ -10755,6 +10755,22 @@ html[data-theme="light"] .consulta-table tr:hover td {
     gap: .5rem;
 }
 
+.editor-msg.editor-msg--floating-surface {
+    background: var(--alfa-bg-surface-raised);
+    border: 1px solid var(--alfa-border-strong);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
+    color: var(--alfa-text-primary);
+}
+
+.editor-msg.editor-msg--floating-surface strong {
+    color: var(--alfa-text-primary);
+}
+
+.editor-msg.editor-msg--floating-surface p,
+.editor-msg.editor-msg--floating-surface small {
+    color: var(--alfa-text-secondary);
+}
+
 .editor-msg--animated {
     animation: editor-msg-fade-in .18s ease-out both;
     transition: opacity .18s ease, transform .18s ease;

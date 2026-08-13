@@ -9,34 +9,17 @@
             }
         </label>
     }
-    @if (UpdateOnInput)
-    {
-        <input id="@InputId"
-               class="alfa-input__control"
-               type="@Type"
-               value="@Value"
-               placeholder="@Placeholder"
-               maxlength="@MaxLength"
-               disabled="@Disabled"
-               required="@Required"
-               aria-invalid="@HasError.ToString().ToLowerInvariant()"
-               aria-describedby="@DescribedBy"
-               @oninput="UpdateValueAsync" />
-    }
-    else
-    {
-        <input id="@InputId"
-               class="alfa-input__control"
-               type="@Type"
-               value="@Value"
-               placeholder="@Placeholder"
-               maxlength="@MaxLength"
-               disabled="@Disabled"
-               required="@Required"
-               aria-invalid="@HasError.ToString().ToLowerInvariant()"
-               aria-describedby="@DescribedBy"
-               @onchange="UpdateValueAsync" />
-    }
+    <input id="@InputId"
+           class="alfa-input__control"
+           type="@Type"
+           value="@Value"
+           placeholder="@Placeholder"
+           maxlength="@MaxLength"
+           disabled="@Disabled"
+           required="@Required"
+           aria-invalid="@HasError.ToString().ToLowerInvariant()"
+           aria-describedby="@DescribedBy"
+           @oninput="UpdateValueAsync" />
     @if (!string.IsNullOrWhiteSpace(ErrorText))
     {
         <div id="@ErrorId" class="alfa-field__message alfa-field__message--error">@ErrorText</div>
@@ -56,7 +39,6 @@
     [Parameter] public string Type { get; set; } = "text";
     [Parameter] public string? Placeholder { get; set; }
     [Parameter] public int? MaxLength { get; set; }
-    [Parameter] public bool UpdateOnInput { get; set; }
     [Parameter] public string? HelpText { get; set; }
     [Parameter] public string? ErrorText { get; set; }
     [Parameter] public bool Required { get; set; }
