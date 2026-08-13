@@ -37,4 +37,7 @@ public interface IConversacionesInformesService
 
     /// <summary>Cantidad de mensajes por mes en los últimos 12 meses (terminando en Año/Mes), para ver la tendencia.</summary>
     Task<IReadOnlyList<ConversacionInformeTendenciaDto>> GetTendenciaMensajesAsync(int anio, int mes, CancellationToken ct = default);
+
+    /// <summary>Mensajes por mes de los últimos 12 meses de UN cliente/contacto (la fila del detalle).</summary>
+    Task<IReadOnlyList<ConversacionInformeTendenciaDto>> GetTendenciaClienteAsync(int idDetalle, CancellationToken ct = default);
 }

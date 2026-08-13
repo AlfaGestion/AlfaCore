@@ -276,6 +276,35 @@ public sealed class ConversacionesInformesService(
         ORDER BY c.IdConversacion DESC;
         """;
 
+    // Mensajes del período agrupados por contacto (para "atendimos a Juan (12), María (5)").
+    private const string ContactosMesSql = """
+        SELECT ISNULL(NULLIF(LTRIM(RTRIM(con.Nombre_y_Apellido)), N''), N'(sin contacto)') AS Nombre,
+               COUNT(*) AS CantMensajes
+        FROM dbo.CONV_MENSAJES m
+        INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+        LEFT JOIN dbo.MA_CONTACTOS con ON con.id = c.IdContacto
+        WHERE m.FechaHora >= @Desde AND m.FechaHora < @Hasta
+          AND ISNULL(c.Canal, N'') <> N'INTERNO'
+          AND m.Direction IN (N'ENTRANTE', N'SALIENTE')
+          AND ( (@ClienteCodigo <> N'' AND UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = UPPER(@ClienteCodigo))
+                OR (@IdContacto IS NOT NULL AND c.IdContacto = @IdContacto) )
+        GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(con.Nombre_y_Apellido)), N''), N'(sin contacto)')
+        ORDER BY CantMensajes DESC;
+        """;
+
+    // Mensajes por mes (últimos 12) de un cliente/contacto puntual.
+    private const string TendenciaClienteSql = """
+        SELECT YEAR(m.FechaHora) AS Anio, MONTH(m.FechaHora) AS Mes, COUNT(*) AS CantMensajes
+        FROM dbo.CONV_MENSAJES m
+        INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+        WHERE m.FechaHora >= @Desde AND m.FechaHora < @Hasta
+          AND ISNULL(c.Canal, N'') <> N'INTERNO'
+          AND m.Direction IN (N'ENTRANTE', N'SALIENTE')
+          AND ( (@ClienteCodigo <> N'' AND UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = UPPER(@ClienteCodigo))
+                OR (@IdContacto IS NOT NULL AND c.IdContacto = @IdContacto) )
+        GROUP BY YEAR(m.FechaHora), MONTH(m.FechaHora);
+        """;
+
     public Task<ConversacionInformeDetalleDto?> GetDetalleAsync(int idDetalle, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetDetalleInforme", async token =>
         {
@@ -300,6 +329,9 @@ public sealed class ConversacionesInformesService(
             var mensajes = (await cn.QueryAsync<ConversacionInformeMensajeDto>(new CommandDefinition(
                 MensajesMesSql, args, cancellationToken: token))).ToList();
 
+            var contactos = (await cn.QueryAsync<ConversacionInformeContactoDto>(new CommandDefinition(
+                ContactosMesSql, args, cancellationToken: token))).ToList();
+
             var email = string.Empty;
             if (fila.TipoFila == "CLIENTE" && !string.IsNullOrWhiteSpace(fila.ClienteCodigo))
                 email = await cn.ExecuteScalarAsync<string>(new CommandDefinition(
@@ -320,7 +352,8 @@ public sealed class ConversacionesInformesService(
                 Mes = cab.Mes,
                 ClienteEmail = (email ?? string.Empty).Trim(),
                 IdConversacionWhatsApp = idConv,
-                Mensajes = mensajes
+                Mensajes = mensajes,
+                Contactos = contactos
             };
         }, ct);
 
@@ -348,8 +381,11 @@ public sealed class ConversacionesInformesService(
             if (string.IsNullOrWhiteSpace(resumen))
                 throw new InvalidOperationException("No se pudo generar el resumen. Verificá que OPENAI_API_KEY esté configurada en el servidor.");
 
-            await GuardarBorradorAsync(idDetalle, resumen.Trim(), token);
-            return resumen.Trim();
+            // Prepend un párrafo con datos duros exactos (período, días, mensajes, horas, contactos).
+            var intro = BuildIntroDatos(det);
+            var final = intro.Length > 0 ? $"{intro}\n\n{resumen.Trim()}" : resumen.Trim();
+            await GuardarBorradorAsync(idDetalle, final, token);
+            return final;
         }, ct);
 
     public Task GuardarResumenEditadoAsync(int idDetalle, string texto, CancellationToken ct = default)
@@ -503,8 +539,9 @@ public sealed class ConversacionesInformesService(
             persona + "\n\n" +
             $"Le estás escribiendo al cliente \"{det.Fila.NombreMostrar}\"{rubro}, sobre la atención que le dimos durante {mesNombre}.\n\n" +
             "FORMATO (respetalo):\n" +
-            "- Arrancá con UNA sola línea de introducción (ej: \"Te dejamos un resumen de lo que trabajamos este mes:\").\n" +
-            "- Después, entre 3 y 6 viñetas, cada una empezando con \"• \", una por tema/consulta concreta, diciendo qué se hizo " +
+            "- NO pongas línea de introducción ni menciones fechas, cantidades de mensajes/días ni horas: ese párrafo ya lo " +
+            "agregamos nosotros por separado. Empezá directo con las viñetas.\n" +
+            "- Entre 3 y 6 viñetas, cada una empezando con \"• \", una por tema/consulta concreta, diciendo qué se hizo " +
             "y su estado (resuelto / en curso / pendiente).\n" +
             "- Cerrá con UNA línea corta ofreciendo seguir ayudando.\n\n" +
             "REGLAS:\n" +
@@ -517,6 +554,92 @@ public sealed class ConversacionesInformesService(
             "- Si hubo muy poca actividad (1 o 2 mensajes), resolvelo en 1 o 2 líneas, sin forzar viñetas.\n" +
             "- Devolvé SOLO el cuerpo del mensaje: sin asunto, sin \"Hola\" ni saludo inicial, sin firma.";
     }
+
+    private static string BuildIntroDatos(ConversacionInformeDetalleDto det)
+    {
+        var f = det.Fila;
+        var sb = new StringBuilder();
+
+        if (det.Mensajes.Count > 0)
+        {
+            var min = det.Mensajes.Min(m => m.FechaHora);
+            var max = det.Mensajes.Max(m => m.FechaHora);
+            var periodo = min.Date == max.Date ? $"el {min:dd/MM}" : $"del {min:dd/MM} al {max:dd/MM}";
+            sb.Append($"En el período {periodo}, en {f.CantDias} día{(f.CantDias == 1 ? "" : "s")} intercambiamos {f.CantMensajes} mensajes.");
+        }
+        else
+        {
+            sb.Append($"En el mes intercambiamos {f.CantMensajes} mensajes.");
+        }
+
+        if (f.MinutosTotales > 0)
+        {
+            var horas = (int)Math.Ceiling(f.MinutosTotales / 60.0);
+            sb.Append($" El tiempo estimado de atención fue de {horas} h.");
+        }
+
+        var named = det.Contactos
+            .Where(c => !string.Equals(c.Nombre?.Trim(), "(sin contacto)", StringComparison.OrdinalIgnoreCase)
+                        && !string.IsNullOrWhiteSpace(c.Nombre))
+            .ToList();
+        if (named.Count > 0)
+        {
+            var partes = named
+                .Select(c => $"{c.Nombre.Trim()} ({c.CantMensajes} mensaje{(c.CantMensajes == 1 ? "" : "s")})")
+                .ToList();
+            sb.Append($" Atendimos a {JoinConY(partes)}.");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string JoinConY(IReadOnlyList<string> items)
+    {
+        if (items.Count == 0) return string.Empty;
+        if (items.Count == 1) return items[0];
+        return string.Join(", ", items.Take(items.Count - 1)) + " y " + items[^1];
+    }
+
+    public Task<IReadOnlyList<ConversacionInformeTendenciaDto>> GetTendenciaClienteAsync(int idDetalle, CancellationToken ct = default)
+        => ExecuteLoggedAsync("TendenciaClienteInforme", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var fila = await cn.QuerySingleOrDefaultAsync<ConversacionInformeFilaDto>(new CommandDefinition(
+                FilaByIdSql, new { Id = idDetalle }, cancellationToken: token));
+            if (fila is null)
+                return (IReadOnlyList<ConversacionInformeTendenciaDto>)[];
+
+            var cab = await cn.QuerySingleOrDefaultAsync<ConversacionInformeMensualDto>(new CommandDefinition(
+                "SELECT IdInforme, Anio, Mes FROM dbo.CONV_INFORME_MENSUAL WHERE IdInforme = @Id;",
+                new { Id = fila.IdInforme }, cancellationToken: token));
+            if (cab is null)
+                return [];
+
+            var primerMes = new DateTime(cab.Anio, cab.Mes, 1);
+            var desde = primerMes.AddMonths(-11);
+            var hasta = primerMes.AddMonths(1);
+
+            var datos = (await cn.QueryAsync<ConversacionInformeTendenciaDto>(new CommandDefinition(
+                TendenciaClienteSql,
+                new { Desde = desde, Hasta = hasta, ClienteCodigo = fila.ClienteCodigo ?? string.Empty, fila.IdContacto },
+                cancellationToken: token))).ToList();
+
+            var mapa = datos.ToDictionary(x => (x.Anio, x.Mes), x => x.CantMensajes);
+            var serie = new List<ConversacionInformeTendenciaDto>(12);
+            for (var i = 0; i < 12; i++)
+            {
+                var m = desde.AddMonths(i);
+                serie.Add(new ConversacionInformeTendenciaDto
+                {
+                    Anio = m.Year,
+                    Mes = m.Month,
+                    CantMensajes = mapa.TryGetValue((m.Year, m.Month), out var c) ? c : 0
+                });
+            }
+            return serie;
+        }, ct);
 
     private static string BuildConversacionesTexto(ConversacionInformeDetalleDto det)
     {
