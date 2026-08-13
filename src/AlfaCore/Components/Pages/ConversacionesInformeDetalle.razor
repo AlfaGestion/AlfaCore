@@ -218,9 +218,12 @@
     }
 
     private void Volver()
-        => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
-            ? $"/{idweb}/{idbase}/conversaciones/informes"
-            : "/conversaciones/informes");
+    {
+        var qs = _det is not null ? $"?anio={_det.Anio}&mes={_det.Mes}" : string.Empty;
+        Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
+            ? $"/{idweb}/{idbase}/conversaciones/informes{qs}"
+            : $"/conversaciones/informes{qs}");
+    }
 
     private void SetFeedback(bool ok, string msg) { _feedbackOk = ok; _feedback = msg; }
 }

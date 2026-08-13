@@ -49,7 +49,7 @@
     <div class="conv-informes-toolbar panel-card" style="padding:.85rem 1rem;">
         <div class="field">
             <label for="inf-mes">Mes</label>
-            <select id="inf-mes" @bind="_mes">
+            <select id="inf-mes" @bind="_mes" @bind:after="AutoAbrirPeriodoAsync">
                 @for (var m = 1; m <= 12; m++)
                 {
                     var mm = m;
@@ -59,7 +59,7 @@
         </div>
         <div class="field">
             <label for="inf-anio">Año</label>
-            <select id="inf-anio" @bind="_anio">
+            <select id="inf-anio" @bind="_anio" @bind:after="AutoAbrirPeriodoAsync">
                 @for (var y = DateTime.Today.Year; y >= DateTime.Today.Year - 4; y--)
                 {
                     var yy = y;
@@ -193,6 +193,9 @@
 </div>
 
 @code {
+    [SupplyParameterFromQuery(Name = "anio")] public int? AnioQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "mes")] public int? MesQuery { get; set; }
+
     private int _mes;
     private int _anio;
     private bool _trabajando;
@@ -208,11 +211,43 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // Por defecto, el mes anterior (se informa sobre un mes ya terminado).
-        var previo = DateTime.Today.AddMonths(-1);
-        _mes = previo.Month;
-        _anio = previo.Year;
+        if (AnioQuery is > 0 && MesQuery is >= 1 and <= 12)
+        {
+            // Volvemos de un detalle: reabrimos el mismo período.
+            _anio = AnioQuery.Value;
+            _mes = MesQuery.Value;
+        }
+        else
+        {
+            // Por defecto, el mes anterior (se informa sobre un mes ya terminado).
+            var previo = DateTime.Today.AddMonths(-1);
+            _mes = previo.Month;
+            _anio = previo.Year;
+        }
         await CargarListaAsync();
+        await AutoAbrirPeriodoAsync();
+    }
+
+    // Si ya existe un informe guardado para el período elegido, lo abre solo (sin regenerar).
+    private async Task AutoAbrirPeriodoAsync()
+    {
+        try
+        {
+            _informe = await InformesSvc.GetByPeriodoAsync(_anio, _mes);
+            _yaGenerado = _informe is not null;
+            _sortCol = string.Empty;
+            if (_informe is not null)
+                await CargarTendenciaAsync();
+            else
+            {
+                _tendencia = [];
+                _tendenciaMax = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(false, $"No se pudo abrir el informe del período: {ex.Message}");
+        }
     }
 
     private async Task CargarListaAsync()
