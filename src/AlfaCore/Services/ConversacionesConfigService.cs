@@ -629,6 +629,9 @@ public sealed class ConversacionesConfigService(
                     "¿Seguís ahí? Si no tenemos novedades, vamos a cerrar esta conversación. Escribinos cuando quieras. 🙂"),
                 AutoCierreMensajeCierre = ReadValue(values, "CONV_AUTOCIERRE_MENSAJE_CIERRE", string.Empty,
                     "Cerramos esta conversación por inactividad. Cuando lo necesites, escribinos de nuevo. ¡Gracias!"),
+                SlaActivo = ReadValue(values, "CONV_SLA_ACTIVO", string.Empty) == "1",
+                SlaHorasRecordatorio = ReadIntValue(values, "CONV_SLA_HORAS_RECORDATORIO", 0, 2),
+                SlaHorasReasignar = ReadIntValue(values, "CONV_SLA_HORAS_REASIGNAR", 0, 4),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
         }, "No se pudo cargar la configuración de automatizaciones.", ct);
@@ -665,7 +668,10 @@ public sealed class ConversacionesConfigService(
                 ("CONV_AUTOCIERRE_HORAS_AVISO", (config.AutoCierreHorasAviso <= 0 ? 23 : config.AutoCierreHorasAviso).ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 ("CONV_AUTOCIERRE_HORAS_CIERRE", (config.AutoCierreHorasCierre <= 0 ? 24 : config.AutoCierreHorasCierre).ToString(System.Globalization.CultureInfo.InvariantCulture)),
                 ("CONV_AUTOCIERRE_MENSAJE_AVISO", (config.AutoCierreMensajeAviso ?? string.Empty).Trim()),
-                ("CONV_AUTOCIERRE_MENSAJE_CIERRE", (config.AutoCierreMensajeCierre ?? string.Empty).Trim())
+                ("CONV_AUTOCIERRE_MENSAJE_CIERRE", (config.AutoCierreMensajeCierre ?? string.Empty).Trim()),
+                ("CONV_SLA_ACTIVO", config.SlaActivo ? "1" : "0"),
+                ("CONV_SLA_HORAS_RECORDATORIO", (config.SlaHorasRecordatorio <= 0 ? 2 : config.SlaHorasRecordatorio).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                ("CONV_SLA_HORAS_REASIGNAR", (config.SlaHorasReasignar <= 0 ? 4 : config.SlaHorasReasignar).ToString(System.Globalization.CultureInfo.InvariantCulture))
             };
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -1305,7 +1311,10 @@ public sealed class ConversacionesConfigService(
                 'CONV_AUTOCIERRE_HORAS_AVISO',
                 'CONV_AUTOCIERRE_HORAS_CIERRE',
                 'CONV_AUTOCIERRE_MENSAJE_AVISO',
-                'CONV_AUTOCIERRE_MENSAJE_CIERRE'
+                'CONV_AUTOCIERRE_MENSAJE_CIERRE',
+                'CONV_SLA_ACTIVO',
+                'CONV_SLA_HORAS_RECORDATORIO',
+                'CONV_SLA_HORAS_REASIGNAR'
             )
             """;
 

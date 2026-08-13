@@ -222,6 +222,13 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>Mensaje al cerrar (opcional; vacío = cierra sin mensaje).</summary>
     public string AutoCierreMensajeCierre { get; set; } = "Cerramos esta conversación por inactividad. Cuando lo necesites, escribinos de nuevo. ¡Gracias!";
 
+    // Seguimientos / SLA. Cuando el cliente está esperando respuesta (último mensaje entrante) hace
+    // más de X horas, deja una nota interna de recordatorio; si sigue sin respuesta hace Y horas y
+    // estaba asignada, la desasigna para que otro la tome. No manda nada al cliente (todos los canales).
+    public bool SlaActivo { get; set; }
+    public int SlaHorasRecordatorio { get; set; } = 2;
+    public int SlaHorasReasignar { get; set; } = 4;
+
     public string ConfigSource { get; set; } = string.Empty;
 
     public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);

@@ -6688,6 +6688,105 @@ public sealed class ConversacionesService(
             new { idConversacion }, ct).ConfigureAwait(false);
     }
 
+    // Seguimientos / SLA. Para conversaciones donde el cliente espera respuesta (último mensaje
+    // entrante): a las N horas deja una nota interna de recordatorio; a las M horas, si estaba
+    // asignada, la desasigna para que otro la tome. No manda nada al cliente (aplica a todo canal).
+    public async Task<int> ProcesarSeguimientosSlaAsync(CancellationToken ct = default)
+    {
+        int acciones = 0;
+        try
+        {
+            if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+                return 0;
+
+            var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+            if (!config.SlaActivo)
+                return 0;
+
+            var horasRec = Math.Max(1, config.SlaHorasRecordatorio);
+            var horasReasig = Math.Max(horasRec, config.SlaHorasReasignar);
+
+            var candidatos = new List<(long Id, string IdTecnico, DateTime UltInbound, bool YaRecordado)>();
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(ct);
+                const string sql = """
+                    SELECT TOP (200)
+                        c.IdConversacion,
+                        LTRIM(RTRIM(ISNULL(c.IdTecnico, ''))) AS IdTecnico,
+                        m.FechaHora,
+                        CASE WHEN EXISTS (
+                            SELECT 1 FROM dbo.CONV_MENSAJES n
+                            WHERE n.IdConversacion = c.IdConversacion
+                              AND n.Direction = N'NOTA_INTERNA' AND ISNULL(n.SistemaAutor, '') = N'SLA'
+                              AND n.FechaHora > m.FechaHora
+                        ) THEN 1 ELSE 0 END AS YaRecordado
+                    FROM dbo.CONV_CONVERSACIONES c
+                    INNER JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
+                    OUTER APPLY (
+                        SELECT TOP (1) ISNULL(mm.Direction, '') AS Direction, mm.FechaHora
+                        FROM dbo.CONV_MENSAJES mm
+                        WHERE mm.IdConversacion = c.IdConversacion AND mm.Direction IN (N'ENTRANTE', N'SALIENTE')
+                        ORDER BY mm.FechaHora DESC, mm.IdMensaje DESC
+                    ) m
+                    WHERE ISNULL(c.Archivada, 0) = 0
+                      AND ISNULL(e.EsCerrado, 0) = 0
+                      AND m.Direction = N'ENTRANTE'
+                      AND m.FechaHora <= DATEADD(hour, -@HorasRecordatorio, GETDATE());
+                    """;
+                await using var cmd = new SqlCommand(sql, cn);
+                cmd.Parameters.AddWithValue("@HorasRecordatorio", horasRec);
+                await using var rd = await cmd.ExecuteReaderAsync(ct);
+                while (await rd.ReadAsync(ct))
+                    candidatos.Add((rd.GetInt64(0), GetString(rd, 1),
+                        rd.IsDBNull(2) ? DateTime.Now : rd.GetDateTime(2),
+                        !rd.IsDBNull(3) && rd.GetInt32(3) == 1));
+            }
+
+            foreach (var cand in candidatos)
+            {
+                try
+                {
+                    var horasEspera = (int)Math.Floor((DateTime.Now - cand.UltInbound).TotalHours);
+                    if (!string.IsNullOrWhiteSpace(cand.IdTecnico) && horasEspera >= horasReasig)
+                    {
+                        await AssignConversationAsync(new ConversacionAsignacionRequest
+                        {
+                            IdConversacion = cand.Id,
+                            IdTecnico = null,
+                            UsuarioAccion = "AlfaCore",
+                            SistemaAccion = "SLA",
+                            Observaciones = "Reasignada por falta de respuesta (SLA)."
+                        }, ct).ConfigureAwait(false);
+                        await AddInternalEventCoreAsync(cand.Id,
+                            $"🔁 Reasignada por SLA: el cliente espera respuesta hace ~{horasEspera} h. Vuelve a la cola.",
+                            null, null, "AlfaCore", "SLA", ct).ConfigureAwait(false);
+                        acciones++;
+                    }
+                    else if (!cand.YaRecordado)
+                    {
+                        await AddInternalEventCoreAsync(cand.Id,
+                            $"⏰ SLA: el cliente espera respuesta hace ~{horasEspera} h.",
+                            null, null, "AlfaCore", "SLA", ct).ConfigureAwait(false);
+                        acciones++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await _appEvents.LogErrorAsync("Conversaciones", "SlaItem", ex,
+                        "No se pudo procesar el seguimiento SLA de una conversación.",
+                        new { cand.Id }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync("Conversaciones", "Sla", ex,
+                "No se pudo procesar los seguimientos SLA.", null, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+        return acciones;
+    }
+
     private static bool ContienePalabraEscalado(string texto, string? palabras)
     {
         if (string.IsNullOrWhiteSpace(palabras))

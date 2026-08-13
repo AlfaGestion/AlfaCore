@@ -756,6 +756,27 @@
                     </div>
                 </div>
 
+                <div class="conv-config-fields conv-bot-config">
+                    <div class="conv-config-fields__full">
+                        <h4 class="conv-bot-config__title"><i class="bi bi-alarm"></i> Seguimientos / SLA</h4>
+                        <p class="panel-card__subtitle">Vigila las conversaciones donde el cliente espera respuesta (último mensaje entrante). A las horas configuradas deja una nota interna de recordatorio; si sigue sin responderse y estaba asignada, la desasigna para que otro la tome. No manda nada al cliente. Aplica a todos los canales. Apagado por defecto.</p>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label class="conv-config-checkbox">
+                            <input type="checkbox" @bind="_automatizacionesConfig.SlaActivo" />
+                            <span>Activar seguimientos / SLA</span>
+                        </label>
+                    </div>
+                    <div class="field">
+                        <label for="sla-recordatorio">Horas sin respuesta para el recordatorio</label>
+                        <input id="sla-recordatorio" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasRecordatorio" />
+                    </div>
+                    <div class="field">
+                        <label for="sla-reasignar">Horas sin respuesta para reasignar</label>
+                        <input id="sla-reasignar" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasReasignar" />
+                    </div>
+                </div>
+
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="SaveAutomatizacionesAsync" disabled="@(Loading || Saving)">
                         <i class="bi bi-floppy-fill"></i> Guardar automatizaciones

@@ -39,6 +39,8 @@ public interface IConversacionesService
     Task ChangeStatusAsync(ConversacionEstadoRequest request, CancellationToken ct = default);
     /// <summary>Procesa el auto-cierre por inactividad para la base activa. Devuelve cuántas acciones hizo (avisos + cierres).</summary>
     Task<int> ProcesarAutoCierreAsync(CancellationToken ct = default);
+
+    Task<int> ProcesarSeguimientosSlaAsync(CancellationToken ct = default);
     Task SetConversationPinAsync(long idConversacion, string usuario, string? sistema, bool fijada, CancellationToken ct = default);
     Task MarkConversationReadAsync(long idConversacion, string usuario, string? sistema, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);

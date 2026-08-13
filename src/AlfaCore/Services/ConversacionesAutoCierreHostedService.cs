@@ -81,6 +81,10 @@ public sealed class ConversacionesAutoCierreHostedService(
                     var n = await conv.ProcesarAutoCierreAsync(ct);
                     if (n > 0)
                         logger.LogInformation("Auto-cierre: {Acciones} acción(es) en base {Base}.", n, b.Nombre);
+
+                    var sla = await conv.ProcesarSeguimientosSlaAsync(ct);
+                    if (sla > 0)
+                        logger.LogInformation("SLA: {Acciones} acción(es) en base {Base}.", sla, b.Nombre);
                 }
                 catch (Exception ex)
                 {
@@ -93,6 +97,7 @@ public sealed class ConversacionesAutoCierreHostedService(
             using var scope = services.CreateScope();
             var conv = scope.ServiceProvider.GetRequiredService<IConversacionesService>();
             await conv.ProcesarAutoCierreAsync(ct);
+            await conv.ProcesarSeguimientosSlaAsync(ct);
         }
     }
 }
