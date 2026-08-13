@@ -14,27 +14,7 @@
 
 <div class="@GetUsuariosPageClass()" @onclick="CloseUsuariosSearchPanel">
 
-    <AlfaNotification Message="@(_showEditor ? null : _feedback)" OnDismiss="ClearFeedback" />
-
-    @if (_showEditor && _feedback is not null)
-    {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-            </div>
-        </section>
-    }
+    <AlfaNotification Message="@_feedback" OnDismiss="ClearFeedback" />
 
     <AlfaDialog Open="@(_showViewSettings && !_showEditor)"
                 Title="Configurar vista"
@@ -92,164 +72,25 @@
 
     @if (_showEditor)
     {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Datos del usuario</h3>
-                    <p class="panel-card__subtitle">@(_isNewMode ? "Completá los datos básicos del usuario o grupo." : $"Sistema fijo: CN000PR · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
-                </div>
-            </div>
-
-            <div class="usuarios-editor">
-                <div class="usuarios-photo-card">
-                    <InputFile id="usuarios-photo-picker"
-                               @key="@($"usuarios-photo-{_photoPickerVersion}")"
-                               style="display:none"
-                               OnChange="HandlePhotoSelectedAsync"
-                               accept=".jpg,.jpeg,image/jpeg"
-                               disabled="@_saving" />
-
-                    <div class="usuarios-photo-preview">
-                        @if (!string.IsNullOrWhiteSpace(CurrentPhotoUrl))
-                        {
-                            <img src="@CurrentPhotoUrl" alt="Foto del usuario" class="usuarios-photo-preview__img" />
-                        }
-                        else
-                        {
-                            <div class="usuarios-photo-preview__empty">
-                                <i class="bi bi-person-bounding-box"></i>
-                            </div>
-                        }
-                    </div>
-
-                    <div class="usuarios-photo-actions">
-                        <label class="btn btn--secondary interfaces-file-trigger @(_saving ? "is-disabled" : string.Empty)"
-                               for="usuarios-photo-picker"
-                               aria-disabled="@_saving">
-                            <i class="bi bi-image"></i>
-                            <span>@(HasExistingOrPendingPhoto ? "Cambiar foto" : "Agregar foto")</span>
-                        </label>
-                        <button type="button"
-                                class="btn btn--ghost"
-                                @onclick="QuitarFoto"
-                                disabled="@(_saving || !HasExistingOrPendingPhoto)">
-                            <i class="bi bi-trash"></i>
-                            <span>Quitar</span>
-                        </button>
-                    </div>
-                    @if (HasFieldError("foto"))
-                    {
-                        <small class="usuarios-field-error">@GetFieldError("foto")</small>
-                    }
-                    <p class="usuarios-photo-hint">La imagen se guarda como JPG en `RutaImagenes\USUARIOS\&lt;Nombre&gt;.jpg`.</p>
-                </div>
-
-                <div class="usuarios-editor__form">
-                    <div class="usuarios-editor__grid">
-                        <div class="field">
-                            <label>Nombre de usuario</label>
-                            <input type="text"
-                                   class="@GetFieldInputClass("nombre")"
-                                   maxlength="50"
-                                   @bind="_form.Nombre"
-                                   disabled="@_saving" />
-                            @if (HasFieldError("nombre"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("nombre")</small>
-                            }
-                        </div>
-                        <div class="field">
-                            <label>Email</label>
-                            <input type="email"
-                                   class="@GetFieldInputClass("email")"
-                                   maxlength="150"
-                                   @bind="_form.Email"
-                                   disabled="@_saving" />
-                            @if (HasFieldError("email"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("email")</small>
-                            }
-                        </div>
-                    </div>
-
-                    <div class="usuarios-toggle-row">
-                        <label class="checkbox">
-                            <input type="checkbox" @bind="_form.EsGrupo" disabled="@_saving" />
-                            <span>Usuario de referencia para grupo</span>
-                        </label>
-                        <label class="checkbox">
-                            <input type="checkbox" @bind="_form.CambiarProximoInicio" disabled="@(_saving || _form.EsGrupo)" />
-                            <span>Cambiar contraseña en el próximo inicio</span>
-                        </label>
-                        <label class="checkbox">
-                            <input type="checkbox" @bind="_form.EsTecnico" disabled="@(_saving || _form.EsGrupo)" />
-                            <span>Es técnico / agente de soporte</span>
-                        </label>
-                    </div>
-                    <p class="usuarios-photo-hint">Da de alta (o reactiva) automáticamente al usuario en Técnicos, para poder asignarle conversaciones y usar el chat interno.</p>
-                    @if (HasFieldError("cambiar-proximo-inicio"))
-                    {
-                        <small class="usuarios-field-error">@GetFieldError("cambiar-proximo-inicio")</small>
-                    }
-
-                    @if (_form.EsGrupo)
-                    {
-                        <div class="usuarios-empty">
-                            Los grupos no usan contraseña en esta primera versión.
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="usuarios-password-card">
-                            <div class="usuarios-password-card__head">
-                                <div>
-                                    <span class="interfaces-detail__label">Contraseña</span>
-                                    <p class="panel-card__subtitle">Compatible con la codificación actual del sistema de escritorio.</p>
-                                </div>
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="TogglePasswordVisibility">
-                                    <i class="bi @(_showPassword ? "bi-eye-slash" : "bi-eye")"></i>
-                                    <span>@(_showPassword ? "Ocultar" : "Mostrar")</span>
-                                </button>
-                            </div>
-                            <div class="usuarios-editor__grid">
-                                <div class="field">
-                                    <label>Contraseña</label>
-                                    <input type="@(_showPassword ? "text" : "password")"
-                                           class="@GetFieldInputClass("contrasena")"
-                                           maxlength="13"
-                                           @bind="_form.Contrasena"
-                                           disabled="@_saving" />
-                                    @if (HasFieldError("contrasena"))
-                                    {
-                                        <small class="usuarios-field-error">@GetFieldError("contrasena")</small>
-                                    }
-                                </div>
-                                <div class="field">
-                                    <label>Confirmación</label>
-                                    <input type="@(_showPassword ? "text" : "password")"
-                                           class="@GetFieldInputClass("confirmacion")"
-                                           maxlength="13"
-                                           @bind="_confirmacionContrasena"
-                                           disabled="@_saving" />
-                                    @if (HasFieldError("confirmacion"))
-                                    {
-                                        <small class="usuarios-field-error">@GetFieldError("confirmacion")</small>
-                                    }
-                                </div>
-                            </div>
-                        </div>
-                    }
-
-                    @if (!_isNewMode)
-                    {
-                        <div class="usuarios-editor__meta">
-                            <span>Alta: @FormatDate(_selectedAlta)</span>
-                            <span>Modificación: @FormatDate(_selectedModificacion)</span>
-                        </div>
-                    }
-                </div>
-            </div>
-        </section>
+        <UsuariosEditView Model="@_form"
+                          CreateMode="@_isNewMode"
+                          Active="@_selectedActivo"
+                          Saving="@_saving"
+                          CreatedAt="@_selectedAlta"
+                          ModifiedAt="@_selectedModificacion"
+                          CurrentPhotoUrl="@CurrentPhotoUrl"
+                          HasPhoto="@HasExistingOrPendingPhoto"
+                          PhotoPickerVersion="@_photoPickerVersion"
+                          ConfirmationPassword="@_confirmacionContrasena"
+                          ConfirmationPasswordChanged="SetConfirmationPassword"
+                          ShowPassword="@_showPassword"
+                          ActiveTab="@_editorTab"
+                          ActiveTabChanged="SetEditorTab"
+                          FieldErrors="@_fieldErrors"
+                          OnFieldChanged="HandleEditorFieldChanged"
+                          OnPhotoSelected="HandlePhotoSelectedAsync"
+                          OnRemovePhoto="QuitarFoto"
+                          OnTogglePassword="TogglePasswordVisibility" />
     }
     else
     {
@@ -431,6 +272,7 @@
     private bool _hasNext;
     private string _selectedNombre = string.Empty;
     private string _confirmacionContrasena = string.Empty;
+    private string _editorTab = "information";
     private string _activoFiltro = "1";
     private string _grupoFiltro = string.Empty;
     private string _existingPhotoCacheToken = string.Empty;
@@ -584,9 +426,9 @@
                 : _showEditor
                     ? (_isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing)
                     : _selectedNames.Count > 0 ? PageHeaderState.Selection : PageHeaderState.List,
-            ShellMode = _showEditor ? PageHeaderShellMode.Legacy : PageHeaderShellMode.AlfaDesignPilot,
-            TopNavigationItems = _showEditor ? [] : BuildTopNavigationItems(),
-            OnBack = _showEditor ? new Func<Task>(() => { CerrarEditor(); return Task.CompletedTask; }) : null,
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = BuildTopNavigationItems(),
+            OnBack = null,
             Search = _showEditor
                 ? null
                 : new PageHeaderSearchConfig(),
@@ -828,6 +670,7 @@
         _selectedActivo = true;
         _existingPhotoCacheToken = string.Empty;
         _showPassword = false;
+        _editorTab = "information";
         _confirmacionContrasena = string.Empty;
         _pendingPhoto = null;
         _photoPickerVersion++;
@@ -871,10 +714,14 @@
 
     private async Task GuardarAsync()
     {
+        if (_saving)
+            return;
+
         ClearFieldErrors();
         if (!_form.EsGrupo && !string.Equals(_form.Contrasena, _confirmacionContrasena, StringComparison.Ordinal))
         {
             SetFieldError("confirmacion", "La confirmación de la contraseña no coincide.");
+            _editorTab = "access";
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
@@ -1096,6 +943,7 @@
         };
 
         _form.QuitarFoto = false;
+        ClearFieldError("foto");
         _photoPickerVersion++;
     }
 
@@ -1107,6 +955,7 @@
         _form.FotoNombreOriginal = string.Empty;
         _form.FotoMimeType = string.Empty;
         _form.QuitarFoto = HasExistingPhoto;
+        ClearFieldError("foto");
     }
 
     private void TogglePasswordVisibility() => _showPassword = !_showPassword;
@@ -1149,6 +998,7 @@
         _selectedActivo = detail.Activo;
         _existingPhotoCacheToken = detail.TieneFoto ? detail.FotoCacheToken : string.Empty;
         _showPassword = false;
+        _editorTab = "information";
         _pendingPhoto = null;
         _photoPickerVersion++;
 
@@ -1440,7 +1290,7 @@
 
     private string GetUsuariosPageClass()
         => _showEditor
-            ? "page-grid usuarios-page"
+            ? "usuarios-page usuarios-page--editor"
             : "usuarios-page usuarios-page--list";
 
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
@@ -1567,6 +1417,10 @@
             if (!string.IsNullOrWhiteSpace(issue.FieldKey))
                 _fieldErrors[issue.FieldKey.Trim()] = issue.Message;
         }
+
+        _editorTab = _fieldErrors.Keys.Any(key => key is "contrasena" or "confirmacion" or "cambiar-proximo-inicio")
+            ? "access"
+            : "information";
     }
 
     private bool HasFieldError(string key)
@@ -1574,9 +1428,6 @@
 
     private string GetFieldError(string key)
         => HasFieldError(key) ? _fieldErrors[key.Trim()] : string.Empty;
-
-    private string GetFieldInputClass(string key)
-        => HasFieldError(key) ? "usuarios-input usuarios-input--invalid" : "usuarios-input";
 
     private bool IsSelected(UsuarioGridItemDto item)
         => !_isNewMode && string.Equals(_selectedNombre, item.Nombre, StringComparison.OrdinalIgnoreCase);
@@ -1589,13 +1440,56 @@
     private void ClearFeedback()
         => SetFeedback(null);
 
-    private static string GetFeedbackClass(AppUiMessage message)
-        => message.Severity switch
+    private void ClearFieldError(string key)
+    {
+        if (!string.IsNullOrWhiteSpace(key))
+            _fieldErrors.Remove(key.Trim());
+    }
+
+    private Task SetConfirmationPassword(string? value)
+    {
+        _confirmacionContrasena = value ?? string.Empty;
+        ClearFieldError("confirmacion");
+        return Task.CompletedTask;
+    }
+
+    private Task SetEditorTab(string? value)
+    {
+        _editorTab = value is "access" ? "access" : "information";
+        return Task.CompletedTask;
+    }
+
+    private Task HandleEditorFieldChanged(string property)
+    {
+        switch (property)
         {
-            AppUiFeedbackSeverity.Success => "editor-msg--ok",
-            AppUiFeedbackSeverity.Warning => "editor-msg--warning",
-            _ => "editor-msg--error"
-        };
+            case nameof(UsuarioSaveRequest.Nombre):
+                ClearFieldError("nombre");
+                break;
+            case nameof(UsuarioSaveRequest.Email):
+                ClearFieldError("email");
+                break;
+            case nameof(UsuarioSaveRequest.Contrasena):
+                ClearFieldError("contrasena");
+                break;
+            case nameof(UsuarioSaveRequest.CambiarProximoInicio):
+                ClearFieldError("cambiar-proximo-inicio");
+                break;
+            case nameof(UsuarioSaveRequest.EsGrupo):
+                ClearFieldError("cambiar-proximo-inicio");
+                if (_form.EsGrupo)
+                {
+                    _form.Contrasena = string.Empty;
+                    _confirmacionContrasena = string.Empty;
+                    _form.CambiarProximoInicio = false;
+                    ClearFieldError("contrasena");
+                    ClearFieldError("confirmacion");
+                }
+                break;
+        }
+
+        return Task.CompletedTask;
+    }
 
     private sealed class PendingUserPhoto
     {
