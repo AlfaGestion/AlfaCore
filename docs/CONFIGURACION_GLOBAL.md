@@ -8,6 +8,22 @@ La tabla `TA_CONFIGURACION` es el **repositorio único de configuración del sis
 👉 NO se deben hardcodear valores en código.  
 👉 NO se deben crear tablas paralelas de configuración sin justificación.
 
+## ⛔ Regla absoluta: nunca vaciar `TA_CONFIGURACION`
+
+`TA_CONFIGURACION` funciona como el **registro/configuración central de Alfa Gestión y AlfaCore**.
+
+Nunca debe incluirse en scripts de limpieza, reinicio, depuración, pruebas, vaciado de colas, borrado masivo o mantenimiento general.
+
+Prohibido ejecutar sobre esta tabla, salvo pedido explícito y acotado sobre claves concretas:
+
+- `DELETE FROM TA_CONFIGURACION`
+- `TRUNCATE TABLE TA_CONFIGURACION`
+- borrados por `GRUPO` completo
+- updates masivos sin `WHERE CLAVE = ...`
+- cualquier limpieza automática que la trate como tabla operativa
+
+Si una tarea necesita limpiar datos de un módulo, se deben identificar únicamente sus tablas operativas. `TA_CONFIGURACION` solo puede modificarse clave por clave, con objetivo claro y verificable.
+
 ---
 
 ## 🧱 Estructura de la tabla

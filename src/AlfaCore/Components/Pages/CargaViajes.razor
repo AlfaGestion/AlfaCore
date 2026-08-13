@@ -2872,122 +2872,6 @@
                                 </div>
                             </div>
                         }
-                        @if (_showViajeTarifasClientePanel)
-                        {
-                            <div class="carga-viajes-viaje__tarifas-panel">
-                                <section class="carga-viajes-viaje-tarifas">
-                                    <div class="carga-viajes-viaje-tarifas__header">
-                                        <div>
-                                            <span class="carga-viajes-viaje-tarifas__eyebrow">Tarifas del cliente</span>
-                                            <h4>@GetViajeTarifasPanelTitle()</h4>
-                                        </div>
-                                        <div class="actions">
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarTarifasClienteAsync">Cerrar</button>
-                                        </div>
-                                    </div>
-
-                                    @if (_viajeTarifasFeedback is not null)
-                                    {
-                                        <div class="editor-msg @GetFeedbackClass(_viajeTarifasFeedback)">
-                                            <div>
-                                                <strong>@_viajeTarifasFeedback.Title</strong>
-                                                <p>@_viajeTarifasFeedback.Message</p>
-                                            </div>
-                                        </div>
-                                    }
-
-                                    <div class="smart-search carga-viajes-viaje-tarifas__search">
-                                        <div class="smart-search__bar">
-                                            <i class="bi bi-search"></i>
-                                            <input type="search"
-                                                   placeholder="Buscar destino o vehículo..."
-                                                   @bind="_viajeTarifasSearch"
-                                                   @bind:event="oninput" />
-                                            <button type="button" class="smart-search__toggle" @onclick="() => _viajeTarifasSearch = string.Empty" aria-label="Limpiar búsqueda">
-                                                <i class="bi bi-x-lg"></i>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    @if (_viajeTarifasLoading)
-                                    {
-                                        <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">Cargando tarifas del cliente...</div>
-                                    }
-                                    else if (GetVisibleViajeTarifas().Count == 0)
-                                    {
-                                        <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">No hay tarifas para mostrar con ese filtro.</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="carga-viajes-viaje-tarifas__meta">
-                                            <span>@GetViajeTarifasVisibleCount() tarifa(s)</span>
-                                            @if (!string.IsNullOrWhiteSpace(_viajeTarifasSelectionHint))
-                                            {
-                                                <span class="carga-viajes-viaje-tarifas__hint">@_viajeTarifasSelectionHint</span>
-                                            }
-                                        </div>
-
-                                        <div class="carga-viajes-viaje-tarifas__list" role="list">
-                                            <div class="carga-viajes-viaje-tarifas__head" role="presentation">
-                                                <span>Destino</span>
-                                                <span>Tipo vehículo</span>
-                                                <span>Cliente</span>
-                                                <span>Fletero</span>
-                                                <span></span>
-                                            </div>
-                                            @foreach (var tarifa in GetVisibleViajeTarifasOrdered())
-                                            {
-                                                <article class="carga-viajes-viaje-tarifas__item" role="listitem">
-                                                    <div class="carga-viajes-viaje-tarifas__destination">
-                                                        <strong>@DisplayText(tarifa.DestinoNombre, tarifa.DestinoCodigo)</strong>
-                                                        @if (tarifa.EsTarifaGeneral)
-                                                        {
-                                                            <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--general">Tarifa general</span>
-                                                        }
-                                                        @if (!tarifa.Activo)
-                                                        {
-                                                            <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--inactive">Inactiva</span>
-                                                        }
-                                                    </div>
-                                                    <div class="carga-viajes-viaje-tarifas__vehicle">
-                                                        @DisplayText(tarifa.TipoVehiculoNombre, tarifa.TipoVehiculoCodigo)
-                                                    </div>
-                                                    <div class="carga-viajes-viaje-tarifas__price-cell carga-viajes-viaje-tarifas__price-cell--client">
-                                                        <small>Cliente</small>
-                                                        <strong>@FormatMoney(tarifa.ImporteCliente)</strong>
-                                                    </div>
-                                                    <div class="carga-viajes-viaje-tarifas__price-cell @(tarifa.ImporteFletero == 0 ? "carga-viajes-viaje-tarifas__price-cell--muted" : string.Empty)">
-                                                        @if (tarifa.ImporteFletero == 0)
-                                                        {
-                                                            <small>Fletero</small>
-                                                            <strong>Sin tarifa</strong>
-                                                        }
-                                                        else
-                                                        {
-                                                            <small>Fletero</small>
-                                                            <strong>@FormatMoney(tarifa.ImporteFletero)</strong>
-                                                        }
-                                                        @if (!string.IsNullOrWhiteSpace(tarifa.FleteroNombreSugerido))
-                                                        {
-                                                            <small class="carga-viajes-viaje-tarifas__price-note">
-                                                                Chofer: @DisplayText(tarifa.FleteroNombreSugerido, tarifa.FleteroCodigoSugerido)
-                                                            </small>
-                                                        }
-                                                        @if (tarifa.FleteroCoincidencias > 1)
-                                                        {
-                                                            <small class="carga-viajes-viaje-tarifas__price-note">@(tarifa.FleteroCoincidencias) tarifas asociadas</small>
-                                                        }
-                                                    </div>
-                                                    <div class="carga-viajes-viaje-tarifas__actions">
-                                                        <button type="button" class="btn btn--primary btn--sm" @onclick="() => SeleccionarTarifaClienteAsync(tarifa)">Seleccionar</button>
-                                                    </div>
-                                                </article>
-                                            }
-                                        </div>
-                                    }
-                                </section>
-                            </div>
-                        }
                     <div class="carga-viajes-form-grid carga-viajes-form-grid--viaje ac-grid ac-grid-4 ac-form-grid" @oninput="MarkViajeDirty" @onchange="MarkViajeDirty">
                         <div class="field">
                             <label>Fecha</label>
@@ -2997,14 +2881,133 @@
                             <label>Cliente</label>
                             <LookupAutocomplete @ref="_viajeClienteLookup" Label="" Placeholder="Buscar cliente..." Text="@_viajeClienteTexto" TextChanged="OnViajeClienteTextoChangedAsync" SelectedChanged="OnViajeClienteSelectedAsync" OnEnterCommitted="FocusViajeChoferAsync" OnCreateRequested="OnViajeClienteCreateRequestedAsync" SearchFunc="CargaViajesSvc.SearchClientesAsync" Disabled="@_viajeReadOnly" MinimumCharacters="0" />
                             <div class="carga-viajes-viaje__tarifas-block">
-                                <button type="button"
-                                        class="btn btn--ghost btn--sm carga-viajes-viaje__tarifas-trigger"
-                                        disabled="@_viajeReadOnly"
-                                        title="@(_viajeReadOnly ? "Modo solo lectura" : "Ver tarifas del cliente")"
-                                        @onclick="AbrirTarifasClienteAsync">
-                                    <i class="bi bi-receipt"></i>
-                                    <span>Tarifas</span>
-                                </button>
+                                <div class="carga-viajes-viaje__tarifas-anchor">
+                                    <button type="button"
+                                            @ref="_viajeTarifasTriggerRef"
+                                            class="btn btn--ghost btn--sm carga-viajes-viaje__tarifas-trigger"
+                                            disabled="@_viajeReadOnly"
+                                            title="@(_viajeReadOnly ? "Modo solo lectura" : "Ver tarifas del cliente")"
+                                            @onclick="AbrirTarifasClienteAsync">
+                                        <i class="bi bi-receipt"></i>
+                                        <span>Tarifas</span>
+                                    </button>
+                                    @if (_showViajeTarifasClientePanel)
+                                    {
+                                        <div class="carga-viajes-viaje__tarifas-panel" @ref="_viajeTarifasPanelRef">
+                                            <section class="carga-viajes-viaje-tarifas">
+                                                <div class="carga-viajes-viaje-tarifas__header">
+                                                    <div>
+                                                        <span class="carga-viajes-viaje-tarifas__eyebrow">Tarifas del cliente</span>
+                                                        <h4>@GetViajeTarifasPanelTitle()</h4>
+                                                    </div>
+                                                    <div class="actions">
+                                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarTarifasClienteAsync">Cerrar</button>
+                                                    </div>
+                                                </div>
+
+                                                @if (_viajeTarifasFeedback is not null)
+                                                {
+                                                    <div class="editor-msg @GetFeedbackClass(_viajeTarifasFeedback)">
+                                                        <div>
+                                                            <strong>@_viajeTarifasFeedback.Title</strong>
+                                                            <p>@_viajeTarifasFeedback.Message</p>
+                                                        </div>
+                                                    </div>
+                                                }
+
+                                                <div class="smart-search carga-viajes-viaje-tarifas__search">
+                                                    <div class="smart-search__bar">
+                                                        <i class="bi bi-search"></i>
+                                                        <input type="search"
+                                                               placeholder="Buscar destino o vehículo..."
+                                                               @bind="_viajeTarifasSearch"
+                                                               @bind:event="oninput" />
+                                                        <button type="button" class="smart-search__toggle" @onclick="() => _viajeTarifasSearch = string.Empty" aria-label="Limpiar búsqueda">
+                                                            <i class="bi bi-x-lg"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                @if (_viajeTarifasLoading)
+                                                {
+                                                    <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">Cargando tarifas del cliente...</div>
+                                                }
+                                                else if (GetVisibleViajeTarifas().Count == 0)
+                                                {
+                                                    <div class="usuarios-empty carga-viajes-viaje-tarifas__loading">No hay tarifas para mostrar con ese filtro.</div>
+                                                }
+                                                else
+                                                {
+                                                    <div class="carga-viajes-viaje-tarifas__meta">
+                                                        <span>@GetViajeTarifasVisibleCount() tarifa(s)</span>
+                                                        @if (!string.IsNullOrWhiteSpace(_viajeTarifasSelectionHint))
+                                                        {
+                                                            <span class="carga-viajes-viaje-tarifas__hint">@_viajeTarifasSelectionHint</span>
+                                                        }
+                                                    </div>
+
+                                                    <div class="carga-viajes-viaje-tarifas__list" role="list">
+                                                        <div class="carga-viajes-viaje-tarifas__head" role="presentation">
+                                                            <span>Destino</span>
+                                                            <span>Tipo vehículo</span>
+                                                            <span>Cliente</span>
+                                                            <span>Fletero</span>
+                                                            <span></span>
+                                                        </div>
+                                                        @foreach (var tarifa in GetVisibleViajeTarifasOrdered())
+                                                        {
+                                                            <article class="carga-viajes-viaje-tarifas__item" role="listitem">
+                                                                <div class="carga-viajes-viaje-tarifas__destination">
+                                                                    <strong>@DisplayText(tarifa.DestinoNombre, tarifa.DestinoCodigo)</strong>
+                                                                    @if (tarifa.EsTarifaGeneral)
+                                                                    {
+                                                                        <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--general">Tarifa general</span>
+                                                                    }
+                                                                    @if (!tarifa.Activo)
+                                                                    {
+                                                                        <span class="carga-viajes-viaje-tarifas__badge carga-viajes-viaje-tarifas__badge--inactive">Inactiva</span>
+                                                                    }
+                                                                </div>
+                                                                <div class="carga-viajes-viaje-tarifas__vehicle">
+                                                                    @DisplayText(tarifa.TipoVehiculoNombre, tarifa.TipoVehiculoCodigo)
+                                                                </div>
+                                                                <div class="carga-viajes-viaje-tarifas__price-cell carga-viajes-viaje-tarifas__price-cell--client">
+                                                                    <small>Cliente</small>
+                                                                    <strong>@FormatMoney(tarifa.ImporteCliente)</strong>
+                                                                </div>
+                                                                <div class="carga-viajes-viaje-tarifas__price-cell @(tarifa.ImporteFletero == 0 ? "carga-viajes-viaje-tarifas__price-cell--muted" : string.Empty)">
+                                                                    @if (tarifa.ImporteFletero == 0)
+                                                                    {
+                                                                        <small>Fletero</small>
+                                                                        <strong>Sin tarifa</strong>
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        <small>Fletero</small>
+                                                                        <strong>@FormatMoney(tarifa.ImporteFletero)</strong>
+                                                                    }
+                                                                    @if (!string.IsNullOrWhiteSpace(tarifa.FleteroNombreSugerido))
+                                                                    {
+                                                                        <small class="carga-viajes-viaje-tarifas__price-note">
+                                                                            Chofer: @DisplayText(tarifa.FleteroNombreSugerido, tarifa.FleteroCodigoSugerido)
+                                                                        </small>
+                                                                    }
+                                                                    @if (tarifa.FleteroCoincidencias > 1)
+                                                                    {
+                                                                        <small class="carga-viajes-viaje-tarifas__price-note">@(tarifa.FleteroCoincidencias) tarifas asociadas</small>
+                                                                    }
+                                                                </div>
+                                                                <div class="carga-viajes-viaje-tarifas__actions">
+                                                                    <button type="button" class="btn btn--primary btn--sm" @onclick="() => SeleccionarTarifaClienteAsync(tarifa)">Seleccionar</button>
+                                                                </div>
+                                                            </article>
+                                                        }
+                                                    </div>
+                                                }
+                                            </section>
+                                        </div>
+                                    }
+                                </div>
                             </div>
                         </div>
                         <div class="field">
@@ -3461,6 +3464,9 @@
     private string _viajeTarifasSelectionHint = string.Empty;
     private AppUiMessage? _viajeTarifasFeedback;
     private readonly List<CargaViajeTarifaClienteResumenDto> _viajeTarifasClienteRows = [];
+    private ElementReference _viajeTarifasTriggerRef;
+    private ElementReference _viajeTarifasPanelRef;
+    private bool _viajeTarifasPanelPositionPending;
     private string _choferesTipoVehiculoTexto = string.Empty;
     private readonly bool[] _viajeAdicionalesActivos = [false, false, false, false, false, false];
     private LookupAutocomplete? _viajeClienteLookup;
@@ -3949,6 +3955,15 @@
         _reportesCancellationCts?.Dispose();
         _feedbackAutoClearCts?.Cancel();
         _feedbackAutoClearCts?.Dispose();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_showViajeTarifasClientePanel && _viajeTarifasPanelPositionPending)
+        {
+            _viajeTarifasPanelPositionPending = false;
+            await PositionViajeTarifasPanelAsync();
+        }
     }
 
     protected override async Task OnParametersSetAsync()
@@ -6793,6 +6808,7 @@
             return;
 
         _showViajeTarifasClientePanel = true;
+        _viajeTarifasPanelPositionPending = true;
         _viajeTarifasFeedback = null;
         _viajeTarifasSelectionHint = string.Empty;
         _viajeTarifasSearch = string.Empty;
@@ -6831,6 +6847,8 @@
         finally
         {
             _viajeTarifasLoading = false;
+            _viajeTarifasPanelPositionPending = true;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -6838,6 +6856,18 @@
     {
         ResetViajeTarifasClientePanelState();
         return Task.CompletedTask;
+    }
+
+    private async Task PositionViajeTarifasPanelAsync()
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("cargaViajes.positionViajeTarifasPanel", _viajeTarifasTriggerRef, _viajeTarifasPanelRef);
+        }
+        catch
+        {
+            // Si el helper JS no está disponible, el panel sigue funcionando en layout full-width.
+        }
     }
 
     private string GetViajeTarifasPanelTitle()
@@ -10412,6 +10442,7 @@
         _viajeTarifasSearch = string.Empty;
         _viajeTarifasSelectionHint = string.Empty;
         _viajeTarifasFeedback = null;
+        _viajeTarifasPanelPositionPending = false;
     }
 
     private bool HasAnyPendingChanges()
