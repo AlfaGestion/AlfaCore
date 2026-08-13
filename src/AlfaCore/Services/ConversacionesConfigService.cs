@@ -586,14 +586,18 @@ public sealed class ConversacionesConfigService(
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            await using var cmd = new SqlCommand(BuildAutomatizacionesSelectSql(detailColumn), cn);
-            await using var rd = await cmd.ExecuteReaderAsync(token);
-            while (await rd.ReadAsync(token))
+            // Bloque propio para que el DataReader se cierre antes de leer CONV_ASISTENTE en la misma
+            // conexión (sin MARS, dos readers abiertos a la vez tiran "ya hay un DataReader abierto").
+            await using (var cmd = new SqlCommand(BuildAutomatizacionesSelectSql(detailColumn), cn))
+            await using (var rd = await cmd.ExecuteReaderAsync(token))
             {
-                var key = GetString(rd, 0);
-                var value = GetString(rd, 1);
-                var detailValue = GetString(rd, 2);
-                values[key] = ResolveStoredValue(value, detailValue);
+                while (await rd.ReadAsync(token))
+                {
+                    var key = GetString(rd, 0);
+                    var value = GetString(rd, 1);
+                    var detailValue = GetString(rd, 2);
+                    values[key] = ResolveStoredValue(value, detailValue);
+                }
             }
 
             var dias = ReadValue(values, "CONV_AUTOMATIZACIONES_DIAS", string.Empty, "LUN,MAR,MIE,JUE,VIE")
