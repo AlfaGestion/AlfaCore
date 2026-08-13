@@ -98,6 +98,7 @@ public sealed class ArticulosComprasExcelExporter
             "bajo" => "Bajaron",
             "plano" => "Sin variación",
             "nuevo" => "Nuevos",
+            "alta" => "Altas",
             _ => string.Empty
         };
 

@@ -738,15 +738,31 @@ public class Program
             static string? NullIfEmpty(string? value)
                 => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-            static bool MatchVariacion(ArticuloResumenDto item, string variacion)
+            static bool MatchVariacion(ArticuloResumenDto item, string variacion, DashboardFilters filters)
                 => variacion switch
                 {
                     "subio" => item.VariacionPrecio > 0.005m,
                     "bajo" => item.VariacionPrecio < -0.005m,
                     "plano" => item.VariacionPrecio.HasValue && item.VariacionPrecio >= -0.005m && item.VariacionPrecio <= 0.005m,
                     "nuevo" => item.EsNuevo,
+                    "alta" => EsAltaEnPeriodo(item, filters),
                     _ => true
                 };
+
+            static bool EsAltaEnPeriodo(ArticuloResumenDto item, DashboardFilters filters)
+            {
+                if (!item.FechaAlta.HasValue)
+                    return false;
+
+                var fechaAlta = item.FechaAlta.Value.Date;
+                if (filters.FechaDesde.HasValue && fechaAlta < filters.FechaDesde.Value.Date)
+                    return false;
+
+                if (filters.FechaHasta.HasValue && fechaAlta > filters.FechaHasta.Value.Date)
+                    return false;
+
+                return true;
+            }
 
             static bool MatchTexto(ArticuloResumenDto item, string texto)
             {
@@ -785,7 +801,7 @@ public class Program
             var variacion = request.Query["variacion"].ToString().Trim();
             var page = await dashboardSvc.GetArticulosPageDataAsync(filters, ct);
             var rows = page.Articulos
-                .Where(x => MatchVariacion(x, variacion))
+                .Where(x => MatchVariacion(x, variacion, filters))
                 .Where(x => MatchTexto(x, texto))
                 .ToList();
 

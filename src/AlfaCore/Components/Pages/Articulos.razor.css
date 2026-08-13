@@ -40,31 +40,64 @@
     max-height: min(68vh, 760px);
 }
 
+.articulos-help {
+    padding: 1rem;
+}
+
+.articulos-help__grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.articulos-help__grid div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 0.25rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 12px;
+    padding: 0.75rem;
+    background: rgba(15, 23, 42, 0.42);
+}
+
+.articulos-help__grid strong {
+    font-size: 0.88rem;
+}
+
+.articulos-help__grid span {
+    color: rgba(226, 232, 240, 0.72);
+    font-size: 0.84rem;
+    line-height: 1.35;
+}
+
 .articulos-modal-backdrop {
     position: fixed;
     inset: 0;
-    z-index: 1040;
+    z-index: 30000;
     background: rgba(2, 6, 23, 0.72);
 }
 
 .articulos-modal {
     position: fixed;
     inset: 0;
-    z-index: 1050;
+    z-index: 30001;
     display: grid;
-    place-items: center;
+    place-items: start center;
     padding: 1rem;
+    overflow: hidden;
 }
 
 .articulos-modal__card {
     width: min(1480px, 100%);
-    max-height: min(92vh, 980px);
-    overflow: auto;
+    max-height: calc(100vh - 2rem);
+    overflow: hidden;
     border: 1px solid rgba(148, 163, 184, 0.22);
     border-radius: 18px;
     background: rgba(7, 13, 26, 0.98);
     box-shadow: 0 26px 90px rgba(0, 0, 0, 0.46);
-    padding: 1rem;
+    display: flex;
+    flex-direction: column;
 }
 
 .articulos-modal__header {
@@ -72,7 +105,10 @@
     align-items: start;
     justify-content: space-between;
     gap: 1rem;
-    margin-bottom: 1rem;
+    flex: 0 0 auto;
+    padding: 1rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(7, 13, 26, 0.98);
 }
 
 .articulos-modal__header h3 {
@@ -83,6 +119,12 @@
 .articulos-modal__header p {
     margin: 0.25rem 0 0;
     color: rgba(226, 232, 240, 0.72);
+}
+
+.articulos-modal__body {
+    min-height: 0;
+    overflow: auto;
+    padding: 1rem;
 }
 
 .articulos-modal__summary {
@@ -100,6 +142,7 @@
 
 @media (max-width: 1200px) {
     .articulos-page .three-grid,
+    .articulos-help__grid,
     .articulos-modal__grid {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
@@ -121,6 +164,7 @@
     }
 
     .articulos-page .three-grid,
+    .articulos-help__grid,
     .articulos-modal__grid,
     .articulos-modal__summary {
         grid-template-columns: 1fr;
@@ -134,5 +178,10 @@
     .articulos-modal__card {
         max-height: calc(100vh - 1rem);
         border-radius: 14px;
+    }
+
+    .articulos-modal__header,
+    .articulos-modal__body {
+        padding: 0.75rem;
     }
 }

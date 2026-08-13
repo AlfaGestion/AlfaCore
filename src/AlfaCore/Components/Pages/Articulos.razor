@@ -57,12 +57,14 @@
             var nBajaron   = _page.Articulos.Count(x => x.VariacionPrecio < -0.005m);
             var nSinVar    = _page.Articulos.Count(x => x.VariacionPrecio.HasValue && x.VariacionPrecio >= -0.005m && x.VariacionPrecio <= 0.005m);
             var nNuevos    = _page.Articulos.Count(x => x.EsNuevo);
+            var nAltas      = _page.Articulos.Count(EsAltaEnPeriodo);
             <div class="quick-filter-bar">
                 <button class="@QfClass("")  quick-filter-btn" @onclick='() => _filtroVar = ""'>Todos (@_page.Articulos.Count)</button>
                 <button class="@QfClass("subio") quick-filter-btn quick-filter-btn--up"   @onclick='() => _filtroVar = "subio"'>▲ Subieron (@nSubieron)</button>
                 <button class="@QfClass("bajo")  quick-filter-btn quick-filter-btn--down" @onclick='() => _filtroVar = "bajo"'>▼ Bajaron (@nBajaron)</button>
                 <button class="@QfClass("plano") quick-filter-btn" @onclick='() => _filtroVar = "plano"'>= Sin variación (@nSinVar)</button>
                 <button class="@QfClass("nuevo") quick-filter-btn quick-filter-btn--new"  @onclick='() => _filtroVar = "nuevo"'>✦ Nuevos (@nNuevos)</button>
+                <button class="@QfClass("alta") quick-filter-btn quick-filter-btn--new"  @onclick='() => _filtroVar = "alta"'>+ Altas (@nAltas)</button>
             </div>
         }
 
@@ -133,11 +135,29 @@
             </DataTable>
         </section>
 
+        <section class="articulos-help panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Cómo se calculan los importes</h3>
+                    <p class="panel-card__subtitle">Criterios usados para este listado según el período filtrado.</p>
+                </div>
+            </div>
+            <div class="articulos-help__grid">
+                <div><strong>Total</strong><span>Suma del total comprado del artículo en el período actual.</span></div>
+                <div><strong>Costo prom.</strong><span>Promedio del costo de las compras del artículo dentro del período actual.</span></div>
+                <div><strong>Precio act.</strong><span>Mayor costo registrado para el artículo dentro del período actual.</span></div>
+                <div><strong>Precio ant.</strong><span>Promedio del costo del artículo en el período anterior equivalente.</span></div>
+                <div><strong>Variación</strong><span>Compara precio actual contra precio anterior: (actual - anterior) / anterior.</span></div>
+                <div><strong>Nuevos</strong><span>Artículos con compras en el período actual y sin compras anteriores al inicio del período.</span></div>
+                <div><strong>Altas</strong><span>Artículos cuya fecha de alta del maestro cae dentro del período filtrado.</span></div>
+            </div>
+        </section>
+
         @if (_detalle is not null)
         {
             <div class="articulos-modal-backdrop" @onclick="CerrarDetalle"></div>
             <div class="articulos-modal" role="dialog" aria-modal="true" aria-labelledby="articulo-detalle-title">
-                <div class="articulos-modal__card">
+                <div class="articulos-modal__card" @onclick:stopPropagation="true">
                     <div class="articulos-modal__header">
                         <div>
                             <h3 id="articulo-detalle-title">@_detalle.Resumen.DescripcionArticulo</h3>
@@ -148,36 +168,38 @@
                         </button>
                     </div>
 
-                    <div class="articulos-modal__summary">
-                        <div class="detail-row"><span class="detail-row__label">Código</span><strong style="text-align:@GetCodigoAlign(_detalle.Resumen.IdArticulo); display:inline-block; min-width:100%;">@_detalle.Resumen.IdArticulo</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Fecha alta</span><strong>@Fecha(_detalle.Resumen.FechaAlta)</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Cantidad</span><strong>@_detalle.Resumen.CantidadComprada.ToString("N2")</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Total</span><strong>@Moneda(_detalle.Resumen.TotalComprado)</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Costo promedio</span><strong>@Moneda(_detalle.Resumen.CostoPromedio)</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Precio anterior</span><strong>@MonedaNullable(_detalle.Resumen.PrecioAnterior)</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Precio actual</span><strong>@Moneda(_detalle.Resumen.PrecioActual)</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Variación</span><strong>@((MarkupString)RenderVariacionBadge(_detalle.Resumen.VariacionPrecio, _detalle.Resumen.EsNuevo))</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Última compra</span><strong>@Fecha(_detalle.Resumen.UltimaCompra)</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Proveedor principal</span><strong>@(string.IsNullOrWhiteSpace(_detalle.Resumen.ProveedorPrincipal) ? "Sin dato" : _detalle.Resumen.ProveedorPrincipal)</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Participación proveedor</span><strong>@(_detalle.Resumen.ParticipacionProveedorPrincipal > 0 ? $"{(_detalle.Resumen.ParticipacionProveedorPrincipal * 100m):N1}%" : "Sin dato")</strong></div>
-                        <div class="detail-row"><span class="detail-row__label">Cantidad de compras</span><strong>@_detalle.Resumen.CantidadCompras.ToString("N0")</strong></div>
-                    </div>
+                    <div class="articulos-modal__body">
+                        <div class="articulos-modal__summary">
+                            <div class="detail-row"><span class="detail-row__label">Código</span><strong style="text-align:@GetCodigoAlign(_detalle.Resumen.IdArticulo); display:inline-block; min-width:100%;">@_detalle.Resumen.IdArticulo</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Fecha alta</span><strong>@Fecha(_detalle.Resumen.FechaAlta)</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Cantidad</span><strong>@_detalle.Resumen.CantidadComprada.ToString("N2")</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Total</span><strong>@Moneda(_detalle.Resumen.TotalComprado)</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Costo promedio</span><strong>@Moneda(_detalle.Resumen.CostoPromedio)</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Precio anterior</span><strong>@MonedaNullable(_detalle.Resumen.PrecioAnterior)</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Precio actual</span><strong>@Moneda(_detalle.Resumen.PrecioActual)</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Variación</span><strong>@((MarkupString)RenderVariacionBadge(_detalle.Resumen.VariacionPrecio, _detalle.Resumen.EsNuevo))</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Última compra</span><strong>@Fecha(_detalle.Resumen.UltimaCompra)</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Proveedor principal</span><strong>@(string.IsNullOrWhiteSpace(_detalle.Resumen.ProveedorPrincipal) ? "Sin dato" : _detalle.Resumen.ProveedorPrincipal)</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Participación proveedor</span><strong>@(_detalle.Resumen.ParticipacionProveedorPrincipal > 0 ? $"{(_detalle.Resumen.ParticipacionProveedorPrincipal * 100m):N1}%" : "Sin dato")</strong></div>
+                            <div class="detail-row"><span class="detail-row__label">Cantidad de compras</span><strong>@_detalle.Resumen.CantidadCompras.ToString("N0")</strong></div>
+                        </div>
 
-                    <div class="articulos-modal__grid">
-                        <section class="panel-card"><LineChart Data="_detalle.EvolucionCosto" Titulo="Evolución del precio" Subtitulo="Costo promedio mensual del artículo" /></section>
-                        <section class="panel-card"><HorizontalBarChart Data="_detalle.Proveedores" Titulo="Proveedores asociados" Subtitulo="Participación por total comprado" /></section>
-                        <section class="panel-card">
-                            <div class="panel-card__header"><div><h3 class="panel-card__title">Historial</h3><p class="panel-card__subtitle">Últimos comprobantes del artículo</p></div></div>
-                            <div class="detail-list">
-                                @foreach (var item in _detalle.Historial)
-                                {
-                                    <div class="detail-row">
-                                        <span class="detail-row__label">@item.Fecha.ToString("dd/MM/yy") · @item.Tc @item.IdComprobante</span>
-                                        <a class="action-link" href="@RouteCtx.BuildRoute($"/compras/comprobantes?tc={item.Tc}&id={item.IdComprobante}&cuenta={Uri.EscapeDataString(item.Cuenta)}")">Abrir</a>
-                                    </div>
-                                }
-                            </div>
-                        </section>
+                        <div class="articulos-modal__grid">
+                            <section class="panel-card"><LineChart Data="_detalle.EvolucionCosto" Titulo="Evolución del precio" Subtitulo="Costo promedio mensual del artículo" /></section>
+                            <section class="panel-card"><HorizontalBarChart Data="_detalle.Proveedores" Titulo="Proveedores asociados" Subtitulo="Participación por total comprado" /></section>
+                            <section class="panel-card">
+                                <div class="panel-card__header"><div><h3 class="panel-card__title">Historial</h3><p class="panel-card__subtitle">Últimos comprobantes del artículo</p></div></div>
+                                <div class="detail-list">
+                                    @foreach (var item in _detalle.Historial)
+                                    {
+                                        <div class="detail-row">
+                                            <span class="detail-row__label">@item.Fecha.ToString("dd/MM/yy") · @item.Tc @item.IdComprobante</span>
+                                            <a class="action-link" href="@RouteCtx.BuildRoute($"/compras/comprobantes?tc={item.Tc}&id={item.IdComprobante}&cuenta={Uri.EscapeDataString(item.Cuenta)}")">Abrir</a>
+                                        </div>
+                                    }
+                                </div>
+                            </section>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -221,6 +243,7 @@
             "bajo"   => _page!.Articulos.Where(x => x.VariacionPrecio < -0.005m),
             "plano"  => _page!.Articulos.Where(x => x.VariacionPrecio.HasValue && x.VariacionPrecio >= -0.005m && x.VariacionPrecio <= 0.005m),
             "nuevo"  => _page!.Articulos.Where(x => x.EsNuevo),
+            "alta"   => _page!.Articulos.Where(EsAltaEnPeriodo),
             _        => _page!.Articulos
         }).Where(MatchesTextoListado);
 
@@ -296,6 +319,21 @@
     private static bool Contains(string? value, string text)
         => !string.IsNullOrWhiteSpace(value)
            && value.Contains(text, StringComparison.CurrentCultureIgnoreCase);
+
+    private bool EsAltaEnPeriodo(ArticuloResumenDto item)
+    {
+        if (!item.FechaAlta.HasValue)
+            return false;
+
+        var fechaAlta = item.FechaAlta.Value.Date;
+        if (_filters.FechaDesde.HasValue && fechaAlta < _filters.FechaDesde.Value.Date)
+            return false;
+
+        if (_filters.FechaHasta.HasValue && fechaAlta > _filters.FechaHasta.Value.Date)
+            return false;
+
+        return true;
+    }
 
     private static string RenderMayorVariacion(string? articulo, decimal? variacion)
     {
