@@ -17,6 +17,8 @@ public sealed class ConversacionesConfigService(
     IAppUserSessionService appUserSession) : IConversacionesConfigService
 {
     private const string ConfigGroup = "CONVERSACIONES";
+    private const string DefaultUrgenciaPalabras =
+        "no puedo facturar, no me deja facturar, no factura, no anda el sistema, no arranca, no abre el sistema, sistema caido, no hay sistema, se cerro el sistema, no funciona el sistema";
     private const string DefaultWebhookPath = "/api/conversaciones/whatsapp/webhook";
     private const string DefaultInstagramWebhookPath = "/api/conversaciones/instagram/webhook";
     private const string DefaultFacebookWebhookPath = "/api/conversaciones/facebook/webhook";
@@ -641,6 +643,8 @@ public sealed class ConversacionesConfigService(
                 SlaActivo = ReadValue(values, "CONV_SLA_ACTIVO", string.Empty) == "1",
                 SlaHorasRecordatorio = ReadIntValue(values, "CONV_SLA_HORAS_RECORDATORIO", 0, 2),
                 SlaHorasReasignar = ReadIntValue(values, "CONV_SLA_HORAS_REASIGNAR", 0, 4),
+                AsistenteFueraHorario = ReadValue(values, "CONV_ASISTENTE_FUERA_HORARIO", string.Empty) == "1",
+                AsistenteUrgenciaPalabras = ReadValue(values, "CONV_ASISTENTE_URGENCIA_PALABRAS", string.Empty, DefaultUrgenciaPalabras),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
         }, "No se pudo cargar la configuración de automatizaciones.", ct);
@@ -680,7 +684,9 @@ public sealed class ConversacionesConfigService(
                 ("CONV_AUTOCIERRE_MENSAJE_CIERRE", (config.AutoCierreMensajeCierre ?? string.Empty).Trim()),
                 ("CONV_SLA_ACTIVO", config.SlaActivo ? "1" : "0"),
                 ("CONV_SLA_HORAS_RECORDATORIO", (config.SlaHorasRecordatorio <= 0 ? 2 : config.SlaHorasRecordatorio).ToString(System.Globalization.CultureInfo.InvariantCulture)),
-                ("CONV_SLA_HORAS_REASIGNAR", (config.SlaHorasReasignar <= 0 ? 4 : config.SlaHorasReasignar).ToString(System.Globalization.CultureInfo.InvariantCulture))
+                ("CONV_SLA_HORAS_REASIGNAR", (config.SlaHorasReasignar <= 0 ? 4 : config.SlaHorasReasignar).ToString(System.Globalization.CultureInfo.InvariantCulture)),
+                ("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"),
+                ("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim())
             };
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -1537,7 +1543,9 @@ public sealed class ConversacionesConfigService(
                 'CONV_AUTOCIERRE_MENSAJE_CIERRE',
                 'CONV_SLA_ACTIVO',
                 'CONV_SLA_HORAS_RECORDATORIO',
-                'CONV_SLA_HORAS_REASIGNAR'
+                'CONV_SLA_HORAS_REASIGNAR',
+                'CONV_ASISTENTE_FUERA_HORARIO',
+                'CONV_ASISTENTE_URGENCIA_PALABRAS'
             )
             """;
 

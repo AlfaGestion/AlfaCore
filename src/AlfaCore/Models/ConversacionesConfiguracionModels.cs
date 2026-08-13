@@ -239,6 +239,12 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>SOLO_INFO | GENERAL | GENERAL_AVISA (qué hace cuando la info no alcanza).</summary>
     public string AsistentePolitica { get; set; } = "GENERAL_AVISA";
 
+    /// <summary>Fuera de horario, que atienda el asistente IA (en vez del mensaje fijo).</summary>
+    public bool AsistenteFueraHorario { get; set; }
+
+    /// <summary>Palabras que marcan urgencia (se atienden en cualquier horario): sube prioridad y avisa al operador.</summary>
+    public string AsistenteUrgenciaPalabras { get; set; } = string.Empty;
+
     public string ConfigSource { get; set; } = string.Empty;
 
     public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);

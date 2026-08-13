@@ -15,6 +15,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         string politica,
         string mensajeCliente,
         IReadOnlyList<ConversacionMensajeDto> historial,
+        bool fueraDeHorario = false,
+        bool esUrgente = false,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -25,7 +27,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         if (string.IsNullOrWhiteSpace(model))
             model = "gpt-4o-mini";
 
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         foreach (var m in historial
@@ -75,7 +77,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
     }
 
-    private static string BuildSystemPrompt(string comportamiento, string informacion, string politica)
+    private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
+        bool fueraDeHorario, bool esUrgente)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -107,6 +110,17 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             default: // GENERAL_AVISA
                 sb.AppendLine("- Si la información del negocio no alcanza, respondé con tu conocimiento general PERO aclarando en la respuesta que un asesor lo va a confirmar. Poné \"puede_responder\": true salvo que la consulta sea incomprensible.");
                 break;
+        }
+
+        if (fueraDeHorario)
+        {
+            sb.AppendLine();
+            sb.AppendLine("CONTEXTO HORARIO: estás atendiendo FUERA del horario de atención.");
+            sb.AppendLine("- Presentate con naturalidad como asistente virtual y avisá que el equipo humano está fuera de horario.");
+            sb.AppendLine("- Intentá resolver con la información. Si no podés, decile que dejás su mensaje registrado y que un operador lo revisa apenas sea posible.");
+            sb.AppendLine("- Siempre poné \"puede_responder\": true: aunque no resuelvas, respondé con la contención (nunca dejes al cliente sin respuesta fuera de horario).");
+            if (esUrgente)
+                sb.AppendLine("- El cliente reporta un problema URGENTE (no puede facturar, o el sistema no anda/ no arranca). Avisale que lo marcaste como URGENTE para que puedan atenderlo a la brevedad, aunque sea fuera de horario.");
         }
 
         sb.AppendLine();

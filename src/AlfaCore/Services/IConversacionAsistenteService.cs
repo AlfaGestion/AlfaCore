@@ -17,6 +17,8 @@ public interface IConversacionAsistenteService
         string politica,
         string mensajeCliente,
         IReadOnlyList<ConversacionMensajeDto> historial,
+        bool fueraDeHorario = false,
+        bool esUrgente = false,
         CancellationToken ct = default);
 }
 

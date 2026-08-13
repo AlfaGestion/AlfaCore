@@ -6452,6 +6452,11 @@ public sealed class ConversacionesService(
             if (!IsOutsideBusinessHours(config, BusinessNow()))
                 return;
 
+            // Si el asistente IA está configurado para atender fuera de horario, no mandamos el mensaje
+            // fijo: lo maneja el bot (que se presenta como IA, intenta ayudar y marca urgencias).
+            if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)
+                return;
+
             if (await HasPendingAutoReplyAsync(idConversacion, ct).ConfigureAwait(false))
                 return;
 
@@ -6518,13 +6523,29 @@ public sealed class ConversacionesService(
             if (IsAutomaticSystem(lastSistema))
                 return;
 
+            var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
+            var esUrgente = fueraDeHorario && ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
+
+            // Urgencia fuera de horario: subimos prioridad y dejamos nota para que el operador decida
+            // atender ahora (facturación caída / sistema que no anda son casos que se atienden siempre).
+            if (esUrgente)
+            {
+                await SetConversationPrioridadAsync(idConversacion, "URGENTE", ct).ConfigureAwait(false);
+                await AddInternalEventCoreAsync(idConversacion,
+                    $"⏰🚨 Posible URGENCIA fuera de horario. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
+                    null, null, "AlfaCore", "URGENCIA", ct).ConfigureAwait(false);
+            }
+
             var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
             var result = await asistenteService.ResponderAsync(
                 config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-                texto, mensajes, ct).ConfigureAwait(false);
+                texto, mensajes, fueraDeHorario, esUrgente, ct).ConfigureAwait(false);
 
-            // Según la política del asistente: si no pudo resolver (SOLO_INFO sin datos), escala en silencio.
-            if (result is null || !result.PuedeResponder || string.IsNullOrWhiteSpace(result.Respuesta))
+            // En horario, respeta la política (si no puede resolver, escala en silencio). Fuera de horario,
+            // siempre contesta la contención (nunca deja al cliente sin respuesta), aunque no resuelva.
+            var hayRespuesta = result is not null && !string.IsNullOrWhiteSpace(result.Respuesta);
+            var debeEnviar = hayRespuesta && (result!.PuedeResponder || fueraDeHorario);
+            if (!debeEnviar)
             {
                 await _appEvents.LogAuditAsync(
                     "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
@@ -6537,7 +6558,7 @@ public sealed class ConversacionesService(
             await SendMessageAsync(new ConversacionSendMessageRequest
             {
                 IdConversacion = idConversacion,
-                Texto = result.Respuesta.Trim(),
+                Texto = result!.Respuesta.Trim(),
                 MessageType = "TEXT",
                 UsuarioAccion = "AlfaCore",
                 SistemaAccion = "BOT"
@@ -6547,7 +6568,7 @@ public sealed class ConversacionesService(
                 "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
                 idConversacion.ToString(CultureInfo.InvariantCulture),
                 "El asistente respondió automáticamente.",
-                new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
+                new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -6819,6 +6840,12 @@ public sealed class ConversacionesService(
         return palabras
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Any(p => lower.Contains(p.ToLowerInvariant()));
+    }
+
+    private static string Truncar(string? texto, int max)
+    {
+        var t = (texto ?? string.Empty).Trim();
+        return t.Length <= max ? t : t[..max] + "…";
     }
 
     private async Task<(int Count, string LastSistema)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)

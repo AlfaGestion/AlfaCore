@@ -732,6 +732,17 @@
                     </div>
                     <div class="field conv-config-fields__full">
                         <label class="conv-config-checkbox">
+                            <input type="checkbox" @bind="_automatizacionesConfig.AsistenteFueraHorario" />
+                            <span>Fuera de horario, que atienda el asistente (en vez del mensaje fijo): se presenta como IA, intenta ayudar y, si no puede, deja el mensaje para un operador</span>
+                        </label>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label for="asis-urgencia">Palabras que marcan urgencia (se atienden en cualquier horario: suben prioridad y avisan al operador)</label>
+                        <input id="asis-urgencia" @bind="_automatizacionesConfig.AsistenteUrgenciaPalabras"
+                               placeholder="no puedo facturar, no anda el sistema, no arranca, sistema caido" />
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label class="conv-config-checkbox">
                             <input type="checkbox" @bind="_automatizacionesConfig.BotSoloSinAsignar" />
                             <span>Responder solo conversaciones sin asignar (si un humano la tomó, el asistente calla)</span>
                         </label>
