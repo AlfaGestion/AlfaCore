@@ -89,6 +89,16 @@ public sealed class ConversacionInformeDetalleDto
     public string PeriodoLabel => $"{Mes:00}/{Anio}";
 }
 
+/// <summary>Cantidad de mensajes de un mes, para el gráfico de tendencia de los últimos 12 meses.</summary>
+public sealed class ConversacionInformeTendenciaDto
+{
+    public int Anio { get; set; }
+    public int Mes { get; set; }
+    public int CantMensajes { get; set; }
+
+    public string Label => $"{Mes:00}/{Anio % 100:00}";
+}
+
 /// <summary>Ítem del listado de informes ya generados (para elegir cuál abrir).</summary>
 public sealed class ConversacionInformeListItemDto
 {

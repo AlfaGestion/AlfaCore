@@ -24,6 +24,14 @@
     .abono-SinAbono { background: rgba(148,163,184,.14); color: #94a3b8; border-color: rgba(148,163,184,.3); }
     .conv-informes-empty { padding: 2rem; text-align: center; color: var(--color-muted); }
     .conv-informes-total-row td { font-weight: 800; border-top: 2px solid rgba(148,163,184,.3); background: rgba(148,163,184,.05); }
+    table.conv-informes-grid th.sortable { cursor: pointer; user-select: none; }
+    table.conv-informes-grid th.sortable:hover { color: var(--color-text); }
+    .conv-inf-sortarrow { color: #38bdf8; margin-left: .15rem; }
+    .conv-inf-chart { display: flex; align-items: flex-end; gap: .4rem; height: 180px; margin-top: .8rem; }
+    .conv-inf-bar-wrap { flex: 1 1 0; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+    .conv-inf-bar { width: 70%; max-width: 40px; background: linear-gradient(180deg, #38bdf8, #0ea5e9); border-radius: 5px 5px 0 0; }
+    .conv-inf-bar-val { font-size: .62rem; color: var(--color-muted); margin-bottom: .15rem; }
+    .conv-inf-bar-lbl { font-size: .6rem; color: var(--color-muted); margin-top: .25rem; white-space: nowrap; }
 </style>
 
 <div class="conv-informes-page">
@@ -94,15 +102,15 @@
                 <table class="conv-informes-grid">
                     <thead>
                         <tr>
-                            <th>Cliente / Contacto</th>
-                            <th>Clasificación</th>
-                            <th>Categoría</th>
-                            <th>Abono</th>
-                            <th class="num">Conv.</th>
-                            <th class="num">Días</th>
-                            <th class="num">Mensajes</th>
-                            <th class="num">Horas</th>
-                            <th class="num">Hs. fact.</th>
+                            <th class="sortable" @onclick='() => Ordenar("nombre")'>Cliente / Contacto @SortArrow("nombre")</th>
+                            <th class="sortable" @onclick='() => Ordenar("clasif")'>Clasificación @SortArrow("clasif")</th>
+                            <th class="sortable" @onclick='() => Ordenar("categoria")'>Categoría @SortArrow("categoria")</th>
+                            <th class="sortable" @onclick='() => Ordenar("abono")'>Abono @SortArrow("abono")</th>
+                            <th class="num sortable" @onclick='() => Ordenar("conv")'>Conv. @SortArrow("conv")</th>
+                            <th class="num sortable" @onclick='() => Ordenar("dias")'>Días @SortArrow("dias")</th>
+                            <th class="num sortable" @onclick='() => Ordenar("msj")'>Mensajes @SortArrow("msj")</th>
+                            <th class="num sortable" @onclick='() => Ordenar("horas")'>Horas @SortArrow("horas")</th>
+                            <th class="num sortable" @onclick='() => Ordenar("fact")'>Hs. fact. @SortArrow("fact")</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -150,6 +158,25 @@
                 </table>
             </div>
         </div>
+
+        @if (_tendencia.Count > 0)
+        {
+            <div class="panel-card" style="padding:1rem; margin-top:1rem;">
+                <strong><i class="bi bi-graph-up"></i> Mensajes por mes (últimos 12 meses)</strong>
+                <p class="panel-card__subtitle" style="margin:.15rem 0 0;">Para ver si las consultas suben, bajan o se mantienen.</p>
+                <div class="conv-inf-chart">
+                    @foreach (var t in _tendencia)
+                    {
+                        var h = _tendenciaMax > 0 ? (int)Math.Round(100.0 * t.CantMensajes / _tendenciaMax) : 0;
+                        <div class="conv-inf-bar-wrap" title="@t.Label: @t.CantMensajes mensajes">
+                            <span class="conv-inf-bar-val">@t.CantMensajes</span>
+                            <div class="conv-inf-bar" style="height:@Math.Max(h, 2)%;"></div>
+                            <span class="conv-inf-bar-lbl">@t.Label</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
     }
     else if (!_trabajando)
     {
@@ -168,6 +195,10 @@
     private bool _feedbackOk;
     private ConversacionInformeMensualDto? _informe;
     private List<ConversacionInformeListItemDto> _informes = [];
+    private List<ConversacionInformeTendenciaDto> _tendencia = [];
+    private int _tendenciaMax;
+    private string _sortCol = string.Empty;
+    private bool _sortAsc = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -199,7 +230,9 @@
         try
         {
             _informe = await InformesSvc.GenerarAsync(_anio, _mes, null);
+            _sortCol = string.Empty;
             await CargarListaAsync();
+            await CargarTendenciaAsync();
             SetFeedback(true, $"Informe de {MesNombre(_mes)} {_anio} generado: {_informe.Filas.Count} clientes/contactos.");
         }
         catch (Exception ex)
@@ -226,6 +259,8 @@
                 _mes = _informe.Mes;
                 _anio = _informe.Anio;
                 _yaGenerado = true;
+                _sortCol = string.Empty;
+                await CargarTendenciaAsync();
             }
         }
         catch (Exception ex)
@@ -242,6 +277,53 @@
         => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)
             ? $"/{idweb}/{idbase}/conversaciones/informes/detalle/{fila.IdDetalle}"
             : $"/conversaciones/informes/detalle/{fila.IdDetalle}");
+
+    private async Task CargarTendenciaAsync()
+    {
+        try
+        {
+            _tendencia = (await InformesSvc.GetTendenciaMensajesAsync(_anio, _mes)).ToList();
+            _tendenciaMax = _tendencia.Count > 0 ? _tendencia.Max(t => t.CantMensajes) : 0;
+        }
+        catch
+        {
+            _tendencia = [];
+            _tendenciaMax = 0;
+        }
+    }
+
+    private void Ordenar(string col)
+    {
+        if (_informe is null)
+            return;
+        if (_sortCol == col)
+            _sortAsc = !_sortAsc;
+        else
+        {
+            _sortCol = col;
+            // Texto: ascendente por defecto; números: descendente (más actividad primero).
+            _sortAsc = col is "nombre" or "clasif" or "categoria" or "abono";
+        }
+
+        Func<ConversacionInformeFilaDto, object> key = col switch
+        {
+            "clasif" => f => f.ClasificacionDesc,
+            "categoria" => f => f.CategoriaDesc,
+            "abono" => f => f.EstadoAbono,
+            "conv" => f => f.CantConversaciones,
+            "dias" => f => f.CantDias,
+            "msj" => f => f.CantMensajes,
+            "horas" => f => f.MinutosTotales,
+            "fact" => f => f.MinutosFacturables,
+            _ => f => f.NombreMostrar
+        };
+        _informe.Filas = (_sortAsc ? _informe.Filas.OrderBy(key) : _informe.Filas.OrderByDescending(key)).ToList();
+    }
+
+    private MarkupString SortArrow(string col)
+        => _sortCol == col
+            ? new MarkupString($"<span class=\"conv-inf-sortarrow\">{(_sortAsc ? "▲" : "▼")}</span>")
+            : new MarkupString(string.Empty);
 
     private void VolverAConversaciones()
         => Nav.NavigateTo(idbase.HasValue && !string.IsNullOrEmpty(idweb)

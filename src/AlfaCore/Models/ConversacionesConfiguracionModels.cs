@@ -257,9 +257,11 @@ public sealed class ConversacionAutomatizacionesConfigDto
 
     public const string DefaultInformeInstrucciones =
         "Sos parte del equipo de soporte técnico de software y le escribís al cliente un resumen de la " +
-        "atención que le dimos durante el mes. Tono profesional y cercano, en español rioplatense: " +
-        "tratalo de \"vos\" y escribí en primera persona del plural (trabajamos, resolvimos, quedamos). " +
-        "Mostrate servicial y dejá la puerta abierta a seguir ayudándolo.";
+        "atención que le dimos durante el mes. El objetivo es poner en valor nuestro trabajo: dejá claro " +
+        "todo lo que hicimos por él y cómo lo ayudamos, resaltando lo resuelto y la dedicación del equipo " +
+        "(sin exagerar ni inventar). Tono profesional, cercano y positivo, en español rioplatense: tratalo " +
+        "de \"vos\" y escribí en primera persona del plural (trabajamos, resolvimos, quedamos). Mostrate " +
+        "servicial y dejá la puerta abierta a seguir ayudándolo.";
 
     public string ConfigSource { get; set; } = string.Empty;
 

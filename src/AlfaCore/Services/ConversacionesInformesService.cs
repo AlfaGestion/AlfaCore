@@ -416,6 +416,10 @@ public sealed class ConversacionesInformesService(
             if (string.IsNullOrWhiteSpace(texto))
                 throw new InvalidOperationException("Generá o escribí el resumen antes de enviarlo.");
 
+            var horas = HorasSoporteFrase(det.Fila);
+            if (horas.Length > 0)
+                texto = $"{texto}\n\n🛠️ {horas}";
+
             // Si la ventana de 24 h está cerrada, SendMessageAsync falla: se avisa para mandarlo por mail o con plantilla.
             await conversacionesService.SendMessageAsync(new ConversacionSendMessageRequest
             {
@@ -432,6 +436,40 @@ public sealed class ConversacionesInformesService(
             await appEvents.LogAuditAsync(ModuleName, "EnviarInformeWhatsApp", "CONV_INFORME_MENSUAL_DET",
                 idDetalle.ToString(), "Resumen mensual enviado por WhatsApp.", new { det.IdConversacionWhatsApp }, token);
             return true;
+        }, ct);
+
+    public Task<IReadOnlyList<ConversacionInformeTendenciaDto>> GetTendenciaMensajesAsync(int anio, int mes, CancellationToken ct = default)
+        => ExecuteLoggedAsync("TendenciaInforme", async token =>
+        {
+            var primerMes = new DateTime(anio, mes, 1);
+            var desde = primerMes.AddMonths(-11);
+            var hasta = primerMes.AddMonths(1);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            var datos = (await cn.QueryAsync<ConversacionInformeTendenciaDto>(new CommandDefinition("""
+                SELECT YEAR(m.FechaHora) AS Anio, MONTH(m.FechaHora) AS Mes, COUNT(*) AS CantMensajes
+                FROM dbo.CONV_MENSAJES m
+                INNER JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                WHERE m.FechaHora >= @Desde AND m.FechaHora < @Hasta
+                  AND ISNULL(c.Canal, N'') <> N'INTERNO'
+                  AND m.Direction IN (N'ENTRANTE', N'SALIENTE')
+                GROUP BY YEAR(m.FechaHora), MONTH(m.FechaHora);
+                """, new { Desde = desde, Hasta = hasta }, cancellationToken: token))).ToList();
+
+            // Completamos los 12 meses en orden, con 0 donde no hubo actividad.
+            var mapa = datos.ToDictionary(x => (x.Anio, x.Mes), x => x.CantMensajes);
+            var serie = new List<ConversacionInformeTendenciaDto>(12);
+            for (var i = 0; i < 12; i++)
+            {
+                var m = desde.AddMonths(i);
+                serie.Add(new ConversacionInformeTendenciaDto
+                {
+                    Anio = m.Year,
+                    Mes = m.Month,
+                    CantMensajes = mapa.TryGetValue((m.Year, m.Month), out var c) ? c : 0
+                });
+            }
+            return (IReadOnlyList<ConversacionInformeTendenciaDto>)serie;
         }, ct);
 
     private async Task GuardarBorradorAsync(int idDetalle, string texto, CancellationToken ct)
@@ -470,6 +508,8 @@ public sealed class ConversacionesInformesService(
             "y su estado (resuelto / en curso / pendiente).\n" +
             "- Cerrá con UNA línea corta ofreciendo seguir ayudando.\n\n" +
             "REGLAS:\n" +
+            "- El foco es poner en valor nuestro trabajo: resaltá lo que resolvimos y cómo acompañamos al cliente, " +
+            "en tono positivo, pero SIN exagerar ni inventar (todo tiene que surgir de las conversaciones).\n" +
             "- Máximo ~150 palabras. Sé concreto: nombrá los temas reales que aparezcan (ej: \"el error al cargar la eFC\"), " +
             "nunca frases genéricas de relleno como \"diversas consultas\".\n" +
             "- No inventes nada que no esté en las conversaciones; no incluyas datos internos del equipo ni de otros clientes; " +
@@ -498,15 +538,24 @@ public sealed class ConversacionesInformesService(
         return full.Length <= max ? full : full[^max..];
     }
 
+    private static string HorasSoporteFrase(ConversacionInformeFilaDto fila)
+        => fila.MinutosTotales <= 0
+            ? string.Empty
+            : $"Este mes aplicamos {fila.HorasTotalesLabel} de soporte a tu empresa.";
+
     private static string BuildEmailHtml(ConversacionInformeDetalleDto det, string texto, string empresa)
     {
         var cuerpo = System.Net.WebUtility.HtmlEncode(texto).Replace("\n", "<br>");
         var firma = string.IsNullOrWhiteSpace(empresa) ? string.Empty : $"<p style=\"margin-top:18px;color:#475569;\">Saludos,<br>{System.Net.WebUtility.HtmlEncode(empresa)}</p>";
+        var horas = HorasSoporteFrase(det.Fila);
+        var horasBox = horas.Length == 0 ? string.Empty :
+            $"<div style=\"margin-top:14px;padding:10px 14px;background:#f0f9ff;border-left:3px solid #0ea5e9;border-radius:6px;color:#0c4a6e;\">🛠️ {System.Net.WebUtility.HtmlEncode(horas)}</div>";
         return $"""
             <div style="font-family:Segoe UI,Arial,sans-serif;font-size:14px;color:#0f172a;line-height:1.5;max-width:640px;">
               <h2 style="margin:0 0 12px;font-size:18px;">Resumen de atención — {det.PeriodoLabel}</h2>
               <p style="margin:0 0 10px;color:#475569;">Hola {System.Net.WebUtility.HtmlEncode(det.Fila.NombreMostrar)},</p>
               <div style="white-space:normal;">{cuerpo}</div>
+              {horasBox}
               {firma}
             </div>
             """;

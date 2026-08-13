@@ -98,29 +98,6 @@
             </div>
             <p class="panel-card__subtitle" style="margin:.5rem 0 0;">WhatsApp solo funciona si el cliente escribió en las últimas 24 h; si no, usá email (o una plantilla aprobada).</p>
         </div>
-
-        <div class="panel-card" style="padding:1rem;">
-            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => _verMensajes = !_verMensajes">
-                <i class="bi @(_verMensajes ? "bi-chevron-down" : "bi-chevron-right")"></i> Conversaciones del mes (@_det.Mensajes.Count mensajes)
-            </button>
-            @if (_verMensajes)
-            {
-                <div class="conv-infdet-msgs" style="margin-top:.6rem;">
-                    @if (_det.Mensajes.Count == 0)
-                    {
-                        <span class="panel-card__subtitle">No hay mensajes registrados en este período.</span>
-                    }
-                    @foreach (var m in _det.Mensajes)
-                    {
-                        <div class="conv-infdet-msg @(m.EsEntrante ? "in" : "out")">
-                            <span class="ts">@m.FechaHora.ToString("dd/MM HH:mm")</span>
-                            <span class="who">@(m.EsEntrante ? "Cliente" : "Nosotros"):</span>
-                            @m.Texto
-                        </div>
-                    }
-                </div>
-            }
-        </div>
     }
 </div>
 
@@ -130,7 +107,6 @@
     private ConversacionInformeDetalleDto? _det;
     private string _texto = string.Empty;
     private string _email = string.Empty;
-    private bool _verMensajes;
     private bool _trabajando;
     private string? _error;
     private string? _feedback;
