@@ -8,11 +8,17 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject IRouteContextService RouteContext
 @inject IPageHeaderService PageHeader
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Usuarios | Alfa Gestión</PageTitle>
 
 <div class="@GetUsuariosPageClass()" @onclick="CloseUsuariosSearchPanel">
+
+    @if (_showEditor)
+    {
+        <NavigationLock OnBeforeInternalNavigation="ProtectDirtyEditorNavigation" />
+    }
 
     <AlfaNotification Message="@_feedback" OnDismiss="ClearFeedback" />
 
@@ -233,7 +239,7 @@
     }
 
     <AlfaConfirmDialog Open="@_showBulkDeactivateConfirm"
-                       Title="@(_bulkDeactivateConfirmCount == 1 ? "Dar de baja usuario" : "Dar de baja usuarios")"
+                       Title="@GetDeactivateConfirmationTitle()"
                        Message="@GetDeactivateConfirmationMessage()"
                        SecondaryMessage="La baja es lógica: los registros quedarán inactivos."
                        ConfirmLabel="Dar de baja"
@@ -241,6 +247,14 @@
                        Loading="@_saving"
                        OnConfirm="ConfirmBulkDeactivateAsync"
                        OnCancel="CloseBulkDeactivateConfirm" />
+
+    <AlfaConfirmDialog Open="@_showDiscardEditorConfirm"
+                       Title="Descartar cambios"
+                       Message="Hay cambios sin guardar. Si salís ahora, se perderán."
+                       ConfirmLabel="Descartar"
+                       CancelLabel="Seguir editando"
+                       OnConfirm="DiscardEditorChangesAsync"
+                       OnCancel="ContinueEditing" />
 </div>
 
 @code {
@@ -262,6 +276,8 @@
     private bool _selectedActivo = true;
     private bool _showViewSettings;
     private bool _showBulkDeactivateConfirm;
+    private bool _showDiscardEditorConfirm;
+    private bool _allowEditorNavigation;
     private bool _showUsuariosSearchPanel;
     private bool _viewSettingsLoaded;
     private int _photoPickerVersion;
@@ -280,6 +296,8 @@
     private string _viewSettingsUserName = string.Empty;
     private string _bulkAction = BulkActionDeactivate;
     private string _rowDeactivateName = string.Empty;
+    private string _pendingEditorNavigationUri = string.Empty;
+    private UsuarioEditorSnapshot? _editorInitialState;
     private int _bulkDeactivateConfirmCount;
     private DateTime? _selectedAlta;
     private DateTime? _selectedModificacion;
@@ -399,9 +417,9 @@
         if (_showEditor)
         {
             actions.Add(new PageHeaderAction { Key = "guardar", Label = _saving ? "Guardando..." : "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, Busy = _saving, OnClick = GuardarAsync });
-            actions.Add(new PageHeaderAction { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, OnClick = () => { CerrarEditor(); return Task.CompletedTask; } });
+            actions.Add(new PageHeaderAction { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, OnClick = RequestCancelEditorAsync });
             if (!_isNewMode && _selectedActivo)
-                actions.Add(new PageHeaderAction { Key = "baja", Label = "Dar de baja", Icon = "bi-person-dash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, Disabled = _saving, OnClick = DarDeBajaAsync });
+                actions.Add(new PageHeaderAction { Key = "baja", Label = "Dar de baja", Icon = "bi-person-dash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, Disabled = _saving, OnClick = OpenEditorDeactivateConfirmAsync });
         }
         else
         {
@@ -451,6 +469,7 @@
     public void Dispose()
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
+        ClearEditorDirtyState();
         PageHeader.Clear();
     }
 
@@ -686,17 +705,20 @@
         _form.FotoNombreOriginal = string.Empty;
         _form.FotoMimeType = string.Empty;
         _form.QuitarFoto = false;
+        ResetEditorDirtyState();
         UpdatePageHeader();
     }
 
-    private void CerrarEditor()
+    private void CloseEditor(bool clearFeedback = true)
     {
         ClearFieldErrors();
-        SetFeedback(null);
+        if (clearFeedback)
+            SetFeedback(null);
         _showEditor = false;
         _showPassword = false;
         _pendingPhoto = null;
         _photoPickerVersion++;
+        ClearEditorDirtyState();
         UpdatePageHeader();
     }
 
@@ -716,6 +738,18 @@
     {
         if (_saving)
             return;
+
+        if (!_isNewMode && !IsEditorDirty)
+        {
+            CloseEditor(clearFeedback: false);
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Info,
+                Title = "Sin cambios para guardar",
+                Message = "El usuario no tenía modificaciones pendientes."
+            });
+            return;
+        }
 
         ClearFieldErrors();
         if (!_form.EsGrupo && !string.Equals(_form.Contrasena, _confirmacionContrasena, StringComparison.Ordinal))
@@ -742,14 +776,20 @@
 
             try
             {
+                var created = _isNewMode;
                 var savedName = await UsuariosSvc.SaveAsync(_form);
-                SetFeedback(AppUiMessage.Success("Usuario guardado", $"El usuario {savedName} se guardó correctamente."));
+                SetFeedback(AppUiMessage.Success(
+                    created ? "Usuario creado" : "Usuario actualizado",
+                    created
+                        ? $"El usuario {savedName} se creó correctamente."
+                        : $"El usuario {savedName} se actualizó correctamente."));
                 await BuscarAsync();
                 _selectedNombre = savedName;
                 _showEditor = false;
                 _isNewMode = false;
                 _pendingPhoto = null;
                 _photoPickerVersion++;
+                ClearEditorDirtyState();
             }
             catch (AppValidationException validationEx)
             {
@@ -819,36 +859,16 @@
     {
         _showEditor = true;
         _showViewSettings = false;
+        ClearEditorDirtyState();
         SetFeedback(null);
         await SeleccionarAsync(nombre);
         UpdatePageHeader();
     }
 
-    private async Task DarDeBajaAsync()
-    {
-        if (_isNewMode || string.IsNullOrWhiteSpace(_selectedNombre))
-            return;
-
-        _saving = true;
-        try
-        {
-            var result = await UiOps.RunAsync(() => UsuariosSvc.DeactivateAsync(_selectedNombre), "No se pudo dar de baja el usuario.");
-            if (!result.Success)
-            {
-                SetFeedback(result.Feedback);
-                return;
-            }
-
-            SetFeedback(AppUiMessage.Success("Usuario dado de baja", $"El usuario {_selectedNombre} quedó inactivo."));
-            BeginNew();
-            _showEditor = false;
-            await BuscarAsync();
-        }
-        finally
-        {
-            _saving = false;
-        }
-    }
+    private Task OpenEditorDeactivateConfirmAsync()
+        => _isNewMode || string.IsNullOrWhiteSpace(_selectedNombre)
+            ? Task.CompletedTask
+            : OpenRowDeactivateConfirmAsync(_selectedNombre);
 
     private void EjecutarAccionSeleccionadaAsync()
     {
@@ -877,6 +897,7 @@
 
         _showBulkDeactivateConfirm = false;
         _rowDeactivateName = string.Empty;
+        _bulkDeactivateConfirmCount = 0;
     }
 
     private async Task ConfirmBulkDeactivateAsync()
@@ -892,34 +913,46 @@
             return;
         }
 
-        _showBulkDeactivateConfirm = false;
-        _rowDeactivateName = string.Empty;
         _saving = true;
+        var succeeded = new List<string>();
+        var failed = new List<string>();
         try
         {
             foreach (var nombre in nombres)
-                await UsuariosSvc.DeactivateAsync(nombre);
+            {
+                try
+                {
+                    await UsuariosSvc.DeactivateAsync(nombre);
+                    succeeded.Add(nombre);
+                }
+                catch
+                {
+                    failed.Add(nombre);
+                }
+            }
 
-            if (isRowAction)
-                _selectedNames.Remove(nombres[0]);
-            else
-                _selectedNames.Clear();
-            if (nombres.Contains(_selectedNombre, StringComparer.OrdinalIgnoreCase))
+            foreach (var nombre in succeeded)
+                _selectedNames.Remove(nombre);
+
+            if (succeeded.Contains(_selectedNombre, StringComparer.OrdinalIgnoreCase))
                 _selectedNombre = string.Empty;
 
-            _showEditor = false;
-            SetFeedback(nombres.Length == 1
-                ? AppUiMessage.Success("Usuario dado de baja", $"El usuario {nombres[0]} quedó inactivo.")
-                : AppUiMessage.Success("Usuarios actualizados", $"Se dieron de baja {nombres.Length} registros seleccionados."));
+            if (succeeded.Count > 0 && isRowAction)
+            {
+                _showEditor = false;
+                ClearEditorDirtyState();
+            }
+
             await BuscarAsync();
-        }
-        catch (Exception ex)
-        {
-            SetFeedback(UiOps.BuildMessage(ex, "No se pudieron actualizar los usuarios seleccionados."));
+            SetFeedback(BuildDeactivateFeedback(nombres.Length, succeeded.Count, failed.Count));
         }
         finally
         {
             _saving = false;
+            _showBulkDeactivateConfirm = false;
+            _rowDeactivateName = string.Empty;
+            _bulkDeactivateConfirmCount = 0;
+            UpdatePageHeader();
         }
     }
 
@@ -945,6 +978,7 @@
         _form.QuitarFoto = false;
         ClearFieldError("foto");
         _photoPickerVersion++;
+        StateHasChanged();
     }
 
     private void QuitarFoto()
@@ -956,6 +990,7 @@
         _form.FotoMimeType = string.Empty;
         _form.QuitarFoto = HasExistingPhoto;
         ClearFieldError("foto");
+        StateHasChanged();
     }
 
     private void TogglePasswordVisibility() => _showPassword = !_showPassword;
@@ -1015,6 +1050,7 @@
         _form.QuitarFoto = false;
 
         _confirmacionContrasena = detail.ContrasenaDecodificada;
+        ResetEditorDirtyState();
     }
 
     private async Task EnsureViewSettingsLoadedAsync(bool force = false)
@@ -1334,10 +1370,17 @@
             ? $"{_selectedNames.Count} seleccionado(s) en esta página"
             : $"{_pagedTotal} registro(s) · Página {_pageNumber} de {_totalPages}";
 
+    private string GetDeactivateConfirmationTitle()
+        => !string.IsNullOrWhiteSpace(_rowDeactivateName)
+            ? "Dar de baja usuario"
+            : $"Dar de baja {_bulkDeactivateConfirmCount} {(_bulkDeactivateConfirmCount == 1 ? "usuario" : "usuarios")}";
+
     private string GetDeactivateConfirmationMessage()
-        => _bulkDeactivateConfirmCount == 1
-            ? "El usuario seleccionado quedará inactivo y no podrá iniciar sesión."
-            : $"Se darán de baja {_bulkDeactivateConfirmCount} usuarios o grupos seleccionados.";
+        => !string.IsNullOrWhiteSpace(_rowDeactivateName)
+            ? $"“{_rowDeactivateName}” dejará de estar activo."
+            : _bulkDeactivateConfirmCount == 1
+                ? "El usuario seleccionado dejará de estar activo."
+                : "Los usuarios seleccionados dejarán de estar activos.";
 
     private static string GetUsuarioColumnCssClass(string key)
         => $"usuarios-list-table__col usuarios-list-table__col--{(key ?? string.Empty).Trim().ToLowerInvariant()}";
@@ -1450,6 +1493,7 @@
     {
         _confirmacionContrasena = value ?? string.Empty;
         ClearFieldError("confirmacion");
+        StateHasChanged();
         return Task.CompletedTask;
     }
 
@@ -1488,7 +1532,131 @@
                 break;
         }
 
+        StateHasChanged();
         return Task.CompletedTask;
+    }
+
+    private bool IsEditorDirty
+        => _showEditor && _editorInitialState is not null && !_editorInitialState.Matches(CaptureEditorState());
+
+    private UsuarioEditorSnapshot CaptureEditorState()
+        => new(
+            NormalizeEditorText(_form.Nombre),
+            NormalizeEditorText(_form.Email),
+            _form.EsGrupo,
+            _form.EsTecnico,
+            _form.CambiarProximoInicio,
+            _form.Contrasena ?? string.Empty,
+            _confirmacionContrasena ?? string.Empty,
+            _pendingPhoto is not null,
+            _form.QuitarFoto);
+
+    private static string NormalizeEditorText(string? value)
+        => (value ?? string.Empty).Trim();
+
+    private void ResetEditorDirtyState()
+    {
+        _editorInitialState = CaptureEditorState();
+        _showDiscardEditorConfirm = false;
+        _pendingEditorNavigationUri = string.Empty;
+        _allowEditorNavigation = false;
+    }
+
+    private void ClearEditorDirtyState()
+    {
+        _editorInitialState = null;
+        _showDiscardEditorConfirm = false;
+        _pendingEditorNavigationUri = string.Empty;
+        _allowEditorNavigation = false;
+    }
+
+    private Task RequestCancelEditorAsync()
+    {
+        if (IsEditorDirty)
+        {
+            _showDiscardEditorConfirm = true;
+            return InvokeAsync(StateHasChanged);
+        }
+
+        CloseEditor();
+        return Task.CompletedTask;
+    }
+
+    private void ContinueEditing()
+    {
+        _showDiscardEditorConfirm = false;
+        _pendingEditorNavigationUri = string.Empty;
+        StateHasChanged();
+    }
+
+    private Task DiscardEditorChangesAsync()
+    {
+        _showDiscardEditorConfirm = false;
+        if (!string.IsNullOrWhiteSpace(_pendingEditorNavigationUri))
+        {
+            var target = _pendingEditorNavigationUri;
+            ClearEditorDirtyState();
+            _allowEditorNavigation = true;
+            Nav.NavigateTo(target);
+            return Task.CompletedTask;
+        }
+
+        CloseEditor();
+        return Task.CompletedTask;
+    }
+
+    private void ProtectDirtyEditorNavigation(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    {
+        if (_saving)
+        {
+            context.PreventNavigation();
+            return;
+        }
+
+        if (_allowEditorNavigation)
+        {
+            _allowEditorNavigation = false;
+            return;
+        }
+
+        if (!IsEditorDirty)
+            return;
+
+        context.PreventNavigation();
+        _pendingEditorNavigationUri = context.TargetLocation;
+        _showDiscardEditorConfirm = true;
+    }
+
+    private static AppUiMessage BuildDeactivateFeedback(int requested, int succeeded, int failed)
+    {
+        if (failed == 0)
+        {
+            return AppUiMessage.Success(
+                requested == 1 ? "Usuario dado de baja" : "Usuarios dados de baja",
+                requested == 1
+                    ? "El usuario quedó inactivo."
+                    : $"Se dieron de baja {succeeded} usuarios seleccionados.");
+        }
+
+        if (succeeded == 0)
+        {
+            return new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Error,
+                Title = requested == 1 ? "No se pudo dar de baja el usuario" : "No se pudieron dar de baja los usuarios",
+                Message = requested == 1
+                    ? "La operación no se completó. Podés volver a intentarlo."
+                    : $"No se pudo procesar ninguno de los {failed} usuarios seleccionados."
+            };
+        }
+
+        return new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Warning,
+            Title = "Baja parcialmente completada",
+            Message = $"Se dieron de baja {succeeded} de {requested} usuarios. {failed} no pudieron procesarse.",
+            Suggestion = "Los usuarios que fallaron permanecen seleccionados para que puedas reintentar."
+        };
     }
 
     private sealed class PendingUserPhoto
@@ -1497,6 +1665,52 @@
         public string MimeType { get; init; } = string.Empty;
         public byte[] Contenido { get; init; } = [];
         public string PreviewUrl { get; init; } = string.Empty;
+    }
+
+    private sealed class UsuarioEditorSnapshot
+    {
+        private readonly string _nombre;
+        private readonly string _email;
+        private readonly bool _esGrupo;
+        private readonly bool _esTecnico;
+        private readonly bool _cambiarProximoInicio;
+        private readonly string _contrasena;
+        private readonly string _confirmacionContrasena;
+        private readonly bool _tieneFotoPendiente;
+        private readonly bool _quitarFoto;
+
+        public UsuarioEditorSnapshot(
+            string nombre,
+            string email,
+            bool esGrupo,
+            bool esTecnico,
+            bool cambiarProximoInicio,
+            string contrasena,
+            string confirmacionContrasena,
+            bool tieneFotoPendiente,
+            bool quitarFoto)
+        {
+            _nombre = nombre;
+            _email = email;
+            _esGrupo = esGrupo;
+            _esTecnico = esTecnico;
+            _cambiarProximoInicio = cambiarProximoInicio;
+            _contrasena = contrasena;
+            _confirmacionContrasena = confirmacionContrasena;
+            _tieneFotoPendiente = tieneFotoPendiente;
+            _quitarFoto = quitarFoto;
+        }
+
+        public bool Matches(UsuarioEditorSnapshot other)
+            => string.Equals(_nombre, other._nombre, StringComparison.Ordinal)
+               && string.Equals(_email, other._email, StringComparison.Ordinal)
+               && _esGrupo == other._esGrupo
+               && _esTecnico == other._esTecnico
+               && _cambiarProximoInicio == other._cambiarProximoInicio
+               && string.Equals(_contrasena, other._contrasena, StringComparison.Ordinal)
+               && string.Equals(_confirmacionContrasena, other._confirmacionContrasena, StringComparison.Ordinal)
+               && _tieneFotoPendiente == other._tieneFotoPendiente
+               && _quitarFoto == other._quitarFoto;
     }
 
     private sealed class UsuarioGridGroup
