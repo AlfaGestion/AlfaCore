@@ -350,13 +350,15 @@
                 </div>
                 <button type="button"
                         class="conversations-filter-pill conversations-filter-pill--mercadolibre @(_canalActivo == "MERCADOLIBRE" ? "is-active" : string.Empty)"
-                        @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'>
-                    <i class="bi bi-bag-fill"></i> Mercado Libre
+                        @onclick='() => ChangeCanalAsync("MERCADOLIBRE")'
+                        title="Mercado Libre">
+                    <i class="bi bi-bag-fill"></i>
                 </button>
                 <button type="button"
                         class="conversations-filter-pill @(_canalActivo == "INTERNO" ? "is-active" : string.Empty)"
-                        @onclick='() => ChangeCanalAsync("INTERNO")'>
-                    <i class="bi bi-people-fill"></i> Chat interno
+                        @onclick='() => ChangeCanalAsync("INTERNO")'
+                        title="Chat interno">
+                    <i class="bi bi-people-fill"></i>
                 </button>
                 @if (_canalActivo == "INTERNO")
                 {
@@ -375,7 +377,6 @@
             <div class="conversations-module-actions">
                 <button type="button" class="btn btn--ghost btn--sm conversations-context-button" @onclick="ToggleContextPanel" disabled="@(_selectedConversation is null)" title="Contexto">
                     <i class="bi bi-layout-sidebar-inset-reverse"></i>
-                    <span>Contexto</span>
                     @if (HasContextNotes)
                     {
                         <span style="width:.55rem;height:.55rem;border-radius:999px;background:#22d3ee;box-shadow:0 0 0 4px rgba(34,211,238,.16),0 0 14px rgba(34,211,238,.9);display:inline-block;margin-left:.15rem;" title="Hay observaciones del cliente o contacto"></span>
@@ -385,14 +386,12 @@
                 {
                     <button type="button" class="btn btn--primary btn--sm conversations-ticket-button" @onclick="StartTicketSelection" disabled="@(_selectedConversation is null || _messages.Count == 0)" title="Crear ticket desde mensajes">
                         <i class="bi bi-life-preserver"></i>
-                        <span>Crear ticket</span>
                     </button>
                 }
                 @if (_crmModuloActivo)
                 {
                     <button type="button" class="btn btn--ghost btn--sm conversations-crm-button" @onclick="CrearOportunidadDesdeConversacion" disabled="@(_selectedConversation is null)" title="Crear oportunidad de CRM desde esta conversación">
                         <i class="bi bi-graph-up-arrow"></i>
-                        <span>Crear oportunidad</span>
                     </button>
                 }
                 @if (_alfaKnowledgeModuloActivo)
@@ -406,7 +405,6 @@
                 </button>
                 <button type="button" class="btn btn--ghost btn--sm conversations-wait-time-button @(EsColaEspera ? "is-active" : string.Empty)" @onclick="ToggleColaEsperaAsync" title="Ordenar por tiempo de espera y prioridad, en vez de por actividad reciente">
                     <i class="bi bi-hourglass-split"></i>
-                    <span>Tiempo de espera</span>
                 </button>
             </div>
 
@@ -1295,9 +1293,8 @@
                                         class="btn btn--primary btn--sm conversation-assign-to-me"
                                         @onclick="AssignSelectedConversationToMeAsync"
                                         disabled="@_busyAction"
-                                        title="Tomar esta conversación">
+                                        title="Asignarme · Tomar esta conversación">
                                     <i class="bi bi-person-check-fill"></i>
-                                    Asignarme
                                 </button>
                             }
                             <div class="conversation-header-state__row @(_showStatusMenu ? "is-open" : string.Empty)" @onclick:stopPropagation="true">
@@ -1331,8 +1328,8 @@
                             </div>
                             @if (!IsSelectedConversationClosed)
                             {
-                                <button type="button" class="btn btn--ghost btn--sm conversation-header-state__close" @onclick="CloseConversationAsync" disabled="@_busyAction">
-                                    <i class="bi bi-lock-fill"></i> Cerrar conversación
+                                <button type="button" class="btn btn--ghost btn--sm conversation-header-state__close" @onclick="CloseConversationAsync" disabled="@_busyAction" title="Cerrar conversación">
+                                    <i class="bi bi-lock-fill"></i>
                                 </button>
                             }
                             else
