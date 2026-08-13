@@ -2991,6 +2991,62 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
     margin-right: auto;
 }
 
+.carga-viajes-tarifa-editor__header {
+    display: flex;
+    flex-direction: column;
+    gap: .2rem;
+    min-width: 0;
+}
+
+.carga-viajes-tarifa-editor__header-row {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    flex-wrap: wrap;
+    min-width: 0;
+}
+
+.carga-viajes-tarifa-editor__header-row h3 {
+    margin: 0;
+}
+
+.carga-viajes-tarifa-editor__header-id {
+    display: inline-flex;
+    align-items: center;
+    gap: .45rem;
+    min-width: 0;
+    padding: .18rem .55rem;
+    border-radius: 999px;
+    border: 1px solid rgba(148, 163, 184, .18);
+    background: rgba(15, 23, 42, .42);
+}
+
+.carga-viajes-tarifa-editor__header-id-label {
+    color: rgba(203, 213, 225, .72);
+    font-size: .68rem;
+    line-height: 1;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.carga-viajes-tarifa-editor__header-id-value {
+    display: inline-block;
+    min-width: 4rem;
+    max-width: 100%;
+    color: var(--color-text);
+    font-size: .85rem;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: .02em;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+}
+
+.carga-viajes-tarifa-editor__header-id-value::selection {
+    background: rgba(8, 145, 178, .28);
+    color: var(--color-text);
+}
+
 .carga-viajes-switch {
     min-height: 2.35rem;
     padding-inline: .9rem;
@@ -3538,7 +3594,7 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
     display: grid;
     gap: .5rem;
     margin-top: .4rem;
-    width: fit-content;
+    width: 100%;
     max-width: 100%;
     position: relative;
     z-index: 2;
@@ -3560,11 +3616,13 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
 }
 
 .carga-viajes-viaje__tarifas-panel {
-    position: absolute;
-    top: calc(100% + .45rem);
-    left: 0;
-    z-index: 40;
-    width: min(760px, calc(100vw - 4rem));
+    grid-column: 1 / -1;
+    position: relative;
+    align-self: stretch;
+    width: 100%;
+    max-width: none;
+    margin-top: .35rem;
+    z-index: 4;
     min-width: 0;
 }
 
@@ -3572,12 +3630,14 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
     display: grid;
     gap: .55rem;
     padding: .9rem .95rem;
-    border: 1px solid rgba(148, 163, 184, .18);
+    border: 1px solid rgba(148, 163, 184, .26);
     border-radius: 14px;
-    background: linear-gradient(180deg, rgba(15, 23, 42, .92), rgba(15, 23, 42, .8));
-    box-shadow: 0 16px 34px rgba(2, 6, 23, .18);
+    background: linear-gradient(180deg, rgba(10, 17, 29, .99), rgba(10, 17, 29, .98));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, .04),
+        0 18px 38px rgba(2, 6, 23, .4);
     width: 100%;
-    max-width: 760px;
+    max-width: 100%;
 }
 
 .carga-viajes-viaje-tarifas__header {
@@ -3779,7 +3839,7 @@ html[data-theme="light"] .carga-viajes-page .carga-viajes-smart-search--tarifas 
     }
 
     .carga-viajes-viaje__tarifas-panel {
-        width: min(760px, calc(100vw - 3rem));
+        margin-top: .3rem;
     }
 
     .carga-viajes-config-summary {
