@@ -13,7 +13,7 @@
         </div>
     </div>
 
-    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de rubros" Subtitulo="Acotá el análisis de categorías vendidas." />
+    <VentasFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" Titulo="Filtros de rubros" Subtitulo="Acotá el análisis de categorías vendidas." MostrarComparativoUnidadNegocio="true" />
 
     @if (!string.IsNullOrWhiteSpace(_error))
     {
@@ -31,30 +31,126 @@
         </div>
 
         <div class="split-grid">
-            <section class="panel-card">
-                <HorizontalBarChart Data="_page.TopRubros" Titulo="Top rubros" Subtitulo="Rubros con mayor venta" />
-            </section>
+            @if (_filters.ComparativoUnidadNegocio)
+            {
+                <section class="panel-card rubros-compare">
+                    <div class="panel-card__header">
+                        <div>
+                            <h3 class="panel-card__title">Top rubros por unidad de negocio</h3>
+                            <p class="panel-card__subtitle">@UnidadesTexto()</p>
+                        </div>
+                    </div>
+
+                    @if (_page.Rubros.Count == 0)
+                    {
+                        <p class="chart-empty">Sin datos para graficar.</p>
+                    }
+                    else
+                    {
+                        <div class="rubros-compare__legend">
+                            @foreach (var unidad in _page.UnidadesNegocio.Select((item, index) => new { item, index }))
+                            {
+                                <span class="rubros-compare__legend-item">
+                                    <span class="rubros-compare__dot" style="background:@ColorUnidad(unidad.index)"></span>
+                                    @unidad.item.Descripcion
+                                </span>
+                            }
+                        </div>
+
+                        <div class="rubros-compare__chart">
+                            @foreach (var rubro in _page.Rubros.Take(10))
+                            {
+                                <div class="rubros-compare__row">
+                                    <div class="rubros-compare__head">
+                                        <strong>@rubro.Rubro</strong>
+                                        <span>@Moneda(rubro.TotalVendido)</span>
+                                    </div>
+                                    <div class="rubros-compare__track">
+                                        @foreach (var unidad in _page.UnidadesNegocio.Select((item, index) => new { item, index }))
+                                        {
+                                            var valorUnidad = ValorUnidad(rubro, unidad.item.Codigo);
+                                            if (valorUnidad > 0 && rubro.TotalVendido > 0)
+                                            {
+                                                var ancho = Math.Max((double)(valorUnidad / rubro.TotalVendido) * 100d, 2d);
+                                                <div class="rubros-compare__segment"
+                                                     title="@unidad.item.Descripcion: @Moneda(valorUnidad)"
+                                                     style="width:@ancho.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)%;background:@ColorUnidad(unidad.index)">
+                                                </div>
+                                            }
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </section>
+            }
+            else
+            {
+                <section class="panel-card">
+                    <HorizontalBarChart Data="_page.TopRubros" Titulo="Top rubros" Subtitulo="Rubros con mayor venta" />
+                </section>
+            }
 
             <DataTable Titulo="Listado de rubros" Subtitulo="Participación comercial por categoría">
                 <Header>
-                    <tr>
-                        <th>Rubro</th>
-                        <th style="text-align:right;">Total</th>
-                        <th style="text-align:right;">% total</th>
-                        <th style="text-align:right;">Artículos</th>
-                        <th style="text-align:right;">Comprobantes</th>
-                    </tr>
-                </Header>
-                <Rows>
-                    @foreach (var item in _page.Rubros)
+                    @if (_filters.ComparativoUnidadNegocio)
                     {
                         <tr>
-                            <td><strong>@item.Rubro</strong></td>
-                            <td style="text-align:right;">@Moneda(item.TotalVendido)</td>
-                            <td style="text-align:right;">@Porcentaje(item.Participacion)</td>
-                            <td style="text-align:right;">@item.CantidadArticulos.ToString("N0")</td>
-                            <td style="text-align:right;">@item.CantidadComprobantes.ToString("N0")</td>
+                            <th>Rubro</th>
+                            @foreach (var unidad in _page.UnidadesNegocio)
+                            {
+                                <th style="text-align:right;">@unidad.Descripcion</th>
+                            }
+                            <th style="text-align:right;">Total</th>
                         </tr>
+                    }
+                    else
+                    {
+                        <tr>
+                            <th>Rubro</th>
+                            <th style="text-align:right;">Total</th>
+                            <th style="text-align:right;">% total</th>
+                            <th style="text-align:right;">Artículos</th>
+                            <th style="text-align:right;">Comprobantes</th>
+                        </tr>
+                    }
+                </Header>
+                <Rows>
+                    @if (_filters.ComparativoUnidadNegocio)
+                    {
+                        @foreach (var item in _page.Rubros)
+                        {
+                            <tr>
+                                <td><strong>@item.Rubro</strong></td>
+                                @foreach (var unidad in _page.UnidadesNegocio)
+                                {
+                                    <td style="text-align:right;">@Moneda(ValorUnidad(item, unidad.Codigo))</td>
+                                }
+                                <td style="text-align:right;"><strong>@Moneda(item.TotalVendido)</strong></td>
+                            </tr>
+                        }
+                        <tr class="data-table__totals">
+                            <td><strong>Total</strong></td>
+                            @foreach (var unidad in _page.UnidadesNegocio)
+                            {
+                                <td style="text-align:right;"><strong>@Moneda(TotalUnidad(unidad.Codigo))</strong></td>
+                            }
+                            <td style="text-align:right;"><strong>@Moneda(_page.TotalVendido)</strong></td>
+                        </tr>
+                    }
+                    else
+                    {
+                        @foreach (var item in _page.Rubros)
+                        {
+                            <tr>
+                                <td><strong>@item.Rubro</strong></td>
+                                <td style="text-align:right;">@Moneda(item.TotalVendido)</td>
+                                <td style="text-align:right;">@Porcentaje(item.Participacion)</td>
+                                <td style="text-align:right;">@item.CantidadArticulos.ToString("N0")</td>
+                                <td style="text-align:right;">@item.CantidadComprobantes.ToString("N0")</td>
+                            </tr>
+                        }
                     }
                 </Rows>
             </DataTable>
@@ -84,4 +180,32 @@
 
     private static string Moneda(decimal valor) => valor.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
     private static string Porcentaje(decimal valor) => valor.ToString("P1", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private string UnidadesTexto()
+        => _filters.UnidadesNegocio.Count == 0
+            ? "Todas las unidades de negocio"
+            : $"Comparativo: {string.Join(", ", _page?.UnidadesNegocio.Select(x => x.Descripcion) ?? Array.Empty<string>())}";
+
+    private static decimal ValorUnidad(VentasRubroResumenDto rubro, string codigo)
+        => rubro.UnidadesNegocio.FirstOrDefault(x => x.Codigo == codigo)?.TotalVendido ?? 0;
+
+    private decimal TotalUnidad(string codigo)
+        => _page?.Rubros.Sum(r => ValorUnidad(r, codigo)) ?? 0;
+
+    private static string ColorUnidad(int index)
+    {
+        var colors = new[]
+        {
+            "#16b8d9",
+            "#22c55e",
+            "#f59e0b",
+            "#a78bfa",
+            "#f43f5e",
+            "#14b8a6",
+            "#eab308",
+            "#38bdf8"
+        };
+
+        return colors[index % colors.Length];
+    }
 }

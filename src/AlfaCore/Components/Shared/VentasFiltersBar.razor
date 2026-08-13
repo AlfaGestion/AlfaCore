@@ -80,6 +80,15 @@
                     }
                 </div>
             </div>
+            @if (MostrarComparativoUnidadNegocio)
+            {
+                <div class="field field--wide">
+                    <label class="uneg-compare-toggle">
+                        <input type="checkbox" @bind="Model.ComparativoUnidadNegocio" />
+                        <span>Comparativo por unidad de negocio</span>
+                    </label>
+                </div>
+            }
             <div class="field">
                 <label>Depósito</label>
                 <InputSelect @bind-Value="Model.Deposito">
@@ -114,6 +123,7 @@
     [Parameter] public VentasFilterOptionsDto Options { get; set; } = new();
     [Parameter] public string Titulo { get; set; } = "Filtros de ventas";
     [Parameter] public string Subtitulo { get; set; } = "Usá estos filtros para acotar el análisis comercial.";
+    [Parameter] public bool MostrarComparativoUnidadNegocio { get; set; }
     [Parameter] public EventCallback OnApply { get; set; }
 
     private bool _showAdvanced;
@@ -160,6 +170,7 @@
         Model.Cliente = null;
         Model.Usuario = null;
         Model.UnidadesNegocio = [];
+        Model.ComparativoUnidadNegocio = false;
         Model.Deposito = null;
         Model.TipoComprobante = null;
         _activeQuickRange = null;
@@ -226,6 +237,13 @@
                 .Select(u => u.Descripcion);
             parts.Add($"Unidad de negocio: {string.Join(", ", nombres)}");
         }
+        else
+        {
+            parts.Add("Unidad de negocio: todas las unidades de negocio");
+        }
+
+        if (MostrarComparativoUnidadNegocio && Model.ComparativoUnidadNegocio)
+            parts.Add("Vista: comparativo por unidad de negocio");
 
         AddIfPresent(parts, "Depósito", Model.Deposito);
         AddIfPresent(parts, "TC", Model.TipoComprobante);

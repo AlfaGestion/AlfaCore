@@ -20,6 +20,7 @@ public sealed class VentasDashboardFilters : GestionDateFilterBase
     public List<string> UnidadesNegocio { get; set; } = [];
     public string? Deposito { get; set; }
     public string? TipoComprobante { get; set; }
+    public bool ComparativoUnidadNegocio { get; set; }
 
     /// <summary>Agrupación para el tablero de ventas: "junto" (consolidado) o "separado" (una fila por unidad de negocio).</summary>
     public string Agrupacion { get; set; } = VentasAgrupacionKeys.Junto;

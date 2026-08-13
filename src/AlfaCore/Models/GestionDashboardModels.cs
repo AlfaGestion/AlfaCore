@@ -133,6 +133,15 @@ public sealed class VentasRubroResumenDto
     public decimal Participacion { get; init; }
     public int CantidadArticulos { get; init; }
     public int CantidadComprobantes { get; init; }
+    public IReadOnlyList<VentasRubroUnidadNegocioDto> UnidadesNegocio { get; init; } = [];
+}
+
+public sealed class VentasRubroUnidadNegocioDto
+{
+    public string Codigo { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
+    public decimal TotalVendido { get; init; }
+    public decimal Participacion { get; init; }
 }
 
 public sealed class VentasRubrosPageDto
@@ -141,6 +150,7 @@ public sealed class VentasRubrosPageDto
     public int RubrosActivos { get; init; }
     public IReadOnlyList<CategoryTotalDto> TopRubros { get; init; } = [];
     public IReadOnlyList<VentasRubroResumenDto> Rubros { get; init; } = [];
+    public IReadOnlyList<UnidadNegocioOptionDto> UnidadesNegocio { get; init; } = [];
 }
 
 public sealed class VentasFamiliaResumenDto

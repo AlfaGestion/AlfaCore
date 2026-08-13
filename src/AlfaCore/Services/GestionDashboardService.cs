@@ -522,6 +522,7 @@ public sealed class GestionDashboardService(
                       AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                       AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
                       AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
+                      AND (@Deposito IS NULL OR CONVERT(varchar(50), l.IdDeposito) = @Deposito)
                       AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 )
                 """;
@@ -561,15 +562,78 @@ public sealed class GestionDashboardService(
                 ORDER BY SUM(d.ValorVenta) DESC
                 """, cn, cmd => BindVentasFilters(cmd, filters), token);
 
+            var porUnidad = await QueryVentasRubrosPorUnidadAsync($"""
+                SELECT
+                    ISNULL(NULLIF(LTRIM(RTRIM(d.DescRubro)), ''), CONVERT(varchar(50), d.IDRUBRO)) AS Rubro,
+                    vf.CodigoUnidadNegocio,
+                    vf.UnidadNegocio,
+                    SUM(d.ValorVenta) AS TotalVendido
+                FROM dbo.VT_DETALLEIVAPROFORMA d
+                INNER JOIN (
+                    SELECT DISTINCT
+                        l.TC,
+                        l.IdComprobante,
+                        LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) AS CodigoUnidadNegocio,
+                        ISNULL(NULLIF(LTRIM(RTRIM(u.Descripcion)), ''), LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO)))) AS UnidadNegocio
+                    FROM dbo.Libro_VentasConFP l
+                    LEFT JOIN dbo.V_TA_UnidadNegocio u ON LTRIM(RTRIM(u.Codigo)) = LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO)))
+                    WHERE (@FechaDesde IS NULL OR l.FECHA >= @FechaDesde)
+                      AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
+                      AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
+                      AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
+                      AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
+                      AND (@Deposito IS NULL OR CONVERT(varchar(50), l.IdDeposito) = @Deposito)
+                      AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
+                      AND l.UNEGOCIO IS NOT NULL
+                ) vf ON vf.TC = d.TC AND vf.IdComprobante = d.IDCOMPROBANTE
+                GROUP BY d.IDRUBRO, d.DescRubro, vf.CodigoUnidadNegocio, vf.UnidadNegocio
+                ORDER BY ISNULL(NULLIF(LTRIM(RTRIM(d.DescRubro)), ''), CONVERT(varchar(50), d.IDRUBRO)), SUM(d.ValorVenta) DESC
+                """, cn, cmd => BindVentasFilters(cmd, filters), token);
+
             var total = rubros.Sum(x => x.TotalVendido);
-            var normalized = rubros.Select(x => WithParticipacion(x, total)).ToList();
+            var unidades = porUnidad
+                .GroupBy(x => x.Codigo)
+                .Select(g => new UnidadNegocioOptionDto
+                {
+                    Codigo = g.Key,
+                    Descripcion = g.First().Descripcion
+                })
+                .OrderBy(x => x.Descripcion)
+                .ToList();
+
+            var ordenUnidades = unidades.Select((unidad, index) => new { unidad.Codigo, index })
+                .ToDictionary(x => x.Codigo, x => x.index);
+
+            var unidadesPorRubro = porUnidad
+                .GroupBy(x => x.Rubro)
+                .ToDictionary(
+                    g => g.Key,
+                    g =>
+                    {
+                        var totalRubro = g.Sum(u => u.TotalVendido);
+                        return (IReadOnlyList<VentasRubroUnidadNegocioDto>)g
+                            .Select(x => new VentasRubroUnidadNegocioDto
+                            {
+                                Codigo = x.Codigo,
+                                Descripcion = x.Descripcion,
+                                TotalVendido = x.TotalVendido,
+                                Participacion = totalRubro == 0 ? 0 : x.TotalVendido / totalRubro
+                            })
+                            .OrderBy(x => ordenUnidades.TryGetValue(x.Codigo, out var index) ? index : int.MaxValue)
+                            .ToList();
+                    });
+
+            var normalized = rubros
+                .Select(x => WithParticipacion(x, total, unidadesPorRubro.TryGetValue(x.Rubro, out var detalle) ? detalle : []))
+                .ToList();
 
             return new VentasRubrosPageDto
             {
                 TotalVendido = kpis.TotalVendido,
                 RubrosActivos = kpis.RubrosActivos,
                 TopRubros = top,
-                Rubros = normalized
+                Rubros = normalized,
+                UnidadesNegocio = unidades
             };
         }, "No se pudo cargar la página de rubros de ventas.", ct);
     }
@@ -1826,6 +1890,24 @@ public sealed class GestionDashboardService(
         return items;
     }
 
+    private async Task<IReadOnlyList<VentasRubroUnidadNegocioRow>> QueryVentasRubrosPorUnidadAsync(string sql, SqlConnection cn, Action<SqlCommand>? bind, CancellationToken ct)
+    {
+        var items = new List<VentasRubroUnidadNegocioRow>();
+        await using var cmd = new SqlCommand(sql, cn);
+        bind?.Invoke(cmd);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+        {
+            items.Add(new VentasRubroUnidadNegocioRow(
+                GetStringValue(rd, 0),
+                GetStringValue(rd, 1),
+                GetStringValue(rd, 2),
+                GetDecimal(rd, 3)));
+        }
+
+        return items;
+    }
+
     private async Task<IReadOnlyList<VentasFamiliaResumenDto>> QueryVentasFamiliasAsync(string sql, SqlConnection cn, Action<SqlCommand>? bind, CancellationToken ct)
     {
         var items = new List<VentasFamiliaResumenDto>();
@@ -2093,14 +2175,15 @@ public sealed class GestionDashboardService(
             UltimaVenta = item.UltimaVenta
         };
 
-    private static VentasRubroResumenDto WithParticipacion(VentasRubroResumenDto item, decimal total)
+    private static VentasRubroResumenDto WithParticipacion(VentasRubroResumenDto item, decimal total, IReadOnlyList<VentasRubroUnidadNegocioDto>? unidadesNegocio = null)
         => new()
         {
             Rubro = item.Rubro,
             TotalVendido = item.TotalVendido,
             Participacion = total == 0 ? 0 : item.TotalVendido / total,
             CantidadArticulos = item.CantidadArticulos,
-            CantidadComprobantes = item.CantidadComprobantes
+            CantidadComprobantes = item.CantidadComprobantes,
+            UnidadesNegocio = unidadesNegocio ?? []
         };
 
     private static VentasFamiliaResumenDto WithParticipacion(VentasFamiliaResumenDto item, decimal total)
@@ -2113,4 +2196,6 @@ public sealed class GestionDashboardService(
             CantidadArticulos = item.CantidadArticulos,
             CantidadComprobantes = item.CantidadComprobantes
         };
+
+    private sealed record VentasRubroUnidadNegocioRow(string Rubro, string Codigo, string Descripcion, decimal TotalVendido);
 }
