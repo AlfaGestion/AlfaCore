@@ -1,0 +1,111 @@
+@page "/catalogo/{IdInsert:int}"
+@page "/{idweb}/{idbase:int}/catalogo/{IdInsert:int}"
+@inherits SaaSRoutePageBase
+@using AlfaCore.Models
+@inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+
+<PageTitle>Catálogo público | AlfaCore</PageTitle>
+
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Catálogo público</h2>
+            <p class="page-intro__text">Vista pública mínima preparada para mostrar los catálogos publicados con vigencia activa.</p>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="loading">Cargando catálogo...</div>
+    }
+    else if (_catalogo is null)
+    {
+        <div class="panel-card empty-state">
+            <p>El catálogo no está disponible, fue finalizado o todavía no cumple la vigencia requerida.</p>
+        </div>
+    }
+    else
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">@_catalogo.Nombre</h3>
+                    <p class="panel-card__subtitle">@_catalogo.Tipo · @VigenciaTexto()</p>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(_catalogo.Observaciones))
+            {
+                <p>@_catalogo.Observaciones</p>
+            }
+        </section>
+
+        <section class="panel-card">
+            <div class="table-responsive">
+                <table class="data-table usuarios-table">
+                    <thead>
+                        <tr>
+                            <th>Artículo</th>
+                            <th>Descripción</th>
+                            <th>Marca</th>
+                            <th>Rubro</th>
+                            <th style="text-align:right;">Precio</th>
+                            <th style="text-align:right;">Oferta</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _catalogo.Articulos)
+                        {
+                            <tr>
+                                <td><strong>@item.IdArticulo</strong></td>
+                                <td>
+                                    <strong>@item.DescripcionArticulo</strong>
+                                    @if (!string.IsNullOrWhiteSpace(item.Presentacion))
+                                    {
+                                        <div class="text-muted">@item.Presentacion</div>
+                                    }
+                                </td>
+                                <td>@Display(item.Marca)</td>
+                                <td>@Display(item.Rubro)</td>
+                                <td style="text-align:right;">@Money(item.Precio)</td>
+                                <td style="text-align:right;">@Money(item.PrecioOferta)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+</section>
+
+@code {
+    [Parameter] public int IdInsert { get; set; }
+
+    private CatalogosCatalogoDetalleDto? _catalogo;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await UiOps.RunAsync(() => CatalogosSvc.GetCatalogoPublicoAsync(IdInsert), "No se pudo cargar el catálogo público.");
+        if (result.Success)
+            _catalogo = result.Value;
+
+        _loading = false;
+    }
+
+    private string VigenciaTexto()
+    {
+        if (_catalogo is null)
+            return string.Empty;
+
+        var desde = _catalogo.VigenciaDesde?.ToString("dd/MM/yyyy") ?? "sin fecha";
+        var hasta = _catalogo.VigenciaHasta?.ToString("dd/MM/yyyy") ?? "sin fecha";
+        return $"{desde} - {hasta}";
+    }
+
+    private static string Display(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
+
+    private static string Money(decimal? value)
+        => value.HasValue ? value.Value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR")) : "—";
+}

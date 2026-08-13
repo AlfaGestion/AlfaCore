@@ -141,6 +141,7 @@ public class Program
         builder.Services.AddScoped<ITareasService, TareasService>();
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
+        builder.Services.AddScoped<IInterfacesCatalogosService, InterfacesCatalogosService>();
         builder.Services.AddSingleton<InterfacesCompraIaWorkerState>();
         builder.Services.AddSingleton<DatabaseUpdatesRuntimeState>();
         builder.Services.AddScoped<IActualizacionesService, ActualizacionesService>();
