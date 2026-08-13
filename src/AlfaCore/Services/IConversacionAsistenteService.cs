@@ -30,4 +30,11 @@ public sealed class ConversacionAsistenteRespuesta
     public bool PuedeResponder { get; set; }
 
     public string Respuesta { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Qué representa la respuesta, para que el cliente nunca quede sin contestación:
+    /// RESUELVE (la resolvió), ACLARA (repregunta para poder resolver) o DERIVA (contención +
+    /// pasa a un humano).
+    /// </summary>
+    public string Tipo { get; set; } = "RESUELVE";
 }

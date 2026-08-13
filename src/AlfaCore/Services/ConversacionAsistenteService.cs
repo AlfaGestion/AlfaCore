@@ -120,29 +120,37 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         switch (NormalizePolitica(politica))
         {
             case "SOLO_INFO":
-                sb.AppendLine("- Si la consulta NO se puede responder con la información del negocio, poné \"puede_responder\": false y dejá \"respuesta\" vacía: se derivará a una persona. No respondas con conocimiento general.");
+                sb.AppendLine("- Solo resolvés con la información del negocio/base. Si la consulta NO se puede responder con eso, NO respondas con conocimiento general: pasá a la regla de \"cuando no podés resolver\".");
                 break;
             case "GENERAL":
-                sb.AppendLine("- Si la información del negocio no alcanza, respondé igual con tu conocimiento general razonable. Poné \"puede_responder\": true salvo que la consulta sea incomprensible.");
+                sb.AppendLine("- Si la información del negocio no alcanza, resolvé igual con tu conocimiento general razonable (tipo RESUELVE).");
                 break;
             default: // GENERAL_AVISA
-                sb.AppendLine("- Si la información del negocio no alcanza, respondé con tu conocimiento general PERO aclarando en la respuesta que un asesor lo va a confirmar. Poné \"puede_responder\": true salvo que la consulta sea incomprensible.");
+                sb.AppendLine("- Si la información del negocio no alcanza, resolvé con tu conocimiento general PERO aclarando en la respuesta que un asesor lo va a confirmar (tipo RESUELVE).");
                 break;
         }
+
+        // Nunca dejar al cliente sin respuesta: si no se puede resolver, o se repregunta (ACLARA) o
+        // se manda una contención y se deriva a un humano (DERIVA). Aplica a todas las políticas.
+        sb.AppendLine();
+        sb.AppendLine("CUANDO NO PODÉS RESOLVER (nunca dejes al cliente sin respuesta):");
+        sb.AppendLine("- Si resolviste la consulta: tipo=\"RESUELVE\", \"puede_responder\": true, y la respuesta.");
+        sb.AppendLine("- Si NO podés resolver pero UNA pregunta concreta te permitiría hacerlo, y NO se la hiciste ya antes en esta conversación: tipo=\"ACLARA\", \"puede_responder\": false, y en \"respuesta\" esa única pregunta (breve y puntual).");
+        sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve del estilo \"Dejame que lo veo con un compañero y te respondo en un ratito 🙂\". No inventes la solución.");
+        sb.AppendLine("- Nunca dejes \"respuesta\" vacía.");
 
         if (fueraDeHorario)
         {
             sb.AppendLine();
             sb.AppendLine("CONTEXTO HORARIO: estás atendiendo FUERA del horario de atención.");
             sb.AppendLine("- Presentate con naturalidad como asistente virtual y avisá que el equipo humano está fuera de horario.");
-            sb.AppendLine("- Intentá resolver con la información. Si no podés, decile que dejás su mensaje registrado y que un operador lo revisa apenas sea posible.");
-            sb.AppendLine("- Siempre poné \"puede_responder\": true: aunque no resuelvas, respondé con la contención (nunca dejes al cliente sin respuesta fuera de horario).");
+            sb.AppendLine("- Intentá resolver con la información. Si no podés, decile que dejás su mensaje registrado y que un operador lo revisa apenas sea posible (tipo DERIVA).");
             if (esUrgente)
                 sb.AppendLine("- El cliente reporta un problema URGENTE (no puede facturar, o el sistema no anda/ no arranca). Avisale que lo marcaste como URGENTE para que puedan atenderlo a la brevedad, aunque sea fuera de horario.");
         }
 
         sb.AppendLine();
-        sb.AppendLine("Devolvé SOLO un JSON válido con esta forma exacta: {\"puede_responder\": true/false, \"respuesta\": \"...\"}.");
+        sb.AppendLine("Devolvé SOLO un JSON válido con esta forma exacta: {\"tipo\": \"RESUELVE|ACLARA|DERIVA\", \"puede_responder\": true/false, \"respuesta\": \"...\"}.");
         return sb.ToString().Trim();
     }
 
@@ -150,6 +158,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     {
         var p = (politica ?? string.Empty).Trim().ToUpperInvariant();
         return p is "SOLO_INFO" or "GENERAL" ? p : "GENERAL_AVISA";
+    }
+
+    private static string NormalizeTipo(string? tipo, bool puedeResponder)
+    {
+        var t = (tipo ?? string.Empty).Trim().ToUpperInvariant();
+        if (t is "RESUELVE" or "ACLARA" or "DERIVA")
+            return t;
+        return puedeResponder ? "RESUELVE" : "DERIVA";
     }
 
     private static ConversacionAsistenteRespuesta? ParseRespuesta(string? json)
@@ -170,11 +186,12 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                 && (p.ValueKind == JsonValueKind.True
                     || (p.ValueKind == JsonValueKind.String && bool.TryParse(p.GetString(), out var b) && b));
             var respuesta = (root.TryGetProperty("respuesta", out var r) ? r.GetString() ?? string.Empty : string.Empty).Trim();
+            var tipo = NormalizeTipo(root.TryGetProperty("tipo", out var t) ? t.GetString() : null, puede);
 
             if (puede && respuesta.Length == 0)
                 return null;
 
-            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta };
+            return new ConversacionAsistenteRespuesta { PuedeResponder = puede, Respuesta = respuesta, Tipo = tipo };
         }
         catch (JsonException)
         {

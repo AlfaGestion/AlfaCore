@@ -6563,34 +6563,60 @@ public sealed class ConversacionesService(
                 config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
                 texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, ct).ConfigureAwait(false);
 
-            // En horario, respeta la política (si no puede resolver, escala en silencio). Fuera de horario,
-            // siempre contesta la contención (nunca deja al cliente sin respuesta), aunque no resuelva.
-            var hayRespuesta = result is not null && !string.IsNullOrWhiteSpace(result.Respuesta);
-            var debeEnviar = hayRespuesta && (result!.PuedeResponder || fueraDeHorario);
-            if (!debeEnviar)
-            {
-                await _appEvents.LogAuditAsync(
-                    "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
-                    idConversacion.ToString(CultureInfo.InvariantCulture),
-                    "El asistente escaló a un humano (sin respaldo suficiente para la política configurada).",
-                    new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
-                return;
-            }
+            // Nunca dejamos al cliente sin respuesta. El asistente decide el tipo:
+            //   RESUELVE -> resolvió; ACLARA -> repregunta para poder resolver (esperamos su respuesta);
+            //   DERIVA -> manda una contención y hay que pasar a un humano.
+            // Si por algún error no vino texto, mandamos igual una contención fija y derivamos.
+            var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
+            var respuesta = result is not null && !string.IsNullOrWhiteSpace(result.Respuesta)
+                ? result.Respuesta.Trim()
+                : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
+            if (result is null || string.IsNullOrWhiteSpace(result.Respuesta))
+                tipo = "DERIVA";
 
             await SendMessageAsync(new ConversacionSendMessageRequest
             {
                 IdConversacion = idConversacion,
-                Texto = result!.Respuesta.Trim(),
+                Texto = respuesta,
                 MessageType = "TEXT",
                 UsuarioAccion = "AlfaCore",
                 SistemaAccion = "BOT"
             }, ct).ConfigureAwait(false);
 
-            await _appEvents.LogAuditAsync(
-                "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
-                idConversacion.ToString(CultureInfo.InvariantCulture),
-                "El asistente respondió automáticamente.",
-                new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, ct).ConfigureAwait(false);
+            if (tipo == "ACLARA")
+            {
+                await _appEvents.LogAuditAsync(
+                    "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
+                    idConversacion.ToString(CultureInfo.InvariantCulture),
+                    "El asistente le pidió una aclaración al cliente para poder resolver.",
+                    new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
+            }
+            else if (tipo == "DERIVA")
+            {
+                // Contención enviada: dejamos el caso listo para que un humano lo tome (nota + prioridad),
+                // salvo fuera de horario, donde de por sí queda para el próximo día hábil.
+                if (!fueraDeHorario)
+                {
+                    await AddInternalEventCoreAsync(idConversacion,
+                        "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
+                        null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+                    if (!esUrgente && !esPrioritario)
+                        await SubirPrioridadAsync(idConversacion, "MEDIA", ct).ConfigureAwait(false);
+                }
+                await _appEvents.LogAuditAsync(
+                    "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
+                    idConversacion.ToString(CultureInfo.InvariantCulture),
+                    "El asistente mandó una contención y derivó a un humano (no pudo resolver).",
+                    new { idConversacion, config.AsistentePolitica, fueraDeHorario }, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await _appEvents.LogAuditAsync(
+                    "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
+                    idConversacion.ToString(CultureInfo.InvariantCulture),
+                    "El asistente respondió automáticamente.",
+                    new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, ct).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
