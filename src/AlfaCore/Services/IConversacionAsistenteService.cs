@@ -19,6 +19,7 @@ public interface IConversacionAsistenteService
         IReadOnlyList<ConversacionMensajeDto> historial,
         bool fueraDeHorario = false,
         bool esUrgente = false,
+        string? conocimientoBase = null,
         CancellationToken ct = default);
 }
 

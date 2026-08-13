@@ -17,6 +17,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         IReadOnlyList<ConversacionMensajeDto> historial,
         bool fueraDeHorario = false,
         bool esUrgente = false,
+        string? conocimientoBase = null,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -27,7 +28,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         if (string.IsNullOrWhiteSpace(model))
             model = "gpt-4o-mini";
 
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente);
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         foreach (var m in historial
@@ -78,7 +79,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     }
 
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
-        bool fueraDeHorario, bool esUrgente)
+        bool fueraDeHorario, bool esUrgente, string? conocimientoBase)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -92,6 +93,14 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             sb.AppendLine();
             sb.AppendLine("INFORMACIÓN DEL NEGOCIO (tu fuente de verdad; priorizala sobre cualquier suposición):");
             sb.AppendLine(info);
+        }
+
+        var conocimiento = (conocimientoBase ?? string.Empty).Trim();
+        if (conocimiento.Length > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("BASE DE CONOCIMIENTO (fragmentos de documentos/instructivos recuperados para esta consulta; usalos como fuente de verdad y no los contradigas):");
+            sb.AppendLine(conocimiento);
         }
 
         sb.AppendLine();

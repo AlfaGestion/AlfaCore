@@ -182,7 +182,9 @@ public sealed class AlfaKnowledgeSuggestionService(
                         SourceType = citation.SourceType ?? string.Empty,
                         Title = citation.Title ?? string.Empty,
                         SourceLabel = citation.SourceLabel ?? string.Empty,
-                        SourceReference = citation.SourceReference
+                        SourceReference = citation.SourceReference,
+                        PlainText = citation.PlainText ?? string.Empty,
+                        Score = citation.Score
                     })
                     .ToList()
             };
@@ -564,5 +566,7 @@ public sealed class AlfaKnowledgeSuggestionService(
         public string? Title { get; set; }
         public string? SourceLabel { get; set; }
         public string? SourceReference { get; set; }
+        public string? PlainText { get; set; }
+        public double Score { get; set; }
     }
 }

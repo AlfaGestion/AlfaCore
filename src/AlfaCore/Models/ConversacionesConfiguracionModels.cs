@@ -245,6 +245,9 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>Palabras que marcan urgencia (se atienden en cualquier horario): sube prioridad y avisa al operador.</summary>
     public string AsistenteUrgenciaPalabras { get; set; } = string.Empty;
 
+    /// <summary>Usar AlfaKnowledge (documentos/archivos) como fuente adicional para responder.</summary>
+    public bool AsistenteUsaKnowledge { get; set; } = true;
+
     public string ConfigSource { get; set; } = string.Empty;
 
     public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);

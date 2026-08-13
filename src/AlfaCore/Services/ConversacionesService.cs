@@ -21,6 +21,7 @@ public sealed class ConversacionesService(
     INotificacionesPushService notificacionesPushService,
     ICentralAdminService centralAdminService,
     IConversacionAsistenteService asistenteService,
+    IAlfaKnowledgeSuggestionService alfaKnowledgeService,
     IWebHostEnvironment environment) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
@@ -6537,9 +6538,16 @@ public sealed class ConversacionesService(
             }
 
             var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
+
+            // Fase 2: sumar AlfaKnowledge como fuente. Recuperamos fragmentos de los documentos y se
+            // los damos al asistente para que responda combinando: comportamiento + info pegada + base.
+            var conocimientoBase = string.Empty;
+            if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
+                conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, ct).ConfigureAwait(false);
+
             var result = await asistenteService.ResponderAsync(
                 config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-                texto, mensajes, fueraDeHorario, esUrgente, ct).ConfigureAwait(false);
+                texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, ct).ConfigureAwait(false);
 
             // En horario, respeta la política (si no puede resolver, escala en silencio). Fuera de horario,
             // siempre contesta la contención (nunca deja al cliente sin respuesta), aunque no resuelva.
@@ -6846,6 +6854,45 @@ public sealed class ConversacionesService(
     {
         var t = (texto ?? string.Empty).Trim();
         return t.Length <= max ? t : t[..max] + "…";
+    }
+
+    // Recupera de AlfaKnowledge los fragmentos relevantes (plainText de las citas) y arma un bloque
+    // de texto para inyectar como conocimiento en el prompt del asistente. Si falla, devuelve vacío.
+    private async Task<string> ObtenerConocimientoBaseAsync(
+        string texto, IReadOnlyList<ConversacionMensajeDto> mensajes, long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            var ak = await alfaKnowledgeService.SuggestReplyAsync(
+                texto, mensajes, idConversacion, AlfaKnowledgeSuggestionModes.ReplySuggestion,
+                null, null, null, null, ct).ConfigureAwait(false);
+
+            if (ak is null || ak.Citations.Count == 0)
+                return string.Empty;
+
+            var sb = new StringBuilder();
+            foreach (var cita in ak.Citations
+                         .Where(c => !string.IsNullOrWhiteSpace(c.PlainText))
+                         .OrderByDescending(c => c.Score)
+                         .Take(5))
+            {
+                var titulo = string.IsNullOrWhiteSpace(cita.Title) ? cita.SourceLabel : cita.Title;
+                if (!string.IsNullOrWhiteSpace(titulo))
+                    sb.Append("• [").Append(titulo.Trim()).AppendLine("]");
+                sb.AppendLine(Truncar(cita.PlainText, 800));
+                sb.AppendLine();
+            }
+
+            return sb.ToString().Trim();
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones", "AsistenteKnowledge", ex,
+                "No se pudo recuperar conocimiento de AlfaKnowledge para el asistente.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return string.Empty;
+        }
     }
 
     private async Task<(int Count, string LastSistema)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)

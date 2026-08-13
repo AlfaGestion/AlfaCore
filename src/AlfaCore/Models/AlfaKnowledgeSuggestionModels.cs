@@ -15,6 +15,12 @@ public sealed class AlfaKnowledgeSuggestionCitation
     public string Title { get; set; } = string.Empty;
     public string SourceLabel { get; set; } = string.Empty;
     public string? SourceReference { get; set; }
+
+    /// <summary>Texto plano del fragmento recuperado (para inyectar como conocimiento en el asistente).</summary>
+    public string PlainText { get; set; } = string.Empty;
+
+    /// <summary>Puntaje de relevancia de la búsqueda vectorial.</summary>
+    public double Score { get; set; }
 }
 
 public sealed class AlfaKnowledgeAssistantMessage
