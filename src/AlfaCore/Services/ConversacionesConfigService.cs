@@ -600,8 +600,13 @@ public sealed class ConversacionesConfigService(
                 .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             var diasSet = new HashSet<string>(dias, StringComparer.OrdinalIgnoreCase);
 
+            var asistente = await ReadAsistenteAsync(cn, token);
+
             return new ConversacionAutomatizacionesConfigDto
             {
+                AsistenteComportamiento = asistente.Comportamiento,
+                AsistenteInformacion = asistente.Informacion,
+                AsistentePolitica = asistente.Politica,
                 Activo = ReadValue(values, "CONV_AUTOMATIZACIONES_ACTIVO", string.Empty) == "1",
                 MensajeFueraHorario = ReadValue(values, "CONV_AUTOMATIZACIONES_MENSAJE", string.Empty,
                     "Gracias por escribirnos. Estamos fuera de nuestro horario de atención, te vamos a responder a la brevedad."),
@@ -705,6 +710,8 @@ public sealed class ConversacionesConfigService(
                 cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
                 await cmd.ExecuteNonQueryAsync(token);
             }
+
+            await SaveAsistenteAsync(cn, (SqlTransaction)tx, config, token);
 
             await tx.CommitAsync(token);
 
@@ -881,6 +888,56 @@ public sealed class ConversacionesConfigService(
     {
         var h = (horario ?? string.Empty).Trim().ToUpperInvariant();
         return h is "DENTRO" or "FUERA" ? h : "SIEMPRE";
+    }
+
+    private static string NormalizeAsistentePolitica(string? politica)
+    {
+        var p = (politica ?? string.Empty).Trim().ToUpperInvariant();
+        return p is "SOLO_INFO" or "GENERAL" ? p : "GENERAL_AVISA";
+    }
+
+    private static async Task<(string Comportamiento, string Informacion, string Politica)> ReadAsistenteAsync(
+        SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_ASISTENTE', N'U') IS NULL
+                SELECT TOP (0) N'' AS Comportamiento, N'' AS Informacion, N'GENERAL_AVISA' AS Politica
+            ELSE
+                SELECT ISNULL(Comportamiento, N''), ISNULL(Informacion, N''), ISNULL(Politica, N'GENERAL_AVISA')
+                FROM dbo.CONV_ASISTENTE WHERE Id = 1;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (await rd.ReadAsync(ct))
+            return (GetString(rd, 0), GetString(rd, 1), NormalizeAsistentePolitica(GetString(rd, 2)));
+
+        return (string.Empty, string.Empty, "GENERAL_AVISA");
+    }
+
+    private async Task SaveAsistenteAsync(SqlConnection cn, SqlTransaction tx,
+        ConversacionAutomatizacionesConfigDto config, CancellationToken ct)
+    {
+        // Si la tabla no existe (migración no aplicada), no interrumpimos el guardado del resto.
+        const string sql = """
+            IF OBJECT_ID(N'dbo.CONV_ASISTENTE', N'U') IS NOT NULL
+            BEGIN
+                UPDATE dbo.CONV_ASISTENTE SET
+                    Comportamiento = @Comportamiento, Informacion = @Informacion, Politica = @Politica,
+                    FechaModificacion = GETDATE(), UsuarioModificacion = @Usuario
+                WHERE Id = 1;
+                IF @@ROWCOUNT = 0
+                    INSERT INTO dbo.CONV_ASISTENTE (Id, Comportamiento, Informacion, Politica, FechaModificacion, UsuarioModificacion)
+                    VALUES (1, @Comportamiento, @Informacion, @Politica, GETDATE(), @Usuario);
+            END;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn, tx);
+        cmd.Parameters.AddWithValue("@Comportamiento", (config.AsistenteComportamiento ?? string.Empty).Trim());
+        cmd.Parameters.AddWithValue("@Informacion", (config.AsistenteInformacion ?? string.Empty).Trim());
+        cmd.Parameters.AddWithValue("@Politica", NormalizeAsistentePolitica(config.AsistentePolitica));
+        cmd.Parameters.AddWithValue("@Usuario", appUserSession.GetCurrentUserName("SYSTEM"));
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     public Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default)

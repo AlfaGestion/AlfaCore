@@ -229,6 +229,16 @@ public sealed class ConversacionAutomatizacionesConfigDto
     public int SlaHorasRecordatorio { get; set; } = 2;
     public int SlaHorasReasignar { get; set; } = 4;
 
+    // Asistente IA (cerebro del bot). Se persiste en dbo.CONV_ASISTENTE (texto largo).
+    /// <summary>Comportamiento / persona / instrucciones del asistente (system prompt).</summary>
+    public string AsistenteComportamiento { get; set; } = string.Empty;
+
+    /// <summary>Información del negocio pegada: fuente de verdad que se inyecta en cada respuesta.</summary>
+    public string AsistenteInformacion { get; set; } = string.Empty;
+
+    /// <summary>SOLO_INFO | GENERAL | GENERAL_AVISA (qué hace cuando la info no alcanza).</summary>
+    public string AsistentePolitica { get; set; } = "GENERAL_AVISA";
+
     public string ConfigSource { get; set; } = string.Empty;
 
     public bool IsConfigured => Activo && !string.IsNullOrWhiteSpace(MensajeFueraHorario);

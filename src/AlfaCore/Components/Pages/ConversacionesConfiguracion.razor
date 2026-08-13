@@ -703,19 +703,37 @@
 
                 <div class="conv-config-fields conv-bot-config">
                     <div class="conv-config-fields__full">
-                        <h4 class="conv-bot-config__title"><i class="bi bi-robot"></i> Bot autónomo (IA) — Nivel 3</h4>
-                        <p class="panel-card__subtitle">Responde solo, con guardarraíles. Apagado por defecto. Requiere AlfaKnowledge configurado y las instrucciones del asistente cargadas. Solo responde cuando tiene respaldo de la base; si no, deja la conversación para un humano.</p>
+                        <h4 class="conv-bot-config__title"><i class="bi bi-robot"></i> Asistente IA (responde solo)</h4>
+                        <p class="panel-card__subtitle">Un asistente estilo «proyecto de GPT»: definís su comportamiento y le pegás la información del negocio, y responde solo las consultas entrantes (todos los canales). Apagado por defecto. Requiere la API key de OpenAI configurada en el servidor. Los archivos (base de conocimiento) llegan en una fase siguiente.</p>
                     </div>
                     <div class="field conv-config-fields__full">
                         <label class="conv-config-checkbox">
                             <input type="checkbox" @bind="_automatizacionesConfig.BotActivo" />
-                            <span>Activar bot autónomo</span>
+                            <span>Activar el asistente (responde automáticamente)</span>
                         </label>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label for="asis-comportamiento">Comportamiento (quién es, tono, qué puede y qué no)</label>
+                        <textarea id="asis-comportamiento" rows="3" @bind="_automatizacionesConfig.AsistenteComportamiento"
+                                  placeholder="Sos el asesor de ventas de [Empresa]. Cordial y breve. No des precios que no figuren en la información. Si piden hablar con una persona, derivá."></textarea>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label for="asis-informacion">Información del negocio (la fuente de verdad para responder)</label>
+                        <textarea id="asis-informacion" rows="8" @bind="_automatizacionesConfig.AsistenteInformacion"
+                                  placeholder="Horarios: Lun a Vie de 9 a 18h.&#10;Envíos: a todo el país, 2 a 5 días hábiles.&#10;Formas de pago: efectivo, transferencia, tarjetas.&#10;Preguntas frecuentes...&#10;Todo lo que quieras que sepa el asistente."></textarea>
+                    </div>
+                    <div class="field conv-config-fields__full">
+                        <label for="asis-politica">¿Qué hace cuando la información no alcanza?</label>
+                        <select id="asis-politica" @bind="_automatizacionesConfig.AsistentePolitica">
+                            <option value="SOLO_INFO">Responder solo con la información dada; si no sabe, pasar a un humano</option>
+                            <option value="GENERAL_AVISA">Responder igual con conocimiento general, avisando que un asesor confirmará</option>
+                            <option value="GENERAL">Responder igual con conocimiento general (mayor cobertura, más riesgo)</option>
+                        </select>
                     </div>
                     <div class="field conv-config-fields__full">
                         <label class="conv-config-checkbox">
                             <input type="checkbox" @bind="_automatizacionesConfig.BotSoloSinAsignar" />
-                            <span>Responder solo conversaciones sin asignar (si un humano la tomó, el bot calla)</span>
+                            <span>Responder solo conversaciones sin asignar (si un humano la tomó, el asistente calla)</span>
                         </label>
                     </div>
                     <div class="field conv-config-fields__full">
@@ -723,7 +741,7 @@
                         <input id="bot-escalado" @bind="_automatizacionesConfig.BotPalabrasEscalado" placeholder="humano, persona, reclamo, operador" />
                     </div>
                     <div class="field">
-                        <label for="bot-max">Máx. respuestas del bot por conversación</label>
+                        <label for="bot-max">Máx. respuestas del asistente por conversación</label>
                         <input id="bot-max" type="number" min="1" @bind="_automatizacionesConfig.BotMaxRespuestas" />
                     </div>
                 </div>

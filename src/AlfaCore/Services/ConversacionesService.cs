@@ -20,7 +20,7 @@ public sealed class ConversacionesService(
     IConversacionesConfigService conversacionesConfigService,
     INotificacionesPushService notificacionesPushService,
     ICentralAdminService centralAdminService,
-    IAlfaKnowledgeSuggestionService alfaKnowledgeService,
+    IConversacionAsistenteService asistenteService,
     IWebHostEnvironment environment) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
@@ -6477,10 +6477,11 @@ public sealed class ConversacionesService(
         }
     }
 
-    // Nivel 3 - bot autónomo con guardarraíles. Solo responde si: el bot está activo, AlfaKnowledge
-    // configurado, no hay palabras de escalado, la conversación está sin asignar (si corresponde), la
-    // ventana de WhatsApp está activa, no se superó el tope de respuestas, y la IA tiene respaldo
-    // suficiente (contexto + citas, sin pedir aclaración). Si no, escala silenciosamente a un humano.
+    // Bot autónomo con guardarraíles. Responde con el Asistente IA (comportamiento + información
+    // del negocio configurados, vía OpenAI) si: el bot está activo, hay API key de OpenAI, no hay
+    // palabras de escalado, la conversación está sin asignar (si corresponde), la ventana del canal
+    // está activa, no se superó el tope de respuestas y no hay otra automática encima. La política
+    // del asistente decide qué pasa cuando la info no alcanza; si no puede resolver, escala a humano.
     private async Task TryAutoReplyBotAsync(long idConversacion, string? incomingText, CancellationToken ct)
     {
         try
@@ -6489,7 +6490,7 @@ public sealed class ConversacionesService(
                 return;
 
             var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
-            if (!config.BotActivo || !alfaKnowledgeService.IsConfigured)
+            if (!config.BotActivo || !asistenteService.IsConfigured)
                 return;
 
             var texto = (incomingText ?? string.Empty).Trim();
@@ -6518,30 +6519,25 @@ public sealed class ConversacionesService(
                 return;
 
             var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
-            var result = await alfaKnowledgeService.SuggestReplyAsync(
-                texto, mensajes, idConversacion, AlfaKnowledgeSuggestionModes.ReplySuggestion,
-                null, null, null, null, ct).ConfigureAwait(false);
+            var result = await asistenteService.ResponderAsync(
+                config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
+                texto, mensajes, ct).ConfigureAwait(false);
 
-            var puedeResponder = result is not null
-                && !result.NeedsClarification
-                && result.HasSufficientContext
-                && result.Citations.Count > 0
-                && !string.IsNullOrWhiteSpace(result.SuggestedReply);
-
-            if (!puedeResponder)
+            // Según la política del asistente: si no pudo resolver (SOLO_INFO sin datos), escala en silencio.
+            if (result is null || !result.PuedeResponder || string.IsNullOrWhiteSpace(result.Respuesta))
             {
                 await _appEvents.LogAuditAsync(
                     "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
                     idConversacion.ToString(CultureInfo.InvariantCulture),
-                    "El bot escaló a un humano (sin respaldo suficiente).",
-                    new { idConversacion }, ct).ConfigureAwait(false);
+                    "El asistente escaló a un humano (sin respaldo suficiente para la política configurada).",
+                    new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
                 return;
             }
 
             await SendMessageAsync(new ConversacionSendMessageRequest
             {
                 IdConversacion = idConversacion,
-                Texto = result!.SuggestedReply.Trim(),
+                Texto = result.Respuesta.Trim(),
                 MessageType = "TEXT",
                 UsuarioAccion = "AlfaCore",
                 SistemaAccion = "BOT"
@@ -6550,8 +6546,8 @@ public sealed class ConversacionesService(
             await _appEvents.LogAuditAsync(
                 "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
                 idConversacion.ToString(CultureInfo.InvariantCulture),
-                "El bot respondió automáticamente con respaldo de la base.",
-                new { idConversacion, fuentes = result.Citations.Count }, ct).ConfigureAwait(false);
+                "El asistente respondió automáticamente.",
+                new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
