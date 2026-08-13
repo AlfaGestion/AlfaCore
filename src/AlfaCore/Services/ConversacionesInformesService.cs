@@ -451,12 +451,21 @@ public sealed class ConversacionesInformesService(
         var mesNombre = det.Mes >= 1 && det.Mes <= 12 ? meses[det.Mes] : det.Mes.ToString();
         var rubro = string.IsNullOrWhiteSpace(det.Fila.CategoriaDesc) ? string.Empty : $" (rubro: {det.Fila.CategoriaDesc})";
         return
-            $"Sos parte del equipo de soporte técnico de software. Redactá un resumen BREVE y cordial, en español rioplatense, " +
-            $"dirigido AL CLIENTE \"{det.Fila.NombreMostrar}\"{rubro}, sobre la atención que le dimos durante {mesNombre}. " +
-            "Contá en 1 a 3 párrafos (o bullets cortos): qué consultas o problemas trajo, qué se resolvió y qué quedó pendiente si aplica. " +
-            "Tono profesional y cercano, como para enviárselo por email/WhatsApp. No inventes datos que no estén en las conversaciones, " +
-            "no incluyas información interna del equipo ni de otros clientes, y no uses tecnicismos innecesarios. " +
-            "No agregues encabezados de email ni firma: solo el cuerpo del mensaje.";
+            $"Sos parte del equipo de soporte técnico de software y le escribís AL CLIENTE \"{det.Fila.NombreMostrar}\"{rubro} " +
+            $"un resumen de la atención que le dimos durante {mesNombre}. Escribís en primera persona del plural (\"trabajamos\", " +
+            "\"resolvimos\", \"quedamos\"), en español rioplatense, tono profesional y cercano.\n\n" +
+            "FORMATO (respetalo):\n" +
+            "- Arrancá con UNA sola línea de introducción (ej: \"Te dejamos un resumen de lo que trabajamos este mes:\").\n" +
+            "- Después, entre 3 y 6 viñetas, cada una empezando con \"• \", una por tema/consulta concreta, diciendo qué se hizo " +
+            "y su estado (resuelto / en curso / pendiente).\n" +
+            "- Cerrá con UNA línea corta ofreciendo seguir ayudando.\n\n" +
+            "REGLAS:\n" +
+            "- Máximo ~150 palabras. Sé concreto: nombrá los temas reales que aparezcan (ej: \"el error al cargar la eFC\"), " +
+            "nunca frases genéricas de relleno como \"diversas consultas\".\n" +
+            "- No inventes nada que no esté en las conversaciones; no incluyas datos internos del equipo ni de otros clientes; " +
+            "evitá tecnicismos innecesarios.\n" +
+            "- Si hubo muy poca actividad (1 o 2 mensajes), resolvelo en 1 o 2 líneas, sin forzar viñetas.\n" +
+            "- Devolvé SOLO el cuerpo del mensaje: sin asunto, sin \"Hola\" ni saludo inicial, sin firma.";
     }
 
     private static string BuildConversacionesTexto(ConversacionInformeDetalleDto det)
