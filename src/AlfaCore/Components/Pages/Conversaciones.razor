@@ -8111,12 +8111,20 @@
             var image = imageCandidate is null
                 ? null
                 : await BuildAiImageInputAsync(imageCandidate.Value.Attachment, requestCts.Token);
+
+            // Antes de sugerir, sumamos el contexto del cliente asociado (N° de cliente, rubro del
+            // negocio y prioridad P1-P4) para que la respuesta se adapte a ese cliente.
+            var clienteContexto = await ConversacionesSvc.GetContextoClienteAsistenteAsync(conversationId, requestCts.Token);
+            var instructionFinal = string.IsNullOrWhiteSpace(clienteContexto)
+                ? instruction
+                : string.IsNullOrWhiteSpace(instruction) ? clienteContexto : $"{clienteContexto}\n\n{instruction}";
+
             var result = await AlfaKnowledgeSvc.SuggestReplyAsync(
                 customerMessage,
                 contextMessages,
                 conversationId,
                 AlfaKnowledgeSuggestionModes.ReplySuggestion,
-                instruction,
+                instructionFinal,
                 assistantHistory,
                 image,
                 null,

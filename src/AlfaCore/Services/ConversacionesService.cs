@@ -7117,6 +7117,80 @@ public sealed class ConversacionesService(
         return string.Join(" ", partes);
     }
 
+    // Contexto del cliente para el copiloto: N° de cliente, razón social, rubro del negocio y
+    // prioridad P1-P4 según su clasificación (misma prioridad que el badge del inbox: Clasifica1/2/3
+    // -> P1/P2/P3, el resto -> P4). Texto listo para anteponer a la sugerencia. Vacío si no hay cliente.
+    public async Task<string> GetContextoClienteAsistenteAsync(long idConversacion, CancellationToken ct = default)
+    {
+        try
+        {
+            string codigo = string.Empty, razon = string.Empty, rubro = string.Empty, clasif = string.Empty;
+            await using (var cn = new SqlConnection(ConnectionString))
+            {
+                await cn.OpenAsync(ct);
+                const string sql = """
+                    SELECT TOP (1)
+                        ISNULL(LTRIM(RTRIM(cli.CODIGO)), N''),
+                        ISNULL(LTRIM(RTRIM(cli.RAZON_SOCIAL)), N''),
+                        ISNULL(cat.Descripcion, N''),
+                        ISNULL(LTRIM(RTRIM(cli.Clasificacion)), N'')
+                    FROM dbo.CONV_CONVERSACIONES c
+                    LEFT JOIN dbo.VT_CLIENTES cli
+                        ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N''))))
+                    LEFT JOIN dbo.v_ta_categoria cat ON cat.IdCategoria = cli.IDCategoria
+                    WHERE c.IdConversacion = @Id;
+                    """;
+                await using var cmd = new SqlCommand(sql, cn);
+                cmd.Parameters.AddWithValue("@Id", idConversacion);
+                await using var rd = await cmd.ExecuteReaderAsync(ct);
+                if (await rd.ReadAsync(ct))
+                {
+                    codigo = GetString(rd, 0);
+                    razon = GetString(rd, 1);
+                    rubro = GetString(rd, 2);
+                    clasif = GetString(rd, 3);
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(codigo))
+                return string.Empty;
+
+            var prioridad = "P4";
+            if (!string.IsNullOrWhiteSpace(clasif))
+            {
+                var prio = await conversacionesConfigService.GetPrioridadConfigAsync(ct).ConfigureAwait(false);
+                if (Coincide(prio.Clasifica1, clasif)) prioridad = "P1";
+                else if (Coincide(prio.Clasifica2, clasif)) prioridad = "P2";
+                else if (Coincide(prio.Clasifica3, clasif)) prioridad = "P3";
+            }
+
+            var quien = string.IsNullOrWhiteSpace(razon) ? $"N° {codigo}" : $"N° {codigo} — {razon}";
+            var partes = new List<string> { $"Datos del cliente (para adaptar la respuesta): {quien}." };
+            if (!string.IsNullOrWhiteSpace(rubro))
+                partes.Add($"Rubro del negocio: {rubro.Trim()}. Adaptá ejemplos y pasos a ese rubro.");
+            var prioTexto = prioridad switch
+            {
+                "P1" => "P1 (máxima prioridad, atención preferencial)",
+                "P2" => "P2 (prioridad alta)",
+                "P3" => "P3 (prioridad media)",
+                _ => "P4 (prioridad normal)"
+            };
+            partes.Add($"Prioridad de atención: {prioTexto}.");
+            return string.Join(" ", partes);
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones", "ContextoClienteAsistente", ex,
+                "No se pudo leer el contexto del cliente para el copiloto.",
+                new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            return string.Empty;
+        }
+
+        static bool Coincide(string? config, string clasif)
+            => !string.IsNullOrWhiteSpace(config) && string.Equals(config.Trim(), clasif, StringComparison.OrdinalIgnoreCase);
+    }
+
     // Lee el rubro del cliente (VT_CLIENTES.IdCategoria -> v_ta_categoria.Descripcion) y determina si
     // es un cliente prioritario (su clasificación está entre las configuradas como prioridad de atención).
     private async Task<(string Rubro, bool EsPrioritario)> ObtenerContextoClienteAsync(long idConversacion, CancellationToken ct)

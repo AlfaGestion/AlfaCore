@@ -56,6 +56,12 @@ public interface IConversacionesService
     Task<ConversacionWebhookResultDto> RegisterIncomingFacebookWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingMercadoLibreWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> SyncMercadoLibreQuestionsAsync(CancellationToken ct = default);
+    /// <summary>
+    /// Contexto del cliente asociado a la conversación (N° de cliente, razón social, rubro del
+    /// negocio y prioridad P1-P4 según su clasificación), como texto listo para anteponer a la
+    /// sugerencia del copiloto. Devuelve cadena vacía si la conversación no tiene cliente asociado.
+    /// </summary>
+    Task<string> GetContextoClienteAsistenteAsync(long idConversacion, CancellationToken ct = default);
     Task<long> CreateInternalThreadAsync(ConversacionCrearHiloInternoRequest request, CancellationToken ct = default);
     Task<ConversacionCrearWhatsAppResultDto> CreateOrGetWhatsAppConversationAsync(ConversacionCrearWhatsAppRequest request, CancellationToken ct = default);
     Task<ConversacionAdjuntoDto> UploadAttachmentAsync(ConversacionUploadAdjuntoRequest request, CancellationToken ct = default);
