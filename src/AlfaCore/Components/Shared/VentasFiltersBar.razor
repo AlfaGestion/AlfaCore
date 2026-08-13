@@ -45,6 +45,25 @@
         <span class="filters-summary__text">@BuildSummary()</span>
     </div>
 
+    <div class="field field--wide filters-uneg">
+        <label>Unidad de negocio</label>
+        <div class="uneg-checklist">
+            @foreach (var item in Options.UnidadesNegocio)
+            {
+                <label class="uneg-checklist__item">
+                    <input type="checkbox"
+                           checked="@Model.UnidadesNegocio.Contains(item.Codigo)"
+                           @onchange="e => ToggleUnidadNegocio(item.Codigo, e.Value)" />
+                    <span>@item.Descripcion</span>
+                </label>
+            }
+            @if (Options.UnidadesNegocio.Count == 0)
+            {
+                <span class="uneg-checklist__empty">No hay unidades de negocio con datos.</span>
+            }
+        </div>
+    </div>
+
     @if (_showAdvanced)
     {
         <div class="filters-grid filters-grid--wide">
@@ -62,33 +81,6 @@
                     }
                 </InputSelect>
             </div>
-            <div class="field field--wide">
-                <label>Unidad de negocio</label>
-                <div class="uneg-checklist">
-                    @foreach (var item in Options.UnidadesNegocio)
-                    {
-                        <label class="uneg-checklist__item">
-                            <input type="checkbox"
-                                   checked="@Model.UnidadesNegocio.Contains(item.Codigo)"
-                                   @onchange="e => ToggleUnidadNegocio(item.Codigo, e.Value)" />
-                            <span>@item.Descripcion</span>
-                        </label>
-                    }
-                    @if (Options.UnidadesNegocio.Count == 0)
-                    {
-                        <span class="uneg-checklist__empty">No hay unidades de negocio con datos.</span>
-                    }
-                </div>
-            </div>
-            @if (MostrarComparativoUnidadNegocio)
-            {
-                <div class="field field--wide">
-                    <label class="uneg-compare-toggle">
-                        <input type="checkbox" @bind="Model.ComparativoUnidadNegocio" />
-                        <span>Comparativo por unidad de negocio</span>
-                    </label>
-                </div>
-            }
             <div class="field">
                 <label>Depósito</label>
                 <InputSelect @bind-Value="Model.Deposito">
@@ -242,7 +234,7 @@
             parts.Add("Unidad de negocio: todas las unidades de negocio");
         }
 
-        if (MostrarComparativoUnidadNegocio && Model.ComparativoUnidadNegocio)
+        if (MostrarComparativoUnidadNegocio && Model.UnidadesNegocio.Count > 1)
             parts.Add("Vista: comparativo por unidad de negocio");
 
         AddIfPresent(parts, "Depósito", Model.Deposito);

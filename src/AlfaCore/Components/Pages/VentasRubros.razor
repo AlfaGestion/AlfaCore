@@ -30,8 +30,8 @@
             <KpiCard Titulo="Rubros activos" Valor="@_page.RubrosActivos.ToString("N0")" Icono="R" />
         </div>
 
-        <div class="split-grid">
-            @if (_filters.ComparativoUnidadNegocio)
+        <div class="rubros-layout">
+            @if (MostrarComparativoUnidadNegocio)
             {
                 <section class="panel-card rubros-compare">
                     <div class="panel-card__header">
@@ -92,9 +92,10 @@
                 </section>
             }
 
-            <DataTable Titulo="Listado de rubros" Subtitulo="Participación comercial por categoría">
+            <div class="rubros-list">
+                <DataTable Titulo="Listado de rubros" Subtitulo="Participación comercial por categoría">
                 <Header>
-                    @if (_filters.ComparativoUnidadNegocio)
+                    @if (MostrarComparativoUnidadNegocio)
                     {
                         <tr>
                             <th>Rubro</th>
@@ -117,7 +118,7 @@
                     }
                 </Header>
                 <Rows>
-                    @if (_filters.ComparativoUnidadNegocio)
+                    @if (MostrarComparativoUnidadNegocio)
                     {
                         @foreach (var item in _page.Rubros)
                         {
@@ -153,7 +154,8 @@
                         }
                     }
                 </Rows>
-            </DataTable>
+                </DataTable>
+            </div>
         </div>
     }
 </section>
@@ -163,6 +165,8 @@
     private VentasFilterOptionsDto _options = new();
     private VentasRubrosPageDto? _page;
     private string? _error;
+
+    private bool MostrarComparativoUnidadNegocio => _filters.UnidadesNegocio.Count > 1;
 
     protected override async Task OnInitializedAsync()
     {

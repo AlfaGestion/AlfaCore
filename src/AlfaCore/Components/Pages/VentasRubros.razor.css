@@ -1,4 +1,13 @@
+.rubros-layout {
+    display: grid;
+    gap: 1rem;
+}
+
 .rubros-compare {
+    min-width: 0;
+}
+
+.rubros-list {
     min-width: 0;
 }
 
