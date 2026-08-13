@@ -522,7 +522,16 @@ public sealed class GestionDashboardService(
                       AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                       AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
                       AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
-                      AND (@Deposito IS NULL OR CONVERT(varchar(50), l.IdDeposito) = @Deposito)
+                      AND (
+                          @Deposito IS NULL
+                          OR EXISTS (
+                              SELECT 1
+                              FROM dbo.V_MV_Cpte c
+                              WHERE c.TC = d.TC
+                                AND c.IDCOMPROBANTE = d.IDCOMPROBANTE
+                                AND CONVERT(varchar(50), c.IdDeposito) = @Deposito
+                          )
+                      )
                       AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                 )
                 """;
@@ -582,7 +591,16 @@ public sealed class GestionDashboardService(
                       AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
                       AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
                       AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
-                      AND (@Deposito IS NULL OR CONVERT(varchar(50), l.IdDeposito) = @Deposito)
+                      AND (
+                          @Deposito IS NULL
+                          OR EXISTS (
+                              SELECT 1
+                              FROM dbo.V_MV_Cpte c
+                              WHERE c.TC = l.TC
+                                AND c.IDCOMPROBANTE = l.IdComprobante
+                                AND CONVERT(varchar(50), c.IdDeposito) = @Deposito
+                          )
+                      )
                       AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
                       AND l.UNEGOCIO IS NOT NULL
                 ) vf ON vf.TC = d.TC AND vf.IdComprobante = d.IDCOMPROBANTE
