@@ -1197,13 +1197,38 @@ public sealed class CargaViajesService(
             throw new InvalidOperationException("No se pudo identificar la tarifa seleccionada.");
         }, "No se pudo actualizar el importe de la tarifa.", ct);
 
+    public Task<string> GetUniqueTarifaListaCodigoAsync(string codigoBase, bool esFletero, string? currentIdLista = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetUniqueTarifaListaCodigo", async token =>
+        {
+            var baseCode = BuildTarifaListaBaseCodigo(codigoBase, esFletero);
+            if (string.IsNullOrWhiteSpace(baseCode))
+                throw new InvalidOperationException("No se pudo construir el código de lista de la tarifa.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await TableExistsAsync(cn, "TA_TARIFA", token))
+                return baseCode;
+
+            var columns = await LoadColumnsAsync(cn, "TA_TARIFA", token);
+            var idListaColumn = FirstExistingColumn(columns, "IDLISTA", "ID_LISTA");
+            var normalizedCurrent = NormalizeListaCodigo(currentIdLista);
+
+            if (await IsTarifaListaCodigoDisponibleAsync(cn, idListaColumn, baseCode, normalizedCurrent, token))
+                return baseCode;
+
+            foreach (var candidate in BuildTarifaListaAlternatives(baseCode))
+            {
+                if (await IsTarifaListaCodigoDisponibleAsync(cn, idListaColumn, candidate, normalizedCurrent, token))
+                    return candidate;
+            }
+
+            throw new InvalidOperationException("No se pudo generar un IdLista único para la tarifa.");
+        }, "No se pudo generar un IdLista único para la tarifa.", ct);
+
     public Task<string> SaveTarifaAsync(CargaViajeTarifaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveTarifa", async token =>
         {
             ArgumentNullException.ThrowIfNull(request);
-            var validation = await validator.ValidateTarifaForSaveAsync(request, token);
-            if (!validation.IsValid)
-                throw new AppValidationException(BuildValidationMessage(validation), validation);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1216,6 +1241,13 @@ public sealed class CargaViajesService(
                 : columns.Contains("id_tarifa") ? "ID_TARIFA"
                 : null;
             var idListaColumn = FirstExistingColumn(columns, "IDLISTA", "ID_LISTA");
+            var resolvedIdLista = await ResolveTarifaListaCodigoAsync(cn, idListaColumn, request, token);
+            request.IdLista = resolvedIdLista;
+
+            var validation = await validator.ValidateTarifaForSaveAsync(request, token);
+            if (!validation.IsValid)
+                throw new AppValidationException(BuildValidationMessage(validation), validation);
+
             var clienteColumn = FirstExistingColumn(columns, "IDCLIENTE", "CLIENTE");
             var choferColumn = FirstExistingColumn(columns, "IDCHOFER", "CHOFER");
             var destinoColumn = FirstExistingColumn(columns, "IDDESTINO", "DESTINO");
@@ -1233,10 +1265,10 @@ public sealed class CargaViajesService(
             var adicionalFijo3ImporteColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3IMPORTE", "ADICIONAL_FIJO3_IMPORTE");
             var adicionalFijo3PideCantidadColumn = FirstExistingColumnOrNull(columns, "ADICIONALFIJO3PIDECANTIDAD", "ADICIONAL_FIJO3_PIDE_CANTIDAD");
 
-            var idLista = request.IdLista.Trim().ToUpperInvariant();
-            var originalIdLista = string.IsNullOrWhiteSpace(request.OriginalIdLista)
-                ? idLista
-                : request.OriginalIdLista.Trim().ToUpperInvariant();
+            var idLista = resolvedIdLista;
+            var originalIdLista = NormalizeListaCodigo(request.OriginalIdLista);
+            if (string.IsNullOrWhiteSpace(originalIdLista))
+                originalIdLista = idLista;
             var tarifaId = request.Id;
             var cliente = request.TarifaFletero ? null : string.IsNullOrWhiteSpace(request.Cliente) ? null : request.Cliente.Trim();
             var chofer = request.TarifaFletero ? string.IsNullOrWhiteSpace(request.Chofer) ? null : request.Chofer.Trim() : null;
@@ -4782,6 +4814,79 @@ public sealed class CargaViajesService(
 
         var lastFour = code.Length <= 4 ? code : code[^4..];
         return lastFour.PadLeft(4, '0');
+    }
+
+    private static string BuildTarifaListaBaseCodigo(string codigo, bool esFletero)
+    {
+        var value = (codigo ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        if (esFletero)
+        {
+            var lastThree = value.Length <= 3 ? value : value[^3..];
+            return $"F{lastThree.PadLeft(3, '0')}";
+        }
+
+        return value.Length <= 4
+            ? value.PadLeft(4, '0')
+            : value[^4..];
+    }
+
+    private static IEnumerable<string> BuildTarifaListaAlternatives(string baseCode)
+    {
+        var normalized = NormalizeListaCodigo(baseCode);
+        if (string.IsNullOrWhiteSpace(normalized))
+            yield break;
+
+        var code = normalized.Length <= 4
+            ? normalized.PadLeft(4, '0')
+            : normalized[^4..];
+
+        var prefix = code[..3];
+        foreach (var suffix in "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+            yield return $"{prefix}{suffix}";
+    }
+
+    private static string NormalizeListaCodigo(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
+
+    private static async Task<bool> IsTarifaListaCodigoDisponibleAsync(SqlConnection cn, string idListaColumn, string candidate, string currentIdLista, CancellationToken ct)
+    {
+        var normalizedCandidate = NormalizeListaCodigo(candidate);
+        if (string.IsNullOrWhiteSpace(normalizedCandidate))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(currentIdLista) && string.Equals(normalizedCandidate, currentIdLista, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return !await ExistsByCodeAsync(cn, "TA_TARIFA", idListaColumn, normalizedCandidate, ct);
+    }
+
+    private async Task<string> ResolveTarifaListaCodigoAsync(SqlConnection cn, string idListaColumn, CargaViajeTarifaSaveRequest request, CancellationToken ct)
+    {
+        var currentIdLista = NormalizeListaCodigo(request.IdLista);
+        var originalIdLista = NormalizeListaCodigo(request.OriginalIdLista);
+        var baseCode = !string.IsNullOrWhiteSpace(currentIdLista)
+            ? currentIdLista
+            : BuildTarifaListaBaseCodigo(request.TarifaFletero ? request.Chofer : request.Cliente, request.TarifaFletero);
+
+        if (string.IsNullOrWhiteSpace(baseCode))
+            throw new InvalidOperationException("No se pudo construir el código de lista de la tarifa.");
+
+        if (request.Id > 0)
+            return string.IsNullOrWhiteSpace(originalIdLista) ? baseCode : originalIdLista;
+
+        if (await IsTarifaListaCodigoDisponibleAsync(cn, idListaColumn, baseCode, originalIdLista, ct))
+            return baseCode;
+
+        foreach (var candidate in BuildTarifaListaAlternatives(baseCode))
+        {
+            if (await IsTarifaListaCodigoDisponibleAsync(cn, idListaColumn, candidate, originalIdLista, ct))
+                return candidate;
+        }
+
+        throw new InvalidOperationException("No se pudo generar un IdLista único para la tarifa.");
     }
 
     private static string BuildChoferNombreSql(string tableName, string alias)

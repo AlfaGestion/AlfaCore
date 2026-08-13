@@ -883,6 +883,11 @@
                                 <input @ref="_tarifaNombreInput" type="text" @bind="_tarifaForm.Nombre" @onkeydown="args => HandleEnterAdvanceAsync(args, FocusTarifaDestinoAsync)" />
                             </div>
 
+                            <div class="field field--wide">
+                                <label>ID lista</label>
+                                <input type="text" value="@_tarifaForm.IdLista" readonly tabindex="-1" />
+                            </div>
+
                             <div class="field">
                                 <label>Destino</label>
                                 <LookupAutocomplete @ref="_tarifaDestinoLookup"
@@ -5970,8 +5975,8 @@
     {
         _tarifaForm.Cliente = item.Codigo;
         _tarifaClienteTexto = BuildLookupDisplayText(item);
-        _tarifaForm.IdLista = BuildListaDesdeCodigo(item.Codigo);
         _tarifaForm.Nombre = string.IsNullOrWhiteSpace(item.Titulo) ? item.Codigo : item.Titulo.Trim();
+        await ActualizarTarifaIdListaAsync();
         await Task.CompletedTask;
     }
 
@@ -5979,8 +5984,8 @@
     {
         _tarifaForm.Chofer = item.Codigo;
         _tarifaChoferTexto = BuildLookupDisplayText(item);
-        _tarifaForm.IdLista = BuildListaDesdeCodigo(item.Codigo, true);
         _tarifaForm.Nombre = string.IsNullOrWhiteSpace(item.Titulo) ? item.Codigo : item.Titulo.Trim();
+        await ActualizarTarifaIdListaAsync();
         await Task.CompletedTask;
     }
 
@@ -9161,7 +9166,12 @@
     {
         try
         {
-            _tarifaForm.IdLista = GetTarifaListaCodigo();
+            if (_isNewTarifa)
+                await ActualizarTarifaIdListaAsync();
+
+            if (string.IsNullOrWhiteSpace(_tarifaForm.IdLista))
+                throw new InvalidOperationException("No se pudo determinar el Id lista de la tarifa.");
+
             _tarifaForm.OriginalIdLista = _tarifaOriginalIdLista;
             await CargaViajesSvc.SaveTarifaAsync(_tarifaForm);
         }
@@ -9207,14 +9217,31 @@
         return ExtractVisibleText(value);
     }
 
-    private string GetTarifaListaCodigo()
+    private async Task ActualizarTarifaIdListaAsync()
     {
+        if (!_isNewTarifa)
+        {
+            _tarifaForm.IdLista = _tarifaOriginalIdLista;
+            return;
+        }
+
         var codigoBase = _tarifaForm.TarifaFletero ? _tarifaForm.Chofer : _tarifaForm.Cliente;
         var normalized = (codigoBase ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(normalized))
-            return _tarifaForm.IdLista.Trim().ToUpperInvariant();
+        {
+            _tarifaForm.IdLista = string.Empty;
+            return;
+        }
 
-        return BuildListaDesdeCodigo(normalized, _tarifaForm.TarifaFletero);
+        try
+        {
+            _tarifaForm.IdLista = await CargaViajesSvc.GetUniqueTarifaListaCodigoAsync(normalized, _tarifaForm.TarifaFletero);
+        }
+        catch (Exception ex)
+        {
+            _tarifaForm.IdLista = string.Empty;
+            _tarifaEditorFeedback = UiOps.BuildMessage(ex, "No se pudo determinar el Id lista de la tarifa.");
+        }
     }
 
     private static string BuildLookupDisplayText(CargaViajeLookupOptionDto item)

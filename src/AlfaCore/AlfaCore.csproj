@@ -5,7 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AlfaCore</AssemblyName>
-    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**;publish\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;artifacts\**;publish\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>

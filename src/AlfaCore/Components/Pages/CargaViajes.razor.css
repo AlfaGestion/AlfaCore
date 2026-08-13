@@ -2982,6 +2982,13 @@ html[data-theme="light"] .carga-viajes-tarifas-aumento-v2__preview-header {
 .carga-viajes-modal-backdrop {
     z-index: 2300;
     padding: 1rem;
+    justify-content: flex-start;
+    align-items: flex-start;
+}
+
+.carga-viajes-modal-backdrop .carga-viajes-modal {
+    margin-left: 0;
+    margin-right: auto;
 }
 
 .carga-viajes-switch {
