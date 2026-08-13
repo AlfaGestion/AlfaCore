@@ -2081,6 +2081,7 @@
         if (!string.IsNullOrWhiteSpace(fieldKey))
             _fieldErrors.Remove(fieldKey);
         _editDirty = !string.Equals(_editInitialState, CaptureEditState(), StringComparison.Ordinal);
+        Logger.LogInformation("Contactos dirty recalculado. Mode={Mode}, Property={Property}, Dirty={Dirty}", _pageMode, propertyName, _editDirty);
         return Task.CompletedTask;
     }
 

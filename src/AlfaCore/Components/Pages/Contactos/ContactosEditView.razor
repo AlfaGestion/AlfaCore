@@ -1,5 +1,6 @@
 @namespace AlfaCore.Components.Pages
 @using AlfaCore.Models
+@inject ILogger<ContactosEditView> Logger
 
 <section class="contactos-edit-shell" aria-label="@(CreateMode ? "Nuevo contacto" : "Editar contacto")">
     <header class="contactos-edit-header">
@@ -157,6 +158,7 @@
 
     private async Task SetTextAsync(string property, string? value)
     {
+        Logger.LogInformation("ContactosEditView input recibido. Property={Property}, Length={Length}", property, value?.Length ?? 0);
         typeof(ContactoSaveRequest).GetProperty(property)?.SetValue(Model, value ?? string.Empty);
         await OnFieldChanged.InvokeAsync(property);
     }
