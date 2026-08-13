@@ -1,0 +1,13 @@
+<Project>
+  <PropertyGroup>
+    <ProgramPatchedFile>$(IntermediateOutputPath)Patched\Program.cs</ProgramPatchedFile>
+  </PropertyGroup>
+
+  <Target Name="PatchProgramForTarifaProxy" BeforeTargets="CoreCompile">
+    <Exec Command='powershell -NoProfile -ExecutionPolicy Bypass -File "$(MSBuildThisFileDirectory)build\patch-program-for-tarifa-proxy.ps1" -Source "$(MSBuildProjectDirectory)\Program.cs" -Destination "$(ProgramPatchedFile)"' />
+    <ItemGroup>
+      <Compile Remove="Program.cs" />
+      <Compile Include="$(ProgramPatchedFile)" />
+    </ItemGroup>
+  </Target>
+</Project>
