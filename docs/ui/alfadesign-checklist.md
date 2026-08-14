@@ -2,123 +2,111 @@
 
 [Índice](./README.md) · [Norma](./alfadesign-v1.md) · [Guía](./alfadesign-module-guide.md)
 
-Este checklist forma parte de Definition of Done. Cada sección vale un punto; una entrega debe informar `Cumple: X/13` y detallar excepciones, deuda visual, regresiones y legacy restante.
+Este checklist forma parte de Definition of Done. Una entrega debe informar `Cumple: X/13`, excepciones, deuda visual, regresiones y legacy restante. Presencia en markup no equivale a cumplimiento: validar render, comportamiento, integración, estados y responsive.
 
-> **Presencia del componente != cumplimiento AlfaDesign.** No alcanza con encontrar un componente en Razor o en el DOM. La validación debe comprobar: 1) componente correcto; 2) render visual correcto; 3) comportamiento correcto; 4) integración correcta con el layout; y 5) estados correctos. Este criterio se aplica a todos los componentes compartidos.
+## 1. Shell
 
-## 1. Estructura de pantalla
+- [ ] App Top Bar compartida.
+- [ ] Context Toolbar compartida.
+- [ ] Acciones, navegación, búsqueda, vistas y paginación corresponden al estado real.
+- [ ] Compact mode usable alrededor de 1024/1100 px.
+- [ ] La bajada AlfaCore + módulo se conserva en compacto.
+- [ ] No hay barras locales duplicadas, `fixed` superpuestos ni scroll horizontal global.
 
-- [ ] App Top Bar presente mediante el componente/shell global.
-- [ ] Context Toolbar presente mediante infraestructura compartida y con acciones del estado real.
-- [ ] Smart Search y filtros aparecen solo cuando existe funcionalidad real.
-- [ ] Paginación corresponde al tipo de pantalla y no se simula.
-- [ ] View Switcher muestra solamente vistas reales.
-- [ ] Data View Header aparece solo en List/Table/Grid; Record/Edit/New no arrastran Table Header.
-- [ ] No hay barras locales duplicando App Top Bar o Context Toolbar.
-- [ ] No se recrearon componentes globales dentro del módulo.
-- [ ] No hay sidebar global legacy, `fixed` superpuestos ni compensaciones artificiales.
-- [ ] El shell usa flex/min-height/scroll interno correctamente y no genera scroll horizontal global.
+## 2. Smart Search
 
-## 2. Componentes
+- [ ] Aparece solo si hay colección consultable.
+- [ ] Popover anclado al trigger real.
+- [ ] Viewport-safe, con gutters y max-height adecuados.
+- [ ] Sizing semántico elegido por contenido: compact, standard o wide.
+- [ ] Grid de filtros explícito; no depende de auto-placement frágil.
+- [ ] `Acciones` + `Aplicar/Limpiar` funcionan como unidad.
+- [ ] No hay clipping ni separación artificial de acciones.
 
-- [ ] Se buscó y reutilizó el catálogo AlfaDesign antes de crear UI; no quedan botones Bootstrap, inputs/selects/checkboxes/tabs/menús/confirmaciones/empty states/modales legacy sin excepción.
-- [ ] Lo nuevo reutilizable es compartido, parametrizable y está documentado.
-- [ ] Cada componente se renderiza visualmente según su contrato; no se valida solo por estar presente en markup.
-- [ ] Variantes, tamaños, jerarquía, integración y estados default/hover/focus/disabled/loading/empty/error/selected se comprobaron cuando corresponden.
+## 3. Data View
 
-## 3. Acciones
+- [ ] Data View Header correcto para List/Table/Grid.
+- [ ] Rows/cards densos y legibles.
+- [ ] Scroll interno; no overflow horizontal global.
+- [ ] Data View Footer presente cuando aplica.
+- [ ] Footer usa `.alfa-data-view-footer`.
+- [ ] Footer no repite nombre de módulo.
+- [ ] Resumen usa separadores `·` y pluralización natural cuando sea razonable.
+- [ ] Page-size, si existe, queda como control secundario; no duplica paginación principal.
 
-- [ ] Jerarquía Primary/Secondary/Ghost/Danger consistente; una primary por grupo.
-- [ ] Icon actions tienen label accesible y los handlers reales se conservaron.
+## 4. Column Sizing, Si Aplica
 
-## 4. Tokens
+- [ ] Justificado por densidad/heterogeneidad de columnas.
+- [ ] Metadata min/default/max/resizable.
+- [ ] Columnas estructurales fijas.
+- [ ] Ellipsis y legibilidad al reducir.
+- [ ] Horizontal scroll interno como fallback.
+- [ ] Preview durante drag.
+- [ ] Persistencia al commit, no por pixel.
+- [ ] `WidthPx` opcional compatible con configuración anterior.
+- [ ] Reset widths conserva visibilidad, orden y agrupación.
+
+No convertir column resize en requisito obligatorio de 13/13 cuando no aporta valor.
+
+## 5. Actions
+
+- [ ] Jerarquía Primary/Secondary/Ghost/Danger consistente.
+- [ ] Icon actions tienen label accesible.
+- [ ] Sticky Actions si la tabla lo necesita.
+- [ ] Sticky Actions no se corta contra scrollbar y respeta zebra/hover/selected.
+
+## 6. Componentes
+
+- [ ] Se reutilizó el catálogo AlfaDesign antes de crear UI.
+- [ ] No quedan botones Bootstrap, `.form-control`, dropdowns o modales legacy sin excepción.
+- [ ] Componentes se validan visual y funcionalmente, no solo por presencia.
+
+## 7. Tokens Y Escala
 
 - [ ] Colores, spacing, radios, tamaños y estados usan tokens existentes.
-- [ ] Literales inevitables y diferencias Figma/CSS están documentados.
+- [ ] Literales inevitables están documentados.
+- [ ] Tipografía, densidad y touch targets son legibles.
 
-## 5. Escala
+## 8. Estados
 
-- [ ] Tipografía, densidad, touch targets y jerarquía son legibles y coherentes.
+- [ ] Loading, empty, no results, error, validación, disabled y processing están resueltos.
+- [ ] Un error parcial no destruye shell ni estado ingresado.
 
-## 6. Estados
+## 9. Overlays Y Feedback
 
-- [ ] Carga, vacío, sin resultados, error, validación, disabled y processing están resueltos cuando corresponden.
-- [ ] Un error parcial no destruye el shell ni el estado ingresado.
+- [ ] `AlfaDialog`/`AlfaConfirmDialog` renderizan overlay real.
+- [ ] Backdrop, z-index, foco, Escape, scroll interno y footer funcionan.
+- [ ] `AlfaLookup` no queda cortado por dialog.
+- [ ] `AlfaNotification` usa severidad semántica, texto y cierre; no depende solo de color.
 
-## 7. Overlays y feedback
+## 10. Formularios
 
-- [ ] El Dialog se renderiza realmente como overlay y no inline.
-- [ ] Backdrop visible y correcto.
-- [ ] Surface contenida y sólida.
-- [ ] Z-index correcto.
-- [ ] Header/body/footer mantienen estructura.
-- [ ] Scroll ocurre dentro del dialog cuando corresponde.
-- [ ] No expande el documento.
-- [ ] No deja interactuar visualmente con contenido trasero cuando no corresponde.
-- [ ] Escape/cerrar/cancelar funcionan.
-- [ ] Focus se mantiene correctamente.
-- [ ] Feedback es claro, accionable y no expone detalles técnicos.
+- [ ] Labels, binding, dirty state, errores inline, cancelar/descartar y doble submit son correctos.
 
-Para `AlfaLookup` comprobar input, panel de resultados, selección, hover, loading, empty, error, teclado, Escape y overflow. Para `AlfaButton`, comprobar variante, tamaño, disabled, hover, focus y jerarquía semántica. La misma validación contractual aplica al resto del catálogo.
+## 11. Responsive
 
-- [ ] Lookup abierto dispone de un área visible razonable.
-- [ ] Results panel no queda cortado por Dialog.
-- [ ] Dialog no activa scroll innecesario con contenido corto.
-- [ ] Footer permanece visible.
-- [ ] En viewport bajo el overflow degrada correctamente.
-- [ ] Success utiliza señal semántica success.
-- [ ] Error utiliza señal danger.
-- [ ] Warning utiliza la señal de atención definida.
-- [ ] Info utiliza accent.
-- [ ] La notificación no depende únicamente del color: mantiene título y texto.
-- [ ] Success permanece aproximadamente 4 s.
-- [ ] Warning/Error permanecen aproximadamente 8 s.
-- [ ] Hover pausa el auto-dismiss y al salir continúa.
-- [ ] Close manual funciona.
-- [ ] Un click normal fuera no descarta accidentalmente la notificación.
-- [ ] La surface de Notification sigue siendo sólida AlfaDesign.
-- [ ] Notification queda por encima de Dialog cuando corresponde.
-- [ ] No existe feedback legacy paralelo en el alcance migrado.
+- [ ] Validado a 2048.
+- [ ] Validado a 1440.
+- [ ] Validado a 1024.
+- [ ] Desktop amplio no se degrada por fixes compactos.
+- [ ] Sin overflow horizontal global.
 
-## 8. Formularios
-
-- [ ] Labels, binding, dirty state, errores inline, cancelar/descartar y doble envío son correctos.
-
-## 9. Responsive
-
-- [ ] Validado a 2048, 1440 y 1024 px.
-- [ ] No hay scroll horizontal; paneles y overlays siguen utilizables.
-
-## 10. Funcionalidad
+## 12. Funcionalidad
 
 - [ ] Se preservaron rutas, permisos, consultas, persistencia, auditoría y callbacks.
-- [ ] No hay acciones o datos ficticios.
+- [ ] No hay acciones, columnas o datos ficticios.
 
-## 11. Auditoría legacy
-
-- [ ] Se buscaron `.btn`/`btn-*`, `.form-control`, `.dropdown-menu`, Bootstrap modal, clases legacy, estilos inline, hex sospechosos y componentes antiguos.
-- [ ] Cada hallazgo se migró o tiene excepción y motivo.
-
-## 12. Accesibilidad
-
-- [ ] Navegación por teclado, foco visible, nombres accesibles, roles/ARIA y contraste son suficientes.
-
-## 13. Validación técnica
+## 13. Validación Técnica
 
 - [ ] `dotnet build AlfaCore.sln`
 - [ ] `dotnet test AlfaCore.sln`
 - [ ] `python tools/catalogo/check_catalogo.py`
 - [ ] `git diff --check`
-- [ ] La compilación se ejecutó después del último cambio de CSS aislado y el asset CSS contiene los selectores actualizados.
-- [ ] La validación visual usa el proceso localhost reiniciado y el cache-bust vigente, no un proceso/asset anterior.
-- [ ] Los textos visibles no contienen mojibake.
-- [ ] Los caracteres UTF-8 en español se renderizan correctamente.
-- [ ] No existen caracteres de reemplazo inesperados.
-- [ ] El encoding no se corrige mediante `Replace` ad hoc.
-- [ ] Los mensajes de Notification fueron revisados con caracteres acentuados.
+- [ ] Cache-bust y assets vigentes después de CSS/JS.
+- [ ] Textos visibles sin mojibake ni caracteres de reemplazo.
 - [ ] Sin conflictos, debug temporal, secretos, capturas o temporales versionados.
 
-## Resultado obligatorio
+## Resultado Obligatorio
 
 ```text
 AlfaDesign checklist
@@ -129,44 +117,17 @@ Regresiones:
 Legacy restante:
 ```
 
-No declarar “AlfaDesign completo” con excepciones visuales legacy sin documentar.
+## Estado De Referencias Cerradas
 
-## Resultado Fase 7.5 — Contactos (2026-08-13)
+| Módulo | Resultado | Nota |
+|---|---|---|
+| Contactos | 13/13 | Cerrado visualmente; column resize no aplica/no implementado. |
+| Usuarios | 13/13 | Cerrado visualmente; column resize no implementado. |
+| Técnicos | 13/13 | Cerrado visualmente; column resize no implementado. |
 
-```text
-AlfaDesign checklist
-Cumple: 13/13
-Excepciones: ninguna dentro del alcance aprobado.
-Deuda visual: ninguna dentro de Contactos.
-Deuda técnica separada: ConversacionesService.cs contiene 124 líneas históricas con mojibake fuera del alcance de Fase 7.5; no se corrigen en este checkpoint.
-Regresiones: ninguna detectada en la validación funcional, visual aprobada y verificaciones técnicas.
-Legacy restante: ninguno visual dentro de Contactos salvo excepciones documentadas/no visuales.
-```
+## Estado En Curso
 
-Responsive quedó validado en sesión autenticada a 2048, 1440 y 1024 px: Context panel lateral en 2048/1440, debajo del contenido en 1024, sin solapamientos ni scroll horizontal global. `AlfaDialog`, `AlfaLookup` y `AlfaNotification` permanecen contenidos y el scroll vertical funciona correctamente.
-
-## Resultado Fase 8.4 — Usuarios (2026-08-13)
-
-```text
-AlfaDesign checklist
-Cumple: 13/13
-Excepciones: ninguna dentro del alcance aprobado.
-Deuda visual: ninguna.
-Regresiones: ninguna detectada.
-Legacy restante: ninguno visual dentro de Usuarios; tabla/Smart Search y selector de archivo son patrones nativos justificados.
-```
-
-Los 13 puntos están respaldados por la validación manual aprobada de Browse/New/Edit/dirty state/acciones, la auditoría técnica de Fase 8.4 y la comprobación autenticada responsive a 2048, 1440 y 1024 px. En 1024 el editor pasa a una columna, la tabla conserva overflow exclusivamente interno, dialogs y notifications quedan contenidos y no aparece scroll horizontal global.
-
-## Resultado Fase 9.4 — Técnicos (2026-08-14)
-
-```text
-AlfaDesign checklist
-Cumple: 13/13
-Excepciones: ninguna dentro del alcance aprobado.
-Deuda visual: ninguna.
-Regresiones: ninguna detectada.
-Legacy restante: ninguno visual dentro de Técnicos; tabla y Smart Search conservan patrones nativos AlfaDesign justificados.
-```
-
-Los 13 puntos están respaldados por las validaciones manuales aprobadas de Fases 9.1–9.3, la auditoría component-first/legacy completa, las verificaciones técnicas y la comprobación autenticada de Browse/New/Edit a 2048, 1440 y 1024 px. En 1024 el editor pasa a una columna, el último campo queda accesible por scroll vertical, dialogs/notifications permanecen contenidos y el overflow horizontal es exclusivamente interno a la tabla cuando corresponde.
+| Módulo | Estado | Nota |
+|---|---|---|
+| Clientes | migración en curso | Browse AlfaDesign con Smart Search standard, Data View Footer, column resize y sticky Actions; Editor pendiente. |
+| Proveedores | legacy | Comparte componente con Clientes; no declarar AlfaDesign. |

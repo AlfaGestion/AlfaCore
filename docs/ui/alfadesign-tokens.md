@@ -2,9 +2,9 @@
 
 [Índice](./README.md) · [Norma v1](./alfadesign-v1.md) · [Componentes](./alfadesign-components.md)
 
-La fuente productiva actual es `src/AlfaCore/wwwroot/css/alfacore-design.css`. Los componentes deben consumir variables `--alfa-*`; un valor literal solo se admite para un caso semántico todavía no tokenizado y debe quedar documentado.
+La fuente productiva actual de tokens es `src/AlfaCore/wwwroot/css/alfacore-design.css`. Los componentes y patrones consumen variables `--alfa-*`; un literal solo se admite como implementación puntual o deuda semántica documentada.
 
-## Colores productivos
+## Tokens Productivos
 
 | Categoría | Tokens reales |
 |---|---|
@@ -12,32 +12,47 @@ La fuente productiva actual es `src/AlfaCore/wwwroot/css/alfacore-design.css`. L
 | Bordes | default `#333640`; strong `#4d525e`; subtle = 46% de default |
 | Texto | primary `#f5f5f7`; secondary `#a6abb5`; disabled `#666b75` |
 | Acción | accent `#4f9efa`; hover `#6bb2ff`; active `#3880e0` |
-| Estados | selected `#29476b`; hover `#21242b`; success `#27ae60`; warning `#f2c94c`; danger `#eb5759` |
-
-Cada valor se consume por su variable `--alfa-*` homónima: canvas para viewport, surface para panel base, surface-raised para overlays, input para controles, border por jerarquía, text por énfasis, accent para interacción y estados solo con su significado semántico.
+| Estados | selected `#29476b`; success `#27ae60`; warning `#f2c94c`; danger `#eb5759` |
 
 ## Tipografía
 
-- Cuerpo: `--alfa-font-body` = 13 px.
-- Small/labels: `--alfa-font-small` = 12 px.
+- Body: `--alfa-font-body` = 13 px.
+- Small: `--alfa-font-small` = 12 px.
 - Caption: `--alfa-font-caption` = 11.5 px.
-- Inputs y botones parten de Body; labels y tabla compacta usan Small/Caption según jerarquía. Los headings usan la escala documentada de Figma o la especialización aprobada del módulo.
-- Figma Foundations además registra Display 28 Bold, H1 22 Semi Bold, H2 18 Semi Bold, H3 15 Semi Bold, Body 13, Body Small 12 y Caption 11 Medium. Los tamaños de RecordView aprobados pueden especializar esta escala sin alterar List/Kanban.
+- Inputs y botones parten de Body; labels y tabla compacta usan Small/Caption según jerarquía.
 
-## Tamaños
+## Tamaños Y Defaults
 
-- Controles productivos: `--alfa-control-sm` = 34 px, `--alfa-control-md` = 36 px.
-- Icon button: `--alfa-icon-button-size` = 36 px.
-- App Top Bar y Context Toolbar: 44 px.
+| Concepto | Tipo | Valor actual |
+|---|---|---:|
+| Control sm | token | 34 px |
+| Control md | token | 36 px |
+| Icon button | token | 36 px |
+| App Top Bar desktop | implementation default | ~44 px |
+| Context Toolbar desktop | implementation default | ~44 px |
+| Shell compacto | implementation default | breakpoint alrededor de 1100 px |
+| App Top Bar compacta | implementation default | ~40 px |
+| Context Toolbar compacta | implementation default | ~40 px |
+| Smart Search compact | implementation default | 408 px preferred |
+| Smart Search standard | implementation default | 520 px preferred |
+| Smart Search wide | implementation default | 760 px preferred |
+| Data View Footer | implementation default | 34-36 px |
+| Popover gutter seguro | implementation default | responsabilidad de JS/CSS compartidos |
 
-## Espaciado, radios y capas
+No convertir todos estos defaults en tokens. Son contrato operativo actual, no necesariamente variables globales permanentes.
+
+## Spacing, Radios Y Capas
 
 - Spacing productivo: 4, 8, 12, 16 y 24 px.
 - Radius productivo: 4, 8 y full (999 px).
-- Action Menu: backdrop 1998, panel 1999. Dialog: `--alfa-z-modal` = 2100. Notification: `--alfa-z-notification` = 2200.
-- Sombras no tienen tokens globales todavía; dialogs usan la decisión aprobada `0 12px 32px rgb(0 0 0 / 35%)`.
-- Notification reutiliza surface-raised, border-strong, la misma sombra flotante y una señal de 3 px con `--alfa-success`, `--alfa-accent` o `--alfa-danger`; no agrega colores nuevos.
+- Action Menu: backdrop 1998, panel 1999.
+- Dialog: `--alfa-z-modal` = 2100.
+- Notification: `--alfa-z-notification` = 2200.
 
-## Diferencias verificadas con Figma
+## Comportamientos Que No Son Tokens
 
-El archivo Figma usa variables con sintaxis web `--alfacore-*`, mientras producción usa `--alfa-*`. Figma registra alturas 28/36/44; producción 34/36 y shell 44. Figma tiene spacing 32/40/48 y radius lg 12 que CSS aún no expone. Son deudas de sincronización: no renombrar ni cambiar escala silenciosamente. Hasta una decisión conjunta, manda CSS para implementación existente y Figma para intención visual.
+No son tokens: cálculo viewport-aware de Smart Search, preview/commit de column resize, persistencia `WidthPx`, sticky Actions, clamp min/max de columnas y elección compact/standard/wide. Se documentan como patrones.
+
+## Diferencias Con Figma
+
+Figma usa variables `--alfacore-*`; producción usa `--alfa-*`. Figma registra alturas 28/36/44, spacing 32/40/48 y radius lg 12 que CSS aún no expone. Hasta una decisión conjunta, CSS manda para implementación productiva y Figma para intención visual.

@@ -1,64 +1,65 @@
-# Catálogo de componentes AlfaDesign
+# Componentes Y Patrones AlfaDesign
 
 [Índice](./README.md) · [Tokens](./alfadesign-tokens.md) · [Mapa Figma](./alfadesign-figma-map.md) · [Guía](./alfadesign-module-guide.md)
 
-La implementación oficial vive en `src/AlfaCore/Components/Shared/AlfaDesign/`. Los componentes reciben contenido y callbacks; no contienen reglas de negocio del módulo. La ruta de cada componente es esa carpeta más el nombre `.razor` (y su `.razor.css` aislado cuando existe).
+La implementación reusable vive en `src/AlfaCore/Components/Shared/AlfaDesign/`. Los componentes reciben contenido, estado y callbacks; no contienen reglas de negocio del módulo.
 
-| Componente | Uso y variantes reales | Estados / accesibilidad | Figma |
-|---|---|---|---|
-| `AlfaButton` | acción Primary, Secondary, Ghost o Danger; tamaños Sm/Md; icono | disabled, loading, `aria-busy` | Button `48:104` |
-| `AlfaIconButton` | acción compacta solo icono, tooltip/label obligatorio | active, disabled, `aria-pressed` | Button `48:104` |
-| `AlfaInput` | texto con label, help, required y error | input inmediato, disabled, `aria-invalid` | Input Field `49:192` |
-| `AlfaSelect` | catálogo corto con opciones reales | placeholder, disabled, error | Input Field `49:192` |
-| `AlfaCheckbox` | booleano o mixed | teclado, disabled, `role=checkbox` | Checkbox `50:65` |
-| `AlfaTabs` | navegación entre secciones, badge opcional | active, disabled, `role=tablist` | Tab `50:116` |
-| `AlfaTag` | estado/categoría semántica | Neutral, Accent, Success, Warning, Danger | Tag `54:62` |
-| `AlfaActionMenu` | overflow contextual con separadores | foco, Escape, backdrop, danger | Action Menu `79:383` |
-| `AlfaConfirmDialog` | confirmación destructiva o descarte | loading, error, focus trap, Escape | Confirmation Dialog `80:535` |
-| `AlfaDialog` | superficie modal genérica; contenido/footer del consumidor | Sm/Md/Lg, close, backdrop, Escape, focus trap, loading/disabled/error, responsive | patrón Confirmation/Export Dialog `80:535`, `83:951`; falta nodo genérico dedicado |
-| `AlfaLookup<TItem>` | búsqueda reusable de relaciones/catálogos grandes | debounce, loading, empty, error, selected, disabled | Lookup / Autocomplete `77:209` |
-| `AlfaNotification` | feedback flotante no bloqueante basado en `AppUiMessage` | Success/Info/Warning/Error, auto-dismiss semántico, hover pause, cierre, live region | no hay Toast dedicado; Notification de panel global `86:1146` es otro patrón |
-| `AlfaEmptyState` | vacío, sin resultados o error, con acción opcional | estado anunciado con `aria-live` | Activity Panel `61:102`; no hay set dedicado |
+## Componentes Razor
 
-Parámetros principales: Button/IconButton reciben variante, tamaño, icono, estado y callback; Input/Select/Checkbox reciben label, valor/cambio, disabled y error; Tabs recibe items, clave activa y callback; Tag recibe tono; ActionMenu recibe items y callbacks; ConfirmDialog/Dialog reciben apertura, textos, contenido/acciones, estado y cierre; Lookup recibe función asíncrona, claves/template, selección, debounce y mínimo de caracteres; EmptyState recibe icono, título, descripción y acción. No usar componentes de formulario como contenedores de reglas de negocio ni Dialog como sustituto de navegación. En viewport estrecho los dialogs limitan alto, el body hace scroll y el footer puede envolver.
-
-`AlfaDialog` es el único shell genérico para overlays de módulo. Su contrato exige render fijo fuera del flujo, backdrop, surface raised sólida, border, shadow, z-index modal, header/body/footer, scroll interno y manejo de foco/cierre. `AlfaLookup<TItem>` ofrece combobox con resultados, estado activo/seleccionado, flechas, Enter y Escape; el primer Escape cierra resultados y el siguiente puede cerrar el dialog. Ningún componente se considera validado solo por aparecer en markup.
-
-`AlfaNotification` recibe `Message`, `OnDismiss` y una `Duration` opcional. Sin override aplica 4/5/8/8 segundos a Success/Info/Warning/Error. El hover pausa el contador y X cierra inmediatamente. Usarlo para resultados y errores no bloqueantes; no reemplaza validación inline, confirmaciones ni errores que requieren una decisión modal.
-
-## Infraestructura compartida relacionada
-
-| Patrón | Implementación | Estado |
+| Componente | Uso | Estado |
 |---|---|---|
-| App Top Bar | `MainLayout.razor` + `PageHeaderConfig.TopNavigationItems` | compartido; Figma `105:1517` |
-| Context Toolbar | `MainPageHeader.razor`, `PageHeaderService`, `PageHeaderModels` | compartido; Figma `32:104` |
-| Smart Search | configuración de `MainPageHeader` y estilos en `alfacore-design.css` | patrón compartido, sin componente Razor AlfaDesign aislado; Figma Search Bar `37:2` |
-| Feedback | `AppUiMessage`/`IAppUiOperationService`; hosts globales y surface sólida | infraestructura compartida, presentación aún repartida |
-| Loading | `AlfaEmptyState` y `AppLoadingFrame` | dos alcances; falta un spinner/status único de catálogo |
-| Table | `DataTable`, listados específicos y reglas CSS | patrón, no componente AlfaDesign v1 único; Figma Data Table Row `58:96` |
-| Kanban | vistas específicas por módulo | patrón, no componente AlfaDesign v1 único; Figma Kanban Card `59:86` |
-| Popover de filtros | Smart Search / MainPageHeader | patrón sin componente AlfaDesign aislado; Figma `81:560` |
+| `AlfaButton` | Primary, Secondary, Ghost, Danger; Sm/Md; icono/loading | compartido |
+| `AlfaIconButton` | acción compacta con label/tooltip obligatorio | compartido |
+| `AlfaInput` | texto con label, help, required y error | compartido |
+| `AlfaSelect` | catálogo corto con opciones reales | compartido |
+| `AlfaCheckbox` | booleano o mixed | compartido |
+| `AlfaTabs` | navegación de secciones | compartido |
+| `AlfaTag` | estado/categoría semántica | compartido |
+| `AlfaActionMenu` | overflow contextual | compartido |
+| `AlfaConfirmDialog` | confirmación destructiva/descarte | compartido |
+| `AlfaDialog` | shell modal genérico | compartido |
+| `AlfaLookup<TItem>` | búsqueda de relaciones/catálogos grandes | compartido |
+| `AlfaNotification` | feedback flotante con `AppUiMessage` | compartido |
+| `AlfaEmptyState` | vacío, sin resultados, error recuperable | compartido |
 
-## Tabla semántica
+No usar `.btn`, `.form-control`, modal Bootstrap o dropdown Bootstrap cuando exista esta semántica. Que un componente aparezca en Razor no acredita cumplimiento: debe renderizar e integrarse según contrato.
 
-| Intención | Implementación oficial |
-|---|---|
-| Primary action | `AlfaButton` Primary |
-| Secondary action | `AlfaButton` Secondary |
-| Ghost action | `AlfaButton` Ghost |
-| Danger action | `AlfaButton` Danger |
-| Icon action | `AlfaIconButton` |
-| Input / Select / Checkbox / Tabs / Tag | componente Alfa homónimo |
-| Action Menu | `AlfaActionMenu` |
-| Confirmación | `AlfaConfirmDialog` |
-| Dialog/Modal | `AlfaDialog` |
-| Lookup | `AlfaLookup<TItem>` |
-| Empty / Error recuperable | `AlfaEmptyState` |
-| Feedback de operación | `AlfaNotification` + `AppUiMessage` |
-| Popover | Smart Search/MainPageHeader; deuda de componente aislado |
-| Loading | `AppLoadingFrame` o estado de `AlfaEmptyState`; deuda de patrón único |
-| Smart Search | configuración compartida de `MainPageHeader` |
-| Table/List | `DataTable` + patrón CSS; deuda de componente AlfaDesign único |
-| Kanban | vista específica del módulo; deuda de componente compartido |
+## Patrones Compartidos
 
-No usar `.btn`, `.form-control`, modal Bootstrap o dropdown Bootstrap cuando exista esta semántica. Las excepciones legacy deben constar en el checklist de la pantalla.
+| Patrón | Implementación actual | Contrato |
+|---|---|---|
+| App Top Bar | `MainLayout` + `PageHeaderConfig.TopNavigationItems` | global, no se duplica |
+| Context Toolbar | `MainPageHeader`, `PageHeaderService`, modelos de header | acciones, búsqueda, vistas y paginación reales |
+| Smart Search | `MainPageHeader` + markup de módulo + `alfacore-design.css` | patrón compartido, no componente Razor único |
+| Filter Popover | Smart Search + `alfa-smart-search-popover.js` | anclado al trigger, viewport-aware, clamped |
+| Data View | estructura de cada Browse/List/Kanban | Header + content/rows + Footer |
+| Data View Footer | `.alfa-data-view-footer` | resumen/status y controles secundarios; no repite nombre de módulo |
+| Data View Column Sizing | `AlfaDataViewColumnSizing`, CSS scoped y `alfa-data-view-columns.js` | opcional, con min/default/max, preview/commit y persistencia |
+| Sticky Actions | CSS scoped de tabla | opcional para tablas con scroll horizontal |
+| Table/List | tablas específicas, `DataTable` donde aplique | patrón, no DataTable AlfaDesign universal |
+| Kanban | vistas específicas por módulo | patrón, no componente compartido universal |
+
+## Smart Search
+
+Variantes semánticas:
+
+- compact: 408 px preferred, filtros simples y acciones.
+- standard: 520 px preferred, contenido medio en dos filas conceptuales.
+- wide: 760 px preferred, contenido adicional real como filtro personalizado full-row.
+
+El ancho siempre se clampa al viewport. Compact/standard ubican `Acciones | Aplicar/Limpiar` como unidad funcional, sin separación artificial full-row. Wide puede usar más columnas y reflow responsive.
+
+## Data View Footer
+
+Clases oficiales:
+
+- `.alfa-data-view-footer`
+- `.alfa-data-view-footer__summary`
+- `.alfa-data-view-footer__controls`
+- `.alfa-data-view-footer__page-size`
+
+Formato de texto: `14 registros · Página 1 de 1`; con estado adicional: `311 registros · Página 1 de 7 · 2 seleccionados · Sin agrupar · 1 filtro`.
+
+## Column Sizing
+
+No crear un componente DataTable prematuro. El módulo define metadata por columna y usa helper compartido si necesita drag. Persistencia por usuario via configuración existente (`TA_CONFIGURACION`), no `localStorage`. Reset de widths conserva visibilidad, orden y agrupación.

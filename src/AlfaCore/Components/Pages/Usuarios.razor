@@ -104,18 +104,6 @@
         var groups = BuildGridGroups();
 
         <section class="usuarios-list-shell @( _selectedNames.Count > 0 ? "usuarios-list-shell--selection" : string.Empty)">
-            <header class="usuarios-list-shell__summary">
-                <div>
-                    <span class="usuarios-list-shell__eyebrow">Listado de usuarios</span>
-                    <strong>@GetBrowseSummary()</strong>
-                </div>
-                <AlfaSelect Value="@_filters.PageSize.ToString()"
-                            ValueChanged="SetPageSizeAsync"
-                            Options="@PageSizeOptions"
-                            Disabled="@_loadingList"
-                            Class="usuarios-list-shell__page-size" />
-            </header>
-
             @if (_loadingList)
             {
                 <div class="usuarios-list-shell__state">
@@ -235,6 +223,16 @@
                 </div>
 
             }
+            <footer class="alfa-data-view-footer">
+                <span class="alfa-data-view-footer__summary">@GetBrowseSummary()</span>
+                <div class="alfa-data-view-footer__controls">
+                    <AlfaSelect Value="@_filters.PageSize.ToString()"
+                                ValueChanged="SetPageSizeAsync"
+                                Options="@PageSizeOptions"
+                                Disabled="@_loadingList"
+                                Class="alfa-data-view-footer__page-size" />
+                </div>
+            </footer>
         </section>
     }
 
@@ -378,22 +376,22 @@
         @if (_showUsuariosSearchPanel)
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseUsuariosSearchPanel"></button>
-            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
-                <div class="smart-search__column">
+            <div class="smart-search__panel smart-search__panel--compact" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
+                <div class="smart-search__column smart-search__section smart-search__section--status">
                     <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
                     <button type="button" class="@GetUsuariosSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetUsuariosStatusFilterAsync("1")'>Activos</button>
                     <button type="button" class="@GetUsuariosSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetUsuariosStatusFilterAsync("0")'>Inactivos</button>
                     <button type="button" class="@GetUsuariosSmartOptionClass(string.IsNullOrWhiteSpace(_activoFiltro))" @onclick='() => SetUsuariosStatusFilterAsync("")'>Todos</button>
                 </div>
-                <div class="smart-search__column">
+                <div class="smart-search__column smart-search__section smart-search__section--type">
                     <h4><i class="bi bi-people-fill"></i> Tipo</h4>
                     <button type="button" class="@GetUsuariosSmartOptionClass(string.IsNullOrWhiteSpace(_grupoFiltro))" @onclick='() => SetUsuariosTypeFilterAsync("")'>Todos</button>
                     <button type="button" class="@GetUsuariosSmartOptionClass(_grupoFiltro == "0")" @onclick='() => SetUsuariosTypeFilterAsync("0")'>Usuarios</button>
                     <button type="button" class="@GetUsuariosSmartOptionClass(_grupoFiltro == "1")" @onclick='() => SetUsuariosTypeFilterAsync("1")'>Grupos</button>
                 </div>
-                <div class="smart-search__column">
+                <div class="smart-search__column smart-search__section smart-search__section--actions">
                     <h4><i class="bi bi-lightning-charge-fill"></i> Acciones</h4>
-                    <div class="actions">
+                    <div class="actions smart-search__actions">
                         <AlfaButton Variant="AlfaButtonVariant.Primary"
                                     Size="AlfaSize.Sm"
                                     Icon="bi bi-search"
@@ -1366,9 +1364,18 @@
         };
 
     private string GetBrowseSummary()
-        => _selectedNames.Count > 0
-            ? $"{_selectedNames.Count} seleccionado(s) en esta página"
-            : $"{_pagedTotal} registro(s) · Página {_pageNumber} de {_totalPages}";
+    {
+        var selection = _selectedNames.Count > 0
+            ? $" · {FormatSelectedCount(_selectedNames.Count)}"
+            : string.Empty;
+        return $"{FormatRecordCount(_pagedTotal)} · Página {_pageNumber} de {_totalPages}{selection}";
+    }
+
+    private static string FormatRecordCount(int count)
+        => count == 1 ? "1 registro" : $"{count} registros";
+
+    private static string FormatSelectedCount(int count)
+        => count == 1 ? "1 seleccionado" : $"{count} seleccionados";
 
     private string GetDeactivateConfirmationTitle()
         => !string.IsNullOrWhiteSpace(_rowDeactivateName)

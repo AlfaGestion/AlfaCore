@@ -53,60 +53,6 @@
     overflow: hidden;
 }
 
-.contactos-list-shell--kanban .contactos-list-shell__summary {
-    min-height: 20px;
-    padding: 0 0 var(--alfa-space-8);
-    border-bottom: 0;
-}
-
-.contactos-list-shell--kanban .contactos-list-shell__eyebrow {
-    display: none;
-}
-
-.contactos-list-shell__summary {
-    min-height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--alfa-space-12);
-    padding: var(--alfa-space-8) var(--alfa-space-12);
-    border-bottom: 1px solid var(--alfa-border-default);
-    order: 2;
-}
-
-.contactos-list-shell--selection .contactos-list-shell__summary,
-.contactos-list-shell--kanban .contactos-list-shell__summary {
-    order: 0;
-}
-
-.contactos-list-shell__state,
-.contactos-list-shell__table-scroll,
-.contactos-list-shell ::deep .contactos-kanban {
-    order: 1;
-}
-
-.contactos-list-shell__summary > div {
-    min-width: 0;
-    display: grid;
-    gap: 2px;
-}
-
-.contactos-list-shell__summary strong {
-    overflow: hidden;
-    color: var(--alfa-text-primary);
-    font-size: 13px;
-    font-weight: 600;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.contactos-list-shell__eyebrow {
-    color: var(--alfa-text-secondary);
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-}
-
 .contactos-list-shell__state {
     padding: var(--alfa-space-16);
 }
@@ -348,25 +294,12 @@
         gap: var(--alfa-space-12);
     }
 
-    .contactos-list-shell__summary {
-        align-items: flex-start;
-        flex-direction: column;
-    }
-
     .contactos-list-table {
         min-width: 980px;
     }
 }
 
 /* Escala compartida del piloto Contactos. */
-.contactos-list-shell__summary strong {
-    font-size: var(--alfa-font-body);
-}
-
-.contactos-list-shell__eyebrow {
-    font-size: var(--alfa-font-caption);
-}
-
 .contactos-list-shell .contactos-list-table--local-sticky thead th {
     font-size: 12px;
 }

@@ -153,20 +153,6 @@
         var groups = BuildGridGroups();
 
         <section class="contactos-list-shell @(_viewMode == ContactosViewModeKeys.Kanban ? "contactos-list-shell--kanban" : _selectedIds.Count > 0 ? "contactos-list-shell--selection" : string.Empty)" aria-label="Listado de contactos">
-            @if (_viewMode != ContactosViewModeKeys.Kanban)
-            {
-                <div class="contactos-list-shell__summary">
-                    <div>
-                        <span class="contactos-list-shell__eyebrow">Contactos</span>
-                        <strong>@GetContactListSummary()</strong>
-                    </div>
-                    @if (_selectedIds.Count > 0)
-                    {
-                        <AlfaTag Tone="AlfaTagTone.Accent">@_selectedIds.Count seleccionados</AlfaTag>
-                    }
-                </div>
-            }
-
             @if (_viewMode == ContactosViewModeKeys.Kanban)
             {
                 <ContactosKanbanView Items="_items"
@@ -322,6 +308,9 @@
                 </div>
 
             }
+            <footer class="alfa-data-view-footer">
+                <span class="alfa-data-view-footer__summary">@GetContactListSummary()</span>
+            </footer>
         </section>
     }
 </div>
@@ -677,7 +666,7 @@
         @if (_showSearchPanel)
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
-            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleContactApplyKeyDownAsync">
+            <div class="smart-search__panel smart-search__panel--wide" @onclick:stopPropagation @onkeydown="HandleContactApplyKeyDownAsync">
                 <div class="smart-search__column">
                     <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                     <button type="button" class='@GetSmartOptionClass(_activoFiltro == "1")' @onclick='() => SetContactStatusFilterAsync("1")'>Personas activas</button>
@@ -1641,14 +1630,29 @@
 
     private string GetContactListSummary()
     {
-        var pageText = _totalPages <= 1
-            ? $"{_pagedTotal} registro(s)"
-            : $"{_pagedTotal} registro(s) · página {_pageNumber} de {_totalPages}";
+        var values = new List<string>
+        {
+            $"{FormatRecordCount(_pagedTotal)} · Página {_pageNumber} de {_totalPages}"
+        };
 
-        return HasContactSearchFilters()
-            ? $"{pageText} · filtros activos"
-            : pageText;
+        if (_selectedIds.Count > 0)
+            values.Add(FormatSelectedCount(_selectedIds.Count));
+
+        var filters = BuildContactFilterChips().Count;
+        if (filters > 0)
+            values.Add(FormatFilterCount(filters));
+
+        return string.Join(" · ", values);
     }
+
+    private static string FormatRecordCount(int count)
+        => count == 1 ? "1 registro" : $"{count} registros";
+
+    private static string FormatSelectedCount(int count)
+        => count == 1 ? "1 seleccionado" : $"{count} seleccionados";
+
+    private static string FormatFilterCount(int count)
+        => count == 1 ? "1 filtro" : $"{count} filtros";
 
     private static string GetDisplayValue(string? value)
         => string.IsNullOrWhiteSpace(value) ? "—" : value;

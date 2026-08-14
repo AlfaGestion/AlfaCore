@@ -1,36 +1,38 @@
 # AlfaDesign v1
 
-Este directorio es el punto de entrada obligatorio para crear o migrar interfaces de AlfaCore. AlfaDesign se sostiene con tres fuentes complementarias, no intercambiables:
+Este directorio es la fuente contractual de UI para crear o migrar pantallas AlfaCore. Figma expresa intención visual, el código expresa comportamiento real y `docs/ui` define cómo reconciliarlos sin inventar variantes locales.
 
-- [Figma oficial](https://www.figma.com/design/nNMmjOZSl1w5hlPzbfhJs4/AlfaCore) define la intención y la referencia visual.
-- `docs/ui` define el contrato de implementación y su gobernanza.
-- los componentes compartidos de `src/AlfaCore/Components/Shared/AlfaDesign/` son la implementación reutilizable.
+## Lectura Recomendada
 
-La lógica, los datos, permisos y operaciones reales siguen perteneciendo al código, servicios y base de datos. Ante una inconsistencia no se crea una variante local: se informa y se decide qué fuente actualizar.
+1. [Contrato AlfaDesign v1](./alfadesign-v1.md): norma principal.
+2. [Tokens](./alfadesign-tokens.md): escala productiva y diferencias Figma/CSS.
+3. [Componentes y patrones](./alfadesign-components.md): catálogo component-first.
+4. [Guía de módulos](./alfadesign-module-guide.md): proceso para migrar o crear pantallas.
+5. [Checklist](./alfadesign-checklist.md): Definition of Done.
+6. [Mapa Figma - código](./alfadesign-figma-map.md): nodos reales y deuda Figma.
 
-Una pantalla se considera migrada cuando conserva su funcionalidad real, usa el shell y la Context Toolbar compartidos, reemplaza dependencias visuales legacy por componentes/tokens AlfaDesign, cubre sus estados y responsive, y declara el resultado del checklist con cualquier excepción pendiente.
+## Referencias Por Módulo
 
-## Para crear o migrar un módulo
+| Módulo | Estado documental | Uso como referencia |
+|---|---|---|
+| [Contactos](./alfadesign-contactos-reference.md) | AlfaDesign cerrado | CRUD con Browse/List/Kanban, Record, Edit/New, relaciones y actividad. Smart Search wide. Column resize no implementado. |
+| [Usuarios](./alfadesign-usuarios-reference.md) | AlfaDesign cerrado | ABM administrativo Browse -> Edit/New. Smart Search compact. Column resize no implementado. |
+| [Técnicos](./alfadesign-tecnicos-reference.md) | AlfaDesign cerrado | ABM administrativo con relación opcional y alta auxiliar. Smart Search compact. Column resize no implementado. |
+| Clientes | migración en curso | Browse AlfaDesign implementado/en validación, Smart Search standard, column resize, WidthPx y sticky Actions. Editor pendiente. |
+| Proveedores | legacy | Comparte `CuentasComercialesPage` con Clientes; debe protegerse para no migrarlo accidentalmente. |
 
-1. Leer [AlfaDesign v1](./alfadesign-v1.md).
-2. Leer [tokens](./alfadesign-tokens.md).
-3. Leer el [catálogo de componentes](./alfadesign-components.md).
-4. Seguir la [guía de módulos](./alfadesign-module-guide.md).
-5. Consultar el [mapa Figma ↔ código](./alfadesign-figma-map.md).
-6. Revisar [Contactos como referencia](./alfadesign-contactos-reference.md), sin copiar su lógica de dominio.
-7. Revisar [Usuarios como referencia](./alfadesign-usuarios-reference.md) cuando el dominio incluya cuentas de acceso, sin confundir grupos con roles o permisos.
-8. Revisar [Técnicos como referencia](./alfadesign-tecnicos-reference.md) cuando exista una relación opcional a otra entidad o un alta auxiliar no transaccional.
-9. Implementar preservando el comportamiento existente.
-10. Ejecutar el [checklist](./alfadesign-checklist.md).
-11. Reportar toda excepción y deuda restante.
+No existe todavía una referencia final de Clientes porque la migración no cerró 10.2-10.5.
 
-## Prompt oficial reutilizable
+## Gobierno
 
-> Implementá o migrá este módulo siguiendo AlfaDesign. Leé primero `docs/ui/README.md` y los documentos enlazados. Aplicá la regla component-first: buscá y reutilizá componentes compartidos antes de crear UI. Conservá lógica, datos, permisos y operaciones reales. Usá la App Top Bar global y la Context Toolbar compartida; agregá Data View Header solo para List/Table/Grid cuando corresponda. Contrastá cambios visuales estructurales con el Figma oficial, usá tokens AlfaDesign, validá 2048/1440/1024 y ejecutá `docs/ui/alfadesign-checklist.md`. No inventes funcionalidades ni variantes locales; documentá excepciones.
+- Una decisión AlfaDesign aprobada debe quedar en Figma, docs o código compartido; no solo en prompts.
+- Si existe componente AlfaDesign, se reutiliza antes de crear UI local.
+- Smart Search, Data View, Data View Footer y Data View Column Sizing son patrones/infraestructura, no un componente Razor monolítico.
+- Data View Footer usa un único estilo compartido y no repite el nombre del módulo.
+- Column resize es opcional: solo se usa cuando la densidad de columnas lo justifica.
+- La paginación principal vive en Context Toolbar; el selector de page-size puede vivir en el Footer como control secundario.
+- Todo cambio compartido en `CuentasComercialesPage` debe preservar la rama legacy de Proveedores.
 
-## Gobernanza
+## Prompt Base Para Migraciones
 
-- Las decisiones aprobadas deben quedar en Figma, docs o componentes; nunca únicamente en chats o capturas.
-- Nuevo componente reutilizable: actualizar código, [catálogo](./alfadesign-components.md) y [mapa](./alfadesign-figma-map.md); actualizar Figma cuando corresponda y haya aprobación.
-- Nuevo patrón: actualizar la norma o guía. Nueva condición de aceptación: actualizar el checklist.
-- Todo módulo nuevo o migrado debe reportar el checklist. [Contactos](./alfadesign-contactos-reference.md), [Usuarios](./alfadesign-usuarios-reference.md) y [Técnicos](./alfadesign-tecnicos-reference.md) son referencias v1 de dominios distintos, no plantillas para copiar indiscriminadamente.
+> Migrá este módulo siguiendo AlfaDesign. Leé `docs/ui/README.md` y los documentos enlazados. Conservá lógica, datos, permisos, rutas y operaciones reales. Usá App Top Bar y Context Toolbar compartidas. Elegí Smart Search compact/standard/wide por complejidad de contenido. Definí Data View Header, rows y Data View Footer. Evaluá column resize y sticky Actions solo si aportan valor. Reutilizá componentes AlfaDesign y documentá excepciones. Validá 2048/1440/1024 sin overflow horizontal global.

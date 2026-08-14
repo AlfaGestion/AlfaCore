@@ -103,18 +103,6 @@
         var groups         = BuildGridGroups();
 
         <section class="tecnicos-list-shell">
-            <header class="tecnicos-list-shell__summary">
-                <div>
-                    <span class="tecnicos-list-shell__eyebrow">Listado de técnicos</span>
-                    <strong>@GetBrowseSummary()</strong>
-                </div>
-                <AlfaSelect Value="@_filters.PageSize.ToString()"
-                            ValueChanged="SetPageSizeAsync"
-                            Options="@PageSizeOptions"
-                            Disabled="@_loadingList"
-                            Class="tecnicos-list-shell__page-size" />
-            </header>
-
             @if (_loadingList)
             {
                 <div class="tecnicos-list-shell__state">
@@ -221,6 +209,16 @@
                 </div>
 
             }
+            <footer class="alfa-data-view-footer">
+                <span class="alfa-data-view-footer__summary">@GetBrowseSummary()</span>
+                <div class="alfa-data-view-footer__controls">
+                    <AlfaSelect Value="@_filters.PageSize.ToString()"
+                                ValueChanged="SetPageSizeAsync"
+                                Options="@PageSizeOptions"
+                                Disabled="@_loadingList"
+                                Class="alfa-data-view-footer__page-size" />
+                </div>
+            </footer>
         </section>
     }
 
@@ -456,23 +454,23 @@
         @if (_showSearchPanel)
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
-            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
-                <div class="smart-search__column">
+            <div class="smart-search__panel smart-search__panel--compact" @onclick:stopPropagation @onkeydown="HandleApplyKeyDownAsync">
+                <div class="smart-search__column smart-search__section smart-search__section--status">
                     <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
                     <button type="button" class="@GetSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetStatusFilterAsync("1")'>Activos</button>
                     <button type="button" class="@GetSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetStatusFilterAsync("0")'>Dados de baja</button>
                     <button type="button" class="@GetSmartOptionClass(string.IsNullOrWhiteSpace(_activoFiltro))" @onclick='() => SetStatusFilterAsync("")'>Todos</button>
                 </div>
-                <div class="smart-search__column">
+                <div class="smart-search__column smart-search__section smart-search__section--group">
                     <h4><i class="bi bi-stack"></i> Agrupar por</h4>
                     <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.None)"          @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.None)'>Sin agrupar</button>
                     <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.Cargo)"         @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.Cargo)'>Cargo</button>
                     <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.OcultarCliente)" @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.OcultarCliente)'>Ocultar cliente</button>
                     <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == TecnicosViewGroupKeys.Activo)"        @onclick='() => SetGroupAsync(TecnicosViewGroupKeys.Activo)'>Estado</button>
                 </div>
-                <div class="smart-search__column">
+                <div class="smart-search__column smart-search__section smart-search__section--actions">
                     <h4><i class="bi bi-lightning-charge-fill"></i> Acciones</h4>
-                    <div class="actions">
+                    <div class="actions smart-search__actions">
                         <AlfaButton Variant="AlfaButtonVariant.Primary"
                                     Size="AlfaSize.Sm"
                                     Icon="bi bi-search"
@@ -1674,7 +1672,10 @@
         ];
 
     private string GetBrowseSummary()
-        => $"{_pagedTotal} registro(s) · Página {_pageNumber} de {_totalPages} · Editá desde el menú o con doble clic";
+        => $"{FormatRecordCount(_pagedTotal)} · Página {_pageNumber} de {_totalPages}";
+
+    private static string FormatRecordCount(int count)
+        => count == 1 ? "1 registro" : $"{count} registros";
 
     private static string GetTecnicoColumnCssClass(string key)
         => $"tecnicos-list-table__col tecnicos-list-table__col--{(key ?? string.Empty).Trim().ToLowerInvariant()}";

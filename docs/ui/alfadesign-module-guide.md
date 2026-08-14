@@ -1,60 +1,79 @@
-# Guía de módulos AlfaDesign
+# Guía De Módulos AlfaDesign
 
 [Índice](./README.md) · [Norma](./alfadesign-v1.md) · [Componentes](./alfadesign-components.md) · [Checklist](./alfadesign-checklist.md)
 
-## Proceso obligatorio
+## Proceso
 
-1. Auditar la lógica existente.
-2. Inventariar pantallas.
-3. Inventariar estados: Browse, Record, Edit, New y estados transitorios reales.
-4. Identificar queries y objetos oficiales.
-5. Identificar operaciones reales, permisos, persistencia y auditoría.
-6. Identificar estilos y componentes legacy.
-7. Revisar componentes AlfaDesign y el catálogo.
-8. Revisar Figma cuando la composición o el patrón lo requiera.
-9. Migrar el shell mediante la infraestructura global.
-10. Migrar/configurar la Context Toolbar compartida.
-11. Migrar contenido, Data View Header y overlays usando tokens/componentes.
-12. Mantener handlers, rutas, URL/history y comportamiento.
-13. Validar responsive a 2048/1440/1024, teclado, foco y scroll.
-14. Ejecutar el checklist técnico y visual.
-15. Documentar excepciones, deuda, regresiones y legacy restante.
+1. Auditar dominio, datos, permisos, rutas, servicios y operaciones reales.
+2. Elegir arquitectura: CRUD con ficha, ABM administrativo, ABM con entidad relacionada, u otra derivada del dominio.
+3. Inventariar estados: Browse, Record, Edit, New y transitorios reales.
+4. Usar App Top Bar y Context Toolbar compartidas.
+5. Elegir Smart Search por complejidad de contenido: compact, standard o wide.
+6. Definir Data View: Header, rows/content y Footer.
+7. Evaluar si column resize aporta valor.
+8. Decidir sticky Actions según overflow horizontal y acciones por fila.
+9. Usar Data View Footer compartido.
+10. Migrar overlays y feedback con componentes AlfaDesign.
+11. Mantener backend, semántica, auditoría, URL/history y callbacks reales.
+12. Validar 2048/1440/1024, teclado, foco y scroll.
+13. Ejecutar checklist y documentar excepciones.
 
-Antes de crear UI, auditar explícitamente shell, encabezado global, toolbar, buscador, filtros, paginación, acciones, selector de vista, encabezado table/grid, navegación Record y estados Edit/New. Clasificar cada uno como AlfaDesign reutilizable, legacy a migrar, faltante requerido por funcionalidad real o innecesario. App Top Bar, Context Toolbar, Smart Search, paginador y View Switcher se configuran desde componentes/servicios compartidos; no se reconstruyen dentro del módulo.
+No copiar módulos literalmente. Contactos, Usuarios y Técnicos son referencias de arquitectura, no plantillas universales.
 
-Migrar presentación no significa reescribir funcionalidad. No se crean servicios V2, SQL ad hoc, búsquedas falsas, acciones sin backend ni componentes de dominio dentro de shells genéricos.
-
-## Regla component-first
+## Component-First
 
 Antes de crear button, input, select, checkbox, tabs, tag, menú, confirmación, dialog, lookup, empty state o feedback:
 
-1. buscar en `Components/Shared/AlfaDesign`;
-2. revisar [catálogo](./alfadesign-components.md);
-3. revisar el nodo real en el [mapa Figma](./alfadesign-figma-map.md);
-4. reutilizar;
-5. solo si falta y el patrón es general, crear un componente compartido, tokenizado y documentado.
+1. Buscar en `Components/Shared/AlfaDesign`.
+2. Revisar el catálogo.
+3. Revisar Figma si cambia la estructura o jerarquía.
+4. Reutilizar.
+5. Solo crear componente compartido si el patrón es general.
 
-No crear barras locales que dupliquen App Top Bar o Context Toolbar. Data View Header solo pertenece a List/Table/Grid.
+Smart Search, tablas y Data View son patrones; pueden tener markup de módulo mientras respeten contrato compartido.
 
-## Guardas de dominio para Usuarios y seguridad
+## Smart Search
 
-Una referencia visual no autoriza a inventar modelo de seguridad. Antes de trasladar patrones de Usuarios:
+No se decide por módulo ni por breakpoint solamente. Se decide por contenido:
 
-- confirmar los campos y operaciones reales de `TA_USUARIOS` y los servicios oficiales;
-- tratar `EsGrupo` como la clasificación legacy que es, no como un rol;
-- mantener roles y permisos fuera del editor mientras no exista un contrato backend explícito;
-- no deducir permisos a partir de una maqueta Figma ni crear opciones sin persistencia real;
-- no ampliar la exposición de contraseñas, logs, auditoría, JavaScript, documentación o snapshots serializados;
-- documentar por separado las deudas funcionales y de seguridad que una migración visual no resuelve.
+- compact: dos grupos principales y acciones.
+- standard: varios grupos en dos filas conceptuales.
+- wide: contenido adicional real, como filtro personalizado.
 
-La [referencia de Usuarios](./alfadesign-usuarios-reference.md) registra las diferencias deliberadas entre Figma y el dominio productivo actual.
+El popover debe estar anclado al trigger real y clamped al viewport mediante la infraestructura JS/CSS compartida. No usar modal centrado, top hardcodeado por barras ni posicionamiento sin clamp.
 
-## Elegir arquitectura según el dominio real
+## Data View
 
-AlfaDesign no impone un único recorrido:
+Todo Browse/List debe razonar su contenido como:
 
-- CRUD con ficha: `Browse → Record → Edit/New`. Referencia: [Contactos](./alfadesign-contactos-reference.md).
-- ABM administrativo: `Browse → Edit/New`, sin Record artificial. Referencia: [Usuarios](./alfadesign-usuarios-reference.md).
-- ABM administrativo con entidad relacionada opcional y alta auxiliar: `Browse → Edit/New`, manteniendo separados el dirty state local y la consecuencia externa pendiente. Referencia: [Técnicos](./alfadesign-tecnicos-reference.md).
+```text
+Data View Header
+Scrollable content / Rows
+Data View Footer
+```
 
-El inventario funcional determina qué estados existen. No agregar una Ficha, lista lateral, Smart Search, permisos o navegación intermedia sólo para imitar otro módulo o un frame de Figma.
+Header es encabezado de tabla/list/grid. Footer es status de la colección, no título de módulo ni toolbar. No repetir `LISTADO DE...`, `CONTACTOS`, `USUARIOS`, etc. en el footer.
+
+## Page Size
+
+La paginación principal vive en Context Toolbar. El selector `25/50/100 por página` puede ser control secundario de Data View Footer cuando la implementación lo permita. No duplicar paginadores.
+
+## Column Sizing
+
+Aplicar solo si aporta valor. Requiere:
+
+- metadata `Key`, `MinWidth`, `DefaultWidth`, `MaxWidth`, `Resizable`;
+- columnas estructurales fijas;
+- ellipsis y horizontal scroll interno;
+- preview durante drag;
+- persistencia al commit;
+- `WidthPx` opcional en configuración por usuario;
+- reset que conserve visibilidad, orden y agrupación.
+
+## Sticky Actions
+
+Usar solo si hay tabla ancha con scroll horizontal y acciones por fila. Debe tener ancho fijo, background opaco, z-index, separador y estados zebra/hover/selected correctos.
+
+## Guardas De Dominio
+
+Una referencia visual no autoriza a inventar datos ni seguridad. En Usuarios, `EsGrupo` no es rol; en Técnicos, Usuario asociado es opcional y no transaccional; en Clientes/Proveedores, `CuentasComercialesPage` es compartido y toda migración debe proteger `Tipo == Cliente && !editor` para no afectar Proveedores.
