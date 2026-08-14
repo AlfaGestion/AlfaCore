@@ -282,12 +282,26 @@ public class Program
             return Results.File(path, contentType, Path.GetFileName(path));
         });
 
-        app.MapGet("/api/interfaces/adjuntos/{idAdjunto:long}", async (
+        app.MapGet("/api/interfaces/adjuntos/{idBase:int}/{idAdjunto:long}", async (
+            int idBase,
             long idAdjunto,
+            HttpRequest httpRequest,
             IInterfacesService interfacesSvc,
             IInterfacesConfigService interfacesConfigSvc,
+            IAppUserSessionService appUserSession,
+            ISessionService sessionService,
+            ICentralBasesService basesService,
             CancellationToken ct) =>
         {
+            // Este endpoint corre fuera del circuito Blazor: no arrastra ni el usuario ni la base activa.
+            // Restauramos el usuario desde el token y fijamos/validamos la base pedida antes de leer.
+            var token = httpRequest.Query["token"].ToString();
+            if (!string.IsNullOrWhiteSpace(token))
+                appUserSession.TryRestoreFromToken(token);
+
+            if (!await TryActivateInterfacesBaseAsync(idBase, sessionService, basesService, appUserSession, ct))
+                return Results.NotFound();
+
             var file = await interfacesSvc.GetAttachmentForServeAsync(idAdjunto, ct);
             if (file is null) return Results.NotFound();
 
@@ -1944,6 +1958,51 @@ public class Program
         {
             return false;
         }
+
+        sessionService.SetWebhookOverride(new SessionDto
+        {
+            BaseId = baseInfo.IdBase,
+            Nombre = baseInfo.Nombre,
+            Servidor = baseInfo.DbServer,
+            BaseDatos = baseInfo.DbName,
+            Usuario = baseInfo.DbUser,
+            Password = baseInfo.DbPassword,
+            TrustServerCertificate = true
+        });
+
+        return true;
+    }
+
+    /// <summary>
+    /// Fija la base indicada como activa para este request (endpoint de descarga de adjuntos de
+    /// Interfaces, que corre fuera del circuito Blazor y por eso no arrastra la base seleccionada).
+    /// Valida que el usuario autenticado tenga acceso a esa base: superadmin ve todas, el resto solo
+    /// las de su cliente. Devuelve <c>false</c> (el caller responde 404) si no hay usuario, la base
+    /// no existe o el usuario no tiene acceso. <c>idBase == 0</c> se acepta como passthrough
+    /// (modo legacy / base única: la resolución del scope ya devuelve la base correcta).
+    /// </summary>
+    private static async Task<bool> TryActivateInterfacesBaseAsync(
+        int idBase,
+        ISessionService sessionService,
+        ICentralBasesService basesService,
+        IAppUserSessionService appUserSession,
+        CancellationToken ct)
+    {
+        if (idBase <= 0)
+            return true;
+
+        var user = appUserSession.CurrentUser;
+        if (user is null)
+            return false;
+
+        var baseInfo = await basesService.GetByIdAsync(idBase, ct);
+        if (baseInfo is null)
+            return false;
+
+        // Autorización: superadmin accede a todas; el resto solo a las bases de su cliente.
+        if (!user.SuperAdmin &&
+            !string.Equals(baseInfo.IdCliente.Trim(), user.IdCliente.Trim(), StringComparison.OrdinalIgnoreCase))
+            return false;
 
         sessionService.SetWebhookOverride(new SessionDto
         {

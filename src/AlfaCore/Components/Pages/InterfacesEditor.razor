@@ -8,6 +8,7 @@
 @inject AlfaCore.Services.IInterfacesConfigService InterfacesConfigSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService Session
 @inject NavigationManager Navigation
 @inject IJSRuntime Js
 
@@ -1100,7 +1101,16 @@
     }
 
     private string GetAttachmentDownloadUrl(long idAdjunto)
-        => $"/api/interfaces/adjuntos/{idAdjunto}";
+    {
+        // El endpoint corre fuera del circuito Blazor: le pasamos la base activa (idBase) para que
+        // consulte la base correcta, y el token de sesión para restaurar y autorizar al usuario.
+        var idBase = Session.GetActiveSession()?.BaseId ?? 0;
+        var token = AppUserSession.CurrentToken;
+        var url = $"/api/interfaces/adjuntos/{idBase}/{idAdjunto}";
+        return string.IsNullOrWhiteSpace(token)
+            ? url
+            : $"{url}?token={Uri.EscapeDataString(token)}";
+    }
 
     private static string GetAttachmentIcon(string nombreArchivo)
     {
