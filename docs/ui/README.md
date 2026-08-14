@@ -19,9 +19,10 @@ Una pantalla se considera migrada cuando conserva su funcionalidad real, usa el 
 5. Consultar el [mapa Figma ↔ código](./alfadesign-figma-map.md).
 6. Revisar [Contactos como referencia](./alfadesign-contactos-reference.md), sin copiar su lógica de dominio.
 7. Revisar [Usuarios como referencia](./alfadesign-usuarios-reference.md) cuando el dominio incluya cuentas de acceso, sin confundir grupos con roles o permisos.
-8. Implementar preservando el comportamiento existente.
-9. Ejecutar el [checklist](./alfadesign-checklist.md).
-10. Reportar toda excepción y deuda restante.
+8. Revisar [Técnicos como referencia](./alfadesign-tecnicos-reference.md) cuando exista una relación opcional a otra entidad o un alta auxiliar no transaccional.
+9. Implementar preservando el comportamiento existente.
+10. Ejecutar el [checklist](./alfadesign-checklist.md).
+11. Reportar toda excepción y deuda restante.
 
 ## Prompt oficial reutilizable
 
@@ -32,4 +33,4 @@ Una pantalla se considera migrada cuando conserva su funcionalidad real, usa el 
 - Las decisiones aprobadas deben quedar en Figma, docs o componentes; nunca únicamente en chats o capturas.
 - Nuevo componente reutilizable: actualizar código, [catálogo](./alfadesign-components.md) y [mapa](./alfadesign-figma-map.md); actualizar Figma cuando corresponda y haya aprobación.
 - Nuevo patrón: actualizar la norma o guía. Nueva condición de aceptación: actualizar el checklist.
-- Todo módulo nuevo o migrado debe reportar el checklist. [Contactos](./alfadesign-contactos-reference.md) y [Usuarios](./alfadesign-usuarios-reference.md) son referencias v1 de dominios distintos, no plantillas para copiar indiscriminadamente.
+- Todo módulo nuevo o migrado debe reportar el checklist. [Contactos](./alfadesign-contactos-reference.md), [Usuarios](./alfadesign-usuarios-reference.md) y [Técnicos](./alfadesign-tecnicos-reference.md) son referencias v1 de dominios distintos, no plantillas para copiar indiscriminadamente.

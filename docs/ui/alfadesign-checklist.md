@@ -157,3 +157,16 @@ Legacy restante: ninguno visual dentro de Usuarios; tabla/Smart Search y selecto
 ```
 
 Los 13 puntos están respaldados por la validación manual aprobada de Browse/New/Edit/dirty state/acciones, la auditoría técnica de Fase 8.4 y la comprobación autenticada responsive a 2048, 1440 y 1024 px. En 1024 el editor pasa a una columna, la tabla conserva overflow exclusivamente interno, dialogs y notifications quedan contenidos y no aparece scroll horizontal global.
+
+## Resultado Fase 9.4 — Técnicos (2026-08-14)
+
+```text
+AlfaDesign checklist
+Cumple: 13/13
+Excepciones: ninguna dentro del alcance aprobado.
+Deuda visual: ninguna.
+Regresiones: ninguna detectada.
+Legacy restante: ninguno visual dentro de Técnicos; tabla y Smart Search conservan patrones nativos AlfaDesign justificados.
+```
+
+Los 13 puntos están respaldados por las validaciones manuales aprobadas de Fases 9.1–9.3, la auditoría component-first/legacy completa, las verificaciones técnicas y la comprobación autenticada de Browse/New/Edit a 2048, 1440 y 1024 px. En 1024 el editor pasa a una columna, el último campo queda accesible por scroll vertical, dialogs/notifications permanecen contenidos y el overflow horizontal es exclusivamente interno a la tabla cuando corresponde.

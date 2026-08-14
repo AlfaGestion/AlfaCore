@@ -55,5 +55,6 @@ AlfaDesign no impone un único recorrido:
 
 - CRUD con ficha: `Browse → Record → Edit/New`. Referencia: [Contactos](./alfadesign-contactos-reference.md).
 - ABM administrativo: `Browse → Edit/New`, sin Record artificial. Referencia: [Usuarios](./alfadesign-usuarios-reference.md).
+- ABM administrativo con entidad relacionada opcional y alta auxiliar: `Browse → Edit/New`, manteniendo separados el dirty state local y la consecuencia externa pendiente. Referencia: [Técnicos](./alfadesign-tecnicos-reference.md).
 
 El inventario funcional determina qué estados existen. No agregar una Ficha, lista lateral, Smart Search, permisos o navegación intermedia sólo para imitar otro módulo o un frame de Figma.

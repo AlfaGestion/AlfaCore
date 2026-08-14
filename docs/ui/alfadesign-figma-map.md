@@ -1,6 +1,6 @@
 # Mapa Figma ↔ código
 
-[Índice](./README.md) · [Componentes](./alfadesign-components.md) · [Contactos](./alfadesign-contactos-reference.md) · [Usuarios](./alfadesign-usuarios-reference.md)
+[Índice](./README.md) · [Componentes](./alfadesign-components.md) · [Contactos](./alfadesign-contactos-reference.md) · [Usuarios](./alfadesign-usuarios-reference.md) · [Técnicos](./alfadesign-tecnicos-reference.md)
 
 ## Archivo oficial
 
@@ -78,6 +78,12 @@ La auditoría directa de Fase 8.4 revisó estos frames de `04 — Modules`:
 | Confirmación de baja | `108:2235` | scrim y Confirmation Dialog con Cancelar/Dar de baja | `AlfaConfirmDialog` compartido para baja individual/masiva y descarte; baja lógica real |
 
 Figma expresa intención visual, no contrato de dominio. Sus conceptos “Nombre y apellido”, “Rol”, “Permisos” y “Usuario activo” no se implementan si el backend actual no los ofrece de esa forma. La lista lateral de New/Edit tampoco se replica: AlfaCore usa App Top Bar + Context Toolbar + editor de página completa para evitar un Browse paralelo dentro del formulario.
+
+## Técnicos: adaptación desde referencias AlfaDesign
+
+No existe un frame específico de Técnicos. Su implementación usa como referencias estructurales Usuarios Listado `107:1363`, Nuevo `108:1640`, Edición `108:1840`, Validación `108:2036` y Confirmación `108:2235`, además de Data Table Row `58:96`, Context Toolbar `32:104`, Search `37:2`, Input/Select `49:192`, Checkbox `50:65`, Tag `54:62` y Dialog `80:535`.
+
+La adaptación productiva mantiene un ABM sin Record: Browse con tabla y Smart Search; New/Edit con formulario continuo. No copia tabs, contraseña principal, foto, grupos ni cambio de contraseña de Usuarios. En su lugar representa código, cargo, ubicación, provincia, costo, visibilidad de cliente, Usuario asociado opcional y creación auxiliar de Usuario. Estos nodos son referencias AlfaDesign, no diseños específicos de Técnicos.
 
 ## Cuándo consultar Figma
 
