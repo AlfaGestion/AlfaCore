@@ -1,0 +1,311 @@
+@namespace AlfaCore.Components.Pages
+@using AlfaCore.Models
+@using Microsoft.AspNetCore.Components.Forms
+
+<section class="usuarios-edit-shell" aria-label="@(CreateMode ? "Nuevo usuario" : "Editar usuario")">
+    <header class="usuarios-edit-header">
+        <div class="usuarios-edit-header__identity">
+            <span class="usuarios-edit-header__avatar" aria-hidden="true">
+                @if (!string.IsNullOrWhiteSpace(CurrentPhotoUrl))
+                {
+                    <img src="@CurrentPhotoUrl" alt="" />
+                }
+                else
+                {
+                    <span>@AvatarText</span>
+                }
+            </span>
+            <div class="usuarios-edit-header__copy">
+                <h2>@DisplayName</h2>
+                <div class="usuarios-edit-header__meta">
+                    @if (CreateMode)
+                    {
+                        <AlfaTag Tone="AlfaTagTone.Neutral">Nuevo</AlfaTag>
+                        <span>Se creará activo</span>
+                    }
+                    else
+                    {
+                        <AlfaTag Tone="@(Active ? AlfaTagTone.Success : AlfaTagTone.Neutral)">@(Active ? "Activo" : "Inactivo")</AlfaTag>
+                        <span>Editando cuenta existente</span>
+                    }
+                    <AlfaTag Tone="@(Model.EsGrupo ? AlfaTagTone.Accent : AlfaTagTone.Neutral)">@(Model.EsGrupo ? "Grupo" : "Usuario")</AlfaTag>
+                </div>
+            </div>
+        </div>
+        <span class="usuarios-edit-header__system">Sistema CN000PR</span>
+    </header>
+
+    <article class="usuarios-edit-card">
+        <AlfaTabs Items="@Tabs"
+                  ActiveKey="@ActiveTab"
+                  ActiveKeyChanged="ChangeTabAsync"
+                  AriaLabel="Secciones del usuario" />
+
+        <div class="usuarios-edit-card__scroll">
+            @if (ActiveTab == InformationTab)
+            {
+                <div class="usuarios-edit-content">
+                    <section class="usuarios-edit-section">
+                        <div class="usuarios-edit-section__heading">
+                            <h3>Cuenta</h3>
+                            <p>Identificación utilizada para ingresar y recibir comunicaciones.</p>
+                        </div>
+                        <div class="usuarios-edit-grid">
+                            <AlfaInput Label="Nombre de usuario"
+                                       Required
+                                       MaxLength="50"
+                                       Value="@Model.Nombre"
+                                       ValueChanged="@(value => SetTextAsync(nameof(Model.Nombre), value))"
+                                       ErrorText="@Error("nombre")"
+                                       Disabled="@Saving" />
+                            <AlfaInput Label="Email"
+                                       Type="email"
+                                       MaxLength="150"
+                                       Value="@Model.Email"
+                                       ValueChanged="@(value => SetTextAsync(nameof(Model.Email), value))"
+                                       ErrorText="@Error("email")"
+                                       Disabled="@Saving" />
+                        </div>
+                    </section>
+
+                    <section class="usuarios-edit-section">
+                        <div class="usuarios-edit-section__heading">
+                            <h3>Tipo</h3>
+                            <p>Define si la cuenta representa una persona, un grupo o un técnico.</p>
+                        </div>
+                        <div class="usuarios-edit-options">
+                            <div class="usuarios-edit-option">
+                                <AlfaCheckbox Value="@Model.EsGrupo"
+                                              ValueChanged="@(value => SetFlagAsync(nameof(Model.EsGrupo), value))"
+                                              Disabled="@Saving">Usuario de referencia para grupo</AlfaCheckbox>
+                                <p>Los grupos no utilizan contraseña ni cambio de clave al iniciar.</p>
+                            </div>
+                            <div class="usuarios-edit-option">
+                                <AlfaCheckbox Value="@Model.EsTecnico"
+                                              ValueChanged="@(value => SetFlagAsync(nameof(Model.EsTecnico), value))"
+                                              Disabled="@(Saving || Model.EsGrupo)">Es técnico / agente de soporte</AlfaCheckbox>
+                                <p>Habilita la asignación de conversaciones y el uso del chat interno.</p>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section class="usuarios-edit-section">
+                        <div class="usuarios-edit-section__heading">
+                            <h3>Foto</h3>
+                            <p>Imagen JPG/JPEG utilizada por la cuenta.</p>
+                        </div>
+                        <div class="usuarios-edit-photo">
+                            <div class="usuarios-edit-photo__preview">
+                                @if (!string.IsNullOrWhiteSpace(CurrentPhotoUrl))
+                                {
+                                    <img src="@CurrentPhotoUrl" alt="Foto del usuario" />
+                                }
+                                else
+                                {
+                                    <i class="bi bi-person-bounding-box" aria-hidden="true"></i>
+                                }
+                            </div>
+                            <div class="usuarios-edit-photo__content">
+                                <strong>@(HasPhoto ? "Foto seleccionada" : "Sin foto")</strong>
+                                <span>Se guarda como JPG en la ubicación configurada por el sistema.</span>
+                                <div class="usuarios-edit-photo__actions">
+                                    <div class="usuarios-edit-photo__picker">
+                                        <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                                                    Size="AlfaSize.Sm"
+                                                    Icon="bi bi-image"
+                                                    Disabled="@Saving">@(HasPhoto ? "Cambiar foto" : "Agregar foto")</AlfaButton>
+                                        <InputFile @key="PhotoPickerVersion"
+                                                   class="usuarios-edit-photo__input"
+                                                   OnChange="HandlePhotoSelectedAsync"
+                                                   accept=".jpg,.jpeg,image/jpeg"
+                                                   disabled="@Saving"
+                                                   aria-label="@(HasPhoto ? "Cambiar foto del usuario" : "Agregar foto del usuario")" />
+                                    </div>
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                                Size="AlfaSize.Sm"
+                                                Icon="bi bi-trash"
+                                                Disabled="@(Saving || !HasPhoto)"
+                                                OnClick="_ => RemovePhotoAsync()">Quitar</AlfaButton>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(Error("foto")))
+                                {
+                                    <small class="usuarios-edit-field-error">@Error("foto")</small>
+                                }
+                            </div>
+                        </div>
+                    </section>
+
+                    @if (!CreateMode)
+                    {
+                        <section class="usuarios-edit-section">
+                            <div class="usuarios-edit-section__heading">
+                                <h3>Metadata</h3>
+                                <p>Información de auditoría disponible para esta cuenta.</p>
+                            </div>
+                            <dl class="usuarios-edit-metadata">
+                                <div><dt>Estado</dt><dd>@(Active ? "Activo" : "Inactivo")</dd></div>
+                                <div><dt>Fecha de alta</dt><dd>@FormatDate(CreatedAt)</dd></div>
+                                <div><dt>Última modificación</dt><dd>@FormatDate(ModifiedAt)</dd></div>
+                            </dl>
+                        </section>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="usuarios-edit-content">
+                    <section class="usuarios-edit-section">
+                        <div class="usuarios-edit-section__heading usuarios-edit-section__heading--action">
+                            <div>
+                                <h3>Contraseña</h3>
+                                <p>Compatibilidad actual: máximo 13 caracteres.</p>
+                            </div>
+                            @if (!Model.EsGrupo)
+                            {
+                                <AlfaIconButton Icon="@($"bi {(ShowPassword ? "bi-eye-slash" : "bi-eye")}")"
+                                                Label="@(ShowPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                                Active="@ShowPassword"
+                                                Disabled="@Saving"
+                                                OnClick="_ => TogglePasswordAsync()" />
+                            }
+                        </div>
+
+                        @if (Model.EsGrupo)
+                        {
+                            <AlfaEmptyState Title="Este grupo no usa contraseña"
+                                            Message="Las cuentas de grupo tampoco solicitan cambio de clave en el próximo inicio." />
+                        }
+                        else
+                        {
+                            <div class="usuarios-edit-grid">
+                                <AlfaInput Label="Contraseña"
+                                           Type="@(ShowPassword ? "text" : "password")"
+                                           Required
+                                           MaxLength="13"
+                                           Value="@Model.Contrasena"
+                                           ValueChanged="@(value => SetTextAsync(nameof(Model.Contrasena), value))"
+                                           ErrorText="@Error("contrasena")"
+                                           Disabled="@Saving" />
+                                <AlfaInput Label="Confirmación de contraseña"
+                                           Type="@(ShowPassword ? "text" : "password")"
+                                           Required
+                                           MaxLength="13"
+                                           Value="@ConfirmationPassword"
+                                           ValueChanged="SetConfirmationAsync"
+                                           ErrorText="@Error("confirmacion")"
+                                           Disabled="@Saving" />
+                            </div>
+                        }
+                    </section>
+
+                    <section class="usuarios-edit-section">
+                        <div class="usuarios-edit-section__heading">
+                            <h3>Próximo inicio</h3>
+                            <p>Controla si el usuario deberá cambiar su contraseña al volver a ingresar.</p>
+                        </div>
+                        <div class="usuarios-edit-option usuarios-edit-option--single">
+                            <AlfaCheckbox Value="@Model.CambiarProximoInicio"
+                                          ValueChanged="@(value => SetFlagAsync(nameof(Model.CambiarProximoInicio), value))"
+                                          Disabled="@(Saving || Model.EsGrupo)">Cambiar contraseña en el próximo inicio</AlfaCheckbox>
+                            @if (!string.IsNullOrWhiteSpace(Error("cambiar-proximo-inicio")))
+                            {
+                                <small class="usuarios-edit-field-error">@Error("cambiar-proximo-inicio")</small>
+                            }
+                        </div>
+                    </section>
+                </div>
+            }
+        </div>
+    </article>
+</section>
+
+@code {
+    private const string InformationTab = "information";
+    private const string AccessTab = "access";
+
+    [Parameter, EditorRequired] public UsuarioSaveRequest Model { get; set; } = new();
+    [Parameter] public bool CreateMode { get; set; }
+    [Parameter] public bool Active { get; set; } = true;
+    [Parameter] public bool Saving { get; set; }
+    [Parameter] public DateTime? CreatedAt { get; set; }
+    [Parameter] public DateTime? ModifiedAt { get; set; }
+    [Parameter] public string? CurrentPhotoUrl { get; set; }
+    [Parameter] public bool HasPhoto { get; set; }
+    [Parameter] public int PhotoPickerVersion { get; set; }
+    [Parameter] public string ConfirmationPassword { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string?> ConfirmationPasswordChanged { get; set; }
+    [Parameter] public bool ShowPassword { get; set; }
+    [Parameter] public string ActiveTab { get; set; } = InformationTab;
+    [Parameter] public EventCallback<string?> ActiveTabChanged { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, string> FieldErrors { get; set; } = new Dictionary<string, string>();
+    [Parameter] public EventCallback<string> OnFieldChanged { get; set; }
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnPhotoSelected { get; set; }
+    [Parameter] public EventCallback OnRemovePhoto { get; set; }
+    [Parameter] public EventCallback OnTogglePassword { get; set; }
+
+    private static readonly IReadOnlyList<AlfaTabItem> Tabs =
+    [
+        new(InformationTab, "Información"),
+        new(AccessTab, "Acceso")
+    ];
+
+    private string DisplayName => string.IsNullOrWhiteSpace(Model.Nombre)
+        ? CreateMode ? "Nuevo usuario" : "Usuario sin nombre"
+        : Model.Nombre.Trim();
+    private string AvatarText => string.IsNullOrWhiteSpace(Model.Nombre) ? "?" : Model.Nombre.Trim()[0].ToString().ToUpperInvariant();
+    private string Error(string key) => FieldErrors.TryGetValue(key, out var message) ? message : string.Empty;
+
+    private async Task ChangeTabAsync(string? key)
+    {
+        if (key is InformationTab or AccessTab)
+            await ActiveTabChanged.InvokeAsync(key);
+    }
+
+    private async Task SetTextAsync(string property, string? value)
+    {
+        switch (property)
+        {
+            case nameof(Model.Nombre):
+                Model.Nombre = value ?? string.Empty;
+                break;
+            case nameof(Model.Email):
+                Model.Email = value ?? string.Empty;
+                break;
+            case nameof(Model.Contrasena):
+                Model.Contrasena = value ?? string.Empty;
+                break;
+        }
+
+        await OnFieldChanged.InvokeAsync(property);
+    }
+
+    private async Task SetFlagAsync(string property, bool? value)
+    {
+        switch (property)
+        {
+            case nameof(Model.EsGrupo):
+                Model.EsGrupo = value is true;
+                break;
+            case nameof(Model.EsTecnico):
+                Model.EsTecnico = value is true;
+                break;
+            case nameof(Model.CambiarProximoInicio):
+                Model.CambiarProximoInicio = value is true;
+                break;
+        }
+
+        await OnFieldChanged.InvokeAsync(property);
+    }
+
+    private async Task SetConfirmationAsync(string? value)
+    {
+        ConfirmationPassword = value ?? string.Empty;
+        await ConfirmationPasswordChanged.InvokeAsync(ConfirmationPassword);
+        await OnFieldChanged.InvokeAsync("confirmacion");
+    }
+
+    private Task HandlePhotoSelectedAsync(InputFileChangeEventArgs args) => OnPhotoSelected.InvokeAsync(args);
+    private Task RemovePhotoAsync() => OnRemovePhoto.InvokeAsync();
+    private Task TogglePasswordAsync() => OnTogglePassword.InvokeAsync();
+    private static string FormatDate(DateTime? value) => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
+}

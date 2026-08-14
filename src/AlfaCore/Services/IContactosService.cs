@@ -5,6 +5,7 @@ namespace AlfaCore.Services;
 public interface IContactosService
 {
     Task<PagedResult<ContactoGridItemDto>> SearchAsync(ContactosFilters filters, CancellationToken ct = default);
+    Task<ContactoNavigationContextDto?> GetNavigationContextAsync(int contactId, ContactosFilters filters, CancellationToken ct = default);
     Task<ContactoDetailDto?> GetByIdAsync(int id, CancellationToken ct = default);
     Task<IReadOnlyList<ContactoCuentaDto>> GetCuentasVinculadasAsync(int id, CancellationToken ct = default);
     Task<IReadOnlyList<ContactoMergeCandidateDto>> SearchMergeCandidatesAsync(int contactoPrincipalId, string texto, CancellationToken ct = default);

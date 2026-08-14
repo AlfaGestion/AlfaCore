@@ -1683,7 +1683,8 @@ public sealed class CuentasComercialesService(
                             Key = defaultCol.Key,
                             Label = defaultCol.Label,
                             Visible = defaultCol.Visible,
-                            Order = defaultCol.Order
+                            Order = defaultCol.Order,
+                            WidthPx = null
                         };
                     }
 
@@ -1692,7 +1693,8 @@ public sealed class CuentasComercialesService(
                         Key = defaultCol.Key,
                         Label = defaultCol.Label,
                         Visible = source.Visible,
-                        Order = source.Order
+                        Order = source.Order,
+                        WidthPx = NormalizeColumnWidth(source.WidthPx)
                     };
                 })
                 .OrderBy(c => c.Order)
@@ -1709,6 +1711,9 @@ public sealed class CuentasComercialesService(
 
         return normalized;
     }
+
+    private static int? NormalizeColumnWidth(int? width)
+        => width.HasValue && width.Value > 0 ? Math.Clamp(width.Value, 72, 640) : null;
 
     private static string ResolveStoredValue(string value, string auxValue)
         => !string.IsNullOrWhiteSpace(value) ? value.Trim() : auxValue.Trim();

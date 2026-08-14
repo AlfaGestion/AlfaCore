@@ -1,0 +1,212 @@
+@typeparam TItem where TItem : class
+@implements IDisposable
+
+<div class="alfa-lookup @Class">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="alfa-lookup__label" for="@_inputId">@Label</label>
+    }
+    <div class="@ControlClass">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input id="@_inputId"
+               type="search"
+               value="@SearchText"
+               placeholder="@Placeholder"
+               autocomplete="off"
+               disabled="@Disabled"
+               role="combobox"
+               aria-autocomplete="list"
+               aria-expanded="@Open"
+               aria-controls="@_listId"
+               aria-activedescendant="@ActiveDescendantId"
+               data-alfa-escape-scope="lookup"
+               @oninput="HandleInputAsync"
+               @onfocus="HandleFocusAsync"
+               @onkeydown="HandleKeyDownAsync" />
+        @if (Loading)
+        {
+            <span class="alfa-lookup__spinner" aria-hidden="true"></span>
+        }
+    </div>
+
+    @if (Open)
+    {
+        <div id="@_listId" class="alfa-lookup__results" role="listbox">
+            @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            {
+                <div class="alfa-lookup__state alfa-lookup__state--error" role="alert">@ErrorMessage</div>
+            }
+            else if (Loading)
+            {
+                <div class="alfa-lookup__state" role="status">Buscando...</div>
+            }
+            else if (SearchText.Trim().Length < MinimumCharacters)
+            {
+                <div class="alfa-lookup__state">Escribí al menos @MinimumCharacters carácter@(MinimumCharacters == 1 ? string.Empty : "es").</div>
+            }
+            else if (_items.Count == 0)
+            {
+                <div class="alfa-lookup__state">@EmptyText</div>
+            }
+            else
+            {
+                @for (var index = 0; index < _items.Count; index++)
+                {
+                    var item = _items[index];
+                    var optionIndex = index;
+                    <button type="button"
+                            id="@OptionId(optionIndex)"
+                            class="alfa-lookup__option @(IsSelected(item) || _activeIndex == optionIndex ? "is-selected" : string.Empty)"
+                            role="option"
+                            aria-selected="@IsSelected(item)"
+                            @onmouseenter="() => _activeIndex = optionIndex"
+                            @onclick="() => SelectAsync(item)">
+                        @ItemTemplate(item)
+                    </button>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string Placeholder { get; set; } = "Buscar...";
+    [Parameter] public string EmptyText { get; set; } = "No se encontraron resultados.";
+    [Parameter] public string SearchText { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> SearchTextChanged { get; set; }
+    [Parameter, EditorRequired] public Func<string, CancellationToken, Task<IReadOnlyList<TItem>>> SearchFunc { get; set; } = default!;
+    [Parameter, EditorRequired] public Func<TItem, string> ItemKey { get; set; } = default!;
+    [Parameter, EditorRequired] public RenderFragment<TItem> ItemTemplate { get; set; } = default!;
+    [Parameter] public TItem? SelectedItem { get; set; }
+    [Parameter] public EventCallback<TItem?> SelectedItemChanged { get; set; }
+    [Parameter] public int MinimumCharacters { get; set; } = 2;
+    [Parameter] public int DebounceMilliseconds { get; set; } = 240;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private readonly string _inputId = $"alfa-lookup-{Guid.NewGuid():N}";
+    private readonly string _listId = $"alfa-lookup-list-{Guid.NewGuid():N}";
+    private readonly List<TItem> _items = [];
+    private CancellationTokenSource? _searchCts;
+    private bool Open { get; set; }
+    private bool Loading { get; set; }
+    private string ErrorMessage { get; set; } = string.Empty;
+    private int _activeIndex = -1;
+
+    private string ControlClass => string.Join(" ", new[]
+    {
+        "alfa-lookup__control",
+        Open ? "is-open" : null,
+        SelectedItem is not null ? "is-selected" : null
+    }.Where(static value => !string.IsNullOrWhiteSpace(value)));
+    private string? ActiveDescendantId => Open && _activeIndex >= 0 && _activeIndex < _items.Count ? OptionId(_activeIndex) : null;
+    private string OptionId(int index) => $"{_listId}-option-{index}";
+
+    private async Task HandleInputAsync(ChangeEventArgs args)
+    {
+        SearchText = args.Value?.ToString() ?? string.Empty;
+        SelectedItem = null;
+        _activeIndex = -1;
+        await SearchTextChanged.InvokeAsync(SearchText);
+        await SelectedItemChanged.InvokeAsync(null);
+        Open = true;
+        await QueueSearchAsync();
+    }
+
+    private async Task HandleFocusAsync()
+    {
+        Open = true;
+        if (_items.Count == 0 && SearchText.Trim().Length >= MinimumCharacters)
+            await QueueSearchAsync(immediate: true);
+    }
+
+    private async Task QueueSearchAsync(bool immediate = false)
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+
+        _items.Clear();
+        ErrorMessage = string.Empty;
+        if (SearchText.Trim().Length < MinimumCharacters)
+        {
+            Loading = false;
+            return;
+        }
+
+        Loading = true;
+        try
+        {
+            if (!immediate && DebounceMilliseconds > 0)
+                await Task.Delay(DebounceMilliseconds, token);
+
+            var results = await SearchFunc(SearchText.Trim(), token);
+            if (token.IsCancellationRequested)
+                return;
+
+            _items.AddRange(results);
+            _activeIndex = _items.Count > 0 ? 0 : -1;
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            ErrorMessage = "No se pudo completar la búsqueda.";
+        }
+        finally
+        {
+            if (!token.IsCancellationRequested)
+            {
+                Loading = false;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
+
+    private async Task SelectAsync(TItem item)
+    {
+        SelectedItem = item;
+        Open = false;
+        await SelectedItemChanged.InvokeAsync(item);
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase) && Open)
+        {
+            Open = false;
+            _activeIndex = -1;
+            return;
+        }
+
+        if (!Open || _items.Count == 0)
+            return;
+
+        if (string.Equals(args.Key, "ArrowDown", StringComparison.OrdinalIgnoreCase))
+        {
+            _activeIndex = (_activeIndex + 1 + _items.Count) % _items.Count;
+        }
+        else if (string.Equals(args.Key, "ArrowUp", StringComparison.OrdinalIgnoreCase))
+        {
+            _activeIndex = (_activeIndex - 1 + _items.Count) % _items.Count;
+        }
+        else if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase)
+                 && _activeIndex >= 0
+                 && _activeIndex < _items.Count)
+        {
+            await SelectAsync(_items[_activeIndex]);
+        }
+    }
+
+    private bool IsSelected(TItem item)
+        => SelectedItem is not null && string.Equals(ItemKey(item), ItemKey(SelectedItem), StringComparison.Ordinal);
+
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+    }
+}

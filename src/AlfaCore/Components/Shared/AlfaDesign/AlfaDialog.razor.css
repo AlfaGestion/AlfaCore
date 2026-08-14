@@ -1,0 +1,96 @@
+.alfa-dialog__backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: var(--alfa-z-modal, 2100);
+    display: grid;
+    place-items: center;
+    padding: var(--alfa-space-16);
+    background: rgb(5 5 8 / 60%);
+}
+
+.alfa-dialog {
+    display: flex;
+    width: min(640px, 100%);
+    max-height: min(760px, calc(100dvh - 32px));
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--alfa-border-strong);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    box-shadow: 0 12px 28px rgb(0 0 0 / 38%);
+    color: var(--alfa-text-primary);
+    outline: none;
+}
+
+.alfa-dialog--sm { width: min(460px, 100%); }
+.alfa-dialog--lg { width: min(780px, 100%); }
+
+.alfa-dialog__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--alfa-space-16);
+    padding: 20px 20px var(--alfa-space-12);
+    border-bottom: 1px solid var(--alfa-border-default);
+}
+
+.alfa-dialog__heading { min-width: 0; }
+
+.alfa-dialog__eyebrow {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--alfa-accent-hover);
+    font-size: var(--alfa-font-caption);
+    font-weight: 650;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.alfa-dialog h2 {
+    margin: 0;
+    color: var(--alfa-text-primary);
+    font-size: 18px;
+    line-height: 24px;
+}
+
+.alfa-dialog__heading p {
+    margin: 5px 0 0;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-body);
+    line-height: 19px;
+}
+
+.alfa-dialog__error {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--alfa-space-8);
+    margin: var(--alfa-space-12) 20px 0;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in srgb, var(--alfa-danger) 44%, var(--alfa-border-default));
+    border-radius: var(--alfa-radius-md);
+    background: color-mix(in srgb, var(--alfa-danger) 10%, var(--alfa-bg-surface));
+    color: color-mix(in srgb, var(--alfa-danger) 72%, white);
+    font-size: var(--alfa-font-small);
+    line-height: 18px;
+}
+
+.alfa-dialog__body {
+    min-height: 0;
+    overflow: auto;
+    padding: var(--alfa-space-16) 20px;
+}
+
+.alfa-dialog__footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--alfa-space-8);
+    padding: var(--alfa-space-12) 20px var(--alfa-space-16);
+    border-top: 1px solid var(--alfa-border-default);
+}
+
+@media (max-width: 640px) {
+    .alfa-dialog__backdrop { padding: var(--alfa-space-8); }
+    .alfa-dialog { max-height: calc(100dvh - 16px); }
+    .alfa-dialog__footer { flex-wrap: wrap; }
+}

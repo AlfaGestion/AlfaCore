@@ -1,0 +1,35 @@
+<section class="@CssClass" role="status" aria-live="polite">
+    <div class="alfa-empty-state__icon" aria-hidden="true">
+        <i class="@IconClass"></i>
+    </div>
+    <div class="alfa-empty-state__body">
+        <h2>@Title</h2>
+        @if (!string.IsNullOrWhiteSpace(Message))
+        {
+            <p>@Message</p>
+        }
+    </div>
+    @if (!string.IsNullOrWhiteSpace(ActionLabel))
+    {
+        <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="@ActionIcon" OnClick="OnAction">@ActionLabel</AlfaButton>
+    }
+</section>
+
+@code {
+    [Parameter] public AlfaEmptyStateKind Kind { get; set; } = AlfaEmptyStateKind.NoData;
+    [Parameter] public string Title { get; set; } = "Sin datos";
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public string? ActionLabel { get; set; }
+    [Parameter] public string? ActionIcon { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnAction { get; set; }
+
+    private string CssClass => string.Join(" ", new[] { "alfa-empty-state", $"alfa-empty-state--{Kind.ToString().ToLowerInvariant()}", Class }.Where(static x => !string.IsNullOrWhiteSpace(x)));
+
+    private string IconClass => Kind switch
+    {
+        AlfaEmptyStateKind.NoResults => "bi bi-search",
+        AlfaEmptyStateKind.Error => "bi bi-exclamation-triangle",
+        _ => "bi bi-inbox"
+    };
+}

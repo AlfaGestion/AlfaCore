@@ -1,0 +1,139 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+@if (Open)
+{
+    <div class="alfa-dialog__backdrop" @onclick="HandleBackdropAsync">
+        <section class="@DialogClass"
+                 role="dialog"
+                 aria-modal="true"
+                 aria-labelledby="@_titleId"
+                 aria-describedby="@DescriptionId"
+                 aria-busy="@Loading.ToString().ToLowerInvariant()"
+                 tabindex="-1"
+                 @ref="_dialog"
+                 @onclick:stopPropagation="true">
+            <header class="alfa-dialog__header">
+                <div class="alfa-dialog__heading">
+                    @if (!string.IsNullOrWhiteSpace(Eyebrow))
+                    {
+                        <span class="alfa-dialog__eyebrow">@Eyebrow</span>
+                    }
+                    <h2 id="@_titleId">@Title</h2>
+                    @if (!string.IsNullOrWhiteSpace(Description))
+                    {
+                        <p id="@_descriptionId">@Description</p>
+                    }
+                </div>
+                @if (ShowCloseButton)
+                {
+                    <AlfaIconButton Icon="bi bi-x-lg"
+                                    Label="Cerrar"
+                                    Size="AlfaSize.Sm"
+                                    Disabled="@CloseDisabled"
+                                    OnClick="HandleCloseButtonAsync"
+                                    />
+                }
+            </header>
+
+            @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+            {
+                <div class="alfa-dialog__error" role="alert">
+                    <i class="bi bi-exclamation-circle" aria-hidden="true"></i>
+                    <span>@ErrorMessage</span>
+                </div>
+            }
+
+            <div class="alfa-dialog__body">
+                @ChildContent
+            </div>
+
+            @if (Footer is not null)
+            {
+                <footer class="alfa-dialog__footer">
+                    @Footer
+                </footer>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter, EditorRequired] public string Title { get; set; } = string.Empty;
+    [Parameter] public string? Eyebrow { get; set; }
+    [Parameter] public string? Description { get; set; }
+    [Parameter] public string? ErrorMessage { get; set; }
+    [Parameter] public AlfaDialogSize Size { get; set; } = AlfaDialogSize.Md;
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool ShowCloseButton { get; set; } = true;
+    [Parameter] public bool CloseOnBackdrop { get; set; } = true;
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public RenderFragment? Footer { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private readonly string _titleId = $"alfa-dialog-title-{Guid.NewGuid():N}";
+    private readonly string _descriptionId = $"alfa-dialog-description-{Guid.NewGuid():N}";
+    private ElementReference _dialog;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<AlfaDialog>? _selfReference;
+    private bool _wasOpen;
+
+    private bool CloseDisabled => Loading || Disabled;
+    private string? DescriptionId => string.IsNullOrWhiteSpace(Description) ? null : _descriptionId;
+    private string DialogClass => string.Join(" ", new[]
+    {
+        "alfa-dialog",
+        $"alfa-dialog--{Size.ToString().ToLowerInvariant()}",
+        Loading ? "is-loading" : null,
+        Class
+    }.Where(static value => !string.IsNullOrWhiteSpace(value)));
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Open && !_wasOpen)
+        {
+            _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/alfa-confirm-dialog.js");
+            _selfReference ??= DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("activate", _dialog, _dialog, _selfReference);
+        }
+        else if (!Open && _wasOpen && _module is not null)
+        {
+            await _module.InvokeVoidAsync("deactivate", _dialog);
+        }
+
+        _wasOpen = Open;
+    }
+
+    private Task HandleBackdropAsync()
+        => CloseOnBackdrop ? RequestCloseAsync() : Task.CompletedTask;
+
+    private Task HandleCloseButtonAsync(MouseEventArgs _)
+        => RequestCloseAsync();
+
+    private Task RequestCloseAsync()
+        => CloseDisabled ? Task.CompletedTask : OnClose.InvokeAsync();
+
+    [JSInvokable]
+    public Task RequestCancelAsync()
+        => RequestCloseAsync();
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_module is not null)
+        {
+            try
+            {
+                await _module.InvokeVoidAsync("deactivate", _dialog);
+                await _module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        _selfReference?.Dispose();
+    }
+}

@@ -28,6 +28,10 @@ Documentación transversal del sistema:
 - estándares de UI
 - lineamientos técnicos comunes
 
+### `ui/`
+
+Contrato oficial de implementación de [AlfaDesign](./ui/README.md): norma visual, tokens, componentes, guía operativa, mapa Figma y checklist.
+
 ### `base-datos/`
 
 Documentación técnica de base de datos.

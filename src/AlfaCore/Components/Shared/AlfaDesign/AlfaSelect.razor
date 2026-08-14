@@ -1,0 +1,52 @@
+<div class="@WrapperClass">
+    @if (!string.IsNullOrWhiteSpace(Label))
+    {
+        <label class="alfa-select__label" for="@SelectId">@Label</label>
+    }
+    <select id="@SelectId"
+            class="alfa-select__control"
+            value="@Value"
+            disabled="@Disabled"
+            aria-invalid="@HasError.ToString().ToLowerInvariant()"
+            aria-describedby="@DescribedBy"
+            @onchange="HandleChangeAsync">
+        @if (!string.IsNullOrWhiteSpace(Placeholder))
+        {
+            <option value="">@Placeholder</option>
+        }
+        @foreach (var option in Options)
+        {
+            <option value="@option.Value" disabled="@option.Disabled">@option.Label</option>
+        }
+    </select>
+    @if (HasError)
+    {
+        <div id="@ErrorId" class="alfa-select__message alfa-select__message--error">@ErrorText</div>
+    }
+</div>
+
+@code {
+    private readonly string _id = $"alfa-select-{Guid.NewGuid():N}";
+
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public IReadOnlyList<AlfaSelectOption> Options { get; set; } = [];
+    [Parameter] public string? Placeholder { get; set; }
+    [Parameter] public string? ErrorText { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Id { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string SelectId => string.IsNullOrWhiteSpace(Id) ? _id : Id;
+    private string ErrorId => $"{SelectId}-error";
+    private bool HasError => !string.IsNullOrWhiteSpace(ErrorText);
+    private string? DescribedBy => HasError ? ErrorId : null;
+    private string WrapperClass => string.Join(" ", new[] { "alfa-select", HasError ? "has-error" : null, Class }.Where(static x => !string.IsNullOrWhiteSpace(x)));
+
+    private async Task HandleChangeAsync(ChangeEventArgs args)
+    {
+        Value = args.Value?.ToString();
+        await ValueChanged.InvokeAsync(Value);
+    }
+}
