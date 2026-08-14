@@ -2,18 +2,25 @@
 @page "/{idweb}/{idbase:int}/tecnicos"
 @using AlfaCore.Models
 @using AlfaCore.Services
+@using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.ITecnicosService TecnicosSvc
 @inject AlfaCore.Services.IUsuariosService UsuariosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject IRouteContextService RouteContext
 @inject IPageHeaderService PageHeader
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Técnicos | Alfa Gestión</PageTitle>
 
 <div class="@(_showEditor ? "tecnicos-page tecnicos-page--editor" : "tecnicos-page tecnicos-page--list")" @onclick="HandlePageClickAsync">
 
+    @if (_showEditor)
+    {
+        <NavigationLock ConfirmExternalNavigation="@HasProtectedEditorState"
+                        OnBeforeInternalNavigation="ProtectEditorNavigation" />
+    }
 
     <!-- ── Feedback ────────────────────────────────────────────────────── -->
     <AlfaNotification Message="@_feedback" OnDismiss="ClearFeedback" />
@@ -227,6 +234,14 @@
                        OnConfirm="ConfirmBrowseDeactivateAsync"
                        OnCancel="CloseBrowseDeactivateConfirm" />
 
+    <AlfaConfirmDialog Open="@_showDiscardEditorConfirm"
+                       Title="Descartar cambios"
+                       Message="Hay cambios sin guardar. Si salís ahora, se perderán."
+                       ConfirmLabel="Descartar"
+                       CancelLabel="Seguir editando"
+                       OnConfirm="DiscardEditorChangesAsync"
+                       OnCancel="ContinueEditing" />
+
 </div>
 
 <!-- ── Dialog: Crear usuario ─────────────────────────────────────────────── -->
@@ -314,13 +329,14 @@
 
 <AlfaConfirmDialog Open="@_showPendingUserCleanupConfirm"
                    Title="Usuario sin técnico guardado"
-                   Message="@($"Se creó el usuario “{_pendingCleanupUserName}”, pero el técnico todavía no fue guardado.")"
-                   SecondaryMessage="Podés desactivar el usuario para evitar dejar un acceso pendiente, o mantenerlo y continuar."
+                   Message="@($"Se creó el usuario “{_pendingCreatedUserName}”, pero el técnico todavía no fue guardado.")"
+                   SecondaryMessage="Si abandonás el formulario, podés desactivarlo. Esta operación es independiente del descarte de los datos del técnico."
                    ConfirmLabel="Desactivar usuario"
-                   CancelLabel="Mantener usuario"
+                   CancelLabel="Seguir editando"
                    LoadingLabel="Desactivando..."
-                   OnConfirm="() => ResolvePendingUserCleanupAsync(true)"
-                   OnCancel="() => ResolvePendingUserCleanupAsync(false)" />
+                   Loading="@_pendingCleanupSaving"
+                   OnConfirm="DeactivatePendingUserAndContinueAsync"
+                   OnCancel="ContinueEditingWithPendingUser" />
 
 @code {
     // ── Estado de lista ──────────────────────────────────────────────────────
@@ -338,6 +354,8 @@
     private bool _showSearchPanel;
     private bool _showDeactivateConfirm;
     private bool _showBrowseDeactivateConfirm;
+    private bool _showDiscardEditorConfirm;
+    private bool _allowEditorNavigation;
     private bool _viewSettingsLoaded;
     private bool _savingViewSettings;
     private int  _pagedTotal;
@@ -372,6 +390,7 @@
     private bool   _isNewMode    = true;
     private bool   _selectedActivo = true;
     private string _costoHoraStr = string.Empty;
+    private TecnicoEditorSnapshot? _editorInitialState;
 
     // ── Modal crear usuario ───────────────────────────────────────────────────
     private bool   _showCrearUsuarioModal;
@@ -384,9 +403,10 @@
     private string _editorUserCreatedNote = string.Empty;
     private string _pendingCreatedUserName = string.Empty;
     private bool _showPendingUserCleanupConfirm;
-    private string _pendingCleanupUserName = string.Empty;
+    private bool _pendingCleanupSaving;
     private string _pendingCleanupAction = string.Empty;
     private string _pendingCleanupTargetId = string.Empty;
+    private bool _preserveFeedbackAfterEditorTransition;
     private readonly Dictionary<string, string> _modalErrors = new(StringComparer.OrdinalIgnoreCase);
 
     // ── Datos de combos ───────────────────────────────────────────────────────
@@ -476,7 +496,7 @@
         if (_showEditor)
         {
             actions.Add(new PageHeaderAction { Key = "guardar", Label = _saving ? "Guardando..." : "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, Busy = _saving, OnClick = GuardarAsync });
-            actions.Add(new PageHeaderAction { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, OnClick = CerrarEditor });
+            actions.Add(new PageHeaderAction { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, OnClick = RequestCancelEditorAsync });
             if (!_isNewMode && _selectedActivo)
                 actions.Add(new PageHeaderAction { Key = "baja", Label = "Dar de baja", Icon = "bi-person-dash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, Disabled = _saving, OnClick = DarDeBajaAsync });
         }
@@ -772,16 +792,14 @@
 
     private async Task BeginNewAsync()
     {
-        if (TryOpenPendingUserCleanup("begin-new"))
-            return;
-
-        await BeginNewCoreAsync();
+        await RequestEditorTransitionAsync("begin-new");
     }
 
-    private async Task BeginNewCoreAsync()
+    private async Task BeginNewCoreAsync(bool clearFeedback = true)
     {
         ResetFormState();
-        SetFeedback(null);
+        if (clearFeedback)
+            SetFeedback(null);
         _showEditor       = true;
         _showViewSettings = false;
 
@@ -790,24 +808,18 @@
             "No se pudo obtener el próximo código.");
         _form.IdTecnico = result.Success && result.Value is not null ? result.Value : string.Empty;
 
+        ResetEditorDirtyState();
         UpdatePageHeader();
     }
 
-    private async Task CerrarEditor()
-    {
-        if (TryOpenPendingUserCleanup("close-editor"))
-            return;
-
-        CloseEditorCore();
-        await Task.CompletedTask;
-    }
-
-    private void CloseEditorCore()
+    private void CloseEditorCore(bool clearFeedback = true)
     {
         ClearFieldErrors();
         _editorUserCreatedNote = string.Empty;
-        SetFeedback(null);
+        if (clearFeedback)
+            SetFeedback(null);
         _showEditor = false;
+        ClearEditorDirtyState();
         UpdatePageHeader();
     }
 
@@ -824,17 +836,15 @@
 
     private async Task AbrirEditorAsync(string idTecnico)
     {
-        if (TryOpenPendingUserCleanup("open-editor", idTecnico))
-            return;
-
-        await OpenEditorCoreAsync(idTecnico);
+        await RequestEditorTransitionAsync("open-editor", idTecnico);
     }
 
-    private async Task OpenEditorCoreAsync(string idTecnico)
+    private async Task OpenEditorCoreAsync(string idTecnico, bool clearFeedback = true)
     {
         _showEditor       = true;
         _showViewSettings = false;
-        SetFeedback(null);
+        if (clearFeedback)
+            SetFeedback(null);
         await CargarEditorAsync(idTecnico);
         UpdatePageHeader();
     }
@@ -864,22 +874,71 @@
 
     private async Task GuardarAsync()
     {
+        if (_saving)
+            return;
+
+        if (!_isNewMode && !IsEditorDirty)
+        {
+            if (HasPendingCreatedUser)
+            {
+                SetFeedback(new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Warning,
+                    Title = "Usuario pendiente",
+                    Message = "El usuario creado todavía no quedó vinculado mediante un guardado del técnico.",
+                    Suggestion = "Conservá la asociación o cancelá para resolver su desactivación."
+                });
+                return;
+            }
+
+            CloseEditorCore(clearFeedback: false);
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Info,
+                Title = "Sin cambios para guardar",
+                Message = "El técnico no tenía modificaciones pendientes."
+            });
+            return;
+        }
+
+        if (HasPendingCreatedUser
+            && !string.Equals(
+                NormalizeEditorText(_form.UsuarioAsociado),
+                NormalizeEditorText(_pendingCreatedUserName),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Usuario pendiente sin asociar",
+                Message = $"El usuario {_pendingCreatedUserName} ya fue creado, pero no está seleccionado en el técnico.",
+                Suggestion = "Volvé a seleccionarlo o cancelá para poder desactivarlo de forma segura."
+            });
+            return;
+        }
+
         ClearFieldErrors();
         SyncCostoHora();
-        _editorUserCreatedNote  = string.Empty;
-        _pendingCreatedUserName = string.Empty;
         _saving = true;
         UpdatePageHeader();
         try
         {
             try
             {
+                var created = _isNewMode;
                 var savedId = await TecnicosSvc.SaveAsync(_form);
-                SetFeedback(AppUiMessage.Success("Técnico guardado", $"El técnico {savedId} se guardó correctamente."));
+                SetFeedback(AppUiMessage.Success(
+                    created ? "Técnico creado" : "Técnico actualizado",
+                    created
+                        ? $"El técnico {savedId} se creó correctamente."
+                        : $"El técnico {savedId} se actualizó correctamente."));
                 await BuscarAsync();
                 _selectedIdTecnico = savedId;
+                _pendingCreatedUserName = string.Empty;
+                _editorUserCreatedNote = string.Empty;
                 _showEditor = false;
                 _isNewMode = false;
+                ClearEditorDirtyState();
             }
             catch (AppValidationException validationEx)
             {
@@ -909,6 +968,12 @@
         if (_isNewMode || string.IsNullOrWhiteSpace(_selectedIdTecnico))
             return;
 
+        if (HasProtectedEditorState)
+        {
+            await RequestEditorTransitionAsync("deactivate-editor");
+            return;
+        }
+
         _showDeactivateConfirm = true;
         await InvokeAsync(StateHasChanged);
     }
@@ -923,7 +988,7 @@
 
     private async Task ConfirmDeactivateAsync()
     {
-        if (_isNewMode || string.IsNullOrWhiteSpace(_selectedIdTecnico))
+        if (_saving || _isNewMode || string.IsNullOrWhiteSpace(_selectedIdTecnico))
         {
             _showDeactivateConfirm = false;
             return;
@@ -946,6 +1011,7 @@
             SetFeedback(AppUiMessage.Success("Técnico dado de baja", $"El técnico {_form.Nombre} quedó inactivo."));
             ResetFormState();
             _showEditor = false;
+            ClearEditorDirtyState();
             await BuscarAsync();
         }
         finally
@@ -999,6 +1065,7 @@
         _form.CostoHora         = detail.CostoHora;
         _form.UsuarioAsociado   = detail.UsuarioAsociado;
         _form.OcultarCliente    = detail.OcultarCliente;
+        ResetEditorDirtyState();
     }
 
     private void SyncCostoHora()
@@ -1074,54 +1141,236 @@
     private string GetModalError(string key)
         => _modalErrors.TryGetValue(key, out var message) ? message : string.Empty;
 
-    private bool TryOpenPendingUserCleanup(string action, string? targetId = null)
-    {
-        if (string.IsNullOrEmpty(_pendingCreatedUserName))
-            return false;
+    private bool HasPendingCreatedUser => !string.IsNullOrWhiteSpace(_pendingCreatedUserName);
 
-        var name = _pendingCreatedUserName;
-        _pendingCreatedUserName = string.Empty;
-        _pendingCleanupUserName = name;
+    private bool IsEditorDirty
+        => _showEditor && _editorInitialState is not null && !_editorInitialState.Matches(CaptureEditorState());
+
+    private bool HasProtectedEditorState => IsEditorDirty || HasPendingCreatedUser;
+
+    private Task RequestCancelEditorAsync()
+        => RequestEditorTransitionAsync("close-editor");
+
+    private Task RequestEditorTransitionAsync(string action, string? target = null)
+    {
+        if (_saving || _pendingCleanupSaving)
+            return Task.CompletedTask;
+
         _pendingCleanupAction = action;
-        _pendingCleanupTargetId = targetId ?? string.Empty;
-        _showPendingUserCleanupConfirm = true;
-        _ = InvokeAsync(StateHasChanged);
-        return true;
+        _pendingCleanupTargetId = target ?? string.Empty;
+        _preserveFeedbackAfterEditorTransition = false;
+
+        if (HasPendingCreatedUser)
+        {
+            _showDiscardEditorConfirm = false;
+            _showPendingUserCleanupConfirm = true;
+            return InvokeAsync(StateHasChanged);
+        }
+
+        if (IsEditorDirty)
+        {
+            _showPendingUserCleanupConfirm = false;
+            _showDiscardEditorConfirm = true;
+            return InvokeAsync(StateHasChanged);
+        }
+
+        return ExecutePendingEditorTransitionAsync();
     }
 
-    private async Task ResolvePendingUserCleanupAsync(bool deactivate)
+    private void ContinueEditingWithPendingUser()
     {
-        var name = _pendingCleanupUserName;
-        var action = _pendingCleanupAction;
-        var targetId = _pendingCleanupTargetId;
+        if (_pendingCleanupSaving)
+            return;
 
         _showPendingUserCleanupConfirm = false;
-        _pendingCleanupUserName = string.Empty;
-        _pendingCleanupAction = string.Empty;
-        _pendingCleanupTargetId = string.Empty;
+        ClearPendingEditorTransition();
+        StateHasChanged();
+    }
 
-        if (deactivate && !string.IsNullOrWhiteSpace(name))
+    private async Task DeactivatePendingUserAndContinueAsync()
+    {
+        if (_pendingCleanupSaving || !HasPendingCreatedUser)
+            return;
+
+        var userName = _pendingCreatedUserName;
+        _pendingCleanupSaving = true;
+        try
         {
-            await UiOps.RunAsync(() => UsuariosSvc.DeactivateAsync(name), "No se pudo desactivar el usuario.");
+            var result = await UiOps.RunAsync(
+                () => UsuariosSvc.DeactivateAsync(userName),
+                "No se pudo desactivar el usuario.");
+
+            if (!result.Success)
+            {
+                _showPendingUserCleanupConfirm = false;
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _pendingCreatedUserName = string.Empty;
+            _editorUserCreatedNote = string.Empty;
+            _showPendingUserCleanupConfirm = false;
+            _preserveFeedbackAfterEditorTransition = true;
+            SetFeedback(AppUiMessage.Success(
+                "Usuario desactivado",
+                $"El usuario {userName} quedó inactivo correctamente."));
             await RecargarUsuariosAsync();
+
+            if (IsEditorDirty)
+            {
+                _showDiscardEditorConfirm = true;
+                return;
+            }
+
+            await ExecutePendingEditorTransitionAsync();
         }
+        finally
+        {
+            _pendingCleanupSaving = false;
+        }
+    }
+
+    private void ContinueEditing()
+    {
+        _showDiscardEditorConfirm = false;
+        ClearPendingEditorTransition();
+        StateHasChanged();
+    }
+
+    private Task DiscardEditorChangesAsync()
+    {
+        _showDiscardEditorConfirm = false;
+        return ExecutePendingEditorTransitionAsync();
+    }
+
+    private async Task ExecutePendingEditorTransitionAsync()
+    {
+        var action = _pendingCleanupAction;
+        var target = _pendingCleanupTargetId;
+        var preserveFeedback = _preserveFeedbackAfterEditorTransition;
+        var discardChanges = IsEditorDirty;
+        ClearPendingEditorTransition();
 
         switch (action)
         {
             case "begin-new":
-                await BeginNewCoreAsync();
+                ClearEditorDirtyState();
+                await BeginNewCoreAsync(clearFeedback: !preserveFeedback);
                 break;
             case "close-editor":
-                CloseEditorCore();
+                CloseEditorCore(clearFeedback: !preserveFeedback);
                 break;
             case "open-editor":
-                await OpenEditorCoreAsync(targetId);
+                ClearEditorDirtyState();
+                await OpenEditorCoreAsync(target, clearFeedback: !preserveFeedback);
+                break;
+            case "navigate":
+                ClearEditorDirtyState();
+                _allowEditorNavigation = true;
+                Nav.NavigateTo(target);
+                break;
+            case "deactivate-editor":
+                if (discardChanges && !string.IsNullOrWhiteSpace(_selectedIdTecnico))
+                {
+                    await CargarEditorAsync(_selectedIdTecnico);
+                    if (IsEditorDirty)
+                        return;
+                }
+                _showDeactivateConfirm = true;
+                await InvokeAsync(StateHasChanged);
                 break;
         }
     }
 
+    private void ProtectEditorNavigation(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    {
+        if (_saving || _pendingCleanupSaving)
+        {
+            context.PreventNavigation();
+            return;
+        }
+
+        if (_allowEditorNavigation)
+        {
+            _allowEditorNavigation = false;
+            return;
+        }
+
+        if (!HasProtectedEditorState)
+            return;
+
+        context.PreventNavigation();
+        _ = RequestEditorTransitionAsync("navigate", context.TargetLocation);
+    }
+
+    private TecnicoEditorSnapshot CaptureEditorState()
+        => new(
+            _isNewMode ? NormalizeEditorText(_form.IdTecnico) : string.Empty,
+            NormalizeEditorText(_form.Nombre),
+            NormalizeEditorText(_form.Cargo),
+            NormalizeEditorText(_form.Domicilio),
+            NormalizeEditorText(_form.Localidad),
+            NormalizeExactEditorText(_form.IdProvincia),
+            NormalizeEditorText(_form.Telefono),
+            NormalizeEditorCost(_costoHoraStr),
+            NormalizeEditorText(_form.UsuarioAsociado),
+            _form.OcultarCliente);
+
+    private static string NormalizeEditorText(string? value)
+        => (value ?? string.Empty).Trim();
+
+    private static string NormalizeExactEditorText(string? value)
+        => value ?? string.Empty;
+
+    private static decimal? NormalizeEditorCost(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var text = value.Trim();
+        if (text.Contains(',') && !text.Contains('.')
+            && decimal.TryParse(text, System.Globalization.NumberStyles.Number,
+                System.Globalization.CultureInfo.GetCultureInfo("es-AR"), out var commaValue))
+        {
+            return commaValue;
+        }
+
+        return decimal.TryParse(text, System.Globalization.NumberStyles.Any,
+            System.Globalization.CultureInfo.InvariantCulture, out var invariantValue)
+            ? invariantValue
+            : null;
+    }
+
+    private void ResetEditorDirtyState()
+    {
+        _editorInitialState = CaptureEditorState();
+        _showDiscardEditorConfirm = false;
+        _showPendingUserCleanupConfirm = false;
+        ClearPendingEditorTransition();
+        _allowEditorNavigation = false;
+    }
+
+    private void ClearEditorDirtyState()
+    {
+        _editorInitialState = null;
+        _showDiscardEditorConfirm = false;
+        _showPendingUserCleanupConfirm = false;
+        ClearPendingEditorTransition();
+        _allowEditorNavigation = false;
+    }
+
+    private void ClearPendingEditorTransition()
+    {
+        _pendingCleanupAction = string.Empty;
+        _pendingCleanupTargetId = string.Empty;
+        _preserveFeedbackAfterEditorTransition = false;
+    }
+
     private async Task CrearUsuarioDesdeModalAsync()
     {
+        if (_modalSaving)
+            return;
+
         _modalErrors.Clear();
 
         if (string.IsNullOrWhiteSpace(_modalNombre))
@@ -1545,6 +1794,21 @@
         => value.HasValue ? value.Value.ToString("N2") : "—";
 
     // ── Tipos internos ────────────────────────────────────────────────────────
+
+    private sealed record TecnicoEditorSnapshot(
+        string IdTecnico,
+        string Nombre,
+        string Cargo,
+        string Domicilio,
+        string Localidad,
+        string IdProvincia,
+        string Telefono,
+        decimal? CostoHora,
+        string UsuarioAsociado,
+        bool OcultarCliente)
+    {
+        public bool Matches(TecnicoEditorSnapshot other) => Equals(other);
+    }
 
     private sealed class TecnicoGridGroup
     {
