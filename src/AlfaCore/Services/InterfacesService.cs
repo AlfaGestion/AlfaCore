@@ -496,7 +496,17 @@ public sealed class InterfacesService(
 
                 var relativeFolder = BuildComprobanteFolder(now, idComprobante);
                 if (settings.UsaCarpeta)
-                    Directory.CreateDirectory(Path.Combine(settings.RutaBase, relativeFolder));
+                {
+                    var targetFolder = Path.Combine(settings.RutaBase, relativeFolder);
+                    try
+                    {
+                        Directory.CreateDirectory(targetFolder);
+                    }
+                    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                    {
+                        throw await BuildFolderStorageExceptionAsync("Create", settings, targetFolder, ex, token);
+                    }
+                }
 
                 var order = 1;
                 foreach (var attachment in request.Adjuntos)
@@ -756,7 +766,17 @@ public sealed class InterfacesService(
 
             var relativeFolder = BuildComprobanteFolder(current.FechaHoraGrabacion, request.IdComprobanteRecibido);
             if (settings.UsaCarpeta)
-                Directory.CreateDirectory(Path.Combine(settings.RutaBase, relativeFolder));
+            {
+                var targetFolder = Path.Combine(settings.RutaBase, relativeFolder);
+                try
+                {
+                    Directory.CreateDirectory(targetFolder);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    throw await BuildFolderStorageExceptionAsync("AddAttachments", settings, targetFolder, ex, token);
+                }
+            }
 
             var nextOrder = current.Adjuntos.Count == 0 ? 1 : current.Adjuntos.Max(x => x.Orden) + 1;
             var savedFiles = new List<string>();
@@ -1242,6 +1262,11 @@ public sealed class InterfacesService(
             }
             catch (OperationCanceledException)
             {
+            }
+            catch (Exception ex)
+            {
+                await MarkCompraDetectionFailedAsync(cn, claimed.Id, user, ex.Message, token);
+                throw;
             }
         }, "No se pudo ejecutar ahora la lectura automática de compra.", ct);
 
@@ -2041,6 +2066,36 @@ public sealed class InterfacesService(
         return new AppUserFacingException(userMessage, incidentId, exception);
     }
 
+    private async Task<AppUserFacingException> BuildFolderStorageExceptionAsync(
+        string action,
+        InterfacesUploadSettingsDto settings,
+        string folderPath,
+        Exception exception,
+        CancellationToken ct)
+    {
+        var userMessage = settings.UsaFtp
+            ? "No se pudo preparar la carpeta destino en el FTP configurado para Interfaces. Verificá los datos y permisos del FTP."
+            : $"No se pudo crear la carpeta destino en el almacenamiento configurado ({settings.RutaBase}). " +
+              "La cuenta de Windows con la que se ejecuta AlfaCore no tiene acceso al recurso compartido; " +
+              "verificá permisos de red o corregí la ruta del módulo.";
+
+        var incidentId = await _appEvents.LogErrorAsync(
+            "Interfaces",
+            action,
+            exception,
+            userMessage,
+            new
+            {
+                settings.DestinoTipo,
+                settings.RutaBase,
+                Carpeta = folderPath
+            },
+            AppEventSeverity.Error,
+            ct);
+
+        return new AppUserFacingException(userMessage, incidentId, exception);
+    }
+
     private static string NormalizeActor(string? value, string fallback, int maxLength)
     {
         var resolved = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
@@ -2443,7 +2498,14 @@ public sealed class InterfacesService(
             }
 
             var promptIaAdicional = detail.ReferenciaExterna?.Trim() ?? string.Empty;
-            var jsonPath = await ExecuteFacturaReaderAsync(detectorSettings, stagedFiles, tempRoot, promptIaAdicional, shouldCancelAsync, ct);
+
+            // Punto 1 (paridad v_mv_cpra): pre-detectar el proveedor y aplicar su prompt especifico de TA_CONFIGURACION.
+            var providerPrompt = await ResolveProviderPromptAsync(cn, detectorSettings, stagedFiles, tempRoot, shouldCancelAsync, ct);
+            var promptExtra = CombinePromptExtra(providerPrompt.PromptExtra, promptIaAdicional);
+
+            var jsonPath = await ExecuteFacturaReaderAsync(
+                detectorSettings, stagedFiles, tempRoot, promptExtra, shouldCancelAsync, ct,
+                promptFile: providerPrompt.PromptFilePath);
             var jsonText = await File.ReadAllTextAsync(jsonPath, Encoding.UTF8, ct);
             var payload = ParseCompraIaPayload(jsonText);
             payload = await ResolveProviderDataAsync(cn, payload, ct);
@@ -2548,6 +2610,16 @@ public sealed class InterfacesService(
         catch (OperationCanceledException)
         {
             return 1;
+        }
+        catch (Exception ex)
+        {
+            await MarkCompraDetectionFailedAsync(
+                cn,
+                claimed.Id,
+                string.IsNullOrWhiteSpace(claimed.UsuarioProceso) ? "WORKER" : claimed.UsuarioProceso,
+                ex.Message,
+                ct);
+            throw;
         }
     }
 
@@ -3022,6 +3094,33 @@ public sealed class InterfacesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    private static async Task MarkCompraDetectionFailedAsync(SqlConnection cn, int id, string user, string error, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE dbo.IA_Compras_CAB
+            SET
+                Estado = 'ERROR_LECTURA',
+                SolicitarCancelacion = 0,
+                FechaHora_Fin = ISNULL(FechaHora_Fin, GETDATE()),
+                FechaHora_Modificacion = GETDATE(),
+                Usuario_Proceso = @Usuario_Proceso,
+                Observaciones_Rev = @Observaciones_Rev,
+                Lector_Error = @Lector_Error
+            WHERE ID = @ID;
+            """;
+
+        var message = string.IsNullOrWhiteSpace(error)
+            ? "El procesamiento finalizó con error sin detalle."
+            : error.Trim();
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@ID", id);
+        cmd.Parameters.AddWithValue("@Usuario_Proceso", DbNullable(user, 50));
+        cmd.Parameters.AddWithValue("@Observaciones_Rev", DbNullable("Procesamiento finalizado con error.", 500));
+        cmd.Parameters.AddWithValue("@Lector_Error", DbNullable(Truncate(message, 1000), 1000));
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private static InterfacesCompraIaSettings NormalizeCompraIaSettings(InterfacesCompraIaSettingsDto settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
@@ -3080,9 +3179,11 @@ public sealed class InterfacesService(
         InterfacesCompraIaSettings settings,
         IReadOnlyList<string> stagedFiles,
         string tempRoot,
-        string promptIaAdicional,
+        string promptExtra,
         Func<CancellationToken, Task<bool>>? shouldCancelAsync,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool providerOnly = false,
+        string? promptFile = null)
     {
         var startInfo = new ProcessStartInfo
         {
@@ -3099,11 +3200,25 @@ public sealed class InterfacesService(
             startInfo.ArgumentList.Add(file);
         startInfo.ArgumentList.Add("--outdir");
         startInfo.ArgumentList.Add(tempRoot);
-        startInfo.ArgumentList.Add("--auto");
-        if (!string.IsNullOrWhiteSpace(promptIaAdicional))
+
+        if (providerOnly)
         {
-            startInfo.ArgumentList.Add("--prompt-extra");
-            startInfo.ArgumentList.Add(promptIaAdicional.Trim());
+            // Pre-pase de identificacion de proveedor (equivale a --proveedor en v_mv_cpra).
+            startInfo.ArgumentList.Add("--proveedor");
+        }
+        else
+        {
+            startInfo.ArgumentList.Add("--auto");
+            if (!string.IsNullOrWhiteSpace(promptFile))
+            {
+                startInfo.ArgumentList.Add("--prompt-file");
+                startInfo.ArgumentList.Add(promptFile.Trim());
+            }
+            if (!string.IsNullOrWhiteSpace(promptExtra))
+            {
+                startInfo.ArgumentList.Add("--prompt-extra");
+                startInfo.ArgumentList.Add(promptExtra.Trim());
+            }
         }
 
         using var process = new Process { StartInfo = startInfo };
@@ -3146,6 +3261,150 @@ public sealed class InterfacesService(
             throw new InvalidOperationException("El lector automático no devolvió un archivo JSON válido.");
 
         return jsonPath;
+    }
+
+    // ==== Punto 1: prompt por proveedor (paridad con v_mv_cpra / FrmPersonalizarCompra.ProcesarConIA) ====
+    // Todo el "conocimiento por proveedor" vive en TA_CONFIGURACION (misma base activa):
+    //   CLAVE = <codigo interno del proveedor>  ->  reglas de prompt.
+    // Antes de la lectura completa se hace un pre-pase --proveedor para conocer el codigo,
+    // luego se leen sus reglas y se aplican al lector.
+    private async Task<ProviderPromptResult> ResolveProviderPromptAsync(
+        SqlConnection cn,
+        InterfacesCompraIaSettings settings,
+        IReadOnlyList<string> stagedFiles,
+        string tempRoot,
+        Func<CancellationToken, Task<bool>>? shouldCancelAsync,
+        CancellationToken ct)
+    {
+        try
+        {
+            var codigo = await DetectProveedorCodigoAsync(cn, settings, stagedFiles, tempRoot, shouldCancelAsync, ct);
+            if (string.IsNullOrWhiteSpace(codigo))
+                return ProviderPromptResult.Empty;
+
+            var reglas = await GetProviderPromptRulesAsync(cn, codigo, ct);
+            if (string.IsNullOrWhiteSpace(reglas))
+                return ProviderPromptResult.Empty;
+
+            reglas = reglas.Trim();
+
+            // Igual que CrearPromptProveedor: si el texto empieza con "PRIORIDAD" reemplaza el prompt base
+            // (se pasa como --prompt-file); si no, se anexa como contexto adicional (--prompt-extra).
+            if (reglas.StartsWith("PRIORIDAD", StringComparison.OrdinalIgnoreCase))
+            {
+                var file = Path.Combine(tempRoot, $"Prompt_{SanitizeFileToken(codigo)}.txt");
+                await File.WriteAllTextAsync(file, reglas, new UTF8Encoding(false), ct);
+                return new ProviderPromptResult { PromptFilePath = file };
+            }
+
+            return new ProviderPromptResult
+            {
+                PromptExtra = $"REGLAS ESPECIFICAS DEL PROVEEDOR:{Environment.NewLine}{reglas}"
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // La pre-deteccion es best-effort: si falla, se continua con el prompt generico.
+            return ProviderPromptResult.Empty;
+        }
+    }
+
+    private async Task<string> DetectProveedorCodigoAsync(
+        SqlConnection cn,
+        InterfacesCompraIaSettings settings,
+        IReadOnlyList<string> stagedFiles,
+        string tempRoot,
+        Func<CancellationToken, Task<bool>>? shouldCancelAsync,
+        CancellationToken ct)
+    {
+        var principal = stagedFiles.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(principal))
+            return string.Empty;
+
+        var jsonPath = await ExecuteFacturaReaderAsync(
+            settings, new[] { principal }, tempRoot, string.Empty, shouldCancelAsync, ct,
+            providerOnly: true);
+
+        var jsonText = await File.ReadAllTextAsync(jsonPath, Encoding.UTF8, ct);
+        var (codigoProveedor, cuit, nombre) = ParseProviderOnlyJson(jsonText);
+
+        // Paridad v_mv_cpra: si el codigo explicito es confiable (>=5 chars) se usa;
+        // si no, se resuelve el codigo interno buscando por CUIT / nombre.
+        if (!string.IsNullOrWhiteSpace(codigoProveedor) && codigoProveedor.Trim().Length >= 5)
+            return codigoProveedor.Trim();
+
+        var match = await FindProveedorAsync(cn, cuit, nombre, ct);
+        return match?.Codigo?.Trim() ?? string.Empty;
+    }
+
+    private static (string CodigoProveedor, string Cuit, string Nombre) ParseProviderOnlyJson(string jsonText)
+    {
+        try
+        {
+            var root = JsonNode.Parse(jsonText)?.AsObject();
+            if (root is null)
+                return (string.Empty, string.Empty, string.Empty);
+
+            return (
+                ReadJsonString(root, "codigo_proveedor"),
+                ReadJsonString(root, "cuit"),
+                ReadJsonString(root, "nombre_proveedor"));
+        }
+        catch
+        {
+            return (string.Empty, string.Empty, string.Empty);
+        }
+    }
+
+    private static async Task<string> GetProviderPromptRulesAsync(SqlConnection cn, string codigo, CancellationToken ct)
+    {
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+
+        var sql = $"""
+            SELECT TOP (1)
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION WITH (NOLOCK)
+            WHERE LTRIM(RTRIM(CLAVE)) = @Clave
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Clave", codigo.Trim());
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return string.Empty;
+
+        return ResolveStoredValue(GetString(rd, 0), GetString(rd, 1));
+    }
+
+    private static string CombinePromptExtra(string providerRules, string manualExtra)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(providerRules))
+            parts.Add(providerRules.Trim());
+        if (!string.IsNullOrWhiteSpace(manualExtra))
+            parts.Add(manualExtra.Trim());
+        return string.Join($"{Environment.NewLine}{Environment.NewLine}", parts);
+    }
+
+    private static string SanitizeFileToken(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var cleaned = new string((value ?? string.Empty)
+            .Select(c => invalid.Contains(c) ? '_' : c)
+            .ToArray()).Trim();
+        return string.IsNullOrWhiteSpace(cleaned) ? "proveedor" : cleaned;
+    }
+
+    private sealed class ProviderPromptResult
+    {
+        public string PromptExtra { get; init; } = string.Empty;
+        public string PromptFilePath { get; init; } = string.Empty;
+        public static ProviderPromptResult Empty { get; } = new();
     }
 
     private static InterfacesCompraIaPayload ParseCompraIaPayload(string jsonText)

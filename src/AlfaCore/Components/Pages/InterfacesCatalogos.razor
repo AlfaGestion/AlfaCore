@@ -1,7 +1,11 @@
 @page "/catalogos"
+@page "/catalogos/{Vista}"
 @page "/{idweb}/{idbase:int}/catalogos"
+@page "/{idweb}/{idbase:int}/catalogos/{Vista}"
 @page "/interfaces/catalogos"
+@page "/interfaces/catalogos/{Vista}"
 @page "/{idweb}/{idbase:int}/interfaces/catalogos"
+@page "/{idweb}/{idbase:int}/interfaces/catalogos/{Vista}"
 @inherits SaaSRoutePageBase
 @using AlfaCore.Models
 @inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
@@ -9,17 +13,20 @@
 @inject AlfaCore.Services.IAppUiDialogService DialogSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
 
 <PageTitle>Catálogos | Alfa Gestión</PageTitle>
 
+@if (IsCatalogosOrPredeterminadoSection)
+{
 <section class="page-grid">
     <div class="page-intro">
         <div>
-            <h2 class="page-intro__title">Catálogos web</h2>
-            <p class="page-intro__text">Elegí entre ver catálogos publicados o crear uno nuevo.</p>
+            <h2 class="page-intro__title">@GetSectionTitle()</h2>
+            <p class="page-intro__text">@GetSectionIntro()</p>
         </div>
     </div>
 
@@ -300,6 +307,9 @@
                         <button type="button" class="btn btn--ghost" @onclick="() => BuscarCatalogosAsync()">
                             <i class="bi bi-search"></i> Buscar
                         </button>
+                        <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@(_loading)">
+                            <i class="bi bi-arrow-clockwise"></i> Recargar
+                        </button>
                         <button type="button" class="btn btn--primary" @onclick="ShowNuevoCatalogoAsync">
                             <i class="bi bi-plus-circle"></i> Crear nuevo
                         </button>
@@ -457,7 +467,125 @@
             }
         </section>
     }
+    </section>
+}
+else if (IsMenuSection)
+{
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Menú de catálogos</h2>
+            <p class="page-intro__text">Esta sección queda lista para asociar un menú propio al módulo cuando esté habilitado.</p>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="panel-card">
+            <div class="editor-msg @GetFeedbackClass(_feedback)">
+                <div>
+                    <strong>@_feedback.Title</strong>
+                    <p>@_feedback.Message</p>
+                    @if (_feedback.HasSuggestion)
+                    {
+                        <small>@_feedback.Suggestion</small>
+                    }
+                    @if (_feedback.HasCode)
+                    {
+                        <small>Código: @_feedback.Code</small>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <section class="panel-card">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Menú</h3>
+                <p class="panel-card__subtitle">La opción solo aparece cuando la configuración del módulo lo permite.</p>
+            </div>
+        </div>
+
+        @if (_menuHabilitado)
+        {
+            <div class="section-block">
+                <div class="context-card">
+                    <span class="context-card__label">Estado</span>
+                    <strong>Habilitado</strong>
+                    <span class="context-card__muted">Quedó preparada la navegación para las pantallas de catálogo.</span>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="usuarios-empty">El menú de catálogos no está habilitado en esta base.</div>
+        }
+    </section>
 </section>
+}
+else
+{
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Configuración de catálogos</h2>
+            <p class="page-intro__text">Administrá parámetros propios del módulo y la visibilidad del menú.</p>
+        </div>
+    </div>
+
+    @if (_feedback is not null)
+    {
+        <div class="panel-card">
+            <div class="editor-msg @GetFeedbackClass(_feedback)">
+                <div>
+                    <strong>@_feedback.Title</strong>
+                    <p>@_feedback.Message</p>
+                    @if (_feedback.HasSuggestion)
+                    {
+                        <small>@_feedback.Suggestion</small>
+                    }
+                    @if (_feedback.HasCode)
+                    {
+                        <small>Código: @_feedback.Code</small>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+
+    <section class="panel-card">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Configuración</h3>
+                <p class="panel-card__subtitle">Los cambios se guardan en <code>TA_CONFIGURACION</code>.</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionCatalogosAsync" disabled="@_loading">
+                    <i class="bi bi-save"></i> Guardar
+                </button>
+            </div>
+        </div>
+
+        <div class="section-block">
+            <div class="field">
+                <label>Menú</label>
+                <label class="checkbox">
+                    <input type="checkbox" checked="@_menuHabilitadoDraft" @onchange="ToggleMenuHabilitadoDraft" />
+                    <span>Mostrar opción Menú</span>
+                </label>
+                <p class="section-block__subtitle">Si se desactiva, la pestaña Menú no se mostrará en el header del módulo.</p>
+            </div>
+        </div>
+
+        <div class="context-card mt-4">
+            <span class="context-card__label">Clave</span>
+            <strong>CATALOGOS-MENU-HABILITADO</strong>
+            <span class="context-card__muted">Valor esperado: SI / NO.</span>
+        </div>
+    </section>
+</section>
+}
 
 @if (_showLookupModal)
 {
@@ -551,6 +679,11 @@
 }
 
 @code {
+    private const string SectionCatalogos = "catalogos";
+    private const string SectionPredeterminado = "predeterminado";
+    private const string SectionMenu = "menu";
+    private const string SectionConfiguracion = "configuracion";
+
     private readonly List<CatalogosModalidadOptionDto> _modalidades = [];
     private readonly List<CatalogosListaPrecioDto> _listasPrecio = [];
     private readonly List<CatalogosArticuloCatalogoDto> _articulosSeleccionados = [];
@@ -583,14 +716,26 @@
     private int _catalogosPageSize = 50;
     private string _catalogosUserName = string.Empty;
     private string _draftAgruparPor = CatalogosViewGroupKeys.None;
+    private string _currentSection = SectionCatalogos;
     private int? _editingIdInsert;
     private string _urlPublica = string.Empty;
+    private bool _menuHabilitado;
+    private bool _menuHabilitadoDraft;
     private readonly CancellationTokenSource _disposeCts = new();
-    private readonly List<PageHeaderAction> _headerActions = [];
+
+    [Parameter]
+    public string? Vista { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
+        await ApplyRouteSectionAsync(forceReloadCatalogos: true);
+        UpdatePageHeader();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await ApplyRouteSectionAsync(forceReloadCatalogos: false);
         UpdatePageHeader();
     }
 
@@ -613,8 +758,9 @@
             var modalidadesTask = CatalogosSvc.GetModalidadesAsync(_disposeCts.Token);
             var listasTask = CatalogosSvc.GetListasPrecioAsync(_disposeCts.Token);
             var viewTask = CatalogosSvc.GetViewSettingsAsync(currentUser, _disposeCts.Token);
+            var menuTask = CatalogosSvc.GetMenuHabilitadoAsync(_disposeCts.Token);
 
-            await Task.WhenAll(modalidadesTask, listasTask, viewTask);
+            await Task.WhenAll(modalidadesTask, listasTask, viewTask, menuTask);
 
             _modalidades.Clear();
             _modalidades.AddRange(modalidadesTask.Result);
@@ -626,9 +772,8 @@
             _viewSettingsDraft.Clear();
             _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
             _draftAgruparPor = _viewSettings.AgruparPor;
-
-            if (_homeSelection == CatalogosHomeSelection.VerCatalogos)
-                await BuscarCatalogosAsync(resetPage: false);
+            _menuHabilitado = menuTask.Result;
+            _menuHabilitadoDraft = _menuHabilitado;
         }
         catch (Exception ex)
         {
@@ -637,25 +782,67 @@
         finally
         {
             _loading = false;
-            UpdatePageHeader();
         }
+    }
+
+    private async Task ApplyRouteSectionAsync(bool forceReloadCatalogos)
+    {
+        var normalizedSection = NormalizeSection(Vista);
+        if (string.Equals(_currentSection, normalizedSection, StringComparison.OrdinalIgnoreCase) && !forceReloadCatalogos)
+            return;
+
+        _currentSection = normalizedSection;
+        _showViewSettings = false;
+        _showLookupModal = false;
+
+        if (IsCatalogosSection)
+        {
+            _homeSelection ??= CatalogosHomeSelection.VerCatalogos;
+            if (_homeSelection != CatalogosHomeSelection.NuevoCatalogo)
+                _homeSelection = CatalogosHomeSelection.VerCatalogos;
+
+            if (_catalogosPage is null || forceReloadCatalogos || _homeSelection == CatalogosHomeSelection.VerCatalogos)
+                await BuscarCatalogosAsync(resetPage: forceReloadCatalogos || _catalogosPage is null);
+            return;
+        }
+
+        if (IsPredeterminadoSection)
+        {
+            _homeSelection = CatalogosHomeSelection.NuevoCatalogo;
+            ResetNuevoCatalogo();
+            await SelectModeAsync("permanente");
+            return;
+        }
+
+        if (IsMenuSection || IsConfiguracionSection)
+        {
+            _homeSelection = CatalogosHomeSelection.VerCatalogos;
+            if (IsConfiguracionSection)
+                _menuHabilitadoDraft = _menuHabilitado;
+        }
+    }
+
+    private void NavigateToSection(string section)
+    {
+        var target = BuildSectionRoute(section);
+        if (string.Equals(GetCurrentRoutePath(), NormalizeRoutePath(target), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        Nav.NavigateTo(target);
     }
 
     private async Task RecargarAsync()
     {
         await LoadAsync();
+        await ApplyRouteSectionAsync(forceReloadCatalogos: true);
         UpdatePageHeader();
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task ShowCatalogosAsync()
+    private Task ShowCatalogosAsync()
     {
-        _homeSelection = CatalogosHomeSelection.VerCatalogos;
-        _showViewSettings = false;
-        _feedback = null;
-        await BuscarCatalogosAsync(resetPage: true);
-        UpdatePageHeader();
-        await InvokeAsync(StateHasChanged);
+        NavigateToSection(SectionCatalogos);
+        return Task.CompletedTask;
     }
 
     private async Task ShowNuevoCatalogoAsync()
@@ -669,32 +856,28 @@
         await Task.CompletedTask;
     }
 
-    private async Task ShowCatalogoPredeterminadoAsync()
+    private Task ShowCatalogoPredeterminadoAsync()
     {
-        await ShowNuevoCatalogoAsync();
-        await SelectModeAsync("permanente");
-        UpdatePageHeader();
-        await InvokeAsync(StateHasChanged);
+        NavigateToSection(SectionPredeterminado);
+        return Task.CompletedTask;
     }
 
-    private async Task ShowConfiguracionAsync()
+    private Task ShowMenuAsync()
     {
-        _homeSelection = CatalogosHomeSelection.VerCatalogos;
-        _showViewSettings = true;
-        _feedback = null;
-        await BuscarCatalogosAsync(resetPage: true);
-        UpdatePageHeader();
-        await InvokeAsync(StateHasChanged);
+        NavigateToSection(SectionMenu);
+        return Task.CompletedTask;
     }
 
-    private async Task BackToHomeAsync()
+    private Task ShowConfiguracionAsync()
     {
-        _homeSelection = null;
-        _showViewSettings = false;
-        _feedback = null;
-        UpdatePageHeader();
-        await InvokeAsync(StateHasChanged);
-        await Task.CompletedTask;
+        NavigateToSection(SectionConfiguracion);
+        return Task.CompletedTask;
+    }
+
+    private Task BackToHomeAsync()
+    {
+        NavigateToSection(SectionCatalogos);
+        return Task.CompletedTask;
     }
 
     private void ResetNuevoCatalogo()
@@ -739,147 +922,131 @@
         await Task.CompletedTask;
     }
 
+    private bool IsCatalogosSection => string.Equals(_currentSection, SectionCatalogos, StringComparison.OrdinalIgnoreCase);
+    private bool IsPredeterminadoSection => string.Equals(_currentSection, SectionPredeterminado, StringComparison.OrdinalIgnoreCase);
+    private bool IsMenuSection => string.Equals(_currentSection, SectionMenu, StringComparison.OrdinalIgnoreCase);
+    private bool IsConfiguracionSection => string.Equals(_currentSection, SectionConfiguracion, StringComparison.OrdinalIgnoreCase);
+    private bool IsCatalogosOrPredeterminadoSection => IsCatalogosSection || IsPredeterminadoSection;
+
+    private string GetSectionTitle()
+        => IsPredeterminadoSection ? "Catálogo predeterminado" : "Catálogos web";
+
+    private string GetSectionIntro()
+        => IsPredeterminadoSection
+            ? "Administrá el catálogo general sin fechas de vigencia."
+            : "Elegí entre ver catálogos publicados o crear uno nuevo.";
+
+    private static string NormalizeSection(string? value)
+        => (value ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            SectionPredeterminado => SectionPredeterminado,
+            SectionMenu => SectionMenu,
+            SectionConfiguracion => SectionConfiguracion,
+            SectionCatalogos => SectionCatalogos,
+            _ => SectionCatalogos
+        };
+
+    private string GetCurrentRoutePath()
+        => NormalizeRoutePath(Nav.ToBaseRelativePath(Nav.Uri));
+
+    private static string NormalizeRoutePath(string? value)
+        => (value ?? string.Empty).Split('?', '#')[0].Trim().Trim('/');
+
+    private string BuildSectionRoute(string section)
+    {
+        var normalized = NormalizeSection(section);
+        var route = normalized == SectionCatalogos
+            ? "/catalogos"
+            : $"/catalogos/{normalized}";
+
+        return RouteContext.BuildRoute(route);
+    }
+
+    private void ToggleMenuHabilitadoDraft(ChangeEventArgs args)
+        => _menuHabilitadoDraft = args.Value is bool value && value;
+
+    private async Task GuardarConfiguracionCatalogosAsync()
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await CatalogosSvc.SaveMenuHabilitadoAsync(_catalogosUserName, _menuHabilitadoDraft, _disposeCts.Token);
+            return true;
+        }, "No se pudo guardar la configuración de catálogos.");
+
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _menuHabilitado = _menuHabilitadoDraft;
+        _feedback = AppUiMessage.Success("Configuración guardada", "La visibilidad del menú quedó actualizada.");
+        UpdatePageHeader();
+    }
+
     private void UpdatePageHeader()
     {
-        var actions = BuildHeaderActions();
         PageHeader.Set(new PageHeaderConfig
         {
             Title = "Catálogos",
             Breadcrumb = ["Interfaces"],
-            Actions = actions,
+            Actions = [],
+            ViewButtons = BuildHeaderViewButtons(),
+            InlineViewButtons = true,
             ShowHistoryNavigation = false,
             ShowHomeNavigation = false,
             AlwaysVisible = true
         });
     }
 
-    private IReadOnlyList<PageHeaderAction> BuildHeaderActions()
+    private IReadOnlyList<PageHeaderViewButton> BuildHeaderViewButtons()
     {
-        _headerActions.Clear();
-
-        if (_homeSelection is null)
+        var buttons = new List<PageHeaderViewButton>
         {
-            _headerActions.Add(new PageHeaderAction
+            new()
             {
-                Key = "catalogos-ver",
-                Label = "Ver catálogos",
-                Icon = "bi-calendar-check",
-                Style = PageHeaderActionStyle.Primary,
-                Priority = PageHeaderActionPriority.Essential,
+                Key = SectionCatalogos,
+                Label = "Catálogos",
+                Title = "Catálogos",
+                Icon = "bi-journal-text",
+                Active = IsCatalogosSection,
                 OnClick = ShowCatalogosAsync
-            });
-            _headerActions.Add(new PageHeaderAction
+            },
+            new()
             {
-                Key = "catalogos-nuevo",
-                Label = "Crear catálogo",
-                Icon = "bi-plus-circle",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Essential,
-                OnClick = ShowNuevoCatalogoAsync
-            });
-            _headerActions.Add(new PageHeaderAction
-            {
-                Key = "catalogos-predeterminado",
+                Key = SectionPredeterminado,
                 Label = "Catálogo predeterminado",
+                Title = "Catálogo predeterminado",
                 Icon = "bi-bookmark-star",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Overflow,
+                Active = IsPredeterminadoSection,
                 OnClick = ShowCatalogoPredeterminadoAsync
-            });
-            _headerActions.Add(new PageHeaderAction
+            }
+        };
+
+        if (_menuHabilitado)
+        {
+            buttons.Add(new PageHeaderViewButton
             {
-                Key = "catalogos-configuracion",
-                Label = "Configuración",
-                Icon = "bi-sliders",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Overflow,
-                OnClick = ShowConfiguracionAsync
+                Key = SectionMenu,
+                Label = "Menú",
+                Title = "Menú",
+                Icon = "bi-menu-button-wide",
+                Active = IsMenuSection,
+                OnClick = ShowMenuAsync
             });
-            return _headerActions;
         }
 
-        if (_homeSelection == CatalogosHomeSelection.VerCatalogos)
+        buttons.Add(new PageHeaderViewButton
         {
-            _headerActions.Add(new PageHeaderAction
-            {
-                Key = "catalogos-nuevo",
-                Label = "Crear catálogo",
-                Icon = "bi-plus-circle",
-                Style = PageHeaderActionStyle.Primary,
-                Priority = PageHeaderActionPriority.Essential,
-                OnClick = ShowNuevoCatalogoAsync
-            });
-            _headerActions.Add(new PageHeaderAction
-            {
-                Key = "catalogos-configuracion",
-                Label = "Configuración",
-                Icon = "bi-sliders",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Essential,
-                OnClick = ShowConfiguracionAsync
-            });
-            _headerActions.Add(new PageHeaderAction
-            {
-                Key = "catalogos-home",
-                Label = "Inicio",
-                Icon = "bi-house",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Overflow,
-                OnClick = BackToHomeAsync
-            });
-            _headerActions.Add(new PageHeaderAction
-            {
-                Key = "catalogos-recargar",
-                Label = "Recargar",
-                Icon = "bi-arrow-clockwise",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Overflow,
-                Disabled = _loading,
-                OnClick = RecargarAsync
-            });
-            return _headerActions;
-        }
+            Key = SectionConfiguracion,
+            Label = "Configuración",
+            Title = "Configuración",
+            Icon = "bi-gear",
+            Active = IsConfiguracionSection,
+            OnClick = ShowConfiguracionAsync
+        });
 
-        _headerActions.Add(new PageHeaderAction
-        {
-            Key = "catalogos-guardar",
-            Label = "Guardar",
-            Icon = "bi-save",
-            Style = PageHeaderActionStyle.Ghost,
-            Priority = PageHeaderActionPriority.Essential,
-            Disabled = _loading,
-            OnClick = GuardarAsync
-        });
-        _headerActions.Add(new PageHeaderAction
-        {
-            Key = "catalogos-publicar",
-            Label = "Publicar",
-            Icon = "bi-bullhorn",
-            Style = PageHeaderActionStyle.Primary,
-            Priority = PageHeaderActionPriority.Essential,
-            Disabled = _loading,
-            OnClick = PublicarAsync
-        });
-        _headerActions.Add(new PageHeaderAction
-        {
-            Key = "catalogos-cancelar",
-            Label = "Cancelar",
-            Icon = "bi-x-circle",
-            Style = PageHeaderActionStyle.Ghost,
-            Priority = PageHeaderActionPriority.Essential,
-            Disabled = _loading,
-            OnClick = CancelarAsync
-        });
-        _headerActions.Add(new PageHeaderAction
-        {
-            Key = "catalogos-home",
-            Label = "Inicio",
-            Icon = "bi-house",
-            Style = PageHeaderActionStyle.Ghost,
-            Priority = PageHeaderActionPriority.Overflow,
-            OnClick = BackToHomeAsync
-        });
-        return _headerActions;
+        return buttons;
     }
 
     private async Task OnListaPrecioChangedAsync()

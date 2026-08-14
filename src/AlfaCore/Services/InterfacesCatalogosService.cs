@@ -15,6 +15,7 @@ public sealed class InterfacesCatalogosService(
 {
     private const string ModuleName = "Interfaces";
     private const string ConfigGroup = "CATALOGOS";
+    private const string MenuEnabledConfigKey = "CATALOGOS-MENU-HABILITADO";
     private const string ViewConfigPrefix = "USUVIEW-CATALOGOS-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
 
@@ -576,6 +577,110 @@ public sealed class InterfacesCatalogosService(
 
             return true;
         }, "No se pudo finalizar el catálogo.", ct);
+
+    public async Task<bool> GetMenuHabilitadoAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+
+            if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", ct))
+                return false;
+
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+            var sql = $"""
+                SELECT TOP (1)
+                    ISNULL(VALOR, ''),
+                    ISNULL({detailColumn}, '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+                """;
+
+            var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(sql, new { Clave = MenuEnabledConfigKey }, cancellationToken: ct));
+            var raw = ResolveStoredValue(row.Valor, row.ValorAux);
+            return string.Equals(raw.Trim(), "SI", StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                ModuleName,
+                "GetCatalogosMenuEnabled",
+                ex,
+                "No se pudo leer la configuración de visibilidad del menú de catálogos.",
+                new { Usuario = appUserSession.GetCurrentUserName(Environment.UserName) },
+                AppEventSeverity.Warning,
+                ct);
+
+            return false;
+        }
+    }
+
+    public Task SaveMenuHabilitadoAsync(string userName, bool habilitado, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveCatalogosMenuEnabled", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(userName))
+                throw new InvalidOperationException("No hay un usuario logueado para guardar la configuración del menú.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var value = habilitado ? "SI" : "NO";
+
+            var sql = $"""
+                UPDATE dbo.TA_CONFIGURACION
+                SET
+                    VALOR = @Valor,
+                    {detailColumn} = NULL,
+                    GRUPO = @Grupo,
+                    FechaHora_Modificacion = GETDATE()
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+                IF @@ROWCOUNT = 0
+                BEGIN
+                    INSERT INTO dbo.TA_CONFIGURACION
+                    (
+                        CLAVE,
+                        VALOR,
+                        {detailColumn},
+                        GRUPO,
+                        FechaHora_Grabacion,
+                        FechaHora_Modificacion
+                    )
+                    VALUES
+                    (
+                        @Clave,
+                        @Valor,
+                        NULL,
+                        @Grupo,
+                        GETDATE(),
+                        GETDATE()
+                    );
+                END;
+                """;
+
+            await cn.ExecuteAsync(new CommandDefinition(
+                sql,
+                new
+                {
+                    ClaveNormalizada = MenuEnabledConfigKey,
+                    Clave = MenuEnabledConfigKey,
+                    Valor = value,
+                    Grupo = ConfigGroup
+                },
+                cancellationToken: token));
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SaveCatalogosMenuEnabled",
+                "TA_CONFIGURACION",
+                MenuEnabledConfigKey,
+                "Configuración de visibilidad del menú de catálogos actualizada.",
+                new { UserName = userName.Trim(), Habilitado = habilitado },
+                token);
+
+            return true;
+        }, "No se pudo guardar la configuración del menú de catálogos.", ct);
 
     public Task<CatalogosViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetViewSettings", async token =>
