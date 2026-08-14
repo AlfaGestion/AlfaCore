@@ -12,31 +12,11 @@
 
 <PageTitle>Técnicos | Alfa Gestión</PageTitle>
 
-<div class="@(_showEditor ? "page-grid tecnicos-page" : "tecnicos-page tecnicos-page--list")" @onclick="HandlePageClickAsync">
+<div class="@(_showEditor ? "tecnicos-page tecnicos-page--editor" : "tecnicos-page tecnicos-page--list")" @onclick="HandlePageClickAsync">
 
 
     <!-- ── Feedback ────────────────────────────────────────────────────── -->
-    <AlfaNotification Message="@(_showEditor ? null : _feedback)" OnDismiss="ClearFeedback" />
-
-    @if (_showEditor && _feedback is not null)
-    {
-        <section class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-            </div>
-        </section>
-    }
+    <AlfaNotification Message="@_feedback" OnDismiss="ClearFeedback" />
 
     <!-- ── Configurar vista ────────────────────────────────────────────── -->
     <AlfaDialog Open="@(_showViewSettings && !_showEditor)"
@@ -96,204 +76,18 @@
     <!-- ── Editor ──────────────────────────────────────────────────────── -->
     @if (_showEditor)
     {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Datos del técnico</h3>
-                    <p class="panel-card__subtitle">
-                        @if (_isNewMode)
-                        {
-                            <span>Completá los datos del técnico.</span>
-                        }
-                        else
-                        {
-                            <span>Código: @_form.IdTecnicoOriginal · Estado: @(_selectedActivo ? "Activo" : "Dado de baja")</span>
-                        }
-                    </p>
-                </div>
-            </div>
-
-            <div class="usuarios-editor">
-                <div class="usuarios-editor__form" style="max-width:720px;">
-
-                    <!-- Fila 1: Código y Nombre -->
-                    <div class="usuarios-editor__grid">
-                        <div class="field">
-                            <label>Código</label>
-                            <input type="text"
-                                   class="@GetFieldInputClass("id-tecnico")"
-                                   maxlength="4"
-                                   style="text-align:right;"
-                                   @bind="_form.IdTecnico"
-                                   disabled="@(_saving || !_isNewMode)" />
-                            @if (HasFieldError("id-tecnico"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("id-tecnico")</small>
-                            }
-                        </div>
-                        <div class="field">
-                            <label>Nombre</label>
-                            <input type="text"
-                                   class="@GetFieldInputClass("nombre")"
-                                   maxlength="100"
-                                   @ref="_nombreRef"
-                                   @bind="_form.Nombre"
-                                   disabled="@_saving" />
-                            @if (HasFieldError("nombre"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("nombre")</small>
-                            }
-                        </div>
-                    </div>
-
-                    <!-- Fila 2: Cargo y Teléfono -->
-                    <div class="usuarios-editor__grid">
-                        <div class="field">
-                            <label>Cargo</label>
-                            <input type="text"
-                                   class="@GetFieldInputClass("cargo")"
-                                   maxlength="100"
-                                   @bind="_form.Cargo"
-                                   disabled="@_saving" />
-                            @if (HasFieldError("cargo"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("cargo")</small>
-                            }
-                        </div>
-                        <div class="field">
-                            <label>Teléfono</label>
-                            <input type="text"
-                                   class="@GetFieldInputClass("telefono")"
-                                   maxlength="50"
-                                   @bind="_form.Telefono"
-                                   disabled="@_saving" />
-                            @if (HasFieldError("telefono"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("telefono")</small>
-                            }
-                        </div>
-                    </div>
-
-                    <!-- Fila 3: Domicilio y Localidad -->
-                    <div class="usuarios-editor__grid">
-                        <div class="field">
-                            <label>Domicilio</label>
-                            <input type="text"
-                                   class="@GetFieldInputClass("domicilio")"
-                                   maxlength="100"
-                                   @bind="_form.Domicilio"
-                                   disabled="@_saving" />
-                            @if (HasFieldError("domicilio"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("domicilio")</small>
-                            }
-                        </div>
-                        <div class="field">
-                            <label>Localidad</label>
-                            <input type="text"
-                                   class="@GetFieldInputClass("localidad")"
-                                   maxlength="100"
-                                   @bind="_form.Localidad"
-                                   disabled="@_saving" />
-                            @if (HasFieldError("localidad"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("localidad")</small>
-                            }
-                        </div>
-                    </div>
-
-                    <!-- Fila 4: Provincia y Costo/hora -->
-                    <div class="usuarios-editor__grid">
-                        <div class="field">
-                            <label>Provincia</label>
-                            <select class="@GetFieldInputClass("id-provincia")"
-                                    @bind="_form.IdProvincia"
-                                    disabled="@_saving">
-                                <option value="">— Sin provincia —</option>
-                                @foreach (var estado in _estados)
-                                {
-                                    <option value="@estado.Codigo">@estado.Descripcion</option>
-                                }
-                            </select>
-                            @if (HasFieldError("id-provincia"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("id-provincia")</small>
-                            }
-                        </div>
-                        <div class="field">
-                            <label>Costo por hora</label>
-                            <input type="number"
-                                   class="@GetFieldInputClass("costo-hora")"
-                                   style="text-align:right;"
-                                   min="0"
-                                   step="0.01"
-                                   @bind="_costoHoraStr"
-                                   disabled="@_saving" />
-                            @if (HasFieldError("costo-hora"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("costo-hora")</small>
-                            }
-                        </div>
-                    </div>
-
-                    <!-- Fila 5: Usuario asociado -->
-                    <div class="field">
-                        <label>Usuario del sistema</label>
-                        <div class="actions" style="align-items:flex-start; gap:0.5rem;">
-                            <select class="@GetFieldInputClass("usuario-asociado")"
-                                    style="flex:1;"
-                                    @bind="_form.UsuarioAsociado"
-                                    disabled="@_saving">
-                                <option value="">— Sin usuario asociado —</option>
-                                @foreach (var u in _usuarios)
-                                {
-                                    <option value="@u">@u</option>
-                                }
-                            </select>
-                            <button type="button"
-                                    class="btn btn--ghost"
-                                    title="Recargar lista de usuarios"
-                                    @onclick="RecargarUsuariosAsync"
-                                    disabled="@_saving">
-                                <i class="bi bi-arrow-clockwise"></i>
-                            </button>
-                            <button type="button"
-                                    class="btn btn--ghost"
-                                    title="Crear un nuevo usuario del sistema"
-                                    @onclick="AbrirModalCrearUsuario"
-                                    disabled="@_saving">
-                                <i class="bi bi-person-plus"></i> Crear usuario
-                            </button>
-                        </div>
-                        @if (HasFieldError("usuario-asociado"))
-                        {
-                            <small class="usuarios-field-error">@GetFieldError("usuario-asociado")</small>
-                        }
-                    </div>
-
-                    <!-- Fila 6: Ocultar cliente -->
-                    <div class="usuarios-toggle-row">
-                        <label class="checkbox">
-                            <input type="checkbox" @bind="_form.OcultarCliente" disabled="@_saving" />
-                            <span>Ocultar los datos del cliente</span>
-                        </label>
-                    </div>
-
-                    <!-- Aviso: usuario recién creado desde el modal -->
-                    @if (!string.IsNullOrEmpty(_editorUserCreatedNote))
-                    {
-                        <div class="editor-msg editor-msg--ok" style="margin-bottom:1rem;">
-                            <div>
-                                <strong>Usuario listo</strong>
-                                <p>@_editorUserCreatedNote</p>
-                                <p><strong>Ahora hacé clic en "Guardar" para confirmar el alta.</strong></p>
-                            </div>
-                        </div>
-                    }
-
-                </div>
-            </div>
-        </section>
+        <TecnicosEditView Model="@_form"
+                          CreateMode="@_isNewMode"
+                          Active="@_selectedActivo"
+                          Saving="@_saving"
+                          CostPerHour="@_costoHoraStr"
+                          CostPerHourChanged="SetCostPerHour"
+                          Provinces="@_estados"
+                          Users="@_usuarios"
+                          FieldErrors="@_fieldErrors"
+                          UserCreatedNote="@_editorUserCreatedNote"
+                          OnReloadUsers="RecargarUsuariosAsync"
+                          OnCreateUser="AbrirModalCrearUsuario" />
     }
     else
     {
@@ -435,164 +229,98 @@
 
 </div>
 
-<!-- ── Modal: Crear usuario ──────────────────────────────────────────────── -->
-@if (_showCrearUsuarioModal)
-{
-    <button type="button" class="modal-backdrop app-modal-backdrop" aria-label="Cerrar" @onclick="CerrarModalCrearUsuario"></button>
-    <section class="panel-card app-modal no-print" @onclick:stopPropagation>
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Crear usuario del sistema</h3>
-                <p class="panel-card__subtitle">El usuario se creará con acceso básico al sistema.</p>
-            </div>
-            <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarModalCrearUsuario" title="Cerrar">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-
-        <div class="editor-msg editor-msg--warning" style="margin-bottom:1rem;">
-            <div>
-                <strong>Recordá asignar permisos</strong>
-                <p>Después de crear el usuario, asignale las opciones del menú en <strong>Seguridad → Autorización de tareas</strong>. Sin eso, el usuario tendrá acceso irrestricto a todo el sistema.</p>
-            </div>
-        </div>
-
-        @if (_modalErrors.ContainsKey("general"))
-        {
-            <div class="editor-msg editor-msg--error" style="margin-bottom:1rem;">
-                <div><p>@_modalErrors["general"]</p></div>
-            </div>
-        }
-
-        <div class="contactos-form__grid" style="max-width:420px;">
-            <div class="field">
-                <label>Nombre de usuario</label>
-                <input type="text"
-                       class="@GetModalInputClass("nombre")"
-                       maxlength="50"
-                       placeholder="Nombre de usuario del sistema"
-                       @bind="_modalNombre"
-                       disabled="@_modalSaving" />
-                @if (_modalErrors.ContainsKey("nombre"))
-                {
-                    <small class="usuarios-field-error">@_modalErrors["nombre"]</small>
-                }
-            </div>
-
-            <div class="field">
-                <label>Email <small>(opcional)</small></label>
-                <input type="email"
-                       class="@GetModalInputClass("email")"
-                       maxlength="200"
-                       placeholder="correo@ejemplo.com"
-                       @bind="_modalEmail"
-                       disabled="@_modalSaving" />
-                @if (_modalErrors.ContainsKey("email"))
-                {
-                    <small class="usuarios-field-error">@_modalErrors["email"]</small>
-                }
-            </div>
-
-            <div class="field">
-                <label>Contraseña</label>
-                <div style="display:flex; gap:0.4rem;">
-                    <input type="@(_modalShowClave ? "text" : "password")"
-                           class="@GetModalInputClass("clave")"
-                           style="flex:1;"
-                           placeholder="Contraseña"
-                           @bind="_modalClave"
-                           disabled="@_modalSaving" />
-                    <button type="button" class="btn btn--ghost btn--sm"
-                            @onclick="() => _modalShowClave = !_modalShowClave"
-                            title="@(_modalShowClave ? "Ocultar" : "Mostrar") contraseña">
-                        <i class="bi @(_modalShowClave ? "bi-eye-slash" : "bi-eye")"></i>
-                    </button>
+<!-- ── Dialog: Crear usuario ─────────────────────────────────────────────── -->
+<AlfaDialog Open="@_showCrearUsuarioModal"
+            Title="Crear usuario del sistema"
+            Eyebrow="Técnico"
+            Description="El usuario se creará con acceso básico y quedará asociado al formulario actual."
+            ErrorMessage="@GetModalError("general")"
+            Size="AlfaDialogSize.Sm"
+            Loading="@_modalSaving"
+            OnClose="CerrarModalCrearUsuario">
+    <ChildContent>
+        <div class="tecnicos-user-dialog">
+            <div class="tecnicos-user-dialog__notice">
+                <i class="bi bi-shield-exclamation" aria-hidden="true"></i>
+                <div>
+                    <strong>Recordá asignar permisos</strong>
+                    <p>Después de crear el usuario, asignale las opciones del menú en Seguridad → Autorización de tareas.</p>
                 </div>
-                @if (_modalErrors.ContainsKey("clave"))
-                {
-                    <small class="usuarios-field-error">@_modalErrors["clave"]</small>
-                }
             </div>
 
-            <div class="field">
-                <label>Confirmación</label>
-                <input type="@(_modalShowClave ? "text" : "password")"
-                       class="@GetModalInputClass("confirmacion")"
-                       placeholder="Repetí la contraseña"
-                       @bind="_modalConfirmacion"
-                       disabled="@_modalSaving" />
-                @if (_modalErrors.ContainsKey("confirmacion"))
-                {
-                    <small class="usuarios-field-error">@_modalErrors["confirmacion"]</small>
-                }
+            <AlfaInput Label="Nombre de usuario"
+                       Required
+                       MaxLength="50"
+                       Placeholder="Nombre de usuario del sistema"
+                       Value="@_modalNombre"
+                       ValueChanged="SetModalName"
+                       ErrorText="@GetModalError("nombre")"
+                       Disabled="@_modalSaving" />
+            <AlfaInput Label="Email"
+                       Type="email"
+                       MaxLength="200"
+                       Placeholder="correo@ejemplo.com"
+                       Value="@_modalEmail"
+                       ValueChanged="SetModalEmail"
+                       ErrorText="@GetModalError("email")"
+                       Disabled="@_modalSaving" />
+            <div class="tecnicos-user-dialog__password">
+                <AlfaInput Label="Contraseña"
+                           Required
+                           Type="@(_modalShowClave ? "text" : "password")"
+                           MaxLength="13"
+                           Placeholder="Contraseña"
+                           Value="@_modalClave"
+                           ValueChanged="SetModalPassword"
+                           ErrorText="@GetModalError("clave")"
+                           Disabled="@_modalSaving" />
+                <AlfaIconButton Icon="@($"bi {(_modalShowClave ? "bi-eye-slash" : "bi-eye")}")"
+                                Label="@(_modalShowClave ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                Active="@_modalShowClave"
+                                Disabled="@_modalSaving"
+                                OnClick="_ => ToggleModalPassword()" />
             </div>
+            <AlfaInput Label="Confirmación"
+                       Required
+                       Type="@(_modalShowClave ? "text" : "password")"
+                       MaxLength="13"
+                       Placeholder="Repetí la contraseña"
+                       Value="@_modalConfirmacion"
+                       ValueChanged="SetModalConfirmation"
+                       ErrorText="@GetModalError("confirmacion")"
+                       Disabled="@_modalSaving" />
         </div>
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                    Disabled="@_modalSaving"
+                    OnClick="_ => CerrarModalCrearUsuario()">Cancelar</AlfaButton>
+        <AlfaButton Variant="AlfaButtonVariant.Primary"
+                    Icon="bi bi-person-plus"
+                    Loading="@_modalSaving"
+                    OnClick="_ => CrearUsuarioDesdeModalAsync()">Crear usuario</AlfaButton>
+    </Footer>
+</AlfaDialog>
 
-        <div class="actions" style="margin-top:1.25rem;">
-            <button type="button" class="btn btn--primary" @onclick="CrearUsuarioDesdeModalAsync" disabled="@_modalSaving">
-                <i class="bi bi-person-plus"></i>
-                <span>@(_modalSaving ? "Creando..." : "Crear usuario")</span>
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="CerrarModalCrearUsuario" disabled="@_modalSaving">
-                <i class="bi bi-x-circle"></i> Cancelar
-            </button>
-        </div>
-    </section>
-}
+<AlfaConfirmDialog Open="@_showDeactivateConfirm"
+                   Title="Dar de baja técnico"
+                   Message="@($"“{_form.Nombre}” dejará de estar activo.")"
+                   SecondaryMessage="La baja es lógica y no reactiva registros automáticamente."
+                   ConfirmLabel="Dar de baja"
+                   LoadingLabel="Procesando..."
+                   Loading="@_saving"
+                   OnConfirm="ConfirmDeactivateAsync"
+                   OnCancel="CloseDeactivateConfirm" />
 
-@if (_showDeactivateConfirm)
-{
-    <button type="button" class="modal-backdrop app-modal-backdrop" aria-label="Cancelar" @onclick="CloseDeactivateConfirm"></button>
-    <section class="panel-card app-modal no-print" @onclick:stopPropagation>
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Dar de baja técnico</h3>
-                <p class="panel-card__subtitle">Se dará de baja @_form.Nombre.</p>
-            </div>
-            <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseDeactivateConfirm" disabled="@_saving" title="Cerrar">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--danger" @onclick="ConfirmDeactivateAsync" disabled="@_saving">
-                <i class="bi bi-person-dash"></i> @(_saving ? "Procesando..." : "Confirmar baja")
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="CloseDeactivateConfirm" disabled="@_saving">
-                Cancelar
-            </button>
-        </div>
-    </section>
-}
-
-@if (_showPendingUserCleanupConfirm)
-{
-    <button type="button" class="modal-backdrop app-modal-backdrop" aria-label="Mantener usuario" @onclick="() => ResolvePendingUserCleanupAsync(false)"></button>
-    <section class="panel-card app-modal no-print" @onclick:stopPropagation>
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Usuario sin técnico guardado</h3>
-                <p class="panel-card__subtitle">Se creó el usuario @_pendingCleanupUserName, pero el técnico no fue guardado.</p>
-            </div>
-            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => ResolvePendingUserCleanupAsync(false)" title="Cerrar">
-                <i class="bi bi-x-lg"></i>
-            </button>
-        </div>
-        <div class="editor-msg editor-msg--warning" style="margin-bottom:1rem;">
-            <div>
-                <strong>Acceso pendiente</strong>
-                <p>Podés desactivar ese usuario para evitar dejar un acceso sin completar, o mantenerlo y continuar.</p>
-            </div>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--danger" @onclick="() => ResolvePendingUserCleanupAsync(true)">
-                <i class="bi bi-person-dash"></i> Desactivar usuario
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="() => ResolvePendingUserCleanupAsync(false)">
-                Mantener usuario
-            </button>
-        </div>
-    </section>
-}
+<AlfaConfirmDialog Open="@_showPendingUserCleanupConfirm"
+                   Title="Usuario sin técnico guardado"
+                   Message="@($"Se creó el usuario “{_pendingCleanupUserName}”, pero el técnico todavía no fue guardado.")"
+                   SecondaryMessage="Podés desactivar el usuario para evitar dejar un acceso pendiente, o mantenerlo y continuar."
+                   ConfirmLabel="Desactivar usuario"
+                   CancelLabel="Mantener usuario"
+                   LoadingLabel="Desactivando..."
+                   OnConfirm="() => ResolvePendingUserCleanupAsync(true)"
+                   OnCancel="() => ResolvePendingUserCleanupAsync(false)" />
 
 @code {
     // ── Estado de lista ──────────────────────────────────────────────────────
@@ -644,8 +372,6 @@
     private bool   _isNewMode    = true;
     private bool   _selectedActivo = true;
     private string _costoHoraStr = string.Empty;
-    private bool   _shouldFocusNombre;
-    private ElementReference _nombreRef;
 
     // ── Modal crear usuario ───────────────────────────────────────────────────
     private bool   _showCrearUsuarioModal;
@@ -769,7 +495,7 @@
             State = _saving ? PageHeaderState.Loading : _showEditor ? (_isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing) : PageHeaderState.List,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems(),
-            OnBack = _showEditor ? new Func<Task>(CerrarEditor) : null,
+            OnBack = null,
             Search = _showEditor
                 ? null
                 : new PageHeaderSearchConfig(),
@@ -789,16 +515,6 @@
             CargarCombosAsync(),
             BuscarAsync());
         UpdatePageHeader();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (_shouldFocusNombre)
-        {
-            _shouldFocusNombre = false;
-            try { await _nombreRef.FocusAsync(); }
-            catch { }
-        }
     }
 
     public void Dispose()
@@ -1074,7 +790,6 @@
             "No se pudo obtener el próximo código.");
         _form.IdTecnico = result.Success && result.Value is not null ? result.Value : string.Empty;
 
-        _shouldFocusNombre = true;
         UpdatePageHeader();
     }
 
@@ -1195,7 +910,7 @@
             return;
 
         _showDeactivateConfirm = true;
-        await Task.CompletedTask;
+        await InvokeAsync(StateHasChanged);
     }
 
     private void CloseDeactivateConfirm()
@@ -1319,6 +1034,46 @@
         _modalErrors.Clear();
     }
 
+    private Task SetCostPerHour(string? value)
+    {
+        _costoHoraStr = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task SetModalName(string? value)
+    {
+        _modalNombre = value ?? string.Empty;
+        _modalErrors.Remove("nombre");
+        return Task.CompletedTask;
+    }
+
+    private Task SetModalEmail(string? value)
+    {
+        _modalEmail = value ?? string.Empty;
+        _modalErrors.Remove("email");
+        return Task.CompletedTask;
+    }
+
+    private Task SetModalPassword(string? value)
+    {
+        _modalClave = value ?? string.Empty;
+        _modalErrors.Remove("clave");
+        return Task.CompletedTask;
+    }
+
+    private Task SetModalConfirmation(string? value)
+    {
+        _modalConfirmacion = value ?? string.Empty;
+        _modalErrors.Remove("confirmacion");
+        return Task.CompletedTask;
+    }
+
+    private void ToggleModalPassword()
+        => _modalShowClave = !_modalShowClave;
+
+    private string GetModalError(string key)
+        => _modalErrors.TryGetValue(key, out var message) ? message : string.Empty;
+
     private bool TryOpenPendingUserCleanup(string action, string? targetId = null)
     {
         if (string.IsNullOrEmpty(_pendingCreatedUserName))
@@ -1330,6 +1085,7 @@
         _pendingCleanupAction = action;
         _pendingCleanupTargetId = targetId ?? string.Empty;
         _showPendingUserCleanupConfirm = true;
+        _ = InvokeAsync(StateHasChanged);
         return true;
     }
 
@@ -1406,11 +1162,17 @@
                 _form.UsuarioAsociado   = nombreCreado;
                 _pendingCreatedUserName = nombreCreado;
                 _editorUserCreatedNote  = $"El usuario '{nombreCreado}' fue creado y asociado al técnico. Recordá asignarle permisos en Seguridad → Autorización de tareas.";
+                SetFeedback(AppUiMessage.Success("Usuario creado", $"El usuario {nombreCreado} quedó seleccionado. Guardá el técnico para completar la asociación."));
             }
             catch (AppValidationException validationEx)
             {
                 foreach (var issue in validationEx.Validation.Issues.Where(i => !string.IsNullOrWhiteSpace(i.FieldKey)))
-                    _modalErrors[issue.FieldKey.Trim()] = issue.Message;
+                {
+                    var key = issue.FieldKey.Trim();
+                    if (string.Equals(key, "contrasena", StringComparison.OrdinalIgnoreCase))
+                        key = "clave";
+                    _modalErrors[key] = issue.Message;
+                }
                 if (_modalErrors.Count == 0)
                     _modalErrors["general"] = validationEx.UserMessage;
             }
@@ -1775,29 +1537,9 @@
             _fieldErrors[issue.FieldKey.Trim()] = issue.Message;
     }
 
-    private bool HasFieldError(string key)
-        => !string.IsNullOrWhiteSpace(key) && _fieldErrors.ContainsKey(key.Trim());
-
-    private string GetFieldError(string key)
-        => HasFieldError(key) ? _fieldErrors[key.Trim()] : string.Empty;
-
-    private string GetFieldInputClass(string key)
-        => HasFieldError(key) ? "usuarios-input usuarios-input--invalid" : "usuarios-input";
-
-    private string GetModalInputClass(string key)
-        => _modalErrors.ContainsKey(key) ? "usuarios-input usuarios-input--invalid" : "usuarios-input";
-
     private void SetFeedback(AppUiMessage? message) => _feedback = message;
 
     private void ClearFeedback() => SetFeedback(null);
-
-    private static string GetFeedbackClass(AppUiMessage message)
-        => message.Severity switch
-        {
-            AppUiFeedbackSeverity.Success => "editor-msg--ok",
-            AppUiFeedbackSeverity.Warning => "editor-msg--warning",
-            _                             => "editor-msg--error"
-        };
 
     private static string FormatMoney(decimal? value)
         => value.HasValue ? value.Value.ToString("N2") : "—";

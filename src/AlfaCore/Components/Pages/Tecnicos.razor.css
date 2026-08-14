@@ -1,3 +1,15 @@
+.tecnicos-page--editor {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--alfa-bg-canvas);
+}
+
 .tecnicos-page--list {
     width: 100%;
     max-width: 100%;
@@ -245,6 +257,55 @@
     display: flex;
     flex: 0 0 auto;
     gap: var(--alfa-space-4);
+}
+
+.tecnicos-user-dialog {
+    display: grid;
+    gap: var(--alfa-space-16);
+}
+
+.tecnicos-user-dialog__notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--alfa-space-12);
+    padding: var(--alfa-space-12);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-secondary);
+}
+
+.tecnicos-user-dialog__notice > i {
+    color: var(--alfa-warning);
+    font-size: 18px;
+}
+
+.tecnicos-user-dialog__notice > div {
+    display: grid;
+    gap: 3px;
+}
+
+.tecnicos-user-dialog__notice strong {
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-body);
+    font-weight: 600;
+}
+
+.tecnicos-user-dialog__notice p {
+    margin: 0;
+    font-size: var(--alfa-font-small);
+    line-height: 16px;
+}
+
+.tecnicos-user-dialog__password {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--alfa-space-8);
+}
+
+.tecnicos-user-dialog__password ::deep .alfa-icon-button {
+    margin-bottom: 2px;
 }
 
 @media (max-width: 1024px) {
