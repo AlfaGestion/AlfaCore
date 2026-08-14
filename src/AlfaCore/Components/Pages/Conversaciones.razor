@@ -3888,15 +3888,22 @@
             {
             }
 
-            // Al entrar a Conversaciones el asistente arranca SIEMPRE abierto si el módulo
-            // AlfaKnowledge está activo (si no, la gente no lo usa). El usuario puede cerrarlo
-            // durante la sesión, pero se vuelve a abrir la próxima vez que entra.
+            // El asistente arranca CERRADO (no auto-analiza ni sugiere para no gastar tokens en
+            // conversaciones que el operador no necesita). Solo se reabre solo si el operador lo
+            // había dejado abierto la última vez (respeta su elección). Si no, lo abre con el ✨.
             if (!_showAiSuggestionPanel && _alfaKnowledgeModuloActivo)
             {
-                _showAiSuggestionPanel = true;
-                if (_selectedConversationId is not null)
-                    await OpenAiSuggestionPanelAsync();
-                StateHasChanged();
+                string? pref = null;
+                try { pref = await JS.InvokeAsync<string>("localStorage.getItem", AiPanelOpenStorageKey); }
+                catch { }
+
+                if (pref == "1")
+                {
+                    _showAiSuggestionPanel = true;
+                    if (_selectedConversationId is not null)
+                        await OpenAiSuggestionPanelAsync();
+                    StateHasChanged();
+                }
             }
         }
 
