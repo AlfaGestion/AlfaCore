@@ -13,6 +13,7 @@ public interface ICatalogoPublicoPdfService
         CatalogosPublicIdentityDto branding,
         string? idWeb,
         string? ftpCodigoCta,
+        bool esCuadricula,
         CancellationToken ct = default);
 }
 
@@ -30,6 +31,7 @@ public sealed class CatalogoPublicoPdfService(
         CatalogosPublicIdentityDto branding,
         string? idWeb,
         string? ftpCodigoCta,
+        bool esCuadricula,
         CancellationToken ct = default)
     {
         var logoBytes = await CargarLogoAsync(idWeb, ct);
@@ -69,7 +71,7 @@ public sealed class CatalogoPublicoPdfService(
 
                     foreach (var grupoRubro in grupos)
                     {
-                        column.Item().Element(e => ComposeRubroSection(e, grupoRubro, imageMap));
+                        column.Item().Element(e => ComposeRubroSection(e, grupoRubro, imageMap, esCuadricula));
                     }
                 });
 
@@ -128,7 +130,7 @@ public sealed class CatalogoPublicoPdfService(
         });
     }
 
-    private static void ComposeRubroSection(IContainer container, GrupoRubroPdf grupo, IReadOnlyDictionary<string, byte[]?> imageMap)
+    private static void ComposeRubroSection(IContainer container, GrupoRubroPdf grupo, IReadOnlyDictionary<string, byte[]?> imageMap, bool esCuadricula)
     {
         container.Column(col =>
         {
@@ -141,9 +143,49 @@ public sealed class CatalogoPublicoPdfService(
                 {
                     marcaCol.Spacing(4);
                     marcaCol.Item().Text(grupoMarca.Marca).FontSize(10).SemiBold().FontColor(Colors.Grey.Darken2);
-                    marcaCol.Item().Element(e => ComposeArticulosTable(e, grupoMarca.Articulos, imageMap));
+
+                    if (esCuadricula)
+                        marcaCol.Item().Element(e => ComposeArticulosGrid(e, grupoMarca.Articulos, imageMap));
+                    else
+                        marcaCol.Item().Element(e => ComposeArticulosTable(e, grupoMarca.Articulos, imageMap));
                 });
             }
+        });
+    }
+
+    private const int ArticulosPorFilaGrid = 3;
+
+    private static void ComposeArticulosGrid(IContainer container, List<CatalogosCatalogoItemDto> articulos, IReadOnlyDictionary<string, byte[]?> imageMap)
+    {
+        container.Column(column =>
+        {
+            column.Spacing(8);
+
+            for (var i = 0; i < articulos.Count; i += ArticulosPorFilaGrid)
+            {
+                var fila = articulos.Skip(i).Take(ArticulosPorFilaGrid).ToList();
+
+                column.Item().Row(row =>
+                {
+                    foreach (var item in fila)
+                        row.RelativeItem().Element(e => ComposeTarjetaArticulo(e, item, imageMap));
+
+                    for (var j = fila.Count; j < ArticulosPorFilaGrid; j++)
+                        row.RelativeItem();
+                });
+            }
+        });
+    }
+
+    private static void ComposeTarjetaArticulo(IContainer container, CatalogosCatalogoItemDto item, IReadOnlyDictionary<string, byte[]?> imageMap)
+    {
+        container.Border(1).BorderColor(Colors.Grey.Lighten3).Padding(7).Column(col =>
+        {
+            col.Spacing(4);
+            col.Item().Height(96).Element(e => ComposeImagenCelda(e, item, imageMap, 96));
+            col.Item().Text(item.DescripcionArticulo).FontSize(8).Bold();
+            col.Item().Text($"Cód. {item.IdArticulo}").FontSize(7).FontColor(Colors.Grey.Medium);
+            col.Item().Element(e => ComposePrecioCelda(e, item, alignRight: false, tamanioBase: 13f));
         });
     }
 
@@ -160,9 +202,9 @@ public sealed class CatalogoPublicoPdfService(
 
             foreach (var item in articulos)
             {
-                table.Cell().Element(CeldaBase).Element(e => ComposeImagenCelda(e, item, imageMap));
+                table.Cell().Element(CeldaBase).Element(e => ComposeImagenCelda(e, item, imageMap, 40));
                 table.Cell().Element(CeldaBase).Element(e => ComposeDescripcionCelda(e, item));
-                table.Cell().Element(CeldaBase).Element(e => ComposePrecioCelda(e, item));
+                table.Cell().Element(CeldaBase).Element(e => ComposePrecioCelda(e, item, alignRight: true));
             }
         });
 
@@ -170,17 +212,17 @@ public sealed class CatalogoPublicoPdfService(
             => c.PaddingVertical(4).PaddingHorizontal(3).BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten3);
     }
 
-    private static void ComposeImagenCelda(IContainer container, CatalogosCatalogoItemDto item, IReadOnlyDictionary<string, byte[]?> imageMap)
+    private static void ComposeImagenCelda(IContainer container, CatalogosCatalogoItemDto item, IReadOnlyDictionary<string, byte[]?> imageMap, float size)
     {
         var tieneImagen = imageMap.TryGetValue(item.IdArticulo, out var bytes) && bytes is not null;
 
         if (tieneImagen)
         {
-            container.Width(40).Height(40).Image(bytes!).FitArea();
+            container.Width(size).Height(size).Image(bytes!).FitArea();
             return;
         }
 
-        container.Width(40).Height(40).Background(Colors.Grey.Lighten3).AlignCenter().AlignMiddle()
+        container.Width(size).Height(size).Background(Colors.Grey.Lighten3).AlignCenter().AlignMiddle()
             .Text(Iniciales(item.DescripcionArticulo)).FontSize(8).Bold().FontColor(Colors.Grey.Darken2);
     }
 
@@ -199,29 +241,31 @@ public sealed class CatalogoPublicoPdfService(
         });
     }
 
-    private static void ComposePrecioCelda(IContainer container, CatalogosCatalogoItemDto item)
+    private static void ComposePrecioCelda(IContainer container, CatalogosCatalogoItemDto item, bool alignRight, float tamanioBase = 10f)
     {
         var hasOffer = HasValidOffer(item);
 
         container.Column(col =>
         {
-            col.Item().AlignRight().Text(text =>
+            var precioItem = alignRight ? col.Item().AlignRight() : col.Item();
+            precioItem.Text(text =>
             {
                 var span = text.Span(FormatMoney(item.Precio));
                 if (hasOffer)
                 {
-                    span.FontSize(8).FontColor(Colors.Grey.Medium).Strikethrough();
+                    span.FontSize(tamanioBase - 2).FontColor(Colors.Grey.Medium).Strikethrough();
                 }
                 else
                 {
-                    span.FontSize(10).Bold();
+                    span.FontSize(tamanioBase).Bold();
                 }
             });
 
             if (hasOffer)
             {
-                col.Item().AlignRight().Text($"Oferta: {FormatMoney(item.PrecioOferta)}")
-                    .FontSize(10).Bold().FontColor(Colors.Blue.Darken2);
+                var ofertaItem = alignRight ? col.Item().AlignRight() : col.Item();
+                ofertaItem.Text($"Oferta: {FormatMoney(item.PrecioOferta)}")
+                    .FontSize(tamanioBase).Bold().FontColor(Colors.Blue.Darken2);
             }
         });
     }

@@ -423,6 +423,7 @@ public class Program
             int idInsert,
             string? idweb,
             int? idbase,
+            string? vista,
             IInterfacesCatalogosService catalogosSvc,
             IPuntoVentaService puntoVentaSvc,
             ICatalogoPublicoPdfService pdfSvc,
@@ -459,7 +460,8 @@ public class Program
             var branding = await catalogosSvc.GetPublicIdentityAsync(idweb, ct);
             var settings = await puntoVentaSvc.GetSettingsAsync(ct);
 
-            var pdfBytes = await pdfSvc.GenerarPdfAsync(catalogo, branding, idweb, settings.FtpCodigoCta, ct);
+            var esCuadricula = string.Equals(vista, "cuadricula", StringComparison.OrdinalIgnoreCase);
+            var pdfBytes = await pdfSvc.GenerarPdfAsync(catalogo, branding, idweb, settings.FtpCodigoCta, esCuadricula, ct);
 
             return Results.File(pdfBytes, "application/pdf", $"catalogo-{idInsert}.pdf");
         }).AllowAnonymous();

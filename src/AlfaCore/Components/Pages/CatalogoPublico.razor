@@ -757,6 +757,7 @@
             query.Add($"idweb={Uri.EscapeDataString(idweb)}");
         if (idbase is > 0)
             query.Add($"idbase={idbase.Value}");
+        query.Add($"vista={(_viewMode == CatalogoViewMode.Cuadricula ? "cuadricula" : "lista")}");
 
         var relative = $"/api/catalogos/{IdInsert}/pdf";
         if (query.Count > 0)
