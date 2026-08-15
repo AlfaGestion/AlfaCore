@@ -42,6 +42,10 @@ public interface IConversacionesService
 
     Task<int> ProcesarSeguimientosSlaAsync(CancellationToken ct = default);
 
+    /// <summary>Retoma las conversaciones cuya espera configurada para el Asistente IA ("esperar N minutos
+    /// antes de responder") ya se cumplió. Devuelve cuántas procesó.</summary>
+    Task<int> ProcesarRespuestasBotPendientesAsync(CancellationToken ct = default);
+
     // Mensajes programados (envío diferido)
     Task<long> ProgramarMensajeAsync(ConversacionProgramarRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionMensajeProgramadoDto>> GetMensajesProgramadosAsync(long idConversacion, CancellationToken ct = default);

@@ -754,12 +754,23 @@
                         </label>
                     </div>
                     <div class="field conv-config-fields__full">
+                        <label class="conv-config-checkbox">
+                            <input type="checkbox" @bind="_automatizacionesConfig.BotSoloFueraHorario" />
+                            <span>Responder solo fuera del horario de atención (en horario, lo dejan los agentes humanos)</span>
+                        </label>
+                    </div>
+                    <div class="field conv-config-fields__full">
                         <label for="bot-escalado">Palabras que fuerzan pasar a un humano</label>
                         <input id="bot-escalado" @bind="_automatizacionesConfig.BotPalabrasEscalado" placeholder="humano, persona, reclamo, operador" />
                     </div>
                     <div class="field">
                         <label for="bot-max">Máx. respuestas del asistente por conversación</label>
                         <input id="bot-max" type="number" min="1" @bind="_automatizacionesConfig.BotMaxRespuestas" />
+                    </div>
+                    <div class="field">
+                        <label for="bot-espera">Esperar minutos antes de responder</label>
+                        <input id="bot-espera" type="number" min="0" @bind="_automatizacionesConfig.BotEsperaMinutos" />
+                        <small class="field__hint">Le da tiempo a un agente humano a responder primero. 0 = el asistente responde de inmediato.</small>
                     </div>
                 </div>
 

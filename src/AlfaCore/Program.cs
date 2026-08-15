@@ -215,6 +215,7 @@ public class Program
         builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
         builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
         builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+        builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
 
         var app = builder.Build();
 

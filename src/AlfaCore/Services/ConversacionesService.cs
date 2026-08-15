@@ -6483,11 +6483,9 @@ public sealed class ConversacionesService(
         }
     }
 
-    // Bot autónomo con guardarraíles. Responde con el Asistente IA (comportamiento + información
-    // del negocio configurados, vía OpenAI) si: el bot está activo, hay API key de OpenAI, no hay
-    // palabras de escalado, la conversación está sin asignar (si corresponde), la ventana del canal
-    // está activa, no se superó el tope de respuestas y no hay otra automática encima. La política
-    // del asistente decide qué pasa cuando la info no alcanza; si no puede resolver, escala a humano.
+    // Entrada del bot autónomo desde el webhook: si hay que esperar antes de contestar (para darle
+    // margen a un agente humano), no responde ahora — encola la conversación y la retoma el job de
+    // espera. Si no, corre los guardarraíles y responde ya (ver EjecutarRespuestaBotAsync).
     private async Task TryAutoReplyBotAsync(long idConversacion, string? incomingText, CancellationToken ct)
     {
         try
@@ -6503,120 +6501,13 @@ public sealed class ConversacionesService(
             if (texto.Length == 0)
                 return;
 
-            if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+            if (config.BotEsperaMinutos > 0)
+            {
+                await EncolarRespuestaBotAsync(idConversacion, config.BotEsperaMinutos, ct).ConfigureAwait(false);
                 return;
-
-            if (config.BotSoloSinAsignar)
-            {
-                var tecnico = await GetConversationTechnicianIdAsync(idConversacion, ct).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(tecnico))
-                    return;
             }
 
-            var canalBot = await GetConversationChannelAsync(idConversacion, ct).ConfigureAwait(false);
-            if (!await IsSendWindowActiveAsync(idConversacion, canalBot, ct).ConfigureAwait(false))
-                return;
-
-            var (botCount, lastSistema) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
-            if (botCount >= Math.Max(1, config.BotMaxRespuestas))
-                return;
-            // No encimar sobre otra automática (bienvenida, fuera de horario, auto-cierre, etc.).
-            if (IsAutomaticSystem(lastSistema))
-                return;
-
-            var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
-            var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
-
-            // Datos del cliente: rubro (para razonar la respuesta) y si es un cliente prioritario
-            // (su clasificación está entre las configuradas como prioridad de atención).
-            var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, ct).ConfigureAwait(false);
-
-            // Prioridad de la conversación (solo sube, nunca baja): urgencia -> URGENTE; cliente
-            // prioritario -> ALTA. A los clientes prioritarios (restaurantes/POS, etc.) siempre se los prioriza.
-            if (esUrgente)
-                await SubirPrioridadAsync(idConversacion, "URGENTE", ct).ConfigureAwait(false);
-            else if (esPrioritario)
-                await SubirPrioridadAsync(idConversacion, "ALTA", ct).ConfigureAwait(false);
-
-            // Fuera de horario, dejamos nota para que un operador decida atender ahora (las urgencias y
-            // los clientes prioritarios se atienden en cualquier horario).
-            if (fueraDeHorario && (esUrgente || esPrioritario))
-            {
-                var motivo = esUrgente ? "posible URGENCIA" : "cliente prioritario";
-                var conRubro = string.IsNullOrWhiteSpace(rubro) ? string.Empty : $" (rubro: {rubro})";
-                await AddInternalEventCoreAsync(idConversacion,
-                    $"⏰🚨 Fuera de horario, {motivo}{conRubro}. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
-                    null, null, "AlfaCore", "URGENCIA", ct).ConfigureAwait(false);
-            }
-
-            var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
-
-            // Fase 2: sumar AlfaKnowledge como fuente. Recuperamos fragmentos de los documentos y se
-            // los damos al asistente para que responda combinando: comportamiento + info pegada + base.
-            var conocimientoBase = string.Empty;
-            if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
-                conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, ct).ConfigureAwait(false);
-
-            var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
-
-            var result = await asistenteService.ResponderAsync(
-                config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-                texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, ct).ConfigureAwait(false);
-
-            // Nunca dejamos al cliente sin respuesta. El asistente decide el tipo:
-            //   RESUELVE -> resolvió; ACLARA -> repregunta para poder resolver (esperamos su respuesta);
-            //   DERIVA -> manda una contención y hay que pasar a un humano.
-            // Si por algún error no vino texto, mandamos igual una contención fija y derivamos.
-            var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
-            var respuesta = result is not null && !string.IsNullOrWhiteSpace(result.Respuesta)
-                ? result.Respuesta.Trim()
-                : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
-            if (result is null || string.IsNullOrWhiteSpace(result.Respuesta))
-                tipo = "DERIVA";
-
-            await SendMessageAsync(new ConversacionSendMessageRequest
-            {
-                IdConversacion = idConversacion,
-                Texto = respuesta,
-                MessageType = "TEXT",
-                UsuarioAccion = "AlfaCore",
-                SistemaAccion = "BOT"
-            }, ct).ConfigureAwait(false);
-
-            if (tipo == "ACLARA")
-            {
-                await _appEvents.LogAuditAsync(
-                    "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
-                    idConversacion.ToString(CultureInfo.InvariantCulture),
-                    "El asistente le pidió una aclaración al cliente para poder resolver.",
-                    new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
-            }
-            else if (tipo == "DERIVA")
-            {
-                // Contención enviada: dejamos el caso listo para que un humano lo tome (nota + prioridad),
-                // salvo fuera de horario, donde de por sí queda para el próximo día hábil.
-                if (!fueraDeHorario)
-                {
-                    await AddInternalEventCoreAsync(idConversacion,
-                        "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
-                        null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
-                    if (!esUrgente && !esPrioritario)
-                        await SubirPrioridadAsync(idConversacion, "MEDIA", ct).ConfigureAwait(false);
-                }
-                await _appEvents.LogAuditAsync(
-                    "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
-                    idConversacion.ToString(CultureInfo.InvariantCulture),
-                    "El asistente mandó una contención y derivó a un humano (no pudo resolver).",
-                    new { idConversacion, config.AsistentePolitica, fueraDeHorario }, ct).ConfigureAwait(false);
-            }
-            else
-            {
-                await _appEvents.LogAuditAsync(
-                    "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
-                    idConversacion.ToString(CultureInfo.InvariantCulture),
-                    "El asistente respondió automáticamente.",
-                    new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, ct).ConfigureAwait(false);
-            }
+            await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -6624,6 +6515,241 @@ public sealed class ConversacionesService(
                 "Conversaciones", "BotAutoReply", ex,
                 "No se pudo procesar la respuesta automática del bot.",
                 new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+    }
+
+    // Cola de espera (dbo.CONV_BOT_PENDIENTES): a lo sumo una fila PENDIENTE por conversación. Si el
+    // cliente escribe de nuevo mientras se espera, no reprograma el reloj (para que no charlar
+    // indefinidamente evite la respuesta del bot); el job de espera usa el mensaje más reciente al
+    // momento de responder.
+    private async Task EncolarRespuestaBotAsync(long idConversacion, int minutos, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        const string sql = """
+            IF NOT EXISTS (
+                SELECT 1 FROM dbo.CONV_BOT_PENDIENTES
+                WHERE IdConversacion = @IdConversacion AND Estado = N'PENDIENTE')
+            INSERT INTO dbo.CONV_BOT_PENDIENTES (IdConversacion, FechaProgramada)
+            VALUES (@IdConversacion, @FechaProgramada);
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@FechaProgramada", BusinessNow().AddMinutes(minutos));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    // Job en segundo plano (ver ConversacionesBotEsperaHostedService): retoma las conversaciones cuya
+    // espera configurada ya se cumplió. Vuelve a correr todos los guardarraíles del bot con el mensaje
+    // entrante más reciente — por si el cliente escribió de nuevo, o si un agente humano ya la tomó
+    // mientras tanto (en cuyo caso el bot calla).
+    public async Task<int> ProcesarRespuestasBotPendientesAsync(CancellationToken ct = default)
+    {
+        var pendientes = new List<(long IdPendiente, long IdConversacion)>();
+        await using (var cn = new SqlConnection(ConnectionString))
+        {
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            const string sql = """
+                IF OBJECT_ID(N'dbo.CONV_BOT_PENDIENTES', N'U') IS NOT NULL
+                    SELECT TOP (200) IdPendiente, IdConversacion
+                    FROM dbo.CONV_BOT_PENDIENTES
+                    WHERE Estado = N'PENDIENTE' AND FechaProgramada <= @Ahora
+                    ORDER BY FechaProgramada;
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Ahora", BusinessNow());
+            await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await rd.ReadAsync(ct).ConfigureAwait(false))
+                pendientes.Add((rd.GetInt64(0), rd.GetInt64(1)));
+        }
+
+        if (pendientes.Count == 0)
+            return 0;
+
+        var procesados = 0;
+        foreach (var (idPendiente, idConversacion) in pendientes)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if (await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+                {
+                    var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+                    if (config.BotActivo && asistenteService.IsConfigured)
+                    {
+                        var texto = await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(texto))
+                            await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
+                    }
+                }
+
+                await MarcarBotPendienteProcesadoAsync(idPendiente, ct).ConfigureAwait(false);
+                procesados++;
+            }
+            catch (Exception ex)
+            {
+                await _appEvents.LogErrorAsync(
+                    "Conversaciones", "BotAutoReplyPendiente", ex,
+                    "No se pudo procesar la respuesta en espera del bot.",
+                    new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            }
+        }
+
+        return procesados;
+    }
+
+    private async Task<string> GetLastIncomingTextAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(CAST(Texto AS nvarchar(max)), '')
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'
+            ORDER BY FechaHora DESC, IdMensaje DESC;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result as string ?? string.Empty;
+    }
+
+    private async Task MarcarBotPendienteProcesadoAsync(long idPendiente, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(
+            "UPDATE dbo.CONV_BOT_PENDIENTES SET Estado = N'PROCESADO', FechaProcesado = GETDATE() WHERE IdPendiente = @Id;", cn);
+        cmd.Parameters.AddWithValue("@Id", idPendiente);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    // Bot autónomo con guardarraíles. Responde con el Asistente IA (comportamiento + información
+    // del negocio configurados, vía OpenAI) si: no hay palabras de escalado, la conversación está sin
+    // asignar (si corresponde), estamos en el horario permitido (si "solo fuera de horario" está
+    // activo), la ventana del canal está activa, no se superó el tope de respuestas y no hay otra
+    // automática encima. La política del asistente decide qué pasa cuando la info no alcanza; si no
+    // puede resolver, escala a humano. Se llama tanto al llegar el mensaje (sin espera configurada)
+    // como desde el job de espera, ya con todos los chequeos de activación resueltos.
+    private async Task EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct)
+    {
+        if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+            return;
+
+        if (config.BotSoloSinAsignar)
+        {
+            var tecnico = await GetConversationTechnicianIdAsync(idConversacion, ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(tecnico))
+                return;
+        }
+
+        var canalBot = await GetConversationChannelAsync(idConversacion, ct).ConfigureAwait(false);
+        if (!await IsSendWindowActiveAsync(idConversacion, canalBot, ct).ConfigureAwait(false))
+            return;
+
+        var (botCount, lastSistema) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
+        if (botCount >= Math.Max(1, config.BotMaxRespuestas))
+            return;
+        // No encimar sobre otra automática (bienvenida, fuera de horario, auto-cierre, etc.).
+        if (IsAutomaticSystem(lastSistema))
+            return;
+
+        var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
+        // Configurado para responder solo fuera de horario: en horario, calla y lo deja para un humano.
+        if (config.BotSoloFueraHorario && !fueraDeHorario)
+            return;
+
+        var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
+
+        // Datos del cliente: rubro (para razonar la respuesta) y si es un cliente prioritario
+        // (su clasificación está entre las configuradas como prioridad de atención).
+        var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, ct).ConfigureAwait(false);
+
+        // Prioridad de la conversación (solo sube, nunca baja): urgencia -> URGENTE; cliente
+        // prioritario -> ALTA. A los clientes prioritarios (restaurantes/POS, etc.) siempre se los prioriza.
+        if (esUrgente)
+            await SubirPrioridadAsync(idConversacion, "URGENTE", ct).ConfigureAwait(false);
+        else if (esPrioritario)
+            await SubirPrioridadAsync(idConversacion, "ALTA", ct).ConfigureAwait(false);
+
+        // Fuera de horario, dejamos nota para que un operador decida atender ahora (las urgencias y
+        // los clientes prioritarios se atienden en cualquier horario).
+        if (fueraDeHorario && (esUrgente || esPrioritario))
+        {
+            var motivo = esUrgente ? "posible URGENCIA" : "cliente prioritario";
+            var conRubro = string.IsNullOrWhiteSpace(rubro) ? string.Empty : $" (rubro: {rubro})";
+            await AddInternalEventCoreAsync(idConversacion,
+                $"⏰🚨 Fuera de horario, {motivo}{conRubro}. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
+                null, null, "AlfaCore", "URGENCIA", ct).ConfigureAwait(false);
+        }
+
+        var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
+
+        // Fase 2: sumar AlfaKnowledge como fuente. Recuperamos fragmentos de los documentos y se
+        // los damos al asistente para que responda combinando: comportamiento + info pegada + base.
+        var conocimientoBase = string.Empty;
+        if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
+            conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, ct).ConfigureAwait(false);
+
+        var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
+
+        var result = await asistenteService.ResponderAsync(
+            config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
+            texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, ct).ConfigureAwait(false);
+
+        // Nunca dejamos al cliente sin respuesta. El asistente decide el tipo:
+        //   RESUELVE -> resolvió; ACLARA -> repregunta para poder resolver (esperamos su respuesta);
+        //   DERIVA -> manda una contención y hay que pasar a un humano.
+        // Si por algún error no vino texto, mandamos igual una contención fija y derivamos.
+        var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
+        var respuesta = result is not null && !string.IsNullOrWhiteSpace(result.Respuesta)
+            ? result.Respuesta.Trim()
+            : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
+        if (result is null || string.IsNullOrWhiteSpace(result.Respuesta))
+            tipo = "DERIVA";
+
+        await SendMessageAsync(new ConversacionSendMessageRequest
+        {
+            IdConversacion = idConversacion,
+            Texto = respuesta,
+            MessageType = "TEXT",
+            UsuarioAccion = "AlfaCore",
+            SistemaAccion = "BOT"
+        }, ct).ConfigureAwait(false);
+
+        if (tipo == "ACLARA")
+        {
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "El asistente le pidió una aclaración al cliente para poder resolver.",
+                new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
+        }
+        else if (tipo == "DERIVA")
+        {
+            // Contención enviada: dejamos el caso listo para que un humano lo tome (nota + prioridad),
+            // salvo fuera de horario, donde de por sí queda para el próximo día hábil.
+            if (!fueraDeHorario)
+            {
+                await AddInternalEventCoreAsync(idConversacion,
+                    "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
+                    null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+                if (!esUrgente && !esPrioritario)
+                    await SubirPrioridadAsync(idConversacion, "MEDIA", ct).ConfigureAwait(false);
+            }
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "El asistente mandó una contención y derivó a un humano (no pudo resolver).",
+                new { idConversacion, config.AsistentePolitica, fueraDeHorario }, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "El asistente respondió automáticamente.",
+                new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, ct).ConfigureAwait(false);
         }
     }
 

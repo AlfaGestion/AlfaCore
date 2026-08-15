@@ -209,6 +209,14 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>Tope de respuestas automáticas por conversación antes de escalar (evita loops).</summary>
     public int BotMaxRespuestas { get; set; } = 5;
 
+    /// <summary>El bot solo responde fuera del horario de atención configurado (Automatizaciones); dentro
+    /// del horario calla y lo dejan para un agente humano.</summary>
+    public bool BotSoloFueraHorario { get; set; }
+
+    /// <summary>Minutos de espera desde que llega el mensaje antes de que el bot responda, para darle
+    /// margen a un agente humano a atender primero. 0 = responde de inmediato.</summary>
+    public int BotEsperaMinutos { get; set; }
+
     // Auto-cierre por inactividad. Cierra conversaciones donde estamos esperando al cliente
     // (último mensaje nuestro) y no responde. Manda un aviso previo antes de cerrar. Apagado por
     // defecto. Aplica a todos los canales; el aviso/cierre solo se envían si el canal lo permite.
