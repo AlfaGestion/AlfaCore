@@ -1274,7 +1274,10 @@ else
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
     private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
     private bool CanShowLauncherAccess => !IsDirectMode;
-    private bool UseTopOnlyNavigation => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase);
+    private bool UseTopOnlyNavigation
+        => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(_currentModule, "catalogo", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(_currentModule, "catalogos", StringComparison.OrdinalIgnoreCase);
     private bool ShowSidebar => !UseTopOnlyNavigation;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
@@ -1811,6 +1814,18 @@ else
 
         _currentModule = normalized switch
         {
+            "catalogo" => "catalogo",
+            "catalogo/predeterminado" => "catalogo",
+            "catalogo/menu" => "catalogo",
+            "catalogo/configuracion" => "catalogo",
+            _ when normalized.StartsWith("catalogo/", StringComparison.OrdinalIgnoreCase) => "catalogo",
+            "catalogos" => "catalogos",
+            "catalogos/predeterminado" => "catalogos",
+            "catalogos/menu" => "catalogos",
+            "catalogos/configuracion" => "catalogos",
+            _ when normalized.StartsWith("catalogos/", StringComparison.OrdinalIgnoreCase) => "catalogos",
+            "interfaces/catalogos" => "catalogos",
+            _ when normalized.StartsWith("interfaces/catalogos/", StringComparison.OrdinalIgnoreCase) => "catalogos",
             "clientes" => "clientes",
             "proveedores" => "proveedores",
             _ => effectivePath.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
@@ -3314,8 +3329,19 @@ else
             "carga-viajes/liquidacion" => "Liquidación de Choferes / Fleteros",
             "carga-viajes/liquidaciones" => "Liquidaciones",
             "carga-viajes/configuracion" => "Configurar Carga de Viaje",
+            "catalogo" => "Catálogos",
+            "catalogo/predeterminado" => "Catálogo predeterminado",
+            "catalogo/menu" => "Menú de Catálogos",
+            "catalogo/configuracion" => "Configuración de Catálogos",
+            "catalogos" => "Catálogos",
+            "catalogos/predeterminado" => "Catálogo predeterminado",
+            "catalogos/menu" => "Menú de Catálogos",
+            "catalogos/configuracion" => "Configuración de Catálogos",
+            _ when path.StartsWith("catalogos/", StringComparison.OrdinalIgnoreCase) => "Catálogos",
             "informes" => "Informes",
             "informes/novedades" => "Novedades",
+            "interfaces/catalogos" => "Catálogos",
+            _ when path.StartsWith("interfaces/catalogos/", StringComparison.OrdinalIgnoreCase) => "Catálogos",
             "interfaces" => "Recepción documental",
             "interfaces/configuracion" => "Configuración de Interfaces",
             "interfaces/nuevo" => "Nuevo documento",
@@ -3369,8 +3395,16 @@ else
         "carga-viajes/liquidacion" => "Liquidación de Choferes / Fleteros",
         "carga-viajes/liquidaciones" => "Liquidaciones",
         "carga-viajes/configuracion" => "Configurar Carga de Viaje",
+        "catalogo" => "Catálogos",
+        "catalogo/predeterminado" => "Catálogo predeterminado",
+        "catalogo/menu" => "Menú de Catálogos",
+        "catalogo/configuracion" => "Configuración de Catálogos",
+        "catalogos" => "Catálogos",
         "informes" => "Informes",
         "informes/novedades" => "Novedades",
+        "catalogos/predeterminado" => "Catálogo predeterminado",
+        "catalogos/menu" => "Menú de Catálogos",
+        "catalogos/configuracion" => "Configuración de Catálogos",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
         "usuarios" => "Usuarios",

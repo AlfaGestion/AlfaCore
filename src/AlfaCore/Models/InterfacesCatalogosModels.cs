@@ -156,5 +156,35 @@ public sealed class CatalogosCatalogoSaveResultDto
     public bool Simulado { get; set; }
     public int IdInsert { get; set; }
     public string UrlPublica { get; set; } = string.Empty;
+    public string UrlCliente { get; set; } = string.Empty;
     public string Mensaje { get; set; } = string.Empty;
+}
+
+public sealed class CatalogosCatalogoAccessUrlsDto
+{
+    public string UrlPublica { get; set; } = string.Empty;
+    public string UrlCliente { get; set; } = string.Empty;
+}
+
+public sealed class CatalogosPublicIdentityDto
+{
+    public string NombreVisible { get; set; } = string.Empty;
+    public string NombreFallback { get; set; } = string.Empty;
+    public string LogoUrl { get; set; } = string.Empty;
+    public string LogoFormato { get; set; } = CatalogosPublicLogoFormatKeys.Auto;
+    public bool TieneLogoPersonalizado { get; set; }
+}
+
+public static class CatalogosPublicLogoFormatKeys
+{
+    public const string Auto = "auto";
+    public const string Square = "square";
+    public const string Horizontal = "horizontal";
+}
+
+public sealed class CatalogosPublicLogoServeDto
+{
+    public string RutaCompleta { get; set; } = string.Empty;
+    public string MimeType { get; set; } = "image/png";
+    public string NombreArchivo { get; set; } = "logo.png";
 }

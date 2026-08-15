@@ -4904,12 +4904,7 @@
         => GetProductImageUrl(article.IdArticulo);
 
     private string GetProductImageUrl(string idArticulo)
-    {
-        var cta = _settings.FtpCodigoCta.Trim();
-        if (string.IsNullOrWhiteSpace(cta) || string.IsNullOrWhiteSpace(idArticulo))
-            return string.Empty;
-        return $"https://alfanet.com.ar/ac/public/assets/images/{Uri.EscapeDataString(cta)}/{Uri.EscapeDataString(idArticulo.Trim())}.jpg";
-    }
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_settings.FtpCodigoCta, idArticulo);
 
     private string BuildReceiptPrintHtml(bool showReprint)
     {

@@ -143,6 +143,7 @@ public class Program
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
         builder.Services.AddScoped<IInterfacesCatalogosService, InterfacesCatalogosService>();
+        builder.Services.AddSingleton<IArticuloImagenFtpService, ArticuloImagenFtpService>();
         builder.Services.AddSingleton<InterfacesCompraIaWorkerState>();
         builder.Services.AddSingleton<DatabaseUpdatesRuntimeState>();
         builder.Services.AddScoped<IActualizacionesService, ActualizacionesService>();
@@ -166,6 +167,8 @@ public class Program
         builder.Services.AddScoped<IComprobanteViewerService, ComprobanteViewerService>();
         builder.Services.AddSingleton<AppUserSessionStore>();
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();
+        builder.Services.AddSingleton<CatalogosClienteSessionStore>();
+        builder.Services.AddScoped<ICatalogosClienteSessionService, CatalogosClienteSessionService>();
         builder.Services.AddSingleton<UsuariosPasswordCodec>();
         builder.Services.AddSingleton<Vb6BridgeTicketStore>();
         builder.Services.AddScoped<IVb6BridgeService, Vb6BridgeService>();
@@ -358,6 +361,73 @@ public class Program
 
             return Results.File(photo.RutaCompleta, photo.MimeType, photo.NombreArchivo);
         });
+
+        app.MapGet("/api/catalogos/logo-publico/{idweb}", async (
+            string idweb,
+            int? idbase,
+            IInterfacesCatalogosService catalogosSvc,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            var resolvedBaseId = idbase ?? ResolveSqlSessionBaseId(httpContext.Request.Cookies["AlfaCore.SqlSessionId"]);
+            if (resolvedBaseId is > 0)
+            {
+                var routeBase = await centralBasesSvc.GetByIdAsync(resolvedBaseId.Value, ct);
+                if (routeBase is not null)
+                {
+                    sessionSvc.SetWebhookOverride(new SessionDto
+                    {
+                        Id = Guid.Parse($"00000000-0000-0000-0000-{routeBase.IdBase:000000000000}"),
+                        BaseId = routeBase.IdBase,
+                        Nombre = routeBase.Nombre,
+                        Servidor = routeBase.DbServer,
+                        BaseDatos = routeBase.DbName,
+                        Usuario = routeBase.DbUser,
+                        Password = routeBase.DbPassword,
+                        TrustServerCertificate = true,
+                        Activa = true
+                    });
+                }
+            }
+
+            var logo = await catalogosSvc.GetPublicLogoForServeAsync(idweb, ct);
+            if (logo is null || !File.Exists(logo.RutaCompleta))
+                return Results.NotFound();
+
+            httpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+            httpContext.Response.Headers.Pragma = "no-cache";
+            return Results.File(logo.RutaCompleta, logo.MimeType, logo.NombreArchivo);
+        }).AllowAnonymous();
+
+        app.MapGet("/api/catalogos/imagen-articulo/{idCliente}/{idArticulo}", async (
+            string idCliente,
+            string idArticulo,
+            IArticuloImagenFtpService imagenSvc,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            var imagen = await imagenSvc.ObtenerImagenAsync(idCliente, idArticulo, ct);
+            if (imagen is null || !File.Exists(imagen.RutaCompleta))
+                return Results.NotFound();
+
+            httpContext.Response.Headers.CacheControl = "public, max-age=86400";
+            return Results.File(imagen.RutaCompleta, imagen.MimeType);
+        }).AllowAnonymous();
+
+        static int? ResolveSqlSessionBaseId(string? sessionIdCookie)
+        {
+            if (string.IsNullOrWhiteSpace(sessionIdCookie))
+                return null;
+
+            if (!Guid.TryParse(sessionIdCookie, out var sessionId))
+                return null;
+
+            var bytes = sessionId.ToByteArray();
+            var baseId = BitConverter.ToInt32(bytes, 0);
+            return baseId > 0 ? baseId : null;
+        }
 
         app.MapGet("/api/punto-venta/articulos/{idArticulo}/imagen", async (
             string idArticulo,
