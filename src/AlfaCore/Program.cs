@@ -21,6 +21,8 @@ public class Program
         // directo si los ve, por eso a veces parecia que "andaba").
         DotEnvLoader.LoadIfPresent(AppContext.BaseDirectory);
 
+        QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
+
         var webRootCandidates = new[]
         {
             Path.Combine(AppContext.BaseDirectory, "wwwroot"),
@@ -144,6 +146,7 @@ public class Program
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
         builder.Services.AddScoped<IInterfacesCatalogosService, InterfacesCatalogosService>();
         builder.Services.AddSingleton<IArticuloImagenFtpService, ArticuloImagenFtpService>();
+        builder.Services.AddScoped<ICatalogoPublicoPdfService, CatalogoPublicoPdfService>();
         builder.Services.AddSingleton<InterfacesCompraIaWorkerState>();
         builder.Services.AddSingleton<DatabaseUpdatesRuntimeState>();
         builder.Services.AddScoped<IActualizacionesService, ActualizacionesService>();
@@ -414,6 +417,51 @@ public class Program
 
             httpContext.Response.Headers.CacheControl = "public, max-age=86400";
             return Results.File(imagen.RutaCompleta, imagen.MimeType);
+        }).AllowAnonymous();
+
+        app.MapGet("/api/catalogos/{idInsert:int}/pdf", async (
+            int idInsert,
+            string? idweb,
+            int? idbase,
+            IInterfacesCatalogosService catalogosSvc,
+            IPuntoVentaService puntoVentaSvc,
+            ICatalogoPublicoPdfService pdfSvc,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            var resolvedBaseId = idbase ?? ResolveSqlSessionBaseId(httpContext.Request.Cookies["AlfaCore.SqlSessionId"]);
+            if (resolvedBaseId is > 0)
+            {
+                var routeBase = await centralBasesSvc.GetByIdAsync(resolvedBaseId.Value, ct);
+                if (routeBase is not null)
+                {
+                    sessionSvc.SetWebhookOverride(new SessionDto
+                    {
+                        Id = Guid.Parse($"00000000-0000-0000-0000-{routeBase.IdBase:000000000000}"),
+                        BaseId = routeBase.IdBase,
+                        Nombre = routeBase.Nombre,
+                        Servidor = routeBase.DbServer,
+                        BaseDatos = routeBase.DbName,
+                        Usuario = routeBase.DbUser,
+                        Password = routeBase.DbPassword,
+                        TrustServerCertificate = true,
+                        Activa = true
+                    });
+                }
+            }
+
+            var catalogo = await catalogosSvc.GetCatalogoPublicoAsync(idInsert, ct);
+            if (catalogo is null)
+                return Results.NotFound();
+
+            var branding = await catalogosSvc.GetPublicIdentityAsync(idweb, ct);
+            var settings = await puntoVentaSvc.GetSettingsAsync(ct);
+
+            var pdfBytes = await pdfSvc.GenerarPdfAsync(catalogo, branding, idweb, settings.FtpCodigoCta, ct);
+
+            return Results.File(pdfBytes, "application/pdf", $"catalogo-{idInsert}.pdf");
         }).AllowAnonymous();
 
         static int? ResolveSqlSessionBaseId(string? sessionIdCookie)

@@ -35,6 +35,9 @@
         </div>
 
         <div class="catalogo-publico-hero__actions">
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleThemeAsync" title="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")">
+                <i class="bi @(_isDark ? "bi-sun" : "bi-moon")"></i>
+            </button>
             @if (IsAuthenticatedForCurrentCatalog)
             {
                 <span class="badge text-bg-secondary">Cliente: @GetCurrentClientLabel()</span>
@@ -131,6 +134,12 @@
                     <h3 class="panel-card__title">Artículos</h3>
                     <p class="panel-card__subtitle">Elegí entre vista de lista o cuadrícula sin recargar el catálogo.</p>
                 </div>
+                @if (_catalogo.Articulos.Count > 0)
+                {
+                    <a class="btn btn--ghost btn--sm" href="@GetPdfExportUrl()" target="_blank" rel="noopener">
+                        <i class="bi bi-file-earmark-pdf"></i> Exportar PDF
+                    </a>
+                }
             </div>
 
             @if (_catalogo.Articulos.Count > 0)
@@ -227,7 +236,6 @@
                                         <th>Marca</th>
                                         <th>Rubro</th>
                                         <th style="text-align:right;">Precio</th>
-                                        <th style="text-align:right;">Oferta</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -261,19 +269,8 @@
                                             <td>@Display(item.Marca)</td>
                                             <td>@Display(item.Rubro)</td>
                                             <td style="text-align:right;">
-                                                @if (HasValidOffer(item))
-                                                {
-                                                    <div class="catalogo-publico-price catalogo-publico-price--list">
-                                                        <span class="catalogo-publico-price__current">@Money(item.PrecioOferta)</span>
-                                                        <span class="catalogo-publico-price__old">@Money(item.Precio)</span>
-                                                    </div>
-                                                }
-                                                else
-                                                {
-                                                    <span class="catalogo-publico-price__current">@Money(item.Precio)</span>
-                                                }
+                                                @RenderPrecio(item)
                                             </td>
-                                            <td style="text-align:right;">@Money(item.PrecioOferta)</td>
                                         </tr>
                                     }
                                 </tbody>
@@ -318,15 +315,7 @@
                                         </div>
 
                                         <div class="catalogo-publico-grid__prices">
-                                            @if (HasValidOffer(item))
-                                            {
-                                                <span class="catalogo-publico-grid__offer">@Money(item.PrecioOferta)</span>
-                                                <span class="catalogo-publico-grid__price-old">@Money(item.Precio)</span>
-                                            }
-                                            else
-                                            {
-                                                <span class="catalogo-publico-grid__offer catalogo-publico-grid__offer--regular">@Money(item.Precio)</span>
-                                            }
+                                            @RenderPrecio(item, alignEnd: false)
                                         </div>
                                     </div>
                                 </article>
@@ -359,6 +348,7 @@
     private PuntoVentaSettingsDto _puntoVentaSettings = new();
     private bool _routeSessionError;
     private const string ViewModeStorageKey = "alfacore_catalogo_publico_view_mode";
+    private bool _isDark = true;
     private string _filtroRubro = string.Empty;
     private string _filtroMarca = string.Empty;
     private bool _agruparPorMarca;
@@ -407,8 +397,31 @@
                 _restoreAttempted = true;
                 await RestoreClientSessionAsync();
             }
+
+            try
+            {
+                var theme = await Js.InvokeAsync<string>("dashboardTheme.get");
+                _isDark = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+                await InvokeAsync(StateHasChanged);
+            }
+            catch
+            {
+                // Sin JS interop disponible (prerender): se mantiene el modo oscuro por defecto.
+            }
         }
 
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        _isDark = !_isDark;
+        try
+        {
+            await Js.InvokeVoidAsync("dashboardTheme.set", _isDark ? "dark" : "light");
+        }
+        catch
+        {
+        }
     }
 
     public async ValueTask DisposeAsync()
@@ -648,9 +661,20 @@
         {
             var value = await Js.InvokeAsync<string?>("localStorage.getItem", ViewModeStorageKey);
             if (string.Equals(value, nameof(CatalogoViewMode.Cuadricula), StringComparison.OrdinalIgnoreCase))
+            {
                 _viewMode = CatalogoViewMode.Cuadricula;
-            else
+                return;
+            }
+
+            if (string.Equals(value, nameof(CatalogoViewMode.Lista), StringComparison.OrdinalIgnoreCase))
+            {
                 _viewMode = CatalogoViewMode.Lista;
+                return;
+            }
+
+            // Sin preferencia guardada todavia (primera visita): en mobile arrancamos en Cuadricula.
+            var esMobile = await Js.InvokeAsync<bool>("alfaCoreViewport.isMobile");
+            _viewMode = esMobile ? CatalogoViewMode.Cuadricula : CatalogoViewMode.Lista;
         }
         catch
         {
@@ -709,6 +733,15 @@
            && item.PrecioOferta.Value > 0m
            && item.PrecioOferta.Value < item.Precio;
 
+    private RenderFragment RenderPrecio(CatalogosCatalogoItemDto item, bool alignEnd = true) =>
+        @<div class="catalogo-publico-price @(alignEnd ? "catalogo-publico-price--list" : string.Empty) @(HasValidOffer(item) ? "catalogo-publico-price--offer" : string.Empty)">
+            <span class="catalogo-publico-price__current">@Money(item.Precio)</span>
+            @if (HasValidOffer(item))
+            {
+                <span class="catalogo-publico-price__offer">Oferta: @Money(item.PrecioOferta)</span>
+            }
+        </div>;
+
     private string GetCurrentClientLabel()
         => CatalogoClienteSession.CurrentClient?.RazonSocial?.Trim()
            ?? CatalogoClienteSession.CurrentClient?.CodigoCliente?.Trim()
@@ -716,6 +749,21 @@
 
     private string GetPublicCatalogUrl()
         => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(includeClientSuffix: false)).ToString();
+
+    private string GetPdfExportUrl()
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(idweb))
+            query.Add($"idweb={Uri.EscapeDataString(idweb)}");
+        if (idbase is > 0)
+            query.Add($"idbase={idbase.Value}");
+
+        var relative = $"/api/catalogos/{IdInsert}/pdf";
+        if (query.Count > 0)
+            relative += "?" + string.Join("&", query);
+
+        return relative;
+    }
 
     private string GetClientLoginUrl()
         => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(includeClientSuffix: true)).ToString();

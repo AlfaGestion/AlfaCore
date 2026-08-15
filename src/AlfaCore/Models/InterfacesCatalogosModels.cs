@@ -23,6 +23,7 @@ public sealed class CatalogosArticuloBusquedaFiltersDto
     public string Origen { get; set; } = CatalogosArticuloOrigenKeys.ListaPrecio;
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
+    public string? IdWeb { get; set; }
 }
 
 public sealed class CatalogosArticuloBusquedaDto

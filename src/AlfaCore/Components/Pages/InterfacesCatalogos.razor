@@ -564,6 +564,21 @@
                         <option value="@CatalogosPublicLogoFormatKeys.Horizontal">Horizontal</option>
                     </select>
                 </div>
+
+                <div class="field mt-3">
+                    <label>Clase de precio</label>
+                    <select @bind="_clasePrecioDraft">
+                        <option value="1">Clase 1</option>
+                        <option value="2">Clase 2</option>
+                        <option value="3">Clase 3</option>
+                        <option value="4">Clase 4</option>
+                        <option value="5">Clase 5</option>
+                        <option value="6">Clase 6</option>
+                        <option value="7">Clase 7</option>
+                        <option value="8">Clase 8</option>
+                    </select>
+                    <small class="catalogos-config-help">Define qué columna de precio del artículo (Precio1 a Precio8) se usa al buscar o importar artículos para el catálogo. Los catálogos ya publicados no cambian.</small>
+                </div>
             </div>
 
             <div class="context-card mt-4">
@@ -782,6 +797,7 @@
     private CatalogosPublicIdentityDto _publicIdentity = new();
     private string _publicIdentityNameDraft = string.Empty;
     private string _publicLogoFormatDraft = CatalogosPublicLogoFormatKeys.Auto;
+    private string _clasePrecioDraft = "1";
     private string _publicLogoPreviewUrl = string.Empty;
     private byte[] _publicLogoBytes = [];
     private string _publicLogoFileName = string.Empty;
@@ -896,9 +912,10 @@
             var menuTask = TraceTaskAsync(traceId, "LoadAsync", "GetMenuHabilitadoAsync", () => CatalogosSvc.GetMenuHabilitadoAsync(_disposeCts.Token));
             var identityTask = TraceTaskAsync(traceId, "LoadAsync", "GetPublicIdentityAsync", () => CatalogosSvc.GetPublicIdentityAsync(idweb, _disposeCts.Token));
             var posSettingsTask = TraceTaskAsync(traceId, "LoadAsync", "PuntoVentaSvc.GetSettingsAsync", () => PuntoVentaSvc.GetSettingsAsync(_disposeCts.Token));
+            var clasePrecioTask = TraceTaskAsync(traceId, "LoadAsync", "GetPublicClasePrecioAsync", () => CatalogosSvc.GetPublicClasePrecioAsync(idweb, _disposeCts.Token));
 
             Logger.LogInformation("CATALOGOS - LoadAsync #{TraceId} esperando tareas paralelas", traceId);
-            await Task.WhenAll(modalidadesTask, listasTask, viewTask, menuTask, identityTask, posSettingsTask);
+            await Task.WhenAll(modalidadesTask, listasTask, viewTask, menuTask, identityTask, posSettingsTask, clasePrecioTask);
             Logger.LogInformation("CATALOGOS - LoadAsync #{TraceId} tareas paralelas completadas", traceId);
 
             _modalidades.Clear();
@@ -922,6 +939,7 @@
             _publicLogoRestoreRequested = false;
             _hasCustomPublicLogo = _publicIdentity.TieneLogoPersonalizado;
             _puntoVentaSettings = posSettingsTask.Result;
+            _clasePrecioDraft = clasePrecioTask.Result;
 
             Logger.LogInformation("CATALOGOS - LoadAsync END #{TraceId} | modalidades={Modalidades} listas={Listas} menu={Menu} viewColumns={Columns} loading={Loading}",
                 traceId,
@@ -1453,6 +1471,7 @@
             await CatalogosSvc.SaveMenuHabilitadoAsync(_catalogosUserName, _menuHabilitadoDraft, _disposeCts.Token);
             await CatalogosSvc.SavePublicIdentityNameAsync(_catalogosUserName, _publicIdentityNameDraft, _disposeCts.Token);
             await CatalogosSvc.SavePublicLogoFormatAsync(_catalogosUserName, idweb, _publicLogoFormatDraft, _disposeCts.Token);
+            await CatalogosSvc.SavePublicClasePrecioAsync(_catalogosUserName, idweb, _clasePrecioDraft, _disposeCts.Token);
 
             if (_publicLogoRestoreRequested)
             {
@@ -1488,6 +1507,7 @@
         _publicIdentityNameDraft = _publicIdentity.NombreVisible;
         _publicLogoPreviewUrl = string.IsNullOrWhiteSpace(_publicIdentity.LogoUrl) ? "/logos/Logo.png" : _publicIdentity.LogoUrl;
         _publicLogoFormatDraft = _publicIdentity.LogoFormato;
+        _clasePrecioDraft = await CatalogosSvc.GetPublicClasePrecioAsync(idweb, _disposeCts.Token);
         _publicLogoBytes = [];
         _publicLogoFileName = string.Empty;
         _publicLogoContentType = string.Empty;
@@ -1741,7 +1761,8 @@
                 IdLista = _idLista,
                 Origen = _articuloOrigen,
                 PageNumber = _lookupPageNumber,
-                PageSize = LookupPageSize
+                PageSize = LookupPageSize,
+                IdWeb = idweb
             }, _disposeCts.Token), "No se pudieron cargar los artículos.");
 
             if (!result.Success || result.Value is null)
@@ -1907,7 +1928,7 @@
             if (!confirmado)
                 return;
 
-            var result = await UiOps.RunAsync(() => CatalogosSvc.GetArticulosDesdeListaAsync(_idLista, _disposeCts.Token), "No se pudo importar la lista completa.");
+            var result = await UiOps.RunAsync(() => CatalogosSvc.GetArticulosDesdeListaAsync(_idLista, idweb, _disposeCts.Token), "No se pudo importar la lista completa.");
             if (!result.Success || result.Value is null)
             {
                 _feedback = result.Feedback;
@@ -2173,14 +2194,20 @@
     {
         if (HasEditorChanges())
         {
-            var confirm = await Js.InvokeAsync<bool>("confirm", "Tiene cambios sin guardar. ¿Desea salir?");
+            var confirm = await DialogSvc.ConfirmAsync(
+                "Salir sin guardar",
+                "Tenés cambios sin guardar en este catálogo. ¿Querés salir igual?",
+                "Salir",
+                "Cancelar");
             if (!confirm)
                 return;
         }
 
         ResetNuevoCatalogo();
         NavigateToSection(SectionCatalogos);
+        await ApplyRouteSectionAsync(SectionCatalogos, forceReloadCatalogos: true);
         UpdatePageHeader();
+        StateHasChanged();
     }
 
     private async Task BuscarCatalogosAsync(bool resetPage = true)

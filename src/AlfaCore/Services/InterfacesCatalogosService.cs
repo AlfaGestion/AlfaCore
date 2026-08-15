@@ -22,6 +22,8 @@ public sealed class InterfacesCatalogosService(
     private const string PublicNameConfigKey = "CATALOGOS-NOMBRE-PUBLICO";
     private const string PublicLogoConfigKey = "CATALOGOS-LOGO-PUBLICO";
     private const string PublicLogoFormatConfigKey = "CATALOGOS-LOGO-FORMATO";
+    private const string PublicClasePrecioConfigKey = "CATALOGOS-CLASE-PRECIO";
+    private const string DefaultClasePrecio = "1";
     private const string DefaultPublicLogoUrl = "/logos/Logo.png";
     private const string ViewConfigPrefix = "USUVIEW-CATALOGOS-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
@@ -92,6 +94,7 @@ public sealed class InterfacesCatalogosService(
             var idLista = (filters.IdLista ?? string.Empty).Trim();
             var origen = (filters.Origen ?? string.Empty).Trim();
             var usarLista = string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase);
+            var clasePrecio = ParseClasePrecio(await GetPublicClasePrecioAsync(filters.IdWeb, token));
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -106,7 +109,7 @@ public sealed class InterfacesCatalogosService(
                 return EmptyArticuloPage(pageNumber, pageSize);
 
             var sql = usarLista
-                ? """
+                ? $"""
                 SELECT
                     a.IDARTICULO AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
@@ -115,7 +118,7 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
                     ISNULL(LTRIM(RTRIM(p.IdLista)), '') AS ListaPrecio,
                     N'' AS NombreListaPrecio,
-                    ISNULL(p.Precio1, 0) AS Precio,
+                    ISNULL(p.Precio{clasePrecio}, 0) AS Precio,
                     CASE
                         WHEN p.FhOfertaDesde IS NOT NULL
                          AND p.FhOfertaHasta IS NOT NULL
@@ -145,7 +148,7 @@ public sealed class InterfacesCatalogosService(
                 ORDER BY a.DESCRIPCION, a.IDARTICULO
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
                 """
-                : """
+                : $"""
                 SELECT
                     a.IDARTICULO AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
@@ -154,7 +157,7 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
                     N'' AS ListaPrecio,
                     N'' AS NombreListaPrecio,
-                    ISNULL(a.Precio1, 0) AS Precio,
+                    ISNULL(a.Precio{clasePrecio}, 0) AS Precio,
                     CAST(NULL AS decimal(18, 4)) AS PrecioOferta,
                     COUNT(1) OVER() AS TotalRows
                 FROM dbo.V_MA_ARTICULOS a
@@ -227,7 +230,7 @@ public sealed class InterfacesCatalogosService(
             return await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { IdLista = lista }, cancellationToken: token));
         }, "No se pudo contar la lista de precios.", ct);
 
-    public Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> GetArticulosDesdeListaAsync(string idLista, CancellationToken ct = default)
+    public Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> GetArticulosDesdeListaAsync(string idLista, string? idWeb = null, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetArticulosDesdeLista", async token =>
         {
             var lista = (idLista ?? string.Empty).Trim();
@@ -240,7 +243,9 @@ public sealed class InterfacesCatalogosService(
             if (!await SqlObjectExistsAsync(cn, "V_MA_ARTICULOS", token) || !await SqlObjectExistsAsync(cn, "V_MA_Precios", token))
                 return Array.Empty<CatalogosArticuloBusquedaDto>();
 
-            const string sql = """
+            var clasePrecio = ParseClasePrecio(await GetPublicClasePrecioAsync(idWeb, token));
+
+            var sql = $"""
                 SELECT
                     a.IDARTICULO AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
@@ -249,7 +254,7 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
                     ISNULL(LTRIM(RTRIM(p.IdLista)), '') AS ListaPrecio,
                     ISNULL(LTRIM(RTRIM(pc.Nombre)), '') AS NombreListaPrecio,
-                    ISNULL(p.Precio1, 0) AS Precio,
+                    ISNULL(p.Precio{clasePrecio}, 0) AS Precio,
                     CASE
                         WHEN p.FhOfertaDesde IS NOT NULL
                          AND p.FhOfertaHasta IS NOT NULL
@@ -844,6 +849,64 @@ public sealed class InterfacesCatalogosService(
             return true;
         }, "No se pudo guardar el formato del logo del catálogo.", ct);
 
+    public Task<string> GetPublicClasePrecioAsync(string? idWeb, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetPublicClasePrecio", async token =>
+        {
+            var effectiveIdWeb = GetEffectiveIdWeb(idWeb);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", token))
+                return DefaultClasePrecio;
+
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var scopedKey = BuildScopedConfigKey(PublicClasePrecioConfigKey, effectiveIdWeb);
+
+            var sql = $"""
+                SELECT
+                    UPPER(LTRIM(RTRIM(CLAVE))) AS Clave,
+                    ISNULL(VALOR, '') AS Valor,
+                    ISNULL({detailColumn}, '') AS ValorAux
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (@ScopedKey, @LegacyKey);
+                """;
+
+            var rows = await cn.QueryAsync<(string Clave, string Valor, string ValorAux)>(new CommandDefinition(
+                sql,
+                new { ScopedKey = scopedKey.ToUpperInvariant(), LegacyKey = PublicClasePrecioConfigKey.ToUpperInvariant() },
+                cancellationToken: token));
+
+            var values = rows.ToDictionary(x => x.Clave, x => ResolveStoredValue(x.Valor, x.ValorAux), StringComparer.OrdinalIgnoreCase);
+            return NormalizeClasePrecio(ReadFirstConfigValue(values, scopedKey, PublicClasePrecioConfigKey));
+        }, "No se pudo cargar la clase de precio del catálogo.", ct);
+
+    public Task SavePublicClasePrecioAsync(string userName, string? idWeb, string clasePrecio, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SavePublicClasePrecio", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(userName))
+                throw new InvalidOperationException("No hay un usuario logueado para guardar la clase de precio.");
+
+            var effectiveIdWeb = GetEffectiveIdWeb(idWeb);
+            var normalizedClase = NormalizeClasePrecio(clasePrecio);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var configKey = BuildScopedConfigKey(PublicClasePrecioConfigKey, effectiveIdWeb);
+            await UpsertConfigValueAsync(cn, detailColumn, configKey, normalizedClase, ConfigGroup, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SavePublicClasePrecio",
+                "TA_CONFIGURACION",
+                configKey,
+                "Clase de precio del catálogo público actualizada.",
+                new { UserName = userName.Trim(), ClasePrecio = normalizedClase, IdWeb = effectiveIdWeb },
+                token);
+
+            return true;
+        }, "No se pudo guardar la clase de precio del catálogo.", ct);
+
     public Task<CatalogosPublicIdentityDto> SavePublicIdentityLogoAsync(string userName, string? idWeb, Stream content, string fileName, string contentType, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SavePublicIdentityLogo", async token =>
         {
@@ -1250,6 +1313,12 @@ public sealed class InterfacesCatalogosService(
             CatalogosPublicLogoFormatKeys.Horizontal => CatalogosPublicLogoFormatKeys.Horizontal,
             _ => CatalogosPublicLogoFormatKeys.Auto
         };
+
+    private static int ParseClasePrecio(string? value)
+        => int.TryParse((value ?? string.Empty).Trim(), out var parsed) && parsed is >= 1 and <= 8 ? parsed : 1;
+
+    private static string NormalizeClasePrecio(string? value)
+        => ParseClasePrecio(value).ToString();
 
     private static string BuildScopedConfigKey(string baseKey, string? idWeb)
     {

@@ -14,9 +14,8 @@
     top: 0;
     z-index: 30;
     align-self: start;
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(15, 23, 42, 0.94));
-    border-bottom: 1px solid rgba(148, 163, 184, 0.16);
-    box-shadow: 0 14px 30px rgba(2, 6, 23, 0.18);
+    border-bottom: 1px solid var(--color-border);
+    box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12);
     backdrop-filter: blur(8px);
 }
 
@@ -33,8 +32,8 @@
     place-items: center;
     box-sizing: border-box;
     border-radius: 16px;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
     overflow: hidden;
     min-width: 0;
     min-height: 0;
@@ -72,7 +71,7 @@
 
 .catalogo-publico-hero__eyebrow {
     margin: 0 0 0.15rem;
-    color: #22d3ee;
+    color: var(--color-primary);
     font-size: 0.7rem;
     font-weight: 800;
     letter-spacing: 0.08em;
@@ -84,11 +83,12 @@
     font-size: 1.3rem;
     line-height: 1.1;
     font-weight: 800;
+    color: var(--color-text);
 }
 
 .catalogo-publico-hero__text {
     margin: 0.35rem 0 0;
-    color: rgba(226, 232, 240, 0.76);
+    color: var(--color-muted);
     font-size: 0.95rem;
     line-height: 1.45;
 }
@@ -103,7 +103,7 @@
 
 .catalogo-publico-meta__text {
     margin: 0;
-    color: rgba(15, 23, 42, 0.8);
+    color: var(--color-muted);
 }
 
 .catalogo-publico-list__header {
@@ -120,8 +120,8 @@
     gap: 0.45rem;
     padding: 0.25rem;
     border-radius: 999px;
-    background: rgba(15, 23, 42, 0.05);
-    border: 1px solid rgba(15, 23, 42, 0.08);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
 }
 
 .catalogo-publico-view-switch__btn {
@@ -132,20 +132,20 @@
     border-radius: 999px;
     padding: 0.55rem 0.9rem;
     font-weight: 700;
-    color: #334155;
+    color: var(--color-muted);
     background: transparent;
     transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .catalogo-publico-view-switch__btn:hover {
-    color: #0f172a;
-    background: rgba(255, 255, 255, 0.78);
+    color: var(--color-text);
+    background: var(--hover-bg);
 }
 
 .catalogo-publico-view-switch__btn.is-active {
     color: #fff;
-    background: #0f172a;
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.24);
+    background: var(--color-primary);
+    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.24);
 }
 
 .catalogo-publico-tabs {
@@ -167,26 +167,27 @@
 .catalogo-publico-tabs__btn {
     flex: 0 0 auto;
     white-space: nowrap;
-    border: 1px solid rgba(148, 163, 184, 0.18);
+    border: 1px solid var(--color-border);
     border-radius: 999px;
     padding: 0.5rem 1rem;
     font-size: 0.85rem;
     font-weight: 700;
-    color: rgba(226, 232, 240, 0.78);
-    background: rgba(15, 23, 42, 0.6);
+    color: var(--color-muted);
+    background: var(--color-bg);
     cursor: pointer;
     transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .catalogo-publico-tabs__btn:hover {
-    color: #fff;
-    background: rgba(15, 23, 42, 0.85);
+    color: var(--color-text);
+    background: var(--hover-bg);
 }
 
 .catalogo-publico-tabs__btn.is-active {
     color: #fff;
-    background: linear-gradient(135deg, #0f172a, #334155);
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.24);
+    background: var(--color-primary);
+    border-color: transparent;
+    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.24);
 }
 
 .catalogo-publico-filters {
@@ -207,9 +208,9 @@
     gap: 0.65rem;
     padding: 0.65rem 1rem;
     border-radius: 999px;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(15, 23, 42, 0.82);
-    color: rgba(226, 232, 240, 0.92);
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    color: var(--color-text);
     font-size: 0.85rem;
     font-weight: 600;
     cursor: pointer;
@@ -230,7 +231,7 @@
     width: 38px;
     height: 22px;
     border-radius: 999px;
-    background: rgba(148, 163, 184, 0.35);
+    background: var(--color-border);
     transition: background-color 0.15s ease;
 }
 
@@ -248,7 +249,7 @@
 }
 
 .catalogo-publico-filters__toggle-input:checked ~ .catalogo-publico-filters__toggle-track {
-    background: #22d3ee;
+    background: var(--color-primary);
 }
 
 .catalogo-publico-filters__toggle-input:checked ~ .catalogo-publico-filters__toggle-track::before {
@@ -256,7 +257,7 @@
 }
 
 .catalogo-publico-filters__toggle-input:focus-visible ~ .catalogo-publico-filters__toggle-track {
-    outline: 2px solid rgba(34, 211, 238, 0.55);
+    outline: 2px solid var(--color-primary);
     outline-offset: 2px;
 }
 
@@ -269,7 +270,7 @@
     font-size: 1rem;
     font-weight: 800;
     letter-spacing: 0.02em;
-    color: inherit;
+    color: var(--color-text);
 }
 
 .catalogo-publico-grupo-marca__titulo:first-child {
@@ -283,33 +284,34 @@
 .catalogo-publico-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 1rem;
+    gap: 1.1rem;
+    min-width: 0;
 }
 
 .catalogo-publico-grid__card {
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    min-width: 0;
     border-radius: 22px;
-    border: 1px solid rgba(148, 163, 184, 0.16);
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(15, 23, 42, 0.9));
-    box-shadow: 0 12px 28px rgba(2, 6, 23, 0.28);
+    border: 1px solid var(--color-border);
+    background: var(--color-panel-strong);
+    box-shadow: var(--shadow-soft);
 }
 
 .catalogo-publico-grid__media {
     display: grid;
     place-items: center;
-    min-height: 220px;
+    aspect-ratio: 4 / 3;
     padding: 1rem;
-    background: radial-gradient(circle at top, rgba(59, 130, 246, 0.16), rgba(15, 23, 42, 0.88) 65%);
-    border-bottom: 1px solid rgba(148, 163, 184, 0.14);
+    background: var(--color-bg);
+    border-bottom: 1px solid var(--color-border);
 }
 
 .catalogo-publico-grid__img,
 .catalogo-publico-grid__fallback {
     width: 100%;
     height: 100%;
-    max-height: 220px;
     object-fit: contain;
     display: block;
 }
@@ -318,7 +320,7 @@
     display: grid;
     place-items: center;
     border-radius: 18px;
-    color: #e2e8f0;
+    color: var(--color-text);
     font-weight: 900;
     font-size: 1.4rem;
     letter-spacing: 0.1em;
@@ -342,7 +344,9 @@
 .catalogo-publico-grid__title {
     font-size: 1rem;
     line-height: 1.25;
-    color: #f8fafc;
+    color: var(--color-text);
+    overflow-wrap: anywhere;
+    min-width: 0;
 }
 
 .catalogo-publico-grid__code {
@@ -351,13 +355,13 @@
     border-radius: 999px;
     font-size: 0.72rem;
     font-weight: 800;
-    color: #cbd5e1;
-    background: rgba(148, 163, 184, 0.12);
+    color: var(--color-muted);
+    background: var(--color-bg);
 }
 
 .catalogo-publico-grid__presentation {
     margin: 0;
-    color: #cbd5e1;
+    color: var(--color-muted);
     font-size: 0.92rem;
 }
 
@@ -365,39 +369,19 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.4rem 0.75rem;
-    color: #94a3b8;
+    color: var(--color-muted);
     font-size: 0.88rem;
 }
 
 .catalogo-publico-grid__prices {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
-    gap: 0.55rem;
     margin-top: 0.2rem;
-}
-
-.catalogo-publico-grid__offer {
-    color: #7dd3fc;
-    font-weight: 900;
-    font-size: 1.2rem;
-}
-
-.catalogo-publico-grid__offer--regular {
-    color: #f8fafc;
-}
-
-.catalogo-publico-grid__price-old {
-    color: #94a3b8;
-    text-decoration: line-through;
-    font-size: 0.92rem;
 }
 
 .catalogo-publico-price {
     display: inline-flex;
     flex-direction: column;
-    align-items: flex-end;
-    gap: 0.1rem;
+    align-items: flex-start;
+    gap: 0.15rem;
 }
 
 .catalogo-publico-price--list {
@@ -405,14 +389,22 @@
 }
 
 .catalogo-publico-price__current {
-    color: #0f172a;
+    color: var(--color-text);
     font-weight: 900;
+    font-size: 1.05rem;
 }
 
-.catalogo-publico-price__old {
-    color: #64748b;
+.catalogo-publico-price--offer .catalogo-publico-price__current {
+    color: var(--color-muted);
+    font-weight: 600;
+    font-size: 0.86rem;
     text-decoration: line-through;
-    font-size: 0.84rem;
+}
+
+.catalogo-publico-price__offer {
+    color: var(--color-primary);
+    font-weight: 900;
+    font-size: 1.05rem;
 }
 
 .catalogo-articulo-media {
@@ -423,8 +415,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(180deg, rgba(17, 24, 39, 0.06), rgba(17, 24, 39, 0.12));
-    border: 1px solid rgba(17, 24, 39, 0.08);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
 }
 
 .catalogo-articulo-media__img {
@@ -442,7 +434,7 @@
     justify-content: center;
     font-weight: 800;
     letter-spacing: 0.08em;
-    color: #374151;
+    color: var(--color-text);
     background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(16, 185, 129, 0.14));
 }
 
@@ -515,11 +507,13 @@
     }
 
     .catalogo-publico-grid {
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.75rem;
     }
 
-    .catalogo-publico-grid__media {
-        min-height: 180px;
+    .catalogo-publico-grid__body {
+        padding: 0.75rem 0.75rem 0.85rem;
+        gap: 0.35rem;
     }
 
     .catalogo-publico-table thead {
@@ -538,7 +532,7 @@
         align-items: center;
         gap: 0.3rem 0.65rem;
         padding: 0.7rem 0.15rem;
-        border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+        border-bottom: 1px solid var(--color-border);
     }
 
     .catalogo-publico-table tr:last-child {
@@ -565,12 +559,19 @@
     .catalogo-publico-table td:nth-child(3) strong {
         display: block;
         font-size: 0.94rem;
+        color: var(--color-text);
     }
 
     .catalogo-publico-table td:nth-child(6) {
         order: 3;
-        flex: 0 0 auto;
-        text-align: right;
+        flex: 1 1 100%;
+        text-align: left;
+        margin-top: 0.25rem;
+        padding-left: calc(80px + 0.65rem);
+    }
+
+    .catalogo-publico-table td:nth-child(6) .catalogo-publico-price {
+        align-items: flex-start;
     }
 
     .catalogo-publico-table td:nth-child(2),
@@ -579,14 +580,10 @@
         order: 4;
         flex: 0 1 auto;
         font-size: 0.76rem;
-        color: #64748b;
+        color: var(--color-muted);
     }
 
     .catalogo-publico-table td:nth-child(2)::before {
         content: "#";
-    }
-
-    .catalogo-publico-table td:nth-child(7) {
-        display: none;
     }
 }
