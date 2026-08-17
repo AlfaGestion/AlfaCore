@@ -13,6 +13,7 @@ public interface ICatalogoPublicoPdfService
         CatalogosPublicIdentityDto branding,
         string? idWeb,
         string? ftpCodigoCta,
+        int? idBase,
         bool esCuadricula,
         CancellationToken ct = default);
 }
@@ -31,11 +32,12 @@ public sealed class CatalogoPublicoPdfService(
         CatalogosPublicIdentityDto branding,
         string? idWeb,
         string? ftpCodigoCta,
+        int? idBase,
         bool esCuadricula,
         CancellationToken ct = default)
     {
         var logoBytes = await CargarLogoAsync(idWeb, ct);
-        var imageMap = await CargarImagenesAsync(catalogo.Articulos, ftpCodigoCta, ct);
+        var imageMap = await CargarImagenesAsync(catalogo.Articulos, ftpCodigoCta, idBase, ct);
         var grupos = AgruparPorRubroYMarca(catalogo.Articulos);
         var generadoEl = DateTime.Now;
 
@@ -333,6 +335,7 @@ public sealed class CatalogoPublicoPdfService(
     private async Task<IReadOnlyDictionary<string, byte[]?>> CargarImagenesAsync(
         IReadOnlyList<CatalogosCatalogoItemDto> articulos,
         string? ftpCodigoCta,
+        int? idBase,
         CancellationToken ct)
     {
         var resultado = new Dictionary<string, byte[]?>(StringComparer.OrdinalIgnoreCase);
@@ -346,7 +349,7 @@ public sealed class CatalogoPublicoPdfService(
             await throttle.WaitAsync(ct);
             try
             {
-                var imagen = await imagenSvc.ObtenerImagenAsync(ftpCodigoCta, item.IdArticulo, ct);
+                var imagen = await imagenSvc.ObtenerImagenAsync(ftpCodigoCta, idBase, item.IdArticulo, thumbnail: false, ct);
                 if (imagen is null || !File.Exists(imagen.RutaCompleta))
                     return (item.IdArticulo, Bytes: (byte[]?)null);
 

@@ -407,11 +407,13 @@ public class Program
         app.MapGet("/api/catalogos/imagen-articulo/{idCliente}/{idArticulo}", async (
             string idCliente,
             string idArticulo,
+            int? idbase,
+            bool? thumb,
             IArticuloImagenFtpService imagenSvc,
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            var imagen = await imagenSvc.ObtenerImagenAsync(idCliente, idArticulo, ct);
+            var imagen = await imagenSvc.ObtenerImagenAsync(idCliente, idbase, idArticulo, thumb == true, ct);
             if (imagen is null || !File.Exists(imagen.RutaCompleta))
                 return Results.NotFound();
 
@@ -461,7 +463,7 @@ public class Program
             var settings = await puntoVentaSvc.GetSettingsAsync(ct);
 
             var esCuadricula = string.Equals(vista, "cuadricula", StringComparison.OrdinalIgnoreCase);
-            var pdfBytes = await pdfSvc.GenerarPdfAsync(catalogo, branding, idweb, settings.FtpCodigoCta, esCuadricula, ct);
+            var pdfBytes = await pdfSvc.GenerarPdfAsync(catalogo, branding, idweb, settings.FtpCodigoCta, resolvedBaseId, esCuadricula, ct);
 
             return Results.File(pdfBytes, "application/pdf", $"catalogo-{idInsert}.pdf");
         }).AllowAnonymous();

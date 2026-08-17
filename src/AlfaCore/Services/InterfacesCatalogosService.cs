@@ -24,6 +24,7 @@ public sealed class InterfacesCatalogosService(
     private const string PublicLogoFormatConfigKey = "CATALOGOS-LOGO-FORMATO";
     private const string PublicClasePrecioConfigKey = "CATALOGOS-CLASE-PRECIO";
     private const string DefaultClasePrecio = "1";
+    private const string OfertaClasePrecioConfigKey = "CLASEPRECIOOFERTA";
     private const string DefaultPublicLogoUrl = "/logos/Logo.png";
     private const string ViewConfigPrefix = "USUVIEW-CATALOGOS-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
@@ -108,6 +109,8 @@ public sealed class InterfacesCatalogosService(
             if (usarLista && !await SqlObjectExistsAsync(cn, "V_MA_Precios", token))
                 return EmptyArticuloPage(pageNumber, pageSize);
 
+            var ofertaClase = usarLista ? await GetOfertaClasePrecioAsync(cn, token) : 0;
+
             var sql = usarLista
                 ? $"""
                 SELECT
@@ -121,8 +124,8 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(p.Precio{clasePrecio}, 0) AS Precio,
                     CASE
                         WHEN p.FhOfertaDesde IS NOT NULL
-                         AND p.FhOfertaHasta IS NOT NULL
-                         AND GETDATE() BETWEEN p.FhOfertaDesde AND p.FhOfertaHasta THEN p.Precio0
+                         AND GETDATE() >= p.FhOfertaDesde
+                         AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN p.Precio{ofertaClase}
                         ELSE NULL
                     END AS PrecioOferta,
                     COUNT(1) OVER() AS TotalRows
@@ -244,6 +247,7 @@ public sealed class InterfacesCatalogosService(
                 return Array.Empty<CatalogosArticuloBusquedaDto>();
 
             var clasePrecio = ParseClasePrecio(await GetPublicClasePrecioAsync(idWeb, token));
+            var ofertaClase = await GetOfertaClasePrecioAsync(cn, token);
 
             var sql = $"""
                 SELECT
@@ -257,8 +261,8 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(p.Precio{clasePrecio}, 0) AS Precio,
                     CASE
                         WHEN p.FhOfertaDesde IS NOT NULL
-                         AND p.FhOfertaHasta IS NOT NULL
-                         AND GETDATE() BETWEEN p.FhOfertaDesde AND p.FhOfertaHasta THEN p.Precio0
+                         AND GETDATE() >= p.FhOfertaDesde
+                         AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN p.Precio{ofertaClase}
                         ELSE NULL
                     END AS PrecioOferta
                 FROM dbo.V_MA_Precios p
@@ -880,6 +884,28 @@ public sealed class InterfacesCatalogosService(
             return NormalizeClasePrecio(ReadFirstConfigValue(values, scopedKey, PublicClasePrecioConfigKey));
         }, "No se pudo cargar la clase de precio del catálogo.", ct);
 
+    private async Task<int> GetOfertaClasePrecioAsync(SqlConnection cn, CancellationToken ct)
+    {
+        if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", ct))
+            return 0;
+
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+        var sql = $"""
+            SELECT TOP (1)
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+            """;
+
+        var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(
+            sql,
+            new { Clave = OfertaClasePrecioConfigKey },
+            cancellationToken: ct));
+        var raw = ResolveStoredValue(row.Valor ?? string.Empty, row.ValorAux ?? string.Empty);
+        return int.TryParse(raw.Trim(), out var parsed) && parsed is >= 0 and <= 8 ? parsed : 0;
+    }
+
     public Task SavePublicClasePrecioAsync(string userName, string? idWeb, string clasePrecio, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SavePublicClasePrecio", async token =>
         {
@@ -1207,8 +1233,45 @@ public sealed class InterfacesCatalogosService(
 
             var items = (await multi.ReadAsync<CatalogosCatalogoItemDto>()).ToList();
             header.Articulos = items;
+
+            await EnrichOfertaHastaAsync(items, header.IdLista, token);
+
             return header;
         }, soloPublico ? "No se pudo cargar el catálogo público." : "No se pudo cargar el catálogo.", ct);
+
+    private async Task EnrichOfertaHastaAsync(List<CatalogosCatalogoItemDto> items, string idLista, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(idLista) || !items.Any(i => i.PrecioOferta is > 0))
+            return;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+
+        if (!await SqlObjectExistsAsync(cn, "V_MA_Precios", ct))
+            return;
+
+        const string sql = """
+            SELECT
+                LTRIM(RTRIM(p.IdArticulo)) AS IdArticulo,
+                p.FhOfertaHasta AS OfertaHasta
+            FROM dbo.V_MA_Precios p
+            WHERE UPPER(LTRIM(RTRIM(ISNULL(p.IdLista, '')))) = UPPER(LTRIM(RTRIM(@IdLista)))
+              AND UPPER(LTRIM(RTRIM(ISNULL(p.TipoLista, 'V')))) = 'V';
+            """;
+
+        var rows = await cn.QueryAsync<(string IdArticulo, DateTime? OfertaHasta)>(new CommandDefinition(
+            sql,
+            new { IdLista = idLista },
+            cancellationToken: ct));
+
+        var hastaPorArticulo = rows.ToDictionary(r => r.IdArticulo, r => r.OfertaHasta, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in items)
+        {
+            if (item.PrecioOferta is > 0 && hastaPorArticulo.TryGetValue(item.IdArticulo.Trim(), out var hasta))
+                item.OfertaHasta = hasta;
+        }
+    }
 
     private static bool IsCatalogoPublicoVigente(CatalogosCatalogoDetalleDto catalogo)
     {

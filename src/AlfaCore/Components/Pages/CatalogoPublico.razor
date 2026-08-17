@@ -246,11 +246,13 @@
                                                 <div class="catalogo-articulo-media">
                                                     @if (ShouldShowImage(item))
                                                     {
-                                                        <img class="catalogo-articulo-media__img"
-                                                             src="@GetProductImageUrl(item)"
-                                                             alt="@item.DescripcionArticulo"
-                                                             loading="lazy"
-                                                             @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(item.IdArticulo))" />
+                                                        <button type="button" class="catalogo-articulo-media__trigger" @onclick="() => OpenLightbox(item)" title="Ver imagen completa">
+                                                            <img class="catalogo-articulo-media__img"
+                                                                 src="@GetProductThumbUrl(item)"
+                                                                 alt="@item.DescripcionArticulo"
+                                                                 loading="lazy"
+                                                                 @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(item.IdArticulo))" />
+                                                        </button>
                                                     }
                                                     else
                                                     {
@@ -286,11 +288,13 @@
                                     <div class="catalogo-publico-grid__media">
                                         @if (ShouldShowImage(item))
                                         {
-                                            <img class="catalogo-publico-grid__img"
-                                                 src="@GetProductImageUrl(item)"
-                                                 alt="@item.DescripcionArticulo"
-                                                 loading="lazy"
-                                                 @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(item.IdArticulo))" />
+                                            <button type="button" class="catalogo-publico-grid__trigger" @onclick="() => OpenLightbox(item)" title="Ver imagen completa">
+                                                <img class="catalogo-publico-grid__img"
+                                                     src="@GetProductThumbUrl(item)"
+                                                     alt="@item.DescripcionArticulo"
+                                                     loading="lazy"
+                                                     @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(item.IdArticulo))" />
+                                            </button>
                                         }
                                         else
                                         {
@@ -327,6 +331,19 @@
         </section>
     }
 </section>
+
+@if (_lightboxItem is not null)
+{
+    <div class="catalogo-publico-lightbox" @onclick="CloseLightbox">
+        <button type="button" class="catalogo-publico-lightbox__close" @onclick="CloseLightbox" @onclick:stopPropagation="true" title="Cerrar">
+            <i class="bi bi-x-lg"></i>
+        </button>
+        <div class="catalogo-publico-lightbox__content" @onclick:stopPropagation="true">
+            <img class="catalogo-publico-lightbox__img" src="@GetProductImageUrl(_lightboxItem)" alt="@_lightboxItem.DescripcionArticulo" />
+            <p class="catalogo-publico-lightbox__caption">@_lightboxItem.DescripcionArticulo</p>
+        </div>
+    </div>
+}
 
 @code {
     private const string ClientTokenStorageKey = "alfacore_catalogo_cliente_token";
@@ -473,8 +490,22 @@
         await RefreshCatalogAsync();
     }
 
+    private int? _effectiveIdBase;
+
+    private int? GetEffectiveIdBase() => _effectiveIdBase;
+
     private async Task EnsureRouteSessionAsync()
     {
+        if (idbase is > 0)
+        {
+            _effectiveIdBase = idbase;
+        }
+        else
+        {
+            var sessionBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+            _effectiveIdBase = sessionBaseId > 0 ? sessionBaseId : null;
+        }
+
         if (!AppMode.IsSaaSMode || !idbase.HasValue)
             return;
 
@@ -733,12 +764,33 @@
            && item.PrecioOferta.Value > 0m
            && item.PrecioOferta.Value < item.Precio;
 
+    private static int GetOfertaPercent(CatalogosCatalogoItemDto item)
+    {
+        if (!HasValidOffer(item) || item.Precio is not > 0m)
+            return 0;
+
+        var descuento = 1m - (item.PrecioOferta!.Value / item.Precio!.Value);
+        return (int)Math.Round(descuento * 100m, MidpointRounding.AwayFromZero);
+    }
+
+    private static string GetOfertaHastaTexto(CatalogosCatalogoItemDto item)
+        => item.OfertaHasta.HasValue
+            ? $"Válido hasta {item.OfertaHasta.Value:dd/MM/yyyy}"
+            : string.Empty;
+
     private RenderFragment RenderPrecio(CatalogosCatalogoItemDto item, bool alignEnd = true) =>
         @<div class="catalogo-publico-price @(alignEnd ? "catalogo-publico-price--list" : string.Empty) @(HasValidOffer(item) ? "catalogo-publico-price--offer" : string.Empty)">
             <span class="catalogo-publico-price__current">@Money(item.Precio)</span>
             @if (HasValidOffer(item))
             {
-                <span class="catalogo-publico-price__offer">Oferta: @Money(item.PrecioOferta)</span>
+                <span class="catalogo-publico-price__offer-row">
+                    <span class="catalogo-publico-price__badge">-@GetOfertaPercent(item)%</span>
+                    <span class="catalogo-publico-price__offer">@Money(item.PrecioOferta)</span>
+                </span>
+                @if (item.OfertaHasta.HasValue)
+                {
+                    <span class="catalogo-publico-price__offer-hasta">@GetOfertaHastaTexto(item)</span>
+                }
             }
         </div>;
 
@@ -755,8 +807,9 @@
         var query = new List<string>();
         if (!string.IsNullOrWhiteSpace(idweb))
             query.Add($"idweb={Uri.EscapeDataString(idweb)}");
-        if (idbase is > 0)
-            query.Add($"idbase={idbase.Value}");
+        var effectiveIdBase = GetEffectiveIdBase();
+        if (effectiveIdBase is > 0)
+            query.Add($"idbase={effectiveIdBase.Value}");
         query.Add($"vista={(_viewMode == CatalogoViewMode.Cuadricula ? "cuadricula" : "lista")}");
 
         var relative = $"/api/catalogos/{IdInsert}/pdf";
@@ -796,7 +849,7 @@
         => (value ?? string.Empty).Trim().Trim('/');
 
     private bool ShouldShowImage(CatalogosCatalogoItemDto item)
-        => !_imageFallbacks.Contains(item.IdArticulo) && !string.IsNullOrWhiteSpace(GetProductImageUrl(item));
+        => !_imageFallbacks.Contains(item.IdArticulo) && !string.IsNullOrWhiteSpace(GetProductThumbUrl(item));
 
     private void HandleImageError(string idArticulo)
     {
@@ -804,8 +857,19 @@
             _imageFallbacks.Add(idArticulo);
     }
 
+    private string GetProductThumbUrl(CatalogosCatalogoItemDto item)
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), thumbnail: true);
+
     private string GetProductImageUrl(CatalogosCatalogoItemDto item)
-        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo);
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase());
+
+    private CatalogosCatalogoItemDto? _lightboxItem;
+
+    private void OpenLightbox(CatalogosCatalogoItemDto item)
+        => _lightboxItem = item;
+
+    private void CloseLightbox()
+        => _lightboxItem = null;
 
     private static string ProductInitials(string descripcion)
     {

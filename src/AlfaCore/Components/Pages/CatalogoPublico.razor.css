@@ -304,8 +304,18 @@
     place-items: center;
     aspect-ratio: 4 / 3;
     padding: 1rem;
-    background: var(--color-bg);
-    border-bottom: 1px solid var(--color-border);
+    background: #f5f6f8;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.catalogo-publico-grid__trigger {
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
 }
 
 .catalogo-publico-grid__img,
@@ -320,7 +330,7 @@
     display: grid;
     place-items: center;
     border-radius: 18px;
-    color: var(--color-text);
+    color: #1f2937;
     font-weight: 900;
     font-size: 1.4rem;
     letter-spacing: 0.1em;
@@ -407,6 +417,29 @@
     font-size: 1.05rem;
 }
 
+.catalogo-publico-price__offer-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+}
+
+.catalogo-publico-price__badge {
+    display: inline-block;
+    padding: 0.1rem 0.45rem;
+    border-radius: 999px;
+    background: #dc2626;
+    color: #fff;
+    font-weight: 800;
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+}
+
+.catalogo-publico-price__offer-hasta {
+    color: var(--color-muted);
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
 .catalogo-articulo-media {
     width: 96px;
     height: 96px;
@@ -415,8 +448,18 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: var(--color-bg);
-    border: 1px solid var(--color-border);
+    background: #f5f6f8;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+}
+
+.catalogo-articulo-media__trigger {
+    display: block;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
 }
 
 .catalogo-articulo-media__img {
@@ -434,7 +477,7 @@
     justify-content: center;
     font-weight: 800;
     letter-spacing: 0.08em;
-    color: var(--color-text);
+    color: #1f2937;
     background: linear-gradient(135deg, rgba(59, 130, 246, 0.18), rgba(16, 185, 129, 0.14));
 }
 
@@ -585,5 +628,70 @@
 
     .catalogo-publico-table td:nth-child(2)::before {
         content: "#";
+    }
+}
+
+.catalogo-publico-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 1080;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    background: rgba(10, 12, 18, 0.82);
+    cursor: zoom-out;
+}
+
+.catalogo-publico-lightbox__content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: min(900px, 100%);
+    max-height: 100%;
+    cursor: default;
+}
+
+.catalogo-publico-lightbox__img {
+    max-width: 100%;
+    max-height: 80vh;
+    object-fit: contain;
+    border-radius: 12px;
+    background: #f5f6f8;
+    padding: 0.5rem;
+    box-shadow: 0 20px 50px rgba(2, 6, 23, 0.45);
+}
+
+.catalogo-publico-lightbox__caption {
+    margin: 0;
+    color: #fff;
+    font-weight: 600;
+    text-align: center;
+}
+
+.catalogo-publico-lightbox__close {
+    position: absolute;
+    top: 1.25rem;
+    right: 1.25rem;
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    font-size: 1.1rem;
+    cursor: pointer;
+}
+
+.catalogo-publico-lightbox__close:hover {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+@media (max-width: 768px) {
+    .catalogo-publico-lightbox {
+        padding: 1rem;
     }
 }

@@ -1185,7 +1185,8 @@ public sealed class InterfacesService(
                 }
             }
 
-            snapshot.Worker = _workerState.Snapshot(settings.Habilitado && settings.WorkerHabilitado, settings.WorkerIntervaloSegundos);
+            var idBaseActiva = sessionService.GetActiveSession()?.BaseId ?? 0;
+            snapshot.Worker = _workerState.Snapshot(idBaseActiva, settings.Habilitado && settings.WorkerHabilitado, settings.WorkerIntervaloSegundos);
             snapshot.Items = items;
             return snapshot;
         }, "No se pudo cargar la cola de procesamiento de compras.", ct);

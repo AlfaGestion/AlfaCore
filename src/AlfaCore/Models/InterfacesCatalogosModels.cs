@@ -104,6 +104,7 @@ public sealed class CatalogosCatalogoItemDto
     public decimal? Precio { get; set; }
     public decimal? PrecioOferta { get; set; }
     public string Rubro { get; set; } = string.Empty;
+    public DateTime? OfertaHasta { get; set; }
 }
 
 public sealed class CatalogosCatalogoResumenDto

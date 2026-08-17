@@ -6,7 +6,7 @@ namespace AlfaCore.Services;
 
 public interface IArticuloImagenFtpService
 {
-    Task<ArticuloImagenArchivoDto?> ObtenerImagenAsync(string idCliente, string idArticulo, CancellationToken ct = default);
+    Task<ArticuloImagenArchivoDto?> ObtenerImagenAsync(string idCliente, int? idBase, string idArticulo, bool thumbnail = false, CancellationToken ct = default);
 }
 
 public sealed class ArticuloImagenArchivoDto
@@ -20,18 +20,23 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
     private const string FtpHost = "alfanet.ddns.net";
     private const string FtpUsuario = "ftpalfa";
     private const string FtpClave = "24681012";
-    private static readonly string[] ExtensionesSoportadas = [".jpg", ".jpeg", ".png", ".webp"];
+    private static readonly string[] ExtensionesSoportadas = [".jpg", ".jpeg", ".png", ".webp", ".bmp"];
     private static readonly TimeSpan CacheMissTtl = TimeSpan.FromMinutes(10);
     private static readonly ConcurrentDictionary<string, DateTime> MissCache = new(StringComparer.OrdinalIgnoreCase);
 
-    public async Task<ArticuloImagenArchivoDto?> ObtenerImagenAsync(string idCliente, string idArticulo, CancellationToken ct = default)
+    public async Task<ArticuloImagenArchivoDto?> ObtenerImagenAsync(string idCliente, int? idBase, string idArticulo, bool thumbnail = false, CancellationToken ct = default)
     {
         var cliente = NormalizeSegment(idCliente);
         var articulo = NormalizeSegment(idArticulo);
         if (string.IsNullOrWhiteSpace(cliente) || string.IsNullOrWhiteSpace(articulo))
             return null;
 
-        var cacheDir = Path.Combine(environment.ContentRootPath, "App_Data", "cache", "imagenes-articulos", cliente);
+        var baseSegment = idBase is > 0 ? idBase.Value.ToString() : null;
+        var carpeta = thumbnail ? "thumbs4" : "imagenes";
+        var remoteDir = baseSegment is null ? $"{cliente}/{carpeta}" : $"{cliente}/{baseSegment}/{carpeta}";
+        var cacheDir = baseSegment is null
+            ? Path.Combine(environment.ContentRootPath, "App_Data", "cache", "imagenes-articulos", cliente, carpeta)
+            : Path.Combine(environment.ContentRootPath, "App_Data", "cache", "imagenes-articulos", cliente, baseSegment, carpeta);
 
         foreach (var ext in ExtensionesSoportadas)
         {
@@ -40,7 +45,7 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
                 return new ArticuloImagenArchivoDto { RutaCompleta = cachedPath, MimeType = MimeTypeFor(ext) };
         }
 
-        var missKey = $"{cliente}/{articulo}";
+        var missKey = $"{remoteDir}/{articulo}";
         if (MissCache.TryGetValue(missKey, out var missedAt) && DateTime.UtcNow - missedAt < CacheMissTtl)
             return null;
 
@@ -48,7 +53,7 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
 
         foreach (var ext in ExtensionesSoportadas)
         {
-            var bytes = await TryDownloadAsync(cliente, articulo + ext, ct);
+            var bytes = await TryDownloadAsync(remoteDir, articulo + ext, ct);
             if (bytes is null)
                 continue;
 
@@ -62,11 +67,11 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
         return null;
     }
 
-    private async Task<byte[]?> TryDownloadAsync(string idCliente, string nombreArchivo, CancellationToken ct)
+    private async Task<byte[]?> TryDownloadAsync(string remoteDir, string nombreArchivo, CancellationToken ct)
     {
         try
         {
-            var uri = new Uri($"ftp://{FtpHost}/Clientes/{idCliente}/imagenes/{nombreArchivo}");
+            var uri = new Uri($"ftp://{FtpHost}/Clientes/{remoteDir}/{nombreArchivo}");
 #pragma warning disable SYSLIB0014, CS0618
             var request = (FtpWebRequest)WebRequest.Create(uri);
             request.Method = WebRequestMethods.Ftp.DownloadFile;
@@ -114,6 +119,7 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
         ".jpg" or ".jpeg" => "image/jpeg",
         ".png" => "image/png",
         ".webp" => "image/webp",
+        ".bmp" => "image/bmp",
         _ => "application/octet-stream"
     };
 }
