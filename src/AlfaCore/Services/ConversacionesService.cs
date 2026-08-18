@@ -18,6 +18,7 @@ public sealed class ConversacionesService(
     IHttpClientFactory httpClientFactory,
     ICentralBasesService centralBasesService,
     IConversacionesConfigService conversacionesConfigService,
+    IWhatsAppWebSessionService whatsAppWebSessionService,
     INotificacionesPushService notificacionesPushService,
     ICentralAdminService centralAdminService,
     IConversacionAsistenteService asistenteService,
@@ -2198,11 +2199,14 @@ public sealed class ConversacionesService(
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
                 if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                     whatsAppConfig.PhoneNumberId = conversation.PhoneNumberId;
+                var deliveryProvider = ResolveWhatsAppDeliveryProvider(whatsAppConfig);
                 var windowActive = await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
                 if (!windowActive)
                     throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
 
-                initialState = whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
+                initialState = string.Equals(deliveryProvider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase)
+                    ? "PENDIENTE"
+                    : whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
             }
             else if (isInstagram)
             {
@@ -2267,7 +2271,23 @@ public sealed class ConversacionesService(
             string finalState = initialState;
             string payload = string.Empty;
 
-            if (!isInternal && whatsAppConfig?.IsConfiguredForSend == true)
+            if (isWhatsApp && whatsAppConfig is not null && string.Equals(ResolveWhatsAppDeliveryProvider(whatsAppConfig), ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var sendResult = await whatsAppWebSessionService.SendTextAsync(conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
+                    whatsAppMessageId = sendResult.ExternalMessageId;
+                    finalState = sendResult.EstadoEnvio;
+                    payload = sendResult.PayloadJson;
+                }
+                catch (Exception ex)
+                {
+                    await UpdateMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
+                    await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
+                    throw new InvalidOperationException("No se pudo enviar el mensaje por WhatsApp Web. Quedó marcado con error en la conversación.", ex);
+                }
+            }
+            else if (!isInternal && whatsAppConfig?.IsConfiguredForSend == true)
             {
                 try
                 {
@@ -2435,6 +2455,7 @@ public sealed class ConversacionesService(
             var config = await configTask;
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                 config.PhoneNumberId = conversation.PhoneNumberId;
+            EnsureWhatsAppMetaProvider(config, "enviar reacciones");
             var now = BusinessNow();
             var text = emoji;
 
@@ -2773,6 +2794,7 @@ public sealed class ConversacionesService(
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                 config.PhoneNumberId = conversation.PhoneNumberId;
+            EnsureWhatsAppMetaProvider(config, "enviar plantillas");
             if (!string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
             {
                 var meta = await GetMetaTemplateStatusAsync(config, template, token);
@@ -3374,6 +3396,133 @@ public sealed class ConversacionesService(
             };
         }, "No se pudo procesar el webhook de WhatsApp.", ct);
 
+    public async Task RegisterIncomingWhatsAppWebMessageAsync(ConversacionWhatsAppWebIncomingMessageDto request, CancellationToken ct = default)
+    {
+        await ExecuteLoggedAsync("Conversaciones", "RegisterIncomingWhatsAppWebMessage", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            var payloadJson = string.IsNullOrWhiteSpace(request.RawJson)
+                ? JsonSerializer.Serialize(request)
+                : request.RawJson;
+
+            var webhookLogId = await InsertWebhookLogAsync("WHATSAPP_WEB", "InboxFile", payloadJson, string.Empty, token);
+            try
+            {
+                var incoming = new IncomingWhatsAppMessage
+                {
+                    Phone = request.Phone?.Trim() ?? string.Empty,
+                    PhoneNumberId = request.InstanceName?.Trim() ?? string.Empty,
+                    DisplayPhoneNumber = string.Empty,
+                    ContactName = request.ContactName?.Trim() ?? string.Empty,
+                    MessageType = string.IsNullOrWhiteSpace(request.MessageType) ? "TEXT" : request.MessageType.Trim().ToUpperInvariant(),
+                    WhatsAppMessageId = request.MessageId?.Trim() ?? string.Empty,
+                    WhatsAppReplyToMessageId = request.ReplyToMessageId?.Trim() ?? string.Empty,
+                    Timestamp = request.TimestampUtc == default ? BusinessNow() : request.TimestampUtc,
+                    Text = request.Text?.Trim() ?? string.Empty,
+                    RawJson = payloadJson
+                };
+
+                var conversationId = await EnsureConversationAsync(incoming, token);
+                var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
+                if (messageId <= 0)
+                {
+                    messageId = await InsertMessageAsync(new PendingMessageInsert
+                    {
+                        ConversationId = conversationId,
+                        Phone = incoming.Phone,
+                        MessageType = incoming.MessageType,
+                        Direction = "ENTRANTE",
+                        EstadoEnvio = "RECIBIDO",
+                        Text = incoming.Text,
+                        PayloadJson = incoming.RawJson,
+                        FechaHora = NormalizeIncomingTimestamp(incoming.Timestamp),
+                        UsuarioAutor = string.Empty,
+                        SistemaAutor = "WHATSAPP_WEB",
+                        IdTecnicoAutor = string.Empty,
+                        WhatsAppMessageId = incoming.WhatsAppMessageId,
+                        ReplyToMessageId = incoming.WhatsAppReplyToMessageId
+                    }, token);
+                }
+
+                if (string.Equals(incoming.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase))
+                {
+                    await RefreshConversationAsync(
+                        conversationId,
+                        NormalizeIncomingTimestamp(incoming.Timestamp),
+                        BuildReactionSummary(incoming.Text, incoming: true),
+                        token,
+                        reopenIfClosed: false);
+                }
+                else
+                {
+                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
+                    await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                    if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                    {
+                        await TryAutoReplyWelcomeAsync(conversationId, token);
+                        await TryAutoReplyOutOfHoursAsync(conversationId, token);
+                        await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                    }
+                }
+
+                await UpdateWebhookLogAsync(webhookLogId, true, string.Empty, token);
+            }
+            catch (Exception ex)
+            {
+                await UpdateWebhookLogAsync(webhookLogId, false, ex.Message, token);
+                throw;
+            }
+        }, "No se pudo registrar el mensaje entrante de WhatsApp Web.", ct);
+    }
+
+    public Task<int> ProcessWhatsAppWebInboxAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "ProcessWhatsAppWebInbox", async token =>
+        {
+            var sessionsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "whatsapp-web");
+            if (!Directory.Exists(sessionsRoot))
+                return 0;
+
+            var inboxFiles = Directory
+                .EnumerateFiles(sessionsRoot, "*.json", SearchOption.AllDirectories)
+                .Where(path => string.Equals(Path.GetFileName(Path.GetDirectoryName(path)), "inbox", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var processed = 0;
+            foreach (var inboxFile in inboxFiles)
+            {
+                token.ThrowIfCancellationRequested();
+                try
+                {
+                    var json = await File.ReadAllTextAsync(inboxFile, token);
+                    var incoming = JsonSerializer.Deserialize<ConversacionWhatsAppWebIncomingMessageDto>(json);
+                    if (incoming is null)
+                    {
+                        throw new InvalidOperationException("El archivo de inbox no contiene un mensaje válido.");
+                    }
+
+                    incoming.RawJson = string.IsNullOrWhiteSpace(incoming.RawJson) ? json : incoming.RawJson;
+                    await RegisterIncomingWhatsAppWebMessageAsync(incoming, token);
+                    File.Delete(inboxFile);
+                    processed++;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    await _appEvents.LogErrorAsync(
+                        "Conversaciones",
+                        "ProcessWhatsAppWebInbox",
+                        ex,
+                        "No se pudo procesar un archivo del inbox de WhatsApp Web.",
+                        new { InboxFile = inboxFile },
+                        AppEventSeverity.Warning,
+                        token);
+                }
+            }
+
+            return processed;
+        }, "No se pudo procesar la bandeja de entrada de WhatsApp Web.", ct);
+
     public Task<ConversacionWebhookResultDto> RegisterIncomingInstagramWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingInstagramWebhook", async token =>
         {
@@ -3858,6 +4007,8 @@ public sealed class ConversacionesService(
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
                 if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                     whatsAppConfig.PhoneNumberId = conversation.PhoneNumberId;
+                var deliveryProvider = ResolveWhatsAppDeliveryProvider(whatsAppConfig);
+                EnsureWhatsAppProviderImplemented(deliveryProvider, "enviar adjuntos");
                 var windowActive = await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
                 if (!windowActive && !request.PermitirEnvioConVentanaVencida)
                     throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
@@ -8836,6 +8987,43 @@ public sealed class ConversacionesService(
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
     }
 
+    private static string ResolveWhatsAppDeliveryProvider(ConversacionWhatsAppConfigDto config)
+    {
+        var providerMode = (config.ProviderMode ?? string.Empty).Trim().ToUpperInvariant();
+        var defaultProvider = (config.DefaultProvider ?? string.Empty).Trim().ToUpperInvariant();
+
+        if (providerMode == ConversacionWhatsAppProviderModes.WebOnly)
+            return ConversacionWhatsAppProviders.WhatsAppWeb;
+
+        if (providerMode == ConversacionWhatsAppProviderModes.MetaAndWeb)
+            return defaultProvider == ConversacionWhatsAppProviders.WhatsAppWeb
+                ? ConversacionWhatsAppProviders.WhatsAppWeb
+                : ConversacionWhatsAppProviders.MetaCloud;
+
+        return ConversacionWhatsAppProviders.MetaCloud;
+    }
+
+    private static void EnsureWhatsAppProviderImplemented(string provider, string actionLabel)
+    {
+        if (string.Equals(provider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"La base está configurada para usar WhatsApp Web al {actionLabel}, pero ese conector todavía no está implementado en AlfaCore. " +
+                "Por ahora dejá el proveedor en Meta Cloud API o en convivencia con Meta como predeterminado.");
+        }
+    }
+
+    private static void EnsureWhatsAppMetaProvider(ConversacionWhatsAppConfigDto config, string actionLabel)
+    {
+        var provider = ResolveWhatsAppDeliveryProvider(config);
+        if (!string.Equals(provider, ConversacionWhatsAppProviders.MetaCloud, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"La acción de {actionLabel} hoy solo está disponible con Meta Cloud API. " +
+                "Si querés usarla, dejá Meta como proveedor predeterminado para WhatsApp.");
+        }
+    }
+
     private async Task UpdateWebhookLogAsync(long idWebhookLog, bool procesadoOk, string? errorDescripcion, CancellationToken ct)
     {
         const string sql = """
@@ -12089,6 +12277,25 @@ public sealed class ConversacionesService(
             var incidentId = await _appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
             throw new AppUserFacingException(userMessage, incidentId, ex);
         }
+    }
+
+    private async Task ExecuteLoggedAsync(
+        string module,
+        string action,
+        Func<CancellationToken, Task> operation,
+        string userMessage,
+        CancellationToken ct)
+    {
+        await ExecuteLoggedAsync(
+            module,
+            action,
+            async token =>
+            {
+                await operation(token);
+                return true;
+            },
+            userMessage,
+            ct);
     }
 
     private async Task TryLogConversationSchemaCheckFailureAsync(Exception exception, CancellationToken ct)

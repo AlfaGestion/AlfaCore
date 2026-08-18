@@ -129,6 +129,7 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IConversacionesInformesService, ConversacionesInformesService>();
         builder.Services.AddScoped<ITablasReferenciaService, TablasReferenciaService>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
@@ -216,6 +217,7 @@ public class Program
         builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
         builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
         builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
+        builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
 
         var app = builder.Build();
 

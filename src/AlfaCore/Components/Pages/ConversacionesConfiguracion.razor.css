@@ -123,6 +123,48 @@
     box-shadow: 0 10px 24px rgba(47, 79, 133, .18);
 }
 
+.conv-waweb-pairing {
+    display: grid;
+    grid-template-columns: minmax(180px, 240px) 1fr;
+    gap: 1rem;
+    align-items: start;
+    padding: 1rem;
+    border: 1px solid var(--border, #d7deea);
+    border-radius: 18px;
+    background: linear-gradient(180deg, #fbfdff, #f4f8fc);
+}
+
+.conv-waweb-pairing__qr {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: .8rem;
+    border-radius: 18px;
+    background: #fff;
+    border: 1px solid #dfe7f2;
+    min-height: 220px;
+}
+
+.conv-waweb-pairing__qr img {
+    display: block;
+    width: 100%;
+    max-width: 220px;
+    height: auto;
+}
+
+.conv-waweb-pairing__details {
+    display: grid;
+    gap: .85rem;
+}
+
+.checkbox-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: .55rem;
+    font-weight: 600;
+    color: #1f3558;
+}
+
 @media (max-width: 720px) {
     .conv-config-collapsible__summary {
         align-items: flex-start;
@@ -139,5 +181,9 @@
     .conv-config-subtab {
         width: 100%;
         text-align: center;
+    }
+
+    .conv-waweb-pairing {
+        grid-template-columns: 1fr;
     }
 }

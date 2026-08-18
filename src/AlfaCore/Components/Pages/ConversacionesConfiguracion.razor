@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/conversaciones/configuracion"
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IConversacionesService ConvSvc
+@inject AlfaCore.Services.IWhatsAppWebSessionService WhatsAppWebSessionSvc
 @inject AlfaCore.Services.IAnyDeskLocalSettingsService AnyDeskSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppModeService AppMode
@@ -79,6 +80,12 @@
     {
     <div class="conv-config-status-grid">
             <article class="panel-card conv-status-card">
+                <span class="panel-card__tag">Modo del canal</span>
+                <strong>@GetWhatsAppProviderModeLabel()</strong>
+                <p class="panel-card__subtitle">Define si WhatsApp usa Meta, una sesión Web o convivencia de ambos.</p>
+            </article>
+
+            <article class="panel-card conv-status-card">
                 <span class="panel-card__tag">Envío Cloud API</span>
                 <strong class="@GetStatusClass(_config.IsConfiguredForSend)">@GetStatusLabel(_config.IsConfiguredForSend)</strong>
                 <p class="panel-card__subtitle">Requiere <code>access token</code> y <code>phone_number_id</code>.</p>
@@ -95,6 +102,12 @@
                 <strong class="@GetStatusClass(_config.IsReadyForMetaSetup)">@GetPublicationLabel()</strong>
                 <p class="panel-card__subtitle">Meta necesita una URL pública HTTPS para llamar al webhook.</p>
             </article>
+
+            <article class="panel-card conv-status-card">
+                <span class="panel-card__tag">Sesión WhatsApp Web</span>
+                <strong class="@GetStatusClass(_config.IsWebSessionReady)">@GetWhatsAppWebStatusLabel()</strong>
+                <p class="panel-card__subtitle">Preparación para QR o inicio por número, separada del canal oficial de Meta.</p>
+            </article>
     </div>
 
     <div class="conv-config-layout">
@@ -107,7 +120,30 @@
                     <span class="panel-card__tag">TA_CONFIGURACION</span>
                 </div>
 
+                <div class="context-card">
+                    <span class="context-card__label">Convivencia de proveedores</span>
+                    <strong>@GetWhatsAppProviderSummary()</strong>
+                    <span class="context-card__muted">La integración productiva actual sigue siendo Meta Cloud API. La sesión WhatsApp Web queda configurada por separado para preparar QR o inicio por número sin mezclar credenciales ni webhook.</span>
+                </div>
+
                 <div class="conv-config-fields">
+                    <div class="field">
+                        <label for="wa-provider-mode">Modo del canal</label>
+                        <select id="wa-provider-mode" @bind="_config.ProviderMode">
+                            <option value="@ConversacionWhatsAppProviderModes.MetaOnly">Solo Meta Cloud API</option>
+                            <option value="@ConversacionWhatsAppProviderModes.WebOnly">Solo sesión WhatsApp Web</option>
+                            <option value="@ConversacionWhatsAppProviderModes.MetaAndWeb">Convivencia Meta + WhatsApp Web</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="wa-default-provider">Proveedor predeterminado</label>
+                        <select id="wa-default-provider" @bind="_config.DefaultProvider">
+                            <option value="@ConversacionWhatsAppProviders.MetaCloud">Meta Cloud API</option>
+                            <option value="@ConversacionWhatsAppProviders.WhatsAppWeb">WhatsApp Web</option>
+                        </select>
+                    </div>
+
                     <div class="field">
                         <label for="wa-public-url">Base pública HTTPS</label>
                         <input id="wa-public-url" @bind="_config.PublicBaseUrl" placeholder="@_suggestedBaseUrl" />
@@ -148,6 +184,127 @@
                         <input id="wa-webhook-path" value="@_config.WebhookPath" readonly />
                     </div>
                 </div>
+
+                <div class="context-card">
+                    <span class="context-card__label">Meta Cloud API</span>
+                    <strong>@GetWhatsAppMetaSummary()</strong>
+                    <span class="context-card__muted">Este bloque es el que hoy usa AlfaCore para recibir y enviar mensajes por el canal oficial.</span>
+                </div>
+
+                <div class="conv-config-fields">
+                    <div class="field">
+                        <label for="wa-web-instance">Instancia sesión Web</label>
+                        <input id="wa-web-instance" @bind="_config.WebInstanceName" placeholder="Ej. alfa-whatsapp-web-01" />
+                    </div>
+
+                    <div class="field">
+                        <label for="wa-web-session-mode">Método de inicio</label>
+                        <select id="wa-web-session-mode" @bind="_config.WebSessionMode">
+                            <option value="@ConversacionWhatsAppWebSessionModes.Qr">Escanear QR</option>
+                            <option value="@ConversacionWhatsAppWebSessionModes.PhoneNumber">Ingresar número de teléfono</option>
+                        </select>
+                    </div>
+
+                    <div class="field">
+                        <label for="wa-web-phone">Número para sesión Web</label>
+                        <input id="wa-web-phone" @bind="_config.WebPhoneNumber" placeholder="Ej. +54 11 1234-5678" />
+                    </div>
+
+                    <div class="field">
+                        <label for="wa-web-status">Estado de sesión</label>
+                        <select id="wa-web-status" @bind="_config.WebSessionStatus">
+                            <option value="@ConversacionWhatsAppWebSessionStatuses.Disconnected">Desconectada</option>
+                            <option value="@ConversacionWhatsAppWebSessionStatuses.PendingQr">Pendiente de QR / validación</option>
+                            <option value="@ConversacionWhatsAppWebSessionStatuses.Connected">Conectada</option>
+                        </select>
+                    </div>
+
+                    <div class="field conv-config-fields__full">
+                        <label for="wa-web-display-name">Nombre visible de la sesión</label>
+                        <input id="wa-web-display-name" @bind="_config.WebDisplayName" placeholder="Ej. WhatsApp Soporte Casa Central" />
+                    </div>
+                </div>
+
+                <div class="context-card">
+                    <span class="context-card__label">Sesión WhatsApp Web</span>
+                    <strong>@GetWhatsAppWebSummary()</strong>
+                    <span class="context-card__muted">AlfaCore puede generar un QR interno de emparejamiento y un código de texto opcional para preparar la sesión Web. La vinculación nativa con WhatsApp todavía requiere el conector Web completo.</span>
+                </div>
+
+                <div class="conv-config-fields">
+                    <div class="field field--checkbox conv-config-fields__full">
+                        <label class="checkbox-inline">
+                            <input type="checkbox" @bind="_includeTextPairingCode" />
+                            <span>Generar también código de texto</span>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button type="button" class="btn btn--ghost" @onclick="GenerateWhatsAppWebPairingAsync" disabled="@(Loading || Saving || PairingBusy)">
+                        <i class="bi bi-qr-code"></i> Generar QR
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="RefreshWhatsAppWebSessionAsync" disabled="@(Loading || Saving || PairingBusy || string.IsNullOrWhiteSpace(_config.WebInstanceName))">
+                        <i class="bi bi-arrow-repeat"></i> Refrescar estado
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="ClearWhatsAppWebPairingAsync" disabled="@(Loading || Saving || PairingBusy || string.IsNullOrWhiteSpace(_config.WebInstanceName))">
+                        <i class="bi bi-stop-circle"></i> Detener sesión
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_config.WebRuntimeState) || !string.IsNullOrWhiteSpace(_config.WebLastError))
+                {
+                    <div class="context-card">
+                        <span class="context-card__label">Estado runtime</span>
+                        <strong>@DisplayPairingValue(_config.WebRuntimeState)</strong>
+                        <span class="context-card__muted">
+                            PID: @(_config.WebWorkerProcessId?.ToString() ?? "sin proceso")
+                            @if (_config.WebRuntimeUpdatedAtUtc.HasValue)
+                            {
+                                <text> · Actualizado: @_config.WebRuntimeUpdatedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</text>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_config.WebLastError))
+                            {
+                                <text> · Error: @_config.WebLastError</text>
+                            }
+                        </span>
+                    </div>
+                }
+
+                @if (_config.HasWebPairingQr || _config.HasWebPairingCode)
+                {
+                    <div class="conv-waweb-pairing">
+                        @if (_config.HasWebPairingQr)
+                        {
+                            <div class="conv-waweb-pairing__qr">
+                                <img src="@_config.WebPairingQrDataUrl" alt="QR de emparejamiento de WhatsApp Web" />
+                            </div>
+                        }
+
+                        <div class="conv-waweb-pairing__details">
+                            <div class="context-card">
+                                <span class="context-card__label">Instancia</span>
+                                <strong>@DisplayPairingValue(_config.WebInstanceName)</strong>
+                                <span class="context-card__muted">Usala para identificar la sesión Web que querés vincular.</span>
+                            </div>
+
+                            @if (_config.HasWebPairingCode)
+                            {
+                                <div class="context-card">
+                                    <span class="context-card__label">Código de texto</span>
+                                    <strong>@_config.WebPairingCode</strong>
+                                    <span class="context-card__muted">Pensado para el flujo alternativo de inicio por número.</span>
+                                </div>
+                            }
+
+                            <div class="context-card">
+                                <span class="context-card__label">Vencimiento</span>
+                                <strong>@GetWhatsAppWebPairingExpirationLabel()</strong>
+                                <span class="context-card__muted">Si expira, regeneralo desde este mismo panel.</span>
+                            </div>
+                        </div>
+                    </div>
+                }
 
                 <div class="context-card">
                     <span class="context-card__label">URL de callback a informar en Meta</span>
@@ -194,7 +351,7 @@
                 <div class="context-card">
                     <span class="context-card__label">Dónde queda guardado</span>
                     <strong>dbo.TA_CONFIGURACION</strong>
-                    <span class="context-card__muted">Claves usadas: <code>CONV_WHATSAPP_*</code>.</span>
+                    <span class="context-card__muted">Claves usadas: <code>CONV_WHATSAPP_*</code>, incluyendo modo del canal y sesión Web preparada.</span>
                 </div>
 
                 <div class="context-card">
@@ -1409,7 +1566,9 @@
     private AppUiMessage? _anyDeskFeedback;
     private string _suggestedBaseUrl = string.Empty;
     private string? _webhookToken;
+    private bool _includeTextPairingCode = true;
     private bool HasWebhookToken => !string.IsNullOrWhiteSpace(_webhookToken);
+    private bool PairingBusy { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -1965,6 +2124,81 @@
         Saving = false;
     }
 
+    private async Task GenerateWhatsAppWebPairingAsync()
+    {
+        PairingBusy = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => WhatsAppWebSessionSvc.StartSessionAsync(_includeTextPairingCode),
+            "No se pudo iniciar la sesión real de WhatsApp Web.");
+
+        if (result.Success && result.Value is not null)
+        {
+            _config = result.Value;
+            EnsureDefaults();
+            _feedback = AppUiMessage.Success(
+                "Sesión Web iniciada",
+                "AlfaCore arrancó el worker de WhatsApp Web y ya dejó disponible el QR o el código temporal según el modo elegido.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        PairingBusy = false;
+    }
+
+    private async Task RefreshWhatsAppWebSessionAsync()
+    {
+        PairingBusy = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => WhatsAppWebSessionSvc.RefreshSessionAsync(),
+            "No se pudo refrescar el estado de WhatsApp Web.");
+
+        if (result.Success && result.Value is not null)
+        {
+            _config = result.Value;
+            EnsureDefaults();
+            _feedback = AppUiMessage.Success(
+                "Estado actualizado",
+                "La sesión Web fue refrescada con el último estado reportado por el worker.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        PairingBusy = false;
+    }
+
+    private async Task ClearWhatsAppWebPairingAsync()
+    {
+        PairingBusy = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => WhatsAppWebSessionSvc.StopSessionAsync(),
+            "No se pudo detener la sesión de WhatsApp Web.");
+
+        if (result.Success && result.Value is not null)
+        {
+            _config = result.Value;
+            EnsureDefaults();
+            _feedback = AppUiMessage.Success(
+                "Sesión detenida",
+                "El worker de WhatsApp Web fue detenido y se limpiaron los artefactos temporales de emparejamiento.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        PairingBusy = false;
+    }
+
     private async Task SaveInstagramAsync()
     {
         Saving = true;
@@ -2164,11 +2398,23 @@
 
     private void EnsureDefaults()
     {
+        if (string.IsNullOrWhiteSpace(_config.ProviderMode))
+            _config.ProviderMode = ConversacionWhatsAppProviderModes.MetaOnly;
+
+        if (string.IsNullOrWhiteSpace(_config.DefaultProvider))
+            _config.DefaultProvider = ConversacionWhatsAppProviders.MetaCloud;
+
         if (string.IsNullOrWhiteSpace(_config.WebhookPath))
             _config.WebhookPath = "/api/conversaciones/whatsapp/webhook";
 
         if (string.IsNullOrWhiteSpace(_config.ApiVersion))
             _config.ApiVersion = "v22.0";
+
+        if (string.IsNullOrWhiteSpace(_config.WebSessionMode))
+            _config.WebSessionMode = ConversacionWhatsAppWebSessionModes.Qr;
+
+        if (string.IsNullOrWhiteSpace(_config.WebSessionStatus))
+            _config.WebSessionStatus = ConversacionWhatsAppWebSessionStatuses.Disconnected;
     }
 
     private void EnsureInstagramDefaults()
@@ -2286,6 +2532,53 @@
 
     private string GetPublicationLabel()
         => _config.IsReadyForMetaSetup ? "Lista para configurar en Meta" : "Falta completar datos";
+
+    private string GetWhatsAppProviderModeLabel()
+        => _config.ProviderMode switch
+        {
+            ConversacionWhatsAppProviderModes.WebOnly => "Solo sesión WhatsApp Web",
+            ConversacionWhatsAppProviderModes.MetaAndWeb => "Meta + WhatsApp Web",
+            _ => "Solo Meta Cloud API"
+        };
+
+    private string GetWhatsAppProviderSummary()
+        => $"{GetWhatsAppProviderModeLabel()} · Predeterminado: {GetWhatsAppDefaultProviderLabel()}";
+
+    private string GetWhatsAppDefaultProviderLabel()
+        => _config.DefaultProvider == ConversacionWhatsAppProviders.WhatsAppWeb
+            ? "WhatsApp Web"
+            : "Meta Cloud API";
+
+    private string GetWhatsAppMetaSummary()
+        => _config.IsConfiguredForSend
+            ? $"Configurado para enviar con el número {(_config.PhoneNumberId.Length > 0 ? _config.PhoneNumberId : "sin Phone Number ID")}."
+            : "Todavía faltan credenciales para operar con Meta Cloud API.";
+
+    private string GetWhatsAppWebStatusLabel()
+        => _config.WebSessionStatus switch
+        {
+            ConversacionWhatsAppWebSessionStatuses.Connected => "Conectada",
+            ConversacionWhatsAppWebSessionStatuses.PendingQr => "Pendiente de validación",
+            _ => "Desconectada"
+        };
+
+    private string GetWhatsAppWebSummary()
+    {
+        var mode = _config.WebSessionMode == ConversacionWhatsAppWebSessionModes.PhoneNumber
+            ? "Inicio por número"
+            : "Escaneo por QR";
+        var instance = string.IsNullOrWhiteSpace(_config.WebInstanceName) ? "sin instancia definida" : _config.WebInstanceName;
+        var number = string.IsNullOrWhiteSpace(_config.WebPhoneNumber) ? "sin número cargado" : _config.WebPhoneNumber;
+        return $"{GetWhatsAppWebStatusLabel()} · {mode} · {instance} · {number}";
+    }
+
+    private string GetWhatsAppWebPairingExpirationLabel()
+        => _config.WebPairingExpiresAtUtc.HasValue
+            ? _config.WebPairingExpiresAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+            : "Sin vencimiento";
+
+    private static string DisplayPairingValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "No definido" : value.Trim();
 
     private static string GetStatusClass(bool ready)
         => ready ? "conv-config-status conv-config-status--ok" : "conv-config-status conv-config-status--pending";

@@ -2,8 +2,10 @@ using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using QRCoder;
 using System.Globalization;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace AlfaCore.Services;
@@ -25,6 +27,7 @@ public sealed class ConversacionesConfigService(
     private const string DefaultMercadoLibreWebhookPath = "/api/conversaciones/mercadolibre/webhook";
     private const string DefaultMercadoLibreOAuthCallbackPath = "/api/conversaciones/mercadolibre/oauth/callback";
     private const string KnowledgeBaseHeaderName = "X-Knowledge-Base-Id";
+    private const int WhatsAppExpectedConfigKeyCount = 21;
     private readonly WhatsAppOptions _fallbackOptions = whatsAppOptions.Value;
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
@@ -52,6 +55,8 @@ public sealed class ConversacionesConfigService(
 
             var config = new ConversacionWhatsAppConfigDto
             {
+                ProviderMode = ReadValue(values, "CONV_WHATSAPP_PROVIDER_MODE", string.Empty, ConversacionWhatsAppProviderModes.MetaOnly),
+                DefaultProvider = ReadValue(values, "CONV_WHATSAPP_DEFAULT_PROVIDER", string.Empty, ConversacionWhatsAppProviders.MetaCloud),
                 VerifyToken = ReadValue(values, "CONV_WHATSAPP_VERIFY_TOKEN", _fallbackOptions.VerifyToken),
                 AccessToken = ReadValue(values, "CONV_WHATSAPP_ACCESS_TOKEN", _fallbackOptions.AccessToken),
                 PhoneNumberId = ReadValue(values, "CONV_WHATSAPP_PHONE_NUMBER_ID", _fallbackOptions.PhoneNumberId),
@@ -60,7 +65,18 @@ public sealed class ConversacionesConfigService(
                 ApiVersion = ReadValue(values, "CONV_WHATSAPP_API_VERSION", _fallbackOptions.ApiVersion, "v22.0"),
                 PublicBaseUrl = ReadValue(values, "CONV_WHATSAPP_PUBLIC_BASE_URL", string.Empty),
                 WebhookPath = ReadValue(values, "CONV_WHATSAPP_WEBHOOK_PATH", _fallbackOptions.WebhookPath, DefaultWebhookPath),
-                ConfigSource = ResolveConfigSource(values)
+                WebSessionMode = ReadValue(values, "CONV_WHATSAPP_WEB_SESSION_MODE", string.Empty, ConversacionWhatsAppWebSessionModes.Qr),
+                WebPhoneNumber = ReadValue(values, "CONV_WHATSAPP_WEB_PHONE_NUMBER", string.Empty),
+                WebSessionStatus = ReadValue(values, "CONV_WHATSAPP_WEB_SESSION_STATUS", string.Empty, ConversacionWhatsAppWebSessionStatuses.Disconnected),
+                WebDisplayName = ReadValue(values, "CONV_WHATSAPP_WEB_DISPLAY_NAME", string.Empty),
+                WebInstanceName = ReadValue(values, "CONV_WHATSAPP_WEB_INSTANCE_NAME", string.Empty),
+                WebPairingToken = ReadValue(values, "CONV_WHATSAPP_WEB_PAIRING_TOKEN", string.Empty),
+                WebPairingCode = ReadValue(values, "CONV_WHATSAPP_WEB_PAIRING_CODE", string.Empty),
+                WebPairingQrPayload = ReadValue(values, "CONV_WHATSAPP_WEB_PAIRING_QR_PAYLOAD", string.Empty),
+                WebPairingQrDataUrl = ReadValue(values, "CONV_WHATSAPP_WEB_PAIRING_QR_DATA_URL", string.Empty),
+                WebPairingGeneratedAtUtc = ReadDateTimeValue(values, "CONV_WHATSAPP_WEB_PAIRING_GENERATED_AT_UTC"),
+                WebPairingExpiresAtUtc = ReadDateTimeValue(values, "CONV_WHATSAPP_WEB_PAIRING_EXPIRES_AT_UTC"),
+                ConfigSource = ResolveConfigSource(values, WhatsAppExpectedConfigKeyCount)
             };
 
             if (string.IsNullOrWhiteSpace(config.WebhookPath))
@@ -97,6 +113,8 @@ public sealed class ConversacionesConfigService(
 
         var config = new ConversacionWhatsAppConfigDto
         {
+            ProviderMode = ReadValue(values, "CONV_WHATSAPP_PROVIDER_MODE", string.Empty, ConversacionWhatsAppProviderModes.MetaOnly),
+            DefaultProvider = ReadValue(values, "CONV_WHATSAPP_DEFAULT_PROVIDER", string.Empty, ConversacionWhatsAppProviders.MetaCloud),
             VerifyToken = ReadValue(values, "CONV_WHATSAPP_VERIFY_TOKEN", _fallbackOptions.VerifyToken),
             AccessToken = ReadValue(values, "CONV_WHATSAPP_ACCESS_TOKEN", _fallbackOptions.AccessToken),
             PhoneNumberId = ReadValue(values, "CONV_WHATSAPP_PHONE_NUMBER_ID", _fallbackOptions.PhoneNumberId),
@@ -105,7 +123,18 @@ public sealed class ConversacionesConfigService(
             ApiVersion = ReadValue(values, "CONV_WHATSAPP_API_VERSION", _fallbackOptions.ApiVersion, "v22.0"),
             PublicBaseUrl = ReadValue(values, "CONV_WHATSAPP_PUBLIC_BASE_URL", string.Empty),
             WebhookPath = ReadValue(values, "CONV_WHATSAPP_WEBHOOK_PATH", _fallbackOptions.WebhookPath, DefaultWebhookPath),
-            ConfigSource = ResolveConfigSource(values)
+            WebSessionMode = ReadValue(values, "CONV_WHATSAPP_WEB_SESSION_MODE", string.Empty, ConversacionWhatsAppWebSessionModes.Qr),
+            WebPhoneNumber = ReadValue(values, "CONV_WHATSAPP_WEB_PHONE_NUMBER", string.Empty),
+            WebSessionStatus = ReadValue(values, "CONV_WHATSAPP_WEB_SESSION_STATUS", string.Empty, ConversacionWhatsAppWebSessionStatuses.Disconnected),
+            WebDisplayName = ReadValue(values, "CONV_WHATSAPP_WEB_DISPLAY_NAME", string.Empty),
+            WebInstanceName = ReadValue(values, "CONV_WHATSAPP_WEB_INSTANCE_NAME", string.Empty),
+            WebPairingToken = ReadValue(values, "CONV_WHATSAPP_WEB_PAIRING_TOKEN", string.Empty),
+            WebPairingCode = ReadValue(values, "CONV_WHATSAPP_WEB_PAIRING_CODE", string.Empty),
+            WebPairingQrPayload = ReadValue(values, "CONV_WHATSAPP_WEB_PAIRING_QR_PAYLOAD", string.Empty),
+            WebPairingQrDataUrl = ReadValue(values, "CONV_WHATSAPP_WEB_PAIRING_QR_DATA_URL", string.Empty),
+            WebPairingGeneratedAtUtc = ReadDateTimeValue(values, "CONV_WHATSAPP_WEB_PAIRING_GENERATED_AT_UTC"),
+            WebPairingExpiresAtUtc = ReadDateTimeValue(values, "CONV_WHATSAPP_WEB_PAIRING_EXPIRES_AT_UTC"),
+            ConfigSource = ResolveConfigSource(values, WhatsAppExpectedConfigKeyCount)
         };
 
         if (string.IsNullOrWhiteSpace(config.WebhookPath))
@@ -165,17 +194,70 @@ public sealed class ConversacionesConfigService(
                 "Configuración de WhatsApp actualizada.",
                 new
                 {
+                    normalized.ProviderMode,
+                    normalized.DefaultProvider,
                     normalized.PhoneNumberId,
                     normalized.BusinessAccountId,
                     normalized.ApiVersion,
                     normalized.PublicBaseUrl,
-                    normalized.WebhookPath
+                    normalized.WebhookPath,
+                    normalized.WebSessionMode,
+                    normalized.WebSessionStatus,
+                    normalized.WebInstanceName
                 },
                 token);
 
             return true;
         }, "No se pudo guardar la configuración de WhatsApp.", ct);
     }
+
+    public Task<ConversacionWhatsAppConfigDto> GenerateWhatsAppWebPairingAsync(ConversacionWhatsAppWebPairingRequestDto request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GenerateWhatsAppWebPairing", async token =>
+        {
+            request ??= new ConversacionWhatsAppWebPairingRequestDto();
+
+            var config = await GetWhatsAppConfigAsync(token);
+            var normalized = Normalize(config);
+            var nowUtc = DateTime.UtcNow;
+            var expiresUtc = nowUtc.AddMinutes(2);
+            var instanceName = string.IsNullOrWhiteSpace(normalized.WebInstanceName)
+                ? $"waweb-{Guid.NewGuid():N}"[..14]
+                : normalized.WebInstanceName;
+            var pairingToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
+            var pairingCode = request.IncludeTextCode ? BuildPairingCode() : string.Empty;
+            var payload = BuildWhatsAppWebPairingPayload(instanceName, normalized.WebSessionMode, normalized.WebPhoneNumber, pairingToken, pairingCode, expiresUtc);
+            var qrDataUrl = BuildQrCodeDataUrl(payload);
+
+            normalized.WebInstanceName = instanceName;
+            normalized.WebSessionStatus = ConversacionWhatsAppWebSessionStatuses.PendingQr;
+            normalized.WebPairingToken = pairingToken;
+            normalized.WebPairingCode = pairingCode;
+            normalized.WebPairingQrPayload = payload;
+            normalized.WebPairingQrDataUrl = qrDataUrl;
+            normalized.WebPairingGeneratedAtUtc = nowUtc;
+            normalized.WebPairingExpiresAtUtc = expiresUtc;
+
+            await SaveWhatsAppConfigAsync(normalized, token);
+            return normalized;
+        }, "No se pudo generar el QR de WhatsApp Web.", ct);
+
+    public Task<ConversacionWhatsAppConfigDto> ClearWhatsAppWebPairingAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "ClearWhatsAppWebPairing", async token =>
+        {
+            var config = await GetWhatsAppConfigAsync(token);
+            var normalized = Normalize(config);
+            normalized.WebPairingToken = string.Empty;
+            normalized.WebPairingCode = string.Empty;
+            normalized.WebPairingQrPayload = string.Empty;
+            normalized.WebPairingQrDataUrl = string.Empty;
+            normalized.WebPairingGeneratedAtUtc = null;
+            normalized.WebPairingExpiresAtUtc = null;
+            if (!string.Equals(normalized.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase))
+                normalized.WebSessionStatus = ConversacionWhatsAppWebSessionStatuses.Disconnected;
+
+            await SaveWhatsAppConfigAsync(normalized, token);
+            return normalized;
+        }, "No se pudo limpiar el emparejamiento de WhatsApp Web.", ct);
 
     public Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetInstagramConfig", async token =>
@@ -1432,6 +1514,8 @@ public sealed class ConversacionesConfigService(
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN
             (
+                'CONV_WHATSAPP_PROVIDER_MODE',
+                'CONV_WHATSAPP_DEFAULT_PROVIDER',
                 'CONV_WHATSAPP_VERIFY_TOKEN',
                 'CONV_WHATSAPP_ACCESS_TOKEN',
                 'CONV_WHATSAPP_PHONE_NUMBER_ID',
@@ -1439,6 +1523,17 @@ public sealed class ConversacionesConfigService(
                 'CONV_WHATSAPP_APP_SECRET',
                 'CONV_WHATSAPP_API_VERSION',
                 'CONV_WHATSAPP_PUBLIC_BASE_URL',
+                'CONV_WHATSAPP_WEB_SESSION_MODE',
+                'CONV_WHATSAPP_WEB_PHONE_NUMBER',
+                'CONV_WHATSAPP_WEB_SESSION_STATUS',
+                'CONV_WHATSAPP_WEB_DISPLAY_NAME',
+                'CONV_WHATSAPP_WEB_INSTANCE_NAME',
+                'CONV_WHATSAPP_WEB_PAIRING_TOKEN',
+                'CONV_WHATSAPP_WEB_PAIRING_CODE',
+                'CONV_WHATSAPP_WEB_PAIRING_QR_PAYLOAD',
+                'CONV_WHATSAPP_WEB_PAIRING_QR_DATA_URL',
+                'CONV_WHATSAPP_WEB_PAIRING_GENERATED_AT_UTC',
+                'CONV_WHATSAPP_WEB_PAIRING_EXPIRES_AT_UTC',
                 'CONV_WHATSAPP_WEBHOOK_PATH'
             )
             """;
@@ -1563,6 +1658,8 @@ public sealed class ConversacionesConfigService(
 
     private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionWhatsAppConfigDto config)
     {
+        yield return ("CONV_WHATSAPP_PROVIDER_MODE", config.ProviderMode);
+        yield return ("CONV_WHATSAPP_DEFAULT_PROVIDER", config.DefaultProvider);
         yield return ("CONV_WHATSAPP_VERIFY_TOKEN", config.VerifyToken);
         yield return ("CONV_WHATSAPP_ACCESS_TOKEN", config.AccessToken);
         yield return ("CONV_WHATSAPP_PHONE_NUMBER_ID", config.PhoneNumberId);
@@ -1571,6 +1668,17 @@ public sealed class ConversacionesConfigService(
         yield return ("CONV_WHATSAPP_API_VERSION", config.ApiVersion);
         yield return ("CONV_WHATSAPP_PUBLIC_BASE_URL", config.PublicBaseUrl);
         yield return ("CONV_WHATSAPP_WEBHOOK_PATH", config.WebhookPath);
+        yield return ("CONV_WHATSAPP_WEB_SESSION_MODE", config.WebSessionMode);
+        yield return ("CONV_WHATSAPP_WEB_PHONE_NUMBER", config.WebPhoneNumber);
+        yield return ("CONV_WHATSAPP_WEB_SESSION_STATUS", config.WebSessionStatus);
+        yield return ("CONV_WHATSAPP_WEB_DISPLAY_NAME", config.WebDisplayName);
+        yield return ("CONV_WHATSAPP_WEB_INSTANCE_NAME", config.WebInstanceName);
+        yield return ("CONV_WHATSAPP_WEB_PAIRING_TOKEN", config.WebPairingToken);
+        yield return ("CONV_WHATSAPP_WEB_PAIRING_CODE", config.WebPairingCode);
+        yield return ("CONV_WHATSAPP_WEB_PAIRING_QR_PAYLOAD", config.WebPairingQrPayload);
+        yield return ("CONV_WHATSAPP_WEB_PAIRING_QR_DATA_URL", config.WebPairingQrDataUrl);
+        yield return ("CONV_WHATSAPP_WEB_PAIRING_GENERATED_AT_UTC", FormatUtc(config.WebPairingGeneratedAtUtc));
+        yield return ("CONV_WHATSAPP_WEB_PAIRING_EXPIRES_AT_UTC", FormatUtc(config.WebPairingExpiresAtUtc));
     }
 
     private static IEnumerable<(string Key, string Value)> BuildItems(ConversacionInstagramConfigDto config)
@@ -1630,6 +1738,8 @@ public sealed class ConversacionesConfigService(
 
         return new ConversacionWhatsAppConfigDto
         {
+            ProviderMode = NormalizeWhatsAppProviderMode(config.ProviderMode),
+            DefaultProvider = NormalizeWhatsAppDefaultProvider(config.DefaultProvider),
             VerifyToken = (config.VerifyToken ?? string.Empty).Trim(),
             AccessToken = (config.AccessToken ?? string.Empty).Trim(),
             PhoneNumberId = (config.PhoneNumberId ?? string.Empty).Trim(),
@@ -1638,9 +1748,50 @@ public sealed class ConversacionesConfigService(
             ApiVersion = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v22.0" : config.ApiVersion.Trim(),
             PublicBaseUrl = NormalizePublicBaseUrl(config.PublicBaseUrl, "WhatsApp"),
             WebhookPath = path,
+            WebSessionMode = NormalizeWhatsAppWebSessionMode(config.WebSessionMode),
+            WebPhoneNumber = (config.WebPhoneNumber ?? string.Empty).Trim(),
+            WebSessionStatus = NormalizeWhatsAppWebSessionStatus(config.WebSessionStatus),
+            WebDisplayName = (config.WebDisplayName ?? string.Empty).Trim(),
+            WebInstanceName = (config.WebInstanceName ?? string.Empty).Trim(),
+            WebPairingToken = (config.WebPairingToken ?? string.Empty).Trim(),
+            WebPairingCode = NormalizePairingCode(config.WebPairingCode),
+            WebPairingQrPayload = (config.WebPairingQrPayload ?? string.Empty).Trim(),
+            WebPairingQrDataUrl = (config.WebPairingQrDataUrl ?? string.Empty).Trim(),
+            WebPairingGeneratedAtUtc = NormalizeUtc(config.WebPairingGeneratedAtUtc),
+            WebPairingExpiresAtUtc = NormalizeUtc(config.WebPairingExpiresAtUtc),
             ConfigSource = string.Empty
         };
     }
+
+    private static string NormalizeWhatsAppProviderMode(string? value)
+        => value?.Trim().ToUpperInvariant() switch
+        {
+            ConversacionWhatsAppProviderModes.WebOnly => ConversacionWhatsAppProviderModes.WebOnly,
+            ConversacionWhatsAppProviderModes.MetaAndWeb => ConversacionWhatsAppProviderModes.MetaAndWeb,
+            _ => ConversacionWhatsAppProviderModes.MetaOnly
+        };
+
+    private static string NormalizeWhatsAppDefaultProvider(string? value)
+        => value?.Trim().ToUpperInvariant() switch
+        {
+            ConversacionWhatsAppProviders.WhatsAppWeb => ConversacionWhatsAppProviders.WhatsAppWeb,
+            _ => ConversacionWhatsAppProviders.MetaCloud
+        };
+
+    private static string NormalizeWhatsAppWebSessionMode(string? value)
+        => value?.Trim().ToUpperInvariant() switch
+        {
+            ConversacionWhatsAppWebSessionModes.PhoneNumber => ConversacionWhatsAppWebSessionModes.PhoneNumber,
+            _ => ConversacionWhatsAppWebSessionModes.Qr
+        };
+
+    private static string NormalizeWhatsAppWebSessionStatus(string? value)
+        => value?.Trim().ToUpperInvariant() switch
+        {
+            ConversacionWhatsAppWebSessionStatuses.PendingQr => ConversacionWhatsAppWebSessionStatuses.PendingQr,
+            ConversacionWhatsAppWebSessionStatuses.Connected => ConversacionWhatsAppWebSessionStatuses.Connected,
+            _ => ConversacionWhatsAppWebSessionStatuses.Disconnected
+        };
 
     private static ConversacionInstagramConfigDto Normalize(ConversacionInstagramConfigDto config)
     {
@@ -1783,6 +1934,16 @@ public sealed class ConversacionesConfigService(
         return fallback > 0 ? fallback : defaultValue;
     }
 
+    private static DateTime? ReadDateTimeValue(Dictionary<string, string> values, string key)
+    {
+        if (!values.TryGetValue(key, out var value) || string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return DateTime.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var parsed)
+            ? parsed
+            : null;
+    }
+
     private static string ResolveStoredValue(string value, string auxValue)
     {
         if (!string.IsNullOrWhiteSpace(value))
@@ -1802,6 +1963,55 @@ public sealed class ConversacionesConfigService(
 
     private static object DbNullable(string? value)
         => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
+
+    private static string FormatUtc(DateTime? value)
+        => value.HasValue
+            ? value.Value.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture)
+            : string.Empty;
+
+    private static DateTime? NormalizeUtc(DateTime? value)
+        => value.HasValue
+            ? DateTime.SpecifyKind(value.Value.ToUniversalTime(), DateTimeKind.Utc)
+            : null;
+
+    private static string NormalizePairingCode(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToUpperInvariant();
+
+    private static string BuildPairingCode()
+    {
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        Span<char> buffer = stackalloc char[8];
+        var bytes = RandomNumberGenerator.GetBytes(buffer.Length);
+        for (var i = 0; i < buffer.Length; i++)
+            buffer[i] = alphabet[bytes[i] % alphabet.Length];
+
+        return $"{new string(buffer[..4])}-{new string(buffer[4..])}";
+    }
+
+    private static string BuildWhatsAppWebPairingPayload(string instanceName, string sessionMode, string phone, string pairingToken, string pairingCode, DateTime expiresUtc)
+    {
+        var payload = new
+        {
+            provider = ConversacionWhatsAppProviders.WhatsAppWeb,
+            instance = instanceName,
+            mode = sessionMode,
+            phone = string.IsNullOrWhiteSpace(phone) ? null : phone,
+            token = pairingToken,
+            code = string.IsNullOrWhiteSpace(pairingCode) ? null : pairingCode,
+            expiresAtUtc = expiresUtc.ToString("O", CultureInfo.InvariantCulture)
+        };
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    private static string BuildQrCodeDataUrl(string payload)
+    {
+        using var generator = new QRCodeGenerator();
+        using var qrData = generator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
+        var svg = new SvgQRCode(qrData).GetGraphic(8);
+        var bytes = System.Text.Encoding.UTF8.GetBytes(svg);
+        return $"data:image/svg+xml;base64,{Convert.ToBase64String(bytes)}";
+    }
 
     private static string GetString(SqlDataReader rd, int index)
         => rd.IsDBNull(index) ? string.Empty : Convert.ToString(rd.GetValue(index)) ?? string.Empty;

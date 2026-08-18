@@ -10,7 +10,7 @@
 
 1. [Panorama: qué hace la IA en Conversaciones](#1-panorama-qué-hace-la-ia-en-conversaciones)
 2. [Antes de empezar: asignate la conversación](#2-antes-de-empezar-asignate-la-conversación)
-3. [El panel del asistente (se abre solo)](#3-el-panel-del-asistente-se-abre-solo)
+3. [El panel del asistente (apertura manual)](#3-el-panel-del-asistente-apertura-manual)
 4. [Análisis de la conversación (resumen, intención, sentimiento)](#4-análisis-de-la-conversación)
 5. [La respuesta sugerida y el indicador de confianza](#5-la-respuesta-sugerida-y-el-indicador-de-confianza)
 6. [Aprobar y enviar, o editar antes](#6-aprobar-y-enviar-o-editar-antes)
@@ -49,7 +49,11 @@ agentes respondan a la vez y deja registro de quién atiende.
 
 ---
 
-## 3. El panel del asistente (se abre solo)
+## 3. El panel del asistente (apertura manual)
+
+El asistente no se abre automáticamente al entrar a una conversación.
+
+Se abre de forma manual cuando el operador hace clic en el botón de sugerencia IA. Esto evita consumir créditos o tokens cada vez que se navega entre conversaciones.
 
 Al entrar a Conversaciones, si el módulo AlfaKnowledge está habilitado, el panel del asistente
 **se abre automáticamente** a la derecha (tercera columna en escritorio). Podés cerrarlo con la

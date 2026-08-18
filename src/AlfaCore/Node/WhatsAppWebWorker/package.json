@@ -1,0 +1,15 @@
+{
+  "name": "alfacore-whatsapp-web-worker",
+  "private": true,
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Worker aislado para sesiones de WhatsApp Web en AlfaCore",
+  "main": "worker.mjs",
+  "scripts": {
+    "start": "node worker.mjs"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "^7.0.0-rc.11",
+    "pino": "^9.9.0"
+  }
+}

@@ -1,0 +1,390 @@
+import fs from "node:fs";
+import fsp from "node:fs/promises";
+import path from "node:path";
+import process from "node:process";
+import makeWASocket, {
+  Browsers,
+  DisconnectReason,
+  fetchLatestBaileysVersion,
+  useMultiFileAuthState
+} from "@whiskeysockets/baileys";
+import pino from "pino";
+
+const [, , command = "", sessionDirArg = "", modeArg = "QR", phoneArg = "", includeCodeArg = "0", instanceArg = ""] = process.argv;
+
+if (command !== "start" || !sessionDirArg) {
+  console.error("Usage: node worker.mjs start <sessionDir> <mode> <phone> <includeCode> <instanceName>");
+  process.exit(1);
+}
+
+const sessionDir = path.resolve(sessionDirArg);
+const authDir = path.join(sessionDir, "auth");
+const statusFile = path.join(sessionDir, "status.json");
+const inboxDir = path.join(sessionDir, "inbox");
+const outboxDir = path.join(sessionDir, "outbox");
+const resultsDir = path.join(sessionDir, "results");
+const mode = String(modeArg || "QR").toUpperCase() === "PHONE_NUMBER" ? "PHONE_NUMBER" : "QR";
+const phone = String(phoneArg || "").replace(/\D/g, "");
+const includeTextCode = includeCodeArg === "1";
+const instanceName = String(instanceArg || path.basename(sessionDir));
+
+await fsp.mkdir(authDir, { recursive: true });
+await fsp.mkdir(inboxDir, { recursive: true });
+await fsp.mkdir(outboxDir, { recursive: true });
+await fsp.mkdir(resultsDir, { recursive: true });
+
+let sock;
+let pairingRequested = false;
+let isStopping = false;
+let isProcessingOutbox = false;
+
+process.on("SIGTERM", async () => {
+  isStopping = true;
+  await writeStatus({
+    state: "STOPPED",
+    sessionId: instanceName,
+    processId: process.pid,
+    lastUpdatedAtUtc: new Date().toISOString()
+  });
+  process.exit(0);
+});
+
+process.on("SIGINT", async () => {
+  isStopping = true;
+  await writeStatus({
+    state: "STOPPED",
+    sessionId: instanceName,
+    processId: process.pid,
+    lastUpdatedAtUtc: new Date().toISOString()
+  });
+  process.exit(0);
+});
+
+await writeStatus({
+  state: "STARTING",
+  sessionId: instanceName,
+  processId: process.pid,
+  lastUpdatedAtUtc: new Date().toISOString()
+});
+
+try {
+  const { state, saveCreds } = await useMultiFileAuthState(authDir);
+  const { version } = await fetchLatestBaileysVersion();
+
+  sock = makeWASocket({
+    version,
+    auth: state,
+    browser: Browsers.macOS("Desktop"),
+    logger: pino({ level: "silent" }),
+    printQRInTerminal: false,
+    markOnlineOnConnect: false,
+    syncFullHistory: false
+  });
+
+  sock.ev.on("creds.update", saveCreds);
+  sock.ev.on("messages.upsert", handleMessagesUpsert);
+
+  sock.ev.on("connection.update", async (update) => {
+    const { connection, lastDisconnect, qr } = update;
+    const now = new Date();
+
+    if (qr) {
+      await writeStatus({
+        state: "QR_READY",
+        sessionId: instanceName,
+        processId: process.pid,
+        qrPayload: qr,
+        generatedAtUtc: now.toISOString(),
+        expiresAtUtc: new Date(now.getTime() + 2 * 60 * 1000).toISOString(),
+        lastUpdatedAtUtc: now.toISOString()
+      });
+
+      if (mode === "PHONE_NUMBER" && includeTextCode && phone && !pairingRequested && !(sock?.authState?.creds?.registered)) {
+        pairingRequested = true;
+        try {
+          const pairingCode = await sock.requestPairingCode(phone);
+          await writeStatus({
+            state: "PAIRING_CODE_READY",
+            sessionId: instanceName,
+            processId: process.pid,
+            qrPayload: qr,
+            pairingCode,
+            generatedAtUtc: now.toISOString(),
+            expiresAtUtc: new Date(now.getTime() + 2 * 60 * 1000).toISOString(),
+            lastUpdatedAtUtc: new Date().toISOString()
+          });
+        } catch (error) {
+          await writeStatus({
+            state: "ERROR",
+            sessionId: instanceName,
+            processId: process.pid,
+            error: serializeError(error),
+            lastUpdatedAtUtc: new Date().toISOString()
+          });
+        }
+      }
+    }
+
+    if (connection === "open") {
+      await writeStatus({
+        state: "CONNECTED",
+        sessionId: instanceName,
+        processId: process.pid,
+        lastUpdatedAtUtc: new Date().toISOString()
+      });
+    }
+
+    if (connection === "close") {
+      const statusCode = lastDisconnect?.error?.output?.statusCode;
+      const loggedOut = statusCode === DisconnectReason.loggedOut;
+
+      await writeStatus({
+        state: loggedOut ? "DISCONNECTED" : "CLOSED",
+        sessionId: instanceName,
+        processId: process.pid,
+        error: serializeError(lastDisconnect?.error),
+        lastUpdatedAtUtc: new Date().toISOString()
+      });
+
+      if (!loggedOut && !isStopping) {
+        process.exit(2);
+      }
+    }
+  });
+} catch (error) {
+  await writeStatus({
+    state: "ERROR",
+    sessionId: instanceName,
+    processId: process.pid,
+    error: serializeError(error),
+    lastUpdatedAtUtc: new Date().toISOString()
+  });
+  process.exit(1);
+}
+
+setInterval(async () => {
+  if (isStopping) {
+    return;
+  }
+
+  await processOutbox();
+}, 1200);
+
+setInterval(async () => {
+  if (isStopping) {
+    return;
+  }
+
+  const status = await readStatus();
+  await writeStatus({
+    ...status,
+    state: status.state || "RUNNING",
+    sessionId: instanceName,
+    processId: process.pid,
+    lastUpdatedAtUtc: new Date().toISOString()
+  });
+}, 15000);
+
+async function readStatus() {
+  try {
+    const raw = await fsp.readFile(statusFile, "utf8");
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+async function writeStatus(status) {
+  const payload = JSON.stringify(status, null, 2);
+  await fsp.writeFile(statusFile, payload, "utf8");
+}
+
+async function processOutbox() {
+  if (isProcessingOutbox || !sock) {
+    return;
+  }
+
+  isProcessingOutbox = true;
+  try {
+    const files = (await fsp.readdir(outboxDir))
+      .filter((file) => file.toLowerCase().endsWith(".json"))
+      .sort((a, b) => a.localeCompare(b));
+
+    for (const file of files) {
+      const commandPath = path.join(outboxDir, file);
+      let command;
+
+      try {
+        const raw = await fsp.readFile(commandPath, "utf8");
+        command = JSON.parse(raw);
+      } catch (error) {
+        await writeCommandResult({
+          id: path.parse(file).name,
+          state: "ERROR",
+          error: `No se pudo leer el comando: ${serializeError(error)}`
+        });
+        await safeUnlink(commandPath);
+        continue;
+      }
+
+      const commandId = String(command?.id || path.parse(file).name);
+      try {
+        if (String(command?.type || "").toLowerCase() !== "send_text") {
+          throw new Error(`Tipo de comando no soportado: ${command?.type || ""}`);
+        }
+
+        const jid = toUserJid(command.phone);
+        const content = { text: String(command.text || "") };
+        const options = {};
+        const replyToMessageId = String(command.replyToMessageId || "").trim();
+        if (replyToMessageId) {
+          options.quoted = { key: { remoteJid: jid, id: replyToMessageId, fromMe: false } };
+        }
+
+        const sent = await sock.sendMessage(jid, content, options);
+        await writeCommandResult({
+          id: commandId,
+          state: "ENVIADO",
+          externalMessageId: sent?.key?.id || ""
+        });
+      } catch (error) {
+        await writeCommandResult({
+          id: commandId,
+          state: "ERROR_ENVIO",
+          error: serializeError(error)
+        });
+      } finally {
+        await safeUnlink(commandPath);
+      }
+    }
+  } finally {
+    isProcessingOutbox = false;
+  }
+}
+
+async function writeCommandResult(result) {
+  const resultId = String(result?.id || cryptoRandomId());
+  const resultPath = path.join(resultsDir, `${resultId}.json`);
+  await fsp.writeFile(resultPath, JSON.stringify(result, null, 2), "utf8");
+}
+
+async function handleMessagesUpsert(event) {
+  const messages = Array.isArray(event?.messages) ? event.messages : [];
+  for (const entry of messages) {
+    try {
+      const normalized = normalizeIncomingMessage(entry);
+      if (!normalized) {
+        continue;
+      }
+
+      const inboxFile = path.join(
+        inboxDir,
+        `${new Date().toISOString().replaceAll(":", "-")}-${normalized.messageId}.json`
+      );
+
+      await fsp.writeFile(inboxFile, JSON.stringify(normalized, null, 2), "utf8");
+    } catch (error) {
+      await writeStatus({
+        ...(await readStatus()),
+        state: "ERROR",
+        sessionId: instanceName,
+        processId: process.pid,
+        error: `Inbox error: ${serializeError(error)}`,
+        lastUpdatedAtUtc: new Date().toISOString()
+      });
+    }
+  }
+}
+
+function normalizeIncomingMessage(entry) {
+  const remoteJid = String(entry?.key?.remoteJid || "");
+  if (!remoteJid || remoteJid.endsWith("@g.us")) {
+    return null;
+  }
+
+  if (entry?.key?.fromMe) {
+    return null;
+  }
+
+  const phoneValue = remoteJid.split("@")[0]?.replace(/\D/g, "") || "";
+  if (!phoneValue) {
+    return null;
+  }
+
+  const text =
+    entry?.message?.conversation ||
+    entry?.message?.extendedTextMessage?.text ||
+    entry?.message?.imageMessage?.caption ||
+    entry?.message?.videoMessage?.caption ||
+    "";
+
+  return {
+    instanceName,
+    phone: phoneValue.startsWith("+" ) ? phoneValue : `+${phoneValue}`,
+    contactName: String(entry?.pushName || ""),
+    messageId: String(entry?.key?.id || cryptoRandomId()),
+    replyToMessageId: String(entry?.message?.extendedTextMessage?.contextInfo?.stanzaId || ""),
+    messageType: resolveMessageType(entry),
+    text: String(text || ""),
+    timestampUtc: resolveTimestamp(entry),
+    rawJson: JSON.stringify(entry)
+  };
+}
+
+function resolveMessageType(entry) {
+  if (entry?.message?.reactionMessage?.text) {
+    return "REACTION";
+  }
+
+  return "TEXT";
+}
+
+function resolveTimestamp(entry) {
+  const source = Number(entry?.messageTimestamp || 0);
+  if (!Number.isFinite(source) || source <= 0) {
+    return new Date().toISOString();
+  }
+
+  return new Date(source * 1000).toISOString();
+}
+
+function toUserJid(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) {
+    throw new Error("Número de destino inválido para WhatsApp Web.");
+  }
+
+  return `${digits}@s.whatsapp.net`;
+}
+
+async function safeUnlink(filePath) {
+  try {
+    await fsp.unlink(filePath);
+  } catch {
+    // Si el archivo ya no existe o quedó tomado un instante, seguimos igual.
+  }
+}
+
+function cryptoRandomId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function serializeError(error) {
+  if (!error) {
+    return "";
+  }
+
+  if (typeof error === "string") {
+    return error;
+  }
+
+  if (error instanceof Error) {
+    return `${error.name}: ${error.message}`;
+  }
+
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
