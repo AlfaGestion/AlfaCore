@@ -4,8 +4,8 @@ namespace AlfaCore.Services;
 
 public interface IWhatsAppWebSessionService
 {
-    Task<ConversacionWhatsAppConfigDto> StartSessionAsync(bool includeTextCode, CancellationToken ct = default);
-    Task<ConversacionWhatsAppConfigDto> RefreshSessionAsync(CancellationToken ct = default);
-    Task<ConversacionWhatsAppConfigDto> StopSessionAsync(CancellationToken ct = default);
-    Task<ConversacionWhatsAppWebSendResultDto> SendTextAsync(string phone, string text, string? replyToMessageId, CancellationToken ct = default);
+    Task<ConversacionWhatsAppNumeroDto> StartSessionAsync(int idNumero, bool includeTextCode, CancellationToken ct = default);
+    Task<ConversacionWhatsAppNumeroDto> RefreshSessionAsync(int idNumero, CancellationToken ct = default);
+    Task<ConversacionWhatsAppNumeroDto> StopSessionAsync(int idNumero, CancellationToken ct = default);
+    Task<ConversacionWhatsAppWebSendResultDto> SendTextAsync(int? idNumeroWhatsApp, string phone, string text, string? replyToMessageId, CancellationToken ct = default);
 }

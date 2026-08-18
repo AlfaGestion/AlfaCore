@@ -374,7 +374,34 @@ public sealed class ConversacionWhatsAppNumeroDto
     public string PhoneNumberId { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
+    public string WebSessionMode { get; set; } = ConversacionWhatsAppWebSessionModes.Qr;
+    public string WebPhoneNumber { get; set; } = string.Empty;
+    public string WebSessionStatus { get; set; } = ConversacionWhatsAppWebSessionStatuses.Disconnected;
+    public string WebDisplayName { get; set; } = string.Empty;
+    public string WebInstanceName { get; set; } = string.Empty;
+    public string WebPairingToken { get; set; } = string.Empty;
+    public string WebPairingCode { get; set; } = string.Empty;
+    public string WebPairingQrPayload { get; set; } = string.Empty;
+    public string WebPairingQrDataUrl { get; set; } = string.Empty;
+    public DateTime? WebPairingGeneratedAtUtc { get; set; }
+    public DateTime? WebPairingExpiresAtUtc { get; set; }
+    public string WebRuntimeState { get; set; } = string.Empty;
+    public string WebLastError { get; set; } = string.Empty;
+    public int? WebWorkerProcessId { get; set; }
+    public DateTime? WebRuntimeUpdatedAtUtc { get; set; }
     public List<string> Usuarios { get; set; } = [];
+
+    public bool IsWebSessionReady =>
+        string.Equals(WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(WebInstanceName);
+
+    public bool HasWebPairingQr =>
+        !string.IsNullOrWhiteSpace(WebPairingQrDataUrl) &&
+        WebPairingExpiresAtUtc.HasValue;
+
+    public bool HasWebPairingCode =>
+        !string.IsNullOrWhiteSpace(WebPairingCode) &&
+        WebPairingExpiresAtUtc.HasValue;
 }
 
 public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto

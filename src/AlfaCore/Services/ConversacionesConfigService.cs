@@ -1220,7 +1220,25 @@ public sealed class ConversacionesConfigService(
 
             var numeros = new List<ConversacionWhatsAppNumeroDto>();
             const string sqlNumeros = """
-                SELECT IdNumero, ISNULL(PhoneNumberId, ''), ISNULL(Nombre, ''), Activo
+                SELECT
+                    IdNumero,
+                    ISNULL(PhoneNumberId, ''),
+                    ISNULL(Nombre, ''),
+                    Activo,
+                    ISNULL(WebSessionMode, ''),
+                    ISNULL(WebPhoneNumber, ''),
+                    ISNULL(WebSessionStatus, ''),
+                    ISNULL(WebDisplayName, ''),
+                    ISNULL(WebInstanceName, ''),
+                    ISNULL(WebPairingToken, ''),
+                    ISNULL(WebPairingCode, ''),
+                    ISNULL(WebPairingQrPayload, ''),
+                    ISNULL(WebRuntimeState, ''),
+                    ISNULL(WebLastError, ''),
+                    WebWorkerProcessId,
+                    WebPairingGeneratedAtUtc,
+                    WebPairingExpiresAtUtc,
+                    WebRuntimeUpdatedAtUtc
                 FROM dbo.CONV_WHATSAPP_NUMEROS
                 ORDER BY Nombre;
                 """;
@@ -1229,13 +1247,7 @@ public sealed class ConversacionesConfigService(
             {
                 while (await rd.ReadAsync(token))
                 {
-                    numeros.Add(new ConversacionWhatsAppNumeroDto
-                    {
-                        IdNumero = rd.GetInt32(0),
-                        PhoneNumberId = GetString(rd, 1),
-                        Nombre = GetString(rd, 2),
-                        Activo = rd.GetBoolean(3)
-                    });
+                    numeros.Add(MapWhatsAppNumero(rd));
                 }
             }
 
@@ -1268,6 +1280,25 @@ public sealed class ConversacionesConfigService(
             return (IReadOnlyList<ConversacionWhatsAppNumeroDto>)numeros;
         }, "No se pudieron cargar los números de WhatsApp.", ct);
 
+    public async Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroAsync(int idNumero, CancellationToken ct = default)
+    {
+        if (idNumero <= 0)
+            return null;
+
+        var numeros = await GetWhatsAppNumerosAsync(ct);
+        return numeros.FirstOrDefault(x => x.IdNumero == idNumero);
+    }
+
+    public async Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroByInstanceNameAsync(string instanceName, CancellationToken ct = default)
+    {
+        var normalized = (instanceName ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+            return null;
+
+        var numeros = await GetWhatsAppNumerosAsync(ct);
+        return numeros.FirstOrDefault(x => string.Equals(x.WebInstanceName, normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
     public Task SaveWhatsAppNumeroAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(numero);
@@ -1294,13 +1325,29 @@ public sealed class ConversacionesConfigService(
             {
                 const string sqlUpdate = """
                     UPDATE dbo.CONV_WHATSAPP_NUMEROS
-                    SET PhoneNumberId = @PhoneNumberId, Nombre = @Nombre, Activo = @Activo, FechaHora_Modificacion = GETDATE()
+                    SET
+                        PhoneNumberId = @PhoneNumberId,
+                        Nombre = @Nombre,
+                        Activo = @Activo,
+                        WebSessionMode = @WebSessionMode,
+                        WebPhoneNumber = @WebPhoneNumber,
+                        WebSessionStatus = @WebSessionStatus,
+                        WebDisplayName = @WebDisplayName,
+                        WebInstanceName = @WebInstanceName,
+                        WebPairingToken = @WebPairingToken,
+                        WebPairingCode = @WebPairingCode,
+                        WebPairingQrPayload = @WebPairingQrPayload,
+                        WebPairingGeneratedAtUtc = @WebPairingGeneratedAtUtc,
+                        WebPairingExpiresAtUtc = @WebPairingExpiresAtUtc,
+                        WebRuntimeState = @WebRuntimeState,
+                        WebLastError = @WebLastError,
+                        WebWorkerProcessId = @WebWorkerProcessId,
+                        WebRuntimeUpdatedAtUtc = @WebRuntimeUpdatedAtUtc,
+                        FechaHora_Modificacion = GETDATE()
                     WHERE IdNumero = @IdNumero;
                     """;
                 await using var cmd = new SqlCommand(sqlUpdate, cn, (SqlTransaction)tx);
-                cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
-                cmd.Parameters.AddWithValue("@Nombre", nombre);
-                cmd.Parameters.AddWithValue("@Activo", numero.Activo);
+                FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre);
                 cmd.Parameters.AddWithValue("@IdNumero", numero.IdNumero);
                 await cmd.ExecuteNonQueryAsync(token);
                 idNumero = numero.IdNumero;
@@ -1308,14 +1355,50 @@ public sealed class ConversacionesConfigService(
             else
             {
                 const string sqlInsert = """
-                    INSERT INTO dbo.CONV_WHATSAPP_NUMEROS (PhoneNumberId, Nombre, Activo)
+                    INSERT INTO dbo.CONV_WHATSAPP_NUMEROS
+                    (
+                        PhoneNumberId,
+                        Nombre,
+                        Activo,
+                        WebSessionMode,
+                        WebPhoneNumber,
+                        WebSessionStatus,
+                        WebDisplayName,
+                        WebInstanceName,
+                        WebPairingToken,
+                        WebPairingCode,
+                        WebPairingQrPayload,
+                        WebPairingGeneratedAtUtc,
+                        WebPairingExpiresAtUtc,
+                        WebRuntimeState,
+                        WebLastError,
+                        WebWorkerProcessId,
+                        WebRuntimeUpdatedAtUtc
+                    )
                     OUTPUT INSERTED.IdNumero
-                    VALUES (@PhoneNumberId, @Nombre, @Activo);
+                    VALUES
+                    (
+                        @PhoneNumberId,
+                        @Nombre,
+                        @Activo,
+                        @WebSessionMode,
+                        @WebPhoneNumber,
+                        @WebSessionStatus,
+                        @WebDisplayName,
+                        @WebInstanceName,
+                        @WebPairingToken,
+                        @WebPairingCode,
+                        @WebPairingQrPayload,
+                        @WebPairingGeneratedAtUtc,
+                        @WebPairingExpiresAtUtc,
+                        @WebRuntimeState,
+                        @WebLastError,
+                        @WebWorkerProcessId,
+                        @WebRuntimeUpdatedAtUtc
+                    );
                     """;
                 await using var cmd = new SqlCommand(sqlInsert, cn, (SqlTransaction)tx);
-                cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
-                cmd.Parameters.AddWithValue("@Nombre", nombre);
-                cmd.Parameters.AddWithValue("@Activo", numero.Activo);
+                FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre);
                 idNumero = (int)(await cmd.ExecuteScalarAsync(token))!;
             }
 
@@ -1356,6 +1439,46 @@ public sealed class ConversacionesConfigService(
 
             return true;
         }, "No se pudo guardar el número de WhatsApp.", ct);
+    }
+
+    public Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(numero);
+        if (numero.IdNumero <= 0)
+            throw new InvalidOperationException("El número de WhatsApp debe existir antes de guardar su sesión Web.");
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveWhatsAppNumeroWebSession", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            const string sql = """
+                UPDATE dbo.CONV_WHATSAPP_NUMEROS
+                SET
+                    WebSessionMode = @WebSessionMode,
+                    WebPhoneNumber = @WebPhoneNumber,
+                    WebSessionStatus = @WebSessionStatus,
+                    WebDisplayName = @WebDisplayName,
+                    WebInstanceName = @WebInstanceName,
+                    WebPairingToken = @WebPairingToken,
+                    WebPairingCode = @WebPairingCode,
+                    WebPairingQrPayload = @WebPairingQrPayload,
+                    WebPairingGeneratedAtUtc = @WebPairingGeneratedAtUtc,
+                    WebPairingExpiresAtUtc = @WebPairingExpiresAtUtc,
+                    WebRuntimeState = @WebRuntimeState,
+                    WebLastError = @WebLastError,
+                    WebWorkerProcessId = @WebWorkerProcessId,
+                    WebRuntimeUpdatedAtUtc = @WebRuntimeUpdatedAtUtc,
+                    FechaHora_Modificacion = GETDATE()
+                WHERE IdNumero = @IdNumero;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            FillWhatsAppNumeroParameters(cmd, numero, numero.PhoneNumberId, numero.Nombre, includeMetaFields: false);
+            cmd.Parameters.AddWithValue("@IdNumero", numero.IdNumero);
+            await cmd.ExecuteNonQueryAsync(token);
+            return true;
+        }, "No se pudo guardar la sesión Web del número de WhatsApp.", ct);
     }
 
     public Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default)
@@ -2002,6 +2125,63 @@ public sealed class ConversacionesConfigService(
         };
 
         return JsonSerializer.Serialize(payload);
+    }
+
+    private static ConversacionWhatsAppNumeroDto MapWhatsAppNumero(SqlDataReader rd)
+    {
+        var qrPayload = GetString(rd, 11);
+        return new ConversacionWhatsAppNumeroDto
+        {
+            IdNumero = rd.GetInt32(0),
+            PhoneNumberId = GetString(rd, 1),
+            Nombre = GetString(rd, 2),
+            Activo = rd.GetBoolean(3),
+            WebSessionMode = NormalizeWhatsAppWebSessionMode(GetString(rd, 4)),
+            WebPhoneNumber = GetString(rd, 5),
+            WebSessionStatus = NormalizeWhatsAppWebSessionStatus(GetString(rd, 6)),
+            WebDisplayName = GetString(rd, 7),
+            WebInstanceName = GetString(rd, 8),
+            WebPairingToken = GetString(rd, 9),
+            WebPairingCode = GetString(rd, 10),
+            WebPairingQrPayload = qrPayload,
+            WebPairingQrDataUrl = string.IsNullOrWhiteSpace(qrPayload) ? string.Empty : BuildQrCodeDataUrl(qrPayload),
+            WebRuntimeState = GetString(rd, 12),
+            WebLastError = GetString(rd, 13),
+            WebWorkerProcessId = rd.IsDBNull(14) ? null : rd.GetInt32(14),
+            WebPairingGeneratedAtUtc = rd.IsDBNull(15) ? null : rd.GetDateTime(15),
+            WebPairingExpiresAtUtc = rd.IsDBNull(16) ? null : rd.GetDateTime(16),
+            WebRuntimeUpdatedAtUtc = rd.IsDBNull(17) ? null : rd.GetDateTime(17)
+        };
+    }
+
+    private static void FillWhatsAppNumeroParameters(
+        SqlCommand cmd,
+        ConversacionWhatsAppNumeroDto numero,
+        string phoneNumberId,
+        string nombre,
+        bool includeMetaFields = true)
+    {
+        if (includeMetaFields)
+        {
+            cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
+            cmd.Parameters.AddWithValue("@Nombre", nombre);
+            cmd.Parameters.AddWithValue("@Activo", numero.Activo);
+        }
+
+        cmd.Parameters.AddWithValue("@WebSessionMode", NormalizeWhatsAppWebSessionMode(numero.WebSessionMode));
+        cmd.Parameters.AddWithValue("@WebPhoneNumber", DbNullable((numero.WebPhoneNumber ?? string.Empty).Trim()));
+        cmd.Parameters.AddWithValue("@WebSessionStatus", NormalizeWhatsAppWebSessionStatus(numero.WebSessionStatus));
+        cmd.Parameters.AddWithValue("@WebDisplayName", DbNullable((numero.WebDisplayName ?? string.Empty).Trim()));
+        cmd.Parameters.AddWithValue("@WebInstanceName", DbNullable((numero.WebInstanceName ?? string.Empty).Trim()));
+        cmd.Parameters.AddWithValue("@WebPairingToken", DbNullable((numero.WebPairingToken ?? string.Empty).Trim()));
+        cmd.Parameters.AddWithValue("@WebPairingCode", DbNullable((numero.WebPairingCode ?? string.Empty).Trim()));
+        cmd.Parameters.AddWithValue("@WebPairingQrPayload", DbNullable((numero.WebPairingQrPayload ?? string.Empty).Trim()));
+        cmd.Parameters.AddWithValue("@WebPairingGeneratedAtUtc", numero.WebPairingGeneratedAtUtc.HasValue ? numero.WebPairingGeneratedAtUtc.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@WebPairingExpiresAtUtc", numero.WebPairingExpiresAtUtc.HasValue ? numero.WebPairingExpiresAtUtc.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@WebRuntimeState", DbNullable((numero.WebRuntimeState ?? string.Empty).Trim()));
+        cmd.Parameters.AddWithValue("@WebLastError", DbNullable((numero.WebLastError ?? string.Empty).Trim()));
+        cmd.Parameters.AddWithValue("@WebWorkerProcessId", numero.WebWorkerProcessId.HasValue ? numero.WebWorkerProcessId.Value : DBNull.Value);
+        cmd.Parameters.AddWithValue("@WebRuntimeUpdatedAtUtc", numero.WebRuntimeUpdatedAtUtc.HasValue ? numero.WebRuntimeUpdatedAtUtc.Value : DBNull.Value);
     }
 
     private static string BuildQrCodeDataUrl(string payload)

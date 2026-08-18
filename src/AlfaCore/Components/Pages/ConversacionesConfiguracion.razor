@@ -105,8 +105,8 @@
 
             <article class="panel-card conv-status-card">
                 <span class="panel-card__tag">Sesión WhatsApp Web</span>
-                <strong class="@GetStatusClass(_config.IsWebSessionReady)">@GetWhatsAppWebStatusLabel()</strong>
-                <p class="panel-card__subtitle">Preparación para QR o inicio por número, separada del canal oficial de Meta.</p>
+                <strong class="@GetStatusClass(_numeros.Any(n => n.IsWebSessionReady))">@GetWhatsAppWebOverviewLabel()</strong>
+                <p class="panel-card__subtitle">Cada número maneja su propia sesión Web para no mezclar QR, estado ni mensajes.</p>
             </article>
     </div>
 
@@ -191,120 +191,11 @@
                     <span class="context-card__muted">Este bloque es el que hoy usa AlfaCore para recibir y enviar mensajes por el canal oficial.</span>
                 </div>
 
-                <div class="conv-config-fields">
-                    <div class="field">
-                        <label for="wa-web-instance">Instancia sesión Web</label>
-                        <input id="wa-web-instance" @bind="_config.WebInstanceName" placeholder="Ej. alfa-whatsapp-web-01" />
-                    </div>
-
-                    <div class="field">
-                        <label for="wa-web-session-mode">Método de inicio</label>
-                        <select id="wa-web-session-mode" @bind="_config.WebSessionMode">
-                            <option value="@ConversacionWhatsAppWebSessionModes.Qr">Escanear QR</option>
-                            <option value="@ConversacionWhatsAppWebSessionModes.PhoneNumber">Ingresar número de teléfono</option>
-                        </select>
-                    </div>
-
-                    <div class="field">
-                        <label for="wa-web-phone">Número para sesión Web</label>
-                        <input id="wa-web-phone" @bind="_config.WebPhoneNumber" placeholder="Ej. +54 11 1234-5678" />
-                    </div>
-
-                    <div class="field">
-                        <label for="wa-web-status">Estado de sesión</label>
-                        <select id="wa-web-status" @bind="_config.WebSessionStatus">
-                            <option value="@ConversacionWhatsAppWebSessionStatuses.Disconnected">Desconectada</option>
-                            <option value="@ConversacionWhatsAppWebSessionStatuses.PendingQr">Pendiente de QR / validación</option>
-                            <option value="@ConversacionWhatsAppWebSessionStatuses.Connected">Conectada</option>
-                        </select>
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="wa-web-display-name">Nombre visible de la sesión</label>
-                        <input id="wa-web-display-name" @bind="_config.WebDisplayName" placeholder="Ej. WhatsApp Soporte Casa Central" />
-                    </div>
-                </div>
-
                 <div class="context-card">
                     <span class="context-card__label">Sesión WhatsApp Web</span>
-                    <strong>@GetWhatsAppWebSummary()</strong>
-                    <span class="context-card__muted">AlfaCore puede generar un QR interno de emparejamiento y un código de texto opcional para preparar la sesión Web. La vinculación nativa con WhatsApp todavía requiere el conector Web completo.</span>
+                    <strong>@GetWhatsAppWebOverviewSummary()</strong>
+                    <span class="context-card__muted">La sesión Web ya no se configura en bloque global. Se administra por número en la sección "Números de WhatsApp", para que cada teléfono tenga su propio QR, código y runtime sin mezclarse con otra base o línea.</span>
                 </div>
-
-                <div class="conv-config-fields">
-                    <div class="field field--checkbox conv-config-fields__full">
-                        <label class="checkbox-inline">
-                            <input type="checkbox" @bind="_includeTextPairingCode" />
-                            <span>Generar también código de texto</span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="GenerateWhatsAppWebPairingAsync" disabled="@(Loading || Saving || PairingBusy)">
-                        <i class="bi bi-qr-code"></i> Generar QR
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="RefreshWhatsAppWebSessionAsync" disabled="@(Loading || Saving || PairingBusy || string.IsNullOrWhiteSpace(_config.WebInstanceName))">
-                        <i class="bi bi-arrow-repeat"></i> Refrescar estado
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="ClearWhatsAppWebPairingAsync" disabled="@(Loading || Saving || PairingBusy || string.IsNullOrWhiteSpace(_config.WebInstanceName))">
-                        <i class="bi bi-stop-circle"></i> Detener sesión
-                    </button>
-                </div>
-
-                @if (!string.IsNullOrWhiteSpace(_config.WebRuntimeState) || !string.IsNullOrWhiteSpace(_config.WebLastError))
-                {
-                    <div class="context-card">
-                        <span class="context-card__label">Estado runtime</span>
-                        <strong>@DisplayPairingValue(_config.WebRuntimeState)</strong>
-                        <span class="context-card__muted">
-                            PID: @(_config.WebWorkerProcessId?.ToString() ?? "sin proceso")
-                            @if (_config.WebRuntimeUpdatedAtUtc.HasValue)
-                            {
-                                <text> · Actualizado: @_config.WebRuntimeUpdatedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</text>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(_config.WebLastError))
-                            {
-                                <text> · Error: @_config.WebLastError</text>
-                            }
-                        </span>
-                    </div>
-                }
-
-                @if (_config.HasWebPairingQr || _config.HasWebPairingCode)
-                {
-                    <div class="conv-waweb-pairing">
-                        @if (_config.HasWebPairingQr)
-                        {
-                            <div class="conv-waweb-pairing__qr">
-                                <img src="@_config.WebPairingQrDataUrl" alt="QR de emparejamiento de WhatsApp Web" />
-                            </div>
-                        }
-
-                        <div class="conv-waweb-pairing__details">
-                            <div class="context-card">
-                                <span class="context-card__label">Instancia</span>
-                                <strong>@DisplayPairingValue(_config.WebInstanceName)</strong>
-                                <span class="context-card__muted">Usala para identificar la sesión Web que querés vincular.</span>
-                            </div>
-
-                            @if (_config.HasWebPairingCode)
-                            {
-                                <div class="context-card">
-                                    <span class="context-card__label">Código de texto</span>
-                                    <strong>@_config.WebPairingCode</strong>
-                                    <span class="context-card__muted">Pensado para el flujo alternativo de inicio por número.</span>
-                                </div>
-                            }
-
-                            <div class="context-card">
-                                <span class="context-card__label">Vencimiento</span>
-                                <strong>@GetWhatsAppWebPairingExpirationLabel()</strong>
-                                <span class="context-card__muted">Si expira, regeneralo desde este mismo panel.</span>
-                            </div>
-                        </div>
-                    </div>
-                }
 
                 <div class="context-card">
                     <span class="context-card__label">URL de callback a informar en Meta</span>
@@ -1356,6 +1247,25 @@
                                 <label>Phone Number ID</label>
                                 <input @bind="numero.PhoneNumberId" placeholder="Ej: 109876543210" />
                             </div>
+                            <div class="field">
+                                <label>Nombre visible sesión Web</label>
+                                <input @bind="numero.WebDisplayName" placeholder="Ej: WhatsApp Sucursal Centro" />
+                            </div>
+                            <div class="field">
+                                <label>Instancia sesión Web</label>
+                                <input @bind="numero.WebInstanceName" placeholder="Se genera sola si la dejás vacía" />
+                            </div>
+                            <div class="field">
+                                <label>Método de inicio</label>
+                                <select @bind="numero.WebSessionMode">
+                                    <option value="@ConversacionWhatsAppWebSessionModes.Qr">Escanear QR</option>
+                                    <option value="@ConversacionWhatsAppWebSessionModes.PhoneNumber">Ingresar número de teléfono</option>
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>Número para sesión Web</label>
+                                <input @bind="numero.WebPhoneNumber" placeholder="Ej: +54 11 1234-5678" />
+                            </div>
                         </div>
                         <div class="field">
                             <label class="conv-config-checkbox">
@@ -1363,6 +1273,79 @@
                                 <span>Activo</span>
                             </label>
                         </div>
+                        <div class="context-card">
+                            <span class="context-card__label">Sesión WhatsApp Web</span>
+                            <strong>@GetNumeroWhatsAppWebSummary(numero)</strong>
+                            <span class="context-card__muted">Cada número mantiene su propia sesión Web. Esto evita que los mensajes entren en otra base o se mezclen con otra línea.</span>
+                        </div>
+                        <div class="conv-config-fields">
+                            <div class="field field--checkbox conv-config-fields__full">
+                                <label class="checkbox-inline">
+                                    <input type="checkbox" @bind="_includeTextPairingCode" />
+                                    <span>Generar también código de texto</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="actions">
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => GenerateWhatsAppWebPairingAsync(numero)" disabled="@(Loading || Saving || PairingBusy)">
+                                <i class="bi bi-qr-code"></i> Generar QR
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RefreshWhatsAppWebSessionAsync(numero)" disabled="@(Loading || Saving || PairingBusy || numero.IdNumero <= 0)">
+                                <i class="bi bi-arrow-repeat"></i> Refrescar estado
+                            </button>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => ClearWhatsAppWebPairingAsync(numero)" disabled="@(Loading || Saving || PairingBusy || numero.IdNumero <= 0 || string.IsNullOrWhiteSpace(numero.WebInstanceName))">
+                                <i class="bi bi-stop-circle"></i> Detener sesión
+                            </button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(numero.WebRuntimeState) || !string.IsNullOrWhiteSpace(numero.WebLastError))
+                        {
+                            <div class="context-card">
+                                <span class="context-card__label">Estado runtime</span>
+                                <strong>@DisplayPairingValue(numero.WebRuntimeState)</strong>
+                                <span class="context-card__muted">
+                                    PID: @(numero.WebWorkerProcessId?.ToString() ?? "sin proceso")
+                                    @if (numero.WebRuntimeUpdatedAtUtc.HasValue)
+                                    {
+                                        <text> · Actualizado: @numero.WebRuntimeUpdatedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</text>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(numero.WebLastError))
+                                    {
+                                        <text> · Error: @numero.WebLastError</text>
+                                    }
+                                </span>
+                            </div>
+                        }
+                        @if (numero.HasWebPairingQr || numero.HasWebPairingCode)
+                        {
+                            <div class="conv-waweb-pairing">
+                                @if (numero.HasWebPairingQr)
+                                {
+                                    <div class="conv-waweb-pairing__qr">
+                                        <img src="@numero.WebPairingQrDataUrl" alt="QR de emparejamiento de WhatsApp Web" />
+                                    </div>
+                                }
+                                <div class="conv-waweb-pairing__details">
+                                    <div class="context-card">
+                                        <span class="context-card__label">Instancia</span>
+                                        <strong>@DisplayPairingValue(numero.WebInstanceName)</strong>
+                                        <span class="context-card__muted">Usala para identificar la sesión Web de este número.</span>
+                                    </div>
+                                    @if (numero.HasWebPairingCode)
+                                    {
+                                        <div class="context-card">
+                                            <span class="context-card__label">Código de texto</span>
+                                            <strong>@numero.WebPairingCode</strong>
+                                            <span class="context-card__muted">Disponible para el flujo alternativo de inicio por número.</span>
+                                        </div>
+                                    }
+                                    <div class="context-card">
+                                        <span class="context-card__label">Vencimiento</span>
+                                        <strong>@GetWhatsAppWebPairingExpirationLabel(numero)</strong>
+                                        <span class="context-card__muted">Si expira, regeneralo desde este mismo panel.</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
                         <div class="field conv-config-fields__full">
                             <label>Usuarios con acceso a este número</label>
                             <div class="conv-config-checklist">
@@ -2124,22 +2107,32 @@
         Saving = false;
     }
 
-    private async Task GenerateWhatsAppWebPairingAsync()
+    private async Task GenerateWhatsAppWebPairingAsync(ConversacionWhatsAppNumeroDto numero)
     {
+        if (numero.IdNumero <= 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Guardá primero el número",
+                Message = "Antes de generar el QR, primero guardá este número para crear su sesión propia."
+            };
+            return;
+        }
+
         PairingBusy = true;
         _feedback = null;
 
         var result = await UiOps.RunAsync(
-            () => WhatsAppWebSessionSvc.StartSessionAsync(_includeTextPairingCode),
+            () => WhatsAppWebSessionSvc.StartSessionAsync(numero.IdNumero, _includeTextPairingCode),
             "No se pudo iniciar la sesión real de WhatsApp Web.");
 
         if (result.Success && result.Value is not null)
         {
-            _config = result.Value;
-            EnsureDefaults();
+            ReplaceNumero(result.Value);
             _feedback = AppUiMessage.Success(
                 "Sesión Web iniciada",
-                "AlfaCore arrancó el worker de WhatsApp Web y ya dejó disponible el QR o el código temporal según el modo elegido.");
+                $"'{result.Value.Nombre}' ya tiene disponible su QR o código temporal según el modo elegido.");
         }
         else
         {
@@ -2149,22 +2142,24 @@
         PairingBusy = false;
     }
 
-    private async Task RefreshWhatsAppWebSessionAsync()
+    private async Task RefreshWhatsAppWebSessionAsync(ConversacionWhatsAppNumeroDto numero)
     {
+        if (numero.IdNumero <= 0)
+            return;
+
         PairingBusy = true;
         _feedback = null;
 
         var result = await UiOps.RunAsync(
-            () => WhatsAppWebSessionSvc.RefreshSessionAsync(),
+            () => WhatsAppWebSessionSvc.RefreshSessionAsync(numero.IdNumero),
             "No se pudo refrescar el estado de WhatsApp Web.");
 
         if (result.Success && result.Value is not null)
         {
-            _config = result.Value;
-            EnsureDefaults();
+            ReplaceNumero(result.Value);
             _feedback = AppUiMessage.Success(
                 "Estado actualizado",
-                "La sesión Web fue refrescada con el último estado reportado por el worker.");
+                $"La sesión Web de '{result.Value.Nombre}' fue refrescada con el último estado reportado por el worker.");
         }
         else
         {
@@ -2174,22 +2169,24 @@
         PairingBusy = false;
     }
 
-    private async Task ClearWhatsAppWebPairingAsync()
+    private async Task ClearWhatsAppWebPairingAsync(ConversacionWhatsAppNumeroDto numero)
     {
+        if (numero.IdNumero <= 0)
+            return;
+
         PairingBusy = true;
         _feedback = null;
 
         var result = await UiOps.RunAsync(
-            () => WhatsAppWebSessionSvc.StopSessionAsync(),
+            () => WhatsAppWebSessionSvc.StopSessionAsync(numero.IdNumero),
             "No se pudo detener la sesión de WhatsApp Web.");
 
         if (result.Success && result.Value is not null)
         {
-            _config = result.Value;
-            EnsureDefaults();
+            ReplaceNumero(result.Value);
             _feedback = AppUiMessage.Success(
                 "Sesión detenida",
-                "El worker de WhatsApp Web fue detenido y se limpiaron los artefactos temporales de emparejamiento.");
+                $"Se detuvo la sesión Web de '{result.Value.Nombre}' y se limpiaron los artefactos temporales de emparejamiento.");
         }
         else
         {
@@ -2410,11 +2407,6 @@
         if (string.IsNullOrWhiteSpace(_config.ApiVersion))
             _config.ApiVersion = "v22.0";
 
-        if (string.IsNullOrWhiteSpace(_config.WebSessionMode))
-            _config.WebSessionMode = ConversacionWhatsAppWebSessionModes.Qr;
-
-        if (string.IsNullOrWhiteSpace(_config.WebSessionStatus))
-            _config.WebSessionStatus = ConversacionWhatsAppWebSessionStatuses.Disconnected;
     }
 
     private void EnsureInstagramDefaults()
@@ -2554,28 +2546,61 @@
             ? $"Configurado para enviar con el número {(_config.PhoneNumberId.Length > 0 ? _config.PhoneNumberId : "sin Phone Number ID")}."
             : "Todavía faltan credenciales para operar con Meta Cloud API.";
 
-    private string GetWhatsAppWebStatusLabel()
-        => _config.WebSessionStatus switch
+    private void ReplaceNumero(ConversacionWhatsAppNumeroDto numero)
+    {
+        var actualizados = _numeros.ToList();
+        var index = actualizados.FindIndex(x => x.IdNumero == numero.IdNumero);
+        if (index >= 0)
+            actualizados[index] = numero;
+        else
+            actualizados.Add(numero);
+
+        _numeros = actualizados;
+    }
+
+    private static string GetWhatsAppWebStatusLabel(ConversacionWhatsAppNumeroDto numero)
+        => numero.WebSessionStatus switch
         {
             ConversacionWhatsAppWebSessionStatuses.Connected => "Conectada",
             ConversacionWhatsAppWebSessionStatuses.PendingQr => "Pendiente de validación",
             _ => "Desconectada"
         };
 
-    private string GetWhatsAppWebSummary()
+    private string GetNumeroWhatsAppWebSummary(ConversacionWhatsAppNumeroDto numero)
     {
-        var mode = _config.WebSessionMode == ConversacionWhatsAppWebSessionModes.PhoneNumber
+        var mode = string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase)
             ? "Inicio por número"
             : "Escaneo por QR";
-        var instance = string.IsNullOrWhiteSpace(_config.WebInstanceName) ? "sin instancia definida" : _config.WebInstanceName;
-        var number = string.IsNullOrWhiteSpace(_config.WebPhoneNumber) ? "sin número cargado" : _config.WebPhoneNumber;
-        return $"{GetWhatsAppWebStatusLabel()} · {mode} · {instance} · {number}";
+        var instance = string.IsNullOrWhiteSpace(numero.WebInstanceName) ? "sin instancia definida" : numero.WebInstanceName;
+        var number = string.IsNullOrWhiteSpace(numero.WebPhoneNumber) ? "sin número cargado" : numero.WebPhoneNumber;
+        return $"{GetWhatsAppWebStatusLabel(numero)} · {mode} · {instance} · {number}";
     }
 
-    private string GetWhatsAppWebPairingExpirationLabel()
-        => _config.WebPairingExpiresAtUtc.HasValue
-            ? _config.WebPairingExpiresAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+    private static string GetWhatsAppWebPairingExpirationLabel(ConversacionWhatsAppNumeroDto numero)
+        => numero.WebPairingExpiresAtUtc.HasValue
+            ? numero.WebPairingExpiresAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
             : "Sin vencimiento";
+
+    private string GetWhatsAppWebOverviewLabel()
+    {
+        var connected = _numeros.Count(n => n.IsWebSessionReady);
+        if (connected > 0)
+            return $"{connected} conectada(s)";
+
+        return _numeros.Any(n => n.HasWebPairingQr || n.HasWebPairingCode || !string.IsNullOrWhiteSpace(n.WebRuntimeState))
+            ? "Con sesiones en preparación"
+            : "Sin sesiones activas";
+    }
+
+    private string GetWhatsAppWebOverviewSummary()
+    {
+        if (_numeros.Count == 0)
+            return "Todavía no hay números cargados para administrar sesiones Web.";
+
+        var connected = _numeros.Count(n => n.IsWebSessionReady);
+        var configured = _numeros.Count(n => !string.IsNullOrWhiteSpace(n.WebInstanceName) || !string.IsNullOrWhiteSpace(n.WebDisplayName) || !string.IsNullOrWhiteSpace(n.WebPhoneNumber));
+        return $"{connected} conectada(s) · {configured} con preparación Web cargada · {_numeros.Count} número(s) en total";
+    }
 
     private static string DisplayPairingValue(string? value)
         => string.IsNullOrWhiteSpace(value) ? "No definido" : value.Trim();

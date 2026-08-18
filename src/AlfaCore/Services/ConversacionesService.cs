@@ -2275,7 +2275,7 @@ public sealed class ConversacionesService(
             {
                 try
                 {
-                    var sendResult = await whatsAppWebSessionService.SendTextAsync(conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
+                    var sendResult = await whatsAppWebSessionService.SendTextAsync(conversation.IdNumeroWhatsApp, conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
                     whatsAppMessageId = sendResult.ExternalMessageId;
                     finalState = sendResult.EstadoEnvio;
                     payload = sendResult.PayloadJson;
@@ -3412,7 +3412,9 @@ public sealed class ConversacionesService(
                 var incoming = new IncomingWhatsAppMessage
                 {
                     Phone = request.Phone?.Trim() ?? string.Empty,
-                    PhoneNumberId = request.InstanceName?.Trim() ?? string.Empty,
+                    PhoneNumberId = string.IsNullOrWhiteSpace(request.PhoneNumberId)
+                        ? request.InstanceName?.Trim() ?? string.Empty
+                        : request.PhoneNumberId.Trim(),
                     DisplayPhoneNumber = string.Empty,
                     ContactName = request.ContactName?.Trim() ?? string.Empty,
                     MessageType = string.IsNullOrWhiteSpace(request.MessageType) ? "TEXT" : request.MessageType.Trim().ToUpperInvariant(),
@@ -3509,6 +3511,23 @@ public sealed class ConversacionesService(
                     if (incoming is null)
                     {
                         throw new InvalidOperationException("El archivo de inbox no contiene un mensaje válido.");
+                    }
+
+                    var inboxDir = Path.GetDirectoryName(inboxFile);
+                    var instanceDir = string.IsNullOrWhiteSpace(inboxDir)
+                        ? null
+                        : Directory.GetParent(inboxDir);
+                    var instanceName = instanceDir?.Name ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(instanceName))
+                    {
+                        incoming.InstanceName = instanceName;
+                        var numero = await conversacionesConfigService.GetWhatsAppNumeroByInstanceNameAsync(instanceName, token);
+                        if (numero is null)
+                        {
+                            throw new InvalidOperationException($"No existe un número de WhatsApp configurado para la instancia '{instanceName}'.");
+                        }
+
+                        incoming.PhoneNumberId = numero.PhoneNumberId;
                     }
 
                     incoming.RawJson = string.IsNullOrWhiteSpace(incoming.RawJson) ? json : incoming.RawJson;
@@ -12350,6 +12369,7 @@ public sealed class ConversacionesService(
     private sealed class ConversationIdentity
     {
         public long IdConversacion { get; init; }
+        public int? IdNumeroWhatsApp { get; init; }
         public string TelefonoWhatsApp { get; init; } = string.Empty;
         public string Canal { get; init; } = string.Empty;
         public string IdentificadorExternoContacto { get; init; } = string.Empty;

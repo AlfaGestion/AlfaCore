@@ -552,6 +552,7 @@ public sealed class ConversacionWebhookRequest
 public sealed class ConversacionWhatsAppWebIncomingMessageDto
 {
     public string InstanceName { get; set; } = string.Empty;
+    public string PhoneNumberId { get; set; } = string.Empty;
     public string Phone { get; set; } = string.Empty;
     public string ContactName { get; set; } = string.Empty;
     public string MessageId { get; set; } = string.Empty;
