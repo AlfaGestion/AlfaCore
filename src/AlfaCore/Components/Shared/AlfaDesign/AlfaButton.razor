@@ -1,0 +1,45 @@
+<button class="@CssClass"
+        type="@Type"
+        disabled="@IsDisabled"
+        aria-busy="@Loading.ToString().ToLowerInvariant()"
+        @onclick="HandleClickAsync">
+    @if (Loading)
+    {
+        <span class="alfa-button__spinner" aria-hidden="true"></span>
+    }
+    @if (!string.IsNullOrWhiteSpace(Icon))
+    {
+        <i class="@Icon" aria-hidden="true"></i>
+    }
+    <span class="alfa-button__content">@ChildContent</span>
+</button>
+
+@code {
+    [Parameter] public AlfaButtonVariant Variant { get; set; } = AlfaButtonVariant.Primary;
+    [Parameter] public AlfaSize Size { get; set; } = AlfaSize.Md;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string Type { get; set; } = "button";
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback<MouseEventArgs> OnClick { get; set; }
+
+    private bool IsDisabled => Disabled || Loading;
+
+    private string CssClass
+        => string.Join(" ", new[]
+        {
+            "alfa-button",
+            $"alfa-button--{Variant.ToString().ToLowerInvariant()}",
+            $"alfa-button--{Size.ToString().ToLowerInvariant()}",
+            Loading ? "is-loading" : null,
+            Class
+        }.Where(static x => !string.IsNullOrWhiteSpace(x)));
+
+    private async Task HandleClickAsync(MouseEventArgs args)
+    {
+        if (!IsDisabled && OnClick.HasDelegate)
+            await OnClick.InvokeAsync(args);
+    }
+}

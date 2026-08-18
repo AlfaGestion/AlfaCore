@@ -1,0 +1,39 @@
+.alfa-checkbox {
+    min-height: var(--alfa-control-sm);
+    border: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-8);
+    background: transparent;
+    color: var(--alfa-text-primary);
+    font: inherit;
+    cursor: pointer;
+    padding: 0;
+}
+
+.alfa-checkbox__box {
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--alfa-border-strong);
+    border-radius: var(--alfa-radius-sm);
+    display: inline-grid;
+    place-items: center;
+    color: #fff;
+    background: var(--alfa-bg-input);
+}
+
+.alfa-checkbox.is-checked .alfa-checkbox__box,
+.alfa-checkbox.is-mixed .alfa-checkbox__box {
+    border-color: var(--alfa-accent);
+    background: var(--alfa-accent);
+}
+
+.alfa-checkbox:disabled {
+    color: var(--alfa-text-disabled);
+    cursor: not-allowed;
+}
+
+.alfa-checkbox:focus-visible {
+    outline: 2px solid var(--alfa-accent);
+    outline-offset: 3px;
+}

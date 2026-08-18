@@ -1,3 +1,273 @@
+.cuentas-page--list {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--alfa-bg-canvas);
+}
+
+.cuentas-list-shell {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: auto;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
+}
+
+.cuentas-list-shell__state {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--alfa-space-16);
+    overflow: auto;
+}
+
+.cuentas-list-shell__table-scroll {
+    position: relative;
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+    overscroll-behavior: contain;
+}
+
+.cuentas-list-table {
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    table-layout: fixed;
+}
+
+.cuentas-list-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    height: 32px;
+    padding: 0 var(--alfa-space-8);
+    border-bottom: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-table-header);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+    font-weight: 700;
+    line-height: 12px;
+    text-align: left;
+    text-transform: uppercase;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.cuentas-list-table thead th.cuentas-list-table__col {
+    padding-right: 18px;
+}
+
+.cuentas-list-table td {
+    height: 32px;
+    padding: 0 var(--alfa-space-8);
+    border-bottom: 1px solid var(--alfa-border-subtle);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    line-height: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.cuentas-list-table__row {
+    background: var(--alfa-bg-surface);
+    cursor: pointer;
+}
+
+.cuentas-list-table__row:nth-child(even) {
+    background: var(--alfa-bg-row-alt);
+}
+
+.cuentas-list-table__row:hover {
+    background: var(--alfa-bg-row-hover);
+}
+
+.cuentas-list-table__row.is-selected {
+    background: color-mix(in srgb, var(--alfa-state-selected) 44%, var(--alfa-bg-surface));
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--alfa-accent) 72%, transparent);
+}
+
+.cuentas-list-table__row strong {
+    color: var(--alfa-text-primary);
+    font-weight: 600;
+}
+
+.cuentas-list-table__select {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    text-align: center;
+}
+
+.cuentas-list-table__select-col {
+    width: 44px;
+}
+
+.cuentas-list-table__checkbox {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--alfa-accent);
+}
+
+.cuentas-list-table__actions {
+    position: sticky;
+    right: 0;
+    z-index: 7;
+    width: 64px;
+    min-width: 64px;
+    max-width: 64px;
+    overflow: visible;
+    padding: 0;
+    border-left: 1px solid var(--alfa-border-subtle);
+    background: var(--alfa-bg-surface);
+    box-shadow: -8px 0 12px -12px rgba(0, 0, 0, .5);
+    text-align: center;
+}
+
+.cuentas-list-table thead .cuentas-list-table__actions {
+    z-index: 12;
+    background: var(--alfa-bg-table-header);
+}
+
+.cuentas-list-table__actions-col {
+    width: 64px;
+}
+
+.cuentas-list-table__row:nth-child(even) .cuentas-list-table__actions {
+    background: var(--alfa-bg-row-alt);
+}
+
+.cuentas-list-table__row:hover .cuentas-list-table__actions {
+    background: var(--alfa-bg-row-hover);
+}
+
+.cuentas-list-table__row.is-selected .cuentas-list-table__actions {
+    background: color-mix(in srgb, var(--alfa-state-selected) 44%, var(--alfa-bg-surface));
+}
+
+.cuentas-list-table__actions ::deep .alfa-action-menu__trigger {
+    width: 28px;
+    height: 28px;
+}
+
+.cuentas-list-table__group td {
+    height: 30px;
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    font-weight: 700;
+}
+
+.cuentas-list-table__code {
+    display: block;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    text-align: right;
+}
+
+.cuentas-list-table__col {
+    position: relative;
+    min-width: 0;
+}
+
+.cuentas-list-table__col--codigo {
+    text-align: right;
+}
+
+.cuentas-list-table__header-label {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.alfa-data-view-column-resizer {
+    position: absolute;
+    top: 0;
+    right: -5px;
+    bottom: 0;
+    z-index: 13;
+    width: 10px;
+    cursor: col-resize;
+    touch-action: none;
+}
+
+.alfa-data-view-column-resizer::after {
+    position: absolute;
+    top: 7px;
+    right: 4px;
+    bottom: 7px;
+    width: 1px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--alfa-border-default) 54%, transparent);
+    content: "";
+    opacity: .45;
+    transition: opacity .12s ease, background .12s ease;
+}
+
+.alfa-data-view-column-resizer:hover::after,
+.alfa-data-view-column-resizer.is-active::after,
+.cuentas-list-shell.is-resizing-columns .alfa-data-view-column-resizer::after {
+    background: var(--alfa-accent);
+    opacity: 1;
+}
+
+.cuentas-list-shell.is-resizing-columns {
+    cursor: col-resize;
+    user-select: none;
+}
+
+.cuentas-list-table td ::deep .alfa-tag {
+    max-width: 100%;
+}
+
+.cuentas-view-settings-alfa {
+    display: grid;
+    gap: var(--alfa-space-16);
+}
+
+.cuentas-view-settings-alfa__list {
+    display: grid;
+    gap: 6px;
+}
+
+.cuentas-view-settings-alfa__item {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    padding: 6px var(--alfa-space-8) 6px var(--alfa-space-12);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+}
+
+.cuentas-view-settings-alfa__order {
+    display: flex;
+    flex: 0 0 auto;
+    gap: var(--alfa-space-4);
+}
+
+@media (max-width: 1024px) {
+    .cuentas-list-table {
+        min-width: 1180px;
+    }
+}
+
 .cuentas-notas-grid {
     display: grid;
     gap: 1rem;

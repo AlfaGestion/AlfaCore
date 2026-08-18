@@ -1,0 +1,81 @@
+.alfa-notification {
+    position: fixed;
+    z-index: var(--alfa-z-notification, 2200);
+    top: calc(var(--alfa-topbar-height) + var(--alfa-context-toolbar-height) + var(--alfa-space-12));
+    right: var(--alfa-space-16);
+    width: min(420px, calc(100vw - 32px));
+    display: grid;
+    grid-template-columns: 3px minmax(0, 1fr) auto;
+    align-items: start;
+    gap: var(--alfa-space-12);
+    overflow: hidden;
+    padding: var(--alfa-space-12);
+    border: 1px solid var(--alfa-border-strong);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface-raised);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+    color: var(--alfa-text-primary);
+    animation: alfa-notification-in .18s ease-out both;
+}
+
+.alfa-notification.is-leaving {
+    pointer-events: none;
+    animation: alfa-notification-out .18s ease-in both;
+}
+
+.alfa-notification__signal {
+    align-self: stretch;
+    min-height: 38px;
+    border-radius: var(--alfa-radius-full);
+    background: var(--alfa-accent);
+}
+
+.alfa-notification--success .alfa-notification__signal { background: var(--alfa-success); }
+.alfa-notification--warning .alfa-notification__signal,
+.alfa-notification--error .alfa-notification__signal { background: var(--alfa-danger); }
+
+.alfa-notification__content {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+    padding-block: 2px;
+}
+
+.alfa-notification__content strong {
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-body);
+    font-weight: 650;
+    line-height: 18px;
+}
+
+.alfa-notification__content p,
+.alfa-notification__content small {
+    margin: 0;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    line-height: 18px;
+    white-space: pre-line;
+}
+
+@keyframes alfa-notification-in {
+    from { opacity: 0; transform: translateY(-6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes alfa-notification-out {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-6px); }
+}
+
+@media (max-width: 640px) {
+    .alfa-notification {
+        top: calc(var(--alfa-topbar-height) + var(--alfa-context-toolbar-height) + var(--alfa-space-8));
+        right: var(--alfa-space-8);
+        width: calc(100vw - 16px);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .alfa-notification,
+    .alfa-notification.is-leaving { animation: none; }
+}

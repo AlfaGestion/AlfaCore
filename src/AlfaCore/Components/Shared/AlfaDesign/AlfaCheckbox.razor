@@ -1,0 +1,48 @@
+<button class="@CssClass"
+        type="button"
+        role="checkbox"
+        aria-checked="@AriaChecked"
+        disabled="@Disabled"
+        @onclick="ToggleAsync"
+        @onkeydown="HandleKeyDownAsync">
+    <span class="alfa-checkbox__box" aria-hidden="true">
+        @if (Value is true)
+        {
+            <i class="bi bi-check-lg"></i>
+        }
+        else if (Value is null)
+        {
+            <i class="bi bi-dash-lg"></i>
+        }
+    </span>
+    @if (ChildContent is not null)
+    {
+        <span class="alfa-checkbox__label">@ChildContent</span>
+    }
+</button>
+
+@code {
+    [Parameter] public bool? Value { get; set; }
+    [Parameter] public EventCallback<bool?> ValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private string AriaChecked => Value is null ? "mixed" : (Value.Value ? "true" : "false");
+    private string CssClass => string.Join(" ", new[] { "alfa-checkbox", Value is true ? "is-checked" : null, Value is null ? "is-mixed" : null, Class }.Where(static x => !string.IsNullOrWhiteSpace(x)));
+
+    private async Task ToggleAsync()
+    {
+        if (Disabled)
+            return;
+
+        Value = Value is true ? false : true;
+        await ValueChanged.InvokeAsync(Value);
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key is " " or "Enter")
+            await ToggleAsync();
+    }
+}

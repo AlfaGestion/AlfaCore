@@ -1,0 +1,54 @@
+.alfa-tabs {
+    min-height: var(--alfa-control-md);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-4);
+    border-bottom: 1px solid var(--alfa-border-default);
+}
+
+.alfa-tabs__item {
+    min-height: var(--alfa-control-md);
+    border: 0;
+    border-bottom: 2px solid transparent;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-8);
+    background: transparent;
+    color: var(--alfa-text-secondary);
+    font: inherit;
+    font-weight: 600;
+    padding: 0 var(--alfa-space-12);
+    cursor: pointer;
+}
+
+.alfa-tabs__item.is-active {
+    border-color: var(--alfa-accent);
+    color: var(--alfa-text-primary);
+}
+
+.alfa-tabs__item:hover:not(:disabled) {
+    color: var(--alfa-text-primary);
+    background: var(--alfa-state-hover);
+}
+
+.alfa-tabs__item:disabled {
+    color: var(--alfa-text-disabled);
+    cursor: not-allowed;
+}
+
+.alfa-tabs__item:focus-visible {
+    outline: 2px solid var(--alfa-accent);
+    outline-offset: -2px;
+}
+
+.alfa-tabs__badge {
+    min-width: 18px;
+    height: 18px;
+    display: inline-grid;
+    place-items: center;
+    border-radius: var(--alfa-radius-full);
+    padding: 0 6px;
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+}

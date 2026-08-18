@@ -7,7 +7,18 @@
       "PowerShell(Get-ChildItem -Path \"c:\\\\dev\\\\AlfaCore\\\\src\\\\AlfaCore\" -Recurse -Directory | Select-Object -ExpandProperty FullName | Where-Object { $_ -match \"\\(Service|Repository|Model|Component|Dto\\)\" })",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(mkdir -p \"/c/Users/albert/AppData/Local/Temp/claude/c--dev-AlfaCore/03136413-ace2-40ae-a12b-139e0543fe29/scratchpad\")"
+      "Bash(mkdir -p \"/c/Users/albert/AppData/Local/Temp/claude/c--dev-AlfaCore/03136413-ace2-40ae-a12b-139e0543fe29/scratchpad\")",
+      "Bash(\"/c/Program Files/Microsoft SQL Server/Client SDK/ODBC/130/Tools/Binn/sqlcmd\" -S 10.8.0.31 -U ALFANET2007 -P ALFANET2007 -d ALFANET2007 -Q \"SELECT COUNT\\(*\\) AS Total FROM dbo.TA_CONFIGURACION\" -W)",
+      "Bash(\"/c/Program Files/Microsoft SQL Server/Client SDK/ODBC/130/Tools/Binn/sqlcmd\" -S 10.8.0.31 -U ALFANET2007 -P ALFANET2007 -d ALFANET2007 -Q \"SELECT TOP 20 CLAVE FROM dbo.TA_CONFIGURACION ORDER BY CLAVE\" -W)",
+      "Bash(dotnet build *)",
+      "Bash(netstat -ano)",
+      "PowerShell(Get-CimInstance Win32_Process -Filter \"ProcessId = 25508\")",
+      "PowerShell(Get-Process -Id 3128)",
+      "Bash(sed -n '7753,7795p' /tmp/bundle.css)",
+      "Read(//tmp/**)",
+      "Bash(curl -s \"http://localhost:5055/AlfaCore.styles.css?v=20260812-conv-bot-autonomo\" --max-time 15 -o /tmp/bundle2.css)",
+      "Bash(sed -n '/catalogo-publico-hero__logo\\\\[/,/^}/p' /tmp/bundle2.css)",
+      "Bash(dotnet publish *)"
     ],
     "additionalDirectories": [
       "C:\\Users\\albert\\AppData\\Local\\Temp\\claude\\c--dev-AlfaCore\\03136413-ace2-40ae-a12b-139e0543fe29\\scratchpad"

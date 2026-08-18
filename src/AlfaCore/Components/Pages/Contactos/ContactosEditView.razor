@@ -1,0 +1,177 @@
+@namespace AlfaCore.Components.Pages
+@using AlfaCore.Models
+
+<section class="contactos-edit-shell" aria-label="@(CreateMode ? "Nuevo contacto" : "Editar contacto")">
+    <header class="contactos-edit-header">
+        <div class="contactos-edit-header__identity">
+            <span class="contactos-edit-header__avatar" aria-hidden="true">@AvatarText</span>
+            <div>
+                <h2>@DisplayName</h2>
+                <div class="contactos-edit-header__meta">
+                    @if (CreateMode)
+                    {
+                        <AlfaTag Tone="AlfaTagTone.Neutral">Nuevo</AlfaTag>
+                        <span>Sin guardar</span>
+                    }
+                    else
+                    {
+                        <AlfaTag Tone="@(Active ? AlfaTagTone.Success : AlfaTagTone.Neutral)">@(Active ? "Activo" : "Inactivo")</AlfaTag>
+                        <span>Editando contacto #@Model.Id</span>
+                    }
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <article class="contactos-edit-card">
+        <AlfaTabs Items="@Tabs" ActiveKey="@ActiveTabKey" ActiveKeyChanged="@ChangeTabAsync" AriaLabel="Secciones de edición" />
+
+        <div class="contactos-edit-card__scroll">
+            @if (ActiveTab == InformationTab)
+            {
+                <div class="contactos-edit-content">
+                <section class="contactos-edit-section">
+                    <h3>Datos principales y contacto</h3>
+                    <div class="contactos-edit-grid">
+                        <AlfaInput Label="Nombre y apellido" MaxLength="100" Value="@Model.NombreApellido" ValueChanged="@(v => SetTextAsync(nameof(Model.NombreApellido), v))" ErrorText="@(Error("nombre"))" Required Disabled="@Saving" />
+                        <AlfaInput Label="Nro. documento" MaxLength="13" Value="@Model.NumeroDocumento" ValueChanged="@(v => SetTextAsync(nameof(Model.NumeroDocumento), v))" ErrorText="@(Error("numero-documento"))" Disabled="@Saving" />
+                        <AlfaInput Label="Teléfono" MaxLength="100" Value="@Model.Telefono" ValueChanged="@(v => SetTextAsync(nameof(Model.Telefono), v))" ErrorText="@(Error("telefono"))" Disabled="@Saving" />
+                        <AlfaInput Label="Tel. alternativo" MaxLength="100" Value="@Model.TelefonoAlternativo" ValueChanged="@(v => SetTextAsync(nameof(Model.TelefonoAlternativo), v))" ErrorText="@(Error("telefono-alternativo"))" Disabled="@Saving" />
+                        <AlfaInput Label="Celular" MaxLength="100" Value="@Model.Celular" ValueChanged="@(v => SetTextAsync(nameof(Model.Celular), v))" ErrorText="@(Error("celular"))" Disabled="@Saving" />
+                        <AlfaInput Label="E-mail" Type="email" MaxLength="100" Value="@Model.Email" ValueChanged="@(v => SetTextAsync(nameof(Model.Email), v))" ErrorText="@(Error("email"))" Disabled="@Saving" />
+                    </div>
+                </section>
+
+                <section class="contactos-edit-section">
+                    <h3>Ubicación</h3>
+                    <div class="contactos-edit-grid">
+                        <AlfaInput Label="Domicilio" MaxLength="100" Value="@Model.Domicilio" ValueChanged="@(v => SetTextAsync(nameof(Model.Domicilio), v))" ErrorText="@(Error("domicilio"))" Disabled="@Saving" />
+                        <AlfaInput Label="Localidad" MaxLength="100" Value="@Model.Localidad" ValueChanged="@(v => SetTextAsync(nameof(Model.Localidad), v))" ErrorText="@(Error("localidad"))" Disabled="@Saving" />
+                        <AlfaSelect Label="Provincia" Value="@Model.ProvinciaCodigo" ValueChanged="@(v => SetTextAsync(nameof(Model.ProvinciaCodigo), v))" Options="@ProvinceOptions" Placeholder="Seleccionar..." ErrorText="@(Error("provincia"))" Disabled="@(Saving || LoadingProvinces)" />
+                        <AlfaInput Label="Código postal" MaxLength="20" Value="@Model.CodigoPostal" ValueChanged="@(v => SetTextAsync(nameof(Model.CodigoPostal), v))" ErrorText="@(Error("codigo-postal"))" Disabled="@Saving" />
+                    </div>
+                </section>
+
+                <section class="contactos-edit-section">
+                    <h3>Información adicional y comercial</h3>
+                    <div class="contactos-edit-grid">
+                        <AlfaInput Label="Cargo" MaxLength="100" Value="@Model.Cargo" ValueChanged="@(v => SetTextAsync(nameof(Model.Cargo), v))" ErrorText="@(Error("cargo"))" Disabled="@Saving" />
+                        <AlfaInput Label="Página web" MaxLength="100" Value="@Model.Website" ValueChanged="@(v => SetTextAsync(nameof(Model.Website), v))" ErrorText="@(Error("website"))" Disabled="@Saving" />
+                    </div>
+                </section>
+
+                <section class="contactos-edit-section">
+                    <h3>Permisos de correo</h3>
+                    <div class="contactos-edit-permissions">
+                        <AlfaCheckbox Value="@Model.MailPagosCobranzas" ValueChanged="@(v => SetFlagAsync(nameof(Model.MailPagosCobranzas), v))" Disabled="@Saving">Pagos/Cobranzas</AlfaCheckbox>
+                        <AlfaCheckbox Value="@Model.MailOrdenCompra" ValueChanged="@(v => SetFlagAsync(nameof(Model.MailOrdenCompra), v))" Disabled="@Saving">Órdenes de compra</AlfaCheckbox>
+                        <AlfaCheckbox Value="@Model.MailOrdenTrabajo" ValueChanged="@(v => SetFlagAsync(nameof(Model.MailOrdenTrabajo), v))" Disabled="@Saving">Órdenes de trabajo</AlfaCheckbox>
+                    </div>
+                </section>
+                </div>
+            }
+            else if (ActiveTab == ObservationsTab)
+            {
+            <section class="contactos-edit-content contactos-edit-content--single">
+                <div class="contactos-edit-textarea-field">
+                    <label for="contactos-edit-observaciones">Observaciones</label>
+                    <textarea id="contactos-edit-observaciones" class="@(!string.IsNullOrWhiteSpace(Error("observaciones")) ? "has-error" : string.Empty)" value="@Model.Observaciones" disabled="@Saving" @oninput="SetObservationsAsync"></textarea>
+                    @if (!string.IsNullOrWhiteSpace(Error("observaciones")))
+                    {
+                        <small>@Error("observaciones")</small>
+                    }
+                </div>
+            </section>
+            }
+            else
+            {
+            <section class="contactos-edit-content contactos-edit-content--single">
+                <div class="contactos-edit-accounts-head">
+                    <div><h3>Cuentas vinculadas</h3><p>Clientes y proveedores relacionados. Los vínculos se administran desde cada cuenta.</p></div>
+                </div>
+                @if (LinkedAccounts.Count == 0)
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Sin cuentas vinculadas" Message="Este contacto no tiene clientes o proveedores vinculados." />
+                }
+                else
+                {
+                    <div class="contactos-edit-accounts">
+                        @foreach (var account in LinkedAccounts)
+                        {
+                            <a href="@BuildAccountLink(account)" class="contactos-edit-account">
+                                <span><strong>@Display(account.RazonSocial, account.Codigo)</strong><small>@account.Tipo · @account.Codigo</small></span>
+                                <i class="bi bi-box-arrow-up-right" aria-hidden="true"></i>
+                            </a>
+                        }
+                    </div>
+                }
+            </section>
+            }
+        </div>
+    </article>
+</section>
+
+@code {
+    private const int InformationTab = 0;
+    private const int ObservationsTab = 1;
+    private const int AccountsTab = 2;
+
+    [Parameter, EditorRequired] public ContactoSaveRequest Model { get; set; } = new();
+    [Parameter] public bool CreateMode { get; set; }
+    [Parameter] public bool Active { get; set; }
+    [Parameter] public bool Saving { get; set; }
+    [Parameter] public bool LoadingProvinces { get; set; }
+    [Parameter] public IReadOnlyList<ProvinciaOptionDto> Provinces { get; set; } = [];
+    [Parameter] public IReadOnlyList<ContactoCuentaDto> LinkedAccounts { get; set; } = [];
+    [Parameter] public IReadOnlyDictionary<string, string> FieldErrors { get; set; } = new Dictionary<string, string>();
+    [Parameter] public int ActiveTab { get; set; }
+    [Parameter] public EventCallback<int> ActiveTabChanged { get; set; }
+    [Parameter] public EventCallback<string> OnFieldChanged { get; set; }
+    [Parameter, EditorRequired] public Func<ContactoCuentaDto, string> BuildAccountLink { get; set; } = _ => "#";
+
+    private IReadOnlyList<AlfaTabItem> Tabs => CreateMode
+        ?
+        [
+            new(InformationTab.ToString(), "Información"),
+            new(ObservationsTab.ToString(), "Observaciones")
+        ]
+        :
+        [
+            new(InformationTab.ToString(), "Información"),
+            new(ObservationsTab.ToString(), "Observaciones"),
+            new(AccountsTab.ToString(), "Cuentas vinculadas", Badge: LinkedAccounts.Count.ToString())
+        ];
+    private string ActiveTabKey => ActiveTab.ToString();
+    private IReadOnlyList<AlfaSelectOption> ProvinceOptions => Provinces.Select(p => new AlfaSelectOption(p.Codigo, p.Descripcion)).ToArray();
+    private string DisplayName => string.IsNullOrWhiteSpace(Model.NombreApellido)
+        ? CreateMode ? "Nuevo contacto" : "Contacto sin nombre"
+        : Model.NombreApellido.Trim();
+    private string AvatarText => string.IsNullOrWhiteSpace(Model.NombreApellido) ? "?" : Model.NombreApellido.Trim()[0].ToString().ToUpperInvariant();
+    private string Error(string key) => FieldErrors.TryGetValue(key, out var message) ? message : string.Empty;
+
+    private async Task ChangeTabAsync(string? key)
+    {
+        if (int.TryParse(key, out var tab))
+            await ActiveTabChanged.InvokeAsync(tab);
+    }
+
+    private async Task SetTextAsync(string property, string? value)
+    {
+        typeof(ContactoSaveRequest).GetProperty(property)?.SetValue(Model, value ?? string.Empty);
+        await OnFieldChanged.InvokeAsync(property);
+    }
+
+    private async Task SetFlagAsync(string property, bool? value)
+    {
+        typeof(ContactoSaveRequest).GetProperty(property)?.SetValue(Model, value == true);
+        await OnFieldChanged.InvokeAsync(property);
+    }
+
+    private async Task SetObservationsAsync(ChangeEventArgs args)
+    {
+        Model.Observaciones = args.Value?.ToString() ?? string.Empty;
+        await OnFieldChanged.InvokeAsync(nameof(Model.Observaciones));
+    }
+
+    private static string Display(string? preferred, string fallback) => string.IsNullOrWhiteSpace(preferred) ? fallback : preferred;
+}

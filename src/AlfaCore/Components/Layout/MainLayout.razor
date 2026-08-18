@@ -771,7 +771,87 @@ else
             }
         </header>
 
-        <MainPageHeader />
+        @if (IsAlfaDesignShellActive)
+        {
+            <header class="alfa-app-topbar no-print" aria-label="Barra global">
+                <div class="alfa-app-topbar__brand">
+                    <a class="alfa-app-topbar__logo" href="@GetLauncherUrl()" title="Ir a Inicio" aria-label="Ir a Inicio" @onclick:preventDefault="true" @onclick="GoToLauncher">
+                        <span class="alfa-app-topbar__logo-mark" aria-hidden="true">
+                            <i class="bi bi-person-vcard"></i>
+                        </span>
+                        <span class="alfa-app-topbar__brand-copy">
+                            <strong>AlfaCore</strong>
+                            <small>@GetModuleTitle()</small>
+                        </span>
+                    </a>
+                    <nav class="alfa-app-topbar__nav" aria-label="Navegación principal">
+                        @foreach (var item in PageHeader.Current.TopNavigationItems)
+                        {
+                            if (item.Disabled)
+                            {
+                                <span class="alfa-app-topbar__nav-item is-disabled @(item.Active ? "is-active" : string.Empty)" aria-disabled="true">
+                                    @if (!string.IsNullOrWhiteSpace(item.Icon))
+                                    {
+                                        <i class="bi @item.Icon"></i>
+                                    }
+                                    <span>@item.Label</span>
+                                </span>
+                            }
+                            else if (item.OnClick is not null)
+                            {
+                                <button type="button" class="alfa-app-topbar__nav-item @(item.Active ? "is-active" : string.Empty)" @onclick="() => RunTopNavigationAsync(item)">
+                                    @if (!string.IsNullOrWhiteSpace(item.Icon))
+                                    {
+                                        <i class="bi @item.Icon"></i>
+                                    }
+                                    <span>@item.Label</span>
+                                </button>
+                            }
+                            else
+                            {
+                                <a class="alfa-app-topbar__nav-item @(item.Active ? "is-active" : string.Empty)" href="@item.Url">
+                                    @if (!string.IsNullOrWhiteSpace(item.Icon))
+                                    {
+                                        <i class="bi @item.Icon"></i>
+                                    }
+                                    <span>@item.Label</span>
+                                </a>
+                            }
+                        }
+                    </nav>
+                </div>
+                <div class="alfa-app-topbar__global-actions">
+                    <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones")" title="Conversaciones" aria-label="Conversaciones">
+                        <i class="bi bi-chat-left-text"></i>
+                    </a>
+                    @if (AppUserSession.IsAuthenticated)
+                    {
+                        <button type="button" class="alfa-app-topbar__global-icon" @onclick="TogglePushPanelAsync" title="Notificaciones" aria-label="Notificaciones">
+                            <i class="bi bi-bell"></i>
+                        </button>
+                    }
+                    <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
+                        <i class="bi bi-gear"></i>
+                    </a>
+                    <button type="button" class="alfa-app-topbar__chip alfa-app-topbar__chip--base" @onclick="OpenSqlSessionDrawerAsync" title="Base activa">
+                        <i class="bi bi-database"></i>
+                        <span>@GetActiveBaseShortLabel()</span>
+                        <i class="bi bi-chevron-down"></i>
+                    </button>
+                    @if (AppUserSession.IsAuthenticated && AppUserSession.CurrentUser is not null)
+                    {
+                        <button type="button" class="alfa-app-topbar__chip" @onclick="OpenLoginOverlayAsync" title="Usuario activo">
+                            <span class="alfa-app-topbar__avatar">@GetUserInitials()</span>
+                            <span>@AppUserSession.CurrentUser.UserName</span>
+                        </button>
+                    }
+                </div>
+            </header>
+        }
+
+        <CascadingValue Name="AlfaDesignShellActive" Value="IsAlfaDesignShellActive">
+            <MainPageHeader />
+        </CascadingValue>
 
         @if (ShouldShowConversationMobilePwaActions)
         {
@@ -1270,12 +1350,16 @@ else
     private string CurrentPageTitle => GetCurrentPageTitle();
     private RenderFragment? ModuleBackLink => null;
     private string ShellClass
-        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)} {(UseTopOnlyNavigation ? "shell--top-only" : string.Empty)}";
+        => $"shell {(IsSidebarCollapsed ? "shell--collapsed" : string.Empty)} {(_sidebarToggleHoverBlocked ? "shell--toggle-hover-blocked" : string.Empty)} {(_mobileSidebarOpen ? "shell--mobile-open" : string.Empty)} {(IsDirectMode ? "shell--direct" : string.Empty)} {(IsPosFullscreenRoute ? "shell--pos-fullscreen" : string.Empty)} {(UseTopOnlyNavigation ? "shell--top-only" : string.Empty)} {(IsAlfaDesignShellActive ? "shell--alfa-design" : string.Empty)}";
     private bool ShowShellContext => string.IsNullOrWhiteSpace(_currentModule);
-    private bool ShowLauncherContext => ShowShellContext && !IsDirectMode;
+    private bool ShowLauncherContext => ShowShellContext && !IsDirectMode && !IsAlfaDesignShellActive;
     private bool CanShowLauncherAccess => !IsDirectMode;
-    private bool UseTopOnlyNavigation => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase);
-    private bool ShowSidebar => !UseTopOnlyNavigation;
+    private bool UseTopOnlyNavigation
+        => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(_currentModule, "catalogo", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(_currentModule, "catalogos", StringComparison.OrdinalIgnoreCase);
+    private bool IsAlfaDesignShellActive => PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+    private bool ShowSidebar => !UseTopOnlyNavigation && !IsAlfaDesignShellActive && !IsDirectMode;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
     private string SidebarToggleTitle => IsSidebarCollapsed ? "Desplegar menú principal" : "Plegar menú principal";
@@ -1376,6 +1460,7 @@ else
         HeaderNavigation.Record(Nav.Uri);
         SessionSvc.SessionChanged += OnSessionChanged;
         AppUserSession.StateChanged += OnAppUserStateChanged;
+        PageHeader.Changed += OnPageHeaderChanged;
         Nav.LocationChanged += OnLocationChanged;
     }
 
@@ -1423,10 +1508,49 @@ else
         InvokeAsync(StateHasChanged);
     }
 
+    private void OnPageHeaderChanged()
+        => _ = InvokeAsync(StateHasChanged);
+
+    private static async Task RunTopNavigationAsync(PageHeaderTopNavItem item)
+    {
+        if (item.OnClick is not null)
+            await item.OnClick.Invoke();
+    }
+
+    private string GetActiveBaseShortLabel()
+    {
+        if (_activeSession is not null)
+            return string.IsNullOrWhiteSpace(_activeSession.Nombre)
+                ? _activeSession.BaseDatos
+                : _activeSession.Nombre;
+
+        if (!string.IsNullOrWhiteSpace(_routeSessionLabel))
+            return _routeSessionLabel;
+
+        return "Sin base activa";
+    }
+
+    private string GetUserInitials()
+    {
+        var userName = AppUserSession.CurrentUser?.UserName;
+        if (string.IsNullOrWhiteSpace(userName))
+            return "US";
+
+        var parts = userName
+            .Split([' ', '.', '_', '-'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length >= 2)
+            return string.Concat(parts[0][0], parts[1][0]).ToUpperInvariant();
+
+        return userName.Length >= 2
+            ? userName[..2].ToUpperInvariant()
+            : userName.ToUpperInvariant();
+    }
+
     public void Dispose()
     {
         SessionSvc.SessionChanged -= OnSessionChanged;
         AppUserSession.StateChanged -= OnAppUserStateChanged;
+        PageHeader.Changed -= OnPageHeaderChanged;
         Nav.LocationChanged -= OnLocationChanged;
         StopGlobalConversationPolling();
         _ = InvokeAsync(async () =>
@@ -1440,11 +1564,14 @@ else
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs args)
     {
         HeaderNavigation.Record(args.Location);
-        PageHeader.Clear();
         _mobileSidebarOpen = false;
         if (IsLauncherRoute)
             _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
+        var preserveContactosPilot = string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
+            && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+        if (!preserveContactosPilot)
+            PageHeader.Clear();
         if (EnforceDirectMode())
             return;
         if (ShowShellContext)
@@ -1811,6 +1938,18 @@ else
 
         _currentModule = normalized switch
         {
+            "catalogo" => "catalogo",
+            "catalogo/predeterminado" => "catalogo",
+            "catalogo/menu" => "catalogo",
+            "catalogo/configuracion" => "catalogo",
+            _ when normalized.StartsWith("catalogo/", StringComparison.OrdinalIgnoreCase) => "catalogo",
+            "catalogos" => "catalogos",
+            "catalogos/predeterminado" => "catalogos",
+            "catalogos/menu" => "catalogos",
+            "catalogos/configuracion" => "catalogos",
+            _ when normalized.StartsWith("catalogos/", StringComparison.OrdinalIgnoreCase) => "catalogos",
+            "interfaces/catalogos" => "catalogos",
+            _ when normalized.StartsWith("interfaces/catalogos/", StringComparison.OrdinalIgnoreCase) => "catalogos",
             "clientes" => "clientes",
             "proveedores" => "proveedores",
             _ => effectivePath.Split('/').FirstOrDefault()?.ToLowerInvariant() ?? string.Empty
@@ -3314,8 +3453,19 @@ else
             "carga-viajes/liquidacion" => "Liquidación de Choferes / Fleteros",
             "carga-viajes/liquidaciones" => "Liquidaciones",
             "carga-viajes/configuracion" => "Configurar Carga de Viaje",
+            "catalogo" => "Catálogos",
+            "catalogo/predeterminado" => "Catálogo predeterminado",
+            "catalogo/menu" => "Menú de Catálogos",
+            "catalogo/configuracion" => "Configuración de Catálogos",
+            "catalogos" => "Catálogos",
+            "catalogos/predeterminado" => "Catálogo predeterminado",
+            "catalogos/menu" => "Menú de Catálogos",
+            "catalogos/configuracion" => "Configuración de Catálogos",
+            _ when path.StartsWith("catalogos/", StringComparison.OrdinalIgnoreCase) => "Catálogos",
             "informes" => "Informes",
             "informes/novedades" => "Novedades",
+            "interfaces/catalogos" => "Catálogos",
+            _ when path.StartsWith("interfaces/catalogos/", StringComparison.OrdinalIgnoreCase) => "Catálogos",
             "interfaces" => "Recepción documental",
             "interfaces/configuracion" => "Configuración de Interfaces",
             "interfaces/nuevo" => "Nuevo documento",
@@ -3369,8 +3519,16 @@ else
         "carga-viajes/liquidacion" => "Liquidación de Choferes / Fleteros",
         "carga-viajes/liquidaciones" => "Liquidaciones",
         "carga-viajes/configuracion" => "Configurar Carga de Viaje",
+        "catalogo" => "Catálogos",
+        "catalogo/predeterminado" => "Catálogo predeterminado",
+        "catalogo/menu" => "Menú de Catálogos",
+        "catalogo/configuracion" => "Configuración de Catálogos",
+        "catalogos" => "Catálogos",
         "informes" => "Informes",
         "informes/novedades" => "Novedades",
+        "catalogos/predeterminado" => "Catálogo predeterminado",
+        "catalogos/menu" => "Menú de Catálogos",
+        "catalogos/configuracion" => "Configuración de Catálogos",
         "interfaces" => "Interfaces",
         "actualizaciones" => "Actualizaciones",
         "usuarios" => "Usuarios",
