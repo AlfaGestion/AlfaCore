@@ -1217,28 +1217,29 @@ public sealed class ConversacionesConfigService(
             await cn.OpenAsync(token);
 
             var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
+            var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", token);
 
             var numeros = new List<ConversacionWhatsAppNumeroDto>();
-            const string sqlNumeros = """
+            var sqlNumeros = $"""
                 SELECT
                     IdNumero,
                     ISNULL(PhoneNumberId, ''),
                     ISNULL(Nombre, ''),
-                    Activo,
-                    ISNULL(WebSessionMode, ''),
-                    ISNULL(WebPhoneNumber, ''),
-                    ISNULL(WebSessionStatus, ''),
-                    ISNULL(WebDisplayName, ''),
-                    ISNULL(WebInstanceName, ''),
-                    ISNULL(WebPairingToken, ''),
-                    ISNULL(WebPairingCode, ''),
-                    ISNULL(WebPairingQrPayload, ''),
-                    ISNULL(WebRuntimeState, ''),
-                    ISNULL(WebLastError, ''),
-                    WebWorkerProcessId,
-                    WebPairingGeneratedAtUtc,
-                    WebPairingExpiresAtUtc,
-                    WebRuntimeUpdatedAtUtc
+                    {(HasColumn(numeroColumns, "Activo") ? "Activo" : "CAST(1 AS bit)")},
+                    {SelectStringColumn(numeroColumns, "WebSessionMode")},
+                    {SelectStringColumn(numeroColumns, "WebPhoneNumber")},
+                    {SelectStringColumn(numeroColumns, "WebSessionStatus")},
+                    {SelectStringColumn(numeroColumns, "WebDisplayName")},
+                    {SelectStringColumn(numeroColumns, "WebInstanceName")},
+                    {SelectStringColumn(numeroColumns, "WebPairingToken")},
+                    {SelectStringColumn(numeroColumns, "WebPairingCode")},
+                    {SelectStringColumn(numeroColumns, "WebPairingQrPayload")},
+                    {SelectStringColumn(numeroColumns, "WebRuntimeState")},
+                    {SelectStringColumn(numeroColumns, "WebLastError")},
+                    {SelectNullableIntColumn(numeroColumns, "WebWorkerProcessId")},
+                    {SelectNullableDateColumn(numeroColumns, "WebPairingGeneratedAtUtc")},
+                    {SelectNullableDateColumn(numeroColumns, "WebPairingExpiresAtUtc")},
+                    {SelectNullableDateColumn(numeroColumns, "WebRuntimeUpdatedAtUtc")}
                 FROM dbo.CONV_WHATSAPP_NUMEROS
                 ORDER BY Nombre;
                 """;
@@ -1319,86 +1320,46 @@ public sealed class ConversacionesConfigService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await using var tx = await cn.BeginTransactionAsync(token);
+            var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", token);
+            var hasWebColumns = HasAnyWhatsAppWebColumns(numeroColumns);
 
             int idNumero;
             if (numero.IdNumero > 0)
             {
-                const string sqlUpdate = """
+                var sqlUpdate = $"""
                     UPDATE dbo.CONV_WHATSAPP_NUMEROS
                     SET
                         PhoneNumberId = @PhoneNumberId,
                         Nombre = @Nombre,
-                        Activo = @Activo,
-                        WebSessionMode = @WebSessionMode,
-                        WebPhoneNumber = @WebPhoneNumber,
-                        WebSessionStatus = @WebSessionStatus,
-                        WebDisplayName = @WebDisplayName,
-                        WebInstanceName = @WebInstanceName,
-                        WebPairingToken = @WebPairingToken,
-                        WebPairingCode = @WebPairingCode,
-                        WebPairingQrPayload = @WebPairingQrPayload,
-                        WebPairingGeneratedAtUtc = @WebPairingGeneratedAtUtc,
-                        WebPairingExpiresAtUtc = @WebPairingExpiresAtUtc,
-                        WebRuntimeState = @WebRuntimeState,
-                        WebLastError = @WebLastError,
-                        WebWorkerProcessId = @WebWorkerProcessId,
-                        WebRuntimeUpdatedAtUtc = @WebRuntimeUpdatedAtUtc,
+                        Activo = @Activo{BuildWhatsAppNumeroWebUpdateAssignments(numeroColumns)},
                         FechaHora_Modificacion = GETDATE()
                     WHERE IdNumero = @IdNumero;
                     """;
                 await using var cmd = new SqlCommand(sqlUpdate, cn, (SqlTransaction)tx);
-                FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre);
+                FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre, includeWebFields: hasWebColumns);
                 cmd.Parameters.AddWithValue("@IdNumero", numero.IdNumero);
                 await cmd.ExecuteNonQueryAsync(token);
                 idNumero = numero.IdNumero;
             }
             else
             {
-                const string sqlInsert = """
+                var sqlInsert = $"""
                     INSERT INTO dbo.CONV_WHATSAPP_NUMEROS
                     (
                         PhoneNumberId,
                         Nombre,
-                        Activo,
-                        WebSessionMode,
-                        WebPhoneNumber,
-                        WebSessionStatus,
-                        WebDisplayName,
-                        WebInstanceName,
-                        WebPairingToken,
-                        WebPairingCode,
-                        WebPairingQrPayload,
-                        WebPairingGeneratedAtUtc,
-                        WebPairingExpiresAtUtc,
-                        WebRuntimeState,
-                        WebLastError,
-                        WebWorkerProcessId,
-                        WebRuntimeUpdatedAtUtc
+                        Activo{BuildWhatsAppNumeroWebInsertColumns(numeroColumns)}
                     )
                     OUTPUT INSERTED.IdNumero
                     VALUES
                     (
                         @PhoneNumberId,
                         @Nombre,
-                        @Activo,
-                        @WebSessionMode,
-                        @WebPhoneNumber,
-                        @WebSessionStatus,
-                        @WebDisplayName,
-                        @WebInstanceName,
-                        @WebPairingToken,
-                        @WebPairingCode,
-                        @WebPairingQrPayload,
-                        @WebPairingGeneratedAtUtc,
-                        @WebPairingExpiresAtUtc,
-                        @WebRuntimeState,
-                        @WebLastError,
-                        @WebWorkerProcessId,
-                        @WebRuntimeUpdatedAtUtc
+                        @Activo{BuildWhatsAppNumeroWebInsertValues(numeroColumns)}
                     );
                     """;
                 await using var cmd = new SqlCommand(sqlInsert, cn, (SqlTransaction)tx);
-                FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre);
+                FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre, includeWebFields: hasWebColumns);
                 idNumero = (int)(await cmd.ExecuteScalarAsync(token))!;
             }
 
@@ -1451,30 +1412,23 @@ public sealed class ConversacionesConfigService(
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", token);
+            if (!HasAnyWhatsAppWebColumns(numeroColumns))
+            {
+                throw new InvalidOperationException(
+                    "La base activa todavía no tiene las columnas de sesión Web por número. Corré la actualización 2026-08-18-010 antes de generar QR o vincular teléfonos.");
+            }
 
-            const string sql = """
+            var sql = $"""
                 UPDATE dbo.CONV_WHATSAPP_NUMEROS
                 SET
-                    WebSessionMode = @WebSessionMode,
-                    WebPhoneNumber = @WebPhoneNumber,
-                    WebSessionStatus = @WebSessionStatus,
-                    WebDisplayName = @WebDisplayName,
-                    WebInstanceName = @WebInstanceName,
-                    WebPairingToken = @WebPairingToken,
-                    WebPairingCode = @WebPairingCode,
-                    WebPairingQrPayload = @WebPairingQrPayload,
-                    WebPairingGeneratedAtUtc = @WebPairingGeneratedAtUtc,
-                    WebPairingExpiresAtUtc = @WebPairingExpiresAtUtc,
-                    WebRuntimeState = @WebRuntimeState,
-                    WebLastError = @WebLastError,
-                    WebWorkerProcessId = @WebWorkerProcessId,
-                    WebRuntimeUpdatedAtUtc = @WebRuntimeUpdatedAtUtc,
+                    1 = 1{BuildWhatsAppNumeroWebUpdateAssignments(numeroColumns)},
                     FechaHora_Modificacion = GETDATE()
                 WHERE IdNumero = @IdNumero;
                 """;
 
             await using var cmd = new SqlCommand(sql, cn);
-            FillWhatsAppNumeroParameters(cmd, numero, numero.PhoneNumberId, numero.Nombre, includeMetaFields: false);
+            FillWhatsAppNumeroParameters(cmd, numero, numero.PhoneNumberId, numero.Nombre, includeMetaFields: false, includeWebFields: true);
             cmd.Parameters.AddWithValue("@IdNumero", numero.IdNumero);
             await cmd.ExecuteNonQueryAsync(token);
             return true;
@@ -2159,7 +2113,8 @@ public sealed class ConversacionesConfigService(
         ConversacionWhatsAppNumeroDto numero,
         string phoneNumberId,
         string nombre,
-        bool includeMetaFields = true)
+        bool includeMetaFields = true,
+        bool includeWebFields = true)
     {
         if (includeMetaFields)
         {
@@ -2168,20 +2123,120 @@ public sealed class ConversacionesConfigService(
             cmd.Parameters.AddWithValue("@Activo", numero.Activo);
         }
 
-        cmd.Parameters.AddWithValue("@WebSessionMode", NormalizeWhatsAppWebSessionMode(numero.WebSessionMode));
-        cmd.Parameters.AddWithValue("@WebPhoneNumber", DbNullable((numero.WebPhoneNumber ?? string.Empty).Trim()));
-        cmd.Parameters.AddWithValue("@WebSessionStatus", NormalizeWhatsAppWebSessionStatus(numero.WebSessionStatus));
-        cmd.Parameters.AddWithValue("@WebDisplayName", DbNullable((numero.WebDisplayName ?? string.Empty).Trim()));
-        cmd.Parameters.AddWithValue("@WebInstanceName", DbNullable((numero.WebInstanceName ?? string.Empty).Trim()));
-        cmd.Parameters.AddWithValue("@WebPairingToken", DbNullable((numero.WebPairingToken ?? string.Empty).Trim()));
-        cmd.Parameters.AddWithValue("@WebPairingCode", DbNullable((numero.WebPairingCode ?? string.Empty).Trim()));
-        cmd.Parameters.AddWithValue("@WebPairingQrPayload", DbNullable((numero.WebPairingQrPayload ?? string.Empty).Trim()));
-        cmd.Parameters.AddWithValue("@WebPairingGeneratedAtUtc", numero.WebPairingGeneratedAtUtc.HasValue ? numero.WebPairingGeneratedAtUtc.Value : DBNull.Value);
-        cmd.Parameters.AddWithValue("@WebPairingExpiresAtUtc", numero.WebPairingExpiresAtUtc.HasValue ? numero.WebPairingExpiresAtUtc.Value : DBNull.Value);
-        cmd.Parameters.AddWithValue("@WebRuntimeState", DbNullable((numero.WebRuntimeState ?? string.Empty).Trim()));
-        cmd.Parameters.AddWithValue("@WebLastError", DbNullable((numero.WebLastError ?? string.Empty).Trim()));
-        cmd.Parameters.AddWithValue("@WebWorkerProcessId", numero.WebWorkerProcessId.HasValue ? numero.WebWorkerProcessId.Value : DBNull.Value);
-        cmd.Parameters.AddWithValue("@WebRuntimeUpdatedAtUtc", numero.WebRuntimeUpdatedAtUtc.HasValue ? numero.WebRuntimeUpdatedAtUtc.Value : DBNull.Value);
+        if (includeWebFields)
+        {
+            cmd.Parameters.AddWithValue("@WebSessionMode", NormalizeWhatsAppWebSessionMode(numero.WebSessionMode));
+            cmd.Parameters.AddWithValue("@WebPhoneNumber", DbNullable((numero.WebPhoneNumber ?? string.Empty).Trim()));
+            cmd.Parameters.AddWithValue("@WebSessionStatus", NormalizeWhatsAppWebSessionStatus(numero.WebSessionStatus));
+            cmd.Parameters.AddWithValue("@WebDisplayName", DbNullable((numero.WebDisplayName ?? string.Empty).Trim()));
+            cmd.Parameters.AddWithValue("@WebInstanceName", DbNullable((numero.WebInstanceName ?? string.Empty).Trim()));
+            cmd.Parameters.AddWithValue("@WebPairingToken", DbNullable((numero.WebPairingToken ?? string.Empty).Trim()));
+            cmd.Parameters.AddWithValue("@WebPairingCode", DbNullable((numero.WebPairingCode ?? string.Empty).Trim()));
+            cmd.Parameters.AddWithValue("@WebPairingQrPayload", DbNullable((numero.WebPairingQrPayload ?? string.Empty).Trim()));
+            cmd.Parameters.AddWithValue("@WebPairingGeneratedAtUtc", numero.WebPairingGeneratedAtUtc.HasValue ? numero.WebPairingGeneratedAtUtc.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@WebPairingExpiresAtUtc", numero.WebPairingExpiresAtUtc.HasValue ? numero.WebPairingExpiresAtUtc.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@WebRuntimeState", DbNullable((numero.WebRuntimeState ?? string.Empty).Trim()));
+            cmd.Parameters.AddWithValue("@WebLastError", DbNullable((numero.WebLastError ?? string.Empty).Trim()));
+            cmd.Parameters.AddWithValue("@WebWorkerProcessId", numero.WebWorkerProcessId.HasValue ? numero.WebWorkerProcessId.Value : DBNull.Value);
+            cmd.Parameters.AddWithValue("@WebRuntimeUpdatedAtUtc", numero.WebRuntimeUpdatedAtUtc.HasValue ? numero.WebRuntimeUpdatedAtUtc.Value : DBNull.Value);
+        }
+    }
+
+    private static async Task<HashSet<string>> GetTableColumnsAsync(SqlConnection cn, string tableName, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT c.name
+            FROM sys.columns c
+            WHERE c.object_id = OBJECT_ID(@TableName);
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@TableName", tableName);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        while (await rd.ReadAsync(ct))
+            result.Add(GetString(rd, 0));
+
+        return result;
+    }
+
+    private static bool HasColumn(HashSet<string> columns, string columnName)
+        => columns.Contains(columnName);
+
+    private static bool HasAnyWhatsAppWebColumns(HashSet<string> columns)
+        => HasColumn(columns, "WebSessionMode");
+
+    private static string SelectStringColumn(HashSet<string> columns, string columnName)
+        => HasColumn(columns, columnName) ? $"ISNULL({columnName}, '')" : "N''";
+
+    private static string SelectNullableIntColumn(HashSet<string> columns, string columnName)
+        => HasColumn(columns, columnName) ? columnName : "CAST(NULL AS int)";
+
+    private static string SelectNullableDateColumn(HashSet<string> columns, string columnName)
+        => HasColumn(columns, columnName) ? columnName : "CAST(NULL AS datetime)";
+
+    private static string BuildWhatsAppNumeroWebUpdateAssignments(HashSet<string> columns)
+    {
+        var assignments = new List<string>();
+        AddWebAssignment(columns, assignments, "WebSessionMode");
+        AddWebAssignment(columns, assignments, "WebPhoneNumber");
+        AddWebAssignment(columns, assignments, "WebSessionStatus");
+        AddWebAssignment(columns, assignments, "WebDisplayName");
+        AddWebAssignment(columns, assignments, "WebInstanceName");
+        AddWebAssignment(columns, assignments, "WebPairingToken");
+        AddWebAssignment(columns, assignments, "WebPairingCode");
+        AddWebAssignment(columns, assignments, "WebPairingQrPayload");
+        AddWebAssignment(columns, assignments, "WebPairingGeneratedAtUtc");
+        AddWebAssignment(columns, assignments, "WebPairingExpiresAtUtc");
+        AddWebAssignment(columns, assignments, "WebRuntimeState");
+        AddWebAssignment(columns, assignments, "WebLastError");
+        AddWebAssignment(columns, assignments, "WebWorkerProcessId");
+        AddWebAssignment(columns, assignments, "WebRuntimeUpdatedAtUtc");
+        return assignments.Count == 0 ? string.Empty : ",\n                        " + string.Join(",\n                        ", assignments);
+    }
+
+    private static string BuildWhatsAppNumeroWebInsertColumns(HashSet<string> columns)
+    {
+        var names = GetWhatsAppNumeroWebColumnNames(columns);
+        return names.Count == 0 ? string.Empty : ",\n                        " + string.Join(",\n                        ", names);
+    }
+
+    private static string BuildWhatsAppNumeroWebInsertValues(HashSet<string> columns)
+    {
+        var names = GetWhatsAppNumeroWebColumnNames(columns);
+        return names.Count == 0 ? string.Empty : ",\n                        @" + string.Join(",\n                        @", names);
+    }
+
+    private static List<string> GetWhatsAppNumeroWebColumnNames(HashSet<string> columns)
+    {
+        var names = new List<string>();
+        AddWebColumnName(columns, names, "WebSessionMode");
+        AddWebColumnName(columns, names, "WebPhoneNumber");
+        AddWebColumnName(columns, names, "WebSessionStatus");
+        AddWebColumnName(columns, names, "WebDisplayName");
+        AddWebColumnName(columns, names, "WebInstanceName");
+        AddWebColumnName(columns, names, "WebPairingToken");
+        AddWebColumnName(columns, names, "WebPairingCode");
+        AddWebColumnName(columns, names, "WebPairingQrPayload");
+        AddWebColumnName(columns, names, "WebPairingGeneratedAtUtc");
+        AddWebColumnName(columns, names, "WebPairingExpiresAtUtc");
+        AddWebColumnName(columns, names, "WebRuntimeState");
+        AddWebColumnName(columns, names, "WebLastError");
+        AddWebColumnName(columns, names, "WebWorkerProcessId");
+        AddWebColumnName(columns, names, "WebRuntimeUpdatedAtUtc");
+        return names;
+    }
+
+    private static void AddWebAssignment(HashSet<string> columns, List<string> assignments, string columnName)
+    {
+        if (HasColumn(columns, columnName))
+            assignments.Add($"{columnName} = @{columnName}");
+    }
+
+    private static void AddWebColumnName(HashSet<string> columns, List<string> names, string columnName)
+    {
+        if (HasColumn(columns, columnName))
+            names.Add(columnName);
     }
 
     private static string BuildQrCodeDataUrl(string payload)
