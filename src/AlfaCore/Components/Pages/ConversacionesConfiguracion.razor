@@ -8,26 +8,14 @@
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Configuración de canales | Alfa Gestión</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Configuración de canales</h2>
-            <p class="page-intro__text">Administrá desde AlfaCore los parámetros de mensajería por canal. Esta configuración se guarda en <code>TA_CONFIGURACION</code> y <code>appsettings</code> queda solo como respaldo mínimo.</p>
-        </div>
-        <div class="actions">
-            <a class="btn btn--ghost" href="/conversaciones">
-                <i class="bi bi-arrow-left"></i> Volver al inbox
-            </a>
-            <button type="button" class="btn btn--ghost" @onclick="LoadAsync" disabled="@(Loading || Saving)">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </div>
-
+<section class="page-grid settings-page">
     @if (_feedback is not null)
     {
         <div class="conversations-inline @GetFeedbackClass(_feedback)">
@@ -50,34 +38,52 @@
             <div>@GetWebhookTenantHelp("los mensajes entrantes")</div>
         </div>
     }
-    <section class="panel-card conv-config-nav-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Ordenar configuración</h3>
-                <p class="panel-card__subtitle">Separá la administración por tema para no mezclar canales, IA y operación diaria.</p>
-            </div>
-            <span class="panel-card__tag">Vista</span>
-        </div>
 
-        <div class="conv-config-tabs" role="tablist" aria-label="Secciones de configuración">
-            <button type="button" class="@GetPrimaryTabClass("canales")" @onclick='() => SelectPrimaryTab("canales")'>Canales</button>
-            <button type="button" class="@GetPrimaryTabClass("ia")" @onclick='() => SelectPrimaryTab("ia")'>IA y automatizaciones</button>
-            <button type="button" class="@GetPrimaryTabClass("operacion")" @onclick='() => SelectPrimaryTab("operacion")'>Operación</button>
-            <button type="button" class="@GetPrimaryTabClass("herramientas")" @onclick='() => SelectPrimaryTab("herramientas")'>Herramientas</button>
-        </div>
+    <div class="settings-workspace">
+        <nav class="settings-nav" aria-label="Secciones de Configuración">
+            @foreach (var item in SettingsNavItems)
+            {
+                <button type="button" class="@GetPrimaryTabClass(item.Key)" @onclick="() => SelectPrimaryTab(item.Key)">
+                    <i class="bi @item.Icon" aria-hidden="true"></i>
+                    <span>@item.Label</span>
+                </button>
+            }
+        </nav>
 
-        @if (_activePrimaryTab == "canales")
+        <div class="settings-content">
+
+    @if (_activePrimaryTab == "resumen")
+    {
+    <header class="settings-section-header">
+        <h2>Resumen</h2>
+        <p>Puntos de entrada a la configuración de Conversaciones. El detalle y el estado de cada canal viven dentro de su propia sección.</p>
+    </header>
+    <div class="settings-summary-grid">
+        @foreach (var item in SettingsNavItems.Where(i => i.Key != "resumen"))
         {
-            <div class="conv-config-subtabs" role="tablist" aria-label="Canales">
-                <button type="button" class="@GetChannelTabClass("whatsapp")" @onclick='() => SelectChannelTab("whatsapp")'>WhatsApp</button>
-                <button type="button" class="@GetChannelTabClass("instagram")" @onclick='() => SelectChannelTab("instagram")'>Instagram</button>
-                <button type="button" class="@GetChannelTabClass("facebook")" @onclick='() => SelectChannelTab("facebook")'>Facebook</button>
-                <button type="button" class="@GetChannelTabClass("mercadolibre")" @onclick='() => SelectChannelTab("mercadolibre")'>Mercado Libre</button>
-            </div>
+            <button type="button" class="settings-summary-card" @onclick="() => SelectPrimaryTab(item.Key)">
+                <i class="bi @item.Icon" aria-hidden="true"></i>
+                <span class="settings-summary-card__label">@item.Label</span>
+                <span class="settings-summary-card__hint">@item.Hint</span>
+            </button>
         }
-    </section>
+    </div>
+    }
+
+    @if (_activePrimaryTab == "canales")
+    {
+    <header class="settings-section-header">
+        <h2>Canales</h2>
+        <p>Elegí el canal para administrar su conexión, credenciales y webhook.</p>
+    </header>
+    <AlfaTabs Items="@_channelTabItems" ActiveKey="@_activeChannelTab" ActiveKeyChanged="@OnChannelTabChanged" AriaLabel="Canales" />
+    }
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp")
     {
+    <header class="settings-content-header">
+        <h3>WhatsApp</h3>
+        <p>Conectá números por QR o revisá la configuración avanzada de Meta Cloud API.</p>
+    </header>
     <div class="conv-config-status-grid">
             <article class="panel-card conv-status-card">
                 <span class="panel-card__tag">Modo del canal</span>
@@ -110,6 +116,10 @@
             </article>
     </div>
 
+    <AlfaTabs Items="@_whatsAppSectionTabItems" ActiveKey="@_activeWhatsAppSection" ActiveKeyChanged="@OnWhatsAppSectionChanged" AriaLabel="Secciones de WhatsApp" />
+
+    @if (_activeWhatsAppSection == "general")
+    {
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -252,6 +262,7 @@
                 </div>
             </aside>
     </div>
+    }
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "instagram")
@@ -628,8 +639,12 @@
 
     }
 
-    @if (_activePrimaryTab == "ia")
+    @if (_activePrimaryTab == "integraciones-ia")
     {
+    <header class="settings-content-header">
+        <h3>Integraciones IA</h3>
+        <p>Conectá AlfaKnowledge como base de conocimiento del asistente y del copiloto.</p>
+    </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -717,7 +732,14 @@
                 </div>
             </aside>
     </div>
+    }
 
+    @if (_activePrimaryTab == "automatizacion")
+    {
+    <header class="settings-content-header">
+        <h3>Automatización</h3>
+        <p>Horarios, bienvenida, asistente, auto-cierre, SLA y reglas por palabras clave.</p>
+    </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -1154,8 +1176,12 @@
 
     }
 
-    @if (_activePrimaryTab == "operacion")
+    @if (_activePrimaryTab == "operacion-accesos")
     {
+    <header class="settings-content-header">
+        <h3>Operación y accesos</h3>
+        <p>Prioridad de atención y administradores de Conversaciones.</p>
+    </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -1224,7 +1250,10 @@
                 </ol>
             </aside>
     </div>
+    }
 
+    @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "numeros")
+    {
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -1408,7 +1437,10 @@
                 </ol>
             </aside>
     </div>
+    }
 
+    @if (_activePrimaryTab == "operacion-accesos")
+    {
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -1457,7 +1489,14 @@
                 </ol>
             </aside>
     </div>
+    }
 
+    @if (_activePrimaryTab == "soporte")
+    {
+    <header class="settings-content-header">
+        <h3>Soporte</h3>
+        <p>Herramientas técnicas y de diagnóstico. No reemplaza la configuración funcional de cada canal.</p>
+    </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -1520,6 +1559,9 @@
             </aside>
     </div>
     }
+
+        </div>
+    </div>
 </section>
 
 @code {
@@ -1540,8 +1582,9 @@
     private ConversacionWhatsAppNumeroDto _nuevoNumero = new() { Activo = true };
     private HashSet<string> _administradores = new(StringComparer.OrdinalIgnoreCase);
     private string _anyDeskPath = string.Empty;
-    private string _activePrimaryTab = "canales";
+    private string _activePrimaryTab = "resumen";
     private string _activeChannelTab = "whatsapp";
+    private string _activeWhatsAppSection = "numeros";
     private bool Loading { get; set; }
     private bool Saving { get; set; }
     private bool AnyDeskSaving { get; set; }
@@ -1553,11 +1596,94 @@
     private bool HasWebhookToken => !string.IsNullOrWhiteSpace(_webhookToken);
     private bool PairingBusy { get; set; }
 
+    private sealed record SettingsNavItem(string Key, string Label, string Icon, string Hint);
+
+    private static readonly IReadOnlyList<SettingsNavItem> SettingsNavItems =
+    [
+        new("resumen", "Resumen", "bi-grid-1x2-fill", "Puntos de entrada a la configuración."),
+        new("canales", "Canales", "bi-broadcast", "WhatsApp, Instagram, Facebook y Mercado Libre."),
+        new("automatizacion", "Automatización", "bi-gear-wide-connected", "Horarios, bienvenida, auto-cierre, SLA y reglas."),
+        new("integraciones-ia", "Integraciones IA", "bi-stars", "AlfaKnowledge y el resto de integraciones de IA."),
+        new("operacion-accesos", "Operación y accesos", "bi-people-fill", "Prioridad de atención y administradores."),
+        new("soporte", "Soporte", "bi-life-preserver", "Herramientas técnicas y de diagnóstico.")
+    ];
+
+    private static readonly IReadOnlyList<AlfaTabItem> _channelTabItems =
+    [
+        new("whatsapp", "WhatsApp"),
+        new("instagram", "Instagram"),
+        new("facebook", "Facebook"),
+        new("mercadolibre", "Mercado Libre")
+    ];
+
+    private static readonly IReadOnlyList<AlfaTabItem> _whatsAppSectionTabItems =
+    [
+        new("numeros", "Números"),
+        new("general", "General")
+    ];
+
+    private bool IsDirectMode
+        => Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri)
+           && System.Web.HttpUtility.ParseQueryString(uri.Query)["directo"] == "1";
+
     protected override async Task OnInitializedAsync()
     {
         _suggestedBaseUrl = GetCurrentBaseUrl();
+        UpdatePageHeader();
         await LoadWebhookTokenAsync();
         await LoadAsync();
+    }
+
+    public void Dispose()
+        => PageHeader.Clear();
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = "Configuración",
+            Breadcrumb = ["Conversaciones", "Configuración"],
+            State = PageHeaderState.List,
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = BuildTopNavigationItems(),
+            OnBack = () =>
+            {
+                Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones"));
+                return Task.CompletedTask;
+            },
+            Actions =
+            [
+                new()
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Disabled = Loading,
+                    OnClick = LoadAsync
+                }
+            ]
+        });
+    }
+
+    private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
+    {
+        var items = new List<PageHeaderTopNavItem>
+        {
+            new() { Key = "conversaciones", Label = "Conversaciones", Url = RouteContext.BuildRoute("/conversaciones") }
+        };
+
+        if (!IsDirectMode)
+        {
+            items.Add(new() { Key = "contactos", Label = "Contactos", Url = RouteContext.BuildRoute("/contactos") });
+            items.Add(new() { Key = "clientes", Label = "Clientes", Url = RouteContext.BuildRoute("/clientes") });
+        }
+
+        items.Add(new() { Key = "plantillas", Label = "Plantillas", Url = RouteContext.BuildRoute("/conversaciones/plantillas") });
+        items.Add(new() { Key = "configuracion", Label = "Configuración", Url = RouteContext.BuildRoute("/conversaciones/configuracion"), Active = true });
+        items.Add(new() { Key = "estadisticas", Label = "Estadísticas", Url = RouteContext.BuildRoute("/conversaciones/estadisticas") });
+        items.Add(new() { Key = "informes", Label = "Informes", Url = RouteContext.BuildRoute("/conversaciones/informes") });
+
+        return items;
     }
 
     private async Task LoadWebhookTokenAsync()
@@ -1602,6 +1728,18 @@
         _activeChannelTab = tab;
     }
 
+    private Task OnChannelTabChanged(string? tab)
+    {
+        SelectChannelTab(tab ?? "whatsapp");
+        return Task.CompletedTask;
+    }
+
+    private Task OnWhatsAppSectionChanged(string? section)
+    {
+        _activeWhatsAppSection = section ?? "numeros";
+        return Task.CompletedTask;
+    }
+
     private bool EnsureSaaSWebhookTokenReady()
     {
         if (!AppMode.IsSaaSMode || HasWebhookToken)
@@ -1625,6 +1763,7 @@
     private async Task LoadAsync()
     {
         Loading = true;
+        UpdatePageHeader();
         _feedback = null;
 
         var result = await UiOps.RunAsync(
@@ -1785,6 +1924,7 @@
         }
 
         Loading = false;
+        UpdatePageHeader();
     }
 
     private async Task LoadReglasAsync()
@@ -2515,10 +2655,7 @@
             : _alfaKnowledgeConfig.FullChatUrl;
 
     private string GetPrimaryTabClass(string tab)
-        => tab == _activePrimaryTab ? "conv-config-tab is-active" : "conv-config-tab";
-
-    private string GetChannelTabClass(string tab)
-        => tab == _activeChannelTab ? "conv-config-subtab is-active" : "conv-config-subtab";
+        => tab == _activePrimaryTab ? "settings-nav__item is-active" : "settings-nav__item";
 
     private string GetStatusLabel(bool ready) => ready ? "Listo" : "Pendiente";
 

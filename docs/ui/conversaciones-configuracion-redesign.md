@@ -1,8 +1,72 @@
 # Rediseño Conversaciones → Configuración (AlfaDesign)
 
 **Estado del documento:** MIGRACIÓN EN PLANIFICACIÓN
-**Fase actual:** C0 — Baseline + contrato de producto
+**C0 — Baseline + contrato de producto:** COMPLETADO (commit `3fd78b5`)
+**C1 — Shell + Information Architecture + navegación interna:** EN IMPLEMENTACIÓN (sin commit todavía, pendiente de validación visual)
 **Rama de trabajo:** `main` (se trabaja directamente sobre `main`, sin rama nueva)
+
+---
+
+## C1 — Decisiones de implementación
+
+### Shell
+
+- `ConversacionesConfiguracion.razor` ahora inyecta `IPageHeaderService` y `IRouteContextService`, implementa `IDisposable` y llama `PageHeader.Set(...)` con `ShellMode = PageHeaderShellMode.AlfaDesignPilot`. Esto activa automáticamente `ShowSidebar => !IsAlfaDesignShellActive` en `MainLayout`, ocultando el sidebar global legacy sin tocar `MainLayout.razor`.
+- App Top Bar: `TopNavigationItems` reconstruye los destinos que antes vivían en el sidebar legacy de Conversaciones (Conversaciones, Contactos, Clientes, Plantillas, Configuración activa, Estadísticas, Informes), usando `RouteContext.BuildRoute` (multi-base/multi-tenant). Contactos/Clientes se ocultan en `?directo=1`, igual que hacía el sidebar legacy.
+- Context Toolbar: `Title = "Configuración"`, `Breadcrumb = ["Conversaciones", "Configuración"]`, acción única `Recargar` (mapea a `LoadAsync` existente), `OnBack` navega a `/conversaciones` (antes era el link "Volver al inbox"). No se agregó Guardar/Descartar/dirty status porque esa lógica no existe todavía (regla C1 §7).
+- **Deuda documentada:** el botón `Recargar` del Context Toolbar solo refleja `Loading` (carga completa de la pantalla), no `Saving` de cada sección individual — evita tocar los ~16 puntos donde distintos métodos `Save*Async` alternan `Saving = true/false`. Es una simplificación menor, no una regresión funcional (los botones de guardado de cada sección siguen deshabilitándose igual que antes).
+
+### Navegación interna (Settings Workspace)
+
+Patrón nuevo, implementado localmente en este componente (markup + CSS scoped, sin crear componente compartido todavía — ver `docs/ui/alfadesign-components.md`, candidato a formalizar como "Settings Internal Navigation" recién cuando exista un segundo módulo que lo necesite):
+
+```
+settings-workspace
+├─ settings-nav (rail vertical, 6 items)
+└─ settings-content
+```
+
+### IA final Nivel 1
+
+`Resumen | Canales | Automatización | Integraciones IA | Operación y accesos | Soporte`. Se eliminó `Herramientas` (estaba vacía; no existía contenido que reclasificar). `Resumen` es un landing mínimo (tarjetas hacia cada categoría, sin métricas ni health checks inventados).
+
+### Canales
+
+Header + `AlfaTabs` (componente AlfaDesign existente) para `WhatsApp | Instagram | Facebook | Mercado Libre`. Instagram/Facebook/Mercado Libre no cambiaron de contenido, solo la condición que los muestra sigue siendo `_activePrimaryTab == "canales"` (sin cambios).
+
+### WhatsApp
+
+Sub-navegación nueva con `AlfaTabs`: `Números` (default) | `General`. "Números de WhatsApp" (antes en "Operación") ahora es la vista por defecto del canal WhatsApp, cumpliendo la regla de prioridad QR > Meta Cloud (C1 §12). El bloque "Parámetros del canal" (Modo del canal + Meta Cloud API completo: Access Token, App Secret, Verify Token, Graph API version, etc.) quedó agrupado bajo "General" tal cual estaba — **no se separó Meta Cloud de "Modo del canal" dentro de ese mismo formulario** porque ambos comparten un único save (`SaveAsync`) y separarlos visualmente en dos destinos de navegación distintos requeriría forkear ese contrato de persistencia, fuera de alcance de C1 (regla C1 §3: "si mover una sección requiere cambiar su modelo o contrato de persistencia, no hacerlo, reportarlo"). Queda reportado como candidato de una fase SEC/C3 posterior.
+
+Ni el modelo `ConversacionWhatsAppNumeroDto`, ni `ConversacionWhatsAppConfigDto`, ni ningún service, fueron modificados. El bloque "Números de WhatsApp" no se movió físicamente en el archivo: se le cambió únicamente la condición `@if` que lo muestra (ahora `_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "numeros"`), aprovechando que un `@if` en falso no genera nodos DOM — el resultado visual es idéntico a haberlo movido, sin el riesgo de un corte/pegado de ~180 líneas.
+
+### Automatización vs Integraciones IA
+
+- **Integraciones IA** = bloque AlfaKnowledge íntegro (tenía su propio save, `SaveAlfaKnowledgeAsync`, separable sin tocar backend).
+- **Automatización** = bloque "Automatizaciones" (horario, bienvenida, Asistente IA, auto-cierre, SLA, informe mensual) + "Reglas / palabras clave".
+- **Deuda documentada:** dentro del bloque "Automatizaciones" hay dos `<details>` — "Asistente IA" e "Informe mensual" — que conceptualmente pertenecen más a Integraciones IA que a Automatización. No se separaron porque todo el bloque comparte un único save (`SaveAutomatizacionesAsync`, transacción con `CONV_*` + `CONV_ASISTENTE`); separarlos requeriría forkear ese contrato de persistencia. Reportado como candidato de fase posterior (probablemente C5 o una fase SEC/backend explícita), no ejecutado en C1.
+
+### Operación y accesos / Soporte
+
+- **Operación y accesos** = Prioridad de atención + Administradores de conversaciones (ninguno movido físicamente, solo recondicionados).
+- **Soporte** = AnyDesk (reclasificado desde la extinta "Herramientas"/"Operación"; no se creó diagnóstico, logs viewer ni ninguna acción inexistente, cumpliendo la regla de no fingir funciones).
+- "Usuarios por número" no se extrajo como sección aparte: sigue viviendo únicamente dentro del manager de cada número (Canales → WhatsApp → Números), evitando una segunda fuente de edición (regla C1 §16).
+
+### Responsive
+
+Breakpoint en 1024px: el rail de navegación (`settings-nav`) pasa de columna sticky a fila horizontal con wrap (`flex-direction: row`, `position: static`). No se validó visualmente todavía (pendiente de validación visual del usuario) — la regla CSS está escrita pero no capturada en captura de pantalla.
+
+### Deep links
+
+No implementados. `_activePrimaryTab`, `_activeChannelTab` y el nuevo `_activeWhatsAppSection` siguen siendo estado interno de componente (no sobreviven a un reload ni son enlazables). Deuda documentada explícitamente, sin cambios de ruta en C1 (regla C1 §27).
+
+### Contenido que sigue legacy internamente
+
+Todo el contenido *dentro* de cada `panel-card` (formularios de WhatsApp/Instagram/Facebook/Mercado Libre/AlfaKnowledge/Automatizaciones/Reglas/Prioridad/Números/Administradores/AnyDesk) permanece sin cambios: mismos campos, mismo binding, mismos saves, mismo CSS legacy claro (`#hex`, gradientes) en los estilos scoped no relacionados con el shell/nav. Eso es rediseño profundo de formulario, explícitamente fuera de alcance de C1.
+
+### Servicios/backend
+
+No se modificó ningún archivo bajo `Services/`, `Models/` (excepto los tipos de `PageHeaderModels.cs` que ya existían), SQL, `Program.cs`, `worker.mjs` ni ningún contrato de persistencia. Los únicos archivos tocados en código fueron `ConversacionesConfiguracion.razor` y `ConversacionesConfiguracion.razor.css`.
 
 ---
 

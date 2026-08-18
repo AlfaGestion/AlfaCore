@@ -12,8 +12,128 @@
     font-size: 1rem;
 }
 
-.conv-config-nav-card {
-    gap: 1rem;
+.settings-workspace {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--alfa-space-16, 16px);
+    min-height: 0;
+}
+
+.settings-nav {
+    flex: 0 0 220px;
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-4, 4px);
+    padding: var(--alfa-space-8, 8px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    position: sticky;
+    top: 0;
+}
+
+.settings-nav__item {
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-8, 8px);
+    border: 0;
+    border-radius: var(--alfa-radius-4, 4px);
+    background: transparent;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    padding: var(--alfa-space-8, 8px) var(--alfa-space-12, 12px);
+    cursor: pointer;
+}
+
+.settings-nav__item:hover {
+    background: var(--alfa-state-hover, #22262e);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.settings-nav__item.is-active {
+    background: var(--alfa-state-selected, #29476b);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.settings-nav__item:focus-visible {
+    outline: 2px solid var(--alfa-accent, #4f9efa);
+    outline-offset: -2px;
+}
+
+.settings-content {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-16, 16px);
+}
+
+.settings-section-header h2 {
+    margin: 0 0 var(--alfa-space-4, 4px);
+    font-size: 1.1rem;
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.settings-section-header p,
+.settings-content-header p {
+    margin: 0;
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.settings-content-header h3 {
+    margin: 0 0 var(--alfa-space-4, 4px);
+    font-size: 1rem;
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.settings-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: var(--alfa-space-12, 12px);
+}
+
+.settings-summary-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-4, 4px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-8, 8px);
+    background: var(--alfa-bg-surface, #16181d);
+    color: var(--alfa-text-primary, #f5f5f7);
+    text-align: left;
+    padding: var(--alfa-space-12, 12px);
+    cursor: pointer;
+    font: inherit;
+}
+
+.settings-summary-card:hover {
+    background: var(--alfa-row-hover, #22262e);
+    border-color: var(--alfa-border-strong, #4d525e);
+}
+
+.settings-summary-card__label {
+    font-weight: 700;
+}
+
+.settings-summary-card__hint {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+@media (max-width: 1024px) {
+    .settings-workspace {
+        flex-direction: column;
+    }
+
+    .settings-nav {
+        flex-direction: row;
+        flex-wrap: wrap;
+        position: static;
+        flex: 0 0 auto;
+    }
 }
 
 .conv-config-collapsible {
@@ -75,54 +195,6 @@
     padding: 1rem;
 }
 
-.conv-config-tabs,
-.conv-config-subtabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: .65rem;
-}
-
-.conv-config-subtabs {
-    padding-top: .35rem;
-    border-top: 1px solid var(--border, #e2e8f0);
-}
-
-.conv-config-tab,
-.conv-config-subtab {
-    border: 1px solid var(--border, #d7deea);
-    background: #f7f9fc;
-    color: #234;
-    border-radius: 999px;
-    padding: .62rem 1rem;
-    font: inherit;
-    font-weight: 700;
-    cursor: pointer;
-    transition: background-color .16s ease, border-color .16s ease, color .16s ease, transform .16s ease;
-}
-
-.conv-config-subtab {
-    font-weight: 600;
-    padding: .48rem .85rem;
-}
-
-.conv-config-tab:hover,
-.conv-config-tab:focus-visible,
-.conv-config-subtab:hover,
-.conv-config-subtab:focus-visible {
-    background: #eef4ff;
-    border-color: #9cb7e5;
-    color: #153766;
-    transform: translateY(-1px);
-}
-
-.conv-config-tab.is-active,
-.conv-config-subtab.is-active {
-    background: linear-gradient(135deg, #2f4f85, #4468a7);
-    border-color: #2f4f85;
-    color: #fff;
-    box-shadow: 0 10px 24px rgba(47, 79, 133, .18);
-}
-
 .conv-waweb-pairing {
     display: grid;
     grid-template-columns: minmax(180px, 240px) 1fr;
@@ -175,12 +247,6 @@
         text-align: left;
         margin-left: 0;
         padding-right: 0;
-    }
-
-    .conv-config-tab,
-    .conv-config-subtab {
-        width: 100%;
-        text-align: center;
     }
 
     .conv-waweb-pairing {
