@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
@@ -37,9 +36,12 @@ let sock;
 let pairingRequested = false;
 let isStopping = false;
 let isProcessingOutbox = false;
+let reconnectTimer = null;
+let reconnectAttempt = 0;
 
 process.on("SIGTERM", async () => {
   isStopping = true;
+  clearReconnectTimer();
   await writeStatus({
     state: "STOPPED",
     sessionId: instanceName,
@@ -51,6 +53,7 @@ process.on("SIGTERM", async () => {
 
 process.on("SIGINT", async () => {
   isStopping = true;
+  clearReconnectTimer();
   await writeStatus({
     state: "STOPPED",
     sessionId: instanceName,
@@ -67,100 +70,7 @@ await writeStatus({
   lastUpdatedAtUtc: new Date().toISOString()
 });
 
-try {
-  const { state, saveCreds } = await useMultiFileAuthState(authDir);
-  const { version } = await fetchLatestBaileysVersion();
-
-  sock = makeWASocket({
-    version,
-    auth: state,
-    browser: Browsers.macOS("Desktop"),
-    logger: pino({ level: "silent" }),
-    printQRInTerminal: false,
-    markOnlineOnConnect: false,
-    syncFullHistory: false
-  });
-
-  sock.ev.on("creds.update", saveCreds);
-  sock.ev.on("messages.upsert", handleMessagesUpsert);
-
-  sock.ev.on("connection.update", async (update) => {
-    const { connection, lastDisconnect, qr } = update;
-    const now = new Date();
-
-    if (qr) {
-      await writeStatus({
-        state: "QR_READY",
-        sessionId: instanceName,
-        processId: process.pid,
-        qrPayload: qr,
-        generatedAtUtc: now.toISOString(),
-        expiresAtUtc: new Date(now.getTime() + 2 * 60 * 1000).toISOString(),
-        lastUpdatedAtUtc: now.toISOString()
-      });
-
-      if (mode === "PHONE_NUMBER" && includeTextCode && phone && !pairingRequested && !(sock?.authState?.creds?.registered)) {
-        pairingRequested = true;
-        try {
-          const pairingCode = await sock.requestPairingCode(phone);
-          await writeStatus({
-            state: "PAIRING_CODE_READY",
-            sessionId: instanceName,
-            processId: process.pid,
-            qrPayload: qr,
-            pairingCode,
-            generatedAtUtc: now.toISOString(),
-            expiresAtUtc: new Date(now.getTime() + 2 * 60 * 1000).toISOString(),
-            lastUpdatedAtUtc: new Date().toISOString()
-          });
-        } catch (error) {
-          await writeStatus({
-            state: "ERROR",
-            sessionId: instanceName,
-            processId: process.pid,
-            error: serializeError(error),
-            lastUpdatedAtUtc: new Date().toISOString()
-          });
-        }
-      }
-    }
-
-    if (connection === "open") {
-      await writeStatus({
-        state: "CONNECTED",
-        sessionId: instanceName,
-        processId: process.pid,
-        lastUpdatedAtUtc: new Date().toISOString()
-      });
-    }
-
-    if (connection === "close") {
-      const statusCode = lastDisconnect?.error?.output?.statusCode;
-      const loggedOut = statusCode === DisconnectReason.loggedOut;
-
-      await writeStatus({
-        state: loggedOut ? "DISCONNECTED" : "CLOSED",
-        sessionId: instanceName,
-        processId: process.pid,
-        error: serializeError(lastDisconnect?.error),
-        lastUpdatedAtUtc: new Date().toISOString()
-      });
-
-      if (!loggedOut && !isStopping) {
-        process.exit(2);
-      }
-    }
-  });
-} catch (error) {
-  await writeStatus({
-    state: "ERROR",
-    sessionId: instanceName,
-    processId: process.pid,
-    error: serializeError(error),
-    lastUpdatedAtUtc: new Date().toISOString()
-  });
-  process.exit(1);
-}
+await connectSocket();
 
 setInterval(async () => {
   if (isStopping) {
@@ -184,6 +94,132 @@ setInterval(async () => {
     lastUpdatedAtUtc: new Date().toISOString()
   });
 }, 15000);
+
+async function connectSocket() {
+  try {
+    pairingRequested = false;
+    const { state, saveCreds } = await useMultiFileAuthState(authDir);
+    const { version } = await fetchLatestBaileysVersion();
+
+    sock = makeWASocket({
+      version,
+      auth: state,
+      browser: Browsers.macOS("Desktop"),
+      logger: pino({ level: "silent" }),
+      printQRInTerminal: false,
+      markOnlineOnConnect: false,
+      syncFullHistory: false
+    });
+
+    sock.ev.on("creds.update", saveCreds);
+    sock.ev.on("messages.upsert", handleMessagesUpsert);
+    sock.ev.on("connection.update", handleConnectionUpdate);
+  } catch (error) {
+    const errorMessage = serializeError(error);
+    await writeStatus({
+      state: "RECONNECTING",
+      sessionId: instanceName,
+      processId: process.pid,
+      error: errorMessage,
+      lastUpdatedAtUtc: new Date().toISOString()
+    });
+    scheduleReconnect();
+  }
+}
+
+async function handleConnectionUpdate(update) {
+  const { connection, lastDisconnect, qr } = update;
+  const now = new Date();
+
+  if (qr) {
+    await writeStatus({
+      state: "QR_READY",
+      sessionId: instanceName,
+      processId: process.pid,
+      qrPayload: qr,
+      generatedAtUtc: now.toISOString(),
+      expiresAtUtc: new Date(now.getTime() + 2 * 60 * 1000).toISOString(),
+      lastUpdatedAtUtc: now.toISOString(),
+      error: ""
+    });
+
+    if (mode === "PHONE_NUMBER" && includeTextCode && phone && !pairingRequested && !(sock?.authState?.creds?.registered)) {
+      pairingRequested = true;
+      try {
+        const pairingCode = await sock.requestPairingCode(phone);
+        await writeStatus({
+          state: "PAIRING_CODE_READY",
+          sessionId: instanceName,
+          processId: process.pid,
+          qrPayload: qr,
+          pairingCode,
+          generatedAtUtc: now.toISOString(),
+          expiresAtUtc: new Date(now.getTime() + 2 * 60 * 1000).toISOString(),
+          lastUpdatedAtUtc: new Date().toISOString(),
+          error: ""
+        });
+      } catch (error) {
+        await writeStatus({
+          state: "ERROR",
+          sessionId: instanceName,
+          processId: process.pid,
+          error: serializeError(error),
+          lastUpdatedAtUtc: new Date().toISOString()
+        });
+      }
+    }
+  }
+
+  if (connection === "open") {
+    reconnectAttempt = 0;
+    clearReconnectTimer();
+    await writeStatus({
+      state: "CONNECTED",
+      sessionId: instanceName,
+      processId: process.pid,
+      lastUpdatedAtUtc: new Date().toISOString(),
+      error: ""
+    });
+  }
+
+  if (connection === "close") {
+    const statusCode = lastDisconnect?.error?.output?.statusCode;
+    const loggedOut = statusCode === DisconnectReason.loggedOut;
+    const errorMessage = serializeError(lastDisconnect?.error);
+
+    await writeStatus({
+      state: loggedOut ? "DISCONNECTED" : "RECONNECTING",
+      sessionId: instanceName,
+      processId: process.pid,
+      error: errorMessage,
+      lastUpdatedAtUtc: new Date().toISOString()
+    });
+
+    if (!loggedOut && !isStopping) {
+      scheduleReconnect();
+    }
+  }
+}
+
+function scheduleReconnect() {
+  if (isStopping || reconnectTimer) {
+    return;
+  }
+
+  reconnectAttempt += 1;
+  const delayMs = Math.min(15000, 2000 * reconnectAttempt);
+  reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
+    void connectSocket();
+  }, delayMs);
+}
+
+function clearReconnectTimer() {
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+}
 
 async function readStatus() {
   try {
@@ -320,7 +356,7 @@ function normalizeIncomingMessage(entry) {
 
   return {
     instanceName,
-    phone: phoneValue.startsWith("+" ) ? phoneValue : `+${phoneValue}`,
+    phone: phoneValue.startsWith("+") ? phoneValue : `+${phoneValue}`,
     contactName: String(entry?.pushName || ""),
     messageId: String(entry?.key?.id || cryptoRandomId()),
     replyToMessageId: String(entry?.message?.extendedTextMessage?.contextInfo?.stanzaId || ""),

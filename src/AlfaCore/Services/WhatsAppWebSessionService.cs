@@ -15,8 +15,10 @@ public sealed class WhatsAppWebSessionService(
     private const string WorkerScriptName = "worker.mjs";
     private const string StatusFileName = "status.json";
     private const string SessionsRootDir = "App_Data\\whatsapp-web";
+    private const string AuthDirName = "auth";
     private const string OutboxDirName = "outbox";
     private const string ResultsDirName = "results";
+    private const string InboxDirName = "inbox";
 
     public async Task<ConversacionWhatsAppConfigDto> StartSessionAsync(bool includeTextCode, CancellationToken ct = default)
     {
@@ -35,9 +37,9 @@ public sealed class WhatsAppWebSessionService(
 
         var sessionDir = EnsureSessionDirectory(config.WebInstanceName);
         var statusFile = Path.Combine(sessionDir, StatusFileName);
-
-        TryDeleteFile(statusFile);
         StopProcessIfRunning(statusFile);
+        TryDeleteFile(statusFile);
+        PrepareSessionDirectory(sessionDir, clearAuth: true);
 
         var args = BuildStartArguments(sessionDir, config.WebSessionMode, config.WebPhoneNumber, includeTextCode, config.WebInstanceName);
         var startInfo = new ProcessStartInfo
@@ -181,6 +183,15 @@ public sealed class WhatsAppWebSessionService(
                 var hasInteractiveArtifacts = updated.HasWebPairingQr || updated.HasWebPairingCode || updated.IsWebSessionReady;
                 if (!requireInteractiveArtifacts || hasInteractiveArtifacts)
                     return updated;
+
+                if (string.Equals(updated.WebRuntimeState, "DISCONNECTED", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(updated.WebRuntimeState, "ERROR", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(updated.WebRuntimeState, "CLOSED", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException(
+                        $"WhatsApp Web no pudo iniciar la sesión. Estado: {updated.WebRuntimeState}. " +
+                        $"{(string.IsNullOrWhiteSpace(updated.WebLastError) ? string.Empty : $"Detalle: {updated.WebLastError}")}".Trim());
+                }
             }
 
             await Task.Delay(500, ct);
@@ -289,6 +300,32 @@ public sealed class WhatsAppWebSessionService(
         {
             // Si el worker todavía lo tiene tomado, el próximo refresh lo va a reemplazar.
         }
+    }
+
+    private static void PrepareSessionDirectory(string sessionDir, bool clearAuth)
+    {
+        Directory.CreateDirectory(sessionDir);
+        RecreateDirectory(Path.Combine(sessionDir, OutboxDirName));
+        RecreateDirectory(Path.Combine(sessionDir, ResultsDirName));
+        RecreateDirectory(Path.Combine(sessionDir, InboxDirName));
+
+        if (clearAuth)
+            RecreateDirectory(Path.Combine(sessionDir, AuthDirName));
+    }
+
+    private static void RecreateDirectory(string path)
+    {
+        try
+        {
+            if (Directory.Exists(path))
+                Directory.Delete(path, recursive: true);
+        }
+        catch
+        {
+            // Si quedó algún archivo tomado del intento anterior, el nuevo worker lo recrea igual.
+        }
+
+        Directory.CreateDirectory(path);
     }
 
     private static string BuildQrCodeDataUrl(string payload)

@@ -3479,7 +3479,16 @@ public sealed class ConversacionesService(
     public Task<int> ProcessWhatsAppWebInboxAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "ProcessWhatsAppWebInbox", async token =>
         {
-            var sessionsRoot = Path.Combine(environment.ContentRootPath, "App_Data", "whatsapp-web");
+            var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
+            if (activeBaseId <= 0)
+                return 0;
+
+            var sessionsRoot = Path.Combine(
+                environment.ContentRootPath,
+                "App_Data",
+                "whatsapp-web",
+                activeBaseId.ToString(CultureInfo.InvariantCulture));
+
             if (!Directory.Exists(sessionsRoot))
                 return 0;
 
