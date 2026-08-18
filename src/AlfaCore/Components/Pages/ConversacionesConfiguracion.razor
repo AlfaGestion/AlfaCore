@@ -16,7 +16,9 @@
 <PageTitle>Configuración de canales | Alfa Gestión</PageTitle>
 
 <section class="page-grid settings-page">
-    @if (_feedback is not null)
+    <AlfaNotification Message="@WhatsAppFeedback" OnDismiss="DismissWhatsAppFeedback" />
+
+    @if (_feedback is not null && _feedbackScope != "whatsapp")
     {
         <div class="conversations-inline @GetFeedbackClass(_feedback)">
             <strong>@_feedback.Title</strong>
@@ -29,13 +31,6 @@
             {
                 <div>@_feedback.Suggestion</div>
             }
-        </div>
-    }
-    @if (AppMode.IsSaaSMode)
-    {
-        <div class="conversations-inline @(HasWebhookToken ? "conversations-inline--ok" : "conversations-inline--error")">
-            <strong>@(HasWebhookToken ? "Webhook identificado por base" : "Webhook sin identificación de base")</strong>
-            <div>@GetWebhookTenantHelp("los mensajes entrantes")</div>
         </div>
     }
 
@@ -82,184 +77,160 @@
     {
     <header class="settings-content-header">
         <h3>WhatsApp</h3>
-        <p>Conectá números por QR o revisá la configuración avanzada de Meta Cloud API.</p>
     </header>
-    <div class="conv-config-status-grid">
-            <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Modo del canal</span>
-                <strong>@GetWhatsAppProviderModeLabel()</strong>
-                <p class="panel-card__subtitle">Define si WhatsApp usa Meta, una sesión Web o convivencia de ambos.</p>
-            </article>
+    <AlfaTabs Items="@_whatsAppSectionTabItems" ActiveKey="@_activeWhatsAppSection" ActiveKeyChanged="@OnWhatsAppSectionChanged" AriaLabel="WhatsApp Business o WhatsApp API" />
 
-            <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Envío Cloud API</span>
-                <strong class="@GetStatusClass(_config.IsConfiguredForSend)">@GetStatusLabel(_config.IsConfiguredForSend)</strong>
-                <p class="panel-card__subtitle">Requiere <code>access token</code> y <code>phone_number_id</code>.</p>
-            </article>
-
-            <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Webhook de verificación</span>
-                <strong class="@GetStatusClass(_config.IsConfiguredForVerify)">@GetStatusLabel(_config.IsConfiguredForVerify)</strong>
-                <p class="panel-card__subtitle">Requiere <code>verify_token</code> para validar el callback de Meta.</p>
-            </article>
-
-            <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Publicación</span>
-                <strong class="@GetStatusClass(_config.IsReadyForMetaSetup)">@GetPublicationLabel()</strong>
-                <p class="panel-card__subtitle">Meta necesita una URL pública HTTPS para llamar al webhook.</p>
-            </article>
-
-            <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Sesión WhatsApp Web</span>
-                <strong class="@GetStatusClass(_numeros.Any(n => n.IsWebSessionReady))">@GetWhatsAppWebOverviewLabel()</strong>
-                <p class="panel-card__subtitle">Cada número maneja su propia sesión Web para no mezclar QR, estado ni mensajes.</p>
-            </article>
-    </div>
-
-    <AlfaTabs Items="@_whatsAppSectionTabItems" ActiveKey="@_activeWhatsAppSection" ActiveKeyChanged="@OnWhatsAppSectionChanged" AriaLabel="Secciones de WhatsApp" />
+    @if (_activeWhatsAppSection == "numeros")
+    {
+        <p class="wa-content-lead">Conectá los números que usás para atender conversaciones.</p>
+        <div class="wa-status-summary">
+            <span class="wa-status-chip"><i class="bi bi-telephone-fill" aria-hidden="true"></i> @GetWhatsAppNumerosSummary()</span>
+        </div>
+    }
+    else
+    {
+        <p class="wa-content-lead">Configuración avanzada para la integración oficial de WhatsApp (Meta Cloud API).</p>
+        <div class="wa-status-summary">
+            <span class="@GetWhatsAppApiStatusChipClass(_config.IsConfiguredForSend)"><i class="bi bi-circle-fill" aria-hidden="true"></i> API: @GetStatusLabel(_config.IsConfiguredForSend)</span>
+            <span class="@GetWhatsAppApiStatusChipClass(_config.IsConfiguredForVerify)"><i class="bi bi-circle-fill" aria-hidden="true"></i> Webhook: @GetStatusLabel(_config.IsConfiguredForVerify)</span>
+            <span class="@GetWhatsAppApiStatusChipClass(_config.IsReadyForMetaSetup)"><i class="bi bi-circle-fill" aria-hidden="true"></i> @GetPublicationLabel()</span>
+        </div>
+    }
 
     @if (_activeWhatsAppSection == "general")
     {
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Parámetros del canal</h3>
-                        <p class="panel-card__subtitle">Origen actual: @DisplaySource(_config.ConfigSource)</p>
+    <div class="wa-layout">
+            <section class="wa-panel">
+                <details class="wa-settings-section" open>
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-diagram-3 wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Conexión</span>
+                        <span class="wa-settings-section__hint">Modo del canal, proveedor y datos de identificación en Meta.</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <p class="wa-field-note">@GetWhatsAppProviderSummary() La integración productiva actual sigue siendo Meta Cloud API; la sesión de WhatsApp Business queda configurada por separado para no mezclar credenciales ni webhook.</p>
+
+                        <div class="wa-fields">
+                            <AlfaSelect Label="Modo del canal" Options="@_providerModeOptions" @bind-Value="_config.ProviderMode" />
+                            <AlfaSelect Label="Proveedor predeterminado" Options="@_defaultProviderOptions" @bind-Value="_config.DefaultProvider" />
+                            <AlfaInput Label="Phone Number ID" @bind-Value="_config.PhoneNumberId" Placeholder="Ej. 123456789012345" />
+                            <AlfaInput Label="WhatsApp Business Account ID" @bind-Value="_config.BusinessAccountId" Placeholder="Ej. 109876543210987" />
+                        </div>
                     </div>
-                    <span class="panel-card__tag">TA_CONFIGURACION</span>
-                </div>
+                </details>
 
-                <div class="context-card">
-                    <span class="context-card__label">Convivencia de proveedores</span>
-                    <strong>@GetWhatsAppProviderSummary()</strong>
-                    <span class="context-card__muted">La integración productiva actual sigue siendo Meta Cloud API. La sesión WhatsApp Web queda configurada por separado para preparar QR o inicio por número sin mezclar credenciales ni webhook.</span>
-                </div>
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-key-fill wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Credenciales</span>
+                        <span class="wa-settings-section__hint">Access Token, Verify Token y App Secret de Meta.</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <p class="wa-field-note">@GetWhatsAppMetaSummary()</p>
 
-                <div class="conv-config-fields">
-                    <div class="field">
-                        <label for="wa-provider-mode">Modo del canal</label>
-                        <select id="wa-provider-mode" @bind="_config.ProviderMode">
-                            <option value="@ConversacionWhatsAppProviderModes.MetaOnly">Solo Meta Cloud API</option>
-                            <option value="@ConversacionWhatsAppProviderModes.WebOnly">Solo sesión WhatsApp Web</option>
-                            <option value="@ConversacionWhatsAppProviderModes.MetaAndWeb">Convivencia Meta + WhatsApp Web</option>
-                        </select>
+                        <div class="wa-field wa-fields__full">
+                            <label class="wa-field__label" for="wa-access-token">Access Token</label>
+                            <textarea id="wa-access-token" class="wa-textarea" rows="4" @bind="_config.AccessToken" placeholder="Pegá acá el token permanente o del sistema"></textarea>
+                        </div>
+
+                        <div class="wa-fields">
+                            <AlfaInput Label="Verify Token" @bind-Value="_config.VerifyToken" Placeholder="Texto secreto que definís vos" />
+                            <AlfaInput Label="App Secret" @bind-Value="_config.AppSecret" Placeholder="Opcional por ahora, recomendado para firma" />
+                        </div>
                     </div>
+                </details>
 
-                    <div class="field">
-                        <label for="wa-default-provider">Proveedor predeterminado</label>
-                        <select id="wa-default-provider" @bind="_config.DefaultProvider">
-                            <option value="@ConversacionWhatsAppProviders.MetaCloud">Meta Cloud API</option>
-                            <option value="@ConversacionWhatsAppProviders.WhatsAppWeb">WhatsApp Web</option>
-                        </select>
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-hdd-network wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Webhook</span>
+                        <span class="wa-settings-section__hint">Base pública, versión de Graph API y callback a informar en Meta.</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <div class="wa-fields">
+                            <AlfaInput Label="Base pública HTTPS" @bind-Value="_config.PublicBaseUrl" Placeholder="@_suggestedBaseUrl" />
+                            <AlfaInput Label="Versión Graph API" @bind-Value="_config.ApiVersion" Placeholder="v22.0" />
+                        </div>
+
+                        <div class="wa-field wa-fields__full">
+                            <label class="wa-field__label" for="wa-webhook-path">Webhook interno</label>
+                            <input id="wa-webhook-path" class="wa-input-readonly" value="@_config.WebhookPath" readonly />
+                        </div>
+
+                        <p class="wa-field-note"><strong>Callback a informar en Meta:</strong> @GetWebhookUrlPreview()</p>
+                        <p class="wa-field-note">
+                            Routing por base:
+                            @if (HasWebhookToken)
+                            {
+                                <text>configurado — los mensajes entrantes se identifican sin depender de la sesión activa.</text>
+                            }
+                            else
+                            {
+                                <text>sin token propio todavía — no usar este callback en producción SaaS hasta generarlo.</text>
+                            }
+                        </p>
+                        <p class="wa-field-note">@GetWhatsAppWebOverviewSummary() La sesión por QR se administra por número en la pestaña "WhatsApp Business".</p>
                     </div>
+                </details>
 
-                    <div class="field">
-                        <label for="wa-public-url">Base pública HTTPS</label>
-                        <input id="wa-public-url" @bind="_config.PublicBaseUrl" placeholder="@_suggestedBaseUrl" />
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-plus-circle wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Números por Phone Number ID</span>
+                        <span class="wa-settings-section__hint">Para multinúmero configurado directamente contra Meta Cloud API.</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <p class="wa-field-note">Los números conectados por QR se administran en la pestaña "WhatsApp Business". Usá esto solo si necesitás registrar un número identificado por su <code>Phone Number ID</code> técnico de Meta.</p>
+                        <div class="wa-fields">
+                            <AlfaInput Label="Nombre del número nuevo" @bind-Value="_nuevoNumero.Nombre" Placeholder="Ej: Ventas Sur" />
+                            <AlfaInput Label="Phone Number ID" @bind-Value="_nuevoNumero.PhoneNumberId" Placeholder="Ej: 109876543211" />
+                        </div>
+                        <div class="actions">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" Disabled="@(Loading || Saving)" OnClick="AddNumeroAsync">Agregar número</AlfaButton>
+                        </div>
                     </div>
-
-                    <div class="field">
-                        <label for="wa-api-version">Versión Graph API</label>
-                        <input id="wa-api-version" @bind="_config.ApiVersion" placeholder="v22.0" />
-                    </div>
-
-                    <div class="field">
-                        <label for="wa-phone-id">Phone Number ID</label>
-                        <input id="wa-phone-id" @bind="_config.PhoneNumberId" placeholder="Ej. 123456789012345" />
-                    </div>
-
-                    <div class="field">
-                        <label for="wa-business-id">WhatsApp Business Account ID</label>
-                        <input id="wa-business-id" @bind="_config.BusinessAccountId" placeholder="Ej. 109876543210987" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="wa-access-token">Access Token</label>
-                        <textarea id="wa-access-token" rows="4" @bind="_config.AccessToken" placeholder="Pegá acá el token permanente o del sistema"></textarea>
-                    </div>
-
-                    <div class="field">
-                        <label for="wa-verify-token">Verify Token</label>
-                        <input id="wa-verify-token" @bind="_config.VerifyToken" placeholder="Texto secreto que definís vos" />
-                    </div>
-
-                    <div class="field">
-                        <label for="wa-app-secret">App Secret</label>
-                        <input id="wa-app-secret" @bind="_config.AppSecret" placeholder="Opcional por ahora, recomendado para firma" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="wa-webhook-path">Webhook interno</label>
-                        <input id="wa-webhook-path" value="@_config.WebhookPath" readonly />
-                    </div>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">Meta Cloud API</span>
-                    <strong>@GetWhatsAppMetaSummary()</strong>
-                    <span class="context-card__muted">Este bloque es el que hoy usa AlfaCore para recibir y enviar mensajes por el canal oficial.</span>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">Sesión WhatsApp Web</span>
-                    <strong>@GetWhatsAppWebOverviewSummary()</strong>
-                    <span class="context-card__muted">La sesión Web ya no se configura en bloque global. Se administra por número en la sección "Números de WhatsApp", para que cada teléfono tenga su propio QR, código y runtime sin mezclarse con otra base o línea.</span>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">URL de callback a informar en Meta</span>
-                    <strong>@GetWebhookUrlPreview()</strong>
-                    <span class="context-card__muted">
-                        Si no cargás la base pública, se sugiere la URL actual del navegador.
-                        @if (string.IsNullOrWhiteSpace(_webhookToken))
-                        {
-                            <text> Esta base todavía no tiene token de webhook propio. No uses este callback para producción SaaS porque el servidor no puede identificar el cliente del mensaje entrante.</text>
-                        }
-                        else
-                        {
-                            <text> El token al final de la URL es propio de esta base: identifica a qué cliente pertenece cada mensaje entrante, sin depender de ninguna sesión.</text>
-                        }
-                    </span>
-                </div>
+                </details>
 
                 <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar configuración
-                    </button>
+                    <AlfaButton Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="SaveAsync">Guardar configuración</AlfaButton>
                 </div>
             </section>
 
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Qué necesitás en Meta</h3>
-                        <p class="panel-card__subtitle">Guía rápida para dejar operativo el canal.</p>
+            <aside class="wa-help">
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-question-circle wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">¿Necesitás ayuda para configurar Meta Cloud API?</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <ol class="conv-config-steps">
+                            <li>Crear o usar una app tipo negocio en Meta for Developers y agregar el producto WhatsApp.</li>
+                            <li>Obtener el <code>Phone Number ID</code> del número que vas a conectar.</li>
+                            <li>Obtener el <code>WhatsApp Business Account ID</code> de la cuenta de negocio.</li>
+                            <li>Generar un <code>Access Token</code> válido para el envío de mensajes.</li>
+                            <li>Definir un <code>Verify Token</code> propio y cargar la URL pública del webhook en Meta.</li>
+                            <li>Suscribir el webhook al menos a eventos de mensajes y estados.</li>
+                            <li>Probar verificación, envío y recepción antes de pasar a producción.</li>
+                        </ol>
                     </div>
-                    <span class="panel-card__tag">Cloud API</span>
-                </div>
+                </details>
 
-                <ol class="conv-config-steps">
-                    <li>Crear o usar una app tipo negocio en Meta for Developers y agregar el producto WhatsApp.</li>
-                    <li>Obtener el <code>Phone Number ID</code> del número que vas a conectar.</li>
-                    <li>Obtener el <code>WhatsApp Business Account ID</code> de la cuenta de negocio.</li>
-                    <li>Generar un <code>Access Token</code> válido para el envío de mensajes.</li>
-                    <li>Definir un <code>Verify Token</code> propio y cargar la URL pública del webhook en Meta.</li>
-                    <li>Suscribir el webhook al menos a eventos de mensajes y estados.</li>
-                    <li>Probar verificación, envío y recepción antes de pasar a producción.</li>
-                </ol>
-
-                <div class="context-card">
-                    <span class="context-card__label">Dónde queda guardado</span>
-                    <strong>dbo.TA_CONFIGURACION</strong>
-                    <span class="context-card__muted">Claves usadas: <code>CONV_WHATSAPP_*</code>, incluyendo modo del canal y sesión Web preparada.</span>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">Manual interno</span>
-                    <strong><code>docs/conversaciones_whatsapp_conexion.md</code></strong>
-                    <span class="context-card__muted">Ahí te dejo el paso a paso completo y el mapa entre Meta y AlfaCore.</span>
-                </div>
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-info-circle wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Información técnica</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <p class="wa-field-note">Fuente: <code>TA_CONFIGURACION</code> (@DisplaySource(_config.ConfigSource)). Claves: <code>CONV_WHATSAPP_*</code>.</p>
+                        <p class="wa-field-note">Manual interno: <code>docs/conversaciones_whatsapp_conexion.md</code>.</p>
+                    </div>
+                </details>
             </aside>
     </div>
     }
@@ -1254,189 +1225,239 @@
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "numeros")
     {
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Números de WhatsApp</h3>
-                        <p class="panel-card__subtitle">Cada número queda atendido por los usuarios que marques. Un número sin usuarios queda visible solo para los administradores de conversaciones.</p>
+    <div class="wa-layout">
+            <section class="wa-panel">
+
+                @if (_numeros.Count == 0)
+                {
+                    <div class="wa-empty-connect">
+                        <p class="wa-content-lead">Conectá tu WhatsApp para atender conversaciones desde AlfaCore.</p>
+                        @if (_connectMethodPromptForIdNumero == 0)
+                        {
+                            <div class="wa-connect-chooser">
+                                <p class="wa-field-note">Elegí cómo querés vincular tu cuenta.</p>
+                                <div class="wa-connect-chooser__methods">
+                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.Qr, null))">Código QR</AlfaButton>
+                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-keyboard" OnClick="@(() => ShowConnectPhoneInput(0))">Número de teléfono</AlfaButton>
+                                </div>
+                                @if (_connectPhoneChooserFor == 0)
+                                {
+                                    <AlfaInput Label="Número de teléfono (con código de país)" @bind-Value="_connectPhoneInput" Placeholder="+54 9 11 1234 5678" />
+                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-keyboard" Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.PhoneNumber, _connectPhoneInput))">Generar código</AlfaButton>
+                                }
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CloseConnectMethodChooser">Cancelar</AlfaButton>
+                            </div>
+                        }
+                        else
+                        {
+                            <AlfaButton Icon="bi bi-qr-code" OnClick="@(() => OpenConnectMethodChooser(0))">Conectar WhatsApp</AlfaButton>
+                        }
                     </div>
-                    <span class="panel-card__tag">CONV_WHATSAPP_NUMEROS</span>
-                </div>
+                }
 
                 @foreach (var numero in _numeros)
                 {
-                    <div class="conv-whatsapp-numero-card">
-                        <div class="conv-config-fields">
-                            <div class="field">
-                                <label>Nombre</label>
-                                <input @bind="numero.Nombre" placeholder="Ej: Ventas Norte" />
+                    <div class="wa-number-card">
+                        <div class="wa-number-card__header">
+                            <div>
+                                <strong class="wa-number-card__name">@(string.IsNullOrWhiteSpace(numero.Nombre) ? "Número sin nombre" : numero.Nombre)</strong>
+                                <span class="wa-number-card__phone">@(string.IsNullOrWhiteSpace(numero.WebPhoneNumber) ? numero.PhoneNumberId : numero.WebPhoneNumber)</span>
                             </div>
-                            <div class="field">
-                                <label>Phone Number ID</label>
-                                <input @bind="numero.PhoneNumberId" placeholder="Ej: 109876543210" />
-                            </div>
-                            <div class="field">
-                                <label>Nombre visible sesión Web</label>
-                                <input @bind="numero.WebDisplayName" placeholder="Ej: WhatsApp Sucursal Centro" />
-                            </div>
-                            <div class="field">
-                                <label>Instancia sesión Web</label>
-                                <input @bind="numero.WebInstanceName" placeholder="Se genera sola si la dejás vacía" />
-                            </div>
-                            <div class="field">
-                                <label>Método de inicio</label>
-                                <select @bind="numero.WebSessionMode">
-                                    <option value="@ConversacionWhatsAppWebSessionModes.Qr">Escanear QR</option>
-                                    <option value="@ConversacionWhatsAppWebSessionModes.PhoneNumber">Ingresar número de teléfono</option>
-                                </select>
-                            </div>
-                            <div class="field">
-                                <label>Número para sesión Web</label>
-                                <input @bind="numero.WebPhoneNumber" placeholder="Ej: +54 11 1234-5678" />
-                            </div>
+                            <AlfaCheckbox Value="@numero.Activo" ValueChanged="@(v => numero.Activo = v ?? false)">Activo</AlfaCheckbox>
                         </div>
-                        <div class="field">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="numero.Activo" />
-                                <span>Activo</span>
-                            </label>
+
+                        <div class="wa-number-card__status">
+                            <AlfaTag Tone="@GetNumeroEstadoTone(numero)">@GetNumeroEstadoLabel(numero)</AlfaTag>
                         </div>
-                        <div class="context-card">
-                            <span class="context-card__label">Sesión WhatsApp Web</span>
-                            <strong>@GetNumeroWhatsAppWebSummary(numero)</strong>
-                            <span class="context-card__muted">Cada número mantiene su propia sesión Web. Esto evita que los mensajes entren en otra base o se mezclen con otra línea.</span>
-                        </div>
-                        <div class="conv-config-fields">
-                            <div class="field field--checkbox conv-config-fields__full">
-                                <label class="checkbox-inline">
-                                    <input type="checkbox" @bind="_includeTextPairingCode" />
-                                    <span>Generar también código de texto</span>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="actions">
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => GenerateWhatsAppWebPairingAsync(numero)" disabled="@(Loading || Saving || PairingBusy)">
-                                <i class="bi bi-qr-code"></i> Generar QR
-                            </button>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => RefreshWhatsAppWebSessionAsync(numero)" disabled="@(Loading || Saving || PairingBusy || numero.IdNumero <= 0)">
-                                <i class="bi bi-arrow-repeat"></i> Refrescar estado
-                            </button>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => ClearWhatsAppWebPairingAsync(numero)" disabled="@(Loading || Saving || PairingBusy || numero.IdNumero <= 0 || string.IsNullOrWhiteSpace(numero.WebInstanceName))">
-                                <i class="bi bi-stop-circle"></i> Detener sesión
-                            </button>
-                        </div>
-                        @if (!string.IsNullOrWhiteSpace(numero.WebRuntimeState) || !string.IsNullOrWhiteSpace(numero.WebLastError))
+
+                        @if (numero.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.Disconnected && !string.IsNullOrWhiteSpace(numero.WebLastError))
                         {
-                            <div class="context-card">
-                                <span class="context-card__label">Estado runtime</span>
-                                <strong>@DisplayPairingValue(numero.WebRuntimeState)</strong>
-                                <span class="context-card__muted">
-                                    PID: @(numero.WebWorkerProcessId?.ToString() ?? "sin proceso")
-                                    @if (numero.WebRuntimeUpdatedAtUtc.HasValue)
-                                    {
-                                        <text> · Actualizado: @numero.WebRuntimeUpdatedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</text>
-                                    }
-                                    @if (!string.IsNullOrWhiteSpace(numero.WebLastError))
-                                    {
-                                        <text> · Error: @numero.WebLastError</text>
-                                    }
-                                </span>
-                            </div>
+                            <p class="wa-number-card__error"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> @numero.WebLastError</p>
                         }
-                        @if (numero.HasWebPairingQr || numero.HasWebPairingCode)
+
+                        @if (string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase) && numero.HasWebPairingCode)
                         {
-                            <div class="conv-waweb-pairing">
-                                @if (numero.HasWebPairingQr)
-                                {
-                                    <div class="conv-waweb-pairing__qr">
-                                        <img src="@numero.WebPairingQrDataUrl" alt="QR de emparejamiento de WhatsApp Web" />
-                                    </div>
-                                }
-                                <div class="conv-waweb-pairing__details">
-                                    <div class="context-card">
-                                        <span class="context-card__label">Instancia</span>
-                                        <strong>@DisplayPairingValue(numero.WebInstanceName)</strong>
-                                        <span class="context-card__muted">Usala para identificar la sesión Web de este número.</span>
-                                    </div>
-                                    @if (numero.HasWebPairingCode)
-                                    {
-                                        <div class="context-card">
-                                            <span class="context-card__label">Código de texto</span>
-                                            <strong>@numero.WebPairingCode</strong>
-                                            <span class="context-card__muted">Disponible para el flujo alternativo de inicio por número.</span>
-                                        </div>
-                                    }
-                                    <div class="context-card">
-                                        <span class="context-card__label">Vencimiento</span>
-                                        <strong>@GetWhatsAppWebPairingExpirationLabel(numero)</strong>
-                                        <span class="context-card__muted">Si expira, regeneralo desde este mismo panel.</span>
-                                    </div>
+                            <div class="wa-pairing">
+                                <div class="wa-pairing__code">@FormatPairingCodeForDisplay(numero.WebPairingCode)</div>
+                                <div class="wa-pairing__details">
+                                    <p class="wa-field-note">Ingresá este código en WhatsApp Business → Dispositivos vinculados → Vincular dispositivo → Vincular con número de teléfono.</p>
+                                    <p class="wa-field-note">Vence: @GetWhatsAppWebPairingExpirationLabel(numero)</p>
                                 </div>
                             </div>
                         }
-                        <div class="field conv-config-fields__full">
-                            <label>Usuarios con acceso a este número</label>
-                            <div class="conv-config-checklist">
-                                @foreach (var usuario in _usuariosSistema)
-                                {
-                                    <label class="conv-config-checkbox">
-                                        <input type="checkbox"
-                                               checked="@numero.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
-                                               @onchange="args => ToggleNumeroUsuario(numero, usuario.Nombre, args.Value is bool b && b)" />
-                                        <span>@usuario.Nombre</span>
-                                    </label>
-                                }
-                                @if (_usuariosSistema.Count == 0)
-                                {
-                                    <span class="panel-card__subtitle">No hay usuarios activos en este sistema.</span>
-                                }
+                        else if (numero.HasWebPairingQr)
+                        {
+                            <div class="wa-pairing">
+                                <div class="wa-pairing__qr">
+                                    <img src="@numero.WebPairingQrDataUrl" alt="QR de emparejamiento de WhatsApp Business" />
+                                </div>
+                                <div class="wa-pairing__details">
+                                    <p class="wa-field-note">Abrí WhatsApp Business → Dispositivos vinculados → Vincular dispositivo → escaneá este código.</p>
+                                    <p class="wa-field-note">Vence: @GetWhatsAppWebPairingExpirationLabel(numero)</p>
+                                </div>
                             </div>
-                        </div>
+                        }
+
+                        @if (numero.IsWebSessionReady)
+                        {
+                            <div class="wa-number-card__actions">
+                                <AlfaButton Variant="AlfaButtonVariant.Danger" Size="AlfaSize.Sm" Icon="bi bi-x-circle" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Desvincular</AlfaButton>
+                            </div>
+                        }
+                        else if (numero.HasWebPairingQr || numero.HasWebPairingCode)
+                        {
+                            <div class="wa-number-card__actions">
+                                <AlfaIconButton Icon="bi bi-arrow-repeat" Label="Actualizar código" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => RefreshWhatsAppWebSessionAsync(numero))" />
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-lg" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => ClearWhatsAppWebPairingAsync(numero))">Cancelar</AlfaButton>
+                            </div>
+                        }
+                        else if (_connectMethodPromptForIdNumero == numero.IdNumero)
+                        {
+                            <div class="wa-connect-chooser">
+                                <p class="wa-field-note">Elegí cómo querés vincular esta cuenta.</p>
+                                <div class="wa-connect-chooser__methods">
+                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" Loading="@(Saving || PairingBusy)" OnClick="@(() => ConectarWhatsAppBusinessAsync(numero, ConversacionWhatsAppWebSessionModes.Qr, null))">Código QR</AlfaButton>
+                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-keyboard" OnClick="@(() => ShowConnectPhoneInput(numero.IdNumero))">Número de teléfono</AlfaButton>
+                                </div>
+                                @if (_connectPhoneChooserFor == numero.IdNumero)
+                                {
+                                    <AlfaInput Label="Número de teléfono (con código de país)" @bind-Value="_connectPhoneInput" Placeholder="+54 9 11 1234 5678" />
+                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-keyboard" Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)" Loading="@(Saving || PairingBusy)" OnClick="@(() => ConectarWhatsAppBusinessAsync(numero, ConversacionWhatsAppWebSessionModes.PhoneNumber, _connectPhoneInput))">Generar código</AlfaButton>
+                                }
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CloseConnectMethodChooser">Cancelar</AlfaButton>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="wa-number-card__actions">
+                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" OnClick="@(() => OpenConnectMethodChooser(numero.IdNumero))">Conectar WhatsApp</AlfaButton>
+                            </div>
+                        }
+
+                        <details class="wa-settings-section">
+                            <summary class="wa-settings-section__summary">
+                                <span class="wa-settings-section__title">Usuarios con acceso</span>
+                                <span class="wa-settings-section__hint">@numero.Usuarios.Count</span>
+                                <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                            </summary>
+                            <div class="wa-settings-section__body">
+                                <div class="wa-user-grid">
+                                    @foreach (var usuario in _usuariosSistema)
+                                    {
+                                        <AlfaCheckbox Value="@numero.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
+                                                      ValueChanged="@(v => ToggleNumeroUsuario(numero, usuario.Nombre, v ?? false))">
+                                            @usuario.Nombre
+                                        </AlfaCheckbox>
+                                    }
+                                    @if (_usuariosSistema.Count == 0)
+                                    {
+                                        <span class="wa-field-note">No hay usuarios activos en este sistema.</span>
+                                    }
+                                </div>
+                            </div>
+                        </details>
+
+                        <details class="wa-settings-section">
+                            <summary class="wa-settings-section__summary">
+                                <span class="wa-settings-section__title">Opciones avanzadas</span>
+                                <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                            </summary>
+                            <div class="wa-settings-section__body">
+                                <div class="wa-fields">
+                                    <AlfaInput Label="Nombre" @bind-Value="numero.Nombre" Placeholder="Ej: Ventas Norte" />
+                                    <AlfaInput Label="Phone Number ID" @bind-Value="numero.PhoneNumberId" Placeholder="Ej: 109876543210" />
+                                    <AlfaInput Label="Nombre visible sesión Web" @bind-Value="numero.WebDisplayName" Placeholder="Ej: WhatsApp Sucursal Centro" />
+                                    <AlfaInput Label="Instancia sesión Web" @bind-Value="numero.WebInstanceName" Placeholder="Se genera sola si la dejás vacía" />
+                                    <AlfaSelect Label="Método de inicio" Options="@_webSessionModeOptions" @bind-Value="numero.WebSessionMode" />
+                                    <AlfaInput Label="Número para sesión Web" @bind-Value="numero.WebPhoneNumber" Placeholder="Ej: +54 11 1234-5678" />
+                                </div>
+                                <AlfaCheckbox Value="@_includeTextPairingCode" ValueChanged="@(v => _includeTextPairingCode = v ?? false)">Generar también código de texto al conectar</AlfaCheckbox>
+                            </div>
+                        </details>
+
+                        @if (!string.IsNullOrWhiteSpace(numero.WebRuntimeState) || numero.WebWorkerProcessId.HasValue)
+                        {
+                            <details class="wa-settings-section">
+                                <summary class="wa-settings-section__summary">
+                                    <span class="wa-settings-section__title">Soporte / runtime</span>
+                                    <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                                </summary>
+                                <div class="wa-settings-section__body">
+                                    <p class="wa-field-note">
+                                        Estado runtime: @DisplayPairingValue(numero.WebRuntimeState)
+                                        · PID: @(numero.WebWorkerProcessId?.ToString() ?? "sin proceso")
+                                        @if (numero.WebRuntimeUpdatedAtUtc.HasValue)
+                                        {
+                                            <text> · Actualizado: @numero.WebRuntimeUpdatedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</text>
+                                        }
+                                    </p>
+                                </div>
+                            </details>
+                        }
+
                         <div class="actions">
-                            <button type="button" class="btn btn--primary btn--sm" @onclick="() => SaveNumeroAsync(numero)" disabled="@(Loading || Saving)">
-                                <i class="bi bi-floppy-fill"></i> Guardar número
-                            </button>
+                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="@(() => SaveNumeroAsync(numero))">Guardar número</AlfaButton>
                         </div>
                     </div>
                 }
 
-                <div class="conv-whatsapp-numero-card conv-whatsapp-numero-card--nuevo">
-                    <div class="conv-config-fields">
-                        <div class="field">
-                            <label>Nombre del número nuevo</label>
-                            <input @bind="_nuevoNumero.Nombre" placeholder="Ej: Ventas Sur" />
+                @if (_numeros.Count > 0)
+                {
+                    @if (_connectMethodPromptForIdNumero == 0)
+                    {
+                        <div class="wa-connect-chooser">
+                            <p class="wa-field-note">Elegí cómo querés vincular la nueva cuenta.</p>
+                            <div class="wa-connect-chooser__methods">
+                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.Qr, null))">Código QR</AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-keyboard" OnClick="@(() => ShowConnectPhoneInput(0))">Número de teléfono</AlfaButton>
+                            </div>
+                            @if (_connectPhoneChooserFor == 0)
+                            {
+                                <AlfaInput Label="Número de teléfono (con código de país)" @bind-Value="_connectPhoneInput" Placeholder="+54 9 11 1234 5678" />
+                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-keyboard" Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.PhoneNumber, _connectPhoneInput))">Generar código</AlfaButton>
+                            }
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CloseConnectMethodChooser">Cancelar</AlfaButton>
                         </div>
-                        <div class="field">
-                            <label>Phone Number ID</label>
-                            <input @bind="_nuevoNumero.PhoneNumberId" placeholder="Ej: 109876543211" />
+                    }
+                    else
+                    {
+                        <div class="actions">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="@(() => OpenConnectMethodChooser(0))">Conectar otro WhatsApp</AlfaButton>
                         </div>
-                    </div>
-                    <div class="actions">
-                        <button type="button" class="btn btn--ghost" @onclick="AddNumeroAsync" disabled="@(Loading || Saving)">
-                            <i class="bi bi-plus-circle"></i> Agregar número
-                        </button>
-                    </div>
-                </div>
+                    }
+                }
             </section>
 
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Cómo funciona</h3>
-                        <p class="panel-card__subtitle">Qué cambia al tener más de un número.</p>
+            <aside class="wa-help">
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-question-circle wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">¿Necesitás ayuda para conectar WhatsApp Business?</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <ol class="conv-config-steps">
+                            <li>Tocá "Conectar WhatsApp" en el número que querés vincular.</li>
+                            <li>Abrí WhatsApp Business en el teléfono → Dispositivos vinculados → Vincular dispositivo.</li>
+                            <li>Escaneá el código QR que aparece en pantalla.</li>
+                            <li>Un usuario normal solo ve, en el inbox, las conversaciones de los números donde está marcado como usuario.</li>
+                            <li>Un administrador de conversaciones ve y puede responder por cualquier número, sin restricción.</li>
+                            <li>Desactivar un número (sin borrarlo) deja de mostrarlo para asignar usuarios nuevos, pero no toca las conversaciones que ya tiene.</li>
+                        </ol>
                     </div>
-                    <span class="panel-card__tag">Multi-número</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>Un usuario normal solo ve, en el inbox, las conversaciones de los números donde está marcado como usuario acá.</li>
-                    <li>Un administrador de conversaciones (sección de abajo) ve y puede responder por cualquier número, sin restricción.</li>
-                    <li>Apenas entra el primer mensaje de un cliente, la conversación queda fijada a ese número para siempre — Meta habilita 24 h de respuesta por par número-cliente, así que no conviene cambiarlo después.</li>
-                    <li>Desactivar un número (sin borrarlo) deja de mostrarlo para asignar usuarios nuevos, pero no toca las conversaciones que ya tiene.</li>
-                </ol>
+                </details>
             </aside>
     </div>
+
+    <AlfaConfirmDialog Open="_stopSessionOpen"
+                        Title="Desvincular WhatsApp"
+                        Message="@GetStopSessionMessage()"
+                        SecondaryMessage="Vas a tener que volver a escanear un código para reconectarlo."
+                        ConfirmLabel="Desvincular"
+                        CancelLabel="Cancelar"
+                        Loading="_stopSessionBusy"
+                        OnConfirm="ConfirmStopWhatsAppWebSessionAsync"
+                        OnCancel="CancelStopWhatsAppWebSession" />
     }
 
     @if (_activePrimaryTab == "operacion-accesos")
@@ -1497,6 +1518,13 @@
         <h3>Soporte</h3>
         <p>Herramientas técnicas y de diagnóstico. No reemplaza la configuración funcional de cada canal.</p>
     </header>
+    @if (AppMode.IsSaaSMode)
+    {
+        <div class="conversations-inline @(HasWebhookToken ? "conversations-inline--ok" : "conversations-inline--error")">
+            <strong>@(HasWebhookToken ? "Webhook identificado por base" : "Webhook sin identificación de base")</strong>
+            <div>@GetWebhookTenantHelp("los mensajes entrantes")</div>
+        </div>
+    }
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -1589,12 +1617,21 @@
     private bool Saving { get; set; }
     private bool AnyDeskSaving { get; set; }
     private AppUiMessage? _feedback;
+    private string? _feedbackScope;
+    private AppUiMessage? WhatsAppFeedback => _feedbackScope == "whatsapp" ? _feedback : null;
     private AppUiMessage? _anyDeskFeedback;
     private string _suggestedBaseUrl = string.Empty;
     private string? _webhookToken;
     private bool _includeTextPairingCode = true;
     private bool HasWebhookToken => !string.IsNullOrWhiteSpace(_webhookToken);
     private bool PairingBusy { get; set; }
+    private ConversacionWhatsAppNumeroDto? _stopSessionTarget;
+    private bool _stopSessionOpen;
+    private bool _stopSessionBusy;
+    private int? _connectMethodPromptForIdNumero;
+    private int? _connectPhoneChooserFor;
+    private string _connectPhoneInput = string.Empty;
+    private CancellationTokenSource? _pollingCts;
 
     private sealed record SettingsNavItem(string Key, string Label, string Icon, string Hint);
 
@@ -1618,8 +1655,27 @@
 
     private static readonly IReadOnlyList<AlfaTabItem> _whatsAppSectionTabItems =
     [
-        new("numeros", "Números"),
-        new("general", "General")
+        new("numeros", "WhatsApp Business"),
+        new("general", "WhatsApp API")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> _providerModeOptions =
+    [
+        new(ConversacionWhatsAppProviderModes.MetaOnly, "Solo Meta Cloud API"),
+        new(ConversacionWhatsAppProviderModes.WebOnly, "Solo WhatsApp Business (QR)"),
+        new(ConversacionWhatsAppProviderModes.MetaAndWeb, "Convivencia Meta + WhatsApp Business")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> _defaultProviderOptions =
+    [
+        new(ConversacionWhatsAppProviders.MetaCloud, "Meta Cloud API"),
+        new(ConversacionWhatsAppProviders.WhatsAppWeb, "WhatsApp Business (QR)")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> _webSessionModeOptions =
+    [
+        new(ConversacionWhatsAppWebSessionModes.Qr, "Escanear QR"),
+        new(ConversacionWhatsAppWebSessionModes.PhoneNumber, "Ingresar número de teléfono")
     ];
 
     private bool IsDirectMode
@@ -1635,7 +1691,10 @@
     }
 
     public void Dispose()
-        => PageHeader.Clear();
+    {
+        StopPolling();
+        PageHeader.Clear();
+    }
 
     private void UpdatePageHeader()
     {
@@ -1720,12 +1779,16 @@
     private void SelectPrimaryTab(string tab)
     {
         _activePrimaryTab = tab;
+        if (tab != "canales")
+            _feedbackScope = null;
     }
 
     private void SelectChannelTab(string tab)
     {
         _activePrimaryTab = "canales";
         _activeChannelTab = tab;
+        if (tab != "whatsapp")
+            _feedbackScope = null;
     }
 
     private Task OnChannelTabChanged(string? tab)
@@ -1765,6 +1828,7 @@
         Loading = true;
         UpdatePageHeader();
         _feedback = null;
+        _feedbackScope = null;
 
         var result = await UiOps.RunAsync(
             () => ConfigSvc.GetWhatsAppConfigAsync(),
@@ -2104,6 +2168,7 @@
 
     private async Task SaveNumeroAsync(ConversacionWhatsAppNumeroDto numero)
     {
+        _feedbackScope = "whatsapp";
         Saving = true;
         _feedback = null;
 
@@ -2126,6 +2191,7 @@
 
     private async Task AddNumeroAsync()
     {
+        _feedbackScope = "whatsapp";
         if (string.IsNullOrWhiteSpace(_nuevoNumero.PhoneNumberId) || string.IsNullOrWhiteSpace(_nuevoNumero.Nombre))
         {
             _feedback = new AppUiMessage
@@ -2216,6 +2282,7 @@
 
     private async Task SaveAsync()
     {
+        _feedbackScope = "whatsapp";
         Saving = true;
         _feedback = null;
 
@@ -2249,6 +2316,7 @@
 
     private async Task GenerateWhatsAppWebPairingAsync(ConversacionWhatsAppNumeroDto numero)
     {
+        _feedbackScope = "whatsapp";
         if (numero.IdNumero <= 0)
         {
             _feedback = new AppUiMessage
@@ -2273,6 +2341,7 @@
             _feedback = AppUiMessage.Success(
                 "Sesión Web iniciada",
                 $"'{result.Value.Nombre}' ya tiene disponible su QR o código temporal según el modo elegido.");
+            StartPolling(result.Value);
         }
         else
         {
@@ -2282,13 +2351,166 @@
         PairingBusy = false;
     }
 
-    private async Task RefreshWhatsAppWebSessionAsync(ConversacionWhatsAppNumeroDto numero)
+    private void OpenConnectMethodChooser(int idNumero)
     {
+        _connectMethodPromptForIdNumero = idNumero;
+        _connectPhoneChooserFor = null;
+        _connectPhoneInput = string.Empty;
+    }
+
+    private void CloseConnectMethodChooser()
+    {
+        _connectMethodPromptForIdNumero = null;
+        _connectPhoneChooserFor = null;
+        _connectPhoneInput = string.Empty;
+    }
+
+    private void ShowConnectPhoneInput(int idNumero)
+        => _connectPhoneChooserFor = idNumero;
+
+    /// <summary>
+    /// Punto de entrada único para conectar WhatsApp Business por QR o por código de teléfono.
+    /// Antes de generar el pairing, persiste el número (nuevo o existente) para que
+    /// StartSessionAsync -- que relee el número desde la base -- encuentre el modo y el teléfono
+    /// recién elegidos.
+    /// </summary>
+    private static string NormalizePhoneDigits(string? value)
+        => new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+
+    private async Task ConectarWhatsAppBusinessAsync(ConversacionWhatsAppNumeroDto numero, string method, string? telefono)
+    {
+        _feedbackScope = "whatsapp";
+        numero.WebSessionMode = method;
+        if (!string.IsNullOrWhiteSpace(telefono))
+            numero.WebPhoneNumber = telefono.Trim();
+
+        if (numero.IdNumero <= 0 && !string.IsNullOrWhiteSpace(telefono))
+        {
+            var telefonoDigits = NormalizePhoneDigits(telefono);
+            var yaConectado = _numeros.FirstOrDefault(n =>
+                n.IsWebSessionReady && NormalizePhoneDigits(n.WebPhoneNumber) == telefonoDigits && telefonoDigits.Length > 0);
+            if (yaConectado is not null)
+            {
+                _feedback = new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Warning,
+                    Title = "Ese número ya está conectado",
+                    Message = $"\"{yaConectado.Nombre}\" ya está vinculado con ese teléfono. No hace falta conectarlo de nuevo."
+                };
+                return;
+            }
+        }
+
+        if (numero.IdNumero <= 0)
+        {
+            Saving = true;
+            var creado = await UiOps.RunAsync(() => ConfigSvc.SaveWhatsAppNumeroAsync(numero), "No se pudo crear el nuevo WhatsApp Business.");
+            Saving = false;
+            if (!creado.Success)
+            {
+                _feedback = creado.Feedback;
+                return;
+            }
+
+            await LoadNumerosAsync();
+            var registrado = _numeros.FirstOrDefault(n => n.PhoneNumberId == numero.PhoneNumberId);
+            if (registrado is null)
+                return;
+
+            numero = registrado;
+        }
+        else
+        {
+            await SaveNumeroAsync(numero);
+        }
+
+        CloseConnectMethodChooser();
+        await GenerateWhatsAppWebPairingAsync(numero);
+    }
+
+    private Task IniciarNuevoWhatsAppBusinessAsync(string method, string? telefono)
+    {
+        var nuevo = new ConversacionWhatsAppNumeroDto
+        {
+            Nombre = $"WhatsApp Business {_numeros.Count + 1}",
+            PhoneNumberId = $"WEBPENDING-{Guid.NewGuid():N}"[..24],
+            Activo = true
+        };
+        return ConectarWhatsAppBusinessAsync(nuevo, method, telefono);
+    }
+
+    private void StartPolling(ConversacionWhatsAppNumeroDto numero)
+    {
+        StopPolling();
+        if (numero.IdNumero <= 0 || numero.IsWebSessionReady)
+            return;
+
+        var cts = new CancellationTokenSource();
+        _pollingCts = cts;
+        _ = PollPairingStatusAsync(numero.IdNumero, cts.Token);
+    }
+
+    private void StopPolling()
+    {
+        _pollingCts?.Cancel();
+        _pollingCts?.Dispose();
+        _pollingCts = null;
+    }
+
+    /// <summary>
+    /// Refresca el estado del pairing cada pocos segundos mientras está pendiente, para que el
+    /// cliente no tenga que tocar "Actualizar" manualmente. Se detiene solo al conectar, fallar,
+    /// cancelar o destruirse el componente -- nunca queda como polling global permanente.
+    /// </summary>
+    private async Task PollPairingStatusAsync(int idNumero, CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(4), token);
+                if (token.IsCancellationRequested)
+                    return;
+
+                var numero = _numeros.FirstOrDefault(n => n.IdNumero == idNumero);
+                if (numero is null)
+                    return;
+
+                await RefreshWhatsAppWebSessionAsync(numero, silent: true);
+
+                // Baileys pasa por RECONNECTING (p.ej. "Stream Errored (restart required)") como
+                // parte normal del handshake tras escanear el QR; eso queda como PendingQr, no
+                // como Disconnected, así que el polling sigue esperando en vez de darlo por fallido.
+                var actualizado = _numeros.FirstOrDefault(n => n.IdNumero == idNumero);
+                if (actualizado is null
+                    || actualizado.IsWebSessionReady
+                    || actualizado.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.Disconnected)
+                {
+                    _pollingCts = null;
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Cancelado explícitamente (conectado, cancelado por el usuario o componente destruido).
+        }
+    }
+
+    private async Task RefreshWhatsAppWebSessionAsync(ConversacionWhatsAppNumeroDto numero, bool silent = false)
+    {
+        _feedbackScope = "whatsapp";
         if (numero.IdNumero <= 0)
             return;
 
-        PairingBusy = true;
-        _feedback = null;
+        if (!silent)
+        {
+            PairingBusy = true;
+            _feedback = null;
+        }
 
         var result = await UiOps.RunAsync(
             () => WhatsAppWebSessionSvc.RefreshSessionAsync(numero.IdNumero),
@@ -2297,23 +2519,29 @@
         if (result.Success && result.Value is not null)
         {
             ReplaceNumero(result.Value);
-            _feedback = AppUiMessage.Success(
-                "Estado actualizado",
-                $"La sesión Web de '{result.Value.Nombre}' fue refrescada con el último estado reportado por el worker.");
+            if (!silent)
+            {
+                _feedback = AppUiMessage.Success(
+                    "Estado actualizado",
+                    $"La sesión Web de '{result.Value.Nombre}' fue refrescada con el último estado reportado por el worker.");
+            }
         }
-        else
+        else if (!silent)
         {
             _feedback = result.Feedback;
         }
 
-        PairingBusy = false;
+        if (!silent)
+            PairingBusy = false;
     }
 
     private async Task ClearWhatsAppWebPairingAsync(ConversacionWhatsAppNumeroDto numero)
     {
+        _feedbackScope = "whatsapp";
         if (numero.IdNumero <= 0)
             return;
 
+        StopPolling();
         PairingBusy = true;
         _feedback = null;
 
@@ -2335,6 +2563,42 @@
 
         PairingBusy = false;
     }
+
+    private void RequestStopWhatsAppWebSession(ConversacionWhatsAppNumeroDto numero)
+    {
+        _stopSessionTarget = numero;
+        _stopSessionOpen = true;
+    }
+
+    private void DismissWhatsAppFeedback()
+    {
+        _feedback = null;
+        _feedbackScope = null;
+    }
+
+    private void CancelStopWhatsAppWebSession()
+    {
+        _stopSessionOpen = false;
+        _stopSessionTarget = null;
+    }
+
+    private async Task ConfirmStopWhatsAppWebSessionAsync()
+    {
+        if (_stopSessionTarget is null)
+            return;
+
+        _stopSessionBusy = true;
+        StopPolling();
+        await ClearWhatsAppWebPairingAsync(_stopSessionTarget);
+        _stopSessionBusy = false;
+        _stopSessionOpen = false;
+        _stopSessionTarget = null;
+    }
+
+    private string GetStopSessionMessage()
+        => _stopSessionTarget is null
+            ? "¿Desvincular este WhatsApp?"
+            : $"¿Desvincular \"{_stopSessionTarget.Nombre}\"? Va a dejar de recibir y enviar mensajes hasta que lo conectes de nuevo.";
 
     private async Task SaveInstagramAsync()
     {
@@ -2695,39 +2959,44 @@
         _numeros = actualizados;
     }
 
-    private static string GetWhatsAppWebStatusLabel(ConversacionWhatsAppNumeroDto numero)
+    /// <summary>
+    /// El estado de sesión manda sobre el último error: Baileys reporta "Stream Errored (restart
+    /// required)" como parte normal y transitoria del handshake al escanear el QR (reconecta solo
+    /// con las credenciales ya guardadas). Mientras el worker sigue en PENDING_QR/RECONNECTING no
+    /// es un error real, aunque WebLastError tenga texto — sólo se muestra "Error" cuando el
+    /// worker ya no está reintentando (WebSessionStatus == Disconnected).
+    /// </summary>
+    private static AlfaTagTone GetNumeroEstadoTone(ConversacionWhatsAppNumeroDto numero)
         => numero.WebSessionStatus switch
         {
-            ConversacionWhatsAppWebSessionStatuses.Connected => "Conectada",
-            ConversacionWhatsAppWebSessionStatuses.PendingQr => "Pendiente de validación",
-            _ => "Desconectada"
+            ConversacionWhatsAppWebSessionStatuses.Connected => AlfaTagTone.Success,
+            ConversacionWhatsAppWebSessionStatuses.PendingQr => AlfaTagTone.Warning,
+            _ when !string.IsNullOrWhiteSpace(numero.WebLastError) => AlfaTagTone.Danger,
+            _ => AlfaTagTone.Neutral
         };
 
-    private string GetNumeroWhatsAppWebSummary(ConversacionWhatsAppNumeroDto numero)
+    private static string GetNumeroEstadoLabel(ConversacionWhatsAppNumeroDto numero)
+        => numero.WebSessionStatus switch
+        {
+            ConversacionWhatsAppWebSessionStatuses.Connected => "Conectado",
+            ConversacionWhatsAppWebSessionStatuses.PendingQr => "Esperando escaneo",
+            _ when !string.IsNullOrWhiteSpace(numero.WebLastError) => "Error",
+            _ => "Desconectado"
+        };
+
+    private static string FormatPairingCodeForDisplay(string? code)
     {
-        var mode = string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase)
-            ? "Inicio por número"
-            : "Escaneo por QR";
-        var instance = string.IsNullOrWhiteSpace(numero.WebInstanceName) ? "sin instancia definida" : numero.WebInstanceName;
-        var number = string.IsNullOrWhiteSpace(numero.WebPhoneNumber) ? "sin número cargado" : numero.WebPhoneNumber;
-        return $"{GetWhatsAppWebStatusLabel(numero)} · {mode} · {instance} · {number}";
+        var trimmed = (code ?? string.Empty).Trim();
+        if (trimmed.Contains('-'))
+            return trimmed;
+
+        return trimmed.Length == 8 ? $"{trimmed[..4]}-{trimmed[4..]}" : trimmed;
     }
 
     private static string GetWhatsAppWebPairingExpirationLabel(ConversacionWhatsAppNumeroDto numero)
         => numero.WebPairingExpiresAtUtc.HasValue
             ? numero.WebPairingExpiresAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
             : "Sin vencimiento";
-
-    private string GetWhatsAppWebOverviewLabel()
-    {
-        var connected = _numeros.Count(n => n.IsWebSessionReady);
-        if (connected > 0)
-            return $"{connected} conectada(s)";
-
-        return _numeros.Any(n => n.HasWebPairingQr || n.HasWebPairingCode || !string.IsNullOrWhiteSpace(n.WebRuntimeState))
-            ? "Con sesiones en preparación"
-            : "Sin sesiones activas";
-    }
 
     private string GetWhatsAppWebOverviewSummary()
     {
@@ -2741,6 +3010,20 @@
 
     private static string DisplayPairingValue(string? value)
         => string.IsNullOrWhiteSpace(value) ? "No definido" : value.Trim();
+
+    private string GetWhatsAppNumerosSummary()
+    {
+        if (_numeros.Count == 0)
+            return "Todavía no agregaste ningún número.";
+
+        var conectados = _numeros.Count(n => n.IsWebSessionReady);
+        var plural = _numeros.Count == 1 ? "número" : "números";
+        var conectadosPlural = conectados == 1 ? "conectado" : "conectados";
+        return $"{_numeros.Count} {plural} · {conectados} {conectadosPlural}";
+    }
+
+    private static string GetWhatsAppApiStatusChipClass(bool ready)
+        => ready ? "wa-status-chip wa-status-chip--ok" : "wa-status-chip wa-status-chip--pending";
 
     private static string GetStatusClass(bool ready)
         => ready ? "conv-config-status conv-config-status--ok" : "conv-config-status conv-config-status--pending";

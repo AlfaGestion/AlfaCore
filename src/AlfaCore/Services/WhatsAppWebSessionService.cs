@@ -52,7 +52,17 @@ public sealed class WhatsAppWebSessionService(
             WindowStyle = ProcessWindowStyle.Hidden
         };
 
-        Process.Start(startInfo);
+        try
+        {
+            Process.Start(startInfo);
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            throw new InvalidOperationException(
+                "No se pudo iniciar el proceso de WhatsApp Web: no se encontró \"node\" en este servidor. " +
+                "Instalá Node.js y ejecutá \"npm install\" en Node/WhatsAppWebWorker antes de conectar un número. " +
+                $"Detalle técnico: {ex.Message}");
+        }
 
         var updated = await WaitForStatusAndPersistAsync(numero, statusFile, requireInteractiveArtifacts: true, ct);
 
@@ -249,14 +259,35 @@ public sealed class WhatsAppWebSessionService(
         numero.WebPairingQrDataUrl = string.IsNullOrWhiteSpace(status.QrPayload)
             ? string.Empty
             : BuildQrCodeDataUrl(status.QrPayload);
+
+        if (string.Equals(status.State, "CONNECTED", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(status.PhoneNumber))
+        {
+            numero.WebPhoneNumber = status.PhoneNumber;
+        }
     }
 
     private string EnsureSessionDirectory(string instanceName)
     {
+        var safeInstanceName = SanitizeInstanceName(instanceName);
         var baseId = sessionService.GetActiveSession()?.BaseId ?? 0;
-        var path = Path.Combine(environment.ContentRootPath, SessionsRootDir, baseId.ToString(CultureInfo.InvariantCulture), instanceName);
+        var path = Path.Combine(environment.ContentRootPath, SessionsRootDir, baseId.ToString(CultureInfo.InvariantCulture), safeInstanceName);
         Directory.CreateDirectory(path);
         return path;
+    }
+
+    /// <summary>
+    /// WebInstanceName puede venir de un campo editable ("Opciones avanzadas"). Se usa directo en un
+    /// Path.Combine para la carpeta de sesión, así que no puede contener separadores de path ni "..":
+    /// sólo se permiten letras, números, guion y guion bajo, truncado a un largo razonable.
+    /// </summary>
+    private static string SanitizeInstanceName(string instanceName)
+    {
+        var safe = new string((instanceName ?? string.Empty).Where(c => char.IsLetterOrDigit(c) || c is '-' or '_').ToArray());
+        if (safe.Length == 0)
+            throw new InvalidOperationException("La instancia de WhatsApp Web no tiene un nombre válido. Volvé a generar la conexión.");
+
+        return safe.Length > 40 ? safe[..40] : safe;
     }
 
     private string GetWorkerDirectory()
@@ -366,6 +397,9 @@ public sealed class WhatsAppWebSessionService(
         public DateTime? GeneratedAtUtc { get; set; }
         public DateTime? ExpiresAtUtc { get; set; }
         public DateTime? LastUpdatedAtUtc { get; set; }
+        public string? PhoneJid { get; set; }
+        public string? PhoneNumber { get; set; }
+        public string? AccountName { get; set; }
     }
 
     private sealed class WhatsAppWebCommandResult

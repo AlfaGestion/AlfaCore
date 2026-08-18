@@ -1319,9 +1319,9 @@ public sealed class ConversacionesConfigService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await using var tx = await cn.BeginTransactionAsync(token);
             var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", token);
             var hasWebColumns = HasAnyWhatsAppWebColumns(numeroColumns);
+            await using var tx = await cn.BeginTransactionAsync(token);
 
             int idNumero;
             if (numero.IdNumero > 0)
@@ -1422,8 +1422,7 @@ public sealed class ConversacionesConfigService(
             var sql = $"""
                 UPDATE dbo.CONV_WHATSAPP_NUMEROS
                 SET
-                    1 = 1{BuildWhatsAppNumeroWebUpdateAssignments(numeroColumns)},
-                    FechaHora_Modificacion = GETDATE()
+                    FechaHora_Modificacion = GETDATE(){BuildWhatsAppNumeroWebUpdateAssignments(numeroColumns)}
                 WHERE IdNumero = @IdNumero;
                 """;
 

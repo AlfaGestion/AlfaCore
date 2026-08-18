@@ -28,6 +28,13 @@ public sealed class ConversacionesService(
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
     private const string ManualWhatsAppConversationSummary = "Conversaci\u00f3n iniciada manualmente.";
+
+    /// <summary>
+    /// El worker de WhatsApp Web (Node) escribe los archivos de inbox en camelCase (phone,
+    /// contactName, text...). System.Text.Json es case-sensitive por defecto, as\u00ed que sin esta
+    /// opci\u00f3n cada propiedad del DTO quedaba en su valor default (vac\u00edo) al deserializar.
+    /// </summary>
+    private static readonly JsonSerializerOptions WhatsAppWebInboxJsonOptions = new(JsonSerializerDefaults.Web);
     private const string ManualWhatsAppInitialState = "PENDIENTE";
     private const string InternalEventDirection = "NOTA_INTERNA";
     private const string InternalEventMessageType = "SYSTEM";
@@ -3507,7 +3514,7 @@ public sealed class ConversacionesService(
                 try
                 {
                     var json = await File.ReadAllTextAsync(inboxFile, token);
-                    var incoming = JsonSerializer.Deserialize<ConversacionWhatsAppWebIncomingMessageDto>(json);
+                    var incoming = JsonSerializer.Deserialize<ConversacionWhatsAppWebIncomingMessageDto>(json, WhatsAppWebInboxJsonOptions);
                     if (incoming is null)
                     {
                         throw new InvalidOperationException("El archivo de inbox no contiene un mensaje válido.");
@@ -6456,7 +6463,8 @@ public sealed class ConversacionesService(
                 ISNULL(c.Canal, 'WHATSAPP'),
                 ISNULL(c.IdentificadorExternoContacto, ''),
                 ISNULL(c.IdentificadorExternoConversacion, ''),
-                ISNULL(n.PhoneNumberId, '')
+                ISNULL(n.PhoneNumberId, ''),
+                c.IdNumeroWhatsApp
             FROM dbo.CONV_CONVERSACIONES c
             LEFT JOIN dbo.CONV_WHATSAPP_NUMEROS n ON n.IdNumero = c.IdNumeroWhatsApp
             WHERE c.IdConversacion = @IdConversacion
@@ -6478,7 +6486,8 @@ public sealed class ConversacionesService(
             Canal = GetString(rd, 2),
             IdentificadorExternoContacto = GetString(rd, 3),
             IdentificadorExternoConversacion = GetString(rd, 4),
-            PhoneNumberId = GetString(rd, 5)
+            PhoneNumberId = GetString(rd, 5),
+            IdNumeroWhatsApp = rd.IsDBNull(6) ? null : rd.GetInt32(6)
         };
     }
 

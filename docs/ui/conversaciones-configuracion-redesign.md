@@ -2,7 +2,10 @@
 
 **Estado del documento:** MIGRACIÓN EN PLANIFICACIÓN
 **C0 — Baseline + contrato de producto:** COMPLETADO (commit `3fd78b5`)
-**C1 — Shell + Information Architecture + navegación interna:** EN IMPLEMENTACIÓN (sin commit todavía, pendiente de validación visual)
+**C1 — Shell + Information Architecture + navegación interna:** COMPLETADO (commit `2d56b70`, pusheado a `origin/main`)
+**C2 — WhatsApp UX foundation:** TODAVÍA PENDIENTE DE APROBACIÓN FINAL (incluye C2.1 — migración visual, C2.2 — pulido de width/help/status, y C2.3 — flujo de conexión Business + fix de backend; sin commit todavía, pendiente de aprobación visual **y funcional** — ver limitación de entorno en la sección C2.3)
+
+**WhatsApp es, a la fecha, la única sección de Configuración migrada visualmente a AlfaDesign v1** (Business y API). Funciona como referencia de patrón para las siguientes secciones. El resto de Configuración (Automatización, Integraciones IA, Operación y accesos, Soporte) sigue con estilo legacy — deuda visual registrada más abajo, no implementada.
 **Rama de trabajo:** `main` (se trabaja directamente sobre `main`, sin rama nueva)
 
 ---
@@ -67,6 +70,311 @@ Todo el contenido *dentro* de cada `panel-card` (formularios de WhatsApp/Instagr
 ### Servicios/backend
 
 No se modificó ningún archivo bajo `Services/`, `Models/` (excepto los tipos de `PageHeaderModels.cs` que ya existían), SQL, `Program.cs`, `worker.mjs` ni ningún contrato de persistencia. Los únicos archivos tocados en código fueron `ConversacionesConfiguracion.razor` y `ConversacionesConfiguracion.razor.css`.
+
+---
+
+## C2 — Decisiones de implementación (WhatsApp UX foundation)
+
+Alcance: exclusivamente `Canales → WhatsApp` (Business y API). No se tocó Instagram, Facebook, Mercado Libre, Automatización, Integraciones IA, Operación ni Soporte, salvo la reducción de prominencia del banner global de webhook (afecta a los 4 canales, ver más abajo).
+
+### Nomenclatura (solo UI, sin tocar código interno)
+
+- Tab "Números" → **WhatsApp Business** (clave interna sigue siendo `"numeros"`).
+- Tab "General" → **WhatsApp API** (clave interna sigue siendo `"general"`).
+- Ningún enum, provider constant, clave `CONV_*`, propiedad de modelo o método fue renombrado. `ConversacionWhatsAppProviderModes`, `ConversacionWhatsAppWebSessionModes`, `ConversacionWhatsAppWebSessionStatuses` quedaron intactos. Los `<option>` de los selects de "Modo del canal"/"Proveedor predeterminado" solo cambiaron su texto visible ("WhatsApp Web" → "WhatsApp Business (QR)"), no su `value`.
+
+### Status superior
+
+Se eliminó el grid de 5 cards grandes (Modo del canal, Envío Cloud API, Webhook de verificación, Publicación, Sesión WhatsApp Web) que mezclaba configuración + readiness + runtime. Reemplazado por una línea compacta que cambia según la sub-sección activa:
+
+- **WhatsApp Business:** `● N números · M conectados` (un solo chip, sin inventar "operativo").
+- **WhatsApp API:** 3 chips compactos con punto de color — `API: Listo/Pendiente`, `Webhook: Listo/Pendiente`, y el texto real de `GetPublicationLabel()` ("Lista para configurar en Meta" / "Falta completar datos"). Ningún término nuevo fue inventado; se reutilizan `GetStatusLabel`/`GetPublicationLabel` ya existentes.
+
+"Modo del canal" (select) se movió dentro de WhatsApp API → sección "Conexión" (deja de ser headline).
+
+### WhatsApp API — progressive disclosure
+
+El formulario único se reorganizó en 3 `<details class="conv-config-collapsible">` (mismo patrón visual ya usado en Automatizaciones, sin CSS nuevo): **Conexión** (modo, proveedor, Phone Number ID, WABA ID), **Credenciales** (Access Token, Verify Token, App Secret) y **Webhook** (base pública, versión Graph API, path, URL de callback, resumen de sesión WhatsApp Business). Un único botón "Guardar configuración" sigue llamando a `SaveAsync` sin cambios — no se separó el save porque romper ese contrato está fuera de alcance de C2 (regla §2). La ayuda ("Qué necesitás en Meta", "Dónde queda guardado", "Manual interno") se movió a un `<details>` colapsado por defecto ("¿Necesitás ayuda para configurar Meta Cloud API?"), sin borrar contenido.
+
+### WhatsApp Business — tarjetas por número
+
+Cada número pasó de un formulario plano de 6 campos + 3 botones iguales a una tarjeta (`.wa-number-card`) con:
+
+- Encabezado: nombre + teléfono + checkbox "Activo" (input real, no status).
+- Estado real vía `AlfaTag` (`GetNumeroEstadoTone`/`GetNumeroEstadoLabel`): Conectado (success) / Esperando escaneo (warning, mapea `PENDING_QR`) / Desconectado (neutral) / Error (danger, si `WebLastError` no está vacío). Solo 4 estados, todos derivados de `WebSessionStatus`/`WebLastError` reales — ninguno inventado.
+- Acción principal **"Conectar WhatsApp"** (llama a `GenerateWhatsAppWebPairingAsync`, el mismo handler que antes decía "Generar QR" — sin cambio de lógica).
+- "Refrescar estado" pasó a icon-button secundario (mismo `RefreshWhatsAppWebSessionAsync`).
+- "Detener sesión" ahora pasa por `AlfaConfirmDialog` (`RequestStopWhatsAppWebSession` → confirmar → `ConfirmStopWhatsAppWebSessionAsync` → llama a `ClearWhatsAppWebPairingAsync`, el handler original, sin tocar su cuerpo). No se ejecutó Stop durante la validación de esta fase.
+- QR: cuando hay pairing activo, se agregó una instrucción breve ("Abrí WhatsApp Business → Dispositivos vinculados → Vincular dispositivo → escaneá este código") en lugar de mezclar ayuda técnica.
+- Campos técnicos (Nombre, Phone Number ID editable, Nombre visible sesión Web, Instancia sesión Web, Método de inicio, Número para sesión Web, checkbox de código de texto) se movieron a `<details>` "Opciones avanzadas", colapsado. Mismo binding (`@bind`), ningún campo se quitó.
+- "Usuarios con acceso" se movió a `<details>` "Usuarios con acceso (N)" colapsado, mismo checklist/binding/`ToggleNumeroUsuario` de siempre.
+- El bloque runtime (PID, estado, última actualización) se movió a `<details>` "Soporte / runtime", solo visible si hay datos reales (`WebRuntimeState` o `WebWorkerProcessId`).
+- El error (`WebLastError`) se muestra como texto corto con ícono de advertencia, no como bloque técnico "Estado runtime" con la palabra "Error:" concatenada.
+- "Cómo funciona" (ayuda multi-número) se colapsó igual que en WhatsApp API.
+
+### Deuda / cleanup
+
+`GetWhatsAppWebOverviewLabel`, `GetNumeroWhatsAppWebSummary` y `GetWhatsAppWebStatusLabel` quedaron sin ningún caller tras el rediseño (reemplazados por `GetWhatsAppNumerosSummary`/`GetNumeroEstadoLabel`/`GetNumeroEstadoTone`) y se eliminaron como código muerto — no se tocó ningún método que sí tuviera un caller real.
+
+### Webhook banner global
+
+El banner "Webhook identificado por base" / "Webhook sin identificación de base" sigue siendo **global** (aparece arriba de cualquier sección de Configuración) porque el token de routing aplica a los 4 canales (WhatsApp/Instagram/Facebook/Mercado Libre), no solo a WhatsApp — moverlo dentro de WhatsApp API habría sido incorrecto funcionalmente. Se agregó la clase `settings-webhook-banner` (padding y peso de fuente reducidos) sin tocar la clase global `.conversations-inline` (compartida con otras pantallas) ni el token ni su lógica de generación.
+
+### Content width
+
+`.wa-number-card` tiene `max-width: 720px` para no estirarse a todo el ancho en 2048px. No se tocó `.conv-config-layout`/`.conv-config-form` (compartidos con Instagram/Facebook/Mercado Libre) para no afectar esos canales en C2.
+
+### Responsive
+
+Sin reglas nuevas de breakpoint más allá de las ya definidas en C1 (`.settings-nav` a 1024px). Las tarjetas de número y los `<details>` son de flujo normal (`display: block`), no requieren reglas adicionales para no producir overflow horizontal. **Pendiente: validación visual real en 2048/1440/1024.**
+
+### Servicios/backend
+
+Sin cambios. Los únicos archivos tocados en C2 fueron `ConversacionesConfiguracion.razor` y `ConversacionesConfiguracion.razor.css`.
+
+---
+
+## C2.1 — Migración visual completa de WhatsApp a AlfaDesign
+
+Motivo: tras revisar capturas reales de C2, el contenido de WhatsApp (especialmente WhatsApp API) seguía mezclando shell AlfaDesign con superficies claras/legacy heredadas de `.conv-config-collapsible` (definida con `background:#fbfcfe`, gradientes claros y texto azul oscuro — pensada para un tema claro que ya no existe en este shell). C2.1 corrige eso sin tocar backend.
+
+### Causa raíz identificada
+
+`.field input/select/textarea` y `.context-card` (clases globales de `app.css`) **ya eran oscuras** (fondos `rgba` sobre dark). El problema real era exclusivamente `.conv-config-collapsible` y sus hijos (`__summary`, `__title`, `__hint`), con colores hardcodeados claros. Esa clase se deja intacta porque Automatización todavía la usa y sigue fuera de alcance — el fix fue dejar de usarla dentro de WhatsApp, no modificarla.
+
+### Patrón nuevo: `.wa-settings-section`
+
+Reemplaza `.conv-config-collapsible` únicamente dentro de WhatsApp Business y WhatsApp API. Es un `<details>` con:
+
+- `.wa-settings-section` (contenedor, surface `--alfa-bg-surface`, borde `--alfa-border-default`, radius `--alfa-radius-8`);
+- `.wa-settings-section__summary` (header compacto, hover sutil `--alfa-state-hover`);
+- `__icon` / `__title` / `__hint` / `__chevron` (rota 180° al abrir vía `[open]`);
+- `.wa-settings-section__body` (mismo dark, separador superior sutil).
+
+Se usa en ambas pestañas (Conexión/Credenciales/Webhook en API; Usuarios con acceso/Opciones avanzadas/Soporte-runtime/Agregar número en Business; y en ambas ayudas). No se formalizó todavía como componente Razor compartido (`AlfaDesign/`) — sigue siendo CSS+markup local en `ConversacionesConfiguracion.razor(.css)`, candidato a extraerse cuando un segundo módulo lo necesite (regla: no crear componentes especulativos).
+
+### Component-first aplicado
+
+Convertidos a componentes AlfaDesign, preservando el mismo `@bind`/valor real (sin tocar el modelo):
+
+- `AlfaInput` (`@bind-Value`): Phone Number ID, WABA ID, Verify Token, App Secret, Base pública HTTPS, Graph API version, y en Business: Nombre, Phone Number ID, Nombre visible sesión Web, Instancia sesión Web, Número para sesión Web, y los campos de "Agregar número".
+- `AlfaSelect` (`@bind-Value` + `Options`): Modo del canal, Proveedor predeterminado, Método de inicio — con listas `_providerModeOptions`/`_defaultProviderOptions`/`_webSessionModeOptions` que usan las mismas constantes (`ConversacionWhatsAppProviderModes`, etc.) como `Value`, no strings nuevos.
+- `AlfaCheckbox` (`Value`/`ValueChanged`, tipo `bool?`): "Activo" por número, "Generar también código de texto", cada checkbox de usuario con acceso.
+- `AlfaTag`: estado de conexión por número (ya existía desde C2).
+- `AlfaNotification`: feedback contextual de WhatsApp (ver más abajo).
+
+**No migrados, con motivo documentado (regla §10 — sin equivalente directo):**
+
+- Access Token: `<textarea>` — `AlfaInput` no tiene variante multilínea. Estilizado con clase local `.wa-textarea` (mismos tokens `--alfa-*` que `AlfaInput`, pero definida en este componente, no reutilizando la clase scoped de `AlfaInput.razor.css` — ver nota de bug abajo).
+- Webhook interno: `<input readonly>` — `AlfaInput` no soporta `readonly` (solo `Disabled`, que impediría seleccionar/copiar el texto en algunos navegadores). Estilizado con clase local `.wa-input-readonly`.
+
+### Bug evitado: CSS scoping cruzado
+
+Primer intento reutilizó literalmente las clases `alfa-field__label`/`alfa-input__control` (definidas en `AlfaInput.razor.css`) en markup de `ConversacionesConfiguracion.razor` para los dos campos no migrados. Blazor aplica CSS isolation por atributo autogenerado (`b-xxxxx`) solo a los elementos renderizados *por ese componente*; una clase con el mismo nombre escrita en otro archivo `.razor` no recibe el estilo, así que esos dos inputs habrían quedado sin estilo (fondo claro del navegador) — el mismo bug que se intentaba corregir. Se corrigió creando `.wa-field`/`.wa-field__label` locales en `ConversacionesConfiguracion.razor.css` en vez de tomar prestadas clases scoped de otro componente.
+
+### WhatsApp Business — refinamiento de la tarjeta de número
+
+- Encabezado eliminado el título "WhatsApp Business" duplicado dentro del panel (ya está en el header de sección) — evita la repetición Canales/WhatsApp/WhatsApp/WhatsApp Business señalada.
+- Badge técnico `CONV_WHATSAPP_NUMEROS` removido de la vista principal (bajó de prioridad, ya no compite con el heading).
+- QR: contenedor propio `.wa-pairing` (grid QR + detalle), fondo blanco solo en el QR mismo (`.wa-pairing__qr`, necesario para que el QR sea escaneable — no es "surface" de la UI, es la imagen).
+- "Usuarios con acceso" ahora es grid (`.wa-user-grid`, `auto-fill minmax(200px,1fr)`) de `AlfaCheckbox`, no una tira horizontal.
+- "Agregar número" pasó de formulario suelto al final a su propia `.wa-settings-section` colapsable.
+
+### WhatsApp API — reorganización final
+
+`Conexión` / `Credenciales` / `Webhook` como `.wa-settings-section` (Conexión abierta por defecto, las otras dos colapsadas). El badge `TA_CONFIGURACION` y "Origen actual" bajaron de prioridad: ahora viven dentro de una sección de ayuda "Información técnica" colapsada, no como subtítulo del heading principal.
+
+### Ownership contextual del feedback (WhatsApp)
+
+Problema reportado: el banner de error ("No se pudo iniciar la sesión real de WhatsApp Web...") aparecía en Soporte, Integraciones IA, etc. porque `_feedback` es un único campo de página compartido por *todas* las secciones.
+
+Solución no invasiva (sin tocar el resto de los handlers de otras secciones):
+
+- Nuevo campo `_feedbackScope` (`string?`). Los 6 handlers de WhatsApp que setean `_feedback` (`GenerateWhatsAppWebPairingAsync`, `RefreshWhatsAppWebSessionAsync`, `ClearWhatsAppWebPairingAsync`, `SaveAsync`, `SaveNumeroAsync`, `AddNumeroAsync`) ahora también hacen `_feedbackScope = "whatsapp";` como primera línea.
+- `SelectPrimaryTab`/`SelectChannelTab` limpian `_feedbackScope` a `null` en cuanto el usuario navega fuera de Canales→WhatsApp.
+- El banner **global** (`.conversations-inline`, usado por Instagram/Facebook/Mercado Libre/Automatización/etc., sin cambios) ahora solo se muestra si `_feedbackScope != "whatsapp"` — para todo lo que no es WhatsApp, comportamiento idéntico a antes.
+- El feedback de WhatsApp se migró a `AlfaNotification` (toast flotante, `position: fixed`, auto-dismiss), montado una sola vez cerca de la raíz del componente vía la propiedad computada `WhatsAppFeedback`. Esto resuelve simultáneamente "no debe dominar la pantalla" (es un toast pequeño, no un banner de ancho completo) y "no debe contaminar otras categorías" (desaparece solo o al navegar).
+- No se tocó ningún backend: `UiOps.RunAsync`, los mensajes de error reales y su contenido siguen exactamente iguales.
+
+### Webhook — ya no global
+
+El banner "Webhook identificado por base" / "Webhook sin identificación de base" se sacó de la posición global (arriba de toda Configuración) y se movió a la pestaña **Soporte** (antes de AnyDesk), no a WhatsApp API, porque el token de routing aplica a los 4 canales (WhatsApp/Instagram/Facebook/Mercado Libre), no solo a WhatsApp — ponerlo únicamente en WhatsApp API habría sido funcionalmente incorrecto para los otros 3 canales. Dentro de WhatsApp API → Webhook se agregó una línea de estado ("Routing por base: configurado/sin token") que no depende de la posición del banner global y no cambia `EnsureWebhookTokenAsync`, el token ni el endpoint.
+
+### Content width
+
+`.wa-layout` (reemplaza `.conv-config-layout` solo dentro de WhatsApp) define `max-width: 1400px` y grid `minmax(0,1fr) minmax(240px,320px)` para el panel principal + ayuda, para no estirarse a todo el ancho en 2048px ni dejar una columna de ayuda vacía permanente. No se tocó `.conv-config-layout` (todavía usado por Instagram/Facebook/Mercado Libre/Automatización/Operación).
+
+### CSS legacy eliminado (solo lo que quedó sin uso)
+
+`.conv-waweb-pairing`, `.conv-waweb-pairing__qr`, `.conv-waweb-pairing__details`, `.checkbox-inline`, y las reglas de `.wa-help-details`/`.wa-number-card__advanced summary` de C2 (superadas por `.wa-settings-section`). Se verificó con grep que ninguna quedara referenciada en el markup antes de borrarla. `.conv-config-collapsible` y su media query (720px) se mantienen intactos porque Automatización los sigue usando.
+
+### Validación técnica ejecutada
+
+`dotnet build` → 0 errores. `check_catalogo.py` → 68 rutinas, 0 advertencias, 0 errores. `git diff --check` → limpio. **No se pudo ejecutar la app en este entorno** (requiere SQL Server real configurado); la validación visual con capturas reales queda para el entorno del usuario.
+
+### Servicios/backend (C2.1)
+
+Sin cambios. Los únicos archivos tocados fueron `ConversacionesConfiguracion.razor` y `ConversacionesConfiguracion.razor.css`.
+
+---
+
+## C2.2 — Pulido final de WhatsApp y cierre de C2
+
+Ajustes puntuales tras la validación visual de C2.1. No se tocó arquitectura, navegación ni backend.
+
+### Content width
+
+`.wa-layout` (compartido por WhatsApp Business y WhatsApp API) pasó de `max-width: 1400px` con columnas `minmax(0,1fr) minmax(240px,320px)` a `max-width: 1280px`, `width: 100%`, columnas `minmax(0,1fr) minmax(280px,340px)`. Se eliminó el `max-width: 720px` fijo de `.wa-number-card`, que era la causa real de "card angosta + espacio vacío": la card ahora ocupa todo el ancho de la columna principal (~900px a 1280px totales), dejando que `.wa-fields` (grid de 2 columnas) respire en vez de comprimirse.
+
+### Ayuda integrada
+
+`.wa-help` (columna secundaria de ambas pestañas) pasó a `position: sticky; top: 0`, igual que `.settings-nav`, para que se sienta anclada al contenido en vez de flotar en el espacio vacío al hacer scroll. La reducción del ancho total del layout (1280px en vez de 1400px) también reduce la sensación de "ayuda perdida a la derecha".
+
+### Status compacto
+
+Causa del bug "Desconectado como barra ancha": `.wa-number-card` es `display:flex; flex-direction:column`, y por default (`align-items: stretch`) cualquier hijo directo —incluido el `<span>` interno de `AlfaTag`— se estira al ancho completo de la columna. Fix: se envolvió el `<AlfaTag>` en un `<div class="wa-number-card__status">` (elemento renderizado por este mismo componente, así que su CSS scoped sí aplica) con `align-self: flex-start`, sin tocar `AlfaTag.razor` ni su CSS compartido. Mismo criterio aplicaría a cualquier otro componente inline-flex usado directo como hijo de un contenedor flex-column.
+
+### Guardar número vs Conectar WhatsApp
+
+"Guardar número" pasó de `btn--primary` a `btn--secondary` para diferenciarse visualmente de "Conectar WhatsApp" (que sigue `btn--primary`, acción principal de conexión). Ningún handler cambió (`SaveNumeroAsync` intacto).
+
+### Feedback contextual — confirmado, no modificado
+
+Se revisó la lógica de `_feedbackScope` (C2.1): al navegar fuera de Canales→WhatsApp, `SelectPrimaryTab`/`SelectChannelTab` limpian el scope a `null`, por lo que el toast/error de una operación WhatsApp no reaparece en Automatización/Integraciones IA/Operación/Soporte. Funciona según lo diseñado; no se tocó código.
+
+### Deuda visual registrada para próximas fases (NO implementada en C2.2)
+
+**Automatización:** `.conv-config-collapsible` claro/legacy (mismo bug de fondo que tenía WhatsApp antes de C2.1), checkboxes legacy, fields legacy, ayuda lateral con el mismo peso que el formulario.
+
+**Integraciones IA:** `panel-card` legacy, metadata `TA_CONFIGURACION`/claves `CONV_*` visibles como protagonistas, **API Key de AlfaKnowledge visible en texto plano** (deuda de seguridad, no solo visual — no tocar en la próxima fase de UI; corresponde a una fase de contrato de secretos, ver `docs/ui/conversaciones-configuracion-redesign.md` sección "Contrato de secretos" y las fases `SEC-1`/`SEC-4` del plan), manual lateral dominante.
+
+**Operación y accesos:** `panel-card` legacy, listas/checks legacy, ayuda lateral con el mismo peso que la configuración, badges técnicos (`CONV_ADMINISTRADORES`, etc.) sin jerarquía reducida.
+
+**Soporte:** `panel-card` legacy, ayuda lateral legacy. El aviso de webhook ya está correctamente contextualizado aquí desde C2.1 — no requiere cambios.
+
+Ninguna de estas categorías se tocó en C2/C2.1/C2.2. Quedan como estaban al cierre de C1.
+
+### Validación técnica
+
+`dotnet build` → 0 errores. `check_catalogo.py` → 68 rutinas, 0 advertencias, 0 errores. `git diff --check` → limpio.
+
+### Servicios/backend (C2.2)
+
+Sin cambios. Archivos tocados: `ConversacionesConfiguracion.razor`, `ConversacionesConfiguracion.razor.css`.
+
+---
+
+## C2.3 — WhatsApp Business Connection Flow
+
+**A diferencia de C2.1/C2.2, esta fase modificó backend** (`WhatsAppWebSessionService.cs`, `worker.mjs`), con permiso explícito del alcance de C2.3, solo en lo necesario para que la conexión QR/pairing code funcione y se auto-provisione. No se tocó Meta API, Instagram, Facebook, Mercado Libre, OAuth, webhooks, routing multibase ni automatizaciones.
+
+### ⚠️ Limitación de entorno — no se pudo probar en vivo
+
+Se confirmó empíricamente (`where node`, `Get-Command node`, búsqueda en todo el PATH) que **Node.js no está instalado en esta máquina**, ni en el PATH de este entorno de trabajo ni a nivel de sistema. Tampoco existe `node_modules` en `src/AlfaCore/Node/WhatsAppWebWorker/` (nunca se corrió `npm install`). Esto significa:
+
+- Es la causa raíz real y verificada de "No se pudo iniciar la sesión real de WhatsApp Web." (ver más abajo).
+- **No fue posible ejecutar ninguno de los casos de prueba A/B (QR real, pairing code real) pedidos en esta fase.** No hay Node.js, no hay dependencias del worker, y tampoco hay un teléfono disponible para escanear.
+- Todo lo implementado en C2.3 fue verificado por lectura de código + `dotnet build`, no por ejecución real. Antes de aprobar funcionalmente esta fase hace falta, como mínimo: instalar Node.js en el servidor, ejecutar `npm install` en `Node/WhatsAppWebWorker/`, y probar con un teléfono real los casos A y B de la sección 36 del pedido original.
+
+### Causa raíz del error "No se pudo iniciar la sesión real de WhatsApp Web"
+
+Auditado `AppUiOperationService.BuildMessage`: preserva el mensaje real para `InvalidOperationException` y para varios casos de `SqlException`/`Win32Exception` ya mapeados, pero **no tenía un caso para un `Win32Exception` directo lanzado por `Process.Start`** (por ejemplo, "no se encuentra node.exe") — esos caen al mensaje genérico final ("Ocurrió un problema inesperado..."), que es exactamente el texto que aparecía en las capturas. Confirmado: sin Node.js instalado, `Process.Start(startInfo)` en `WhatsAppWebSessionService.StartSessionAsync` lanza ese `Win32Exception`.
+
+**Fix aplicado** (`WhatsAppWebSessionService.cs`): se envolvió `Process.Start` en un `try/catch` específico para `Win32Exception` que relanza un `InvalidOperationException` con mensaje accionable ("no se encontró 'node' en este servidor. Instalá Node.js y ejecutá 'npm install'..."). Como `AppUiOperationService` ya preserva el mensaje de `InvalidOperationException` tal cual, este mensaje SÍ llega al usuario. Cambio acotado a este único método; no se tocó `AppUiOperationService` (compartido por toda la app).
+
+### Auditoría previa a tocar backend (obligatoria, sección 3 del pedido)
+
+- `CONV_WHATSAPP_NUMEROS.PhoneNumberId` es `nvarchar(50) NOT NULL` con `UNIQUE` (migración `2026-08-10-003`). No puede quedar vacío ni duplicado entre filas — esto es lo que impide "crear el registro sin pedir nada" de forma trivial.
+- `SaveWhatsAppNumeroAsync` exige `PhoneNumberId` y `Nombre` no vacíos (valida y lanza si faltan) — validación existente, no se tocó.
+- `SaveWhatsAppNumeroWebSessionAsync` (la que se llama automáticamente en cada poll de estado) **actualiza solo columnas `Web*`**, nunca `Nombre`/`PhoneNumberId` — confirmado leyendo `FillWhatsAppNumeroParameters`/`BuildWhatsAppNumeroWebUpdateAssignments`. Esto define qué se puede persistir automáticamente después de conectar y qué no.
+- `worker.mjs`, al recibir `connection === "open"`, **no capturaba ningún dato de identidad** (ni JID ni teléfono) — solo escribía `state: "CONNECTED"`. Sin esto, no había manera de mostrar el teléfono real ni de deduplicar.
+- `StartSessionAsync(idNumero, ...)` siempre relee el número desde la base por `idNumero` — el objeto en memoria de Razor no alcanza; hay que persistir `WebSessionMode`/`WebPhoneNumber` ANTES de llamar a esta función para que el método elegido en la UI realmente se use.
+- `StartSessionAsync` llama siempre a `PrepareSessionDirectory(sessionDir, clearAuth: true)`, **incluso sobre una sesión ya conectada** — confirma el riesgo que señalaba la auditoría original (§32 de este pedido). No se modificó el método (sigue haciendo lo mismo), pero la UI ahora nunca ofrece "Conectar WhatsApp" como acción visible sobre un número ya conectado (ver más abajo) — mitigación por el lado de la UI, no del backend.
+
+### Identidad real después de conectar (backend, aditivo)
+
+- `worker.mjs`: en `connection === "open"`, ahora también captura `sock.user.id` (JID) y `sock.user.name` (nombre de WhatsApp), y los escribe en `status.json` como `phoneJid`, `phoneNumber` (dígitos normalizados con `+`) y `accountName`. Campos nuevos, aditivos — un `status.json` viejo sin estos campos sigue deserializando igual.
+- `WhatsAppWebSessionService.cs`: `WhatsAppWebWorkerStatus` agrega `PhoneJid`/`PhoneNumber`/`AccountName`. `ApplyStatus` ahora, cuando el estado es `CONNECTED` y hay `PhoneNumber`, escribe `numero.WebPhoneNumber = status.PhoneNumber`. Como esto pasa por el mismo camino ya existente (`LoadStatusAndPersistAsync` → `SaveWhatsAppNumeroWebSessionAsync`), **no hizo falta ningún método ni columna nueva**: el teléfono real queda persistido automáticamente, y la UI ya mostraba `WebPhoneNumber` con prioridad sobre `PhoneNumberId` desde C2.1.
+- No se implementó renombrado automático del campo `Nombre` (el placeholder "WhatsApp Business N" queda como está) porque requeriría un segundo `SaveWhatsAppNumeroAsync` completo no verificado en esta fase; se prefirió no arriesgar un write adicional sin poder probarlo. Reportado como posible mejora futura.
+
+### Auto-provisioning (sin backend nuevo)
+
+En vez de crear un método de servicio nuevo, `ConectarWhatsAppBusinessAsync`/`IniciarNuevoWhatsAppBusinessAsync` (código nuevo, solo en el componente Razor) orquestan métodos **ya existentes y probados**:
+
+1. Genera `PhoneNumberId = "WEBPENDING-" + Guid` (único, cumple `NOT NULL`+`UNIQUE`, reconocible como placeholder) y `Nombre = "WhatsApp Business {N}"`.
+2. Llama a `ConfigSvc.SaveWhatsAppNumeroAsync(...)` (sin modificar) para crear la fila.
+3. Recarga números y llama a `GenerateWhatsAppWebPairingAsync(...)` (sin modificar) para iniciar el pairing real.
+
+Ningún servicio ni SQL nuevo. El "Phone Number ID" técnico nunca se le pide al cliente en el flujo Business; sigue existiendo internamente porque la columna lo exige, pero es invisible para el usuario.
+
+### Deduplicación — parcial, verificable por código
+
+Antes de crear una cuenta nueva por el flujo de **teléfono** (el único caso donde se conoce el número de destino antes de conectar), se compara contra los números existentes con `IsWebSessionReady = true` por dígitos normalizados; si coincide, se avisa y no se crea una fila nueva. **No se implementó deduplicación por JID/estado post-conexión** (por ejemplo, si dos pairings QR distintos terminan siendo la misma cuenta real) porque depende de datos que solo puede confirmar el worker en vivo y no hay forma de probarlo en este entorno — deuda explícita, no implementada.
+
+### Polling mientras el pairing está pendiente
+
+`StartPolling`/`StopPolling`/`PollPairingStatusAsync`: cada 4 segundos llaman a `RefreshWhatsAppWebSessionAsync(numero, silent: true)` (nuevo parámetro opcional, default `false`, no cambia el botón manual de refresco) mientras el número no esté conectado ni tenga error. Se detiene al conectar, fallar, cancelar (`ClearWhatsAppWebPairingAsync`), desvincular, o al destruirse el componente (`Dispose` llama `StopPolling`). No es un timer global: vive solo mientras hay un pairing en curso.
+
+### UI Business — resultado
+
+- **Sin número:** estado vacío ("Conectá tu WhatsApp para atender conversaciones desde AlfaCore") + botón "Conectar WhatsApp" → selector Código QR / Número de teléfono.
+- **"Agregar número" (Nombre + Phone Number ID manual) se quitó de Business** y se movió a WhatsApp API bajo "Números por Phone Number ID", con una nota explícita de que los números por QR se administran en Business.
+- **Número conectado:** ya no muestra "Conectar WhatsApp" (evita el borrado accidental de auth de §32); muestra solo "Desvincular" con `AlfaConfirmDialog` (renombrado de "Detener sesión" a "Desvincular", mensaje actualizado).
+- **Pairing pendiente:** "Actualizar código" (icon button) + "Cancelar" (sin confirmación — cancelar algo que nunca llegó a conectar es de bajo riesgo).
+- **Desconectado sin pairing:** "Conectar WhatsApp" → selector de método.
+- Con ≥1 número ya existente: "Conectar otro WhatsApp" (ya no "Agregar número").
+- Todos los botones de esta pantalla (Business y API) usan `AlfaButton`/`AlfaIconButton`; no queda ningún `<button class="btn ...">` dentro de WhatsApp.
+
+### Botón "Recargar" del Context Toolbar — revisado, sin cambios
+
+`MainPageHeader.razor` (compartido por Usuarios/Técnicos/Clientes y ahora Conversaciones) renderiza sus acciones con un `<button class="main-page-header__action">` propio, con CSS scoped `--alfa-*` — no es Bootstrap `.btn` legacy, es la implementación de referencia del propio Context Toolbar que usan todos los módulos migrados. No se creó ninguna excepción visual para Configuración; se comprobó que es exactamente el mismo mecanismo que ya usa Usuarios.razor. No se modificó `MainPageHeader.razor` (es compartido por toda la app, fuera de alcance de esta fase).
+
+### Backward compatibility
+
+- Números/filas existentes (con `PhoneNumberId` real de Meta o ya conectados) siguen funcionando igual: `WebInstanceName`, `WebSessionMode`, runtime, todo intacto.
+- Ningún número existente necesita "recrearse"; simplemente aparece con su estado real (Conectado/Desconectado/Error) apenas carga la pantalla.
+- Los prefijos `WEBPENDING-` son solo un identificador técnico interno del placeholder — no afectan ninguna lectura/escritura existente de `PhoneNumberId` real.
+
+### Archivos modificados en C2.3
+
+Backend: `src/AlfaCore/Services/WhatsAppWebSessionService.cs`, `src/AlfaCore/Node/WhatsAppWebWorker/worker.mjs`.
+UI: `src/AlfaCore/Components/Pages/ConversacionesConfiguracion.razor`, `ConversacionesConfiguracion.razor.css`.
+Docs: este archivo.
+
+No se tocó ningún archivo de Meta/Instagram/Facebook/Mercado Libre/OAuth/webhooks/routing/automatizaciones.
+
+### Validación técnica ejecutada
+
+`dotnet build` → 0 errores. `check_catalogo.py` → 68 rutinas, 0 advertencias, 0 errores. `git diff --check` → limpio.
+
+### Validación funcional — EN CURSO (probado en vivo contra ALFANET2007, número de prueba real)
+
+Node.js instalado (`winget install OpenJS.NodeJS.LTS`, v24.19.0) y dependencias del worker instaladas (`npm ci`). Se probó en vivo contra la base de prueba **ALFANET2007** (número "AlfaNet Pruebas 3647") con un teléfono real. Bugs reales encontrados y corregidos durante la prueba (no eran hipótesis, se reprodujeron en vivo):
+
+- **Migración SQL** (`2026-08-18-010__conversaciones_whatsapp_web_por_numero.sql`): faltaba un `GO` entre el `ALTER TABLE ADD` y el `UPDATE` que referenciaba las columnas nuevas → error 207 "Invalid column name". Corregido agregando el `GO`.
+- **`SaveWhatsAppNumeroWebSessionAsync`**: SQL inválido `SET 1 = 1, ...`. Corregido para empezar el `SET` con una columna real.
+- **`SaveWhatsAppNumeroAsync`**: `GetTableColumnsAsync` se llamaba después de `BeginTransactionAsync` sobre la misma conexión sin pasar la transacción al `SqlCommand` interno → "BeginExecuteReader requires a transaction". Corregido reordenando la llamada antes de abrir la transacción.
+- **JSON case-sensitivity** en `ProcessWhatsAppWebInboxAsync`: el worker escribe camelCase, el deserializer por default es case-sensitive → nombre/teléfono/texto llegaban vacíos. Corregido con `JsonSerializerDefaults.Web`.
+- **`RequireConversationAsync`** (bug de plataforma, no específico de esta feature): nunca seleccionaba `IdNumeroWhatsApp` en el `SELECT` pese a que la propiedad existía en el DTO → **todos** los envíos por WhatsApp Web fallaban con "La conversación no tiene un número de WhatsApp Web asociado." en las 135 bases de SaaS. Corregido agregando la columna al `SELECT` y al mapeo.
+- **LID (linked ID) de WhatsApp**: `remoteJid` en mensajes entrantes puede ser un identificador pseudónimo `@lid`, no el teléfono real; el teléfono real está en `remoteJidAlt`. El worker usaba siempre `remoteJid`, mostrando números como `+232083003801723`. Corregido en `worker.mjs` para preferir `remoteJidAlt`. **Nota:** conversaciones ya creadas antes del fix (ej. conversación 10330) mantienen el teléfono incorrecto; no se autocorrigen, solo las conversaciones nuevas quedan bien.
+- **Race de envío justo después de conectar**: `processOutbox()` en `worker.mjs` solo chequeaba `!sock` (el objeto existe aunque el socket esté cerrado durante una reconexión transitoria), no si el socket estaba realmente abierto. Baileys hace una resync breve justo después de "connection: open" que cierra y reabre el socket; los mensajes en cola durante esa ventana fallaban con `"Error: Connection Closed"` y quedaban marcados `ERROR_ENVIO` aunque el número mostrara "Conectado". Corregido agregando un flag `isSocketOpen` que se pone en `true`/`false` en los eventos `connection.update`; `processOutbox` ahora espera a que esté abierto antes de intentar enviar, dejando el comando en la cola en vez de descartarlo con error.
+
+**Gaps de producto identificados, no corregidos (fuera de alcance de C2.3, requieren decisión de producto):**
+
+- `ResolveWhatsAppDeliveryProvider` (lee `ProviderMode`/`DefaultProvider` globales) no tiene en cuenta el estado de conexión por número — afecta el ruteo Meta Cloud vs WhatsApp Web en las 135 bases. Se le indicó al usuario cambiar "Modo del canal" a "Convivencia" y "Proveedor predeterminado" a "WhatsApp Business (QR)" manualmente vía UI como workaround, sin cambio de código.
+- **No hay reconexión automática de sesiones ya conectadas**: si el worker de un número ya "Conectado" se cae (crash, conflicto de dispositivo, reinicio del servidor), nadie lo vuelve a levantar — no hay watchdog ni relanzamiento en el arranque de la app. El único camino hoy es "Desvincular" + "Conectar WhatsApp" de nuevo, que **siempre** pide un QR/código nuevo (`StartSessionAsync` hace `PrepareSessionDirectory(clearAuth: true)` incondicionalmente) — no hay manera de reintentar reutilizando las credenciales ya vinculadas.
+- **Conflicto de multi-dispositivo real observado**: escanear el QR repetidamente con el mismo teléfono en varios ciclos de prueba (antes de tener el fix de arriba) generó varios dispositivos vinculados en simultáneo, y WhatsApp terminó desconectando/deslogueando la sesión más vieja por conflicto (`Stream Errored (conflict)` → luego `loggedOut` real, confirmado reintentando con las credenciales guardadas). Además, cada intento fallido deja un proceso Node huérfano corriendo en el servidor esperando un QR que nunca se escanea (se limpiaron manualmente 6 procesos + 5 carpetas de sesión vacías durante esta prueba). No existe today una función de "eliminar número"/limpieza de sesiones huérfanas en la UI.
+- **Meta marcó el número de prueba como sospechoso de spam** tras las múltiples vinculaciones/desvinculaciones seguidas en la misma sesión de prueba — la validación funcional quedó pausada por esto, a reintentar más adelante (espaciando los reintentos, y probando con el método de código de 8 dígitos en vez de QR para reducir la frecuencia de "nuevo dispositivo").
+
+**Pendiente para cerrar C2.3:**
+
+1. Reintentar la vinculación (una sola vez, sin reintentos seguidos) una vez que el número de prueba deje de estar marcado por Meta.
+2. Confirmar envío/recepción end-to-end estable con el fix de `isSocketOpen` en efecto.
+3. Confirmar persistencia del estado "Conectado" tras recargar la página.
+4. Probar el método B (pairing code de 8 dígitos) al menos una vez.
+5. Decidir si los gaps de producto listados arriba (reconexión automática, limpieza de huérfanos, `ResolveWhatsAppDeliveryProvider` por número) se resuelven en esta fase o se documentan como deuda para una fase futura.
+
+Sin commit todavía — sigue pendiente de aprobación funcional final del usuario.
 
 ---
 

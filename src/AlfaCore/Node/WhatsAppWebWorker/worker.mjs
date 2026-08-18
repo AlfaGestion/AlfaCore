@@ -33,6 +33,7 @@ await fsp.mkdir(outboxDir, { recursive: true });
 await fsp.mkdir(resultsDir, { recursive: true });
 
 let sock;
+let isSocketOpen = false;
 let pairingRequested = false;
 let isStopping = false;
 let isProcessingOutbox = false;
@@ -171,18 +172,25 @@ async function handleConnectionUpdate(update) {
   }
 
   if (connection === "open") {
+    isSocketOpen = true;
     reconnectAttempt = 0;
     clearReconnectTimer();
+    const confirmedJid = String(sock?.user?.id || "");
+    const confirmedPhoneDigits = confirmedJid.split("@")[0]?.split(":")[0]?.replace(/\D/g, "") || "";
     await writeStatus({
       state: "CONNECTED",
       sessionId: instanceName,
       processId: process.pid,
+      phoneJid: confirmedJid,
+      phoneNumber: confirmedPhoneDigits ? `+${confirmedPhoneDigits}` : "",
+      accountName: String(sock?.user?.name || ""),
       lastUpdatedAtUtc: new Date().toISOString(),
       error: ""
     });
   }
 
   if (connection === "close") {
+    isSocketOpen = false;
     const statusCode = lastDisconnect?.error?.output?.statusCode;
     const loggedOut = statusCode === DisconnectReason.loggedOut;
     const errorMessage = serializeError(lastDisconnect?.error);
@@ -236,7 +244,7 @@ async function writeStatus(status) {
 }
 
 async function processOutbox() {
-  if (isProcessingOutbox || !sock) {
+  if (isProcessingOutbox || !sock || !isSocketOpen) {
     return;
   }
 
@@ -342,7 +350,11 @@ function normalizeIncomingMessage(entry) {
     return null;
   }
 
-  const phoneValue = remoteJid.split("@")[0]?.replace(/\D/g, "") || "";
+  // Con "addressingMode":"lid", remoteJid es un identificador de privacidad de WhatsApp, no el
+  // teléfono real. Baileys expone el JID clásico (con el teléfono real) en remoteJidAlt cuando
+  // el mensaje llegó direccionado por LID; si no existe, remoteJid ya es el JID con el teléfono.
+  const phoneJid = String(entry?.key?.remoteJidAlt || remoteJid);
+  const phoneValue = phoneJid.split("@")[0]?.replace(/\D/g, "") || "";
   if (!phoneValue) {
     return null;
   }
