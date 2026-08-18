@@ -2,97 +2,133 @@ using AlfaCore.Models;
 
 namespace AlfaCore.Services;
 
+/// <summary>
+/// Estado del worker de lectura automática de compras, llevado POR BASE: el worker recorre todas
+/// las bases activas en cada ciclo (ver <see cref="InterfacesCompraIaWorkerHostedService"/>), así
+/// que "un solo estado global" no alcanza — cada cliente/base necesita ver el estado de SU propia
+/// cola, no el de la última base que se haya procesado en el ciclo compartido.
+/// </summary>
 public sealed class InterfacesCompraIaWorkerState
 {
     private readonly object _sync = new();
+    private readonly Dictionary<int, BaseState> _porBase = new();
 
-    public bool IsRunning { get; private set; }
-    public DateTime? LastHeartbeatAt { get; private set; }
-    public DateTime? LastRunStartedAt { get; private set; }
-    public DateTime? LastRunFinishedAt { get; private set; }
-    public DateTime? NextPlannedRunAt { get; private set; }
-    public int LastProcessedCount { get; private set; }
-    public string LastMessage { get; private set; } = string.Empty;
-    public string LastError { get; private set; } = string.Empty;
+    private sealed class BaseState
+    {
+        public bool IsRunning;
+        public DateTime? LastHeartbeatAt;
+        public DateTime? LastRunStartedAt;
+        public DateTime? LastRunFinishedAt;
+        public DateTime? NextPlannedRunAt;
+        public int LastProcessedCount;
+        public string LastMessage = string.Empty;
+        public string LastError = string.Empty;
+    }
 
-    public void MarkRunning(string message)
+    private BaseState GetOrAdd(int idBase)
+    {
+        if (!_porBase.TryGetValue(idBase, out var estado))
+        {
+            estado = new BaseState();
+            _porBase[idBase] = estado;
+        }
+
+        return estado;
+    }
+
+    public void MarkRunning(int idBase, string message)
     {
         lock (_sync)
         {
-            IsRunning = true;
-            LastHeartbeatAt = DateTime.Now;
-            LastRunStartedAt = DateTime.Now;
-            LastMessage = message;
-            LastError = string.Empty;
+            var e = GetOrAdd(idBase);
+            e.IsRunning = true;
+            e.LastHeartbeatAt = DateTime.Now;
+            e.LastRunStartedAt = DateTime.Now;
+            e.LastMessage = message;
+            e.LastError = string.Empty;
         }
     }
 
-    public void MarkWaiting(int delaySeconds, string message)
+    public void MarkWaiting(int idBase, int delaySeconds, string message)
     {
         lock (_sync)
         {
-            IsRunning = false;
-            LastHeartbeatAt = DateTime.Now;
-            LastRunFinishedAt = DateTime.Now;
-            NextPlannedRunAt = DateTime.Now.AddSeconds(Math.Max(1, delaySeconds));
-            LastMessage = message;
+            var e = GetOrAdd(idBase);
+            e.IsRunning = false;
+            e.LastHeartbeatAt = DateTime.Now;
+            e.LastRunFinishedAt = DateTime.Now;
+            e.NextPlannedRunAt = DateTime.Now.AddSeconds(Math.Max(1, delaySeconds));
+            e.LastMessage = message;
         }
     }
 
-    public void MarkWarning(int delaySeconds, string message)
+    public void MarkWarning(int idBase, int delaySeconds, string message)
     {
         lock (_sync)
         {
-            IsRunning = false;
-            LastHeartbeatAt = DateTime.Now;
-            LastRunFinishedAt = DateTime.Now;
-            NextPlannedRunAt = DateTime.Now.AddSeconds(Math.Max(1, delaySeconds));
-            LastMessage = message;
-            LastError = string.Empty;
+            var e = GetOrAdd(idBase);
+            e.IsRunning = false;
+            e.LastHeartbeatAt = DateTime.Now;
+            e.LastRunFinishedAt = DateTime.Now;
+            e.NextPlannedRunAt = DateTime.Now.AddSeconds(Math.Max(1, delaySeconds));
+            e.LastMessage = message;
+            e.LastError = string.Empty;
         }
     }
 
-    public void MarkError(int delaySeconds, string message, string error)
+    public void MarkError(int idBase, int delaySeconds, string message, string error)
     {
         lock (_sync)
         {
-            IsRunning = false;
-            LastHeartbeatAt = DateTime.Now;
-            LastRunFinishedAt = DateTime.Now;
-            NextPlannedRunAt = DateTime.Now.AddSeconds(Math.Max(1, delaySeconds));
-            LastMessage = message;
-            LastError = error;
+            var e = GetOrAdd(idBase);
+            e.IsRunning = false;
+            e.LastHeartbeatAt = DateTime.Now;
+            e.LastRunFinishedAt = DateTime.Now;
+            e.NextPlannedRunAt = DateTime.Now.AddSeconds(Math.Max(1, delaySeconds));
+            e.LastMessage = message;
+            e.LastError = error;
         }
     }
 
-    public void MarkProcessed(int processedCount)
+    public void MarkProcessed(int idBase, int processedCount)
     {
         lock (_sync)
         {
-            LastProcessedCount = processedCount;
-            LastHeartbeatAt = DateTime.Now;
+            var e = GetOrAdd(idBase);
+            e.LastProcessedCount = processedCount;
+            e.LastHeartbeatAt = DateTime.Now;
         }
     }
 
-    public InterfacesCompraIaWorkerStatusDto Snapshot(bool workerEnabled, int intervalSeconds)
+    public InterfacesCompraIaWorkerStatusDto Snapshot(int idBase, bool workerEnabled, int intervalSeconds)
     {
         lock (_sync)
         {
+            if (!_porBase.TryGetValue(idBase, out var e))
+            {
+                return new InterfacesCompraIaWorkerStatusDto
+                {
+                    Estado = workerEnabled ? "ESPERANDO" : "DESHABILITADO",
+                    Descripcion = workerEnabled ? "Worker todavía no ejecutó ningún ciclo para esta base" : "Worker deshabilitado",
+                    ProximoIntento = null
+                };
+            }
+
             var now = DateTime.Now;
             var staleThresholdSeconds = Math.Max(15, Math.Max(3, intervalSeconds) * 2 + 5);
             var recentError = workerEnabled
-                && !IsRunning
-                && !string.IsNullOrWhiteSpace(LastError)
-                && LastRunFinishedAt.HasValue
-                && (now - LastRunFinishedAt.Value).TotalSeconds <= staleThresholdSeconds;
+                && !e.IsRunning
+                && !string.IsNullOrWhiteSpace(e.LastError)
+                && e.LastRunFinishedAt.HasValue
+                && (now - e.LastRunFinishedAt.Value).TotalSeconds <= staleThresholdSeconds;
             var stale = workerEnabled
-                && !IsRunning
-                && LastHeartbeatAt.HasValue
-                && (now - LastHeartbeatAt.Value).TotalSeconds > staleThresholdSeconds;
+                && !e.IsRunning
+                && e.LastHeartbeatAt.HasValue
+                && (now - e.LastHeartbeatAt.Value).TotalSeconds > staleThresholdSeconds;
 
             var estado = !workerEnabled
                 ? "DESHABILITADO"
-                : IsRunning
+                : e.IsRunning
                     ? "PROCESANDO"
                     : recentError
                         ? "ERROR_RECIENTE"
@@ -113,12 +149,12 @@ public sealed class InterfacesCompraIaWorkerState
             {
                 Estado = estado,
                 Descripcion = descripcion,
-                UltimaEjecucion = LastRunFinishedAt ?? LastHeartbeatAt,
-                UltimoInicio = LastRunStartedAt,
-                ProximoIntento = workerEnabled ? NextPlannedRunAt : null,
-                UltimoMensaje = LastMessage,
-                UltimoError = LastError,
-                UltimosProcesados = LastProcessedCount
+                UltimaEjecucion = e.LastRunFinishedAt ?? e.LastHeartbeatAt,
+                UltimoInicio = e.LastRunStartedAt,
+                ProximoIntento = workerEnabled ? e.NextPlannedRunAt : null,
+                UltimoMensaje = e.LastMessage,
+                UltimoError = e.LastError,
+                UltimosProcesados = e.LastProcessedCount
             };
         }
     }

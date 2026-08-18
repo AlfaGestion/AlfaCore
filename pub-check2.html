@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="/">
+    <title>AlfaNet - Alfa Gestión</title>
+    <link rel="stylesheet" href="/bootstrap/bootstrap.min.css?v=20260703-cssfix">
+    <link rel="stylesheet" href="/app.css?v=20260812-crm-cotiz-ia-lineas">
+    <link rel="stylesheet" href="/css/informes.css?v=20260703-cssfix">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="/AlfaCore.styles.css?v=20260812-conv-bot-autonomo">
+    <link rel="stylesheet" href="/css/auth.css?v=20260708-loginlocal2">
+    <link rel="stylesheet" href="/theme-overrides.css?v=20260703-themefix3">
+    <link rel="stylesheet" href="/css/carga-viajes.css?v=20260703-cssfix2">
+    <link rel="stylesheet" href="/css/sticky-list-headers.css?v=20260715b">
+    <link rel="icon" type="image/png" href="/logos/icono.png?v=20260703-cssfix">
+    <link rel="manifest" href="/manifest.webmanifest">
+    <link rel="apple-touch-icon" href="/icons/icon-192.png">
+    <meta name="theme-color" content="#1f2937">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="AlfaCore">
+    <script src="https://www.google.com/recaptcha/api.js?render=explicit" async defer></script>
+    <script>
+        (function () {
+            var t = localStorage.getItem('dashboard.theme') || 'light';
+            document.documentElement.setAttribute('data-theme', t);
+        })();
+        (function () {
+            var isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            if (!isLocal || !('serviceWorker' in navigator))
+                return;
+
+            navigator.serviceWorker.getRegistrations()
+                .then(function (registrations) {
+                    return Promise.all(registrations.map(function (registration) {
+                        return registration.unregister();
+                    }));
+                })
+                .catch(function () { });
+
+            if (window.caches && typeof window.caches.keys === 'function') {
+                window.caches.keys()
+                    .then(function (keys) {
+                        return Promise.all(keys.map(function (key) {
+                            return window.caches.delete(key);
+                        }));
+                    })
+                    .catch(function () { });
+            }
+        })();
+        window.dashboardTheme = {
+            set: function (theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem('dashboard.theme', theme);
+                document.dispatchEvent(new CustomEvent('dashboard-theme-changed', { detail: theme }));
+            },
+            get: function () {
+                return document.documentElement.getAttribute('data-theme') || 'light';
+            },
+            watch: function (dotnetRef) {
+                if (window.__alfaCoreDashboardThemeHandler) {
+                    document.removeEventListener('dashboard-theme-changed', window.__alfaCoreDashboardThemeHandler);
+                }
+
+                window.__alfaCoreDashboardThemeHandler = function () {
+                    if (!dotnetRef) return;
+                    var currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+                    dotnetRef.invokeMethodAsync('OnDashboardThemeChanged', currentTheme);
+                };
+
+                document.addEventListener('dashboard-theme-changed', window.__alfaCoreDashboardThemeHandler);
+            },
+            unwatch: function () {
+                if (window.__alfaCoreDashboardThemeHandler) {
+                    document.removeEventListener('dashboard-theme-changed', window.__alfaCoreDashboardThemeHandler);
+                    window.__alfaCoreDashboardThemeHandler = null;
+                }
+            }
+        };
+        window.alfaCoreSqlSession = {
+            setActive: function (id) {
+                if (!id) return;
+                localStorage.setItem('alfacore.sqlSessionId', id);
+                document.cookie = 'AlfaCore.SqlSessionId=' + encodeURIComponent(id) + '; path=/; max-age=31536000; samesite=lax';
+            },
+            clearActive: function () {
+                localStorage.removeItem('alfacore.sqlSessionId');
+                document.cookie = 'AlfaCore.SqlSessionId=; path=/; max-age=0; samesite=lax';
+            }
+        };
+        window.alfaCorePwaFunctionExists = function (name) {
+            return !!(window.alfaCorePwa && typeof window.alfaCorePwa[name] === 'function');
+        };
+        window.alfaCoreNavigation = {
+            canGoBack: function () {
+                return window.history.length > 1;
+            },
+            goBack: function () {
+                window.history.back();
+            }
+        };
+        window.alfaCorePublicRegistration = {
+            renderRecaptcha: function (elementId, siteKey) {
+                return new Promise(function (resolve, reject) {
+                    var attempts = 0;
+
+                    function render() {
+                        var element = document.getElementById(elementId);
+                        if (!element) {
+                            reject(new Error('No se encontro el contenedor de reCAPTCHA.'));
+                            return;
+                        }
+
+                        if (element.dataset.widgetId) {
+                            resolve(parseInt(element.dataset.widgetId, 10));
+                            return;
+                        }
+
+                        if (window.grecaptcha && typeof window.grecaptcha.render === 'function') {
+                            var widgetId = window.grecaptcha.render(elementId, { sitekey: siteKey });
+                            element.dataset.widgetId = String(widgetId);
+                            resolve(widgetId);
+                            return;
+                        }
+
+                        attempts += 1;
+                        if (attempts > 100) {
+                            reject(new Error('reCAPTCHA no termino de cargar.'));
+                            return;
+                        }
+
+                        window.setTimeout(render, 150);
+                    }
+
+                    render();
+                });
+            },
+            getRecaptchaResponse: function (elementId) {
+                var element = document.getElementById(elementId);
+                if (!element || !element.dataset.widgetId || !window.grecaptcha)
+                    return '';
+
+                return window.grecaptcha.getResponse(parseInt(element.dataset.widgetId, 10)) || '';
+            },
+            resetRecaptcha: function (elementId) {
+                var element = document.getElementById(elementId);
+                if (!element || !element.dataset.widgetId || !window.grecaptcha)
+                    return;
+
+                window.grecaptcha.reset(parseInt(element.dataset.widgetId, 10));
+            }
+        };
+    </script>
+    <title>Catálogo público | AlfaCore</title></head>
+
+<body><!--Blazor:{"type":"server","prerenderId":"9e4ce2d11abb4ccf9e2ab3b976489700","key":{"locationHash":"8D862AD7FBF46D2E5578A49C3B9D84145A349E442ED4C433253E6D7E6DBC8F25:10","formattedComponentKey":""},"sequence":0,"descriptor":"CfDJ8ASVPmYZOshClTghADE3a7arq\u002BRojE\u002BXcicnoWvZHgUBMqelQ5luG4n2igls/olGNbXd4x/Wx5eQlTt\u002B9Mwi05cVd8GYAzb4G30T7rCMPg8SLAk7lY9\u002BoT8/lLHg73rM5OQXyROTxct8uVnqS2vHlLy10sD5hZz6RxpUuFK7LRpbFRSslWdwnnX5MQ5\u002BpiKX575Brv7FCSfykHSUjeBO/lddIJozPc3NGBE3IrwtiGGsjG99LQkMCxAiQwBQao5E1IFMBsJvn/Srxjgf7wvGVCNqUcjHXmNlUBiCuwcMH93XdYPEDkE6VInc7qL4OwHDfp3LvGfqUE4PEn2LA9w6QkkD4g/7lxoMdF\u002BMA4P2TYAwcy38o3ue3ElYi74WyJViSwdS9MuH2b2XrzN8kh\u002BlojSLgRHrZ6hA8GmHXIj88lkNZfuUz/96t85CUdFlW6yxgulEl18iS57mjw1IsYdhnfKhGLluDGY7z\u002Bfeuo8yHxstGV55NeW3a8WCNWPIsFV7Pq3XlyPk3\u002BAQbWb11Yhr3og="}--><main class="public-layout" b-voxyuj2vbu>
+
+<section class="page-grid catalogo-publico-page" b-2k6umnrn50><section class="catalogo-publico-hero panel-card catalogo-publico-hero--sticky" b-2k6umnrn50><div class="catalogo-publico-hero__brand" b-2k6umnrn50><a class="catalogo-publico-hero__logo catalogo-publico-hero__logo--auto" href="http://localhost:5055/fernandezf/115/catalogo/788" title="Cat&#xE1;logo p&#xFA;blico" aria-label="Cat&#xE1;logo p&#xFA;blico" b-2k6umnrn50><img src="/api/catalogos/logo-publico/fernandezf?idbase=115&amp;v=8defa39ab08791f-2c18" alt="FERNANDEZ DEPOSITO" b-2k6umnrn50 /></a>
+            <div class="catalogo-publico-hero__copy" b-2k6umnrn50><p class="catalogo-publico-hero__eyebrow" b-2k6umnrn50>FERNANDEZ DEPOSITO</p>
+                <h2 class="catalogo-publico-hero__title" b-2k6umnrn50>PRU</h2><p class="catalogo-publico-hero__text" b-2k6umnrn50>Vigencia: 14/08/2026 - 15/09/2026</p></div></div>
+
+        <div class="catalogo-publico-hero__actions" b-2k6umnrn50><a class="btn btn--primary btn--sm" href="http://localhost:5055/fernandezf/115/catalogo/788/cliente" b-2k6umnrn50><i class="bi bi-person-check" b-2k6umnrn50></i> Ingresar como cliente
+                </a></div></section><section class="panel-card" b-2k6umnrn50><div class="catalogo-publico-list__header" b-2k6umnrn50><div b-2k6umnrn50><h3 class="panel-card__title" b-2k6umnrn50>Artículos</h3>
+                    <p class="panel-card__subtitle" b-2k6umnrn50>Elegí entre vista de lista o cuadrícula sin recargar el catálogo.</p></div></div><div class="catalogo-publico-tabs" role="tablist" aria-label="Filtro por rubro" b-2k6umnrn50><div class="catalogo-publico-tabs__scroll" b-2k6umnrn50><button type="button" role="tab" aria-selected class="catalogo-publico-tabs__btn is-active" b-2k6umnrn50>
+                            Todos
+                        </button><button type="button" role="tab" class="catalogo-publico-tabs__btn " b-2k6umnrn50>EMBALAJE</button><button type="button" role="tab" class="catalogo-publico-tabs__btn " b-2k6umnrn50>GALLETITAS</button><button type="button" role="tab" class="catalogo-publico-tabs__btn " b-2k6umnrn50>JUGUETERIA</button><button type="button" role="tab" class="catalogo-publico-tabs__btn " b-2k6umnrn50>LIBRERIA</button><button type="button" role="tab" class="catalogo-publico-tabs__btn " b-2k6umnrn50>LIBROS</button></div></div><div class="catalogo-publico-filters" b-2k6umnrn50><div class="field catalogo-publico-filters__field" b-2k6umnrn50><label b-2k6umnrn50>Marca</label>
+                        <select value="" b-2k6umnrn50><option value b-2k6umnrn50>Todas</option><option value="ALTA DENSIDAD" b-2k6umnrn50>ALTA DENSIDAD</option><option value="BONTUS" b-2k6umnrn50>BONTUS</option><option value="EXITO" b-2k6umnrn50>EXITO</option><option value="MISKY" b-2k6umnrn50>MISKY</option><option value="MOOVING" b-2k6umnrn50>MOOVING</option><option value="OLEK" b-2k6umnrn50>OLEK</option><option value="RUIBAL" b-2k6umnrn50>RUIBAL</option><option value="Varios" b-2k6umnrn50>Varios</option></select></div>
+                    <label class="catalogo-publico-filters__toggle" b-2k6umnrn50><input type="checkbox" b-2k6umnrn50 />
+                        <span b-2k6umnrn50>Agrupar por marca</span></label>
+                    <div class="catalogo-publico-view-switch catalogo-publico-filters__view" role="group" aria-label="Selector de vista de art&#xED;culos" b-2k6umnrn50><button type="button" class="catalogo-publico-view-switch__btn is-active" b-2k6umnrn50><i class="bi bi-list-ul" b-2k6umnrn50></i>
+                            <span b-2k6umnrn50>Lista</span></button>
+                        <button type="button" class="catalogo-publico-view-switch__btn " b-2k6umnrn50><i class="bi bi-grid-3x3-gap" b-2k6umnrn50></i>
+                            <span b-2k6umnrn50>Cuadrícula</span></button></div></div><div class="table-responsive" b-2k6umnrn50><table class="data-table usuarios-table catalogo-publico-table" b-2k6umnrn50><thead b-2k6umnrn50><tr b-2k6umnrn50><th style="width:120px;" b-2k6umnrn50>Imagen</th>
+                                        <th b-2k6umnrn50>Artículo</th>
+                                        <th b-2k6umnrn50>Descripción</th>
+                                        <th b-2k6umnrn50>Marca</th>
+                                        <th b-2k6umnrn50>Rubro</th>
+                                        <th style="text-align:right;" b-2k6umnrn50>Precio</th>
+                                        <th style="text-align:right;" b-2k6umnrn50>Oferta</th></tr></thead>
+                                <tbody b-2k6umnrn50><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/1381" alt="4 PUZZLES MIS MASCOTAS***.RUIBAL.H353" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>1381</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>4 PUZZLES MIS MASCOTAS***.RUIBAL.H353</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>RUIBAL</td>
+                                            <td b-2k6umnrn50>JUGUETERIA</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 14,30</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/14001" alt="*OFERTA BULTO BOLSA A/D 25X35 750G.ALTA" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>14001</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>*OFERTA BULTO BOLSA A/D 25X35 750G.ALTA</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>ALTA DENSIDAD</td>
+                                            <td b-2k6umnrn50>EMBALAJE</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 22,00</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/14529" alt="3542" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>14529</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>3542</strong></td>
+                                            <td b-2k6umnrn50>MOOVING</td>
+                                            <td b-2k6umnrn50>LIBRERIA</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 128,46</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/14744" alt="5 EN FILA   ART.119   OLEK" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>14744</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>5 EN FILA   ART.119   OLEK</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>OLEK</td>
+                                            <td b-2k6umnrn50>JUGUETERIA</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 52,80</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/14887" alt="4 PISTAS UNA PALABRA    BONTUS   653" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>14887</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>4 PISTAS UNA PALABRA    BONTUS   653</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>BONTUS</td>
+                                            <td b-2k6umnrn50>JUGUETERIA</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 424,00</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/14970" alt="7791762319426" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>14970</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>7791762319426</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>EXITO</td>
+                                            <td b-2k6umnrn50>LIBRERIA</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 2.563,70</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/16925" alt="4 EN LINEA  BONTUS   531" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>16925</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>4 EN LINEA  BONTUS   531</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>BONTUS</td>
+                                            <td b-2k6umnrn50>JUGUETERIA</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 556,00</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/18579" alt="5 EN LINEA   BONTUS    557" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>18579</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>5 EN LINEA   BONTUS    557</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>BONTUS</td>
+                                            <td b-2k6umnrn50>JUGUETERIA</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 1.240,00</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/331" alt="1/2 TARDE AGUA 315G (14U) MEDIA TARDE      5025" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>331</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>1/2 TARDE AGUA 315G (14U) MEDIA TARDE      5025</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>MISKY</td>
+                                            <td b-2k6umnrn50>GALLETITAS</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 789,76</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/5156" alt="1/2 TARDE SANDWICH 3X107GR.(16U) MEDIA   1243" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>5156</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>1/2 TARDE SANDWICH 3X107GR.(16U) MEDIA   1243</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>MISKY</td>
+                                            <td b-2k6umnrn50>GALLETITAS</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 902,59</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/526" alt="# BANDEJA M15 100U RECT.EXPANDIDO   EXT15" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>526</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50># BANDEJA M15 100U RECT.EXPANDIDO   EXT15</strong><div class="text-muted" b-2k6umnrn50>NEOPEL</div></td>
+                                            <td b-2k6umnrn50>&#x2014;</td>
+                                            <td b-2k6umnrn50>EMBALAJE</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 5.989,75</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/617" alt="1/2 TARDE SANDWICH 5X107GR (8U) MEDIA  21521" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>617</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>1/2 TARDE SANDWICH 5X107GR (8U) MEDIA  21521</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>MISKY</td>
+                                            <td b-2k6umnrn50>GALLETITAS</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 1.523,11</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/646335" alt="365 PREGUNTAS Y CURIOSIDADES PARA NI&#xD1;OS" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>646335</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>365 PREGUNTAS Y CURIOSIDADES PARA NI&#xD1;OS</strong></td>
+                                            <td b-2k6umnrn50>Varios</td>
+                                            <td b-2k6umnrn50>LIBROS</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 12.999,50</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/646340" alt="500 STICKERS DE ANIMALES" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>646340</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>500 STICKERS DE ANIMALES</strong></td>
+                                            <td b-2k6umnrn50>Varios</td>
+                                            <td b-2k6umnrn50>LIBROS</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 5.899,50</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/646342" alt="500 STICKERS DE DINOSAURIOS" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>646342</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>500 STICKERS DE DINOSAURIOS</strong></td>
+                                            <td b-2k6umnrn50>Varios</td>
+                                            <td b-2k6umnrn50>LIBROS</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 5.899,50</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/646465" alt="&#xBF;D&#xD3;NDE SE ESCONDIERON LOS JUGADORES?" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>646465</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>&#xBF;D&#xD3;NDE SE ESCONDIERON LOS JUGADORES?</strong></td>
+                                            <td b-2k6umnrn50>Varios</td>
+                                            <td b-2k6umnrn50>LIBROS</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 6.799,50</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr><tr b-2k6umnrn50><td b-2k6umnrn50><div class="catalogo-articulo-media" b-2k6umnrn50><img class="catalogo-articulo-media__img" src="/api/catalogos/imagen-articulo/112010001/8910" alt="1/2 MEDIA TARDE AGUA 105G (42U)   22516" loading="lazy" b-2k6umnrn50 /></div></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>8910</strong></td>
+                                            <td b-2k6umnrn50><strong b-2k6umnrn50>1/2 MEDIA TARDE AGUA 105G (42U)   22516</strong><div class="text-muted" b-2k6umnrn50>MINORISTA</div></td>
+                                            <td b-2k6umnrn50>MISKY</td>
+                                            <td b-2k6umnrn50>GALLETITAS</td>
+                                            <td style="text-align:right;" b-2k6umnrn50><span class="catalogo-publico-price__current" b-2k6umnrn50>$ 310,26</span></td>
+                                            <td style="text-align:right;" b-2k6umnrn50>&#x2014;</td></tr></tbody></table></div></section></section></main>
+                <!--Blazor:{"prerenderId":"9e4ce2d11abb4ccf9e2ab3b976489700"}-->
+    <script src="_framework/blazor.web.js"></script>
+    <script src="js/dashboard-export.js?v=20260417"></script>
+    <script src="js/auth-tree.js?v=20260526a"></script>
+    <script src="js/conversaciones.js?v=20260722a"></script>
+    <script src="js/interfaces-upload.js?v=20260526b"></script>
+    <script src="js/pwa.js?v=20260521e"></script>
+    <script src="js/sticky-table-scroll.js?v=20260525a"></script>
+    <script src="js/sticky-list-headers.js?v=20260715c"></script>
+    <script src="js/sidebar-hover-state.js?v=20260611a"></script>
+    <script src="js/crm-cotizacion.js?v=20260812b"></script>
+    <script src="js/carga-viajes.js?v=20260813a"></script></body></html><!--Blazor-Server-Component-State:CfDJ8ASVPmYZOshClTghADE3a7ZrpZRUIie6FTXKgNny5+t6VF+DmyD3goqjEsTD/3UBrjS7dvFf2xUzhOSyXdbMea5Ze1ffTonjYR+fbTwIgJik6lQTpH8DktXz7d496TBTsFtQtYzqhaCaLX2LZ3Dx4NT/VW4hYA5rDJgm2ksmPD9dlPJWOqts/VmVtYaU1kYuxgR2Ksihz98K0QbCv7b8Vvmvxnms2DPz0WkjJ1HSsHzR7+2STfz6ccaasJEDbblxkxp8RrVLHnKmXkZdOO9wWGN5nz2uRucBTdU1e35uNbXkZTD50VtkfHn0zTemse56IPrH2ww4xYlMG2qo0h+P0eASGdz+KIpxbsf+F2aQNrFuBJd0C3pVQuSAu+++FpuQMp/tA/fYDAaC4YRfGwRsyooUEBQtL+ZC67C0yOjM54HpnKPhKVpn7WHW3R8sEn6dmUW7NNE6OJ6Y7yoy5A8XIHdc6sABqVxl7omj7cOHNqDGuKnVHlCJwV/ADzRCfnOI77OhNrCmFqST8EhZ1/hJjTmzJVRbLTrDc48qq3N7qRh/-->

@@ -23,6 +23,7 @@ public sealed class CatalogosArticuloBusquedaFiltersDto
     public string Origen { get; set; } = CatalogosArticuloOrigenKeys.ListaPrecio;
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
+    public string? IdWeb { get; set; }
 }
 
 public sealed class CatalogosArticuloBusquedaDto
@@ -103,6 +104,7 @@ public sealed class CatalogosCatalogoItemDto
     public decimal? Precio { get; set; }
     public decimal? PrecioOferta { get; set; }
     public string Rubro { get; set; } = string.Empty;
+    public DateTime? OfertaHasta { get; set; }
 }
 
 public sealed class CatalogosCatalogoResumenDto
@@ -156,5 +158,35 @@ public sealed class CatalogosCatalogoSaveResultDto
     public bool Simulado { get; set; }
     public int IdInsert { get; set; }
     public string UrlPublica { get; set; } = string.Empty;
+    public string UrlCliente { get; set; } = string.Empty;
     public string Mensaje { get; set; } = string.Empty;
+}
+
+public sealed class CatalogosCatalogoAccessUrlsDto
+{
+    public string UrlPublica { get; set; } = string.Empty;
+    public string UrlCliente { get; set; } = string.Empty;
+}
+
+public sealed class CatalogosPublicIdentityDto
+{
+    public string NombreVisible { get; set; } = string.Empty;
+    public string NombreFallback { get; set; } = string.Empty;
+    public string LogoUrl { get; set; } = string.Empty;
+    public string LogoFormato { get; set; } = CatalogosPublicLogoFormatKeys.Auto;
+    public bool TieneLogoPersonalizado { get; set; }
+}
+
+public static class CatalogosPublicLogoFormatKeys
+{
+    public const string Auto = "auto";
+    public const string Square = "square";
+    public const string Horizontal = "horizontal";
+}
+
+public sealed class CatalogosPublicLogoServeDto
+{
+    public string RutaCompleta { get; set; } = string.Empty;
+    public string MimeType { get; set; } = "image/png";
+    public string NombreArchivo { get; set; } = "logo.png";
 }

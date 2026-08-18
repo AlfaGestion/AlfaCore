@@ -94,6 +94,11 @@
         window.alfaCorePwaFunctionExists = function (name) {
             return !!(window.alfaCorePwa && typeof window.alfaCorePwa[name] === 'function');
         };
+        window.alfaCoreViewport = {
+            isMobile: function () {
+                return window.matchMedia('(max-width: 768px)').matches;
+            }
+        };
         window.alfaCoreNavigation = {
             canGoBack: function () {
                 return window.history.length > 1;
