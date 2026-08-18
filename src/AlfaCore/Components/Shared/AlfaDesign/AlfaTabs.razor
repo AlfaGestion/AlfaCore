@@ -1,0 +1,36 @@
+<div class="alfa-tabs" role="tablist" aria-label="@AriaLabel">
+    @foreach (var item in Items)
+    {
+        <button class="@GetItemClass(item)"
+                type="button"
+                role="tab"
+                aria-selected="@(item.Key == ActiveKey)"
+                disabled="@item.Disabled"
+                @onclick="() => ActivateAsync(item)">
+            <span>@item.Label</span>
+            @if (!string.IsNullOrWhiteSpace(item.Badge))
+            {
+                <span class="alfa-tabs__badge">@item.Badge</span>
+            }
+        </button>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<AlfaTabItem> Items { get; set; } = [];
+    [Parameter] public string? ActiveKey { get; set; }
+    [Parameter] public EventCallback<string?> ActiveKeyChanged { get; set; }
+    [Parameter] public string AriaLabel { get; set; } = "Pestañas";
+
+    private string GetItemClass(AlfaTabItem item)
+        => item.Key == ActiveKey ? "alfa-tabs__item is-active" : "alfa-tabs__item";
+
+    private async Task ActivateAsync(AlfaTabItem item)
+    {
+        if (item.Disabled)
+            return;
+
+        ActiveKey = item.Key;
+        await ActiveKeyChanged.InvokeAsync(ActiveKey);
+    }
+}

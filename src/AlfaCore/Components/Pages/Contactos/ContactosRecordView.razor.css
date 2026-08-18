@@ -1,0 +1,656 @@
+.contactos-record-shell {
+    width: 100%;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-16);
+    padding: var(--alfa-space-16);
+    overflow: auto;
+    background: var(--alfa-bg-canvas);
+    color: var(--alfa-text-primary);
+}
+
+.contactos-record-header,
+.contactos-record-card,
+.contactos-record-context {
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+}
+
+.contactos-record-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-16);
+    padding: 18px 20px;
+}
+
+.contactos-record-header__identity {
+    width: min(100%, 760px);
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.contactos-record-header__avatar {
+    width: 60px;
+    height: 60px;
+    display: grid;
+    place-items: center;
+    flex: 0 0 60px;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 23px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.contactos-record-header__avatar i {
+    font-size: 24px;
+}
+
+.contactos-record-header__avatar.tone-0 { background: #397dcc; }
+.contactos-record-header__avatar.tone-1 { background: #3a966c; }
+.contactos-record-header__avatar.tone-2 { background: #7958b5; }
+.contactos-record-header__avatar.tone-3 { background: #318f99; }
+.contactos-record-header__avatar.tone-4 { background: #ad4f7d; }
+.contactos-record-header__avatar.tone-5 { background: #a87936; }
+
+.contactos-record-header__main {
+    min-width: 0;
+    display: grid;
+    gap: 7px;
+}
+
+.contactos-record-header__main h2 {
+    max-width: min(620px, 54vw);
+    margin: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    color: var(--alfa-text-primary);
+    font-size: 21px;
+    font-weight: 650;
+    line-height: 26px;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+}
+
+.contactos-record-header__tags,
+.contactos-record-header__summary {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-6);
+    flex-wrap: wrap;
+}
+
+.contactos-record-header__summary span {
+    min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    overflow: hidden;
+    color: var(--alfa-text-secondary);
+    font-size: 13px;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-record-header__summary i {
+    color: color-mix(in srgb, var(--alfa-accent) 72%, var(--alfa-text-secondary));
+    font-size: 12px;
+}
+
+.contactos-record-smart {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--alfa-space-8);
+    flex-wrap: wrap;
+}
+
+.contactos-record-smart__button {
+    width: 124px;
+    min-height: 56px;
+    display: grid;
+    align-content: center;
+    gap: 3px;
+    padding: 9px 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.contactos-record-smart__button:hover,
+.contactos-record-smart__button:focus-visible {
+    border-color: color-mix(in srgb, var(--alfa-accent) 42%, var(--alfa-border-default));
+    background: var(--alfa-bg-row-hover);
+    outline: 0;
+}
+
+.contactos-record-smart__button strong {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-6);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 18px;
+}
+
+.contactos-record-smart__button span {
+    overflow: hidden;
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    line-height: 14px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-record-smart__button--static {
+    cursor: default;
+}
+
+.contactos-record-smart__button--static:hover {
+    border-color: var(--alfa-border-default);
+    background: var(--alfa-bg-surface-raised);
+}
+
+.contactos-record-layout {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--alfa-space-16);
+}
+
+.contactos-record-layout.has-context {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
+    align-items: start;
+}
+
+.contactos-record-card {
+    min-width: 0;
+    overflow: hidden;
+}
+
+.contactos-record-tabs {
+    height: 38px;
+    display: flex;
+    align-items: end;
+    gap: var(--alfa-space-4);
+    padding: 0 18px;
+    border-bottom: 1px solid var(--alfa-border-default);
+}
+
+.contactos-record-tabs__item {
+    min-width: 64px;
+    height: 38px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    color: var(--alfa-text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+}
+
+.contactos-record-tabs__item.is-active {
+    border-bottom-color: var(--alfa-accent);
+    color: var(--alfa-text-primary);
+    font-weight: 650;
+}
+
+.contactos-record-tabs__item small {
+    padding: 2px 5px;
+    border-radius: var(--alfa-radius-full);
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-secondary);
+    font-size: 10px;
+    line-height: 14px;
+}
+
+.contactos-record-section {
+    display: grid;
+    gap: 14px;
+    padding: 18px 20px 20px;
+}
+
+.contactos-record-section + .contactos-record-section {
+    border-top: 1px solid var(--alfa-border-default);
+}
+
+.contactos-record-section--compact {
+    gap: 10px;
+    padding-top: 14px;
+}
+
+.contactos-record-section h3,
+.contactos-record-context h3 {
+    margin: 0;
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 16px;
+}
+
+.contactos-record-fields {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(300px, 460px));
+    justify-content: start;
+    column-gap: 48px;
+    row-gap: 20px;
+}
+
+.contactos-record-field {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.contactos-record-field span {
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+    line-height: 16px;
+}
+
+.contactos-record-field strong {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--alfa-text-primary);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 19px;
+    overflow-wrap: anywhere;
+    text-overflow: ellipsis;
+}
+
+.contactos-record-field strong.is-empty,
+.contactos-record-muted {
+    color: var(--alfa-text-disabled);
+    font-size: 12.5px;
+    font-weight: 400;
+}
+
+.contactos-record-checks {
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-12);
+    flex-wrap: wrap;
+}
+
+.contactos-record-check {
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-8);
+    color: var(--alfa-text-secondary);
+    font-size: 13px;
+}
+
+.contactos-record-check i {
+    width: 16px;
+    height: 16px;
+    display: inline-grid;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    color: var(--alfa-text-disabled);
+    font-size: 12px;
+    line-height: 1;
+}
+
+.contactos-record-check.is-checked i {
+    color: var(--alfa-accent);
+}
+
+.record-information-content {
+    width: min(100%, 1000px);
+}
+
+.contactos-record-text {
+    margin: 0;
+    color: var(--alfa-text-primary);
+    font-size: 14px;
+    line-height: 19px;
+    white-space: pre-wrap;
+}
+
+.contactos-record-accounts {
+    display: grid;
+    gap: var(--alfa-space-8);
+}
+
+.contactos-record-account {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    padding: 10px 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface-raised);
+    color: var(--alfa-text-primary);
+    text-decoration: none;
+}
+
+.contactos-record-account:hover,
+.contactos-record-account:focus-visible {
+    border-color: color-mix(in srgb, var(--alfa-accent) 42%, var(--alfa-border-default));
+    background: var(--alfa-bg-row-hover);
+    outline: 0;
+}
+
+.contactos-record-account span {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.contactos-record-account strong,
+.contactos-record-account small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.activity-panel {
+    min-width: 0;
+    display: grid;
+    gap: 0;
+    padding: 0 20px 20px;
+}
+
+.activity-toolbar {
+    min-height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    max-width: 880px;
+    border-bottom: 1px solid var(--alfa-border-default);
+}
+
+.activity-toolbar h3 {
+    margin: 0;
+    color: var(--alfa-text-primary);
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+.activity-feedback {
+    min-height: 150px;
+    max-width: 880px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--alfa-text-secondary);
+    font-size: 12.5px;
+}
+
+.activity-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--alfa-border-strong);
+    border-top-color: var(--alfa-accent);
+    border-radius: 50%;
+    animation: activity-spin 0.8s linear infinite;
+}
+
+@keyframes activity-spin {
+    to { transform: rotate(360deg); }
+}
+
+.activity-list {
+    width: 100%;
+    max-width: 880px;
+}
+
+.activity-event {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 12px;
+    padding: 15px 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--alfa-border-default) 72%, transparent);
+}
+
+.activity-event__avatar {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.activity-event__avatar.tone-0 { background: #397dcc; }
+.activity-event__avatar.tone-1 { background: #3a966c; }
+.activity-event__avatar.tone-2 { background: #7958b5; }
+.activity-event__avatar.tone-3 { background: #318f99; }
+.activity-event__avatar.tone-4 { background: #ad4f7d; }
+.activity-event__avatar.tone-5 { background: #a87936; }
+
+.activity-event__content {
+    min-width: 0;
+    display: grid;
+    gap: 5px;
+}
+
+.activity-event__meta {
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    flex-wrap: wrap;
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    line-height: 15px;
+}
+
+.activity-event__meta strong {
+    color: var(--alfa-text-primary);
+    font-size: 12.5px;
+    font-weight: 650;
+}
+
+.activity-event__action {
+    margin: 0;
+    color: var(--alfa-text-primary);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 18px;
+}
+
+.activity-changes {
+    min-width: 0;
+    display: grid;
+    gap: 10px;
+    margin-top: 6px;
+    padding-left: 12px;
+    border-left: 2px solid color-mix(in srgb, var(--alfa-accent) 28%, var(--alfa-border-default));
+}
+
+.activity-change {
+    min-width: 0;
+    display: grid;
+    gap: 3px;
+}
+
+.activity-change > strong {
+    color: var(--alfa-text-secondary);
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 15px;
+}
+
+.activity-change__values {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr);
+    align-items: start;
+    gap: 8px;
+    color: var(--alfa-text-primary);
+    font-size: 12px;
+    line-height: 19px;
+}
+
+.activity-change__values span {
+    min-width: 0;
+    display: -webkit-box;
+    overflow: hidden;
+    overflow-wrap: anywhere;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+}
+
+.activity-change__values i {
+    padding-top: 2px;
+    color: var(--alfa-accent);
+    font-size: 12px;
+}
+
+.activity-load-more {
+    max-width: 880px;
+    display: flex;
+    justify-content: center;
+    padding: 16px 0 0;
+}
+
+.contactos-record-account small {
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+}
+
+.contactos-record-context {
+    min-width: 0;
+    display: grid;
+    gap: var(--alfa-space-12);
+    padding: 16px;
+}
+
+.contactos-record-context__item {
+    display: grid;
+    gap: var(--alfa-space-6);
+    padding: 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface-raised);
+}
+
+.contactos-record-context__item span {
+    color: var(--alfa-text-secondary);
+    font-size: 12px;
+}
+
+.contactos-record-context__item strong {
+    color: var(--alfa-text-primary);
+    font-size: 13.5px;
+    font-weight: 600;
+}
+
+@media (max-width: 1180px) {
+    .contactos-record-header {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .contactos-record-header__main h2 {
+        max-width: 100%;
+    }
+
+    .contactos-record-smart {
+        justify-content: flex-start;
+    }
+
+    .contactos-record-layout.has-context {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 760px) {
+    .contactos-record-shell {
+        padding: var(--alfa-space-12);
+    }
+
+    .contactos-record-header__identity {
+        align-items: flex-start;
+    }
+
+    .contactos-record-header__avatar {
+        width: 58px;
+        height: 58px;
+        flex-basis: 58px;
+        font-size: 22px;
+    }
+
+    .contactos-record-fields {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .contactos-record-smart__button {
+        width: min(100%, 150px);
+    }
+
+    .activity-panel {
+        padding-inline: 14px;
+    }
+
+    .activity-change__values {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 3px;
+    }
+
+    .activity-change__values i {
+        transform: rotate(90deg);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .activity-spinner { animation: none; }
+}
+.contactos-record-accounts__actions {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 14px;
+}
+
+.contactos-account-option {
+    display: grid;
+    gap: 3px;
+}
+
+.contactos-account-option strong {
+    overflow: hidden;
+    font-size: 13px;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.contactos-account-option small {
+    overflow: hidden;
+    color: var(--alfa-text-secondary);
+    font-size: 11.5px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}

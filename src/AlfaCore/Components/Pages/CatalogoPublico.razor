@@ -1,97 +1,836 @@
 @page "/catalogo/{IdInsert:int}"
+@page "/catalogo/{IdInsert:int}/cliente"
 @page "/{idweb}/{idbase:int}/catalogo/{IdInsert:int}"
+@page "/{idweb}/{idbase:int}/catalogo/{IdInsert:int}/cliente"
+@layout AlfaCore.Components.Layout.PublicLayout
 @inherits SaaSRoutePageBase
 @using AlfaCore.Models
 @inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
+@inject AlfaCore.Services.ICatalogosClienteSessionService CatalogoClienteSession
+@inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IAsyncDisposable
 
 <PageTitle>Catálogo público | AlfaCore</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Catálogo público</h2>
-            <p class="page-intro__text">Vista pública mínima preparada para mostrar los catálogos publicados con vigencia activa.</p>
+<section class="page-grid catalogo-publico-page">
+    <section class="catalogo-publico-hero panel-card catalogo-publico-hero--sticky">
+        <div class="catalogo-publico-hero__brand">
+            <a class="catalogo-publico-hero__logo @GetBrandingLogoFrameClass()" href="@GetPublicCatalogUrl()" title="Catálogo público" aria-label="Catálogo público">
+                <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
+            </a>
+            <div class="catalogo-publico-hero__copy">
+                <p class="catalogo-publico-hero__eyebrow">@GetBrandingName()</p>
+                <h2 class="catalogo-publico-hero__title">@GetCatalogHeaderTitle()</h2>
+                @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderSubtitle()))
+                {
+                    <p class="catalogo-publico-hero__text">@GetCatalogHeaderSubtitle()</p>
+                }
+            </div>
         </div>
-    </div>
+
+        <div class="catalogo-publico-hero__actions">
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleThemeAsync" title="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")">
+                <i class="bi @(_isDark ? "bi-sun" : "bi-moon")"></i>
+            </button>
+            @if (IsAuthenticatedForCurrentCatalog)
+            {
+                <span class="badge text-bg-secondary">Cliente: @GetCurrentClientLabel()</span>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="LogoutClienteAsync" disabled="@_sessionBusy">
+                    <i class="bi bi-box-arrow-right"></i> Cerrar sesión
+                </button>
+            }
+            else if (IsClientLoginRoute)
+            {
+                <a class="btn btn--ghost btn--sm" href="@GetPublicCatalogUrl()">
+                    <i class="bi bi-arrow-left"></i> Volver al catálogo
+                </a>
+            }
+            else
+            {
+                <a class="btn btn--primary btn--sm" href="@GetClientLoginUrl()">
+                    <i class="bi bi-person-check"></i> Ingresar como cliente
+                </a>
+            }
+        </div>
+    </section>
 
     @if (_loading)
     {
         <div class="loading">Cargando catálogo...</div>
     }
+    else if (IsClientLoginRoute && !IsAuthenticatedForCurrentCatalog)
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Ingresar como cliente</h3>
+                    <p class="panel-card__subtitle">Usá el código del cliente y su contraseña para identificarte en este catálogo.</p>
+                </div>
+            </div>
+
+            @if (_loginFeedback is not null)
+            {
+                <div class="editor-msg @GetFeedbackClass(_loginFeedback)">
+                    <div>
+                        <strong>@_loginFeedback.Title</strong>
+                        <p>@_loginFeedback.Message</p>
+                    </div>
+                </div>
+            }
+
+            <form class="auth-form" @onsubmit="LoginClienteAsync" @onsubmit:preventDefault="true">
+                <div class="row g-3">
+                    <div class="col-12 col-md-6">
+                        <div class="field">
+                            <label>Código de cliente</label>
+                            <input @bind="_clienteCodigo" @bind:event="oninput" autocomplete="username" disabled="@_sessionBusy" placeholder="Código de cliente" />
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="field">
+                            <label>Contraseña</label>
+                            <input type="password" @bind="_clientePassword" @bind:event="oninput" autocomplete="current-password" disabled="@_sessionBusy" placeholder="Contraseña" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="actions mt-3">
+                    <button type="submit" class="btn btn--primary" disabled="@_sessionBusy">
+                        <i class="bi bi-box-arrow-in-right"></i> @(_sessionBusy ? "Consultando..." : "Ingresar")
+                    </button>
+                    <a class="btn btn--ghost" href="@GetPublicCatalogUrl()" disabled="@_sessionBusy">
+                        <i class="bi bi-arrow-left"></i> Volver al catálogo
+                    </a>
+                </div>
+            </form>
+        </section>
+    }
     else if (_catalogo is null)
     {
         <div class="panel-card empty-state">
+            @if (_catalogFeedback is not null)
+            {
+                <div class="editor-msg @GetFeedbackClass(_catalogFeedback)">
+                    <div>
+                        <strong>@_catalogFeedback.Title</strong>
+                        <p>@_catalogFeedback.Message</p>
+                    </div>
+                </div>
+            }
             <p>El catálogo no está disponible, fue finalizado o todavía no cumple la vigencia requerida.</p>
         </div>
     }
     else
     {
         <section class="panel-card">
-            <div class="panel-card__header">
+            <div class="catalogo-publico-list__header">
                 <div>
-                    <h3 class="panel-card__title">@_catalogo.Nombre</h3>
-                    <p class="panel-card__subtitle">@_catalogo.Tipo · @VigenciaTexto()</p>
+                    <h3 class="panel-card__title">Artículos</h3>
+                    <p class="panel-card__subtitle">Elegí entre vista de lista o cuadrícula sin recargar el catálogo.</p>
                 </div>
+                @if (_catalogo.Articulos.Count > 0)
+                {
+                    <a class="btn btn--ghost btn--sm" href="@GetPdfExportUrl()" target="_blank" rel="noopener">
+                        <i class="bi bi-file-earmark-pdf"></i> Exportar PDF
+                    </a>
+                }
             </div>
-            @if (!string.IsNullOrWhiteSpace(_catalogo.Observaciones))
-            {
-                <p>@_catalogo.Observaciones</p>
-            }
-        </section>
 
-        <section class="panel-card">
-            <div class="table-responsive">
-                <table class="data-table usuarios-table">
-                    <thead>
-                        <tr>
-                            <th>Artículo</th>
-                            <th>Descripción</th>
-                            <th>Marca</th>
-                            <th>Rubro</th>
-                            <th style="text-align:right;">Precio</th>
-                            <th style="text-align:right;">Oferta</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in _catalogo.Articulos)
+            @if (_catalogo.Articulos.Count > 0)
+            {
+                <div class="catalogo-publico-tabs" role="tablist" aria-label="Filtro por rubro">
+                    <div class="catalogo-publico-tabs__scroll">
+                        <button type="button"
+                                role="tab"
+                                aria-selected="@(string.IsNullOrEmpty(_filtroRubro))"
+                                class="catalogo-publico-tabs__btn @(string.IsNullOrEmpty(_filtroRubro) ? "is-active" : string.Empty)"
+                                @onclick="() => SetFiltroRubro(string.Empty)">
+                            Todos
+                        </button>
+                        @foreach (var rubro in GetRubrosDisponibles())
                         {
-                            <tr>
-                                <td><strong>@item.IdArticulo</strong></td>
-                                <td>
-                                    <strong>@item.DescripcionArticulo</strong>
-                                    @if (!string.IsNullOrWhiteSpace(item.Presentacion))
-                                    {
-                                        <div class="text-muted">@item.Presentacion</div>
-                                    }
-                                </td>
-                                <td>@Display(item.Marca)</td>
-                                <td>@Display(item.Rubro)</td>
-                                <td style="text-align:right;">@Money(item.Precio)</td>
-                                <td style="text-align:right;">@Money(item.PrecioOferta)</td>
-                            </tr>
+                            <button type="button"
+                                    role="tab"
+                                    aria-selected="@(string.Equals(_filtroRubro, rubro, StringComparison.OrdinalIgnoreCase))"
+                                    class="catalogo-publico-tabs__btn @(string.Equals(_filtroRubro, rubro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)"
+                                    @onclick="() => SetFiltroRubro(rubro)">
+                                @rubro
+                            </button>
                         }
-                    </tbody>
-                </table>
-            </div>
+                    </div>
+                </div>
+
+                <div class="catalogo-publico-filters">
+                    <div class="field catalogo-publico-filters__field">
+                        <label>Marca</label>
+                        <select @bind="_filtroMarca">
+                            <option value="">Todas</option>
+                            @foreach (var marca in GetMarcasDisponibles())
+                            {
+                                <option value="@marca">@marca</option>
+                            }
+                        </select>
+                    </div>
+                    <label class="catalogo-publico-filters__toggle">
+                        <input type="checkbox" class="catalogo-publico-filters__toggle-input" @bind="_agruparPorMarca" />
+                        <span class="catalogo-publico-filters__toggle-track" aria-hidden="true"></span>
+                        <span>Agrupar por marca</span>
+                    </label>
+                    <div class="catalogo-publico-view-switch catalogo-publico-filters__view" role="group" aria-label="Selector de vista de artículos">
+                        <button type="button"
+                                class="catalogo-publico-view-switch__btn @GetViewModeClass(CatalogoViewMode.Lista)"
+                                @onclick="() => SetViewModeAsync(CatalogoViewMode.Lista)">
+                            <i class="bi bi-list-ul"></i>
+                            <span>Lista</span>
+                        </button>
+                        <button type="button"
+                                class="catalogo-publico-view-switch__btn @GetViewModeClass(CatalogoViewMode.Cuadricula)"
+                                @onclick="() => SetViewModeAsync(CatalogoViewMode.Cuadricula)">
+                            <i class="bi bi-grid-3x3-gap"></i>
+                            <span>Cuadrícula</span>
+                        </button>
+                    </div>
+                </div>
+            }
+
+            @{
+                var gruposVisibles = GetGruposVisibles();
+            }
+
+            @if (_catalogo.Articulos.Count == 0)
+            {
+                <div class="empty-state">
+                    <p>Este catálogo no tiene artículos publicados.</p>
+                </div>
+            }
+            else if (gruposVisibles.Count == 0)
+            {
+                <div class="empty-state">
+                    <p>No se encontraron artículos con los filtros seleccionados.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var grupo in gruposVisibles)
+                {
+                    @if (!string.IsNullOrWhiteSpace(grupo.Etiqueta))
+                    {
+                        <h4 class="catalogo-publico-grupo-marca__titulo">@grupo.Etiqueta</h4>
+                    }
+
+                    @if (_viewMode == CatalogoViewMode.Lista)
+                    {
+                        <div class="table-responsive">
+                            <table class="data-table usuarios-table catalogo-publico-table">
+                                <thead>
+                                    <tr>
+                                        <th style="width:120px;">Imagen</th>
+                                        <th>Artículo</th>
+                                        <th>Descripción</th>
+                                        <th>Marca</th>
+                                        <th>Rubro</th>
+                                        <th style="text-align:right;">Precio</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in grupo.Articulos)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="catalogo-articulo-media">
+                                                    @if (ShouldShowImage(item))
+                                                    {
+                                                        <button type="button" class="catalogo-articulo-media__trigger" @onclick="() => OpenLightbox(item)" title="Ver imagen completa">
+                                                            <img class="catalogo-articulo-media__img"
+                                                                 src="@GetProductThumbUrl(item)"
+                                                                 alt="@item.DescripcionArticulo"
+                                                                 loading="lazy"
+                                                                 @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(item.IdArticulo))" />
+                                                        </button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="catalogo-articulo-media__fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                                    }
+                                                </div>
+                                            </td>
+                                            <td><strong>@item.IdArticulo</strong></td>
+                                            <td>
+                                                <strong>@item.DescripcionArticulo</strong>
+                                                @if (!string.IsNullOrWhiteSpace(item.Presentacion))
+                                                {
+                                                    <div class="text-muted">@item.Presentacion</div>
+                                                }
+                                            </td>
+                                            <td>@Display(item.Marca)</td>
+                                            <td>@Display(item.Rubro)</td>
+                                            <td style="text-align:right;">
+                                                @RenderPrecio(item)
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="catalogo-publico-grid">
+                            @foreach (var item in grupo.Articulos)
+                            {
+                                <article class="catalogo-publico-grid__card">
+                                    <div class="catalogo-publico-grid__media">
+                                        @if (ShouldShowImage(item))
+                                        {
+                                            <button type="button" class="catalogo-publico-grid__trigger" @onclick="() => OpenLightbox(item)" title="Ver imagen completa">
+                                                <img class="catalogo-publico-grid__img"
+                                                     src="@GetProductThumbUrl(item)"
+                                                     alt="@item.DescripcionArticulo"
+                                                     loading="lazy"
+                                                     @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(item.IdArticulo))" />
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <div class="catalogo-publico-grid__fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                        }
+                                    </div>
+
+                                    <div class="catalogo-publico-grid__body">
+                                        <div class="catalogo-publico-grid__title-row">
+                                            <strong class="catalogo-publico-grid__title">@item.DescripcionArticulo</strong>
+                                            <span class="catalogo-publico-grid__code">@item.IdArticulo</span>
+                                        </div>
+
+                                        @if (!string.IsNullOrWhiteSpace(item.Presentacion))
+                                        {
+                                            <p class="catalogo-publico-grid__presentation">@item.Presentacion</p>
+                                        }
+
+                                        <div class="catalogo-publico-grid__meta">
+                                            <span>@Display(item.Marca)</span>
+                                            <span>@Display(item.Rubro)</span>
+                                        </div>
+
+                                        <div class="catalogo-publico-grid__prices">
+                                            @RenderPrecio(item, alignEnd: false)
+                                        </div>
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    }
+                }
+            }
         </section>
     }
 </section>
 
+@if (_lightboxItem is not null)
+{
+    <div class="catalogo-publico-lightbox" @onclick="CloseLightbox">
+        <button type="button" class="catalogo-publico-lightbox__close" @onclick="CloseLightbox" @onclick:stopPropagation="true" title="Cerrar">
+            <i class="bi bi-x-lg"></i>
+        </button>
+        <div class="catalogo-publico-lightbox__content" @onclick:stopPropagation="true">
+            <img class="catalogo-publico-lightbox__img" src="@GetProductImageUrl(_lightboxItem)" alt="@_lightboxItem.DescripcionArticulo" />
+            <p class="catalogo-publico-lightbox__caption">@_lightboxItem.DescripcionArticulo</p>
+        </div>
+    </div>
+}
+
 @code {
+    private const string ClientTokenStorageKey = "alfacore_catalogo_cliente_token";
+
     [Parameter] public int IdInsert { get; set; }
 
     private CatalogosCatalogoDetalleDto? _catalogo;
+    private CatalogosPublicIdentityDto _branding = new();
+    private AppUiMessage? _loginFeedback;
+    private AppUiMessage? _catalogFeedback;
     private bool _loading = true;
+    private bool _sessionBusy;
+    private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
+    private string _clienteCodigo = string.Empty;
+    private string _clientePassword = string.Empty;
+    private bool _restoreAttempted;
+    private bool _viewModeRestored;
+    private CatalogoViewMode _viewMode = CatalogoViewMode.Lista;
+    private PuntoVentaSettingsDto _puntoVentaSettings = new();
+    private bool _routeSessionError;
+    private const string ViewModeStorageKey = "alfacore_catalogo_publico_view_mode";
+    private bool _isDark = true;
+    private string _filtroRubro = string.Empty;
+    private string _filtroMarca = string.Empty;
+    private bool _agruparPorMarca;
+
+    private enum CatalogoViewMode
+    {
+        Lista = 0,
+        Cuadricula = 1
+    }
+
+    private sealed class CatalogoPublicoGrupoMarca
+    {
+        public string Etiqueta { get; init; } = string.Empty;
+        public IReadOnlyList<CatalogosCatalogoItemDto> Articulos { get; init; } = [];
+    }
 
     protected override async Task OnInitializedAsync()
     {
+        CatalogoClienteSession.StateChanged += OnClientSessionStateChanged;
+        await EnsureRouteSessionAsync();
+        await LoadImageSettingsAsync();
+        await LoadPublicIdentityAsync();
+        await RefreshCatalogAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await EnsureRouteSessionAsync();
+        await LoadPublicIdentityAsync();
+        await EnsureCatalogStateAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            if (!_viewModeRestored)
+            {
+                _viewModeRestored = true;
+                await RestoreViewModeAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+
+            if (!_restoreAttempted)
+            {
+                _restoreAttempted = true;
+                await RestoreClientSessionAsync();
+            }
+
+            try
+            {
+                var theme = await Js.InvokeAsync<string>("dashboardTheme.get");
+                _isDark = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+                await InvokeAsync(StateHasChanged);
+            }
+            catch
+            {
+                // Sin JS interop disponible (prerender): se mantiene el modo oscuro por defecto.
+            }
+        }
+
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        _isDark = !_isDark;
+        try
+        {
+            await Js.InvokeVoidAsync("dashboardTheme.set", _isDark ? "dark" : "light");
+        }
+        catch
+        {
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        CatalogoClienteSession.StateChanged -= OnClientSessionStateChanged;
+        await Task.CompletedTask;
+    }
+
+    private void OnClientSessionStateChanged()
+        => _ = InvokeAsync(async () =>
+        {
+            if (IsClientLoginRoute && IsAuthenticatedForCurrentCatalog)
+                Nav.NavigateTo(GetPublicCatalogUrl(), replace: true);
+            else
+                await EnsureCatalogStateAsync();
+
+            await InvokeAsync(StateHasChanged);
+        });
+
+    private bool IsClientLoginRoute
+        => NormalizeRoutePath(Nav.ToBaseRelativePath(Nav.Uri)).EndsWith("/cliente", StringComparison.OrdinalIgnoreCase);
+
+    private bool IsAuthenticatedForCurrentCatalog
+        => CatalogoClienteSession.CurrentClient is { } client
+           && string.Equals(client.IdWeb, NormalizeRouteSegment(idweb), StringComparison.OrdinalIgnoreCase)
+           && client.IdBase == (idbase ?? 0);
+
+    private async Task EnsureCatalogStateAsync()
+    {
+        if (IsClientLoginRoute && !IsAuthenticatedForCurrentCatalog)
+        {
+            _loading = false;
+            _catalogo = null;
+            return;
+        }
+
+        if (_routeSessionError)
+        {
+            _loading = false;
+            _catalogo = null;
+            return;
+        }
+
+        if (_catalogo is not null
+            && _catalogo.IdInsert == IdInsert
+            && !_loading)
+            return;
+
+        await RefreshCatalogAsync();
+    }
+
+    private int? _effectiveIdBase;
+
+    private int? GetEffectiveIdBase() => _effectiveIdBase;
+
+    private async Task EnsureRouteSessionAsync()
+    {
+        if (idbase is > 0)
+        {
+            _effectiveIdBase = idbase;
+        }
+        else
+        {
+            var sessionBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+            _effectiveIdBase = sessionBaseId > 0 ? sessionBaseId : null;
+        }
+
+        if (!AppMode.IsSaaSMode || !idbase.HasValue)
+            return;
+
+        var routeBaseId = idbase.Value;
+        var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+        if (routeBase is null)
+        {
+            _routeSessionError = true;
+            _catalogFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Base no disponible",
+                Message = "No se pudo resolver la base asociada a este catálogo. Probá nuevamente desde el enlace correcto."
+            };
+            return;
+        }
+
+        SessionSvc.SetWebhookOverride(new SessionDto
+        {
+            Id = Guid.Parse($"00000000-0000-0000-0000-{routeBaseId:000000000000}"),
+            BaseId = routeBase.IdBase,
+            Nombre = routeBase.Nombre,
+            Servidor = routeBase.DbServer,
+            BaseDatos = routeBase.DbName,
+            Usuario = routeBase.DbUser,
+            Password = routeBase.DbPassword,
+            TrustServerCertificate = true,
+            Activa = true
+        });
+
+        try
+        {
+            await Js.InvokeVoidAsync("alfaCoreSqlSession.setActive", Guid.Parse($"00000000-0000-0000-0000-{routeBaseId:000000000000}").ToString());
+        }
+        catch
+        {
+            // El override en memoria ya quedó activo; el storage solo acompaña la navegación.
+        }
+
+        _routeSessionError = false;
+    }
+
+    private async Task RefreshCatalogAsync()
+    {
+        _loading = true;
+
+        if (_routeSessionError)
+        {
+            _catalogo = null;
+            _loading = false;
+            return;
+        }
+
+        _catalogFeedback = null;
+
         var result = await UiOps.RunAsync(() => CatalogosSvc.GetCatalogoPublicoAsync(IdInsert), "No se pudo cargar el catálogo público.");
         if (result.Success)
+        {
             _catalogo = result.Value;
-
+        }
+        else
+        {
+            _catalogo = null;
+            _catalogFeedback = result.Feedback;
+        }
         _loading = false;
     }
+
+    private async Task LoadPublicIdentityAsync()
+    {
+        try
+        {
+            _branding = await CatalogosSvc.GetPublicIdentityAsync(idweb);
+        }
+        catch
+        {
+            _branding = new CatalogosPublicIdentityDto();
+        }
+    }
+
+    private async Task LoadImageSettingsAsync()
+    {
+        try
+        {
+            _puntoVentaSettings = await PuntoVentaSvc.GetSettingsAsync();
+        }
+        catch
+        {
+            _puntoVentaSettings = new PuntoVentaSettingsDto();
+        }
+    }
+
+    private async Task RestoreClientSessionAsync()
+    {
+        try
+        {
+            var token = await Js.InvokeAsync<string?>("localStorage.getItem", ClientTokenStorageKey);
+            if (string.IsNullOrWhiteSpace(token))
+                return;
+
+            if (!CatalogoClienteSession.TryRestoreFromToken(token))
+            {
+                await Js.InvokeVoidAsync("localStorage.removeItem", ClientTokenStorageKey);
+                return;
+            }
+
+            if (IsClientLoginRoute && IsAuthenticatedForCurrentCatalog)
+                Nav.NavigateTo(GetPublicCatalogUrl(), replace: true);
+        }
+        catch
+        {
+        }
+
+        await EnsureCatalogStateAsync();
+    }
+
+    private async Task LoginClienteAsync()
+    {
+        _loginFeedback = null;
+        _sessionBusy = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CatalogoClienteSession.LoginAsync(new CatalogosClienteLoginRequestDto
+            {
+                CodigoCliente = _clienteCodigo,
+                Password = _clientePassword,
+                IdWeb = idweb,
+                IdBase = idbase,
+                IdInsert = IdInsert
+            }), "No pudimos validar el acceso en este momento. Intentá nuevamente.");
+
+            if (!result.Success || result.Value is null)
+            {
+                _loginFeedback = result.Feedback;
+                return;
+            }
+
+            await Js.InvokeVoidAsync("localStorage.setItem", ClientTokenStorageKey, CatalogoClienteSession.CurrentToken ?? string.Empty);
+            _clientePassword = string.Empty;
+            Nav.NavigateTo(GetPublicCatalogUrl(), replace: true);
+        }
+        finally
+        {
+            _sessionBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LogoutClienteAsync()
+    {
+        _sessionBusy = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            CatalogoClienteSession.Logout();
+            await Js.InvokeVoidAsync("localStorage.removeItem", ClientTokenStorageKey);
+            Nav.NavigateTo(GetPublicCatalogUrl(), replace: true);
+        }
+        finally
+        {
+            _sessionBusy = false;
+        }
+    }
+
+    private async Task SetViewModeAsync(CatalogoViewMode mode)
+    {
+        if (_viewMode == mode)
+            return;
+
+        _viewMode = mode;
+        await PersistViewModeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string GetViewModeClass(CatalogoViewMode mode)
+        => _viewMode == mode ? "is-active" : string.Empty;
+
+    private async Task RestoreViewModeAsync()
+    {
+        try
+        {
+            var value = await Js.InvokeAsync<string?>("localStorage.getItem", ViewModeStorageKey);
+            if (string.Equals(value, nameof(CatalogoViewMode.Cuadricula), StringComparison.OrdinalIgnoreCase))
+            {
+                _viewMode = CatalogoViewMode.Cuadricula;
+                return;
+            }
+
+            if (string.Equals(value, nameof(CatalogoViewMode.Lista), StringComparison.OrdinalIgnoreCase))
+            {
+                _viewMode = CatalogoViewMode.Lista;
+                return;
+            }
+
+            // Sin preferencia guardada todavia (primera visita): en mobile arrancamos en Cuadricula.
+            var esMobile = await Js.InvokeAsync<bool>("alfaCoreViewport.isMobile");
+            _viewMode = esMobile ? CatalogoViewMode.Cuadricula : CatalogoViewMode.Lista;
+        }
+        catch
+        {
+            _viewMode = CatalogoViewMode.Lista;
+        }
+    }
+
+    private async Task PersistViewModeAsync()
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.setItem", ViewModeStorageKey, _viewMode.ToString());
+        }
+        catch
+        {
+        }
+    }
+
+    private string GetCatalogHeaderTitle()
+        => _catalogo?.Nombre?.Trim()
+           ?? "Catálogo público";
+
+    private string GetCatalogHeaderSubtitle()
+    {
+        if (_catalogo is null)
+            return string.Empty;
+
+        if (_catalogo.VigenciaDesde.HasValue || _catalogo.VigenciaHasta.HasValue)
+            return $"Vigencia: {VigenciaTexto()}";
+
+        return string.IsNullOrWhiteSpace(_catalogo.Tipo)
+            ? string.Empty
+            : _catalogo.Tipo.Trim();
+    }
+
+    private string GetBrandingName()
+        => string.IsNullOrWhiteSpace(_branding.NombreVisible)
+            ? "Catálogos"
+            : _branding.NombreVisible.Trim();
+
+    private string GetBrandingLogoUrl()
+        => string.IsNullOrWhiteSpace(_branding.LogoUrl)
+            ? "/logos/Logo.png"
+            : _branding.LogoUrl.Trim();
+
+    private string GetBrandingLogoFrameClass()
+        => _branding.LogoFormato?.Trim().ToLowerInvariant() switch
+        {
+            CatalogosPublicLogoFormatKeys.Square => "catalogo-publico-hero__logo--square",
+            CatalogosPublicLogoFormatKeys.Horizontal => "catalogo-publico-hero__logo--horizontal",
+            _ => "catalogo-publico-hero__logo--auto"
+        };
+
+    private static bool HasValidOffer(CatalogosCatalogoItemDto item)
+        => item.PrecioOferta.HasValue
+           && item.PrecioOferta.Value > 0m
+           && item.PrecioOferta.Value < item.Precio;
+
+    private static int GetOfertaPercent(CatalogosCatalogoItemDto item)
+    {
+        if (!HasValidOffer(item) || item.Precio is not > 0m)
+            return 0;
+
+        var descuento = 1m - (item.PrecioOferta!.Value / item.Precio!.Value);
+        return (int)Math.Round(descuento * 100m, MidpointRounding.AwayFromZero);
+    }
+
+    private static string GetOfertaHastaTexto(CatalogosCatalogoItemDto item)
+        => item.OfertaHasta.HasValue
+            ? $"Válido hasta {item.OfertaHasta.Value:dd/MM/yyyy}"
+            : string.Empty;
+
+    private RenderFragment RenderPrecio(CatalogosCatalogoItemDto item, bool alignEnd = true) =>
+        @<div class="catalogo-publico-price @(alignEnd ? "catalogo-publico-price--list" : string.Empty) @(HasValidOffer(item) ? "catalogo-publico-price--offer" : string.Empty)">
+            <span class="catalogo-publico-price__current">@Money(item.Precio)</span>
+            @if (HasValidOffer(item))
+            {
+                <span class="catalogo-publico-price__offer-row">
+                    <span class="catalogo-publico-price__badge">-@GetOfertaPercent(item)%</span>
+                    <span class="catalogo-publico-price__offer">@Money(item.PrecioOferta)</span>
+                </span>
+                @if (item.OfertaHasta.HasValue)
+                {
+                    <span class="catalogo-publico-price__offer-hasta">@GetOfertaHastaTexto(item)</span>
+                }
+            }
+        </div>;
+
+    private string GetCurrentClientLabel()
+        => CatalogoClienteSession.CurrentClient?.RazonSocial?.Trim()
+           ?? CatalogoClienteSession.CurrentClient?.CodigoCliente?.Trim()
+           ?? string.Empty;
+
+    private string GetPublicCatalogUrl()
+        => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(includeClientSuffix: false)).ToString();
+
+    private string GetPdfExportUrl()
+    {
+        var query = new List<string>();
+        if (!string.IsNullOrWhiteSpace(idweb))
+            query.Add($"idweb={Uri.EscapeDataString(idweb)}");
+        var effectiveIdBase = GetEffectiveIdBase();
+        if (effectiveIdBase is > 0)
+            query.Add($"idbase={effectiveIdBase.Value}");
+        query.Add($"vista={(_viewMode == CatalogoViewMode.Cuadricula ? "cuadricula" : "lista")}");
+
+        var relative = $"/api/catalogos/{IdInsert}/pdf";
+        if (query.Count > 0)
+            relative += "?" + string.Join("&", query);
+
+        return relative;
+    }
+
+    private string GetClientLoginUrl()
+        => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(includeClientSuffix: true)).ToString();
+
+    private string BuildCatalogRelativeUrl(bool includeClientSuffix)
+        => AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCatalogUrl(
+            IdInsert,
+            includeClientSuffix,
+            idweb,
+            idbase,
+            Nav.Uri,
+            CatalogoClienteSession.CurrentClient?.IdWeb,
+            SessionSvc.GetActiveSession()?.BaseId);
 
     private string VigenciaTexto()
     {
@@ -103,9 +842,114 @@
         return $"{desde} - {hasta}";
     }
 
+    private static string NormalizeRoutePath(string? value)
+        => (value ?? string.Empty).Split('?', '#')[0].Trim().Trim('/');
+
+    private static string NormalizeRouteSegment(string? value)
+        => (value ?? string.Empty).Trim().Trim('/');
+
+    private bool ShouldShowImage(CatalogosCatalogoItemDto item)
+        => !_imageFallbacks.Contains(item.IdArticulo) && !string.IsNullOrWhiteSpace(GetProductThumbUrl(item));
+
+    private void HandleImageError(string idArticulo)
+    {
+        if (!string.IsNullOrWhiteSpace(idArticulo))
+            _imageFallbacks.Add(idArticulo);
+    }
+
+    private string GetProductThumbUrl(CatalogosCatalogoItemDto item)
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), thumbnail: true);
+
+    private string GetProductImageUrl(CatalogosCatalogoItemDto item)
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase());
+
+    private CatalogosCatalogoItemDto? _lightboxItem;
+
+    private void OpenLightbox(CatalogosCatalogoItemDto item)
+        => _lightboxItem = item;
+
+    private void CloseLightbox()
+        => _lightboxItem = null;
+
+    private static string ProductInitials(string descripcion)
+    {
+        if (string.IsNullOrWhiteSpace(descripcion))
+            return "CA";
+
+        var parts = descripcion
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(x => char.ToUpperInvariant(x[0]));
+
+        return string.Concat(parts);
+    }
+
+    private static string GetFeedbackClass(AppUiMessage message)
+        => message.Severity switch
+        {
+            AppUiFeedbackSeverity.Success => "editor-msg--success",
+            AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+            _ => "editor-msg--error"
+        };
+
     private static string Display(string? value)
         => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
 
     private static string Money(decimal? value)
         => value.HasValue ? value.Value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR")) : "—";
+
+    private void SetFiltroRubro(string rubro)
+        => _filtroRubro = rubro ?? string.Empty;
+
+    private IReadOnlyList<string> GetRubrosDisponibles()
+        => _catalogo?.Articulos
+            .Select(x => x.Rubro?.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList()
+           ?? [];
+
+    private IReadOnlyList<string> GetMarcasDisponibles()
+        => _catalogo?.Articulos
+            .Select(x => x.Marca?.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList()
+           ?? [];
+
+    private IReadOnlyList<CatalogosCatalogoItemDto> GetArticulosFiltrados()
+    {
+        if (_catalogo is null)
+            return [];
+
+        IEnumerable<CatalogosCatalogoItemDto> query = _catalogo.Articulos;
+
+        if (!string.IsNullOrWhiteSpace(_filtroRubro))
+            query = query.Where(x => string.Equals((x.Rubro ?? string.Empty).Trim(), _filtroRubro, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(_filtroMarca))
+            query = query.Where(x => string.Equals((x.Marca ?? string.Empty).Trim(), _filtroMarca, StringComparison.OrdinalIgnoreCase));
+
+        return query.ToList();
+    }
+
+    private IReadOnlyList<CatalogoPublicoGrupoMarca> GetGruposVisibles()
+    {
+        var articulos = GetArticulosFiltrados();
+        if (articulos.Count == 0)
+            return [];
+
+        if (!_agruparPorMarca)
+            return [new CatalogoPublicoGrupoMarca { Etiqueta = string.Empty, Articulos = articulos }];
+
+        return articulos
+            .GroupBy(x => string.IsNullOrWhiteSpace(x.Marca) ? "VARIOS" : x.Marca.Trim().ToUpperInvariant())
+            .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new CatalogoPublicoGrupoMarca { Etiqueta = g.Key, Articulos = g.ToList() })
+            .ToList();
+    }
 }

@@ -1,0 +1,159 @@
+@inject IJSRuntime JS
+@inject AlfaActionMenuCoordinator Coordinator
+@implements IAsyncDisposable
+
+<div class="alfa-action-menu @Class" @onkeydown="HandleKeyDownAsync" @onkeydown:stopPropagation="true">
+    <button type="button"
+            class="alfa-action-menu__trigger"
+            title="@TriggerLabel"
+            aria-label="@TriggerLabel"
+            aria-haspopup="menu"
+            aria-expanded="@_open"
+            disabled="@Disabled"
+            @ref="_trigger"
+            @onclick="ToggleAsync">
+        <i class="@TriggerIcon" aria-hidden="true"></i>
+    </button>
+
+    @if (_open)
+    {
+        <button type="button" class="alfa-action-menu__backdrop" tabindex="-1" aria-label="Cerrar menú" @onclick="CloseAndRestoreFocusAsync"></button>
+        <div class="alfa-action-menu__panel"
+             role="menu"
+             aria-label="@MenuLabel"
+             @ref="_panel"
+             @onclick:stopPropagation="true">
+            @foreach (var item in Items)
+            {
+                @if (item.SeparatorBefore)
+                {
+                    <div class="alfa-action-menu__separator" role="separator"></div>
+                }
+                <button type="button"
+                        class="@GetItemClass(item)"
+                        role="menuitem"
+                        tabindex="-1"
+                        aria-current="@(item.Active ? "true" : null)"
+                        disabled="@item.Disabled"
+                        @onclick="() => ExecuteAsync(item)">
+                    @if (!string.IsNullOrWhiteSpace(item.Icon))
+                    {
+                        <i class="@item.Icon" aria-hidden="true"></i>
+                    }
+                    <span class="alfa-action-menu__item-label">@item.Label</span>
+                    @if (!string.IsNullOrWhiteSpace(item.SecondaryText))
+                    {
+                        <span class="alfa-action-menu__secondary">@item.SecondaryText</span>
+                    }
+                </button>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<AlfaActionMenuItem> Items { get; set; } = [];
+    [Parameter] public string TriggerLabel { get; set; } = "Más acciones";
+    [Parameter] public string MenuLabel { get; set; } = "Acciones disponibles";
+    [Parameter] public string TriggerIcon { get; set; } = "bi bi-three-dots";
+    [Parameter] public AlfaActionMenuAlign Align { get; set; } = AlfaActionMenuAlign.End;
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string Class { get; set; } = string.Empty;
+
+    private readonly Guid _menuId = Guid.NewGuid();
+    private ElementReference _trigger;
+    private ElementReference _panel;
+    private IJSObjectReference? _module;
+    private bool _open;
+    private bool _positionPending;
+
+    protected override void OnInitialized()
+        => Coordinator.Opened += HandleAnotherMenuOpened;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_positionPending || !_open)
+            return;
+
+        _positionPending = false;
+        _module ??= await JS.InvokeAsync<IJSObjectReference>("import", "/js/alfa-action-menu.js");
+        await _module.InvokeVoidAsync("position", _trigger, _panel, Align == AlfaActionMenuAlign.End ? "end" : "start");
+        await _module.InvokeVoidAsync("focusFirst", _panel);
+    }
+
+    private Task ToggleAsync()
+        => _open ? CloseAsync(true) : OpenAsync();
+
+    private Task OpenAsync()
+    {
+        Coordinator.NotifyOpened(_menuId);
+        _open = true;
+        _positionPending = true;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void HandleAnotherMenuOpened(Guid menuId)
+    {
+        if (menuId == _menuId || !_open)
+            return;
+
+        _open = false;
+        _positionPending = false;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private Task CloseAndRestoreFocusAsync()
+        => CloseAsync(true);
+
+    private async Task CloseAsync(bool restoreFocus)
+    {
+        if (!_open)
+            return;
+
+        _open = false;
+        _positionPending = false;
+        await InvokeAsync(StateHasChanged);
+        if (restoreFocus)
+            await _trigger.FocusAsync();
+    }
+
+    private async Task ExecuteAsync(AlfaActionMenuItem item)
+    {
+        if (item.Disabled)
+            return;
+
+        await CloseAsync(true);
+        if (item.OnClick is not null)
+            await item.OnClick.Invoke();
+    }
+
+    private async Task HandleKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!_open)
+            return;
+
+        if (args.Key == "Escape")
+        {
+            await CloseAsync(true);
+            return;
+        }
+
+        if (_module is null)
+            return;
+
+        if (args.Key is "ArrowDown" or "ArrowUp")
+            await _module.InvokeVoidAsync("focusRelative", _panel, args.Key == "ArrowDown" ? 1 : -1);
+        else if (args.Key is "Home" or "End")
+            await _module.InvokeVoidAsync("focusEdge", _panel, args.Key == "End");
+    }
+
+    private static string GetItemClass(AlfaActionMenuItem item)
+        => $"alfa-action-menu__item {(item.Active ? "is-active" : string.Empty)} {(item.Danger ? "is-danger" : string.Empty)}";
+
+    public async ValueTask DisposeAsync()
+    {
+        Coordinator.Opened -= HandleAnotherMenuOpened;
+        if (_module is not null)
+            await _module.DisposeAsync();
+    }
+}

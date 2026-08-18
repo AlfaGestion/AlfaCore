@@ -387,8 +387,6 @@ public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
     public string KnowledgeBase { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
 }
-
-
 /// <summary>
 /// Regla del motor de palabras clave de Conversaciones. Vigila los mensajes entrantes
 /// de cualquier canal y, si coincide una palabra clave, aplica sus acciones (responder,

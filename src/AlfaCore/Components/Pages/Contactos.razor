@@ -5,335 +5,219 @@
 @using Microsoft.AspNetCore.WebUtilities
 @using Microsoft.AspNetCore.Components.Web
 @inject IContactosService ContactosSvc
+@inject ICuentasComercialesService CuentasSvc
 @inject IConversacionesService ConversacionesSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
 @inject IRouteContextService RouteContext
 @inject IPageHeaderService PageHeader
 @inject NavigationManager Nav
+@inject ILogger<Contactos> Logger
 @implements IDisposable
 
 <PageTitle>Contactos | Alfa Gestión</PageTitle>
 
-<div class="page-grid contactos-page" @onclick="HandlePageClickAsync">
+<div class="@GetContactosPageClass()" @onclick="HandlePageClickAsync">
 
-    @if (_feedback is not null)
+    @if (_pageMode is ContactosPageMode.Edit or ContactosPageMode.New)
     {
-        <section class="panel-card">
-            <div class="editor-msg editor-msg--animated @GetFeedbackClass(_feedback) @(_feedbackLeaving ? "is-leaving" : string.Empty)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-            </div>
-        </section>
+        <NavigationLock OnBeforeInternalNavigation="ProtectDirtyEditNavigation" />
     }
 
-    @if (_showViewSettings && !_showEditor)
-    {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Configuración de vista</h3>
-                    <p class="panel-card__subtitle">Elegí columnas visibles, su orden y agrupación para la grilla de contactos.</p>
-                </div>
-            </div>
+    <AlfaNotification Message="@_feedback" OnDismiss="ClearFeedback" />
 
-            <div class="usuarios-view-settings">
-                <div class="field">
-                    <label>Agrupar por</label>
-                    <select @bind="_draftAgruparPor">
-                        <option value="@ContactosViewGroupKeys.None">Sin agrupar</option>
-                        <option value="@ContactosViewGroupKeys.Activo">Estado (Activo / Inactivo)</option>
-                    </select>
-                </div>
+    <AlfaDialog Open="@(_showViewSettings && !_showEditor && !_showRecordView)"
+                Title="Configurar vista"
+                Eyebrow="Listado de contactos"
+                Description="Elegí las columnas visibles, su orden y la agrupación de la grilla."
+                Size="AlfaDialogSize.Md"
+                Loading="@_savingViewSettings"
+                OnClose="CancelarConfiguracionVista">
+        <ChildContent>
+            <div class="contactos-view-settings">
+                <AlfaSelect Label="Agrupar por"
+                            Value="@_draftAgruparPor"
+                            ValueChanged="SetDraftGrouping"
+                            Options="@ViewGroupingOptions"
+                            Disabled="@_savingViewSettings" />
 
-                <div class="usuarios-view-settings__list">
+                <div class="contactos-view-settings__list" aria-label="Columnas del listado">
                     @foreach (var column in _viewSettingsDraft.OrderBy(c => c.Order))
                     {
-                        <div class="usuarios-view-settings__item">
-                            <label class="checkbox">
-                                <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleViewColumn(column.Key, args)" />
-                                <span>@column.Label</span>
-                            </label>
-                            <div class="actions">
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">
-                                    <i class="bi bi-arrow-up"></i>
-                                </button>
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, 1)">
-                                    <i class="bi bi-arrow-down"></i>
-                                </button>
+                        var orderedColumns = _viewSettingsDraft.OrderBy(c => c.Order).ToList();
+                        var columnIndex = orderedColumns.FindIndex(item => string.Equals(item.Key, column.Key, StringComparison.OrdinalIgnoreCase));
+                        <div class="contactos-view-settings__item">
+                            <AlfaCheckbox Value="@column.Visible"
+                                          ValueChanged="value => SetViewColumnVisibility(column.Key, value)"
+                                          Disabled="@_savingViewSettings">
+                                @column.Label
+                            </AlfaCheckbox>
+                            <div class="contactos-view-settings__order" aria-label="Ordenar @column.Label">
+                                <AlfaIconButton Icon="bi bi-arrow-up"
+                                                Label="@($"Subir {column.Label}")"
+                                                Size="AlfaSize.Sm"
+                                                Disabled="@(_savingViewSettings || columnIndex <= 0)"
+                                                OnClick="_ => MoveViewColumn(column.Key, -1)" />
+                                <AlfaIconButton Icon="bi bi-arrow-down"
+                                                Label="@($"Bajar {column.Label}")"
+                                                Size="AlfaSize.Sm"
+                                                Disabled="@(_savingViewSettings || columnIndex == orderedColumns.Count - 1)"
+                                                OnClick="_ => MoveViewColumn(column.Key, 1)" />
                             </div>
                         </div>
                     }
                 </div>
-
-                <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionVistaAsync">
-                        <i class="bi bi-floppy"></i> Guardar vista
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="CancelarConfiguracionVista">
-                        <i class="bi bi-x-circle"></i> Cancelar
-                    </button>
-                </div>
             </div>
-        </section>
-    }
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                        Disabled="@_savingViewSettings"
+                        OnClick="_ => CancelarConfiguracionVista()">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary"
+                        Icon="bi bi-floppy"
+                        Loading="@_savingViewSettings"
+                        OnClick="_ => GuardarConfiguracionVistaAsync()">Guardar vista</AlfaButton>
+        </Footer>
+    </AlfaDialog>
 
     @if (_showEditor)
     {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Datos principales</h3>
-                    <p class="panel-card__subtitle">@(_isNewMode ? "Completá los datos principales del contacto." : $"Código interno: {_selectedId} · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
-                </div>
-            </div>
-
-            <div class="contactos-tabs">
-                <button type="button"
-                        class="btn @(_activeTab == ContactoTab.Datos ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _activeTab = ContactoTab.Datos">
-                    Datos generales
-                </button>
-                <button type="button"
-                        class="btn @(_activeTab == ContactoTab.Observaciones ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _activeTab = ContactoTab.Observaciones">
-                    Observaciones
-                </button>
-                <button type="button"
-                        class="btn @(_activeTab == ContactoTab.Cuentas ? "btn--primary" : "btn--ghost")"
-                        @onclick="() => _activeTab = ContactoTab.Cuentas">
-                    Clientes / proveedores
-                </button>
-            </div>
-
-            @if (_activeTab == ContactoTab.Datos)
+        @if (!_isNewMode)
+        {
+            @if (_loadingEdit)
             {
-                <div class="contactos-form">
-                    <div class="contactos-form__grid">
-                        <div class="field">
-                            <label>Nombre y apellido</label>
-                            <input type="text" class="@GetFieldInputClass("nombre")" maxlength="100" @bind="_form.NombreApellido" disabled="@_saving" />
-                            @if (HasFieldError("nombre"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("nombre")</small>
-                            }
-                        </div>
-                        <div class="field">
-                            <label>Domicilio</label>
-                            <input type="text" class="@GetFieldInputClass("domicilio")" maxlength="100" @bind="_form.Domicilio" disabled="@_saving" />
-                            @if (HasFieldError("domicilio"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("domicilio")</small>
-                            }
-                        </div>
-                        <div class="field">
-                            <label>Localidad</label>
-                            <input type="text" class="@GetFieldInputClass("localidad")" maxlength="100" @bind="_form.Localidad" disabled="@_saving" />
-                            @if (HasFieldError("localidad"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("localidad")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Código postal</label>
-                            <input type="text" class="@GetFieldInputClass("codigo-postal")" maxlength="20" @bind="_form.CodigoPostal" disabled="@_saving" />
-                            @if (HasFieldError("codigo-postal"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("codigo-postal")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Provincia</label>
-                            <select class="@GetFieldInputClass("provincia")" @bind="_form.ProvinciaCodigo" disabled="@(_saving || _loadingProvincias)">
-                                <option value="">Seleccionar...</option>
-                                @foreach (var item in _provincias)
-                                {
-                                    <option value="@item.Codigo">@item.Descripcion</option>
-                                }
-                            </select>
-                            @if (HasFieldError("provincia"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("provincia")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Nro. documento</label>
-                            <input type="text" class="@GetFieldInputClass("numero-documento")" maxlength="13" @bind="_form.NumeroDocumento" disabled="@_saving" />
-                            @if (HasFieldError("numero-documento"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("numero-documento")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Teléfono</label>
-                            <input type="text" class="@GetFieldInputClass("telefono")" maxlength="100" @bind="_form.Telefono" disabled="@_saving" />
-                            @if (HasFieldError("telefono"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("telefono")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Tel. alternativo</label>
-                            <input type="text" class="@GetFieldInputClass("telefono-alternativo")" maxlength="100" @bind="_form.TelefonoAlternativo" disabled="@_saving" />
-                            @if (HasFieldError("telefono-alternativo"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("telefono-alternativo")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Celular</label>
-                            <input type="text" class="@GetFieldInputClass("celular")" maxlength="100" @bind="_form.Celular" disabled="@_saving" />
-                            @if (HasFieldError("celular"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("celular")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>E-mail</label>
-                            <input type="email" class="@GetFieldInputClass("email")" maxlength="100" @bind="_form.Email" disabled="@_saving" />
-                            @if (HasFieldError("email"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("email")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Página web</label>
-                            <input type="text" class="@GetFieldInputClass("website")" maxlength="100" @bind="_form.Website" disabled="@_saving" />
-                            @if (HasFieldError("website"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("website")</small>
-                            }
-                        </div>
-                        <div class="field field--md">
-                            <label>Cargo</label>
-                            <input type="text" class="@GetFieldInputClass("cargo")" maxlength="100" @bind="_form.Cargo" disabled="@_saving" />
-                            @if (HasFieldError("cargo"))
-                            {
-                                <small class="usuarios-field-error">@GetFieldError("cargo")</small>
-                            }
-                        </div>
-                    </div>
-
-                    <div class="contactos-flags">
-                        <label class="checkbox">
-                            <input type="checkbox" @bind="_form.MailPagosCobranzas" disabled="@_saving" />
-                            <span>Pagos/Cobranzas</span>
-                        </label>
-                        <label class="checkbox">
-                            <input type="checkbox" @bind="_form.MailOrdenCompra" disabled="@_saving" />
-                            <span>Órdenes de compra</span>
-                        </label>
-                        <label class="checkbox">
-                            <input type="checkbox" @bind="_form.MailOrdenTrabajo" disabled="@_saving" />
-                            <span>Órdenes de trabajo</span>
-                        </label>
-                    </div>
-                </div>
+                <section class="contactos-edit-shell">
+                    <AlfaEmptyState Title="Cargando contacto"
+                                    Message="Estamos preparando los datos para editar en la base activa." />
+                </section>
             }
-            else if (_activeTab == ContactoTab.Observaciones)
+            else if (!string.IsNullOrWhiteSpace(_editErrorMessage))
             {
-                <div class="field">
-                    <label>Observaciones</label>
-                    <textarea class="contactos-observaciones" @bind="_form.Observaciones" disabled="@_saving"></textarea>
-                </div>
+                <section class="contactos-edit-shell">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                    Title="No se pudo cargar el contacto"
+                                    Message="@_editErrorMessage"
+                                    ActionLabel="Volver"
+                                    ActionIcon="bi bi-arrow-left"
+                                    OnAction="ReturnFromEditLoadErrorAsync" />
+                </section>
             }
-            else
+            else if (_editLoadedId == _selectedId && _selectedId > 0)
             {
-                <div class="contactos-form">
-                    <div class="panel-card__header">
-                        <div>
-                            <h3 class="panel-card__title">Cuentas vinculadas</h3>
-                            <p class="panel-card__subtitle">Clientes y proveedores relacionados con este contacto.</p>
-                        </div>
-                    </div>
-                    @if (_linkedAccounts.Count == 0)
-                    {
-                        <div class="usuarios-empty">Este contacto no tiene clientes o proveedores vinculados.</div>
-                    }
-                    else
-                    {
-                        <div class="usuarios-table-wrap">
-                            <table class="data-table usuarios-table" data-sticky-list-header>
-                                <thead>
-                                    <tr>
-                                        <th>Tipo</th>
-                                        <th>C&oacute;digo</th>
-                                        <th>Cuenta</th>
-                                        <th>Relaci&oacute;n</th>
-                                        <th>Acciones</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var account in _linkedAccounts)
-                                    {
-                                        <tr>
-                                            <td>@account.Tipo</td>
-                                            <td>@account.Codigo</td>
-                                            <td><strong>@DisplayOrFallback(account.RazonSocial, account.Codigo)</strong></td>
-                                            <td>
-                                                @if (account.VinculadoPorTabla)
-                                                {
-                                                    <span>Relaci&oacute;n m&uacute;ltiple</span>
-                                                }
-                                                @if (account.VinculadoPorCuentaRel)
-                                                {
-                                                    <span>@(account.VinculadoPorTabla ? " / " : string.Empty)CuentaRel</span>
-                                                }
-                                            </td>
-                                            <td>
-                                                <a class="btn btn--ghost btn--sm" href="@BuildCuentaLink(account)">
-                                                    <i class="bi bi-box-arrow-up-right"></i>
-                                                    Ver / editar
-                                                </a>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                </div>
+                <ContactosEditView Model="_form"
+                                   Active="_selectedActivo"
+                                   Saving="_saving"
+                                   LoadingProvinces="_loadingProvincias"
+                                   Provinces="_provincias"
+                                   LinkedAccounts="_linkedAccounts"
+                                   FieldErrors="_fieldErrors"
+                                   ActiveTab="(int)_activeTab"
+                                   ActiveTabChanged="SetEditTabAsync"
+                                   OnFieldChanged="HandleEditFieldChangedAsync"
+                                   BuildAccountLink="BuildCuentaLink" />
             }
-
-        </section>
+        }
+        else
+        {
+        <ContactosEditView Model="_form"
+                           CreateMode="true"
+                           Saving="_saving"
+                           LoadingProvinces="_loadingProvincias"
+                           Provinces="_provincias"
+                           FieldErrors="_fieldErrors"
+                           ActiveTab="(int)_activeTab"
+                           ActiveTabChanged="SetEditTabAsync"
+                           OnFieldChanged="HandleEditFieldChangedAsync"
+                           BuildAccountLink="BuildCuentaLink" />
+        }
+    }
+    else if (_showRecordView)
+    {
+        <ContactosRecordView Contact="_recordDetail"
+                             ProvinciaDisplay="@GetRecordProvinciaDisplay()"
+                             Loading="_loadingRecord"
+                             ErrorMessage="@_recordErrorMessage"
+                             ActiveTab="@_recordActiveTab"
+                             ActiveTabChanged="SetRecordTabAsync"
+                             OnBack="VolverDesdeFichaAsync"
+                             OnRetry="RecargarFichaAsync"
+                             OnConversation="OpenConversationForRecordAsync"
+                             SearchAccounts="SearchAccountsForRecordAsync"
+                             LinkAccount="LinkAccountToRecordAsync"
+                             AccountLinked="ShowAccountLinkedFeedback"
+                             LinkingAccount="@_linkingAccount" />
     }
     else
     {
         var visibleColumns = GetVisibleColumns();
         var groups = BuildGridGroups();
 
-        <section class="panel-card">
-            <div class="panel-card__header panel-card__header--compact"><p class="panel-card__subtitle">@_pagedTotal registro(s) · Página @_pageNumber de @_totalPages · podés abrir la ficha con el botón editar o con doble clic.</p></div>
-
-            @if (_loadingList)
+        <section class="contactos-list-shell @(_viewMode == ContactosViewModeKeys.Kanban ? "contactos-list-shell--kanban" : _selectedIds.Count > 0 ? "contactos-list-shell--selection" : string.Empty)" aria-label="Listado de contactos">
+            @if (_viewMode == ContactosViewModeKeys.Kanban)
             {
-                <div class="usuarios-empty">Cargando contactos...</div>
+                <ContactosKanbanView Items="_items"
+                                     SelectedIds="_selectedIds"
+                                     PageNumber="@_pageNumber"
+                                     ShowActiveStatus="@(_activoFiltro != "1")"
+                                     Loading="_loadingList"
+                                     ConversationBusy="_openingConversation"
+                                     DeactivateDisabled="_saving"
+                                     ErrorMessage="@_listErrorMessage"
+                                     EmptyKind="@GetContactEmptyStateKind()"
+                                     EmptyTitle="@GetContactEmptyTitle()"
+                                     EmptyMessage="@GetContactEmptyMessage()"
+                                     EmptyActionLabel="@GetContactEmptyActionLabel()"
+                                     EmptyActionIcon="@GetContactEmptyActionIcon()"
+                                     OnToggleSelection="ToggleCardSelection"
+                                     OnOpenRecord="@(id => OpenRecordAsync(id))"
+                                     OnEdit="@(id => AbrirEditorAsync(id))"
+                                     OnOpenConversation="OpenConversationForContactAsync"
+                                     OnCreateConversation="OpenConversationForContactAsync"
+                                     OnDeactivate="DarDeBajaDesdeFilaAsync"
+                                     OnRetry="RecargarAsync"
+                                     OnEmptyAction="HandleContactEmptyActionAsync" />
+            }
+            else if (_loadingList)
+            {
+                <div class="contactos-list-shell__state">
+                    <AlfaEmptyState Title="Cargando contactos"
+                                    Message="Estamos consultando la base activa con los filtros actuales." />
+                </div>
+            }
+            else if (!string.IsNullOrWhiteSpace(_listErrorMessage))
+            {
+                <div class="contactos-list-shell__state">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                    Title="No se pudieron cargar los contactos"
+                                    Message="@_listErrorMessage"
+                                    ActionLabel="Reintentar"
+                                    ActionIcon="bi bi-arrow-clockwise"
+                                    OnAction="RecargarAsync" />
+                </div>
             }
             else if (_items.Count == 0)
             {
-                <div class="usuarios-empty">No hay contactos para los filtros seleccionados.</div>
+                <div class="contactos-list-shell__state">
+                    <AlfaEmptyState Kind="@GetContactEmptyStateKind()"
+                                    Title="@GetContactEmptyTitle()"
+                                    Message="@GetContactEmptyMessage()"
+                                    ActionLabel="@GetContactEmptyActionLabel()"
+                                    ActionIcon="@GetContactEmptyActionIcon()"
+                                    OnAction="HandleContactEmptyActionAsync" />
+                </div>
             }
             else
             {
-                <div class="usuarios-table-wrap">
-                    <table class="data-table usuarios-table contactos-table" data-sticky-list-header>
+                <div class="contactos-list-shell__table-scroll">
+                    <table class="contactos-list-table contactos-list-table--local-sticky">
                         <thead>
                             <tr>
-                                <th class="interfaces-table__selector">
+                                <th class="contactos-list-table__select">
                                     <input type="checkbox"
-                                           class="interfaces-table__checkbox"
+                                           class="contactos-list-table__checkbox"
                                            checked="@AreAllCurrentPageSelected"
                                            @onchange="ToggleSelectAll"
+                                           aria-label="Seleccionar todos los contactos visibles"
                                            title="Seleccionar todos los contactos visibles" />
                                 </th>
                                 @foreach (var col in visibleColumns)
@@ -349,8 +233,7 @@
                                         </button>
                                     </th>
                                 }
-                                <th class="interfaces-table__actions">Acciones</th>
-                                <th class="contactos-table__actions-head">Conversación</th>
+                                <th class="contactos-list-table__actions" aria-label="Acciones">…</th>
                             </tr>
                         </thead>
                         @foreach (var group in groups)
@@ -359,19 +242,19 @@
                                 @if (group.ShowHeader)
                                 {
                                     <tr class="usuarios-group-row">
-                                        <td colspan="@(visibleColumns.Count + 3)">@group.Label</td>
+                                        <td colspan="@(visibleColumns.Count + 2)">@group.Label</td>
                                     </tr>
                                 }
                                 @foreach (var item in group.Items)
                                 {
-                                    <tr class="@(_selectedId == item.Id ? "usuarios-table__row is-selected" : "usuarios-table__row")"
-                                        @onclick="() => _selectedId = item.Id"
-                                        @ondblclick="() => AbrirEditorAsync(item.Id)">
-                                        <td class="interfaces-table__selector" @onclick:stopPropagation="true">
+                                    <tr class="@GetContactRowClass(item.Id)"
+                                        @ondblclick="() => OpenRecordAsync(item.Id)">
+                                        <td class="contactos-list-table__select" @onclick:stopPropagation="true">
                                             <input type="checkbox"
-                                                   class="interfaces-table__checkbox"
+                                                   class="contactos-list-table__checkbox"
                                                    checked="@_selectedIds.Contains(item.Id)"
                                                    @onchange="args => ToggleRowSelection(item.Id, args)"
+                                                   aria-label="@($"Seleccionar contacto {item.NombreApellido}")"
                                                    title="Seleccionar contacto" />
                                         </td>
                                         @foreach (var col in visibleColumns)
@@ -380,45 +263,42 @@
                                                 @switch (col.Key)
                                                 {
                                                     case ContactosViewColumnKeys.Nombre:
-                                                        <strong>@item.NombreApellido</strong>
+                                                        <button type="button"
+                                                                class="contactos-list-table__record-link"
+                                                                title="Doble clic para abrir la ficha"
+                                                                @onkeydown="args => HandleRecordLinkKeyDownAsync(args, item.Id)"
+                                                                @onclick:stopPropagation="true"
+                                                                @ondblclick="() => OpenRecordAsync(item.Id)"
+                                                                @ondblclick:stopPropagation="true">
+                                                            <strong>@item.NombreApellido</strong>
+                                                        </button>
                                                         break;
                                                     case ContactosViewColumnKeys.Localidad:
-                                                        @(string.IsNullOrWhiteSpace(item.Localidad) ? "—" : item.Localidad)
+                                                        @GetDisplayValue(item.Localidad)
                                                         break;
                                                     case ContactosViewColumnKeys.Provincia:
-                                                        @(string.IsNullOrWhiteSpace(item.ProvinciaDescripcion) ? item.ProvinciaCodigo : item.ProvinciaDescripcion)
+                                                        @GetDisplayValue(string.IsNullOrWhiteSpace(item.ProvinciaDescripcion) ? item.ProvinciaCodigo : item.ProvinciaDescripcion)
                                                         break;
                                                     case ContactosViewColumnKeys.Telefono:
-                                                        @(string.IsNullOrWhiteSpace(item.Telefono) ? "—" : item.Telefono)
+                                                        @GetDisplayValue(item.Telefono)
                                                         break;
                                                     case ContactosViewColumnKeys.Celular:
-                                                        @(string.IsNullOrWhiteSpace(item.Celular) ? "—" : item.Celular)
+                                                        @GetDisplayValue(item.Celular)
                                                         break;
                                                     case ContactosViewColumnKeys.Email:
-                                                        @(string.IsNullOrWhiteSpace(item.Email) ? "—" : item.Email)
+                                                        @GetDisplayValue(item.Email)
                                                         break;
                                                     case ContactosViewColumnKeys.Cargo:
-                                                        @(string.IsNullOrWhiteSpace(item.Cargo) ? "—" : item.Cargo)
+                                                        @GetDisplayValue(item.Cargo)
                                                         break;
                                                 }
                                             </td>
                                         }
-                                        <td class="interfaces-table__actions" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true">
-                                            <button type="button"
-                                                    class="btn btn--ghost btn--sm interfaces-table__edit"
-                                                    @onclick="() => AbrirEditorAsync(item.Id)">
-                                                <i class="bi bi-pencil-square"></i>
-                                                <span>Editar</span>
-                                            </button>
-                                        </td>
-                                        <td class="contactos-table__actions" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true">
-                                            <button type="button"
-                                                    class="btn btn--ghost btn--sm contactos-conversation-btn"
-                                                    @onclick="() => OpenConversationForContactAsync(item)"
-                                                    disabled="@(_openingConversation || !HasContactPhone(item))">
-                                                <i class="bi @(item.IdConversacionWhatsApp.HasValue ? "bi-chat-left-text" : "bi-plus-circle")"></i>
-                                                <span>@GetConversationActionLabel(item.IdConversacionWhatsApp)</span>
-                                            </button>
+                                        <td class="contactos-list-table__actions" @onclick:stopPropagation="true" @ondblclick:stopPropagation="true">
+                                            <AlfaActionMenu Items="@BuildContactActionMenu(item)"
+                                                            TriggerLabel="Acciones del contacto"
+                                                            MenuLabel="Acciones del contacto"
+                                                            Align="AlfaActionMenuAlign.End" />
                                         </td>
                                     </tr>
                                 }
@@ -427,70 +307,37 @@
                     </table>
                 </div>
 
-                <div class="result-pagination">
-                    <span class="result-pagination__info">@_pagedTotal registro(s)</span>
-                    <div class="result-pagination__controls">
-                        <button class="result-pagination__btn" title="Página anterior"
-                                @onclick="() => CambiarPaginaAsync(_pageNumber - 1)"
-                                disabled="@(!_hasPrev || _loadingList)">
-                            <i class="bi bi-chevron-left"></i>
-                        </button>
-                        <span class="result-pagination__btn result-pagination__btn--active">@_pageNumber / @_totalPages</span>
-                        <button class="result-pagination__btn" title="Página siguiente"
-                                @onclick="() => CambiarPaginaAsync(_pageNumber + 1)"
-                                disabled="@(!_hasNext || _loadingList)">
-                            <i class="bi bi-chevron-right"></i>
-                        </button>
-                    </div>
-                    <select class="result-pagination__size" title="Registros por página"
-                            value="@_filters.PageSize"
-                            @onchange="OnPageSizeChangedAsync"
-                            disabled="@_loadingList">
-                        <option value="25">25</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
-                    </select>
-                </div>
             }
+            <footer class="alfa-data-view-footer">
+                <span class="alfa-data-view-footer__summary">@GetContactListSummary()</span>
+            </footer>
         </section>
     }
 </div>
 
 @if (_showMergeModal && !_isNewMode)
 {
-    <div class="cuentas-modal-backdrop" @onclick="CloseMergeModal">
-        <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="contactos-merge-title" @onclick:stopPropagation="true">
-            <header class="cuentas-modal__header">
-                <div>
-                    <span class="cuentas-modal__eyebrow">Contacto principal</span>
-                    <h3 id="contactos-merge-title">Unificar @_form.NombreApellido</h3>
-                </div>
-                <button type="button" class="cuentas-modal__close" @onclick="CloseMergeModal" disabled="@_mergingContact" aria-label="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </header>
-
-            <div class="cuentas-modal__body">
-                @if (!string.IsNullOrWhiteSpace(_mergeError))
-                {
-                    <div class="editor-msg editor-msg--warning">@_mergeError</div>
-                }
-
+    <AlfaDialog Open="true"
+                Title="@($"Unificar {_form.NombreApellido}")"
+                Eyebrow="Contacto principal"
+                Description="Buscá el contacto duplicado que se absorberá en este registro."
+                ErrorMessage="@_mergeError"
+                Size="AlfaDialogSize.Md"
+                Loading="@_mergingContact"
+                OnClose="CloseMergeModal">
+        <ChildContent>
                 <div class="cuentas-link-search">
                     <div class="field">
                         <label>Buscar contacto duplicado</label>
                         <input type="search"
-                               class="usuarios-input"
+                               class="contactos-control"
                                placeholder="Nombre, email, celular o tel&eacute;fono..."
                                @bind="_mergeSearchText"
                                @bind:event="oninput"
                                @onkeydown="OnMergeSearchKeyDownAsync"
                                disabled="@(_loadingMergeCandidates || _mergingContact)" />
                     </div>
-                    <button type="button" class="btn btn--primary" @onclick="SearchMergeCandidatesAsync" disabled="@(_loadingMergeCandidates || _mergingContact)">
-                        <i class="bi bi-search"></i>
-                        Buscar
-                    </button>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Loading="@_loadingMergeCandidates" Disabled="@_mergingContact" OnClick="_ => SearchMergeCandidatesAsync()">Buscar</AlfaButton>
                 </div>
 
                 <div class="conversations-context__hint">
@@ -528,70 +375,45 @@
                         }
                     </div>
                 }
-            </div>
-
-            <footer class="cuentas-modal__actions">
-                <button type="button" class="btn btn--ghost" @onclick="CloseMergeModal" disabled="@_mergingContact">
-                    Cerrar
-                </button>
-            </footer>
-        </section>
-    </div>
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_mergingContact" OnClick="_ => CloseMergeModal()">Cerrar</AlfaButton>
+        </Footer>
+    </AlfaDialog>
 }
 
 @if (_showMergeConfirm && _mergeConfirmCandidate is not null)
 {
-    <div class="cuentas-modal-backdrop" @onclick="CloseMergeConfirm">
-        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-merge-confirm-title" @onclick:stopPropagation="true">
-            <header class="cuentas-modal__header">
-                <div>
-                    <span class="cuentas-modal__eyebrow">Confirmación</span>
-                    <h3 id="contactos-merge-confirm-title">Unificar contactos</h3>
-                </div>
-                <button type="button" class="cuentas-modal__close" @onclick="CloseMergeConfirm" disabled="@_mergingContact" aria-label="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </header>
-            <div class="cuentas-modal__body">
-                <div class="context-card">
-                    <span class="context-card__label">Contacto duplicado</span>
-                    <strong>@_mergeConfirmCandidate.NombreApellido</strong>
-                    <span class="context-card__muted">Se unificará dentro de @_form.NombreApellido. Se conservarán los datos y relaciones del contacto principal.</span>
-                </div>
+    <AlfaDialog Open="true"
+                Title="Unificar contactos"
+                Eyebrow="Confirmación"
+                Size="AlfaDialogSize.Sm"
+                Loading="@_mergingContact"
+                OnClose="CloseMergeConfirm">
+        <ChildContent>
+            <div class="context-card">
+                <span class="context-card__label">Contacto duplicado</span>
+                <strong>@_mergeConfirmCandidate.NombreApellido</strong>
+                <span class="context-card__muted">Se unificará dentro de @_form.NombreApellido. Se conservarán los datos y relaciones del contacto principal.</span>
             </div>
-            <footer class="cuentas-modal__actions">
-                <button type="button" class="btn btn--primary" @onclick="ConfirmMergeAsync" disabled="@_mergingContact">
-                    <i class="bi bi-intersect"></i>
-                    @(_mergingContact ? "Unificando..." : "Confirmar unificación")
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="CloseMergeConfirm" disabled="@_mergingContact">
-                    Cancelar
-                </button>
-            </footer>
-        </section>
-    </div>
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_mergingContact" OnClick="_ => CloseMergeConfirm()">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-intersect" Loading="@_mergingContact" OnClick="_ => ConfirmMergeAsync()">Confirmar unificación</AlfaButton>
+        </Footer>
+    </AlfaDialog>
 }
 
 @if (_showBulkTemplateModal)
 {
-    <div class="cuentas-modal-backdrop" @onclick="CloseBulkTemplateModal">
-        <section class="cuentas-modal" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-template-title" @onclick:stopPropagation="true">
-            <header class="cuentas-modal__header">
-                <div>
-                    <span class="cuentas-modal__eyebrow">Acción masiva</span>
-                    <h3 id="contactos-bulk-template-title">Enviar plantilla WhatsApp</h3>
-                </div>
-                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkTemplateModal" disabled="@_sendingBulkTemplate" aria-label="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </header>
-
-            <div class="cuentas-modal__body">
-                @if (!string.IsNullOrWhiteSpace(_bulkTemplateError))
-                {
-                    <div class="editor-msg editor-msg--warning">@_bulkTemplateError</div>
-                }
-
+    <AlfaDialog Open="true"
+                Title="Enviar plantilla WhatsApp"
+                Eyebrow="Acción masiva"
+                ErrorMessage="@_bulkTemplateError"
+                Size="AlfaDialogSize.Md"
+                Loading="@_sendingBulkTemplate"
+                OnClose="CloseBulkTemplateModal">
+        <ChildContent>
                 <div class="conversations-context__hint">
                     <i class="bi bi-info-circle"></i>
                     <span>Se enviará a contactos seleccionados que tengan celular o teléfono. Si la conversación no existe, se crea automáticamente.</span>
@@ -599,7 +421,7 @@
 
                 <div class="field">
                     <label>Plantilla aprobada</label>
-                    <select class="usuarios-input" @bind="_bulkTemplateId" disabled="@(_loadingBulkTemplates || _sendingBulkTemplate)">
+                    <select class="contactos-control" @bind="_bulkTemplateId" disabled="@(_loadingBulkTemplates || _sendingBulkTemplate)">
                         <option value="0">@(_loadingBulkTemplates ? "Cargando plantillas..." : "Seleccionar plantilla...")</option>
                         @foreach (var template in _bulkTemplates)
                         {
@@ -620,7 +442,7 @@
                     {
                         <div class="field">
                             <label>Valores de variables</label>
-                            <textarea class="usuarios-input"
+                            <textarea class="contactos-control"
                                       rows="4"
                                       placeholder="Un valor por línea. Para textos largos separá variables con ---"
                                       @bind="_bulkTemplateValuesText"
@@ -629,85 +451,53 @@
                         </div>
                     }
                 }
-            </div>
-
-            <footer class="cuentas-modal__actions">
-                <button type="button" class="btn btn--primary" @onclick="SendBulkTemplateAsync" disabled="@(_sendingBulkTemplate || _bulkTemplateId <= 0)">
-                    <i class="bi bi-send"></i>
-                    @(_sendingBulkTemplate ? "Enviando..." : "Enviar plantilla")
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="CloseBulkTemplateModal" disabled="@_sendingBulkTemplate">
-                    Cerrar
-                </button>
-            </footer>
-        </section>
-    </div>
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_sendingBulkTemplate" OnClick="_ => CloseBulkTemplateModal()">Cerrar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Loading="@_sendingBulkTemplate" Disabled="@(_bulkTemplateId <= 0)" OnClick="_ => SendBulkTemplateAsync()">Enviar plantilla</AlfaButton>
+        </Footer>
+    </AlfaDialog>
 }
 
-@if (_showBulkDeactivateConfirm)
-{
-    <div class="cuentas-modal-backdrop" @onclick="CloseBulkDeactivateConfirm">
-        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-deactivate-title" @onclick:stopPropagation="true">
-            <header class="cuentas-modal__header">
-                <div>
-                    <span class="cuentas-modal__eyebrow">Confirmación</span>
-                    <h3 id="contactos-bulk-deactivate-title">Dar de baja contactos</h3>
-                </div>
-                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving" aria-label="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </header>
-            <div class="cuentas-modal__body">
-                <div class="context-card">
-                    <span class="context-card__label">Acción masiva</span>
-                    <strong>@_bulkDeactivateConfirmCount contacto(s)</strong>
-                    <span class="context-card__muted">Se darán de baja los contactos seleccionados.</span>
-                </div>
-            </div>
-            <footer class="cuentas-modal__actions">
-                <button type="button" class="btn btn--danger" @onclick="ConfirmBulkDeactivateAsync" disabled="@_saving">
-                    <i class="bi bi-person-dash"></i>
-                    @(_saving ? "Procesando..." : "Confirmar baja")
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="CloseBulkDeactivateConfirm" disabled="@_saving">
-                    Cancelar
-                </button>
-            </footer>
-        </section>
-    </div>
-}
+<AlfaConfirmDialog Open="@_showDeactivateConfirm"
+                   Title="@DeactivateConfirmTitle"
+                   Message="@DeactivateConfirmMessage"
+                   SecondaryMessage="@DeactivateConfirmSecondaryMessage"
+                   ConfirmLabel="@DeactivateConfirmButtonLabel"
+                   LoadingLabel="Dando de baja..."
+                   Loading="@_deactivateConfirmLoading"
+                   ErrorMessage="@_deactivateConfirmError"
+                   OnConfirm="ConfirmDeactivateAsync"
+                   OnCancel="CloseDeactivateConfirm" />
+
+<AlfaConfirmDialog Open="@_showDiscardEditConfirm"
+                   Title="@(_pageMode == ContactosPageMode.New ? "Descartar contacto nuevo" : "Descartar cambios")"
+                   Message="Hay cambios sin guardar. Si salís ahora, se perderán."
+                   ConfirmLabel="@(_pageMode == ContactosPageMode.New ? "Descartar" : "Descartar cambios")"
+                   CancelLabel="Seguir editando"
+                   OnConfirm="DiscardEditChangesAsync"
+                   OnCancel="ContinueEditing" />
 
 @if (_showBulkTemplateConfirm)
 {
-    <div class="cuentas-modal-backdrop" @onclick="CloseBulkTemplateConfirm">
-        <section class="cuentas-modal cuentas-modal--compact" role="dialog" aria-modal="true" aria-labelledby="contactos-bulk-template-confirm-title" @onclick:stopPropagation="true">
-            <header class="cuentas-modal__header">
-                <div>
-                    <span class="cuentas-modal__eyebrow">Confirmación</span>
-                    <h3 id="contactos-bulk-template-confirm-title">Enviar plantilla</h3>
-                </div>
-                <button type="button" class="cuentas-modal__close" @onclick="CloseBulkTemplateConfirm" disabled="@_sendingBulkTemplate" aria-label="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </header>
-            <div class="cuentas-modal__body">
-                <div class="context-card">
-                    <span class="context-card__label">Plantilla</span>
-                    <strong>@_bulkTemplateConfirmName</strong>
-                    <span class="context-card__muted">Se enviará a @_bulkTemplateConfirmCount contacto(s). La entrega final puede confirmarse después por WhatsApp.</span>
-                </div>
+    <AlfaDialog Open="true"
+                Title="Enviar plantilla"
+                Eyebrow="Confirmación"
+                Size="AlfaDialogSize.Sm"
+                Loading="@_sendingBulkTemplate"
+                OnClose="CloseBulkTemplateConfirm">
+        <ChildContent>
+            <div class="context-card">
+                <span class="context-card__label">Plantilla</span>
+                <strong>@_bulkTemplateConfirmName</strong>
+                <span class="context-card__muted">Se enviará a @_bulkTemplateConfirmCount contacto(s). La entrega final puede confirmarse después por WhatsApp.</span>
             </div>
-            <footer class="cuentas-modal__actions">
-                <button type="button" class="btn btn--primary" @onclick="ConfirmBulkTemplateSendAsync" disabled="@_sendingBulkTemplate">
-                    <i class="bi bi-send"></i>
-                    @(_sendingBulkTemplate ? "Enviando..." : "Confirmar envío")
-                </button>
-                <button type="button" class="btn btn--ghost" @onclick="CloseBulkTemplateConfirm" disabled="@_sendingBulkTemplate">
-                    Cancelar
-                </button>
-            </footer>
-        </section>
-    </div>
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_sendingBulkTemplate" OnClick="_ => CloseBulkTemplateConfirm()">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-send" Loading="@_sendingBulkTemplate" OnClick="_ => ConfirmBulkTemplateSendAsync()">Confirmar envío</AlfaButton>
+        </Footer>
+    </AlfaDialog>
 }
 
 @code {
@@ -722,18 +512,31 @@
     private readonly Dictionary<string, string> _fieldErrors = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<int> _selectedIds = [];
     private AppUiMessage? _feedback;
-    private bool _feedbackLeaving;
-    private DateTime _feedbackSetAtUtc = DateTime.MinValue;
     private ContactosViewSettingsDto _viewSettings = BuildDefaultViewSettings();
     private bool _loadingList;
     private bool _loadingProvincias;
     private bool _saving;
     private bool _openingConversation;
+    private bool _linkingAccount;
     private bool _isNewMode = true;
-    private bool _showEditor;
+    private ContactosPageMode _pageMode = ContactosPageMode.Browse;
+    private bool _showEditor => _pageMode is ContactosPageMode.Edit or ContactosPageMode.New;
+    private bool _showRecordView => _pageMode == ContactosPageMode.Record;
     private bool _showViewSettings;
+    private bool _savingViewSettings;
     private bool _viewSettingsLoaded;
+    private bool _loadingRecord;
+    private bool _navigatingRecord;
+    private bool _loadingRecordNavigation;
     private bool _selectedActivo = true;
+    private bool _loadingEdit;
+    private bool _editDirty;
+    private bool _showDiscardEditConfirm;
+    private bool _allowEditNavigation;
+    private string _editInitialState = string.Empty;
+    private string _editErrorMessage = string.Empty;
+    private string _pendingEditNavigationUri = string.Empty;
+    private int _editLoadedId;
     private int _selectedId;
     private int _pagedTotal;
     private int _pageNumber = 1;
@@ -741,12 +544,17 @@
     private bool _hasPrev;
     private bool _hasNext;
     private string _activoFiltro = "1";
+    private string _viewMode = ContactosViewModeKeys.Listado;
     private string _draftAgruparPor = ContactosViewGroupKeys.None;
     private string _viewSettingsUserName = string.Empty;
     private string _bulkAction = BulkActionDeactivate;
     private ContactoTab _activeTab = ContactoTab.Datos;
-    private int? _startupEditId;
-    private bool _startupOpenMerge;
+    private ContactoDetailDto? _recordDetail;
+    private ContactoNavigationContextDto? _recordNavigation;
+    private string _recordActiveTab = ContactosRecordTabKeys.Informacion;
+    private string _recordReturnViewMode = ContactosViewModeKeys.Listado;
+    private string _recordErrorMessage = string.Empty;
+    private string _recordNavigationError = string.Empty;
     private string? _returnUrl;
     private long? _selectedConversationId;
     private bool _showSearchPanel;
@@ -758,55 +566,107 @@
     private ContactoMergeCandidateDto? _mergeConfirmCandidate;
     private string _mergeSearchText = string.Empty;
     private string _mergeError = string.Empty;
-    private bool _showBulkDeactivateConfirm;
-    private int _bulkDeactivateConfirmCount;
+    private bool _showDeactivateConfirm;
+    private bool _deactivateConfirmLoading;
+    private bool _pendingDeactivateIsBulk;
+    private int[] _pendingDeactivateIds = [];
+    private string _pendingDeactivateName = string.Empty;
+    private string _deactivateConfirmError = string.Empty;
     private bool _showBulkTemplateModal;
     private bool _showBulkTemplateConfirm;
     private bool _loadingBulkTemplates;
     private bool _sendingBulkTemplate;
     private long _bulkTemplateId;
+    private int[] _bulkTemplateTargetIds = [];
     private string _bulkTemplateValuesText = string.Empty;
     private string _bulkTemplateError = string.Empty;
     private string _bulkTemplateConfirmName = string.Empty;
+    private string _listErrorMessage = string.Empty;
     private int _bulkTemplateConfirmCount;
     private CancellationTokenSource? _searchDebounceCts;
     private CancellationTokenSource? _listSearchCts;
+    private readonly SemaphoreSlim _locationSync = new(1, 1);
     private SearchRuleDto _contactRuleDraft = new() { Campo = "nombre", Operador = "contains" };
     private readonly List<SavedContactSearch> _contactFavorites = [];
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedIds.Contains(item.Id));
+    private string DeactivateConfirmTitle => _pendingDeactivateIsBulk ? "Dar de baja contactos" : "Dar de baja contacto";
+    private string DeactivateConfirmMessage => _pendingDeactivateIsBulk
+        ? _pendingDeactivateIds.Length == 1
+            ? "El contacto seleccionado dejará de figurar como activo."
+            : $"Los {_pendingDeactivateIds.Length} contactos seleccionados dejarán de figurar como activos."
+        : $"El contacto “{_pendingDeactivateName}” dejará de figurar como activo.";
+    private string DeactivateConfirmSecondaryMessage => _pendingDeactivateIsBulk
+        ? "Esta acción no elimina los registros ni sus datos asociados."
+        : "Esta acción no elimina el registro ni sus datos asociados.";
+    private string DeactivateConfirmButtonLabel => _pendingDeactivateIsBulk
+        ? _pendingDeactivateIds.Length == 1 ? "Dar de baja 1 contacto" : $"Dar de baja {_pendingDeactivateIds.Length} contactos"
+        : "Dar de baja";
     private ConversacionPlantillaDto? SelectedBulkTemplate => _bulkTemplates.FirstOrDefault(item => item.IdPlantilla == _bulkTemplateId);
+    private static readonly IReadOnlyList<AlfaSelectOption> ViewGroupingOptions =
+    [
+        new(ContactosViewGroupKeys.None, "Sin agrupar"),
+        new(ContactosViewGroupKeys.Activo, "Estado (Activo / Inactivo)")
+    ];
+
+    private string GetContactosPageClass()
+    {
+        var mode = _showEditor
+            ? "contactos-page--editor"
+            : _showRecordView
+                ? "contactos-page--record"
+                : "contactos-page--list";
+
+        return $"page-grid contactos-page {mode}";
+    }
 
     private RenderFragment RenderContactSmartSearch() => @<div class="smart-search" @onclick:stopPropagation>
-        <div class="smart-search__bar">
-            <i class="bi bi-search"></i>
+        @{ var activeChips = BuildContactFilterChips(); }
+        <div class="smart-search__bar @(_showSearchPanel ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true">
+                <i class="bi bi-search"></i>
+            </span>
+            <button type="button"
+                    class="smart-search__filter-button @(_showSearchPanel || activeChips.Count > 0 ? "is-active" : string.Empty)"
+                    title="Abrir filtros"
+                    aria-label="Abrir filtros"
+                    aria-expanded="@_showSearchPanel"
+                    @onclick="ToggleContactSearchPanel">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+            @foreach (var chip in activeChips.Take(2))
+            {
+                <button type="button"
+                        class="smart-search__active-filter"
+                        title="@($"Quitar filtro {chip.Label}")"
+                        aria-label="@($"Quitar filtro {chip.Label}")"
+                        @onclick="() => RemoveContactChipAsync(chip.Key)">
+                    <span>@chip.Label</span>
+                    <span class="smart-search__active-filter-remove" aria-hidden="true">
+                        <i class="bi bi-x"></i>
+                    </span>
+                </button>
+            }
+            @if (activeChips.Count > 2)
+            {
+                <span class="smart-search__more-filters" title="@string.Join(", ", activeChips.Skip(2).Select(chip => chip.Label))">+@(activeChips.Count - 2)</span>
+            }
+            </div>
             <input type="search"
-                   placeholder="Buscar por nombre, contacto, teléfono, email, cargo o localidad..."
+                   placeholder="Buscar..."
                    value="@_filters.Texto"
                    @onfocus="OpenContactSearchPanel"
                    @oninput="OnContactSearchInput"
                    @onkeydown="HandleContactApplyKeyDownAsync" />
-            <button type="button" class="smart-search__toggle" @onclick="ToggleContactSearchPanel" aria-label="Mostrar filtros">
+            <button type="button" class="smart-search__toggle" @onclick="ToggleContactSearchPanel" aria-label="Mostrar filtros" aria-expanded="@_showSearchPanel">
                 <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
             </button>
-        </div>
-
-        <div class="smart-search__chips" aria-live="polite">
-            @foreach (var chip in BuildContactFilterChips())
-            {
-                <button type="button" class="smart-chip" @onclick="() => RemoveContactChipAsync(chip.Key)">
-                    @chip.Label <i class="bi bi-x"></i>
-                </button>
-            }
-            @if (BuildContactFilterChips().Count == 0)
-            {
-                <span class="smart-search__hint">Click en el buscador para filtros, agrupaciones y favoritos.</span>
-            }
         </div>
 
         @if (_showSearchPanel)
         {
             <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
-            <div class="smart-search__panel" @onclick:stopPropagation @onkeydown="HandleContactApplyKeyDownAsync">
+            <div class="smart-search__panel smart-search__panel--wide" @onclick:stopPropagation @onkeydown="HandleContactApplyKeyDownAsync">
                 <div class="smart-search__column">
                     <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
                     <button type="button" class='@GetSmartOptionClass(_activoFiltro == "1")' @onclick='() => SetContactStatusFilterAsync("1")'>Personas activas</button>
@@ -841,12 +701,8 @@
                         <button type="button" @onclick="() => ApplySavedContactFavoriteAsync(favorite)">@favorite.Label</button>
                     }
                     <div class="actions">
-                        <button type="button" class="btn btn--primary btn--sm" @onclick="AplicarFiltrosAsync" disabled="@_loadingList">
-                            <i class="bi bi-search"></i> Aplicar
-                        </button>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LimpiarFiltros" disabled="@_loadingList">
-                            <i class="bi bi-eraser"></i> Limpiar
-                        </button>
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_loadingList" OnClick="_ => AplicarFiltrosAsync()">Aplicar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" Disabled="@_loadingList" OnClick="_ => LimpiarFiltros()">Limpiar</AlfaButton>
                     </div>
                 </div>
                 <div class="smart-search__custom">
@@ -868,7 +724,7 @@
                         <option value="not-empty">no está vacío</option>
                     </select>
                     <input type="text" placeholder="Valor" @bind="_contactRuleDraft.Valor" disabled="@IsValueOptionalOperator(_contactRuleDraft.Operador)" />
-                    <button type="button" class="btn btn--primary btn--sm" @onclick="AddContactRuleAsync">Agregar regla</button>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" OnClick="_ => AddContactRuleAsync()">Agregar regla</AlfaButton>
                 </div>
             </div>
         }
@@ -878,8 +734,35 @@
     {
         var actions = new List<PageHeaderAction>();
 
-        if (_showEditor)
+        if (_showRecordView)
         {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "volver",
+                Label = "Atrás",
+                Icon = "bi-arrow-left",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _loadingRecord,
+                OnClick = VolverDesdeFichaAsync
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "editar",
+                Label = "Editar",
+                Icon = "bi-pencil-square",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _loadingRecord || _recordDetail is null,
+                OnClick = EditarFichaAsync
+            });
+            foreach (var action in BuildRecordOverflowActions())
+                actions.Add(action);
+        }
+        else if (_showEditor)
+        {
+            var editUnavailable = !_isNewMode
+                && (_loadingEdit || _editLoadedId != _selectedId || !string.IsNullOrWhiteSpace(_editErrorMessage));
             actions.Add(new PageHeaderAction
             {
                 Key = "guardar",
@@ -898,14 +781,12 @@
                 Icon = "bi-x-circle",
                 Style = PageHeaderActionStyle.Ghost,
                 Priority = PageHeaderActionPriority.Essential,
-                Disabled = _saving,
-                OnClick = () =>
-                {
-                    CerrarEditor();
-                    return Task.CompletedTask;
-                }
+                Disabled = _saving || editUnavailable,
+                OnClick = _isNewMode
+                    ? RequestCancelNewAsync
+                    : RequestCancelEditAsync
             });
-            if (!_isNewMode && _selectedActivo)
+            if (!_isNewMode && _selectedActivo && !editUnavailable)
             {
                 actions.Add(new PageHeaderAction
                 {
@@ -918,18 +799,8 @@
                     OnClick = DarDeBajaAsync
                 });
             }
-            if (!_isNewMode)
+            if (!_isNewMode && !editUnavailable)
             {
-                actions.Add(new PageHeaderAction
-                {
-                    Key = "conversacion",
-                    Label = GetConversationActionLabel(_selectedConversationId),
-                    Icon = "bi-whatsapp",
-                    Style = PageHeaderActionStyle.Primary,
-                    Priority = PageHeaderActionPriority.Essential,
-                    Disabled = _saving || _openingConversation,
-                    OnClick = OpenConversationForSelectedAsync
-                });
                 actions.Add(new PageHeaderAction
                 {
                     Key = "unificar",
@@ -954,6 +825,19 @@
                     Style = PageHeaderActionStyle.Ghost,
                     Disabled = true
                 });
+                if (CanMergeSelectedContacts())
+                {
+                    actions.Add(new PageHeaderAction
+                    {
+                        Key = "unificar-seleccion",
+                        Label = "Unificar",
+                        Icon = "bi-intersect",
+                        Style = PageHeaderActionStyle.Ghost,
+                        Priority = PageHeaderActionPriority.Essential,
+                        Disabled = _loadingList || _mergingContact,
+                        OnClick = OpenMergeFromSelectionAsync
+                    });
+                }
                 actions.Add(new PageHeaderAction
                 {
                     Key = "baja-masiva",
@@ -987,73 +871,310 @@
                 actions.Add(new PageHeaderAction
                 {
                     Key = "cancelar-seleccion",
-                    Label = "Cancelar selección",
+                    Label = "Limpiar selección",
                     Icon = "bi-x-lg",
                     Style = PageHeaderActionStyle.Ghost,
-                    Priority = PageHeaderActionPriority.Overflow,
+                    Priority = PageHeaderActionPriority.Essential,
                     OnClick = ClearContactSelectionAsync
                 });
             }
-            actions.Add(new PageHeaderAction
+            else
             {
-                Key = "nuevo",
-                Label = "Nuevo contacto",
-                Icon = "bi-plus-circle",
-                Style = PageHeaderActionStyle.Primary,
-                Priority = PageHeaderActionPriority.Essential,
-                OnClick = () =>
+                actions.Add(new PageHeaderAction
                 {
-                    BeginNew();
-                    return Task.CompletedTask;
-                }
-            });
-            actions.Add(new PageHeaderAction
-            {
-                Key = "recargar",
-                Label = "Recargar",
-                Icon = "bi-arrow-clockwise",
-                Style = PageHeaderActionStyle.Ghost,
-                Disabled = _loadingList,
-                OnClick = RecargarAsync
-            });
-            actions.Add(new PageHeaderAction
-            {
-                Key = "vista",
-                Label = "Configurar vista",
-                Icon = "bi-sliders",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Overflow,
-                OnClick = () =>
+                    Key = "nuevo",
+                    Label = "Nuevo contacto",
+                    Icon = "bi-plus-circle",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    OnClick = () =>
+                    {
+                        BeginNew();
+                        return Task.CompletedTask;
+                    }
+                });
+                actions.Add(new PageHeaderAction
                 {
-                    AbrirConfiguracionVista();
-                    UpdatePageHeader();
-                    return Task.CompletedTask;
-                }
-            });
-            actions.Add(new PageHeaderAction
-            {
-                Key = "agrupar",
-                Label = GetGroupingLabel(_viewSettings.AgruparPor),
-                Icon = "bi-collection",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Overflow,
-                OnClick = ToggleContactSearchPanelAsync
-            });
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _loadingList,
+                    OnClick = RecargarAsync
+                });
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "vista",
+                    Label = "Configurar vista",
+                    Icon = "bi-sliders",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    OnClick = () =>
+                    {
+                        AbrirConfiguracionVista();
+                        UpdatePageHeader();
+                        return Task.CompletedTask;
+                    }
+                });
+                actions.Add(new PageHeaderAction
+                {
+                    Key = "agrupar",
+                    Label = GetGroupingLabel(_viewSettings.AgruparPor),
+                    Icon = "bi-collection",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    OnClick = ToggleContactSearchPanelAsync
+                });
+            }
         }
 
         PageHeader.Set(new PageHeaderConfig
         {
-            Title = _showEditor ? (_isNewMode ? "Nuevo contacto" : $"Editar {_form.NombreApellido}") : "Contactos",
+            Title = _showRecordView
+                ? DisplayOrFallback(_recordDetail?.NombreApellido, _loadingRecord ? "Cargando contacto" : "Contacto")
+                : _showEditor ? (_isNewMode ? "Nuevo contacto" : $"Editar {_form.NombreApellido}") : "Contactos",
             Breadcrumb = ["Conversaciones", "Contactos"],
-            State = _saving ? PageHeaderState.Loading : _showEditor ? (_isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing) : PageHeaderState.Idle,
-            OnBack = _showEditor && _isNewMode ? new Func<Task>(() => { CerrarEditor(); return Task.CompletedTask; }) : null,
-            Search = _showEditor
+            State = _saving
+                ? PageHeaderState.Loading
+                : _showRecordView
+                    ? (_loadingRecord ? PageHeaderState.Loading : PageHeaderState.ReadOnly)
+                    : _showEditor
+                    ? (_loadingEdit ? PageHeaderState.Loading : _isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing)
+                    : _selectedIds.Count > 0
+                        ? PageHeaderState.Selection
+                        : _viewMode == ContactosViewModeKeys.Kanban ? PageHeaderState.Kanban : PageHeaderState.List,
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            RecordToolbar = _showRecordView,
+            TopNavigationItems = BuildTopNavigationItems(),
+            OnBack = _showRecordView ? VolverDesdeFichaAsync : null,
+            Search = _showEditor || _showRecordView
                 ? null
                 : new PageHeaderSearchConfig(),
-            SearchContent = _showEditor ? null : RenderContactSmartSearch(),
+            SearchContent = _showEditor || _showRecordView ? null : RenderContactSmartSearch(),
+            ViewButtons = _showEditor || _showRecordView ? [] : BuildHeaderViewButtons(),
+            Pagination = _showEditor
+                ? null
+                : _showRecordView ? BuildRecordPagination() : BuildHeaderPagination(),
             Actions = actions
         });
         _ = InvokeAsync(StateHasChanged);
+    }
+
+    private IReadOnlyList<PageHeaderAction> BuildRecordOverflowActions()
+    {
+        if (_recordDetail is null)
+            return [];
+
+        var actions = new List<PageHeaderAction>();
+        if (HasRecordPhone(_recordDetail))
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "conversacion",
+                Label = _recordDetail.IdConversacionWhatsApp.HasValue ? "Abrir conversación" : "Crear conversación",
+                Icon = _recordDetail.IdConversacionWhatsApp.HasValue ? "bi-chat-left-text" : "bi-plus-circle",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                Disabled = _openingConversation,
+                OnClick = OpenConversationForRecordAsync
+            });
+            actions.Add(new PageHeaderAction
+            {
+                Key = "plantilla",
+                Label = "Enviar plantilla",
+                Icon = "bi-lightning-charge",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                Disabled = _openingConversation || _sendingBulkTemplate,
+                OnClick = OpenRecordTemplateModalAsync
+            });
+        }
+
+        actions.Add(new PageHeaderAction
+        {
+            Key = "unificar",
+            Label = "Unificar",
+            Icon = "bi-intersect",
+            Style = PageHeaderActionStyle.Ghost,
+            Priority = PageHeaderActionPriority.Overflow,
+            Disabled = _mergingContact,
+            OnClick = OpenMergeModalAsync
+        });
+
+        if (_recordDetail.Activo)
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "baja",
+                Label = "Dar de baja",
+                Icon = "bi-person-dash",
+                Style = PageHeaderActionStyle.Danger,
+                Priority = PageHeaderActionPriority.Overflow,
+                Disabled = _saving || _loadingEdit,
+                OnClick = DarDeBajaAsync
+            });
+        }
+
+        return actions;
+    }
+
+    private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
+        =>
+        [
+            new()
+            {
+                Key = "contactos",
+                Label = "Contactos",
+                Url = RouteContext.BuildRoute("/contactos"),
+                Active = true
+            },
+            new()
+            {
+                Key = "usuarios",
+                Label = "Usuarios",
+                Url = RouteContext.BuildRoute("/usuarios")
+            },
+            new()
+            {
+                Key = "configuracion",
+                Label = "Configuración",
+                Url = RouteContext.BuildRoute("/conversaciones/configuracion")
+            }
+        ];
+
+    private IReadOnlyList<PageHeaderViewButton> BuildHeaderViewButtons()
+        =>
+        [
+            new()
+            {
+                Key = "listado",
+                Label = "Listado",
+                Title = "Vista de listado",
+                Icon = "bi-table",
+                Active = _viewMode == ContactosViewModeKeys.Listado,
+                Disabled = _loadingList,
+                OnClick = () => SetViewModeAsync(ContactosViewModeKeys.Listado)
+            },
+            new()
+            {
+                Key = "kanban",
+                Label = "Kanban",
+                Title = "Vista Kanban",
+                Icon = "bi-kanban",
+                Active = _viewMode == ContactosViewModeKeys.Kanban,
+                Disabled = _loadingList,
+                OnClick = () => SetViewModeAsync(ContactosViewModeKeys.Kanban)
+            }
+        ];
+
+    private async Task SetViewModeAsync(string mode)
+    {
+        var normalized = mode == ContactosViewModeKeys.Kanban
+            ? ContactosViewModeKeys.Kanban
+            : ContactosViewModeKeys.Listado;
+        if (_viewMode == normalized)
+            return;
+
+        _viewMode = normalized;
+        _viewSettings.Vista = normalized;
+        if (!_showEditor && !_showRecordView)
+            NavigateToContactosState(ContactosUrlState.Base, replace: true);
+        UpdatePageHeader();
+        Logger.LogDebug(
+            "Contactos: cambio de vista. Vista={ViewMode}, Items={ItemCount}, Loading={IsLoading}, TieneErrorCarga={HasLoadError}",
+            _viewMode,
+            _items.Count,
+            _loadingList,
+            !string.IsNullOrWhiteSpace(_listErrorMessage));
+
+        StateHasChanged();
+
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            Logger.LogDebug("Contactos: vista activa en sesión sin persistencia por falta de usuario.");
+            return;
+        }
+
+        var result = await UiOps.RunAsync(
+            async () =>
+            {
+                await ContactosSvc.SaveViewSettingsAsync(currentUser, _viewSettings);
+                return true;
+            },
+            "No se pudo guardar la vista seleccionada.");
+        Logger.LogDebug(
+            "Contactos: persistencia de vista finalizada. Vista={ViewMode}, Success={Success}, Items={ItemCount}",
+            _viewMode,
+            result.Success,
+            _items.Count);
+        if (!result.Success)
+            SetFeedback(result.Feedback);
+    }
+
+    private PageHeaderPaginationConfig BuildHeaderPagination()
+        => new()
+        {
+            Label = $"{_pagedTotal} registro(s)",
+            PageLabel = $"{_pageNumber} / {_totalPages}",
+            HasPrevious = _hasPrev,
+            HasNext = _hasNext,
+            Disabled = _loadingList,
+            OnPrevious = () => CambiarPaginaAsync(_pageNumber - 1),
+            OnNext = () => CambiarPaginaAsync(_pageNumber + 1)
+        };
+
+    private PageHeaderPaginationConfig BuildRecordPagination()
+    {
+        var positionLabel = _loadingRecordNavigation
+            ? "Cargando..."
+            : !string.IsNullOrWhiteSpace(_recordNavigationError)
+                ? "Navegación no disponible"
+                : _recordNavigation is not null
+                    ? $"{_recordNavigation.Position} / {_recordNavigation.Total}"
+                    : "Sin contexto";
+
+        return new PageHeaderPaginationConfig
+        {
+            PageLabel = positionLabel,
+            HasPrevious = _recordNavigation?.PreviousId is not null,
+            HasNext = _recordNavigation?.NextId is not null,
+            Disabled = _loadingRecord || _loadingRecordNavigation || _navigatingRecord || !string.IsNullOrWhiteSpace(_recordNavigationError),
+            OnPrevious = () => NavigateRecordAsync(-1),
+            OnNext = () => NavigateRecordAsync(1)
+        };
+    }
+
+    private async Task NavigateRecordAsync(int direction)
+    {
+        if (_navigatingRecord || _loadingRecord || direction is not (-1 or 1))
+            return;
+
+        var targetId = direction < 0
+            ? _recordNavigation?.PreviousId
+            : _recordNavigation?.NextId;
+        if (targetId is not int id || id <= 0)
+            return;
+
+        _navigatingRecord = true;
+        UpdatePageHeader();
+        try
+        {
+            await OpenRecordAsync(id, updateUrl: false);
+            NavigateToContactosState(ContactosUrlState.Record, id, replace: true);
+        }
+        finally
+        {
+            _navigatingRecord = false;
+            UpdatePageHeader();
+        }
+    }
+
+    private async Task HandleRecordLinkKeyDownAsync(KeyboardEventArgs args, int id)
+    {
+        if (args.Key is "Enter" or " ")
+            await OpenRecordAsync(id);
     }
 
     protected override async Task OnInitializedAsync()
@@ -1065,12 +1186,7 @@
         await CargarProvinciasAsync();
         ApplyStartupQuery();
         await BuscarAsync();
-        if (_startupEditId is int id)
-        {
-            await AbrirEditorAsync(id, updateUrl: false);
-            if (_startupOpenMerge && _selectedId > 0)
-                await OpenMergeModalAsync();
-        }
+        await ApplyCurrentLocationAsync();
         UpdatePageHeader();
     }
 
@@ -1087,26 +1203,61 @@
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
     {
-        _ = InvokeAsync(DismissFeedbackAsync);
-        _ = InvokeAsync(ApplyCurrentLocationAsync);
+        _ = InvokeAsync(async () =>
+        {
+            await DismissFeedbackAsync();
+            await ApplyCurrentLocationAsync();
+            UpdatePageHeader();
+        });
     }
 
     private async Task ApplyCurrentLocationAsync()
     {
-        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
-        _returnUrl = ReadSafeReturnUrl(query);
-
-        if (query.TryGetValue("editar", out var editRaw)
-            && int.TryParse(editRaw.ToString(), out var editId)
-            && editId > 0)
+        await _locationSync.WaitAsync();
+        try
         {
-            if (!_showEditor || _selectedId != editId)
-                await AbrirEditorAsync(editId, updateUrl: false);
-            return;
-        }
+            var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+            _returnUrl = ReadSafeReturnUrl(query);
 
-        if (_showEditor && !_isNewMode)
-            CerrarEditor(useReturnUrl: false);
+            if (query.TryGetValue("contacto", out var contactRaw)
+                && int.TryParse(contactRaw.ToString(), out var contactId)
+                && contactId > 0)
+            {
+                if (query.ContainsKey("editar"))
+                    NavigateToContactosState(ContactosUrlState.Record, contactId, replace: true);
+
+                if (_pageMode != ContactosPageMode.Record || _selectedId != contactId)
+                    await OpenRecordAsync(contactId, updateUrl: false);
+                return;
+            }
+
+            if (query.TryGetValue("editar", out var editRaw)
+                && int.TryParse(editRaw.ToString(), out var editId)
+                && editId > 0)
+            {
+                if (_pageMode != ContactosPageMode.Edit || _selectedId != editId)
+                    await AbrirEditorAsync(editId, updateUrl: false);
+                if (query.TryGetValue("unificar", out var mergeRaw)
+                    && string.Equals(mergeRaw.ToString(), "1", StringComparison.OrdinalIgnoreCase)
+                    && !_showMergeModal)
+                    await OpenMergeModalAsync();
+                return;
+            }
+
+            if (query.ContainsKey("nuevo"))
+            {
+                if (_pageMode != ContactosPageMode.New)
+                    BeginNew();
+                return;
+            }
+
+            if (_pageMode != ContactosPageMode.Browse)
+                ReturnToBrowseState();
+        }
+        finally
+        {
+            _locationSync.Release();
+        }
     }
 
     private void OnAppUserSessionChanged()
@@ -1176,7 +1327,7 @@
     private async Task HandlePageClickAsync()
     {
         CloseSearchPanel();
-        await DismissFeedbackAsync();
+        await Task.CompletedTask;
     }
 
     private void OnContactSearchInput(ChangeEventArgs e)
@@ -1380,6 +1531,7 @@
         var token = searchCts.Token;
 
         _loadingList = true;
+        _listErrorMessage = string.Empty;
         SyncFilters();
         var searchFilters = CloneContactFilters(_filters);
         searchFilters.PageNumber = _filters.PageNumber;
@@ -1410,6 +1562,9 @@
                 return;
 
             SetFeedback(UiOps.BuildMessage(ex, "No se pudieron cargar los contactos."));
+            _listErrorMessage = string.IsNullOrWhiteSpace(ex.Message)
+                ? "Reintentá la búsqueda o revisá la base activa."
+                : ex.Message;
         }
         finally
         {
@@ -1465,6 +1620,134 @@
         return _filters.OrdenDescendente ? "↓" : "↑";
     }
 
+    private string GetContactRowClass(int id)
+        => string.Join(" ", new[]
+        {
+            "contactos-list-table__row",
+            _selectedId == id ? "is-active" : null,
+            _selectedIds.Contains(id) ? "is-selected" : null
+        }.Where(static value => !string.IsNullOrWhiteSpace(value)));
+
+    private string GetContactListSummary()
+    {
+        var values = new List<string>
+        {
+            $"{FormatRecordCount(_pagedTotal)} · Página {_pageNumber} de {_totalPages}"
+        };
+
+        if (_selectedIds.Count > 0)
+            values.Add(FormatSelectedCount(_selectedIds.Count));
+
+        var filters = BuildContactFilterChips().Count;
+        if (filters > 0)
+            values.Add(FormatFilterCount(filters));
+
+        return string.Join(" · ", values);
+    }
+
+    private static string FormatRecordCount(int count)
+        => count == 1 ? "1 registro" : $"{count} registros";
+
+    private static string FormatSelectedCount(int count)
+        => count == 1 ? "1 seleccionado" : $"{count} seleccionados";
+
+    private static string FormatFilterCount(int count)
+        => count == 1 ? "1 filtro" : $"{count} filtros";
+
+    private static string GetDisplayValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "—" : value;
+
+    private static string GetContactSecondaryLine(ContactoGridItemDto item)
+    {
+        var location = FirstNonEmpty(item.Localidad, item.ProvinciaDescripcion, item.ProvinciaCodigo);
+        var channel = FirstNonEmpty(item.Celular, item.Telefono, item.Email);
+
+        if (!string.IsNullOrWhiteSpace(location) && !string.IsNullOrWhiteSpace(channel))
+            return $"{location} · {channel}";
+
+        return FirstNonEmpty(location, channel, item.Cargo) ?? "Sin datos de contacto";
+    }
+
+    private static string GetConversationActionIcon(ContactoGridItemDto item)
+        => item.IdConversacionWhatsApp.HasValue ? "bi bi-chat-left-text" : "bi bi-plus-circle";
+
+    private static string GetConversationActionAriaLabel(ContactoGridItemDto item)
+    {
+        if (!HasContactPhone(item))
+            return "Conversación no disponible";
+
+        return item.IdConversacionWhatsApp.HasValue
+            ? "Abrir conversación"
+            : "Crear conversación";
+    }
+
+    private static string GetConversationActionCssClass(ContactoGridItemDto item)
+    {
+        if (!HasContactPhone(item))
+            return "contactos-row-action contactos-row-action--disabled";
+
+        return item.IdConversacionWhatsApp.HasValue
+            ? "contactos-row-action contactos-row-action--open"
+            : "contactos-row-action contactos-row-action--create";
+    }
+
+    private AlfaEmptyStateKind GetContactEmptyStateKind()
+        => HasContactSearchFilters() ? AlfaEmptyStateKind.NoResults : AlfaEmptyStateKind.NoData;
+
+    private string GetContactEmptyTitle()
+        => HasContactSearchFilters() ? "Sin resultados" : "Sin contactos";
+
+    private string GetContactEmptyMessage()
+        => HasContactSearchFilters()
+            ? "No encontramos contactos con la búsqueda y filtros actuales."
+            : "Todavía no hay contactos cargados en la base activa.";
+
+    private string GetContactEmptyActionLabel()
+        => HasContactSearchFilters() ? "Limpiar filtros" : "Nuevo contacto";
+
+    private string GetContactEmptyActionIcon()
+        => HasContactSearchFilters() ? "bi bi-x-circle" : "bi bi-plus-lg";
+
+    private async Task HandleContactEmptyActionAsync()
+    {
+        if (HasContactSearchFilters())
+        {
+            await ClearContactFiltersAsync();
+            return;
+        }
+
+        BeginNew();
+    }
+
+    private bool HasContactSearchFilters()
+        => !string.IsNullOrWhiteSpace(_filters.Texto)
+           || !string.IsNullOrWhiteSpace(_filters.ProvinciaCodigo)
+           || _filters.TieneEmail.HasValue
+           || _filters.TieneCelular.HasValue
+           || _filters.TieneWhatsApp.HasValue
+           || !string.Equals(_activoFiltro, "1", StringComparison.OrdinalIgnoreCase)
+           || _viewSettings.AgruparPor != ContactosViewGroupKeys.None;
+
+    private async Task ClearContactFiltersAsync()
+    {
+        _filters.Texto = string.Empty;
+        _filters.ProvinciaCodigo = string.Empty;
+        _filters.TieneEmail = null;
+        _filters.TieneCelular = null;
+        _filters.TieneWhatsApp = null;
+        _filters.Activo = true;
+        _filters.PageNumber = 1;
+        _activoFiltro = "1";
+        if (_viewSettings.AgruparPor != ContactosViewGroupKeys.None)
+        {
+            _viewSettings.AgruparPor = ContactosViewGroupKeys.None;
+            var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+            if (!string.IsNullOrWhiteSpace(currentUser))
+                await ContactosSvc.SaveViewSettingsAsync(currentUser, _viewSettings);
+        }
+        await BuscarAsync();
+    }
+
     private string GetContactSortTitle(ContactoViewColumnDto column)
     {
         if (!string.Equals(_filters.OrdenarPor, column.Key, StringComparison.OrdinalIgnoreCase))
@@ -1511,11 +1794,228 @@
         MapDetailToForm(result.Value);
     }
 
+    private async Task OpenRecordAsync(int id, bool updateUrl = true)
+    {
+        if (id <= 0)
+            return;
+
+        var preserveRecordTab = _pageMode == ContactosPageMode.Record;
+        CaptureBrowseReturnView();
+        _pageMode = ContactosPageMode.Record;
+        _selectedId = id;
+        _isNewMode = false;
+        _showViewSettings = false;
+        if (!preserveRecordTab)
+            _recordActiveTab = ContactosRecordTabKeys.Informacion;
+        SetFeedback(null);
+        if (updateUrl)
+            NavigateToRecordUrl(id);
+        await CargarFichaAsync(id);
+        UpdatePageHeader();
+    }
+
+    private async Task CargarFichaAsync(int id)
+    {
+        _loadingRecord = true;
+        _recordErrorMessage = string.Empty;
+        _recordDetail = null;
+        _recordNavigation = null;
+        _recordNavigationError = string.Empty;
+        _loadingRecordNavigation = true;
+        _selectedId = id;
+        UpdatePageHeader();
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => ContactosSvc.GetByIdAsync(id), "No se pudo cargar el contacto.");
+            if (!result.Success)
+            {
+                _recordErrorMessage = result.Feedback?.Message ?? "Reintentá la carga o revisá la base activa.";
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _selectedActivo = false;
+                _selectedConversationId = null;
+                return;
+            }
+
+            _recordDetail = result.Value;
+            ApplyDetailState(result.Value);
+            _isNewMode = false;
+            await CargarNavegacionFichaAsync(id);
+        }
+        finally
+        {
+            _loadingRecord = false;
+            _loadingRecordNavigation = false;
+            UpdatePageHeader();
+        }
+    }
+
+    private async Task CargarNavegacionFichaAsync(int id)
+    {
+        var navigationFilters = CloneContactFilters(_filters);
+        var result = await UiOps.RunAsync(
+            () => ContactosSvc.GetNavigationContextAsync(id, navigationFilters),
+            "No se pudo resolver la navegación del contacto.");
+
+        if (!result.Success || result.Value is null)
+        {
+            _recordNavigation = null;
+            _recordNavigationError = result.Feedback?.Message ?? "No se pudo resolver la navegación del contacto.";
+            return;
+        }
+
+        _recordNavigation = result.Value;
+        _recordNavigationError = string.Empty;
+    }
+
+    private Task RecargarFichaAsync()
+        => _selectedId > 0 ? CargarFichaAsync(_selectedId) : Task.CompletedTask;
+
+    private async Task<IReadOnlyList<ContactoCuentaLookupOptionDto>> SearchAccountsForRecordAsync(string text, CancellationToken ct)
+    {
+        if (_selectedId <= 0 || string.IsNullOrWhiteSpace(text))
+            return [];
+
+        static CuentaComercialFilters BuildFilters(string query) => new()
+        {
+            Texto = query,
+            Activo = true,
+            PageNumber = 1,
+            PageSize = 8
+        };
+
+        var clientsTask = CuentasSvc.SearchAsync(CuentaComercialTipo.Cliente, BuildFilters(text), ct);
+        var suppliersTask = CuentasSvc.SearchAsync(CuentaComercialTipo.Proveedor, BuildFilters(text), ct);
+        await Task.WhenAll(clientsTask, suppliersTask);
+
+        var linked = (_recordDetail?.CuentasVinculadas ?? [])
+            .Select(account => account.Codigo.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        return clientsTask.Result.Items
+            .Select(item => ToAccountLookupOption(CuentaComercialTipo.Cliente, item))
+            .Concat(suppliersTask.Result.Items.Select(item => ToAccountLookupOption(CuentaComercialTipo.Proveedor, item)))
+            .Where(item => !linked.Contains(item.Codigo))
+            .DistinctBy(item => item.Key, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(item => item.RazonSocial, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(item => item.Codigo, StringComparer.OrdinalIgnoreCase)
+            .Take(12)
+            .ToList();
+    }
+
+    private async Task<bool> LinkAccountToRecordAsync(ContactoCuentaLookupOptionDto account)
+    {
+        if (_selectedId <= 0 || _linkingAccount)
+            return false;
+
+        if (IsAccountLinked(account))
+            return false;
+
+        _linkingAccount = true;
+        try
+        {
+            var result = await UiOps.RunAsync(
+                async () =>
+                {
+                    await CuentasSvc.LinkContactoAsync(account.Tipo, new CuentaComercialContactoLinkRequest
+                    {
+                        CuentaCodigo = account.Codigo,
+                        ContactoId = _selectedId
+                    });
+                    return true;
+                },
+                "No se pudo vincular la cuenta al contacto.");
+
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return false;
+            }
+
+            await CargarFichaAsync(_selectedId);
+            return IsAccountLinked(account);
+        }
+        finally
+        {
+            _linkingAccount = false;
+        }
+    }
+
+    private bool IsAccountLinked(ContactoCuentaLookupOptionDto account)
+        => (_recordDetail?.CuentasVinculadas ?? []).Any(linked =>
+            string.Equals(linked.Codigo.Trim(), account.Codigo.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    private void ShowAccountLinkedFeedback(ContactoCuentaLookupOptionDto account)
+    {
+        var accountName = string.IsNullOrWhiteSpace(account.RazonSocial)
+            ? account.Codigo.Trim()
+            : account.RazonSocial.Trim();
+        var message = string.IsNullOrWhiteSpace(accountName)
+            ? "La cuenta quedó vinculada a este contacto."
+            : $"“{accountName}” quedó vinculada a este contacto.";
+
+        SetFeedback(AppUiMessage.Success("Cuenta vinculada", message));
+    }
+
+    private static ContactoCuentaLookupOptionDto ToAccountLookupOption(CuentaComercialTipo type, CuentaComercialGridItemDto item)
+        => new()
+        {
+            Tipo = type,
+            Codigo = item.Codigo,
+            RazonSocial = item.RazonSocial,
+            Localidad = item.Localidad,
+            NumeroDocumento = item.NumeroDocumento
+        };
+
+    private Task VolverDesdeFichaAsync()
+        => VolverDesdeFichaCoreAsync(updateUrl: true);
+
+    private Task VolverDesdeFichaCoreAsync(bool updateUrl)
+    {
+        ReturnToBrowseState();
+        if (updateUrl)
+            NavigateToContactosState(ContactosUrlState.Base, replace: true);
+        return Task.CompletedTask;
+    }
+
+    private async Task EditarFichaAsync()
+    {
+        if (_selectedId <= 0)
+            return;
+
+        await AbrirEditorAsync(_selectedId);
+    }
+
+    private Task SetRecordTabAsync(string tab)
+    {
+        _recordActiveTab = string.IsNullOrWhiteSpace(tab)
+            ? ContactosRecordTabKeys.Informacion
+            : tab;
+        return Task.CompletedTask;
+    }
+
+    private string GetRecordProvinciaDisplay()
+    {
+        var code = _recordDetail?.ProvinciaCodigo;
+        if (string.IsNullOrWhiteSpace(code))
+            return string.Empty;
+
+        return _provincias.FirstOrDefault(x => string.Equals(x.Codigo, code, StringComparison.OrdinalIgnoreCase))?.Descripcion
+            ?? code.Trim();
+    }
+
     private void BeginNew()
     {
         ClearFieldErrors();
         SetFeedback(null);
-        _showEditor = true;
+        CaptureBrowseReturnView();
+        _pageMode = ContactosPageMode.New;
+        _recordDetail = null;
+        _recordErrorMessage = string.Empty;
         _isNewMode = true;
         _activeTab = ContactoTab.Datos;
         _selectedId = 0;
@@ -1540,6 +2040,7 @@
         _form.Website = string.Empty;
         _form.Cargo = string.Empty;
         _form.Observaciones = string.Empty;
+        ResetEditorDirtyState();
         UpdatePageHeader();
     }
 
@@ -1547,15 +2048,8 @@
     {
         var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
         _returnUrl = ReadSafeReturnUrl(query);
-        if (query.TryGetValue("editar", out var editRaw)
-            && int.TryParse(editRaw.ToString(), out var editId)
-            && editId > 0)
-        {
-            _startupEditId = editId;
-            _startupOpenMerge = query.TryGetValue("unificar", out var mergeRaw)
-                && string.Equals(mergeRaw.ToString(), "1", StringComparison.OrdinalIgnoreCase);
+        if (query.ContainsKey("contacto") || query.ContainsKey("editar"))
             return;
-        }
 
         if (!query.TryGetValue("nuevo", out _))
             return;
@@ -1570,6 +2064,7 @@
         if (query.TryGetValue("email", out var email))
             _form.Email = email.ToString();
 
+        ResetEditorDirtyState();
         _filters.Texto = _form.NombreApellido;
         SetFeedback(new AppUiMessage
         {
@@ -1582,6 +2077,178 @@
     private void CerrarEditor()
         => CerrarEditor(useReturnUrl: true);
 
+    private Task SetEditTabAsync(int tab)
+    {
+        _activeTab = tab switch
+        {
+            1 => ContactoTab.Observaciones,
+            2 => ContactoTab.Cuentas,
+            _ => ContactoTab.Datos
+        };
+        return Task.CompletedTask;
+    }
+
+    private Task HandleEditFieldChangedAsync(string propertyName)
+    {
+        var fieldKey = propertyName switch
+        {
+            nameof(ContactoSaveRequest.NombreApellido) => "nombre",
+            nameof(ContactoSaveRequest.Domicilio) => "domicilio",
+            nameof(ContactoSaveRequest.Localidad) => "localidad",
+            nameof(ContactoSaveRequest.ProvinciaCodigo) => "provincia",
+            nameof(ContactoSaveRequest.CodigoPostal) => "codigo-postal",
+            nameof(ContactoSaveRequest.NumeroDocumento) => "numero-documento",
+            nameof(ContactoSaveRequest.Telefono) => "telefono",
+            nameof(ContactoSaveRequest.TelefonoAlternativo) => "telefono-alternativo",
+            nameof(ContactoSaveRequest.Celular) => "celular",
+            nameof(ContactoSaveRequest.Email) => "email",
+            nameof(ContactoSaveRequest.Website) => "website",
+            nameof(ContactoSaveRequest.Cargo) => "cargo",
+            nameof(ContactoSaveRequest.Observaciones) => "observaciones",
+            _ => string.Empty
+        };
+        if (!string.IsNullOrWhiteSpace(fieldKey))
+            _fieldErrors.Remove(fieldKey);
+        _editDirty = !string.Equals(_editInitialState, CaptureEditState(), StringComparison.Ordinal);
+        return Task.CompletedTask;
+    }
+
+    private async Task RequestCancelEditAsync()
+    {
+        if (_editDirty)
+        {
+            _showDiscardEditConfirm = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        await ReturnFromEditToRecordAsync();
+    }
+
+    private async Task RequestCancelNewAsync()
+    {
+        if (_editDirty)
+        {
+            _showDiscardEditConfirm = true;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        ReturnFromNewToBrowse();
+    }
+
+    private void ContinueEditing()
+    {
+        _showDiscardEditConfirm = false;
+        _pendingEditNavigationUri = string.Empty;
+        StateHasChanged();
+    }
+
+    private async Task DiscardEditChangesAsync()
+    {
+        _showDiscardEditConfirm = false;
+        if (!string.IsNullOrWhiteSpace(_pendingEditNavigationUri))
+        {
+            var target = _pendingEditNavigationUri;
+            _pendingEditNavigationUri = string.Empty;
+            _editDirty = false;
+            _allowEditNavigation = true;
+            Nav.NavigateTo(target);
+            return;
+        }
+
+        if (_pageMode == ContactosPageMode.New)
+        {
+            ReturnFromNewToBrowse();
+            return;
+        }
+
+        await ReturnFromEditToRecordAsync();
+    }
+
+    private void ProtectDirtyEditNavigation(Microsoft.AspNetCore.Components.Routing.LocationChangingContext context)
+    {
+        if (_allowEditNavigation)
+        {
+            _allowEditNavigation = false;
+            return;
+        }
+
+        if (!_editDirty)
+            return;
+
+        context.PreventNavigation();
+        _pendingEditNavigationUri = context.TargetLocation;
+        _showDiscardEditConfirm = true;
+    }
+
+    private void ReturnFromNewToBrowse()
+    {
+        ClearFieldErrors();
+        SetFeedback(null);
+        _editDirty = false;
+        _showDiscardEditConfirm = false;
+        _pageMode = ContactosPageMode.Browse;
+        _isNewMode = false;
+        _allowEditNavigation = true;
+        NavigateToContactosState(ContactosUrlState.Base, replace: true);
+        UpdatePageHeader();
+    }
+
+    private async Task ReturnFromEditToRecordAsync()
+    {
+        if (_selectedId <= 0)
+        {
+            CerrarEditor(useReturnUrl: false);
+            return;
+        }
+
+        ClearFieldErrors();
+        SetFeedback(null);
+        _editDirty = false;
+        _pageMode = ContactosPageMode.Record;
+        _recordActiveTab = ContactosRecordTabKeys.Informacion;
+        _allowEditNavigation = true;
+        NavigateToContactosState(ContactosUrlState.Record, _selectedId, replace: true);
+        await CargarFichaAsync(_selectedId);
+    }
+
+    private Task ReturnFromEditLoadErrorAsync()
+        => ReturnFromEditToRecordAsync();
+
+    private string CaptureEditState()
+    {
+        static string Normalize(string? value) => (value ?? string.Empty).Trim();
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            _form.Id,
+            NombreApellido = Normalize(_form.NombreApellido),
+            Domicilio = Normalize(_form.Domicilio),
+            Localidad = Normalize(_form.Localidad),
+            ProvinciaCodigo = Normalize(_form.ProvinciaCodigo),
+            CodigoPostal = Normalize(_form.CodigoPostal),
+            NumeroDocumento = Normalize(_form.NumeroDocumento),
+            Telefono = Normalize(_form.Telefono),
+            TelefonoAlternativo = Normalize(_form.TelefonoAlternativo),
+            Celular = Normalize(_form.Celular),
+            Email = Normalize(_form.Email),
+            Website = Normalize(_form.Website),
+            Cargo = Normalize(_form.Cargo),
+            Observaciones = Normalize(_form.Observaciones),
+            _form.MailPagosCobranzas,
+            _form.MailOrdenCompra,
+            _form.MailOrdenTrabajo
+        });
+    }
+
+    private void ResetEditorDirtyState()
+    {
+        _editInitialState = CaptureEditState();
+        _editDirty = false;
+        _showDiscardEditConfirm = false;
+        _pendingEditNavigationUri = string.Empty;
+    }
+
     private void CerrarEditor(bool useReturnUrl)
     {
         if (useReturnUrl && !string.IsNullOrWhiteSpace(_returnUrl))
@@ -1593,8 +2260,9 @@
         ClearFieldErrors();
         CloseMergeModal();
         SetFeedback(null);
-        _showEditor = false;
+        ReturnToBrowseState();
         _linkedAccounts.Clear();
+        NavigateToContactosState(ContactosUrlState.Base, replace: true);
         UpdatePageHeader();
     }
 
@@ -1648,6 +2316,43 @@
 
         if (_mergeSearchText.Trim().Length >= 2)
             await SearchMergeCandidatesAsync();
+    }
+
+    private bool CanMergeSelectedContacts()
+        => _selectedIds.Count == 2;
+
+    private async Task OpenMergeFromSelectionAsync()
+    {
+        if (!CanMergeSelectedContacts() || _loadingList || _mergingContact)
+            return;
+
+        var ids = _selectedIds.OrderBy(id => id).ToArray();
+        var principalId = ids[0];
+        var duplicateId = ids[1];
+        var duplicate = _items.FirstOrDefault(item => item.Id == duplicateId);
+
+        _selectedId = principalId;
+        await SeleccionarAsync(principalId);
+        _pageMode = ContactosPageMode.Browse;
+        _isNewMode = false;
+
+        _mergeError = string.Empty;
+        _mergeCandidates.Clear();
+        _mergeSearchExecuted = false;
+        _mergeSearchText = _form.NombreApellido;
+        _mergeConfirmCandidate = new ContactoMergeCandidateDto
+        {
+            Id = duplicateId,
+            NombreApellido = duplicate?.NombreApellido ?? $"Contacto #{duplicateId}",
+            Cargo = duplicate?.Cargo ?? string.Empty,
+            Email = duplicate?.Email ?? string.Empty,
+            Telefono = duplicate?.Telefono ?? string.Empty,
+            Celular = duplicate?.Celular ?? string.Empty,
+            Activo = duplicate?.Activo ?? true
+        };
+        _showMergeModal = true;
+        _showMergeConfirm = true;
+        UpdatePageHeader();
     }
 
     private void CloseMergeModal()
@@ -1757,6 +2462,7 @@
 
             _mergingContact = false;
             CloseMergeModal();
+            _selectedIds.Clear();
             SetFeedback(AppUiMessage.Success("Contactos unificados", $"Se unificó {candidate.NombreApellido} dentro de {_form.NombreApellido}."));
             await BuscarAsync();
         }
@@ -1768,6 +2474,9 @@
 
     private async Task GuardarAsync()
     {
+        if (_saving)
+            return;
+
         ClearFieldErrors();
         _saving = true;
         UpdatePageHeader();
@@ -1779,8 +2488,15 @@
                 SetFeedback(AppUiMessage.Success("Contacto guardado", $"El contacto #{savedId} se guardó correctamente."));
                 await BuscarAsync();
                 _selectedId = savedId;
-                _showEditor = false;
                 _isNewMode = false;
+                if (_pageMode is ContactosPageMode.Edit or ContactosPageMode.New)
+                {
+                    _editDirty = false;
+                    _pageMode = ContactosPageMode.Record;
+                    _allowEditNavigation = true;
+                    NavigateToContactosState(ContactosUrlState.Record, savedId, replace: true);
+                    await CargarFichaAsync(savedId);
+                }
             }
             catch (AppValidationException validationEx)
             {
@@ -1807,23 +2523,102 @@
 
     private async Task AbrirEditorAsync(int id, bool updateUrl = true)
     {
-        if (updateUrl && NavigateToContactUrl(id))
+        if (id <= 0)
             return;
 
-        _showEditor = true;
+        CaptureBrowseReturnView();
+        _pageMode = ContactosPageMode.Edit;
+        _selectedId = id;
+        _isNewMode = false;
+        _loadingEdit = true;
+        _editLoadedId = 0;
+        _editErrorMessage = string.Empty;
+        _editDirty = false;
         SetFeedback(null);
-        await SeleccionarAsync(id);
+        if (updateUrl)
+            NavigateToContactUrl(id);
+        UpdatePageHeader();
+        try
+        {
+            var result = await UiOps.RunAsync(() => ContactosSvc.GetByIdAsync(id), "No se pudo cargar el contacto.");
+            if (!result.Success)
+            {
+                _editErrorMessage = result.Feedback?.Message ?? "No se pudo cargar el contacto.";
+                return;
+            }
+
+            if (result.Value is null)
+            {
+                _editErrorMessage = "El contacto solicitado no existe o ya no está disponible en la base activa.";
+                return;
+            }
+
+            MapDetailToForm(result.Value);
+        }
+        finally
+        {
+            _loadingEdit = false;
+            UpdatePageHeader();
+        }
+    }
+
+    private void CaptureBrowseReturnView()
+    {
+        if (_pageMode != ContactosPageMode.Browse)
+            return;
+
+        _recordReturnViewMode = _viewMode == ContactosViewModeKeys.Kanban
+            ? ContactosViewModeKeys.Kanban
+            : ContactosViewModeKeys.Listado;
+    }
+
+    private void ReturnToBrowseState()
+    {
+        _pageMode = ContactosPageMode.Browse;
+        _recordDetail = null;
+        _recordErrorMessage = string.Empty;
+        _recordNavigation = null;
+        _recordNavigationError = string.Empty;
+        _loadingRecordNavigation = false;
+        _loadingRecord = false;
+        _viewMode = _recordReturnViewMode == ContactosViewModeKeys.Kanban
+            ? ContactosViewModeKeys.Kanban
+            : ContactosViewModeKeys.Listado;
         UpdatePageHeader();
     }
 
+    private bool NavigateToRecordUrl(int id)
+        => NavigateToContactosState(ContactosUrlState.Record, id);
+
     private bool NavigateToContactUrl(int id)
+        => NavigateToContactosState(ContactosUrlState.Editor, id);
+
+    private bool NavigateToContactosState(ContactosUrlState state, int? id = null, bool replace = false)
     {
-        var target = QueryHelpers.AddQueryString(RouteContext.BuildRoute("/contactos"), "editar", id.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        var target = BuildContactosUrl(state, id);
         if (string.Equals(Nav.ToBaseRelativePath(Nav.Uri), target.TrimStart('/'), StringComparison.Ordinal))
             return false;
 
-        Nav.NavigateTo(target);
+        Nav.NavigateTo(target, replace: replace);
         return true;
+    }
+
+    private string BuildContactosUrl(ContactosUrlState state, int? id = null)
+    {
+        var target = RouteContext.BuildRoute("/contactos");
+        var invariantId = id.GetValueOrDefault().ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        if (state == ContactosUrlState.Record && id.GetValueOrDefault() > 0)
+            target = QueryHelpers.AddQueryString(target, "contacto", invariantId);
+        else if (state == ContactosUrlState.Editor && id.GetValueOrDefault() > 0)
+            target = QueryHelpers.AddQueryString(target, "editar", invariantId);
+
+        var query = QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("directo", out var directo)
+            && string.Equals(directo.ToString(), "1", StringComparison.OrdinalIgnoreCase))
+            target = QueryHelpers.AddQueryString(target, "directo", "1");
+
+        return target;
     }
 
     private void ToggleRowSelection(int id, ChangeEventArgs args)
@@ -1836,6 +2631,15 @@
         else
             _selectedIds.Remove(id);
 
+        UpdatePageHeader();
+    }
+
+    private void ToggleCardSelection(int id)
+    {
+        if (!_selectedIds.Add(id))
+            _selectedIds.Remove(id);
+
+        _selectedId = id;
         UpdatePageHeader();
     }
 
@@ -1861,30 +2665,18 @@
         return Task.CompletedTask;
     }
 
-    private async Task DarDeBajaAsync()
+    private Task DarDeBajaAsync()
     {
         if (_isNewMode || _selectedId <= 0)
-            return;
+            return Task.CompletedTask;
 
-        _saving = true;
-        try
-        {
-            var result = await UiOps.RunAsync(() => ContactosSvc.DeactivateAsync(_selectedId), "No se pudo dar de baja el contacto.");
-            if (!result.Success)
-            {
-                SetFeedback(result.Feedback);
-                return;
-            }
+        return OpenIndividualDeactivateConfirmAsync(_selectedId, _form.NombreApellido);
+    }
 
-            SetFeedback(AppUiMessage.Success("Contacto dado de baja", $"El contacto #{_selectedId} quedó inactivo."));
-            BeginNew();
-            _showEditor = false;
-            await BuscarAsync();
-        }
-        finally
-        {
-            _saving = false;
-        }
+    private Task DarDeBajaDesdeFilaAsync(int id)
+    {
+        var contact = _items.FirstOrDefault(item => item.Id == id);
+        return OpenIndividualDeactivateConfirmAsync(id, contact?.NombreApellido);
     }
 
     private async Task EjecutarAccionSeleccionadaAsync()
@@ -1922,49 +2714,84 @@
         if (_selectedIds.Count == 0 || _saving)
             return;
 
-        _bulkDeactivateConfirmCount = _selectedIds.Count;
-        _showBulkDeactivateConfirm = true;
+        _pendingDeactivateIds = _selectedIds.OrderBy(id => id).ToArray();
+        _pendingDeactivateName = string.Empty;
+        _pendingDeactivateIsBulk = true;
+        _deactivateConfirmError = string.Empty;
+        _showDeactivateConfirm = true;
     }
 
-    private void CloseBulkDeactivateConfirm()
+    private Task OpenIndividualDeactivateConfirmAsync(int id, string? name)
     {
-        if (_saving)
-            return;
+        if (id <= 0 || _saving)
+            return Task.CompletedTask;
 
-        _showBulkDeactivateConfirm = false;
+        _pendingDeactivateIds = [id];
+        _pendingDeactivateName = string.IsNullOrWhiteSpace(name) ? $"#{id}" : name.Trim();
+        _pendingDeactivateIsBulk = false;
+        _deactivateConfirmError = string.Empty;
+        _showDeactivateConfirm = true;
+        return Task.CompletedTask;
     }
 
-    private async Task ConfirmBulkDeactivateAsync()
+    private void CloseDeactivateConfirm()
     {
-        var ids = _selectedIds.OrderBy(id => id).ToArray();
-        if (ids.Length == 0 || _saving)
-        {
-            _showBulkDeactivateConfirm = false;
+        if (_deactivateConfirmLoading)
             return;
-        }
 
-        _showBulkDeactivateConfirm = false;
+        _showDeactivateConfirm = false;
+        _deactivateConfirmError = string.Empty;
+        _pendingDeactivateIds = [];
+        _pendingDeactivateName = string.Empty;
+        _pendingDeactivateIsBulk = false;
+    }
+
+    private async Task ConfirmDeactivateAsync()
+    {
+        if (_deactivateConfirmLoading || _pendingDeactivateIds.Length == 0)
+            return;
+
+        var ids = _pendingDeactivateIds.ToArray();
+        var isBulk = _pendingDeactivateIsBulk;
+        var selectedAffected = ids.Contains(_selectedId) ? _selectedId : 0;
+        _deactivateConfirmLoading = true;
         _saving = true;
+        _deactivateConfirmError = string.Empty;
         try
         {
             foreach (var id in ids)
                 await ContactosSvc.DeactivateAsync(id);
 
-            _selectedIds.Clear();
-            if (ids.Contains(_selectedId))
+            if (isBulk)
+                _selectedIds.Clear();
+
+            if (selectedAffected > 0 && !_showRecordView)
                 _selectedId = 0;
 
-            _showEditor = false;
-            SetFeedback(AppUiMessage.Success("Contactos actualizados", $"Se dieron de baja {ids.Length} contacto(s) seleccionados."));
+            if (_pageMode is ContactosPageMode.Edit or ContactosPageMode.New)
+                ReturnToBrowseState();
+            SetFeedback(isBulk
+                ? AppUiMessage.Success("Contactos actualizados", $"Se dieron de baja {ids.Length} contacto(s) seleccionados.")
+                : AppUiMessage.Success("Contacto dado de baja", "El contacto quedó inactivo."));
             await BuscarAsync();
+            if (_showRecordView && selectedAffected > 0)
+                await CargarFichaAsync(selectedAffected);
+            _showDeactivateConfirm = false;
+            _pendingDeactivateIds = [];
+            _pendingDeactivateName = string.Empty;
+            _pendingDeactivateIsBulk = false;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            SetFeedback(UiOps.BuildMessage(ex, "No se pudieron actualizar los contactos seleccionados."));
+            _deactivateConfirmError = isBulk
+                ? "No se pudieron dar de baja los contactos seleccionados. Podés reintentar o cancelar."
+                : "No se pudo dar de baja el contacto. Podés reintentar o cancelar.";
         }
         finally
         {
+            _deactivateConfirmLoading = false;
             _saving = false;
+            UpdatePageHeader();
         }
     }
 
@@ -2017,13 +2844,28 @@
 
     private async Task OpenBulkTemplateModalAsync()
     {
-        if (!GetSelectedContactsWithPhone().Any())
+        _bulkTemplateTargetIds = [];
+        await OpenTemplateModalForCurrentTargetAsync("Seleccioná contactos con celular o teléfono para enviar plantillas.");
+    }
+
+    private async Task OpenRecordTemplateModalAsync()
+    {
+        if (_recordDetail is null || _recordDetail.Id <= 0)
+            return;
+
+        _bulkTemplateTargetIds = [_recordDetail.Id];
+        await OpenTemplateModalForCurrentTargetAsync("El contacto necesita celular o teléfono para enviar una plantilla.");
+    }
+
+    private async Task OpenTemplateModalForCurrentTargetAsync(string phoneRequiredMessage)
+    {
+        if (!GetTemplateContactsWithPhone().Any())
         {
             SetFeedback(new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
                 Title = "Teléfono requerido",
-                Message = "Seleccioná contactos con celular o teléfono para enviar plantillas."
+                Message = phoneRequiredMessage
             });
             return;
         }
@@ -2043,6 +2885,7 @@
         _showBulkTemplateConfirm = false;
         _showBulkTemplateModal = false;
         _bulkTemplateError = string.Empty;
+        _bulkTemplateTargetIds = [];
     }
 
     private void CloseBulkTemplateConfirm()
@@ -2097,7 +2940,7 @@
             return;
         }
 
-        var contacts = GetSelectedContactsWithPhone().ToList();
+        var contacts = GetTemplateContactsWithPhone().ToList();
         if (contacts.Count == 0)
         {
             _bulkTemplateError = "No hay contactos seleccionados con teléfono o celular.";
@@ -2121,7 +2964,7 @@
         }
 
         var values = ParseTemplateValues(_bulkTemplateValuesText).ToList();
-        var contacts = GetSelectedContactsWithPhone().ToList();
+        var contacts = GetTemplateContactsWithPhone().ToList();
         if (contacts.Count == 0)
         {
             _showBulkTemplateConfirm = false;
@@ -2201,9 +3044,20 @@
     private void MapDetailToForm(ContactoDetailDto detail)
     {
         ClearFieldErrors();
+        ApplyDetailState(detail);
         _isNewMode = false;
-        _showEditor = true;
+        _pageMode = ContactosPageMode.Edit;
         _activeTab = ContactoTab.Datos;
+        _editLoadedId = detail.Id;
+        _editErrorMessage = string.Empty;
+        _editInitialState = CaptureEditState();
+        _editDirty = false;
+        _showDiscardEditConfirm = false;
+        _pendingEditNavigationUri = string.Empty;
+    }
+
+    private void ApplyDetailState(ContactoDetailDto detail)
+    {
         _selectedId = detail.Id;
         _selectedActivo = detail.Activo;
         _selectedConversationId = detail.IdConversacionWhatsApp;
@@ -2290,14 +3144,55 @@
     private static bool HasContactPhone(ContactoGridItemDto contact)
         => !string.IsNullOrWhiteSpace(FirstNonEmpty(contact.Celular, contact.Telefono));
 
+    private static bool HasRecordPhone(ContactoDetailDto contact)
+        => !string.IsNullOrWhiteSpace(FirstNonEmpty(contact.Celular, contact.Telefono));
+
     private IEnumerable<ContactoGridItemDto> GetSelectedContactsWithPhone()
         => _items
             .Where(item => _selectedIds.Contains(item.Id))
             .Where(HasContactPhone)
             .OrderBy(item => item.NombreApellido, StringComparer.CurrentCultureIgnoreCase);
 
+    private IEnumerable<ContactoGridItemDto> GetTemplateContactsWithPhone()
+    {
+        if (_bulkTemplateTargetIds.Length == 0)
+            return GetSelectedContactsWithPhone();
+
+        var targetIds = _bulkTemplateTargetIds.ToHashSet();
+        var contacts = _items.Where(item => targetIds.Contains(item.Id)).ToList();
+        if (_recordDetail is not null && targetIds.Contains(_recordDetail.Id) && contacts.All(item => item.Id != _recordDetail.Id))
+            contacts.Add(ToGridItem(_recordDetail));
+
+        return contacts
+            .Where(HasContactPhone)
+            .OrderBy(item => item.NombreApellido, StringComparer.CurrentCultureIgnoreCase);
+    }
+
+    private Task OpenConversationForRecordAsync()
+    {
+        if (_recordDetail is null)
+            return Task.CompletedTask;
+
+        return OpenConversationForContactAsync(ToGridItem(_recordDetail));
+    }
+
+    private static ContactoGridItemDto ToGridItem(ContactoDetailDto detail)
+        => new()
+        {
+            Id = detail.Id,
+            NombreApellido = detail.NombreApellido,
+            Localidad = detail.Localidad,
+            ProvinciaCodigo = detail.ProvinciaCodigo,
+            Telefono = detail.Telefono,
+            Celular = detail.Celular,
+            Email = detail.Email,
+            Cargo = detail.Cargo,
+            Activo = detail.Activo,
+            IdConversacionWhatsApp = detail.IdConversacionWhatsApp
+        };
+
     private static string GetConversationActionLabel(long? idConversacion)
-        => idConversacion.HasValue ? "Ver conversación" : "Crear conversación";
+        => idConversacion.HasValue ? "Abrir conversación" : "Crear conversación";
 
     private static string FirstNonEmpty(params string?[] values)
     {
@@ -2329,39 +3224,17 @@
     private string GetFieldError(string key)
         => HasFieldError(key) ? _fieldErrors[key.Trim()] : string.Empty;
 
-    private string GetFieldInputClass(string key)
-        => HasFieldError(key) ? "usuarios-input usuarios-input--invalid" : "usuarios-input";
-
     private void SetFeedback(AppUiMessage? message)
-    {
-        _feedback = message;
-        _feedbackLeaving = false;
-        _feedbackSetAtUtc = message is null ? DateTime.MinValue : DateTime.UtcNow;
-    }
+        => _feedback = message;
+
+    private void ClearFeedback()
+        => _feedback = null;
 
     private async Task DismissFeedbackAsync()
     {
-        if (_feedback is null || _feedbackLeaving)
-            return;
-
-        if (DateTime.UtcNow - _feedbackSetAtUtc < TimeSpan.FromMilliseconds(350))
-            return;
-
-        _feedbackLeaving = true;
-        StateHasChanged();
-        await Task.Delay(180);
-        _feedback = null;
-        _feedbackLeaving = false;
+        ClearFeedback();
+        await Task.CompletedTask;
     }
-
-    private static string GetFeedbackClass(AppUiMessage message)
-        => message.Severity switch
-        {
-            AppUiFeedbackSeverity.Success => "editor-msg--ok",
-            AppUiFeedbackSeverity.Info => "editor-msg--ok",
-            AppUiFeedbackSeverity.Warning => "editor-msg--warning",
-            _ => "editor-msg--error"
-        };
 
     private async Task EnsureViewSettingsLoadedAsync(bool force = false)
     {
@@ -2388,6 +3261,9 @@
     private void ApplyViewSettings(ContactosViewSettingsDto settings, string userName)
     {
         _viewSettings = settings;
+        _viewMode = settings.Vista == ContactosViewModeKeys.Kanban
+            ? ContactosViewModeKeys.Kanban
+            : ContactosViewModeKeys.Listado;
         _viewSettingsUserName = userName;
         _viewSettingsLoaded = true;
         _draftAgruparPor = settings.AgruparPor;
@@ -2408,11 +3284,14 @@
         _showViewSettings = false;
     }
 
-    private void ToggleViewColumn(string key, ChangeEventArgs args)
+    private void SetDraftGrouping(string? value)
+        => _draftAgruparPor = string.IsNullOrWhiteSpace(value) ? ContactosViewGroupKeys.None : value;
+
+    private void SetViewColumnVisibility(string key, bool? visible)
     {
         var column = _viewSettingsDraft.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
         if (column is null) return;
-        column.Visible = args.Value is bool flag && flag;
+        column.Visible = visible is true;
         if (!_viewSettingsDraft.Any(c => c.Visible))
             column.Visible = true;
     }
@@ -2432,6 +3311,9 @@
 
     private async Task GuardarConfiguracionVistaAsync()
     {
+        if (_savingViewSettings)
+            return;
+
         var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(currentUser))
         {
@@ -2439,13 +3321,21 @@
             return;
         }
 
-        var settings = new ContactosViewSettingsDto { AgruparPor = _draftAgruparPor, Columnas = CloneColumns(_viewSettingsDraft) };
-        var result = await UiOps.RunAsync(async () => { await ContactosSvc.SaveViewSettingsAsync(currentUser, settings); return true; }, "No se pudo guardar la configuración de vista.");
-        if (!result.Success) { SetFeedback(result.Feedback); return; }
+        _savingViewSettings = true;
+        try
+        {
+            var settings = new ContactosViewSettingsDto { Vista = _viewMode, AgruparPor = _draftAgruparPor, Columnas = CloneColumns(_viewSettingsDraft) };
+            var result = await UiOps.RunAsync(async () => { await ContactosSvc.SaveViewSettingsAsync(currentUser, settings); return true; }, "No se pudo guardar la configuración de vista.");
+            if (!result.Success) { SetFeedback(result.Feedback); return; }
 
-        ApplyViewSettings(settings, currentUser);
-        _showViewSettings = false;
-        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de la grilla quedó actualizada para tu usuario."));
+            ApplyViewSettings(settings, currentUser);
+            _showViewSettings = false;
+            SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de la grilla quedó actualizada para tu usuario."));
+        }
+        finally
+        {
+            _savingViewSettings = false;
+        }
     }
 
     private IReadOnlyList<ContactoViewColumnDto> GetVisibleColumns()
@@ -2468,6 +3358,44 @@
 
     private static string GetGroupingLabel(string grouping)
         => grouping == ContactosViewGroupKeys.Activo ? "Estado" : "Sin agrupar";
+
+    private IReadOnlyList<AlfaActionMenuItem> BuildContactActionMenu(ContactoGridItemDto item)
+    {
+        var actions = new List<AlfaActionMenuItem>
+        {
+            new()
+            {
+                Key = "editar",
+                Label = "Editar",
+                Icon = "bi bi-pencil-square",
+                OnClick = () => AbrirEditorAsync(item.Id)
+            },
+            new()
+            {
+                Key = "conversacion",
+                Label = GetConversationActionAriaLabel(item),
+                Icon = GetConversationActionIcon(item),
+                Disabled = _openingConversation || !HasContactPhone(item),
+                OnClick = () => OpenConversationForContactAsync(item)
+            }
+        };
+
+        if (item.Activo)
+        {
+            actions.Add(new AlfaActionMenuItem
+            {
+                Key = "baja",
+                Label = "Dar de baja",
+                Icon = "bi bi-person-dash",
+                Danger = true,
+                SeparatorBefore = true,
+                Disabled = _saving,
+                OnClick = () => DarDeBajaDesdeFilaAsync(item.Id)
+            });
+        }
+
+        return actions;
+    }
 
     private static string DisplayOrFallback(params string?[] values)
         => values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? "-";
@@ -2719,6 +3647,7 @@
     private static ContactosViewSettingsDto BuildDefaultViewSettings()
         => new()
         {
+            Vista = ContactosViewModeKeys.Listado,
             AgruparPor = ContactosViewGroupKeys.None,
             Columnas =
             [
@@ -2757,5 +3686,20 @@
         Datos = 0,
         Observaciones = 1,
         Cuentas = 2
+    }
+
+    private enum ContactosUrlState
+    {
+        Base = 0,
+        Record = 1,
+        Editor = 2
+    }
+
+    private enum ContactosPageMode
+    {
+        Browse = 0,
+        Record = 1,
+        Edit = 2,
+        New = 3
     }
 }

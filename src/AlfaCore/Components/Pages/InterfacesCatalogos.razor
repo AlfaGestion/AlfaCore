@@ -1,3 +1,15 @@
+@page "/catalogo"
+@page "/catalogo/{Vista}"
+@page "/catalogo/nuevo"
+@page "/catalogo/predeterminado"
+@page "/catalogo/menu"
+@page "/catalogo/configuracion"
+@page "/{idweb}/{idbase:int}/catalogo"
+@page "/{idweb}/{idbase:int}/catalogo/{Vista}"
+@page "/{idweb}/{idbase:int}/catalogo/nuevo"
+@page "/{idweb}/{idbase:int}/catalogo/predeterminado"
+@page "/{idweb}/{idbase:int}/catalogo/menu"
+@page "/{idweb}/{idbase:int}/catalogo/configuracion"
 @page "/catalogos"
 @page "/catalogos/{Vista}"
 @page "/{idweb}/{idbase:int}/catalogos"
@@ -13,24 +25,21 @@
 @inject AlfaCore.Services.IAppUiDialogService DialogSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@inject ILogger<InterfacesCatalogos> Logger
 @implements IDisposable
 
 <PageTitle>Catálogos | Alfa Gestión</PageTitle>
 
-@if (IsCatalogosOrPredeterminadoSection)
+@if (ShouldRenderCatalogosSection)
 {
 <section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">@GetSectionTitle()</h2>
-            <p class="page-intro__text">@GetSectionIntro()</p>
-        </div>
-    </div>
-
-    @if (_feedback is not null)
+    @if (_feedback is not null && _homeSelection != CatalogosHomeSelection.NuevoCatalogo)
     {
         <div class="panel-card">
             <div class="editor-msg @GetFeedbackClass(_feedback)">
@@ -50,327 +59,111 @@
         </div>
     }
 
-    @if (_homeSelection is null)
+    @if (_homeSelection is null || _homeSelection == CatalogosHomeSelection.VerCatalogos)
     {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Catálogos</h3>
-                    <p class="panel-card__subtitle">Usá las acciones de arriba para abrir publicaciones, crear un catálogo nuevo o entrar al modo predeterminado.</p>
-                </div>
-            </div>
-        </section>
-    }
-    else if (_homeSelection == CatalogosHomeSelection.NuevoCatalogo)
-    {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Crear catálogo nuevo</h3>
-                    <p class="panel-card__subtitle">Completá los datos, buscá artículos y publicá cuando esté listo.</p>
-                </div>
-                <div class="actions flex-wrap">
-                    <button type="button" class="btn btn--ghost" @onclick="GuardarAsync" disabled="@_loading">
-                        <i class="bi bi-save"></i> Guardar
-                    </button>
-                    <button type="button" class="btn btn--primary" @onclick="PublicarAsync" disabled="@_loading">
-                        <i class="bi bi-bullhorn"></i> Publicar
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="CancelarAsync" disabled="@_loading">
-                        <i class="bi bi-x-circle"></i> Cancelar
-                    </button>
-                </div>
-            </div>
-
-            <div class="section-block">
-                <div class="section-block__head">
-                    <h4 class="section-block__title">Datos del catálogo</h4>
-                    <p class="section-block__subtitle">Agrupamos lo básico para completar la carga más rápido.</p>
-                </div>
-                <div class="row g-3">
-                    <div class="col-12">
-                        <div class="field">
-                            <label>Tipo de catálogo</label>
-                            <div class="catalog-mode-group">
-                                @foreach (var item in _modalidades)
-                                {
-                                    <button type="button" class="@GetModeButtonClass(item.Clave)" @onclick="() => SelectModeAsync(item.Clave)">
-                                        @GetModeLabel(item.Clave)
-                                    </button>
-                                }
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-6">
-                        <div class="field">
-                            <label>Nombre</label>
-                            <input @bind="_nombre" placeholder="Catálogo de temporada" />
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-6">
-                        <div class="field">
-                            <label>Descripción / observaciones</label>
-                            <textarea rows="3" @bind="_descripcion" placeholder="Texto que se mostrará al inicio de la publicación."></textarea>
-                        </div>
-                    </div>
-                    @if (_modo == CatalogosViewGroupKeys.Tipo)
-                    {
-                        <div class="col-12 col-md-6 col-xl-4">
-                            <div class="field">
-                                <label>Fecha desde</label>
-                                <InputDate TValue="DateTime?" @bind-Value="_vigenciaDesde" />
-                            </div>
-                        </div>
-                        <div class="col-12 col-md-6 col-xl-4">
-                            <div class="field">
-                                <label>Fecha hasta</label>
-                                <InputDate TValue="DateTime?" @bind-Value="_vigenciaHasta" />
-                            </div>
-                        </div>
-                    }
-                </div>
-            </div>
-
-            <div class="section-block mt-4">
-                <div class="section-block__head">
-                    <h4 class="section-block__title">Agregar artículos desde</h4>
-                    <p class="section-block__subtitle">Elegí de dónde queremos consultar y sumar artículos al catálogo.</p>
-                </div>
-                <div class="row g-3">
-                    <div class="col-12 col-lg-6">
-                        <button type="button" class="catalog-source-card @(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectArticuloSourceAsync(CatalogosArticuloOrigenKeys.ListaPrecio)">
-                            <strong>Lista de precios</strong>
-                        </button>
-                        <p class="catalog-source-card__hint">Consultar o importar artículos de una lista.</p>
-                    </div>
-                    <div class="col-12 col-lg-6">
-                        <button type="button" class="catalog-source-card @(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectArticuloSourceAsync(CatalogosArticuloOrigenKeys.Maestro)">
-                            <strong>Maestro de artículos</strong>
-                        </button>
-                        <p class="catalog-source-card__hint">Buscar directamente en el maestro de artículos.</p>
-                    </div>
-                </div>
-
-                @if (string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase))
-                {
-                    <div class="row g-3 mt-1">
-                        <div class="col-12 col-lg-6 col-xxl-4">
-                            <div class="field">
-                                <label>Lista de precios</label>
-                                <select @bind="_idLista" @bind:after="OnListaPrecioChangedAsync">
-                                    <option value="">Seleccionar...</option>
-                                    @foreach (var lista in _listasPrecio)
-                                    {
-                                        <option value="@lista.IdLista">@lista.Nombre (@lista.IdLista)</option>
-                                    }
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                }
-
-                <div class="toolbar mt-3">
-                    <button type="button" class="btn btn--primary" @onclick="AbrirLookupArticulosAsync" disabled="@_loading">
-                        <i class="bi bi-search"></i> Consultar artículos
-                    </button>
-                    @if (PuedeImportarListaCompleta())
-                    {
-                        <button type="button" class="btn btn--ghost" @onclick="ImportarListaCompletaAsync" disabled="@_loading">
-                            <i class="bi bi-cloud-arrow-down"></i> Importar lista completa
-                        </button>
-                    }
-                    <button type="button" class="btn btn--ghost" @onclick="QuitarSeleccionadosAsync" disabled="@(!_articulosQuitarSeleccionados.Any())">
-                        <i class="bi bi-dash-circle"></i> Quitar seleccionados
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="LimpiarCatalogoAsync" disabled="@(!_articulosSeleccionados.Any())">
-                        <i class="bi bi-trash"></i> Limpiar catálogo
-                    </button>
-                </div>
-            </div>
-
-            <div class="section-block mt-4">
-                <div class="section-block__head d-flex justify-content-between align-items-start gap-3">
-                    <div>
-                        <h4 class="section-block__title">Artículos del catálogo</h4>
-                        <p class="section-block__subtitle">@_articulosSeleccionados.Count artículo(s) seleccionados</p>
-                    </div>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="AbrirLookupArticulosAsync">
-                        <i class="bi bi-search"></i> Consultar artículos
-                    </button>
-                </div>
-
-                @if (_articulosSeleccionados.Count == 0)
-                {
-                    <div class="usuarios-empty">Todavía no agregaste artículos.</div>
-                }
-                else
-                {
-                    <div class="table-responsive">
-                        <table class="data-table usuarios-table">
-                            <thead>
-                                <tr>
-                                    <th style="width:44px;">
-                                        <input type="checkbox" @onchange="ToggleSeleccionTodosQuitarAsync" checked="@(_articulosQuitarSeleccionados.Count == _articulosSeleccionados.Count && _articulosSeleccionados.Count > 0)" />
-                                    </th>
-                                    <th>Código</th>
-                                    <th>Descripción</th>
-                                    <th>Presentación</th>
-                                    <th>Marca</th>
-                                    <th>Rubro</th>
-                                    <th style="text-align:right;">Precio</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @foreach (var item in _articulosSeleccionados)
-                                {
-                                    <tr class="@GetArticuloRowClass(item.IdArticulo)">
-                                        <td>
-                                            <input type="checkbox" checked="@_articulosQuitarSeleccionados.Contains(item.IdArticulo)" @onchange="(ChangeEventArgs args) => ToggleQuitarSeleccionAsync(item.IdArticulo, args)" />
-                                        </td>
-                                        <td><strong>@item.IdArticulo</strong></td>
-                                        <td>@item.DescripcionArticulo</td>
-                                        <td>@Display(item.Presentacion)</td>
-                                        <td>@Display(item.Marca)</td>
-                                        <td>@Display(item.Rubro)</td>
-                                        <td style="text-align:right;">@Money(item.Precio)</td>
-                                        <td style="text-align:right;">
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarArticuloAsync(item.IdArticulo)">
-                                                <i class="bi bi-trash"></i> Quitar
-                                            </button>
-                                        </td>
-                                    </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
-                }
-            </div>
-
-            @if (!string.IsNullOrWhiteSpace(_urlPublica))
-            {
-                <div class="context-card mt-4">
-                    <span class="context-card__label">Enlace público</span>
-                    <strong>@_urlPublica</strong>
-                    <div class="actions mt-2">
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CopiarEnlaceAsync()">
-                            <i class="bi bi-clipboard"></i> Copiar enlace
-                        </button>
-                        <a class="btn btn--ghost btn--sm" href="@_urlPublica" target="_blank" rel="noopener">
-                            <i class="bi bi-box-arrow-up-right"></i> Abrir
-                        </a>
-                    </div>
-                </div>
-            }
-        </section>
-    }
-    else
-    {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Catálogos publicados</h3>
-                    <p class="panel-card__subtitle">Mostramos solo catálogos vigentes para la fecha que elijas.</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="BackToHomeAsync">
-                        <i class="bi bi-arrow-left"></i> Volver
-                    </button>
-                </div>
-            </div>
-
-            <div class="row g-3 align-items-end">
-                <div class="col-12 col-lg-4">
-                    <div class="field">
+        <ModuleListToolbar AriaLabel="Herramientas de catálogos"
+                           PagerAriaLabel="Paginación de catálogos"
+                           ActionsAriaLabel="Acciones de catálogos"
+                           ShowPager="true"
+                           CurrentPage="@(_catalogosPage?.PageNumber ?? 1)"
+                           TotalPages="@(_catalogosPage?.TotalPages ?? 1)"
+                           IsLoading="@_loading"
+                           OnPageChanged="OnCatalogosPageChangedAsync"
+                           Actions="@BuildListadoActions()">
+            <SearchContent>
+                <div class="catalogos-toolbar">
+                    <div class="field catalogos-toolbar__field catalogos-toolbar__field--wide">
                         <label>Buscar catálogo</label>
-                        <input class="form-control" @bind="_catalogosTexto" @bind:event="oninput" placeholder="Nombre, grupo, lista o id" />
+                        <input type="search"
+                               class="form-control"
+                               @bind="_catalogosTexto"
+                               @bind:event="oninput"
+                               @onkeydown="HandleCatalogosSearchKeyDownAsync"
+                               placeholder="Nombre, grupo, lista o id" />
                     </div>
-                </div>
-                <div class="col-12 col-lg-3">
-                    <div class="field">
-                        <label>Fecha</label>
-                        <InputDate TValue="DateTime?" @bind-Value="_catalogosFechaFiltro" />
-                    </div>
-                </div>
-                <div class="col-12 col-lg-2">
-                    <div class="field">
-                        <label>Resultados</label>
-                        <select class="form-select" @bind="_catalogosPageSize">
-                            <option value="25">25</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
+                    <div class="field catalogos-toolbar__field">
+                        <label>Tipo</label>
+                        <select class="form-select" @bind="_catalogosTipoFiltro">
+                            <option value="todos">Todos</option>
+                            <option value="predeterminado">Predeterminado</option>
+                            <option value="vigencia">Con vigencia</option>
                         </select>
                     </div>
-                </div>
-                <div class="col-12 col-lg-3">
-                    <div class="actions">
-                        <button type="button" class="btn btn--ghost" @onclick="() => BuscarCatalogosAsync()">
+                    <div class="field catalogos-toolbar__field">
+                        <label>Estado</label>
+                        <select class="form-select" @bind="_catalogosEstadoFiltro">
+                            <option value="todos">Todos</option>
+                            <option value="publicado">Publicado</option>
+                            <option value="finalizado">Finalizado</option>
+                        </select>
+                    </div>
+                    <div class="field catalogos-toolbar__field">
+                        <label>Fecha</label>
+                        <InputDate TValue="DateTime?" class="form-control" @bind-Value="_catalogosFechaFiltro" />
+                    </div>
+                    <div class="catalogos-toolbar__search-action">
+                        <button type="button" class="btn btn--primary" @onclick="() => BuscarCatalogosAsync()" disabled="@_loading">
                             <i class="bi bi-search"></i> Buscar
                         </button>
-                        <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@(_loading)">
-                            <i class="bi bi-arrow-clockwise"></i> Recargar
-                        </button>
-                        <button type="button" class="btn btn--primary" @onclick="ShowNuevoCatalogoAsync">
-                            <i class="bi bi-plus-circle"></i> Crear nuevo
-                        </button>
                     </div>
                 </div>
-            </div>
+            </SearchContent>
+        </ModuleListToolbar>
 
-            <div class="panel-card__header mt-4">
-                <div>
-                    <h3 class="panel-card__title">Configuración de vista</h3>
-                    <p class="panel-card__subtitle">Mostrá u ocultá columnas y reordenalas según tu criterio.</p>
-                </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="ToggleViewSettings">
-                        <i class="bi bi-sliders"></i> Configurar vista
-                    </button>
-                </div>
-            </div>
-
-            @if (_showViewSettings)
-            {
-                <div class="usuarios-view-settings">
-                    <div class="field">
-                        <label>Agrupar por</label>
-                        <select @bind="_draftAgruparPor">
-                            <option value="@CatalogosViewGroupKeys.None">Sin agrupar</option>
-                            <option value="@CatalogosViewGroupKeys.Tipo">Tipo</option>
-                            <option value="@CatalogosViewGroupKeys.Estado">Estado</option>
-                        </select>
-                    </div>
-                    <div class="usuarios-view-settings__list">
-                        @foreach (var column in _viewSettingsDraft.OrderBy(c => c.Order))
-                        {
-                            <div class="usuarios-view-settings__item">
-                                <label class="checkbox">
-                                    <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleViewColumn(column.Key, args)" />
-                                    <span>@column.Label</span>
-                                </label>
-                                <div class="actions">
-                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">
-                                        <i class="bi bi-arrow-up"></i>
-                                    </button>
-                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, 1)">
-                                        <i class="bi bi-arrow-down"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        }
+        @if (_showViewSettings)
+        {
+            <section class="panel-card">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Vista</h3>
                     </div>
                     <div class="actions">
                         <button type="button" class="btn btn--primary" @onclick="GuardarVistaAsync">
                             <i class="bi bi-floppy"></i> Guardar vista
                         </button>
                         <button type="button" class="btn btn--ghost" @onclick="CancelarVistaAsync">
-                            <i class="bi bi-x-circle"></i> Cancelar
+                            <i class="bi bi-x-circle"></i> Cerrar
                         </button>
                     </div>
                 </div>
-            }
 
-            <div class="panel-card__header mt-4">
+                <div class="row g-3">
+                    <div class="col-12 col-lg-4">
+                        <div class="field">
+                            <label>Agrupar por</label>
+                            <select @bind="_draftAgruparPor">
+                                <option value="@CatalogosViewGroupKeys.None">Sin agrupar</option>
+                                <option value="@CatalogosViewGroupKeys.Tipo">Tipo</option>
+                                <option value="@CatalogosViewGroupKeys.Estado">Estado</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="usuarios-view-settings__list mt-3">
+                    @foreach (var column in _viewSettingsDraft.OrderBy(c => c.Order))
+                    {
+                        <div class="usuarios-view-settings__item">
+                            <label class="checkbox">
+                                <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleViewColumn(column.Key, args)" />
+                                <span>@column.Label</span>
+                            </label>
+                            <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">
+                                    <i class="bi bi-arrow-up"></i>
+                                </button>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, 1)">
+                                    <i class="bi bi-arrow-down"></i>
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+
+        <section class="panel-card">
+            <div class="panel-card__header">
                 <div>
                     <h3 class="panel-card__title">Catálogos publicados</h3>
                     <p class="panel-card__subtitle">@(_catalogosPage?.Total ?? 0) registro(s) · página @(_catalogosPage?.PageNumber ?? 1) de @(_catalogosPage?.TotalPages ?? 1)</p>
@@ -383,7 +176,7 @@
             }
             else if (_catalogosPage.Items.Count == 0)
             {
-                <div class="usuarios-empty">No hay catálogos publicados para la fecha y filtros actuales.</div>
+                <div class="usuarios-empty">No hay catálogos publicados para los filtros actuales.</div>
             }
             else
             {
@@ -458,133 +251,349 @@
                         </tbody>
                     </table>
                 </div>
-
-                <div class="d-flex flex-wrap gap-2 align-items-center mt-3">
-                    <span class="panel-card__subtitle">Página @_catalogosPage.PageNumber de @_catalogosPage.TotalPages</span>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="PrevPageAsync" disabled="@(!_catalogosPage.HasPrev)">Anterior</button>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="NextPageAsync" disabled="@(!_catalogosPage.HasNext)">Siguiente</button>
-                </div>
             }
         </section>
     }
-    </section>
-}
-else if (IsMenuSection)
-{
-<section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Menú de catálogos</h2>
-            <p class="page-intro__text">Esta sección queda lista para asociar un menú propio al módulo cuando esté habilitado.</p>
-        </div>
-    </div>
-
-    @if (_feedback is not null)
+    else if (_homeSelection == CatalogosHomeSelection.NuevoCatalogo)
     {
-        <div class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
+        @if (_feedback is not null)
+        {
+            <div class="panel-card">
+                <div class="editor-msg @GetFeedbackClass(_feedback)">
+                    <div>
+                        <strong>@_feedback.Title</strong>
+                        <p>@_feedback.Message</p>
+                        @if (_feedback.HasSuggestion)
+                        {
+                            <small>@_feedback.Suggestion</small>
+                        }
+                        @if (_feedback.HasCode)
+                        {
+                            <small>Código: @_feedback.Code</small>
+                        }
+                    </div>
                 </div>
             </div>
-        </div>
-    }
+        }
 
-    <section class="panel-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Menú</h3>
-                <p class="panel-card__subtitle">La opción solo aparece cuando la configuración del módulo lo permite.</p>
-            </div>
-        </div>
+        <section class="section-block">
+                <div class="section-block__head">
+                    <h4 class="section-block__title">Datos del catálogo</h4>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12">
+                        <div class="field">
+                            <label>Tipo de catálogo</label>
+                            <div class="catalog-mode-group">
+                                @foreach (var item in _modalidades)
+                                {
+                                    <button type="button" class="@GetModeButtonClass(item.Clave)" @onclick="() => SelectModeAsync(item.Clave)">
+                                        @GetModeLabel(item.Clave)
+                                    </button>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="field">
+                            <label>Nombre</label>
+                            <input @bind="_nombre" placeholder="Catálogo de temporada" />
+                        </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                        <div class="field">
+                            <label>Descripción / observaciones</label>
+                            <textarea rows="3" @bind="_descripcion" placeholder="Opcional"></textarea>
+                        </div>
+                    </div>
+                    @if (_modo == CatalogosViewGroupKeys.Tipo)
+                    {
+                        <div class="col-12 col-md-6 col-xl-4">
+                            <div class="field">
+                                <label>Fecha desde</label>
+                                <InputDate TValue="DateTime?" @bind-Value="_vigenciaDesde" />
+                            </div>
+                        </div>
+                        <div class="col-12 col-md-6 col-xl-4">
+                            <div class="field">
+                                <label>Fecha hasta</label>
+                                <InputDate TValue="DateTime?" @bind-Value="_vigenciaHasta" />
+                            </div>
+                        </div>
+                    }
+                </div>
+        </section>
 
-        @if (_menuHabilitado)
+        <section class="section-block mt-4">
+                <div class="section-block__head">
+                    <h4 class="section-block__title">Artículos</h4>
+                </div>
+                <div class="row g-3">
+                    <div class="col-12 col-lg-6">
+                        <button type="button" class="catalog-source-card @(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectArticuloSourceAsync(CatalogosArticuloOrigenKeys.ListaPrecio)">
+                            <strong>Lista de precios</strong>
+                        </button>
+                    </div>
+                    <div class="col-12 col-lg-6">
+                        <button type="button" class="catalog-source-card @(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectArticuloSourceAsync(CatalogosArticuloOrigenKeys.Maestro)">
+                            <strong>Maestro de artículos</strong>
+                        </button>
+                    </div>
+                </div>
+
+                @if (string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase))
+                {
+                    <div class="row g-3 mt-1">
+                        <div class="col-12 col-lg-6 col-xxl-4">
+                            <div class="field">
+                                <label>Lista de precios</label>
+                                <select @bind="_idLista" @bind:after="OnListaPrecioChangedAsync">
+                                    <option value="">Seleccionar...</option>
+                                    @foreach (var lista in _listasPrecio)
+                                    {
+                                        <option value="@lista.IdLista">@lista.Nombre (@lista.IdLista)</option>
+                                    }
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                <div class="toolbar mt-3">
+                    <button type="button" class="btn btn--primary" @onclick="AbrirLookupArticulosAsync" disabled="@(_loading || IsLookupBusy)">
+                        <i class="bi bi-search"></i> Consultar artículos
+                    </button>
+                    @if (PuedeImportarListaCompleta())
+                    {
+                        <button type="button" class="btn btn--ghost" @onclick="ImportarListaCompletaAsync" disabled="@(_loading || IsLookupBusy)">
+                            <i class="bi bi-cloud-arrow-down"></i> @( _importandoListaCompleta ? "Importando..." : "Importar lista completa" )
+                        </button>
+                    }
+                    <button type="button" class="btn btn--ghost" @onclick="QuitarSeleccionadosAsync" disabled="@(!_articulosQuitarSeleccionados.Any() || IsLookupBusy)">
+                        <i class="bi bi-dash-circle"></i> Quitar seleccionados
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="LimpiarCatalogoAsync" disabled="@(!_articulosSeleccionados.Any() || IsLookupBusy)">
+                        <i class="bi bi-trash"></i> Limpiar catálogo
+                    </button>
+                </div>
+        </section>
+
+        <section class="section-block mt-4">
+                <div class="section-block__head d-flex justify-content-between align-items-start gap-3">
+                    <div>
+                        <h4 class="section-block__title">Artículos del catálogo</h4>
+                    </div>
+                </div>
+
+                @if (_articulosSeleccionados.Count == 0)
+                {
+                    <div class="usuarios-empty">Todavía no agregaste artículos.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="data-table usuarios-table">
+                            <thead>
+                                <tr>
+                                    <th style="width:44px;">
+                                        <input type="checkbox" @onchange="ToggleSeleccionTodosQuitarAsync" checked="@(_articulosQuitarSeleccionados.Count == _articulosSeleccionados.Count && _articulosSeleccionados.Count > 0)" />
+                                    </th>
+                                    <th style="width:88px;">Imagen</th>
+                                    <th>Código</th>
+                                    <th>Descripción</th>
+                                    <th>Presentación</th>
+                                    <th>Marca</th>
+                                    <th>Rubro</th>
+                                    <th style="text-align:right;">Precio</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var item in _articulosSeleccionados)
+                                {
+                                    <tr class="@GetArticuloRowClass(item.IdArticulo)">
+                                        <td>
+                                            <input type="checkbox" checked="@_articulosQuitarSeleccionados.Contains(item.IdArticulo)" @onchange="(ChangeEventArgs args) => ToggleQuitarSeleccionAsync(item.IdArticulo, args)" />
+                                        </td>
+                                        <td>
+                                            @if (ShouldShowArticuloImage(item.IdArticulo))
+                                            {
+                                                <img class="catalogos-article-thumb"
+                                                     src="@GetArticuloImageUrl(item.IdArticulo)"
+                                                     alt="@item.DescripcionArticulo"
+                                                     loading="lazy"
+                                                     @onerror="@EventCallback.Factory.Create(this, () => HandleArticuloImageError(item.IdArticulo))" />
+                                            }
+                                            else
+                                            {
+                                                <div class="catalogos-article-thumb catalogos-article-thumb--fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                            }
+                                        </td>
+                                        <td><strong>@item.IdArticulo</strong></td>
+                                        <td>@item.DescripcionArticulo</td>
+                                        <td>@Display(item.Presentacion)</td>
+                                        <td>@Display(item.Marca)</td>
+                                        <td>@Display(item.Rubro)</td>
+                                        <td style="text-align:right;">@Money(item.Precio)</td>
+                                        <td style="text-align:right;">
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarArticuloAsync(item.IdArticulo)">
+                                                <i class="bi bi-trash"></i> Quitar
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+        </section>
+
+        @if (!string.IsNullOrWhiteSpace(_urlPublica) || !string.IsNullOrWhiteSpace(_urlCliente))
         {
-            <div class="section-block">
+            <div class="context-card mt-4">
+                    <span class="context-card__label">Enlaces del catálogo</span>
+                    @if (!string.IsNullOrWhiteSpace(_urlCliente))
+                    {
+                        <strong>Acceso para clientes</strong>
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <code class="text-break">@_urlCliente</code>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CopiarEnlaceClienteAsync">
+                                <i class="bi bi-clipboard"></i> Copiar enlace
+                            </button>
+                            <a class="btn btn--ghost btn--sm" href="@_urlCliente" target="_blank" rel="noopener">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir
+                            </a>
+                        </div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_urlPublica))
+                    {
+                        <strong class="mt-3 d-block">Acceso público</strong>
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <code class="text-break">@_urlPublica</code>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CopiarEnlacePublicoAsync">
+                                <i class="bi bi-clipboard"></i> Copiar enlace
+                            </button>
+                            <a class="btn btn--ghost btn--sm" href="@_urlPublica" target="_blank" rel="noopener">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir
+                            </a>
+                        </div>
+                    }
+            </div>
+        }
+    }
+</section>
+}
+
+@if (IsMenuSection)
+{
+    <section class="page-grid">
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Menú</h3>
+                </div>
+            </div>
+
+            @if (_menuHabilitado)
+            {
                 <div class="context-card">
                     <span class="context-card__label">Estado</span>
                     <strong>Habilitado</strong>
-                    <span class="context-card__muted">Quedó preparada la navegación para las pantallas de catálogo.</span>
                 </div>
-            </div>
-        }
-        else
-        {
-            <div class="usuarios-empty">El menú de catálogos no está habilitado en esta base.</div>
-        }
+            }
+            else
+            {
+                <div class="usuarios-empty">El menú de catálogos no está habilitado en esta base.</div>
+            }
+        </section>
     </section>
-</section>
 }
-else
-{
-<section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Configuración de catálogos</h2>
-            <p class="page-intro__text">Administrá parámetros propios del módulo y la visibilidad del menú.</p>
-        </div>
-    </div>
 
-    @if (_feedback is not null)
-    {
-        <div class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
+@if (IsConfiguracionSection)
+{
+    <section class="page-grid">
+        <section class="panel-card">
+            <div class="panel-card__header">
                 <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
+                    <h3 class="panel-card__title">Configuración</h3>
+                </div>
+                <div class="actions">
+                    <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionCatalogosAsync" disabled="@_loading">
+                        <i class="bi bi-save"></i> Guardar
+                    </button>
                 </div>
             </div>
-        </div>
-    }
 
-    <section class="panel-card">
-        <div class="panel-card__header">
-            <div>
-                <h3 class="panel-card__title">Configuración</h3>
-                <p class="panel-card__subtitle">Los cambios se guardan en <code>TA_CONFIGURACION</code>.</p>
-            </div>
-            <div class="actions">
-                <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionCatalogosAsync" disabled="@_loading">
-                    <i class="bi bi-save"></i> Guardar
-                </button>
-            </div>
-        </div>
+            <div class="section-block">
+                <div class="field">
+                    <label>Menú</label>
+                    <label class="checkbox">
+                        <input type="checkbox" checked="@_menuHabilitadoDraft" @onchange="ToggleMenuHabilitadoDraft" />
+                        <span>Mostrar opción Menú</span>
+                    </label>
+                </div>
 
-        <div class="section-block">
-            <div class="field">
-                <label>Menú</label>
-                <label class="checkbox">
-                    <input type="checkbox" checked="@_menuHabilitadoDraft" @onchange="ToggleMenuHabilitadoDraft" />
-                    <span>Mostrar opción Menú</span>
-                </label>
-                <p class="section-block__subtitle">Si se desactiva, la pestaña Menú no se mostrará en el header del módulo.</p>
-            </div>
-        </div>
+                <div class="field">
+                    <label>Nombre visible</label>
+                    <input @bind="_publicIdentityNameDraft" placeholder="@GetPublicIdentityPlaceholder()" maxlength="80" />
+                    <small class="catalogos-config-help">Si está vacío se utiliza el nombre de la empresa.</small>
+                </div>
 
-        <div class="context-card mt-4">
-            <span class="context-card__label">Clave</span>
-            <strong>CATALOGOS-MENU-HABILITADO</strong>
-            <span class="context-card__muted">Valor esperado: SI / NO.</span>
-        </div>
+                <div class="field">
+                    <label>Logo</label>
+                    <div class="catalogos-config-logo">
+                        <div class="catalogos-config-logo__preview @GetPublicLogoFrameClass(_publicLogoFormatDraft)">
+                            <img src="@GetPublicLogoPreviewUrl()" alt="Vista previa del logo público" />
+                        </div>
+                        <div class="catalogos-config-logo__actions">
+                            <InputFile OnChange="HandlePublicLogoSelectedAsync" accept="image/jpeg,image/png,image/webp,image/gif" />
+                            <div class="actions">
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="RestorePublicLogoDefaultAsync" disabled="@(!_hasCustomPublicLogo && _publicLogoBytes.Length == 0)">
+                                    <i class="bi bi-arrow-counterclockwise"></i> Restaurar predeterminado
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="field mt-3">
+                    <label>Formato del logo</label>
+                    <select @bind="_publicLogoFormatDraft">
+                        <option value="@CatalogosPublicLogoFormatKeys.Auto">Automático</option>
+                        <option value="@CatalogosPublicLogoFormatKeys.Square">Cuadrado</option>
+                        <option value="@CatalogosPublicLogoFormatKeys.Horizontal">Horizontal</option>
+                    </select>
+                </div>
+
+                <div class="field mt-3">
+                    <label>Clase de precio</label>
+                    <select @bind="_clasePrecioDraft">
+                        <option value="1">Clase 1</option>
+                        <option value="2">Clase 2</option>
+                        <option value="3">Clase 3</option>
+                        <option value="4">Clase 4</option>
+                        <option value="5">Clase 5</option>
+                        <option value="6">Clase 6</option>
+                        <option value="7">Clase 7</option>
+                        <option value="8">Clase 8</option>
+                    </select>
+                    <small class="catalogos-config-help">Define qué columna de precio del artículo (Precio1 a Precio8) se usa al buscar o importar artículos para el catálogo. Los catálogos ya publicados no cambian.</small>
+                </div>
+            </div>
+
+            <div class="context-card mt-4">
+                <span class="context-card__label">Clave</span>
+                <strong>CATALOGOS-MENU-HABILITADO</strong>
+                <span class="context-card__muted">Valor esperado: SI / NO.</span>
+            </div>
+
+            <div class="context-card mt-3">
+                <span class="context-card__label">Identidad pública</span>
+                <strong>@GetPublicIdentitySummary()</strong>
+                <span class="context-card__muted">Se guarda en <code>TA_CONFIGURACION</code> y se aplica al encabezado público del catálogo.</span>
+            </div>
+        </section>
     </section>
-</section>
 }
 
 @if (_showLookupModal)
@@ -597,81 +606,134 @@ else
                     <h4 id="catalogos-lookup-title">Consultar artículos</h4>
                     <p>@(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) ? "Búsqueda filtrada por la lista seleccionada." : "Búsqueda sobre el maestro oficial de artículos.")</p>
                 </div>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseLookupArticulos">Cerrar</button>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseLookupArticulos" disabled="@_lookupLoading">Cerrar</button>
             </div>
 
             <div class="row g-3 align-items-end">
                 <div class="col-12 col-lg-8">
                     <div class="field">
                         <label>Buscar</label>
-                        <input @bind="_lookupTexto" @bind:event="oninput" @onkeydown="HandleSearchKeyDownAsync" placeholder="Código, descripción, marca o rubro" />
+                        <input @bind="_lookupTexto" @bind:event="oninput" @onkeydown="HandleSearchKeyDownAsync" placeholder="Código, descripción, marca o rubro" disabled="@_lookupLoading" />
                     </div>
                 </div>
                 <div class="col-12 col-lg-2">
-                    <div class="field">
-                        <label>Mostrar</label>
-                        <select @bind="_lookupPageSize">
-                            <option value="25">25</option>
-                            <option value="50">50</option>
-                            <option value="100">100</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="col-12 col-lg-2">
-                    <button type="button" class="btn btn--primary w-100" @onclick="BuscarArticulosAsync" disabled="@_loading">
-                        <i class="bi bi-search"></i> Buscar
+                    <button type="button" class="btn btn--primary w-100" @onclick="() => BuscarArticulosAsync(resetPage: true)" disabled="@_lookupLoading">
+                        <i class="bi bi-search"></i> @( _lookupLoading ? "Consultando..." : "Buscar" )
                     </button>
                 </div>
             </div>
 
+            @if (_lookupFeedback is not null)
+            {
+                <div class="editor-msg @GetFeedbackClass(_lookupFeedback)">
+                    <div>
+                        <strong>@_lookupFeedback.Title</strong>
+                        <p>@_lookupFeedback.Message</p>
+                        @if (_lookupFeedback.HasSuggestion)
+                        {
+                            <small>@_lookupFeedback.Suggestion</small>
+                        }
+                    </div>
+                </div>
+            }
+
             <div class="catalogos-modal__meta">
-                <span>@_lookupTotal resultado(s)</span>
+                <span>@(_lookupTotal == 0 ? "Sin resultados" : $"Mostrando {LookupPageFrom}-{LookupPageTo} de {_lookupTotal}")</span>
                 <span>@(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) ? $"Lista: {GetNombreListaActual()}" : "Origen: maestro de artículos")</span>
             </div>
 
+            <div class="catalogos-modal__loading" hidden="@(!_lookupLoading)">
+                <div class="catalogos-modal__loading-card">
+                    <div class="spinner-border" role="status" aria-hidden="true"></div>
+                    <strong>Consultando artículos...</strong>
+                    <span>Por favor espere.</span>
+                </div>
+            </div>
+
             <div class="table-responsive catalogos-modal__table">
-                <table class="data-table usuarios-table">
-                    <thead>
-                        <tr>
-                            <th style="width:44px;"></th>
-                            <th>Código</th>
-                            <th>Descripción</th>
-                            <th>Presentación</th>
-                            <th>Marca</th>
-                            <th>Rubro</th>
-                            <th style="text-align:right;">Precio</th>
-                            <th></th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var item in _lookupResultados)
-                        {
-                            <tr class="@(IsArticuloAlreadyAdded(item.IdArticulo) ? "is-duplicate" : string.Empty)">
-                                <td>
-                                    <input type="checkbox" checked="@_lookupSeleccionados.Contains(item.IdArticulo)" @onchange="(ChangeEventArgs args) => ToggleLookupSeleccionAsync(item.IdArticulo, args)" />
-                                </td>
-                                <td><strong>@item.IdArticulo</strong></td>
-                                <td>@item.DescripcionArticulo</td>
-                                <td>@Display(item.Presentacion)</td>
-                                <td>@Display(item.Marca)</td>
-                                <td>@Display(item.Rubro)</td>
-                                <td style="text-align:right;">@Money(item.Precio)</td>
-                                <td style="text-align:right;">
-                                    @if (IsArticuloAlreadyAdded(item.IdArticulo))
-                                    {
-                                        <span class="badge text-bg-secondary">Ya agregado</span>
-                                    }
-                                </td>
+                @if (_lookupResultados.Count == 0 && !_lookupLoading)
+                {
+                    <div class="usuarios-empty">No se encontraron artículos con los filtros actuales.</div>
+                }
+                else
+                {
+                    <table class="data-table usuarios-table">
+                        <thead>
+                            <tr>
+                                <th style="width:44px;"></th>
+                                <th style="width:72px;"></th>
+                                <th>Código</th>
+                                <th>Descripción</th>
+                                <th>Presentación</th>
+                                <th>Marca</th>
+                                <th>Rubro</th>
+                                <th style="text-align:right;">Precio</th>
+                                <th></th>
                             </tr>
-                        }
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _lookupResultados)
+                            {
+                                var alreadyAdded = IsArticuloAlreadyAdded(item.IdArticulo);
+                                var marcadoParaQuitar = alreadyAdded && _articulosQuitarSeleccionados.Contains(item.IdArticulo);
+                                <tr class="@(alreadyAdded ? "is-duplicate" : string.Empty)">
+                                    <td>
+                                        <input type="checkbox"
+                                               checked="@(alreadyAdded ? !marcadoParaQuitar : _lookupSeleccionados.Contains(item.IdArticulo))"
+                                               disabled="@_lookupLoading"
+                                               @onchange="(ChangeEventArgs args) => ToggleLookupSeleccionAsync(item.IdArticulo, alreadyAdded, args)" />
+                                    </td>
+                                    <td>
+                                        @if (ShouldShowArticuloImage(item.IdArticulo))
+                                        {
+                                            <img class="catalogos-article-thumb catalogos-article-thumb--lookup"
+                                                 src="@GetArticuloImageUrl(item.IdArticulo)"
+                                                 alt="@item.DescripcionArticulo"
+                                                 loading="lazy"
+                                                 @onerror="@EventCallback.Factory.Create(this, () => HandleArticuloImageError(item.IdArticulo))" />
+                                        }
+                                        else
+                                        {
+                                            <div class="catalogos-article-thumb catalogos-article-thumb--lookup catalogos-article-thumb--fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                        }
+                                    </td>
+                                    <td><strong>@item.IdArticulo</strong></td>
+                                    <td>@item.DescripcionArticulo</td>
+                                    <td>@Display(item.Presentacion)</td>
+                                    <td>@Display(item.Marca)</td>
+                                    <td>@Display(item.Rubro)</td>
+                                    <td style="text-align:right;">@Money(item.Precio)</td>
+                                    <td style="text-align:right;">
+                                        @if (marcadoParaQuitar)
+                                        {
+                                            <span class="badge text-bg-danger">Se quitará</span>
+                                        }
+                                        else if (alreadyAdded)
+                                        {
+                                            <span class="badge text-bg-secondary">Ya agregado</span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            <div class="catalogos-modal__pager">
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="LookupPreviousPageAsync" disabled="@(_lookupLoading || _lookupPageNumber <= 1)">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <span>Página @_lookupPageNumber de @(LookupTotalPages <= 0 ? 1 : LookupTotalPages)</span>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="LookupNextPageAsync" disabled="@(_lookupLoading || LookupTotalPages <= 0 || _lookupPageNumber >= LookupTotalPages)">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
             </div>
 
             <div class="catalogos-modal__footer">
-                <button type="button" class="btn btn--ghost" @onclick="CloseLookupArticulos">Cancelar</button>
-                <button type="button" class="btn btn--primary" @onclick="AgregarSeleccionadosDesdeLookupAsync" disabled="@(!_lookupSeleccionados.Any())">
-                    Agregar seleccionados
+                <button type="button" class="btn btn--ghost" @onclick="CloseLookupArticulos" disabled="@_lookupLoading">Cancelar</button>
+                <button type="button" class="btn btn--primary" @onclick="AgregarSeleccionadosDesdeLookupAsync" disabled="@(_lookupLoading || !_lookupSeleccionados.Any())">
+                    @( _lookupLoading ? "Consultando..." : "Agregar seleccionados" )
                 </button>
             </div>
         </div>
@@ -679,7 +741,8 @@ else
 }
 
 @code {
-    private const string SectionCatalogos = "catalogos";
+    private const string SectionCatalogos = "catalogo";
+    private const string SectionNuevo = "nuevo";
     private const string SectionPredeterminado = "predeterminado";
     private const string SectionMenu = "menu";
     private const string SectionConfiguracion = "configuracion";
@@ -689,13 +752,20 @@ else
     private readonly List<CatalogosArticuloCatalogoDto> _articulosSeleccionados = [];
     private readonly List<CatalogosArticuloBusquedaDto> _lookupResultados = [];
     private readonly HashSet<string> _lookupSeleccionados = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CatalogosArticuloBusquedaDto> _lookupCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _articulosQuitarSeleccionados = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _articuloImageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<CatalogosViewColumnDto> _viewSettingsDraft = [];
+
+    private const int LookupPageSize = 50;
 
     private CatalogosViewSettingsDto _viewSettings = BuildDefaultViewSettings();
     private PagedResult<CatalogosCatalogoResumenDto>? _catalogosPage;
     private AppUiMessage? _feedback;
+    private AppUiMessage? _lookupFeedback;
     private bool _loading;
+    private bool _lookupLoading;
+    private bool _importandoListaCompleta;
     private bool _showViewSettings;
     private CatalogosHomeSelection? _homeSelection;
     private string _modo = CatalogosViewGroupKeys.Tipo;
@@ -707,40 +777,113 @@ else
     private DateTime? _vigenciaDesde = DateTime.Today;
     private DateTime? _vigenciaHasta = DateTime.Today.AddMonths(1);
     private int _lookupPageNumber = 1;
-    private int _lookupPageSize = 50;
+    private int _lookupPageSize = LookupPageSize;
     private int _lookupTotal = 0;
     private bool _showLookupModal;
     private string _catalogosTexto = string.Empty;
     private DateTime? _catalogosFechaFiltro = DateTime.Today;
     private int _catalogosPageNumber = 1;
     private int _catalogosPageSize = 50;
+    private string _catalogosTipoFiltro = "todos";
+    private string _catalogosEstadoFiltro = "publicado";
     private string _catalogosUserName = string.Empty;
     private string _draftAgruparPor = CatalogosViewGroupKeys.None;
     private string _currentSection = SectionCatalogos;
     private int? _editingIdInsert;
     private string _urlPublica = string.Empty;
+    private string _urlCliente = string.Empty;
     private bool _menuHabilitado;
     private bool _menuHabilitadoDraft;
+    private CatalogosPublicIdentityDto _publicIdentity = new();
+    private string _publicIdentityNameDraft = string.Empty;
+    private string _publicLogoFormatDraft = CatalogosPublicLogoFormatKeys.Auto;
+    private string _clasePrecioDraft = "1";
+    private string _publicLogoPreviewUrl = string.Empty;
+    private byte[] _publicLogoBytes = [];
+    private string _publicLogoFileName = string.Empty;
+    private string _publicLogoContentType = string.Empty;
+    private bool _publicLogoRestoreRequested;
+    private bool _hasCustomPublicLogo;
+    private PuntoVentaSettingsDto _puntoVentaSettings = new();
+    private bool _routeSessionReady;
+    private bool _catalogosLoaded;
+    private bool _catalogosInitialLoadPending = true;
+    private int _catalogosLoadSequence;
+    private int _catalogosSearchSequence;
+    private string _lastCatalogRouteKey = string.Empty;
     private readonly CancellationTokenSource _disposeCts = new();
 
     [Parameter]
     public string? Vista { get; set; }
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        await LoadAsync();
-        await ApplyRouteSectionAsync(forceReloadCatalogos: true);
+        Nav.LocationChanged += OnLocationChanged;
+        if (TryRedirectToCanonicalRoute())
+            return;
+
+        Logger.LogInformation("CATALOGOS - OnInitializedAsync | idweb={IdWeb} idbase={IdBase} loading={Loading} loaded={Loaded} pageNull={PageNull} currentSection={Section} homeSelection={HomeSelection}",
+            idweb ?? string.Empty,
+            idbase?.ToString() ?? string.Empty,
+            _loading,
+            _catalogosLoaded,
+            _catalogosPage is null,
+            _currentSection,
+            _homeSelection?.ToString() ?? string.Empty);
+
         UpdatePageHeader();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender && (!_catalogosInitialLoadPending || _loading))
+            return;
+
+        await Task.Yield();
+        UpdatePageHeader();
+
+        if (_catalogosInitialLoadPending && !_catalogosLoaded && !_loading)
+        {
+            _catalogosInitialLoadPending = false;
+            await CargarCatalogosAsync(forceReloadCatalogos: true);
+        }
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        await ApplyRouteSectionAsync(forceReloadCatalogos: false);
+        if (TryRedirectToCanonicalRoute())
+            return;
+
+        Logger.LogInformation("CATALOGOS - OnParametersSetAsync | idweb={IdWeb} idbase={IdBase} loading={Loading} loaded={Loaded} pageNull={PageNull} currentSection={Section} homeSelection={HomeSelection}",
+            idweb ?? string.Empty,
+            idbase?.ToString() ?? string.Empty,
+            _loading,
+            _catalogosLoaded,
+            _catalogosPage is null,
+            _currentSection,
+            _homeSelection?.ToString() ?? string.Empty);
+
+        var routeKey = BuildRouteKey();
+        if (!string.Equals(_lastCatalogRouteKey, routeKey, StringComparison.OrdinalIgnoreCase))
+        {
+            Logger.LogInformation("CATALOGOS - OnParametersSetAsync cambio de ruta detectado | previous={PreviousRouteKey} current={CurrentRouteKey}", _lastCatalogRouteKey, routeKey);
+            _lastCatalogRouteKey = routeKey;
+            _catalogosLoaded = false;
+            _catalogosPage = null;
+            _catalogosInitialLoadPending = true;
+        }
+
+        if (_catalogosLoaded)
+            await ApplyRouteSectionAsync(ResolveSection(Vista), forceReloadCatalogos: false);
+        else
+            _catalogosInitialLoadPending = true;
+
         UpdatePageHeader();
     }
 
     public void Dispose()
     {
+        Nav.LocationChanged -= OnLocationChanged;
         _disposeCts.Cancel();
         PageHeader.Clear();
     }
@@ -749,18 +892,31 @@ else
     {
         _loading = true;
         _feedback = null;
+        var traceId = Interlocked.Increment(ref _catalogosLoadSequence);
+        Logger.LogInformation("CATALOGOS - LoadAsync START #{TraceId} | idweb={IdWeb} idbase={IdBase} loading={Loading} loaded={Loaded} pageNull={PageNull}",
+            traceId,
+            idweb ?? string.Empty,
+            idbase?.ToString() ?? string.Empty,
+            _loading,
+            _catalogosLoaded,
+            _catalogosPage is null);
 
         try
         {
             var currentUser = AppUserSession.GetCurrentUserName(Environment.UserName).Trim();
             _catalogosUserName = currentUser;
 
-            var modalidadesTask = CatalogosSvc.GetModalidadesAsync(_disposeCts.Token);
-            var listasTask = CatalogosSvc.GetListasPrecioAsync(_disposeCts.Token);
-            var viewTask = CatalogosSvc.GetViewSettingsAsync(currentUser, _disposeCts.Token);
-            var menuTask = CatalogosSvc.GetMenuHabilitadoAsync(_disposeCts.Token);
+            var modalidadesTask = TraceTaskAsync(traceId, "LoadAsync", "GetModalidadesAsync", () => CatalogosSvc.GetModalidadesAsync(_disposeCts.Token));
+            var listasTask = TraceTaskAsync(traceId, "LoadAsync", "GetListasPrecioAsync", () => CatalogosSvc.GetListasPrecioAsync(_disposeCts.Token));
+            var viewTask = TraceTaskAsync(traceId, "LoadAsync", "GetViewSettingsAsync", () => CatalogosSvc.GetViewSettingsAsync(currentUser, _disposeCts.Token));
+            var menuTask = TraceTaskAsync(traceId, "LoadAsync", "GetMenuHabilitadoAsync", () => CatalogosSvc.GetMenuHabilitadoAsync(_disposeCts.Token));
+            var identityTask = TraceTaskAsync(traceId, "LoadAsync", "GetPublicIdentityAsync", () => CatalogosSvc.GetPublicIdentityAsync(idweb, _disposeCts.Token));
+            var posSettingsTask = TraceTaskAsync(traceId, "LoadAsync", "PuntoVentaSvc.GetSettingsAsync", () => PuntoVentaSvc.GetSettingsAsync(_disposeCts.Token));
+            var clasePrecioTask = TraceTaskAsync(traceId, "LoadAsync", "GetPublicClasePrecioAsync", () => CatalogosSvc.GetPublicClasePrecioAsync(idweb, _disposeCts.Token));
 
-            await Task.WhenAll(modalidadesTask, listasTask, viewTask, menuTask);
+            Logger.LogInformation("CATALOGOS - LoadAsync #{TraceId} esperando tareas paralelas", traceId);
+            await Task.WhenAll(modalidadesTask, listasTask, viewTask, menuTask, identityTask, posSettingsTask, clasePrecioTask);
+            Logger.LogInformation("CATALOGOS - LoadAsync #{TraceId} tareas paralelas completadas", traceId);
 
             _modalidades.Clear();
             _modalidades.AddRange(modalidadesTask.Result);
@@ -774,20 +930,45 @@ else
             _draftAgruparPor = _viewSettings.AgruparPor;
             _menuHabilitado = menuTask.Result;
             _menuHabilitadoDraft = _menuHabilitado;
+            _publicIdentity = identityTask.Result;
+            _publicIdentityNameDraft = _publicIdentity.NombreVisible;
+            _publicLogoPreviewUrl = _publicIdentity.LogoUrl;
+            _publicLogoBytes = [];
+            _publicLogoFileName = string.Empty;
+            _publicLogoContentType = string.Empty;
+            _publicLogoRestoreRequested = false;
+            _hasCustomPublicLogo = _publicIdentity.TieneLogoPersonalizado;
+            _puntoVentaSettings = posSettingsTask.Result;
+            _clasePrecioDraft = clasePrecioTask.Result;
+
+            Logger.LogInformation("CATALOGOS - LoadAsync END #{TraceId} | modalidades={Modalidades} listas={Listas} menu={Menu} viewColumns={Columns} loading={Loading}",
+                traceId,
+                _modalidades.Count,
+                _listasPrecio.Count,
+                _menuHabilitado,
+                _viewSettings.Columnas.Count,
+                _loading);
         }
         catch (Exception ex)
         {
+            Logger.LogError(ex, "CATALOGOS - LoadAsync ERROR | idweb={IdWeb} idbase={IdBase} loading={Loading} loaded={Loaded} pageNull={PageNull}",
+                idweb ?? string.Empty,
+                idbase?.ToString() ?? string.Empty,
+                _loading,
+                _catalogosLoaded,
+                _catalogosPage is null);
             _feedback = UiOps.BuildMessage(ex, "No se pudo cargar el módulo de catálogos.");
         }
         finally
         {
             _loading = false;
+            Logger.LogInformation("CATALOGOS - LoadAsync FINALLY | loading={Loading}", _loading);
         }
     }
 
-    private async Task ApplyRouteSectionAsync(bool forceReloadCatalogos)
+    private async Task ApplyRouteSectionAsync(string section, bool forceReloadCatalogos)
     {
-        var normalizedSection = NormalizeSection(Vista);
+        var normalizedSection = NormalizeSection(section);
         if (string.Equals(_currentSection, normalizedSection, StringComparison.OrdinalIgnoreCase) && !forceReloadCatalogos)
             return;
 
@@ -797,12 +978,17 @@ else
 
         if (IsCatalogosSection)
         {
-            _homeSelection ??= CatalogosHomeSelection.VerCatalogos;
-            if (_homeSelection != CatalogosHomeSelection.NuevoCatalogo)
-                _homeSelection = CatalogosHomeSelection.VerCatalogos;
+            _homeSelection = CatalogosHomeSelection.VerCatalogos;
 
             if (_catalogosPage is null || forceReloadCatalogos || _homeSelection == CatalogosHomeSelection.VerCatalogos)
                 await BuscarCatalogosAsync(resetPage: forceReloadCatalogos || _catalogosPage is null);
+            return;
+        }
+
+        if (IsNuevoSection)
+        {
+            _homeSelection = CatalogosHomeSelection.NuevoCatalogo;
+            ResetNuevoCatalogo();
             return;
         }
 
@@ -822,6 +1008,175 @@ else
         }
     }
 
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        if (!IsCatalogosRoute(e.Location))
+            return;
+
+        _ = InvokeAsync(async () =>
+        {
+            await Task.Yield();
+            var targetSection = ResolveSectionFromLocation(e.Location);
+            await ApplyRouteSectionAsync(targetSection, forceReloadCatalogos: false);
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    private async Task CargarCatalogosAsync(bool forceReloadCatalogos)
+        => await CargarCatalogosAsync(forceReloadCatalogos, "AUTOMATICA");
+
+    private async Task CargarCatalogosAsync(bool forceReloadCatalogos, string origen)
+    {
+        var traceId = Interlocked.Increment(ref _catalogosLoadSequence);
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync START #{TraceId} ORIGEN={Origen} forceReload={ForceReload} | idweb={IdWeb} idbase={IdBase} loading={Loading} loaded={Loaded} pageNull={PageNull}",
+            traceId,
+            origen,
+            forceReloadCatalogos,
+            idweb ?? string.Empty,
+            idbase?.ToString() ?? string.Empty,
+            _loading,
+            _catalogosLoaded,
+            _catalogosPage is null);
+
+        if (_loading)
+        {
+            Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} ABORTA por _loading=true", traceId);
+            return;
+        }
+
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} antes EnsureRouteSessionAsync", traceId);
+        _routeSessionReady = await EnsureRouteSessionAsync();
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} después EnsureRouteSessionAsync | routeSessionReady={RouteSessionReady}", traceId, _routeSessionReady);
+        if (!_routeSessionReady)
+        {
+            Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} sale porque no hay sesión de ruta", traceId);
+            return;
+        }
+
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} antes LoadAsync", traceId);
+        await LoadAsync();
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} después LoadAsync | loading={Loading}", traceId, _loading);
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} antes ApplyRouteSectionAsync", traceId);
+        await ApplyRouteSectionAsync(ResolveSection(Vista), forceReloadCatalogos);
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} después ApplyRouteSectionAsync | pageNull={PageNull} total={Total} loaded={Loaded}",
+            traceId,
+            _catalogosPage is null,
+            _catalogosPage?.Total ?? 0,
+            _catalogosLoaded);
+        _catalogosLoaded = true;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync END #{TraceId} | loading={Loading} loaded={Loaded} pageNull={PageNull} total={Total}",
+            traceId,
+            _loading,
+            _catalogosLoaded,
+            _catalogosPage is null,
+            _catalogosPage?.Total ?? 0);
+    }
+
+    private async Task<bool> EnsureRouteSessionAsync()
+    {
+        var traceId = Interlocked.Increment(ref _catalogosLoadSequence);
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync START #{TraceId} | idweb={IdWeb} idbase={IdBase}",
+            traceId,
+            idweb ?? string.Empty,
+            idbase?.ToString() ?? string.Empty);
+
+        if (!idbase.HasValue)
+        {
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} sin idbase -> true", traceId);
+            return true;
+        }
+
+        var routeBaseId = idbase.Value;
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes GetActiveSession", traceId);
+        var activeSession = SessionSvc.GetActiveSession();
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después GetActiveSession | activeBaseId={ActiveBaseId}",
+            traceId,
+            activeSession is null ? string.Empty : activeSession.BaseId.ToString());
+        if (activeSession is not null && activeSession.BaseId == routeBaseId)
+        {
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} sesión ya activa -> true", traceId);
+            return true;
+        }
+
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes GetAllSessions", traceId);
+        var availableSession = SessionSvc.GetAllSessions().FirstOrDefault(x => x.BaseId == routeBaseId);
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después GetAllSessions | found={Found}", traceId, availableSession is not null);
+        if (availableSession is not null)
+        {
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes SwitchSession | sessionId={SessionId} baseId={BaseId}",
+                traceId,
+                availableSession.Id,
+                availableSession.BaseId);
+            SessionSvc.SwitchSession(availableSession.Id);
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después SwitchSession", traceId);
+            try
+            {
+                Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes JS setActive", traceId);
+                await Js.InvokeVoidAsync("alfaCoreSqlSession.setActive", availableSession.Id.ToString());
+                Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después JS setActive", traceId);
+            }
+            catch
+            {
+                // La sesión en memoria ya quedó activa; el storage es solo persistencia auxiliar.
+                Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} JS setActive falló o no estaba disponible", traceId);
+            }
+
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} returning true por sesión disponible", traceId);
+            return true;
+        }
+
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes CentralBasesSvc.GetByIdAsync", traceId);
+        var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después CentralBasesSvc.GetByIdAsync | routeBaseNull={RouteBaseNull}", traceId, routeBase is null);
+        if (routeBase is null)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Base no disponible",
+                Message = "No se pudo resolver la base asociada a esta URL."
+            };
+            Logger.LogWarning("CATALOGOS - EnsureRouteSessionAsync #{TraceId} no pudo resolver la base", traceId);
+            return false;
+        }
+
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes SetWebhookOverride", traceId);
+        SessionSvc.SetWebhookOverride(new SessionDto
+        {
+            Id = Guid.Parse($"00000000-0000-0000-0000-{routeBaseId:000000000000}"),
+            BaseId = routeBase.IdBase,
+            Nombre = routeBase.Nombre,
+            Servidor = routeBase.DbServer,
+            BaseDatos = routeBase.DbName,
+            Usuario = routeBase.DbUser,
+            Password = routeBase.DbPassword,
+            TrustServerCertificate = true,
+            Activa = true
+        });
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después SetWebhookOverride", traceId);
+
+        try
+        {
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes JS setActive (webhook)", traceId);
+            await Js.InvokeVoidAsync("alfaCoreSqlSession.setActive", Guid.Parse($"00000000-0000-0000-0000-{routeBaseId:000000000000}").ToString());
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después JS setActive (webhook)", traceId);
+        }
+        catch
+        {
+            // La sesión en memoria ya quedó activa; el storage es solo persistencia auxiliar.
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} JS setActive (webhook) falló o no estaba disponible", traceId);
+        }
+
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync END #{TraceId} -> true", traceId);
+        return true;
+    }
+
+    private string BuildRouteKey()
+        => $"{(idweb ?? string.Empty).Trim().ToUpperInvariant()}|{idbase?.ToString() ?? string.Empty}";
+
     private void NavigateToSection(string section)
     {
         var target = BuildSectionRoute(section);
@@ -833,11 +1188,56 @@ else
 
     private async Task RecargarAsync()
     {
-        await LoadAsync();
-        await ApplyRouteSectionAsync(forceReloadCatalogos: true);
-        UpdatePageHeader();
-        await InvokeAsync(StateHasChanged);
+        var traceId = Interlocked.Increment(ref _catalogosLoadSequence);
+        Logger.LogInformation("CATALOGOS - Recargar START #{TraceId} | idweb={IdWeb} idbase={IdBase} loading={Loading} loaded={Loaded} pageNull={PageNull}",
+            traceId,
+            idweb ?? string.Empty,
+            idbase?.ToString() ?? string.Empty,
+            _loading,
+            _catalogosLoaded,
+            _catalogosPage is null);
+        await CargarCatalogosAsync(forceReloadCatalogos: true, "RECARGAR");
+        Logger.LogInformation("CATALOGOS - Recargar END #{TraceId} | loading={Loading} loaded={Loaded} pageNull={PageNull} total={Total}",
+            traceId,
+            _loading,
+            _catalogosLoaded,
+            _catalogosPage is null,
+            _catalogosPage?.Total ?? 0);
     }
+
+    private IReadOnlyList<PageHeaderAction> BuildListadoActions()
+        => [
+            new PageHeaderAction
+            {
+                Key = "nuevo-catalogo",
+                Label = "Nuevo catálogo",
+                Icon = "bi-plus-circle",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _loading,
+                OnClick = ShowNuevoCatalogoAsync
+            },
+            new PageHeaderAction
+            {
+                Key = "recargar-catalogos",
+                Label = "Recargar",
+                Icon = "bi-arrow-clockwise",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _loading,
+                OnClick = RecargarAsync
+            },
+            new PageHeaderAction
+            {
+                Key = "configurar-vista",
+                Label = "Configurar vista",
+                Icon = "bi-sliders",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Overflow,
+                Disabled = _loading,
+                OnClick = () => { ToggleViewSettings(); return Task.CompletedTask; }
+            }
+        ];
 
     private Task ShowCatalogosAsync()
     {
@@ -847,12 +1247,7 @@ else
 
     private async Task ShowNuevoCatalogoAsync()
     {
-        _homeSelection = CatalogosHomeSelection.NuevoCatalogo;
-        _showViewSettings = false;
-        _feedback = null;
-        ResetNuevoCatalogo();
-        UpdatePageHeader();
-        await InvokeAsync(StateHasChanged);
+        NavigateToSection(SectionNuevo);
         await Task.CompletedTask;
     }
 
@@ -874,12 +1269,6 @@ else
         return Task.CompletedTask;
     }
 
-    private Task BackToHomeAsync()
-    {
-        NavigateToSection(SectionCatalogos);
-        return Task.CompletedTask;
-    }
-
     private void ResetNuevoCatalogo()
     {
         _modo = CatalogosViewGroupKeys.None;
@@ -891,13 +1280,11 @@ else
         _vigenciaDesde = DateTime.Today;
         _vigenciaHasta = DateTime.Today.AddMonths(1);
         _articulosSeleccionados.Clear();
-        _lookupResultados.Clear();
-        _lookupSeleccionados.Clear();
+        ResetLookupSession();
         _articulosQuitarSeleccionados.Clear();
-        _lookupTotal = 0;
-        _lookupPageNumber = 1;
         _showLookupModal = false;
         _urlPublica = string.Empty;
+        _urlCliente = string.Empty;
         _editingIdInsert = null;
     }
 
@@ -919,14 +1306,16 @@ else
         }
 
         _feedback = null;
+        UpdatePageHeader();
         await Task.CompletedTask;
     }
 
     private bool IsCatalogosSection => string.Equals(_currentSection, SectionCatalogos, StringComparison.OrdinalIgnoreCase);
+    private bool IsNuevoSection => string.Equals(_currentSection, SectionNuevo, StringComparison.OrdinalIgnoreCase);
     private bool IsPredeterminadoSection => string.Equals(_currentSection, SectionPredeterminado, StringComparison.OrdinalIgnoreCase);
     private bool IsMenuSection => string.Equals(_currentSection, SectionMenu, StringComparison.OrdinalIgnoreCase);
     private bool IsConfiguracionSection => string.Equals(_currentSection, SectionConfiguracion, StringComparison.OrdinalIgnoreCase);
-    private bool IsCatalogosOrPredeterminadoSection => IsCatalogosSection || IsPredeterminadoSection;
+    private bool ShouldRenderCatalogosSection => IsCatalogosSection || IsNuevoSection || IsPredeterminadoSection || IsLegacyCatalogosRoute();
 
     private string GetSectionTitle()
         => IsPredeterminadoSection ? "Catálogo predeterminado" : "Catálogos web";
@@ -939,6 +1328,7 @@ else
     private static string NormalizeSection(string? value)
         => (value ?? string.Empty).Trim().ToLowerInvariant() switch
         {
+            SectionNuevo => SectionNuevo,
             SectionPredeterminado => SectionPredeterminado,
             SectionMenu => SectionMenu,
             SectionConfiguracion => SectionConfiguracion,
@@ -946,18 +1336,127 @@ else
             _ => SectionCatalogos
         };
 
+    private string ResolveSection(string? value)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            return NormalizeSection(value);
+
+        var routeBody = GetRouteBody(GetCurrentRoutePath()).ToLowerInvariant();
+        return routeBody switch
+        {
+            "catalogo" => SectionCatalogos,
+            "catalogo/nuevo" => SectionNuevo,
+            "catalogo/predeterminado" => SectionPredeterminado,
+            "catalogo/menu" => SectionMenu,
+            "catalogo/configuracion" => SectionConfiguracion,
+            "catalogos" => SectionCatalogos,
+            "catalogos/nuevo" => SectionNuevo,
+            "catalogos/predeterminado" => SectionPredeterminado,
+            "catalogos/menu" => SectionMenu,
+            "catalogos/configuracion" => SectionConfiguracion,
+            "interfaces/catalogos" => SectionCatalogos,
+            "interfaces/catalogos/nuevo" => SectionNuevo,
+            "interfaces/catalogos/predeterminado" => SectionPredeterminado,
+            "interfaces/catalogos/menu" => SectionMenu,
+            "interfaces/catalogos/configuracion" => SectionConfiguracion,
+            _ => SectionCatalogos
+        };
+    }
+
+    private string ResolveSectionFromLocation(string location)
+    {
+        var routeBody = GetRouteBody(Nav.ToBaseRelativePath(location)).ToLowerInvariant();
+        return routeBody switch
+        {
+            "catalogo" => SectionCatalogos,
+            "catalogo/nuevo" => SectionNuevo,
+            "catalogo/predeterminado" => SectionPredeterminado,
+            "catalogo/menu" => SectionMenu,
+            "catalogo/configuracion" => SectionConfiguracion,
+            "catalogos" => SectionCatalogos,
+            "catalogos/nuevo" => SectionNuevo,
+            "catalogos/predeterminado" => SectionPredeterminado,
+            "catalogos/menu" => SectionMenu,
+            "catalogos/configuracion" => SectionConfiguracion,
+            "interfaces/catalogos" => SectionCatalogos,
+            "interfaces/catalogos/nuevo" => SectionNuevo,
+            "interfaces/catalogos/predeterminado" => SectionPredeterminado,
+            "interfaces/catalogos/menu" => SectionMenu,
+            "interfaces/catalogos/configuracion" => SectionConfiguracion,
+            _ => SectionCatalogos
+        };
+    }
+
     private string GetCurrentRoutePath()
         => NormalizeRoutePath(Nav.ToBaseRelativePath(Nav.Uri));
 
     private static string NormalizeRoutePath(string? value)
         => (value ?? string.Empty).Split('?', '#')[0].Trim().Trim('/');
 
+    private static string GetRouteBody(string? value)
+    {
+        var normalized = NormalizeRoutePath(value);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return string.Empty;
+
+        var segments = normalized.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length >= 2 && int.TryParse(segments[1], out _))
+            return string.Join('/', segments.Skip(2));
+
+        return normalized;
+    }
+
+    private bool IsLegacyCatalogosRoute()
+    {
+        var routeBody = GetRouteBody(GetCurrentRoutePath());
+        return routeBody.Equals("catalogos", StringComparison.OrdinalIgnoreCase)
+               || routeBody.StartsWith("catalogos/", StringComparison.OrdinalIgnoreCase)
+               || routeBody.Equals("interfaces/catalogos", StringComparison.OrdinalIgnoreCase)
+               || routeBody.StartsWith("interfaces/catalogos/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsCatalogosRoute(string location)
+    {
+        var routeBody = GetRouteBody(Nav.ToBaseRelativePath(location));
+        return routeBody.Equals("catalogo", StringComparison.OrdinalIgnoreCase)
+               || routeBody.StartsWith("catalogo/", StringComparison.OrdinalIgnoreCase)
+               || routeBody.Equals("catalogos", StringComparison.OrdinalIgnoreCase)
+               || routeBody.StartsWith("catalogos/", StringComparison.OrdinalIgnoreCase)
+               || routeBody.Equals("interfaces/catalogos", StringComparison.OrdinalIgnoreCase)
+               || routeBody.StartsWith("interfaces/catalogos/", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool TryRedirectToCanonicalRoute()
+    {
+        var routeBody = GetRouteBody(GetCurrentRoutePath());
+        if (!routeBody.Equals("catalogos", StringComparison.OrdinalIgnoreCase)
+            && !routeBody.StartsWith("catalogos/", StringComparison.OrdinalIgnoreCase)
+            && !routeBody.Equals("interfaces/catalogos", StringComparison.OrdinalIgnoreCase)
+            && !routeBody.StartsWith("interfaces/catalogos/", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var target = BuildSectionRoute(ResolveSection(Vista));
+        if (string.Equals(NormalizeRoutePath(GetCurrentRoutePath()), NormalizeRoutePath(target), StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        Nav.NavigateTo(target, replace: true);
+        return true;
+    }
+
     private string BuildSectionRoute(string section)
     {
         var normalized = NormalizeSection(section);
-        var route = normalized == SectionCatalogos
-            ? "/catalogos"
-            : $"/catalogos/{normalized}";
+        var route = normalized switch
+        {
+            SectionCatalogos => "/catalogo",
+            SectionNuevo => "/catalogo/nuevo",
+            SectionPredeterminado => "/catalogo/predeterminado",
+            SectionConfiguracion => "/catalogo/configuracion",
+            SectionMenu => "/catalogo/menu",
+            _ => "/catalogo"
+        };
 
         return RouteContext.BuildRoute(route);
     }
@@ -970,6 +1469,31 @@ else
         var result = await UiOps.RunAsync(async () =>
         {
             await CatalogosSvc.SaveMenuHabilitadoAsync(_catalogosUserName, _menuHabilitadoDraft, _disposeCts.Token);
+            await CatalogosSvc.SavePublicIdentityNameAsync(_catalogosUserName, _publicIdentityNameDraft, _disposeCts.Token);
+            await CatalogosSvc.SavePublicLogoFormatAsync(_catalogosUserName, idweb, _publicLogoFormatDraft, _disposeCts.Token);
+            await CatalogosSvc.SavePublicClasePrecioAsync(_catalogosUserName, idweb, _clasePrecioDraft, _disposeCts.Token);
+
+            if (_publicLogoRestoreRequested)
+            {
+                await CatalogosSvc.ResetPublicIdentityLogoAsync(_catalogosUserName, idweb, _disposeCts.Token);
+                _publicIdentity = await CatalogosSvc.GetPublicIdentityAsync(idweb, _disposeCts.Token);
+            }
+            else if (_publicLogoBytes.Length > 0)
+            {
+                await using var stream = new MemoryStream(_publicLogoBytes);
+                _publicIdentity = await CatalogosSvc.SavePublicIdentityLogoAsync(
+                    _catalogosUserName,
+                    idweb,
+                    stream,
+                    _publicLogoFileName,
+                    _publicLogoContentType,
+                    _disposeCts.Token);
+            }
+            else
+            {
+                _publicIdentity = await CatalogosSvc.GetPublicIdentityAsync(idweb, _disposeCts.Token);
+            }
+
             return true;
         }, "No se pudo guardar la configuración de catálogos.");
 
@@ -980,23 +1504,169 @@ else
         }
 
         _menuHabilitado = _menuHabilitadoDraft;
-        _feedback = AppUiMessage.Success("Configuración guardada", "La visibilidad del menú quedó actualizada.");
+        _publicIdentityNameDraft = _publicIdentity.NombreVisible;
+        _publicLogoPreviewUrl = string.IsNullOrWhiteSpace(_publicIdentity.LogoUrl) ? "/logos/Logo.png" : _publicIdentity.LogoUrl;
+        _publicLogoFormatDraft = _publicIdentity.LogoFormato;
+        _clasePrecioDraft = await CatalogosSvc.GetPublicClasePrecioAsync(idweb, _disposeCts.Token);
+        _publicLogoBytes = [];
+        _publicLogoFileName = string.Empty;
+        _publicLogoContentType = string.Empty;
+        _publicLogoRestoreRequested = false;
+        _hasCustomPublicLogo = _publicIdentity.TieneLogoPersonalizado;
+        _feedback = AppUiMessage.Success("Configuración guardada", "La identidad pública y la visibilidad del menú quedaron actualizadas.");
         UpdatePageHeader();
+    }
+
+    private async Task HandlePublicLogoSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null)
+            return;
+
+        await using var stream = file.OpenReadStream(5 * 1024 * 1024);
+        await using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms, _disposeCts.Token);
+
+        _publicLogoBytes = ms.ToArray();
+        _publicLogoFileName = file.Name;
+        _publicLogoContentType = string.IsNullOrWhiteSpace(file.ContentType) ? "image/png" : file.ContentType;
+        _publicLogoPreviewUrl = $"data:{_publicLogoContentType};base64,{Convert.ToBase64String(_publicLogoBytes)}";
+        _publicLogoRestoreRequested = false;
+        _hasCustomPublicLogo = true;
+    }
+
+    private Task RestorePublicLogoDefaultAsync()
+    {
+        _publicLogoBytes = [];
+        _publicLogoFileName = string.Empty;
+        _publicLogoContentType = string.Empty;
+        _publicLogoPreviewUrl = "/logos/Logo.png";
+        _publicLogoRestoreRequested = true;
+        _hasCustomPublicLogo = false;
+        return Task.CompletedTask;
+    }
+
+    private string GetPublicLogoPreviewUrl()
+        => string.IsNullOrWhiteSpace(_publicLogoPreviewUrl)
+            ? "/logos/Logo.png"
+            : _publicLogoPreviewUrl;
+
+    private string GetPublicLogoFrameClass(string? format)
+        => (format ?? string.Empty).Trim().ToLowerInvariant() switch
+        {
+            CatalogosPublicLogoFormatKeys.Square => "catalogos-config-logo__preview--square",
+            CatalogosPublicLogoFormatKeys.Horizontal => "catalogos-config-logo__preview--horizontal",
+            _ => "catalogos-config-logo__preview--auto"
+        };
+
+    private string GetPublicIdentityPlaceholder()
+        => string.IsNullOrWhiteSpace(_publicIdentity.NombreFallback)
+            ? "Nombre de la empresa"
+            : _publicIdentity.NombreFallback;
+
+    private string GetPublicIdentitySummary()
+    {
+        var name = string.IsNullOrWhiteSpace(_publicIdentityNameDraft)
+            ? GetPublicIdentityPlaceholder()
+            : _publicIdentityNameDraft.Trim();
+        return $"{name} · Logo {(_hasCustomPublicLogo ? "personalizado" : "predeterminado")}";
     }
 
     private void UpdatePageHeader()
     {
         PageHeader.Set(new PageHeaderConfig
         {
-            Title = "Catálogos",
-            Breadcrumb = ["Interfaces"],
-            Actions = [],
+            Title = GetHeaderTitle(),
+            Breadcrumb = [],
+            Actions = BuildHeaderActions(),
             ViewButtons = BuildHeaderViewButtons(),
             InlineViewButtons = true,
-            ShowHistoryNavigation = false,
-            ShowHomeNavigation = false,
+            ActionsBelowViewButtons = ShouldShowEditorHeaderActions(),
+            ShowHistoryNavigation = true,
+            ShowHomeNavigation = true,
+            HomeUrl = RouteContext.BuildRoute("/"),
+            HomeTitle = "Volver a Inicio",
+            HomeLogoSrc = "/logos/Logo.png",
             AlwaysVisible = true
         });
+    }
+
+    private string GetHeaderTitle()
+    {
+        if (IsPredeterminadoSection)
+            return "Catálogo predeterminado";
+
+        if (IsConfiguracionSection)
+            return "Configuración";
+
+        if (IsMenuSection)
+            return "Menú";
+
+        if (_homeSelection == CatalogosHomeSelection.NuevoCatalogo)
+            return _editingIdInsert.HasValue ? "Editar catálogo" : "Nuevo catálogo";
+
+        return "Catálogos";
+    }
+
+    private bool ShouldShowEditorHeaderActions()
+        => _homeSelection == CatalogosHomeSelection.NuevoCatalogo;
+
+    private IReadOnlyList<PageHeaderAction> BuildHeaderActions()
+    {
+        if (!ShouldShowEditorHeaderActions())
+            return [];
+
+        var actions = new List<PageHeaderAction>
+        {
+            new()
+            {
+                Key = "guardar-borrador",
+                Label = "Guardar borrador",
+                Icon = "bi-save",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _loading,
+                OnClick = GuardarAsync
+            }
+        };
+
+        if (_modo == CatalogosViewGroupKeys.Tipo)
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "publicar-catalogo",
+                Label = "Publicar",
+                Icon = "bi-bullhorn",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _loading,
+                OnClick = PublicarAsync
+            });
+        }
+
+        actions.Add(new PageHeaderAction
+        {
+            Key = "volver-catalogo",
+            Label = "Volver",
+            Icon = "bi-arrow-left",
+            Style = PageHeaderActionStyle.Ghost,
+            Priority = PageHeaderActionPriority.Essential,
+            Disabled = _loading,
+            OnClick = VolverAsync
+        });
+
+        actions.Add(new PageHeaderAction
+        {
+            Key = "limpiar-catalogo",
+            Label = "Limpiar",
+            Icon = "bi-eraser",
+            Style = PageHeaderActionStyle.Ghost,
+            Priority = PageHeaderActionPriority.Normal,
+            Disabled = _loading,
+            OnClick = LimpiarFormularioAsync
+        });
+
+        return actions;
     }
 
     private IReadOnlyList<PageHeaderViewButton> BuildHeaderViewButtons()
@@ -1008,7 +1678,7 @@ else
                 Key = SectionCatalogos,
                 Label = "Catálogos",
                 Title = "Catálogos",
-                Icon = "bi-journal-text",
+                Icon = "bi-collection",
                 Active = IsCatalogosSection,
                 OnClick = ShowCatalogosAsync
             },
@@ -1017,7 +1687,7 @@ else
                 Key = SectionPredeterminado,
                 Label = "Catálogo predeterminado",
                 Title = "Catálogo predeterminado",
-                Icon = "bi-bookmark-star",
+                Icon = "bi-star-fill",
                 Active = IsPredeterminadoSection,
                 OnClick = ShowCatalogoPredeterminadoAsync
             }
@@ -1030,7 +1700,7 @@ else
                 Key = SectionMenu,
                 Label = "Menú",
                 Title = "Menú",
-                Icon = "bi-menu-button-wide",
+                Icon = "bi-list-ul",
                 Active = IsMenuSection,
                 OnClick = ShowMenuAsync
             });
@@ -1051,45 +1721,79 @@ else
 
     private async Task OnListaPrecioChangedAsync()
     {
-        if (_showLookupModal)
-            await BuscarArticulosAsync();
+        if (!_showLookupModal)
+            return;
+
+        ResetLookupSession();
+        _showLookupModal = true;
+        await BuscarArticulosAsync(resetPage: true);
     }
 
-    private async Task BuscarArticulosAsync()
+    private async Task BuscarArticulosAsync(bool resetPage = true)
     {
         _feedback = null;
+        _lookupFeedback = null;
+
         if (string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(_idLista))
         {
-            _lookupResultados.Clear();
-            _lookupTotal = 0;
+            _lookupFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Falta la lista de precios",
+                Message = "Elegí una lista antes de consultar artículos."
+            };
             return;
         }
 
-        var result = await UiOps.RunAsync(() => CatalogosSvc.SearchArticulosAsync(new CatalogosArticuloBusquedaFiltersDto
-        {
-            Texto = _lookupTexto,
-            IdLista = _idLista,
-            Origen = _articuloOrigen,
-            PageNumber = _lookupPageNumber,
-            PageSize = _lookupPageSize
-        }, _disposeCts.Token), "No se pudieron cargar los artículos.");
+        if (resetPage)
+            _lookupPageNumber = 1;
 
-        if (!result.Success || result.Value is null)
-        {
-            _feedback = result.Feedback;
-            return;
-        }
-
-        _lookupResultados.Clear();
-        _lookupResultados.AddRange(result.Value.Items);
-        _lookupTotal = result.Value.Total;
+        _lookupLoading = true;
         _showLookupModal = true;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CatalogosSvc.SearchArticulosAsync(new CatalogosArticuloBusquedaFiltersDto
+            {
+                Texto = _lookupTexto,
+                IdLista = _idLista,
+                Origen = _articuloOrigen,
+                PageNumber = _lookupPageNumber,
+                PageSize = LookupPageSize,
+                IdWeb = idweb
+            }, _disposeCts.Token), "No se pudieron cargar los artículos.");
+
+            if (!result.Success || result.Value is null)
+            {
+                _lookupFeedback = result.Feedback;
+                return;
+            }
+
+            _lookupPageNumber = result.Value.PageNumber;
+            _lookupPageSize = result.Value.PageSize;
+            _lookupResultados.Clear();
+            _lookupResultados.AddRange(result.Value.Items);
+            _lookupTotal = result.Value.Total;
+            foreach (var item in result.Value.Items)
+            {
+                _lookupCache[item.IdArticulo] = item;
+                if (IsArticuloAlreadyAdded(item.IdArticulo))
+                    _lookupSeleccionados.Remove(item.IdArticulo);
+            }
+        }
+        finally
+        {
+            _lookupLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private Task HandleSearchKeyDownAsync(KeyboardEventArgs args)
     {
         if (args.Key is "Enter" or "NumpadEnter")
-            return BuscarArticulosAsync();
+            return BuscarArticulosAsync(resetPage: true);
 
         return Task.CompletedTask;
     }
@@ -1127,14 +1831,25 @@ else
 
     private async Task AbrirLookupArticulosAsync()
     {
-        _lookupPageNumber = 1;
-        await BuscarArticulosAsync();
+        if (string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(_idLista))
+        {
+            _lookupFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Falta la lista de precios",
+                Message = "Elegí una lista antes de consultar artículos."
+            };
+            _showLookupModal = true;
+            return;
+        }
+
+        await BuscarArticulosAsync(resetPage: true);
     }
 
     private void CloseLookupArticulos()
     {
         _showLookupModal = false;
-        _lookupSeleccionados.Clear();
+        ResetLookupSession();
     }
 
     private async Task SelectArticuloSourceAsync(string origen)
@@ -1143,14 +1858,26 @@ else
         if (!string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase))
             _idLista = string.Empty;
 
-        _lookupResultados.Clear();
-        _lookupSeleccionados.Clear();
+        ResetLookupSession();
         await Task.CompletedTask;
     }
 
-    private async Task ToggleLookupSeleccionAsync(string idArticulo, ChangeEventArgs args)
+    private async Task ToggleLookupSeleccionAsync(string idArticulo, bool alreadyAdded, ChangeEventArgs args)
     {
         var checkedValue = args.Value is bool flag && flag;
+
+        if (alreadyAdded)
+        {
+            // Ya está en el catálogo: destildar lo marca para quitar (mismo mecanismo que la tabla de artículos del catálogo).
+            if (checkedValue)
+                _articulosQuitarSeleccionados.Remove(idArticulo);
+            else
+                _articulosQuitarSeleccionados.Add(idArticulo);
+
+            await Task.CompletedTask;
+            return;
+        }
+
         if (checkedValue)
             _lookupSeleccionados.Add(idArticulo);
         else
@@ -1161,11 +1888,16 @@ else
 
     private async Task AgregarSeleccionadosDesdeLookupAsync()
     {
-        var seleccionados = _lookupResultados.Where(x => _lookupSeleccionados.Contains(x.IdArticulo)).ToList();
+        var seleccionados = _lookupSeleccionados
+            .Select(id => _lookupCache.TryGetValue(id, out var item) ? item : null)
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .ToList();
+
         foreach (var item in seleccionados)
             await AgregarArticuloAsync(item);
 
-        _lookupSeleccionados.Clear();
+        ResetLookupSession();
         _showLookupModal = false;
     }
 
@@ -1174,49 +1906,60 @@ else
         if (!PuedeImportarListaCompleta())
             return;
 
-        var total = await UiOps.RunAsync(() => CatalogosSvc.CountArticulosDesdeListaAsync(_idLista, _disposeCts.Token), "No se pudo contar la lista de precios.");
-        if (!total.Success)
+        _importandoListaCompleta = true;
+        try
         {
-            _feedback = total.Feedback;
-            return;
-        }
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
 
-        var confirmado = await DialogSvc.ConfirmAsync(
-            "Importar lista completa",
-            $"Se agregarán {total.Value} artículos de la lista \"{GetNombreListaActual()}\". ¿Desea continuar?",
-            "Importar",
-            "Cancelar");
-
-        if (!confirmado)
-            return;
-
-        var result = await UiOps.RunAsync(() => CatalogosSvc.GetArticulosDesdeListaAsync(_idLista, _disposeCts.Token), "No se pudo importar la lista completa.");
-        if (!result.Success || result.Value is null)
-        {
-            _feedback = result.Feedback;
-            return;
-        }
-
-        var agregados = 0;
-        foreach (var item in result.Value)
-        {
-            if (_articulosSeleccionados.Any(x => string.Equals(x.IdArticulo, item.IdArticulo, StringComparison.OrdinalIgnoreCase)))
-                continue;
-
-            _articulosSeleccionados.Add(new CatalogosArticuloCatalogoDto
+            var total = await UiOps.RunAsync(() => CatalogosSvc.CountArticulosDesdeListaAsync(_idLista, _disposeCts.Token), "No se pudo contar la lista de precios.");
+            if (!total.Success)
             {
-                IdArticulo = item.IdArticulo,
-                DescripcionArticulo = item.DescripcionArticulo,
-                Presentacion = item.Presentacion,
-                Marca = item.Marca,
-                Rubro = item.Rubro,
-                Precio = item.Precio,
-                PrecioOferta = item.PrecioOferta
-            });
-            agregados++;
-        }
+                _feedback = total.Feedback;
+                return;
+            }
 
-        _feedback = AppUiMessage.Success("Lista importada", $"Se agregaron {agregados} artículos nuevos desde \"{GetNombreListaActual()}\".");
+            var confirmado = await DialogSvc.ConfirmAsync(
+                "Importar lista completa",
+                $"Se agregarán {total.Value} artículos de la lista \"{GetNombreListaActual()}\". ¿Desea continuar?",
+                "Importar",
+                "Cancelar");
+
+            if (!confirmado)
+                return;
+
+            var result = await UiOps.RunAsync(() => CatalogosSvc.GetArticulosDesdeListaAsync(_idLista, idweb, _disposeCts.Token), "No se pudo importar la lista completa.");
+            if (!result.Success || result.Value is null)
+            {
+                _feedback = result.Feedback;
+                return;
+            }
+
+            var agregados = 0;
+            foreach (var item in result.Value)
+            {
+                if (_articulosSeleccionados.Any(x => string.Equals(x.IdArticulo, item.IdArticulo, StringComparison.OrdinalIgnoreCase)))
+                    continue;
+
+                _articulosSeleccionados.Add(new CatalogosArticuloCatalogoDto
+                {
+                    IdArticulo = item.IdArticulo,
+                    DescripcionArticulo = item.DescripcionArticulo,
+                    Presentacion = item.Presentacion,
+                    Marca = item.Marca,
+                    Rubro = item.Rubro,
+                    Precio = item.Precio,
+                    PrecioOferta = item.PrecioOferta
+                });
+                agregados++;
+            }
+
+            _feedback = AppUiMessage.Success("Lista importada", $"Se agregaron {agregados} artículos nuevos desde \"{GetNombreListaActual()}\".");
+        }
+        finally
+        {
+            _importandoListaCompleta = false;
+        }
     }
 
     private async Task QuitarSeleccionadosAsync()
@@ -1285,6 +2028,47 @@ else
         => string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase)
            && !string.IsNullOrWhiteSpace(_idLista);
 
+    private int LookupTotalPages
+        => _lookupTotal > 0 ? (int)Math.Ceiling(_lookupTotal / (double)LookupPageSize) : 0;
+
+    private int LookupPageFrom
+        => _lookupTotal == 0 ? 0 : ((_lookupPageNumber - 1) * LookupPageSize) + 1;
+
+    private int LookupPageTo
+        => _lookupTotal == 0 ? 0 : Math.Min(_lookupPageNumber * LookupPageSize, _lookupTotal);
+
+    private bool IsLookupBusy => _lookupLoading || _importandoListaCompleta;
+
+    private async Task LookupPreviousPageAsync()
+    {
+        if (_lookupLoading || _lookupPageNumber <= 1)
+            return;
+
+        _lookupPageNumber--;
+        await BuscarArticulosAsync(resetPage: false);
+    }
+
+    private async Task LookupNextPageAsync()
+    {
+        if (_lookupLoading || LookupTotalPages <= 0 || _lookupPageNumber >= LookupTotalPages)
+            return;
+
+        _lookupPageNumber++;
+        await BuscarArticulosAsync(resetPage: false);
+    }
+
+    private void ResetLookupSession()
+    {
+        _lookupFeedback = null;
+        _lookupResultados.Clear();
+        _lookupSeleccionados.Clear();
+        _lookupCache.Clear();
+        _lookupTotal = 0;
+        _lookupPageNumber = 1;
+        _lookupPageSize = LookupPageSize;
+        _lookupLoading = false;
+    }
+
     private string GetNombreListaActual()
         => _listasPrecio.FirstOrDefault(x => string.Equals(x.IdLista, _idLista, StringComparison.OrdinalIgnoreCase))?.Nombre
            ?? _idLista;
@@ -1295,15 +2079,53 @@ else
     private bool IsArticuloAlreadyAdded(string idArticulo)
         => _articulosSeleccionados.Any(x => string.Equals(x.IdArticulo, idArticulo, StringComparison.OrdinalIgnoreCase));
 
+    private string GetArticuloImageUrl(string idArticulo)
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, idArticulo);
+
+    private bool ShouldShowArticuloImage(string idArticulo)
+        => !_articuloImageFallbacks.Contains(idArticulo) && !string.IsNullOrWhiteSpace(GetArticuloImageUrl(idArticulo));
+
+    private void HandleArticuloImageError(string idArticulo)
+    {
+        if (!string.IsNullOrWhiteSpace(idArticulo))
+            _articuloImageFallbacks.Add(idArticulo);
+    }
+
+    private static string ProductInitials(string descripcion)
+    {
+        if (string.IsNullOrWhiteSpace(descripcion))
+            return "CA";
+
+        var parts = descripcion
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(x => char.ToUpperInvariant(x[0]));
+
+        return string.Concat(parts);
+    }
+
+    private bool HasEditorChanges()
+        => _editingIdInsert.HasValue
+           || _articulosSeleccionados.Count > 0
+           || _articulosQuitarSeleccionados.Count > 0
+           || !string.IsNullOrWhiteSpace(_nombre)
+           || !string.IsNullOrWhiteSpace(_descripcion)
+           || !string.IsNullOrWhiteSpace(_idLista)
+           || !string.IsNullOrWhiteSpace(_lookupTexto);
+
     private async Task GuardarAsync()
     {
         if (_modo == CatalogosViewGroupKeys.None)
         {
             _feedback = AppUiMessage.Success("Borrador actualizado", "El catálogo permanente quedó preparado en pantalla.");
+            UpdatePageHeader();
+            StateHasChanged();
             return;
         }
 
         _feedback = AppUiMessage.Success("Borrador preparado", "El catálogo con vigencia quedó listo para publicar.");
+        UpdatePageHeader();
+        StateHasChanged();
         await Task.CompletedTask;
     }
 
@@ -1317,6 +2139,7 @@ else
                 Title = "Catálogo permanente",
                 Message = "La publicación física del catálogo permanente se definirá en una etapa posterior."
             };
+            StateHasChanged();
             return;
         }
 
@@ -1324,13 +2147,16 @@ else
         if (!result.Success || result.Value is null)
         {
             _feedback = result.Feedback;
+            StateHasChanged();
             return;
         }
 
         _editingIdInsert = result.Value.IdInsert;
-        _urlPublica = GetPublicUrl(result.Value.IdInsert);
+        SetCatalogUrls(result.Value.IdInsert);
         _feedback = AppUiMessage.Success("Catálogo publicado", result.Value.Mensaje);
+        UpdatePageHeader();
         await BuscarCatalogosAsync();
+        StateHasChanged();
     }
 
     private CatalogosCatalogoSaveRequestDto BuildSaveRequest()
@@ -1355,44 +2181,115 @@ else
         await Task.CompletedTask;
     }
 
+    private async Task LimpiarFormularioAsync()
+    {
+        ResetNuevoCatalogo();
+        _feedback = AppUiMessage.Success("Formulario reiniciado", "La pantalla volvió al estado inicial.");
+        UpdatePageHeader();
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    private async Task VolverAsync()
+    {
+        if (HasEditorChanges())
+        {
+            var confirm = await DialogSvc.ConfirmAsync(
+                "Salir sin guardar",
+                "Tenés cambios sin guardar en este catálogo. ¿Querés salir igual?",
+                "Salir",
+                "Cancelar");
+            if (!confirm)
+                return;
+        }
+
+        ResetNuevoCatalogo();
+        NavigateToSection(SectionCatalogos);
+        await ApplyRouteSectionAsync(SectionCatalogos, forceReloadCatalogos: true);
+        UpdatePageHeader();
+        StateHasChanged();
+    }
+
     private async Task BuscarCatalogosAsync(bool resetPage = true)
     {
+        var traceId = Interlocked.Increment(ref _catalogosSearchSequence);
+        Logger.LogInformation("CATALOGOS - BuscarCatalogosAsync START #{TraceId} | resetPage={ResetPage} page={Page} size={Size} loading={Loading} loaded={Loaded} pageNull={PageNull}",
+            traceId,
+            resetPage,
+            _catalogosPageNumber,
+            _catalogosPageSize,
+            _loading,
+            _catalogosLoaded,
+            _catalogosPage is null);
         if (resetPage)
             _catalogosPageNumber = 1;
 
+        Logger.LogInformation("CATALOGOS - BuscarCatalogosAsync #{TraceId} antes UiOps.RunAsync", traceId);
         var result = await UiOps.RunAsync(() => CatalogosSvc.SearchCatalogosAsync(
             _catalogosTexto,
             _catalogosPageNumber,
             _catalogosPageSize,
             _catalogosFechaFiltro,
+            _catalogosTipoFiltro,
+            _catalogosEstadoFiltro,
             _disposeCts.Token), "No se pudieron cargar los catálogos.");
+        Logger.LogInformation("CATALOGOS - BuscarCatalogosAsync #{TraceId} después UiOps.RunAsync | success={Success} hasValue={HasValue} total={Total}",
+            traceId,
+            result.Success,
+            result.Value is not null,
+            result.Value?.Total ?? 0);
 
         if (!result.Success || result.Value is null)
         {
             _feedback = result.Feedback;
+            Logger.LogWarning("CATALOGOS - BuscarCatalogosAsync #{TraceId} terminó sin resultados válidos", traceId);
             return;
         }
 
         _catalogosPage = result.Value;
+        Logger.LogInformation("CATALOGOS - BuscarCatalogosAsync END #{TraceId} | total={Total} pageNumber={PageNumber} pageSize={PageSize}",
+            traceId,
+            _catalogosPage.Total,
+            _catalogosPage.PageNumber,
+            _catalogosPage.PageSize);
     }
 
-    private async Task PrevPageAsync()
+    private async Task<T> TraceTaskAsync<T>(int traceId, string origin, string step, Func<Task<T>> factory)
     {
-        if (_catalogosPage is null || !_catalogosPage.HasPrev)
-            return;
+        Logger.LogInformation("CATALOGOS - {Origin} #{TraceId} antes {Step}", origin, traceId, step);
+        var result = await factory();
+        Logger.LogInformation("CATALOGOS - {Origin} #{TraceId} después {Step} | {Result}",
+            origin,
+            traceId,
+            step,
+            DescribeTraceResult(result));
+        return result;
+    }
 
-        _catalogosPageNumber = Math.Max(1, _catalogosPage.PageNumber - 1);
+    private static string DescribeTraceResult<T>(T result)
+    {
+        return result switch
+        {
+            null => "null",
+            IReadOnlyCollection<CatalogosModalidadOptionDto> modalidades => $"count={modalidades.Count}",
+            IReadOnlyCollection<CatalogosListaPrecioDto> listas => $"count={listas.Count}",
+            CatalogosViewSettingsDto view => $"columnas={view.Columnas.Count} agruparPor={view.AgruparPor}",
+            bool flag => $"value={flag}",
+            PuntoVentaSettingsDto pos => $"ftp={pos.FtpCodigoCta}",
+            _ => result.ToString() ?? string.Empty
+        };
+    }
+
+    private async Task OnCatalogosPageChangedAsync(int pageNumber)
+    {
+        _catalogosPageNumber = Math.Max(1, pageNumber);
         await BuscarCatalogosAsync(resetPage: false);
     }
 
-    private async Task NextPageAsync()
-    {
-        if (_catalogosPage is null || !_catalogosPage.HasNext)
-            return;
-
-        _catalogosPageNumber = _catalogosPage.PageNumber + 1;
-        await BuscarCatalogosAsync(resetPage: false);
-    }
+    private Task HandleCatalogosSearchKeyDownAsync(KeyboardEventArgs args)
+        => args.Key is "Enter" or "NumpadEnter"
+            ? BuscarCatalogosAsync()
+            : Task.CompletedTask;
 
     private async Task EditarCatalogoAsync(int idInsert)
     {
@@ -1425,8 +2322,9 @@ else
             Precio = x.Precio ?? 0m,
             PrecioOferta = x.PrecioOferta
         }));
-        _urlPublica = GetPublicUrl(detail.IdInsert);
+        SetCatalogUrls(detail.IdInsert);
         _feedback = AppUiMessage.Success("Catálogo cargado", $"Se abrió el catálogo #{detail.IdInsert} para editarlo.");
+        UpdatePageHeader();
         await Task.CompletedTask;
     }
 
@@ -1457,6 +2355,24 @@ else
         var url = GetPublicUrl(targetId.Value);
         await Js.InvokeVoidAsync("navigator.clipboard.writeText", url);
         _feedback = AppUiMessage.Success("Enlace copiado", url);
+    }
+
+    private async Task CopiarEnlacePublicoAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_urlPublica))
+            return;
+
+        await Js.InvokeVoidAsync("navigator.clipboard.writeText", _urlPublica);
+        _feedback = AppUiMessage.Success("Enlace copiado", _urlPublica);
+    }
+
+    private async Task CopiarEnlaceClienteAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_urlCliente))
+            return;
+
+        await Js.InvokeVoidAsync("navigator.clipboard.writeText", _urlCliente);
+        _feedback = AppUiMessage.Success("Enlace copiado", _urlCliente);
     }
 
     private async Task GuardarVistaAsync()
@@ -1570,12 +2486,26 @@ else
             : "Catálogo predeterminado";
 
     private string GetPublicUrl(int idInsert)
-    {
-        if (!string.IsNullOrWhiteSpace(idweb) && idbase.HasValue)
-            return $"/{idweb}/{idbase.Value}/catalogo/{idInsert}";
+        => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(idInsert, includeClientSuffix: false)).ToString();
 
-        return $"/catalogo/{idInsert}";
+    private string GetClientUrl(int idInsert)
+        => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(idInsert, includeClientSuffix: true)).ToString();
+
+    private void SetCatalogUrls(int idInsert)
+    {
+        _urlPublica = GetPublicUrl(idInsert);
+        _urlCliente = GetClientUrl(idInsert);
     }
+
+    private string BuildCatalogRelativeUrl(int idInsert, bool includeClientSuffix)
+        => AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCatalogUrl(
+            idInsert,
+            includeClientSuffix,
+            idweb,
+            idbase,
+            Nav.Uri,
+            AppUserSession.CurrentUser?.IdWeb,
+            SessionSvc.GetActiveSession()?.BaseId);
 
     private static string Display(string? value)
         => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();

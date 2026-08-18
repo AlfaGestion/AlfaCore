@@ -504,8 +504,16 @@ Criterio aplicado:
 - Tipo: Service
 - Ubicación: `src/AlfaCore/Services/AppEventService.cs`
 - Propósito: servicio centralizado de logging para errores y auditoría funcional.
-- Datos que usa: `AUX_ERR`, `App_Data/diagnostics/app-events-YYYYMM.jsonl`
-- Observaciones: cumple la regla del proyecto de centralizar el registro técnico; además escribe trazas estructuradas para seguimiento operativo.
+- Datos que usa: `AUX_ERR`, `SYS_EventosAplicacion`, `SYS_EventosAplicacionCambios`, `App_Data/diagnostics/app-events-YYYYMM.jsonl`
+- Observaciones: mantiene el diagnóstico técnico centralizado y ofrece escritura, disponibilidad y lectura paginada de auditoría funcional persistente. La lectura genérica no se expone como endpoint: cada módulo debe autorizar primero el acceso a su entidad.
+
+### AppAuditRepository
+
+- Tipo: Repository
+- Ubicación: `src/AlfaCore/Repositories/AppAuditRepository.cs`
+- Propósito: persiste eventos funcionales y cambios por campo, y recupera actividad paginada sin consultas N+1.
+- Datos que usa: `SYS_EventosAplicacion`, `SYS_EventosAplicacionCambios`
+- Observaciones: pagina primero las cabeceras por entidad y recupera en una sola consulta adicional los cambios de todos los eventos de la página. Incluye un control explícito de disponibilidad del esquema.
 
 ### AppExceptionLoggingMiddleware
 

@@ -3875,9 +3875,9 @@ public sealed class ConversacionesService(
         {
             var phone = NormalizePhone(request.TelefonoWhatsApp);
             if (string.IsNullOrWhiteSpace(phone))
-                throw new InvalidOperationException("IngresÃ¡ un nÃºmero de celular para crear la conversaciÃ³n.");
+                throw new InvalidOperationException("Ingresá un número de celular para crear la conversación.");
             if (phone.Length < 8)
-                throw new InvalidOperationException("El nÃºmero de celular parece incompleto.");
+                throw new InvalidOperationException("El número de celular parece incompleto.");
 
             var technicianId = await ResolveTechnicianIdOrNullAsync(request.IdTecnico, token);
 

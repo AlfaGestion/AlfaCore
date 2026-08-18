@@ -39,6 +39,15 @@ public sealed class ContactoGridItemDto
     public long? IdConversacionWhatsApp { get; set; }
 }
 
+public sealed class ContactoNavigationContextDto
+{
+    public int? PreviousId { get; set; }
+    public int? NextId { get; set; }
+    public int Position { get; set; }
+    public int Total { get; set; }
+    public bool UsesFilteredContext { get; set; }
+}
+
 public sealed class ContactoDetailDto
 {
     public int Id { get; set; }
@@ -99,6 +108,18 @@ public sealed class ContactoCuentaDto
     public bool VinculadoPorCuentaRel { get; set; }
 }
 
+public sealed class ContactoCuentaLookupOptionDto
+{
+    public CuentaComercialTipo Tipo { get; set; }
+    public string Codigo { get; set; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
+    public string Localidad { get; set; } = string.Empty;
+    public string NumeroDocumento { get; set; } = string.Empty;
+
+    public string Key => $"{Tipo}:{Codigo}";
+    public string TipoLabel => Tipo == CuentaComercialTipo.Cliente ? "Cliente" : "Proveedor";
+}
+
 public sealed class ContactoMergeCandidateDto
 {
     public int Id { get; set; }
@@ -119,6 +140,7 @@ public sealed class ContactoMergeRequest
 
 public sealed class ContactosViewSettingsDto
 {
+    public string Vista { get; set; } = ContactosViewModeKeys.Listado;
     public string AgruparPor { get; set; } = ContactosViewGroupKeys.None;
     public List<ContactoViewColumnDto> Columnas { get; set; } = [];
 }
@@ -146,4 +168,10 @@ public static class ContactosViewGroupKeys
 {
     public const string None   = "none";
     public const string Activo = "activo";
+}
+
+public static class ContactosViewModeKeys
+{
+    public const string Listado = "listado";
+    public const string Kanban  = "kanban";
 }
