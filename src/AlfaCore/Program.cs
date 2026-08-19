@@ -145,6 +145,7 @@ public class Program
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
         builder.Services.AddScoped<IInterfacesCatalogosService, InterfacesCatalogosService>();
+        builder.Services.AddScoped<IPedidosEmailService, PedidosEmailService>();
         builder.Services.AddSingleton<IArticuloImagenFtpService, ArticuloImagenFtpService>();
         builder.Services.AddScoped<ICatalogoPublicoPdfService, CatalogoPublicoPdfService>();
         builder.Services.AddSingleton<InterfacesCompraIaWorkerState>();
@@ -172,12 +173,18 @@ public class Program
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();
         builder.Services.AddSingleton<CatalogosClienteSessionStore>();
         builder.Services.AddScoped<ICatalogosClienteSessionService, CatalogosClienteSessionService>();
+        builder.Services.AddSingleton<CatalogoPedidoProcessingGuard>();
         builder.Services.AddSingleton<UsuariosPasswordCodec>();
         builder.Services.AddSingleton<Vb6BridgeTicketStore>();
         builder.Services.AddScoped<IVb6BridgeService, Vb6BridgeService>();
         builder.Services.AddScoped<IAuditoriaService, AuditoriaService>();
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
+        builder.Services.AddScoped<IPortalClienteService, PortalClienteService>();
+        builder.Services.AddScoped<ICarritoComprasService, CarritoComprasService>();
+        builder.Services.AddScoped<IListaPreciosClienteService, ListaPreciosClienteService>();
+        builder.Services.AddSingleton<ListaPreciosClienteExcelExporter>();
+        builder.Services.AddScoped<IListaPreciosClientePdfService, ListaPreciosClientePdfService>();
         builder.Services.AddScoped<IPuntoVentaCartStateService, PuntoVentaCartStateService>();
         builder.Services.AddScoped<IPuntoVentaConfigService, PuntoVentaConfigService>();
         builder.Services.AddScoped<IPuntoVentaConfigValidator, PuntoVentaConfigValidator>();
@@ -468,6 +475,119 @@ public class Program
             return Results.File(pdfBytes, "application/pdf", $"catalogo-{idInsert}.pdf");
         }).AllowAnonymous();
 
+        async Task<(bool Ok, string CodigoCliente, string NombreCliente, string NombreEmpresa, byte[]? LogoBytes, IResult? Error)> ResolvePortalClienteExportContextAsync(
+            HttpRequest request,
+            CatalogosClienteSessionStore clienteSessionStore,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            IInterfacesCatalogosService catalogosSvc,
+            CancellationToken ct)
+        {
+            var token = request.Query["token"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(token) || !clienteSessionStore.TryGet(token, out var cliente) || cliente is null)
+                return (false, "", "", "", null, Results.Unauthorized());
+
+            var idweb = request.Query["idweb"].ToString();
+            var idbase = int.TryParse(request.Query["idbase"], out var parsedIdBase) ? parsedIdBase : (int?)null;
+            idbase ??= cliente.IdBase > 0 ? cliente.IdBase : null;
+            if (string.IsNullOrWhiteSpace(idweb))
+                idweb = cliente.IdWeb;
+
+            if (idbase is > 0)
+            {
+                var routeBase = await centralBasesSvc.GetByIdAsync(idbase.Value, ct);
+                if (routeBase is not null)
+                {
+                    sessionSvc.SetWebhookOverride(new SessionDto
+                    {
+                        Id = Guid.Parse($"00000000-0000-0000-0000-{routeBase.IdBase:000000000000}"),
+                        BaseId = routeBase.IdBase,
+                        Nombre = routeBase.Nombre,
+                        Servidor = routeBase.DbServer,
+                        BaseDatos = routeBase.DbName,
+                        Usuario = routeBase.DbUser,
+                        Password = routeBase.DbPassword,
+                        TrustServerCertificate = true,
+                        Activa = true
+                    });
+                }
+            }
+
+            var branding = await catalogosSvc.GetPublicIdentityAsync(idweb, ct);
+            var nombreEmpresa = string.IsNullOrWhiteSpace(branding.NombreVisible)
+                ? (string.IsNullOrWhiteSpace(branding.NombreFallback) ? "Alfa Gestión" : branding.NombreFallback.Trim())
+                : branding.NombreVisible.Trim();
+
+            byte[]? logoBytes = null;
+            try
+            {
+                var logo = await catalogosSvc.GetPublicLogoForServeAsync(idweb, ct);
+                if (logo is not null && File.Exists(logo.RutaCompleta))
+                    logoBytes = await File.ReadAllBytesAsync(logo.RutaCompleta, ct);
+            }
+            catch
+            {
+            }
+
+            return (true, cliente.CodigoCliente, cliente.RazonSocial, nombreEmpresa, logoBytes, null);
+        }
+
+        app.MapGet("/api/portal-cliente/lista-precios/excel", async (
+            HttpRequest request,
+            CatalogosClienteSessionStore clienteSessionStore,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            IInterfacesCatalogosService catalogosSvc,
+            IListaPreciosClienteService listaPreciosSvc,
+            ListaPreciosClienteExcelExporter exporter,
+            CancellationToken ct) =>
+        {
+            var contexto = await ResolvePortalClienteExportContextAsync(request, clienteSessionStore, centralBasesSvc, sessionSvc, catalogosSvc, ct);
+            if (!contexto.Ok)
+                return contexto.Error!;
+
+            var texto = request.Query["texto"].ToString();
+            var agrupar = request.Query["agrupar"].ToString();
+
+            var resultado = await listaPreciosSvc.ObtenerParaExportarAsync(new ListaPreciosBusquedaFiltroDto
+            {
+                CodigoCliente = contexto.CodigoCliente,
+                Texto = string.IsNullOrWhiteSpace(texto) ? null : texto.Trim(),
+                AgruparPor = agrupar
+            }, ct);
+
+            var bytes = exporter.Exportar(resultado.Articulos, resultado.Resolucion, contexto.NombreEmpresa, contexto.NombreCliente, texto, agrupar);
+            return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ListaPreciosClienteExcelExporter.NombreArchivo());
+        }).AllowAnonymous();
+
+        app.MapGet("/api/portal-cliente/lista-precios/pdf", async (
+            HttpRequest request,
+            CatalogosClienteSessionStore clienteSessionStore,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            IInterfacesCatalogosService catalogosSvc,
+            IListaPreciosClienteService listaPreciosSvc,
+            IListaPreciosClientePdfService pdfSvc,
+            CancellationToken ct) =>
+        {
+            var contexto = await ResolvePortalClienteExportContextAsync(request, clienteSessionStore, centralBasesSvc, sessionSvc, catalogosSvc, ct);
+            if (!contexto.Ok)
+                return contexto.Error!;
+
+            var texto = request.Query["texto"].ToString();
+            var agrupar = request.Query["agrupar"].ToString();
+
+            var resultado = await listaPreciosSvc.ObtenerParaExportarAsync(new ListaPreciosBusquedaFiltroDto
+            {
+                CodigoCliente = contexto.CodigoCliente,
+                Texto = string.IsNullOrWhiteSpace(texto) ? null : texto.Trim(),
+                AgruparPor = agrupar
+            }, ct);
+
+            var pdfBytes = pdfSvc.GenerarPdf(resultado.Articulos, resultado.Resolucion, contexto.LogoBytes, contexto.NombreEmpresa, contexto.NombreCliente, agrupar);
+            return Results.File(pdfBytes, "application/pdf", "lista-precios.pdf");
+        }).AllowAnonymous();
+
         static int? ResolveSqlSessionBaseId(string? sessionIdCookie)
         {
             if (string.IsNullOrWhiteSpace(sessionIdCookie))
@@ -535,13 +655,21 @@ public class Program
                 UsuarioSistema = form["usuarioSistema"].ToString(),
                 PasswordSistema = form["passwordSistema"].ToString(),
                 Modulo = form["modulo"].ToString(),
-                NombreSesion = string.IsNullOrWhiteSpace(form["nombreSesion"]) ? null : form["nombreSesion"].ToString()
+                NombreSesion = string.IsNullOrWhiteSpace(form["nombreSesion"]) ? null : form["nombreSesion"].ToString(),
+                IdBaseCentral = string.IsNullOrWhiteSpace(form["idBaseCentral"]) ? null : form["idBaseCentral"].ToString()
             };
 
             try
             {
                 var ticket = await vb6BridgeSvc.CreateTicketAsync(vb6Request, ct);
                 return Results.Text(ticket, "text/plain; charset=utf-8");
+            }
+            catch (Vb6IdBaseCentralRequeridoException ex)
+            {
+                // 428 (Precondition Required) es un código propio para esta situación puntual, para
+                // que ModAlfaCore.bas la distinga de cualquier otro error 400 sin tener que parsear
+                // el texto del mensaje, y le ofrezca al usuario cargar el dato con un InputBox.
+                return Results.Text(ex.Message, "text/plain; charset=utf-8", statusCode: 428);
             }
             catch (InvalidOperationException ex)
             {
