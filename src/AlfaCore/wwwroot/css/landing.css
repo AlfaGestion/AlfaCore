@@ -1,6 +1,7 @@
 .landing-hero,
 .landing-showcase,
 .landing-features,
+.landing-planes,
 .landing-testimonios,
 .landing-respaldo,
 .landing-deps,
@@ -216,6 +217,85 @@
     color: #607386;
     font-size: 0.92rem;
     line-height: 1.45;
+}
+
+/* --- Planes reales de un módulo (LandingModulo.razor) --- */
+
+.landing-planes {
+    background: #f8fbff;
+    padding: 48px 20px;
+}
+
+.landing-planes__inner {
+    max-width: 980px;
+    margin: 0 auto;
+}
+
+.landing-planes__inner h2 {
+    margin: 0 0 24px;
+    text-align: center;
+    color: #10233d;
+    font-size: clamp(1.4rem, 2.4vw, 1.9rem);
+}
+
+.landing-planes__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px;
+}
+
+.landing-plan-card {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 22px;
+    border: 1px solid rgba(15, 33, 56, 0.1);
+    border-radius: 18px;
+    background: #ffffff;
+    box-shadow: 0 10px 26px rgba(15, 33, 56, 0.06);
+}
+
+.landing-plan-card__name {
+    color: #10233d;
+    font-size: 1.05rem;
+}
+
+.landing-plan-card__price {
+    color: #0b74c9;
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+.landing-plan-card__price small {
+    font-size: .85rem;
+    font-weight: 600;
+    color: #607386;
+}
+
+.landing-plan-card__trial {
+    display: inline-flex;
+    align-self: flex-start;
+    align-items: center;
+    gap: 5px;
+    font-size: .78rem;
+    font-weight: 700;
+    color: #11844e;
+    background: rgba(19, 154, 89, 0.12);
+    padding: 4px 10px;
+    border-radius: 999px;
+}
+
+.landing-plan-card__desc {
+    color: #607386;
+    font-size: .88rem;
+    line-height: 1.45;
+}
+
+.landing-planes__note {
+    margin: 22px 0 0;
+    text-align: center;
+    color: #607386;
+    font-size: .88rem;
 }
 
 /* --- Índice de módulos (/modulos) --- */

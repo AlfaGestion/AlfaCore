@@ -163,6 +163,7 @@
                                             <td>@(item.Dependencias.Count == 0 ? "—" : string.Join(", ", item.Dependencias.Select(d => d.EsObligatoria ? d.Codigo : $"{d.Codigo} (opcional)")))</td>
                                             <td class="text-end">
                                                 <div class="d-inline-flex gap-2">
+                                                    <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => GoPlanes(item.Id)">Planes</button>
                                                     <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => EditAsync(item.Id)">Editar</button>
                                                     <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => DeactivateAsync(item)">Dar de baja</button>
                                                 </div>
@@ -274,6 +275,9 @@
 
     private void GoHome()
         => Nav.NavigateTo(RouteContext.BuildRoute("/admin"));
+
+    private void GoPlanes(int idModulo)
+        => Nav.NavigateTo(RouteContext.BuildRoute($"/admin/modulos/{idModulo}/planes"));
 
     private async Task LoadAsync()
     {

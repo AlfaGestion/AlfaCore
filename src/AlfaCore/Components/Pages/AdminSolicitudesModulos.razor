@@ -63,6 +63,7 @@
                         <tr>
                             <th>Cliente</th>
                             <th>Módulo</th>
+                            <th>Plan</th>
                             <th>Precio</th>
                             <th>Pedido</th>
                             <th></th>
@@ -74,6 +75,7 @@
                             <tr>
                                 <td>@item.ClienteNombre <span class="shell-empty-state__eyebrow">(@item.IdCliente)</span></td>
                                 <td>@item.Nombre</td>
+                                <td>@(string.IsNullOrWhiteSpace(item.PlanNombre) ? "—" : item.PlanNombre)</td>
                                 <td>@item.Precio.ToString("C2")</td>
                                 <td>
                                     @if (item.SolicitadoUtc is not null)
@@ -152,12 +154,23 @@
 
         try
         {
-            await AdminSvc.ActivarModuloAsync(new ActivarModuloRequest
+            // Si la solicitud tiene un plan guardado (registro público con Planes reales que no
+            // pudo autoservirse en Prueba — ver ElegirPlanesAsync), aprobar contrata ese plan en
+            // vez de activar el módulo "a secas": es acá donde alguien de Alfa confirma el pago,
+            // mismo criterio que "Confirmar pago" en el panel Cliente → Módulos.
+            if (item.IdPlan is int idPlan)
             {
-                IdCliente = item.IdCliente,
-                IdModulo = item.IdModulo,
-                ActivadoPor = AppUserSession.CurrentUser?.UserName ?? string.Empty
-            });
+                await AdminSvc.ContratarPlanAsync(item.IdCliente, idPlan, AppUserSession.CurrentUser?.UserName ?? string.Empty);
+            }
+            else
+            {
+                await AdminSvc.ActivarModuloAsync(new ActivarModuloRequest
+                {
+                    IdCliente = item.IdCliente,
+                    IdModulo = item.IdModulo,
+                    ActivadoPor = AppUserSession.CurrentUser?.UserName ?? string.Empty
+                });
+            }
 
             await LoadAsync();
             _message = $"Módulo {item.Nombre} aprobado y activado para {item.ClienteNombre}.";

@@ -3,6 +3,7 @@
 @using AlfaCore.Models
 @using AlfaCore.Services
 @inject ICentralAdminService AdminService
+@inject IPlanesService PlanesSvc
 
 <PageTitle>Módulos | AlfaNet</PageTitle>
 <HeadContent>
@@ -40,9 +41,10 @@
                     <span class="landing-modulo-card__icon"><i class="bi @modulo.Icono"></i></span>
                     <strong>@modulo.Nombre</strong>
                     <span class="landing-modulo-card__tagline">@modulo.Tagline</span>
-                    @if (modulo.Precio > 0)
+                    @{ var precioLabel = GetPrecioLabel(modulo); }
+                    @if (precioLabel is not null)
                     {
-                        <span class="landing-modulo-card__price">USD @modulo.Precio.ToString("0.##")/mes</span>
+                        <span class="landing-modulo-card__price">@precioLabel</span>
                     }
                     <span class="landing-modulo-card__link">Conocer más <i class="bi bi-arrow-right"></i></span>
                 </a>
@@ -95,6 +97,7 @@
 
 @code {
     private HashSet<string> _suspendidos = [];
+    private IReadOnlyDictionary<string, IReadOnlyList<PlanDto>> _planesPorModulo = new Dictionary<string, IReadOnlyList<PlanDto>>(StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
@@ -107,5 +110,30 @@
         {
             _suspendidos = [];
         }
+
+        try
+        {
+            _planesPorModulo = await PlanesSvc.GetPlanesVisiblesPorCodigoModuloAsync();
+        }
+        catch
+        {
+            _planesPorModulo = new Dictionary<string, IReadOnlyList<PlanDto>>(StringComparer.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Precio real (el más económico de los Planes cargados del módulo) si ya existen, o el
+    /// precio hardcodeado de LandingContenidoCatalogo como antes si el módulo no migró a Planes
+    /// todavía. Null = no mostrar precio (módulo sin Planes y sin precio hardcodeado).
+    /// </summary>
+    private string? GetPrecioLabel(LandingContenido modulo)
+    {
+        if (_planesPorModulo.TryGetValue(modulo.Codigo, out var planes) && planes.Count > 0)
+        {
+            var masBarato = planes.OrderBy(p => p.Precio).First();
+            return $"Desde {masBarato.Moneda} {masBarato.Precio.ToString("0.##")}{PlanDisplayHelper.FormatPeriodoCorto(masBarato.TipoFacturacion)}";
+        }
+
+        return modulo.Precio > 0 ? $"USD {modulo.Precio.ToString("0.##")}/mes" : null;
     }
 }

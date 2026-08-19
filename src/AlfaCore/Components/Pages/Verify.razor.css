@@ -218,3 +218,103 @@
     border-color: #0b74c9;
     color: #ffffff;
 }
+
+/* --- Selector de planes (módulos con Planes reales cargados) --- */
+
+.modulo-card--planes {
+    cursor: default;
+    align-items: flex-start;
+}
+
+.plan-option-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.plan-option {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 2px solid rgba(15, 33, 56, 0.12);
+    border-radius: 12px;
+    background: #ffffff;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+}
+
+.plan-option:hover {
+    border-color: rgba(11, 116, 201, 0.4);
+}
+
+.plan-option.is-selected {
+    border-color: #0b74c9;
+    background: rgba(11, 116, 201, 0.06);
+}
+
+.plan-option__radio {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.plan-option__body {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 10px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.plan-option__name {
+    font-weight: 700;
+    font-size: .92rem;
+    color: #10233d;
+}
+
+.plan-option__price {
+    font-size: .85rem;
+    color: #0b74c9;
+    font-weight: 600;
+}
+
+.plan-option__trial {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: .76rem;
+    font-weight: 700;
+    color: #11844e;
+    background: rgba(19, 154, 89, 0.12);
+    padding: 2px 8px;
+    border-radius: 999px;
+}
+
+.plan-option__mark {
+    flex: 0 0 auto;
+    width: 20px;
+    height: 20px;
+    display: grid;
+    place-items: center;
+    border-radius: 999px;
+    border: 2px solid rgba(15, 33, 56, 0.2);
+    color: transparent;
+    background: #ffffff;
+    font-size: .7rem;
+    transition: all .15s ease;
+}
+
+.plan-option.is-selected .plan-option__mark {
+    background: #0b74c9;
+    border-color: #0b74c9;
+    color: #ffffff;
+}
+
+.plan-option--none .plan-option__name {
+    color: #5d7185;
+    font-weight: 600;
+}

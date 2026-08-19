@@ -2,6 +2,7 @@
 @layout AlfaCore.Components.Layout.PublicLayout
 @using AlfaCore.Services
 @inject ICentralAdminService AdminService
+@inject IPlanesService PlanesSvc
 
 <PageTitle>@(_contenido?.Nombre ?? "Módulo") | AlfaNet</PageTitle>
 <HeadContent>
@@ -40,16 +41,45 @@ else
             <p class="landing-hero__desc">@_contenido.Descripcion</p>
 
             <div class="landing-hero__actions">
-                <a href="@($"/registrarme?modulo={_contenido.Slug}")" class="btn btn--primary btn--lg">Probar 30 días gratis</a>
+                <a href="@($"/registrarme?modulo={_contenido.Slug}")" class="btn btn--primary btn--lg">@(_planes.Count > 0 ? "Empezar ahora" : "Probar 30 días gratis")</a>
                 <a href="/modulos" class="btn btn--ghost btn--lg">Ver todos los módulos</a>
             </div>
 
-            @if (_contenido.Precio > 0)
+            @if (_planes.Count == 0 && _contenido.Precio > 0)
             {
                 <p class="landing-hero__price">Desde <strong>USD @_contenido.Precio.ToString("0.##")/mes</strong> después de la prueba gratuita — sin tarjeta, sin compromiso.</p>
             }
         </div>
     </section>
+
+    @if (_planes.Count > 0)
+    {
+        <section class="landing-planes">
+            <div class="landing-planes__inner">
+                <h2>Elegí tu plan</h2>
+                <div class="landing-planes__grid">
+                    @foreach (var plan in _planes)
+                    {
+                        <article class="landing-plan-card" @key="plan.Id">
+                            <strong class="landing-plan-card__name">@plan.Nombre</strong>
+                            <span class="landing-plan-card__price">
+                                @plan.Moneda @plan.Precio.ToString("0.##")<small>@PlanDisplayHelper.FormatPeriodoCorto(plan.TipoFacturacion)</small>
+                            </span>
+                            @if (plan.DiasPrueba > 0)
+                            {
+                                <span class="landing-plan-card__trial"><i class="bi bi-gift-fill"></i> @plan.DiasPrueba días de prueba gratis</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(plan.Descripcion))
+                            {
+                                <span class="landing-plan-card__desc">@plan.Descripcion</span>
+                            }
+                        </article>
+                    }
+                </div>
+                <p class="landing-planes__note">Elegís el plan al registrarte. Si el plan tiene prueba gratuita, arranca sola, sin pedirte ningún dato de pago.</p>
+            </div>
+        </section>
+    }
 
     @if (_contenido.Capturas.Count > 0)
     {
@@ -147,7 +177,11 @@ else
     <section class="landing-cta">
         <div class="landing-cta__inner">
             <h2>Empezá a usar @_contenido.Nombre hoy</h2>
-            <p>Creá tu cuenta, confirmá el email y elegí este módulo en la prueba gratuita de 30 días.</p>
+            <p>
+                @(_planes.Count > 0
+                    ? "Creá tu cuenta, confirmá el email y elegí tu plan."
+                    : "Creá tu cuenta, confirmá el email y elegí este módulo en la prueba gratuita de 30 días.")
+            </p>
             <a href="@($"/registrarme?modulo={_contenido.Slug}")" class="btn btn--primary btn--lg">Registrarme gratis</a>
         </div>
     </section>
@@ -163,6 +197,7 @@ else
 
     private LandingContenido? _contenido;
     private bool _suspendida;
+    private IReadOnlyList<PlanDto> _planes = [];
 
     protected override async Task OnParametersSetAsync()
     {
@@ -170,6 +205,7 @@ else
             string.Equals(m.Slug, Slug, StringComparison.OrdinalIgnoreCase));
 
         _suspendida = false;
+        _planes = [];
         if (_contenido is not null)
         {
             try
@@ -180,6 +216,23 @@ else
             catch
             {
                 _suspendida = false;
+            }
+
+            if (!_suspendida)
+            {
+                // Si el módulo todavía no tiene Planes reales cargados (o falla la consulta por
+                // cualquier motivo), se mantiene el precio hardcodeado de LandingContenidoCatalogo
+                // sin romper la landing — ver IPlanesService.GetPlanesVisiblesPorCodigoModuloAsync.
+                try
+                {
+                    var planesPorModulo = await PlanesSvc.GetPlanesVisiblesPorCodigoModuloAsync();
+                    if (planesPorModulo.TryGetValue(_contenido.Codigo, out var planes))
+                        _planes = planes;
+                }
+                catch
+                {
+                    _planes = [];
+                }
             }
         }
     }

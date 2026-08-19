@@ -117,6 +117,9 @@ public class Program
         builder.Services.AddScoped<ICentralBackupControlService, CentralBackupControlService>();
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
+        builder.Services.AddScoped<IPlanesService, PlanesService>();
+        builder.Services.AddScoped<IPaymentProvider, ManualPaymentProvider>();
+        builder.Services.AddScoped<IBillingService, BillingService>();
         builder.Services.AddScoped<ICentralAuthService, CentralAuthService>();
         builder.Services.AddScoped<IRecaptchaValidationService, RecaptchaValidationService>();
         builder.Services.AddScoped<ICentralProvisioningService, CentralProvisioningService>();
@@ -224,6 +227,7 @@ public class Program
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
         builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
+        builder.Services.AddHostedService<BillingHostedService>();
         builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
         builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
         builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();

@@ -1,0 +1,405 @@
+@page "/admin/modulos/{idModulo:int}/planes"
+@page "/{idweb}/{idbase:int}/admin/modulos/{idModulo:int}/planes"
+@layout AlfaCore.Components.Layout.MainLayout
+@using AlfaCore.Models
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ICentralAdminService AdminSvc
+@inject AlfaCore.Services.IPlanesService PlanesSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+
+<PageTitle>Planes | AlfaNet</PageTitle>
+
+<div class="page-grid admin-home-page">
+<div class="panel-card">
+    <div class="panel-card__header">
+        <div>
+            <h1 class="panel-card__title">Planes de @(_modulo?.Nombre ?? $"módulo #{IdModulo}")</h1>
+            <p class="panel-card__subtitle">Cada módulo puede tener varios planes (mensual, anual, por uso, etc.). El precio y la moneda quedan fijos en el contrato del cliente al momento de contratar — cambiar el plan acá no altera contratos ya firmados.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-light" @onclick="GoModulos">Volver a módulos</button>
+            <button type="button" class="btn btn-primary" @onclick="StartNew">Nuevo plan</button>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <p>Cargando planes...</p>
+    }
+    else if (!IsSuperAdmin)
+    {
+        <div class="editor-msg editor-msg--warning">
+            <strong>Acceso restringido</strong>
+            <p>Solo los superadmin pueden ver esta sección.</p>
+        </div>
+    }
+    else if (_modulo is null)
+    {
+        <div class="editor-msg editor-msg--warning">
+            <strong>Módulo no encontrado</strong>
+            <p>El módulo #@IdModulo no existe o fue dado de baja.</p>
+        </div>
+    }
+    else
+    {
+        @if (!string.IsNullOrWhiteSpace(_message))
+        {
+            <div class="editor-msg editor-msg--success">
+                <strong>Listo</strong>
+                <p>@_message</p>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(_error))
+        {
+            <div class="editor-msg editor-msg--warning">
+                <strong>No se pudo guardar</strong>
+                <p>@_error</p>
+            </div>
+        }
+
+        <div class="row g-3">
+            <div class="col-12 col-xl-5">
+                <div class="panel-card">
+                    <div class="panel-card__header">
+                        <div>
+                            <h2 class="panel-card__title">@(_editing ? $"Editar plan #{_form.Id}" : "Nuevo plan")</h2>
+                            <p class="panel-card__subtitle">El código no se puede repetir dentro del módulo.</p>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Código</label>
+                        <input class="form-control" @bind="_form.Codigo" placeholder="Ej: MENSUAL_BASICO" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Nombre</label>
+                        <input class="form-control" @bind="_form.Nombre" placeholder="Ej: Plan mensual básico" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Descripción</label>
+                        <textarea class="form-control" rows="2" @bind="_form.Descripcion"></textarea>
+                    </div>
+                    <div class="row g-2">
+                        <div class="col-6">
+                            <label class="form-label">Tipo de facturación</label>
+                            <select class="form-select" @bind="_form.TipoFacturacion">
+                                @foreach (var tipo in PlanTipoFacturacion.Todos)
+                                {
+                                    <option value="@tipo">@GetTipoFacturacionLabel(tipo)</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label">Precio</label>
+                            <input class="form-control" type="number" step="0.01" min="0" @bind="_form.Precio" />
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label">Moneda</label>
+                            <select class="form-select" @bind="_form.Moneda">
+                                @foreach (var moneda in MonedaValores.Todas)
+                                {
+                                    <option value="@moneda">@moneda</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <label class="form-label">Días de prueba</label>
+                            <input class="form-control" type="number" min="0" @bind="_form.DiasPrueba" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Días de gracia</label>
+                            <input class="form-control" type="number" min="0" @bind="_form.DiasGracia" />
+                        </div>
+                    </div>
+
+                    <div class="row g-2 mt-1">
+                        <div class="col-6">
+                            <label class="form-label">Cantidad incluida (uso/días)</label>
+                            <input class="form-control" type="number" min="0" @bind="_form.CantidadIncluida" />
+                            <div class="form-text">Cupo para planes POR_USO/PAQUETE_USOS, o cantidad de días del ciclo para DIAS.</div>
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Precio por excedente</label>
+                            <input class="form-control" type="number" step="0.01" min="0" @bind="_form.PrecioExcedente" disabled="@(!_form.PermiteExcedentes)" />
+                        </div>
+                    </div>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" id="plan-permite-excedentes" @bind="_form.PermiteExcedentes" />
+                        <label class="form-check-label" for="plan-permite-excedentes">Permite excedentes</label>
+                    </div>
+
+                    <div class="row g-2 mt-2">
+                        <div class="col-6">
+                            <label class="form-label">Agentes incluidos</label>
+                            <input class="form-control" type="number" min="0" @bind="_form.CantidadAgentesIncluida" />
+                        </div>
+                        <div class="col-6">
+                            <label class="form-label">Precio por agente excedente</label>
+                            <input class="form-control" type="number" step="0.01" min="0" @bind="_form.PrecioPorAgenteExcedente" />
+                        </div>
+                    </div>
+                    <div class="form-text mb-2">Los campos de agentes quedan cargados para uso futuro — todavía no hay ninguna pantalla que controle el cupo real de agentes contratados.</div>
+
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="plan-renovacion" @bind="_form.RenovacionAutomaticaDefault" />
+                        <label class="form-check-label" for="plan-renovacion">Renovación automática por defecto</label>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="plan-visible" @bind="_form.VisibleCatalogo" />
+                        <label class="form-check-label" for="plan-visible">Visible en catálogo</label>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-primary" @onclick="SaveAsync">@(_editing ? "Guardar cambios" : "Crear plan")</button>
+                        <button type="button" class="btn btn-outline-light" @onclick="StartNew">Limpiar</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-xl-7">
+                <div class="panel-card">
+                    <div class="panel-card__header">
+                        <div>
+                            <h2 class="panel-card__title">Listado</h2>
+                            <p class="panel-card__subtitle">Planes definidos para este módulo (activos e inactivos).</p>
+                        </div>
+                    </div>
+
+                    @if (_items.Count == 0)
+                    {
+                        <p>No hay planes cargados para este módulo todavía.</p>
+                    }
+                    else
+                    {
+                        <div class="table-responsive admin-table-wrap">
+                            <table class="table table-sm align-middle admin-table" data-sticky-list-header>
+                                <thead>
+                                    <tr>
+                                        <th>Código</th>
+                                        <th>Nombre</th>
+                                        <th>Facturación</th>
+                                        <th>Precio</th>
+                                        <th>Prueba / gracia</th>
+                                        <th>Activo</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var item in _items)
+                                    {
+                                        <tr class="@(item.Activo ? string.Empty : "text-muted")">
+                                            <td>@item.Codigo</td>
+                                            <td>@item.Nombre</td>
+                                            <td>@GetTipoFacturacionLabel(item.TipoFacturacion)</td>
+                                            <td>@item.Precio.ToString("N2") @item.Moneda</td>
+                                            <td>@item.DiasPrueba d / @item.DiasGracia d</td>
+                                            <td>
+                                                @if (item.Activo)
+                                                {
+                                                    <span class="badge text-bg-success">Activo</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge text-bg-secondary">Inactivo</span>
+                                                }
+                                            </td>
+                                            <td class="text-end">
+                                                <div class="d-inline-flex gap-2">
+                                                    <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => EditAsync(item.Id)">Editar</button>
+                                                    @if (item.Activo)
+                                                    {
+                                                        <button type="button" class="btn btn-sm btn-outline-danger" @onclick="() => SetActivoAsync(item, false)">Dar de baja</button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button type="button" class="btn btn-sm btn-outline-success" @onclick="() => SetActivoAsync(item, true)">Reactivar</button>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+</div>
+</div>
+
+@code {
+    [Parameter] public int IdModulo { get; set; }
+
+    private readonly CrearPlanRequest _form = new();
+    private readonly List<PlanDto> _items = [];
+    private ModuloDto? _modulo;
+
+    private bool _loading = true;
+    private bool _editing;
+    private bool IsSuperAdmin => AppUserSession.CurrentUser?.SuperAdmin == true;
+    private string _message = string.Empty;
+    private string _error = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (!IsSuperAdmin)
+        {
+            _loading = false;
+            return;
+        }
+
+        await LoadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!IsSuperAdmin)
+            return;
+
+        if (_modulo is not null && _modulo.Id != IdModulo)
+            await LoadAsync();
+    }
+
+    private void GoModulos()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/admin/modulos"));
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        try
+        {
+            _modulo = await AdminSvc.GetModuloAsync(IdModulo);
+            _items.Clear();
+            if (_modulo is not null)
+                _items.AddRange(await PlanesSvc.GetByModuloAsync(IdModulo));
+
+            StartNew();
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void StartNew()
+    {
+        _editing = false;
+        _form.Id = null;
+        _form.IdModulo = IdModulo;
+        _form.Codigo = string.Empty;
+        _form.Nombre = string.Empty;
+        _form.Descripcion = string.Empty;
+        _form.TipoFacturacion = PlanTipoFacturacion.Mensual;
+        _form.Precio = 0;
+        _form.Moneda = MonedaValores.Ars;
+        _form.DiasPrueba = 0;
+        _form.DiasGracia = 0;
+        _form.CantidadIncluida = null;
+        _form.PermiteExcedentes = false;
+        _form.PrecioExcedente = null;
+        _form.CantidadAgentesIncluida = null;
+        _form.PrecioPorAgenteExcedente = null;
+        _form.RenovacionAutomaticaDefault = true;
+        _form.VisibleCatalogo = true;
+        _message = string.Empty;
+        _error = string.Empty;
+    }
+
+    private async Task EditAsync(int idPlan)
+    {
+        var item = await PlanesSvc.GetByIdAsync(idPlan);
+        if (item is null)
+            return;
+
+        _editing = true;
+        _message = string.Empty;
+        _error = string.Empty;
+        _form.Id = item.Id;
+        _form.IdModulo = item.IdModulo;
+        _form.Codigo = item.Codigo;
+        _form.Nombre = item.Nombre;
+        _form.Descripcion = item.Descripcion;
+        _form.TipoFacturacion = item.TipoFacturacion;
+        _form.Precio = item.Precio;
+        _form.Moneda = item.Moneda;
+        _form.DiasPrueba = item.DiasPrueba;
+        _form.DiasGracia = item.DiasGracia;
+        _form.CantidadIncluida = item.CantidadIncluida;
+        _form.PermiteExcedentes = item.PermiteExcedentes;
+        _form.PrecioExcedente = item.PrecioExcedente;
+        _form.CantidadAgentesIncluida = item.CantidadAgentesIncluida;
+        _form.PrecioPorAgenteExcedente = item.PrecioPorAgenteExcedente;
+        _form.RenovacionAutomaticaDefault = item.RenovacionAutomaticaDefault;
+        _form.VisibleCatalogo = item.VisibleCatalogo;
+    }
+
+    private async Task SaveAsync()
+    {
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            if (_editing)
+                await PlanesSvc.UpdateAsync(_form);
+            else
+                await PlanesSvc.CreateAsync(_form);
+
+            _items.Clear();
+            _items.AddRange(await PlanesSvc.GetByModuloAsync(IdModulo));
+            _message = _editing ? "Plan actualizado." : "Plan creado.";
+            StartNew();
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+
+    private async Task SetActivoAsync(PlanDto item, bool activo)
+    {
+        _message = string.Empty;
+        _error = string.Empty;
+
+        try
+        {
+            await PlanesSvc.SetActivoAsync(item.Id, activo);
+            _items.Clear();
+            _items.AddRange(await PlanesSvc.GetByModuloAsync(IdModulo));
+            _message = activo ? $"Plan {item.Nombre} reactivado." : $"Plan {item.Nombre} dado de baja.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+    }
+
+    private static string GetTipoFacturacionLabel(string tipo) => tipo switch
+    {
+        PlanTipoFacturacion.Gratis => "Gratis",
+        PlanTipoFacturacion.Mensual => "Mensual",
+        PlanTipoFacturacion.Anual => "Anual",
+        PlanTipoFacturacion.Dias => "Por días",
+        PlanTipoFacturacion.PagoUnico => "Pago único",
+        PlanTipoFacturacion.PorUso => "Por uso",
+        PlanTipoFacturacion.PaqueteUsos => "Paquete de usos",
+        PlanTipoFacturacion.Creditos => "Créditos",
+        _ => tipo
+    };
+}
