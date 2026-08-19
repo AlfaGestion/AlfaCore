@@ -3,7 +3,7 @@
 **Estado del documento:** MIGRACIÓN EN PLANIFICACIÓN
 **C0 — Baseline + contrato de producto:** COMPLETADO (commit `3fd78b5`)
 **C1 — Shell + Information Architecture + navegación interna:** COMPLETADO (commit `2d56b70`, pusheado a `origin/main`)
-**C2 — WhatsApp UX foundation:** TODAVÍA PENDIENTE DE APROBACIÓN FINAL (incluye C2.1 — migración visual, C2.2 — pulido de width/help/status, y C2.3 — flujo de conexión Business + fix de backend; sin commit todavía, pendiente de aprobación visual **y funcional** — ver limitación de entorno en la sección C2.3)
+**C2 — WhatsApp UX foundation:** TODAVÍA PENDIENTE DE APROBACIÓN FINAL (incluye C2.1 — migración visual, C2.2 — pulido de width/help/status, C2.3 — flujo de conexión Business + fix de backend, y C2.4 — QR lifecycle + scroll vertical + cierre del flujo Business; sin commit todavía, pendiente de aprobación visual **y funcional** — ver limitaciones de entorno en las secciones C2.3 y C2.4)
 
 **WhatsApp es, a la fecha, la única sección de Configuración migrada visualmente a AlfaDesign v1** (Business y API). Funciona como referencia de patrón para las siguientes secciones. El resto de Configuración (Automatización, Integraciones IA, Operación y accesos, Soporte) sigue con estilo legacy — deuda visual registrada más abajo, no implementada.
 **Rama de trabajo:** `main` (se trabaja directamente sobre `main`, sin rama nueva)
@@ -375,6 +375,463 @@ Node.js instalado (`winget install OpenJS.NodeJS.LTS`, v24.19.0) y dependencias 
 5. Decidir si los gaps de producto listados arriba (reconexión automática, limpieza de huérfanos, `ResolveWhatsAppDeliveryProvider` por número) se resuelven en esta fase o se documentan como deuda para una fase futura.
 
 Sin commit todavía — sigue pendiente de aprobación funcional final del usuario.
+
+---
+
+## C2.4 — QR lifecycle + scroll vertical + cierre del flujo Business
+
+Continuación de C2.3. No se rediseñó arquitectura: se corrigió el lifecycle del QR (mostrarlo/renovarlo solo cuando corresponde) y se agregó scroll vertical usable a `Settings Workspace`. `Program.cs` **no se tocó en esta fase** — el fix de `ResolveStaticAsset()` (bundle `AlfaCore.styles.css` más reciente por `LastWriteTimeUtc` en vez de priorizar Debug ciegamente, aplicado durante el diagnóstico de CSS isolation de esta misma sesión) queda preservado tal cual.
+
+### Problema real antes de C2.4
+
+El polling (`StartPolling`/`PollPairingStatusAsync`, ya existente desde C2.3) nunca generaba QR solo, y `LoadNumerosAsync` nunca arrancaba el polling — eso ya estaba bien. Pero el markup mostraba `numero.HasWebPairingQr`/`HasWebPairingCode` **directo desde lo que quedó guardado en base**, sin chequear si:
+
+1. ese QR/código seguía vigente (`WebPairingExpiresAtUtc` pudo haber quedado en el pasado, guardado por el último poll antes de cerrar el navegador);
+2. el pairing fue iniciado en la sesión de UI actual, o es un resto de una sesión anterior (recarga de página, u otra pestaña).
+
+Resultado: abrir/recargar WhatsApp Business podía mostrar un QR viejo/vencido como si fuera válido, sin ningún mecanismo para renovarlo (nadie volvía a pollear porque `StartPolling` nunca se re-disparaba solo).
+
+### Gate de visibilidad: `_pairingFlowActiveIds`
+
+Nuevo `HashSet<int> _pairingFlowActiveIds`, en memoria del componente (no persiste, no sobrevive a un reload — eso es intencional). Un `IdNumero` entra al set únicamente en `StartPolling`, que solo se llama desde `GenerateWhatsAppWebPairingAsync` (es decir, tras un click explícito en "Código QR"/"Generar código"/"Actualizar código"). Sale del set al conectar, cancelar (`ClearWhatsAppWebPairingAsync`) o desvincular.
+
+El QR/código guardado en base **solo se renderiza** si se cumplen las tres condiciones a la vez (`ShouldShowPairingSurface`): el `IdNumero` está en `_pairingFlowActiveIds`, no está conectado, y `WebPairingExpiresAtUtc > DateTime.UtcNow`. Si cualquiera de las tres falla (sesión nueva, recarga, o vencido), la tarjeta cae al estado neutral `[ Conectar WhatsApp ]`/selector de método — nunca precarga ni regenera solo. `CONNECTED` sigue teniendo prioridad absoluta sobre cualquier dato de pairing residual (ya lo garantizaba `ApplyStatus` en `WhatsAppWebSessionService`, que limpia `qrPayload`/`pairingCode` al conectar; ahora además `IsWebSessionReady` corta la rama de pairing explícitamente en la UI).
+
+### Auto-renovación durante pairing activo — ya la hacía Baileys, faltaba reflejarla bien
+
+Confirmado leyendo `worker.mjs`: mientras el socket de Baileys sigue abierto sin escanear, WhatsApp empuja un `qr` nuevo cada ~2 minutos y el worker lo escribe en `status.json` con `expiresAtUtc` fresco (`handleConnectionUpdate`, sin cambios en esta fase). El polling de 4s (sin cambios en su timing) ya reflejaba ese nuevo QR al refrescar — lo que faltaba era una transición visual clara mientras tanto. Se agregó:
+
+- **Actualizando código QR...** (`IsPairingRegenerating`): se muestra cuando el pairing sigue activo pero el QR/código actual ya venció y todavía no llegó uno nuevo — evita dejar un QR vencido visible.
+- **Guard de staleness**: `PollPairingStatusAsync` compara `WebPairingGeneratedAtUtc` entre ciclos; si el QR sigue vencido y no cambió durante `PairingStaleCycleLimit` (5) ciclos de 4s (~20s) tras vencer, se considera que la renovación falló.
+- **Guard de fallos de red/IO**: si `RefreshSessionAsync` falla `PairingFailureLimit` (3) veces seguidas, mismo resultado.
+- **Estado de error terminal**: ambos guards detienen el polling (`StopPollingWithRegenerateError`) y muestran "No pudimos actualizar el código QR." con `AlfaButton` **Reintentar** (llama a `GenerateWhatsAppWebPairingAsync` de nuevo — sesión nueva, no un simple refresh) y **Cancelar** (`ClearWhatsAppWebPairingAsync`, ya existente). Nunca reintenta solo.
+- `RefreshWhatsAppWebSessionAsync` (usado también por el botón manual "Actualizar código", sin cambio de firma pública) ahora delega en `RefreshWhatsAppWebSessionCoreAsync`, que devuelve `bool` para que el polling pueda distinguir éxito/fallo sin duplicar la llamada al servicio.
+
+### Navegación — detener y retomar el polling
+
+`SelectPrimaryTab`, `SelectChannelTab`/`OnChannelTabChanged` y `OnWhatsAppSectionChanged` ahora llaman a `SyncWhatsAppPollingWithNavigation()`: si el usuario deja la vista exacta Canales→WhatsApp→WhatsApp Business, corta el polling (`StopPolling`) — no sigue generando QR en background en Automatización, WhatsApp API, Instagram, etc. Si vuelve a esa vista, `ResumePollingIfPairingActive()` retoma el polling solo si queda un pairing propio de esta sesión sin conectar y sin error terminal registrado (si hay error, no reintenta solo — coherente con "el reintento vuelve a ser explícito"). `Dispose()` (recarga, salir de la pantalla) no cambió: sigue llamando `StopPolling()`; como `_pairingFlowActiveIds` vive en memoria del componente, una instancia nueva (F5) arranca vacía — CTA neutral, nunca retoma un pairing pendiente entre recargas.
+
+### Multinúmero — verificado, no requirió cambios
+
+Cada número usa su propio `WebInstanceName`/carpeta de sesión/proceso Node (`WhatsAppWebSessionService`, sin cambios). `_pairingFlowActiveIds` es un `HashSet<int>` por `IdNumero`: conectar la Cuenta A no borra su entrada al iniciar un pairing B (solo el polling en primer plano es de a uno a la vez, ya era así desde C2.3 — no afecta el estado persistido de A). No se tocó backend para esto.
+
+### Texto orientado al cliente
+
+Se quitó el timestamp crudo "Vence: dd/MM/yyyy HH:mm:ss" (`GetWhatsAppWebPairingExpirationLabel`, eliminado por quedar sin uso) del QR y del código por teléfono; se reemplazó por "Si el código vence, lo actualizamos automáticamente." en ambos. El resto de la copy (instrucciones de escaneo, pairing code) no cambió.
+
+### Scroll vertical — causa real y fix
+
+El shell `AlfaDesignPilot` (`alfacore-design.css`) ya define `.shell.shell--alfa-design .shell__content { flex:1 1 auto; overflow:hidden; }` — el `body`/`html` **nunca hicieron scroll** en esta pantalla; el contenido que excedía el viewport quedaba directamente cortado por ese `overflow:hidden`, no "scrolleable pero incómodo". El fix es enteramente local a este componente (mismo patrón que ya usa `Conversaciones.razor.css` para pisar `.page-grid` con más especificidad vía `[b-scope]`, confirmado con grep sobre el bundle compilado):
+
+- `.settings-page` (nueva regla): `display:flex; flex-direction:column; flex:1 1 auto; height:100%; overflow:hidden;` — reemplaza el `display:grid` heredado de `::deep .page-grid` (MainLayout) para este componente puntual, sin tocar esa regla compartida.
+- `.settings-workspace`: pasa de `align-items:flex-start` a `align-items:stretch` + `flex:1 1 auto; overflow:hidden;` — reparte la altura completa entre nav y contenido en vez de dejar que ambos crezcan a su alto de contenido.
+- `.settings-nav`: `align-self:flex-start` (no se estira a la altura completa, queda a su alto natural arriba) + `max-height:100%; overflow-y:auto;` como red de seguridad si algún día crece más que el viewport (hoy no ocurre con 6 items).
+- `.settings-content`: agrega `min-height:0; overflow-y:auto;` — es el **único** contenedor que hace scroll real. `min-height:0` es necesario porque sin eso un hijo flex no se encoge por debajo de su contenido y el overflow nunca se activa.
+
+Un solo scroll container (`.settings-content`), aplica a las 6 categorías por igual (Resumen, Canales, Automatización, Integraciones IA, Operación y accesos, Soporte) porque todas viven dentro del mismo `.settings-content` — no fue necesario tocar cada categoría por separado, ni migrarlas visualmente.
+
+`.wa-help` ya tenía `position:sticky; top:0` desde C2.2, pero no tenía efecto real porque nada scrolleaba. Con `.settings-content` como scroll ancestor real, ahora sticky funciona sin cambios adicionales en esa regla.
+
+En el breakpoint de 1024px (`.settings-workspace{flex-direction:column}`, ya existente desde C1), `.settings-nav` pasa a fila horizontal con wrap y `.settings-content` sigue siendo el único scroll vertical — no se crea scroll anidado.
+
+No se tocó `body`/`html` en ningún punto (ownership del scroll queda contenido dentro del shell/workspace de Configuración, sin riesgo para otras pantallas).
+
+### Build con la app abierta
+
+Igual que en el diagnóstico de CSS isolation de esta sesión: `dotnet build` con `AlfaCore.exe` corriendo bloquea la copia del `.exe` (`MSB3027`, no un error de compilación — la compilación en sí terminó con 0 errores). Se pidió confirmación antes de detener la instancia en ambos casos (fix de `Program.cs` y luego este build), siguiendo la regla de no matar procesos en uso sin avisar.
+
+### Archivos modificados en C2.4
+
+`src/AlfaCore/Components/Pages/ConversacionesConfiguracion.razor`, `ConversacionesConfiguracion.razor.css`, este documento. **No se tocó** `WhatsAppWebSessionService.cs`, `worker.mjs` ni `Program.cs` en esta fase — la auto-renovación cada ~2 minutos ya la hacía Baileys; solo hacía falta que la UI la respetara correctamente.
+
+### Validación técnica ejecutada
+
+`dotnet build AlfaCore.sln` → 0 errores (3 warnings preexistentes, sin relación). `check_catalogo.py` → 68 rutinas, 0 advertencias, 0 errores. `git diff --check` → limpio.
+
+### ⚠️ Validación funcional — NO ejecutada en este entorno
+
+No hay navegador ni teléfono disponible en este entorno de trabajo para ejecutar los casos de prueba A–F pedidos (QR inicial manual, auto-renovación real al vencer, cancelar, navegar fuera, escanear con teléfono real, F5 tras conectar, QR vencido al reabrir, multicuenta, pairing code). Todo lo de esta fase fue verificado por lectura de código + build, igual que en C2.3. Falta la prueba real del usuario contra `ALFANET2007` (o la base de prueba que corresponda) antes de dar C2/C2.4 por aprobado funcionalmente.
+
+Sin commit todavía — C2 sigue **PENDIENTE DE APROBACIÓN FINAL** hasta la validación visual y funcional real del usuario.
+
+---
+
+## C2.4a — Fix distribución del worker + estado UI consistente ante fallo
+
+Bloqueo reproducido: al tocar "Conectar WhatsApp" en el build Release corriendo desde `bin\Release\net8.0\AlfaCore.exe`, aparecía "No existe el worker de WhatsApp Web en C:\...\bin\Release\net8.0\Node\WhatsAppWebWorker\worker.mjs" pese a que el worker se había probado manualmente y sí llega a `QR_READY` con un QR real de Baileys corriendo directo desde `src/AlfaCore/Node/WhatsAppWebWorker/`.
+
+### Causa raíz (confirmada leyendo código + verificando disco, no hipótesis)
+
+Dos problemas independientes, ambos necesarios para el bug completo:
+
+1. **El worker nunca se copiaba al output.** `AlfaCore.csproj` no tenía ningún item `Content`/`None` con `CopyToOutputDirectory` para `Node\WhatsAppWebWorker\**` — se confirmó con `ls` que `bin\Debug\net8.0\Node\` y `bin\Release\net8.0\Node\` no existían antes del fix.
+2. **`WhatsAppWebSessionService.GetWorkerDirectory()` resolvía por `environment.ContentRootPath`**, que en ASP.NET Core por defecto es el *current working directory* del proceso al arrancar (no la carpeta del `.exe`). Corriendo `AlfaCore.exe` con cwd = su propia carpeta de salida (como lo hace un doble click, una tarea programada, o `Start-Process -WorkingDirectory`), `ContentRootPath` coincide con esa carpeta y el bug (1) queda expuesto directamente. Si además alguna vez se lanzara con otro cwd, `ContentRootPath` apuntaría a un tercer lugar más, agravando el problema — la ruta calculada nunca era determinística.
+
+El caso que "sí funcionó" (worker probado manualmente) fue corriendo `node worker.mjs` directo dentro de `src/AlfaCore/Node/WhatsAppWebWorker/` — nunca pasó por `AlfaCore.exe` ni por `GetWorkerDirectory()`, por eso no exponía ninguno de los dos bugs.
+
+### Fix de distribución (`AlfaCore.csproj`)
+
+Se agregaron 3 items `<None Update>` (no `<Content Include>`, para no duplicar con el glob por defecto del SDK que ya incluye estos archivos como `None`) que copian `worker.mjs`, `package.json` y `package-lock.json` a la salida (`CopyToOutputDirectory`/`CopyToPublishDirectory = PreserveNewest`), preservando la carpeta `Node\WhatsAppWebWorker\`. Se agregó también `<None Remove="Node\WhatsAppWebWorker\node_modules\**" />` (mismo criterio ya usado para `App_Data\whatsapp-web`) para que MSBuild no evalúe `node_modules` como items de proyecto si un dev lo tiene instalado localmente.
+
+**`node_modules` NO se copia** (deliberado, no es un olvido): son miles de archivos, no está versionado (`.gitignore` ya lo excluía) y copiarlo vía glob de MSBuild en cada build sería lento y frágil. Verificado con `dotnet build` en Debug y Release: `worker.mjs`/`package.json`/`package-lock.json` aparecen correctamente en ambas carpetas de salida.
+
+### Contrato de distribución (para cerrar C2.4a)
+
+- **Desarrollo (`dotnet run`/F5):** si el build ya copió el worker a `bin\Debug\net8.0\Node\WhatsAppWebWorker\`, se usa esa copia. Si no (primer clone sin build todavía), `GetWorkerDirectory()` cae al árbol fuente `src/AlfaCore/Node/WhatsAppWebWorker/` **solo si `IHostEnvironment.IsDevelopment()`** — mismo patrón ya usado en `Program.cs` para `wwwroot`/`scopedcss`, no es una búsqueda nueva ni arbitraria por disco.
+- **Release/publish/servicio:** siempre usa `AppContext.BaseDirectory\Node\WhatsAppWebWorker` (la carpeta real de salida, determinística sin importar cwd ni modo de arranque).
+- **En ambos casos hace falta `npm ci` una vez** dentro de la carpeta `Node\WhatsAppWebWorker` que corresponda (`src/AlfaCore/Node/WhatsAppWebWorker` en desarrollo, o la carpeta de salida real — `bin/Release/net8.0/Node/WhatsAppWebWorker` o el `publish/.../Node/WhatsAppWebWorker` correspondiente — para Release/publish/servicio). No se automatizó ese paso (instalar dependencias npm como parte del build de un `.csproj` de C# no es apropiado); queda como paso manual de setup, igual que ya estaba documentado en C2.3.
+
+### Bug UI — "Esperando escaneo" falso tras un fallo de arranque
+
+`GetNumeroEstadoLabel`/`GetNumeroEstadoTone` leen `numero.WebSessionStatus` directo desde lo persistido, sin relación con si hay un pairing activo de verdad en esta sesión. Si `StartSessionAsync` falla **antes** de tocar el worker (exactamente el caso de "no existe el worker": `EnsureWorkerFilesExist()` tira la excepción antes de `PrepareSessionDirectory`/`Process.Start`), un `WebSessionStatus = PENDING_QR` que hubiera quedado de un intento anterior (ej. de la validación en vivo documentada en C2.3) seguía mostrando "Esperando escaneo" con el `AlfaTag` en warning, aunque el intento actual falló por completo y no hay ningún proceso corriendo. Coincide con la captura reportada: notificación de error correcta + tag "Esperando escaneo" inconsistente al mismo tiempo.
+
+**Fix acotado** en `GenerateWhatsAppWebPairingAsync` (rama de fallo, `ConversacionesConfiguracion.razor`): al fallar, se saca el `IdNumero` de `_pairingFlowActiveIds` (defensivo) y, si el estado mostrado seguía en `PENDING_QR`, se corrige a `DISCONNECTED` **solo en memoria** (no se persiste, no se toca DB). No se borra `auth`, credenciales, `PhoneNumberId`, usuarios ni el registro del número — nada de eso está en juego en esta rama, que corre antes de que el servicio toque el filesystem de la sesión. El próximo `LoadNumerosAsync`/recarga vuelve a leer el estado real persistido, así que esta corrección es puramente para no confundir al usuario en el momento del fallo. Tras el fix, la tarjeta vuelve a mostrar `[ Conectar WhatsApp ]` y permite reintentar.
+
+No se tocó ningún otro punto del lifecycle de C2.4 (`_pairingFlowActiveIds`, polling, `expiresAtUtc`, auto-renew) — el resto de esa lógica no estaba involucrada en este bug.
+
+### `Program.cs` — preservado, no tocado en esta sub-fase
+
+El fix de `ResolveStaticAsset()` (bundle `AlfaCore.styles.css` más reciente por `LastWriteTimeUtc`) sigue intacto. `Program.cs` no aparece en el diff de C2.4a.
+
+### Archivos modificados en C2.4a
+
+`src/AlfaCore/AlfaCore.csproj`, `src/AlfaCore/Services/WhatsAppWebSessionService.cs`, `src/AlfaCore/Components/Pages/ConversacionesConfiguracion.razor`, este documento.
+
+### Validación técnica ejecutada
+
+`dotnet build AlfaCore.sln` (Debug y Release) → 0 errores. `check_catalogo.py` → 68 rutinas, 0 errores. `git diff --check` → limpio. Se confirmó por lectura + inspección de disco que `worker.mjs` queda exactamente en la ruta que `AppContext.BaseDirectory` resuelve para el `.exe` en ejecución (`bin/Release/net8.0/Node/WhatsAppWebWorker/worker.mjs`), eliminando el error "No existe el worker..." en el próximo intento.
+
+### ⚠️ Limitación de entorno — smoke test NO ejecutado, `npm ci` pendiente
+
+Se buscó Node.js exhaustivamente en este entorno de trabajo (`where.exe node`/`npm`, PATH del proceso, registro de desinstalación de Windows, `winget list`, `Program Files`/`LocalAppData\Programs`): **no se encontró en ninguna parte**, pese a que C2.3 documentó una instalación exitosa (`winget install OpenJS.NodeJS.LTS`, v24.19.0) durante una sesión de validación anterior. No fue posible determinar si esa instalación ya no está disponible en este entorno de trabajo puntual, o si corresponde a otra sesión/máquina — se reporta como hallazgo, no se asume ninguna de las dos.
+
+Consecuencia concreta: **no se pudo ejecutar `npm ci` ni el smoke test desde la carpeta de salida** (`bin/Release/net8.0/Node/WhatsAppWebWorker` no tiene `node_modules` todavía), ni hacer click real en "Conectar WhatsApp" en el navegador (sin herramienta de automatización de browser disponible en este entorno). El fix de distribución/resolución de rutas está verificado por código + presencia de archivos en disco, no por ejecución end-to-end.
+
+**Pendiente para que el usuario complete la validación de C2.4a:**
+
+1. Confirmar que Node.js está disponible en el entorno real donde corre `AlfaCore.exe`.
+2. Ejecutar `npm ci` dentro de `src/AlfaCore/bin/Release/net8.0/Node/WhatsAppWebWorker/` (la carpeta de salida real, no el árbol fuente, ya que Release usa esa ruta).
+3. Entrar a WhatsApp Business → Conectar WhatsApp → Código QR y confirmar que **ya no aparece** "No existe el worker..." y que se ve un QR real.
+4. Recién ahí seguir con la batería completa de C2.4 (expiración, auto-renew, cancelar, scan, reload, multicuenta) — no se ejecuta automáticamente, según lo pedido.
+
+Sin commit todavía.
+
+---
+
+## C2.4b — Runtime real preparado + smoke test del worker desde output real
+
+Continuación directa de C2.4a. Objetivo: dejar el runtime de esta PC en condiciones de generar un QR real desde AlfaCore. No se tocó código de aplicación en esta sub-fase (0 archivos `.razor`/`.cs`/`.csproj` modificados) — todo lo hecho acá es preparación de entorno (Node, `npm ci`, verificación).
+
+### Instancia real verificada
+
+`AlfaCore.exe`, `bin\Release\net8.0\`, confirmado por PID/CommandLine — no se asumió Debug/Release, se verificó. `AppContext.BaseDirectory` de esa instancia = `C:\dev\AlfaCore\src\AlfaCore\bin\Release\net8.0\`, por lo tanto `GetWorkerDirectory()` resuelve a `...\bin\Release\net8.0\Node\WhatsAppWebWorker\`. Confirmado por disco: `worker.mjs`, `package.json`, `package-lock.json` presentes ahí (heredado de C2.4a).
+
+### Node.js — instalado en esta sesión
+
+No estaba instalado: se verificó con `where.exe`/`Get-Command` (sin resultado) y, de forma más concluyente, leyendo directamente `Path` de **Machine** y **User** desde el registro (`[System.Environment]::GetEnvironmentVariable('Path','Machine'/'User')`) — ninguno tenía ninguna entrada de Node. No era un caso de "PATH no refrescado" (§4 del pedido): Node genuinamente no estaba instalado en el sistema.
+
+Instalado con `winget install --id OpenJS.NodeJS.LTS --source winget` (confirmado, con autorización) → **Node v24.19.0**, **npm 11.17.0**, en `C:\Program Files\nodejs\node.exe`.
+
+### PATH heredado — proceso viejo vs proceso nuevo
+
+Confirmado el escenario exacto del §4/§7 del pedido: la instancia de AlfaCore que ya estaba corriendo (arrancada antes de instalar Node) conservó el PATH viejo — un proceso Windows no recibe cambios de PATH posteriores a su arranque. Se avisó explícitamente antes de tocar nada ("Necesito reiniciar AlfaCore para que Process.Start encuentre Node"), se pidió autorización, y solo entonces se detuvo **únicamente** el PID que servía `localhost:5055` y se relanzó el mismo build (`bin\Release\net8.0\AlfaCore.exe`) desde una sesión con el PATH ya releído del registro — así el proceso nuevo lo hereda correctamente. No se reinició Windows, no se tocaron otros procesos.
+
+**Nota de entorno:** cada invocación nueva de la herramienta con la que trabajo en esta sesión sigue heredando un PATH desactualizado (no ve Node salvo que yo lo reconstruya explícitamente desde el registro en ese mismo bloque de comandos) — es una característica del proceso que hospeda esta sesión de trabajo, no del sistema operativo ni de AlfaCore. El registro (Machine/User Path) ya tiene a Node correctamente desde la instalación.
+
+### `npm ci` — dependencias instaladas en la carpeta de salida REAL
+
+Ejecutado en `C:\dev\AlfaCore\src\AlfaCore\bin\Release\net8.0\Node\WhatsAppWebWorker\` (la salida real, no el árbol fuente): **69 paquetes instalados, 0 vulnerabilidades**, usando el `package-lock.json` ya copiado por el build. No se corrió `npm update`/`audit fix`/instalación global. `node_modules` confirmado presente (`@whiskeysockets/baileys` y `pino` verificados explícitamente) y confirmado **ausente de `git status`** — no se tocó `.gitignore` (ya lo excluía).
+
+npm avisó que dos scripts de instalación (`baileys` preinstall de chequeo de engine, `protobufjs` postinstall) quedaron sin correr por la política `allow-scripts` de npm reciente. No se aprobaron manualmente (no fue necesario): el smoke test siguiente confirmó que Baileys carga y genera QR real sin esos scripts.
+
+### Smoke test — worker real desde el output real
+
+`node worker.mjs start <sesión temporal en scratchpad> QR "" 0 wa-smoke-test`, ejecutado directamente en `bin\Release\net8.0\Node\WhatsAppWebWorker\` (mismo `WorkingDirectory` que usa `WhatsAppWebSessionService`). Resultado en ~15s:
+
+```
+state=QR_READY
+hasQrPayload=True (277 caracteres)
+generatedAtUtc / expiresAtUtc reales (ventana de 2 minutos)
+error=(vacío)
+```
+
+No se usó auth real ni se tocó `App_Data\whatsapp-web`. Sesión temporal y proceso de prueba limpiados después (carpeta borrada, proceso detenido). Esto confirma Node + dependencias + worker + Baileys funcionando end-to-end **desde la ruta física exacta que usa el build Release** — no desde el árbol fuente.
+
+### Lo que NO pude verificar yo mismo (limitación de esta sesión, no del fix)
+
+No tengo herramienta de automatización de navegador en esta sesión de trabajo, y `StartSessionAsync` solo se invoca desde el circuito interactivo de Blazor (no hay endpoint HTTP para dispararlo por `curl`). Por lo tanto **no pude hacer clic en "Conectar WhatsApp" dentro de AlfaCore yo mismo** para confirmar `Process.Start` end-to-end vía la UI real. Lo que sí queda demostrado por partes independientes:
+
+- la instancia corriendo resuelve el worker en la ruta correcta (C2.4a + verificado de nuevo acá);
+- esa ruta tiene todo lo necesario para que Baileys llegue a `QR_READY` (smoke test);
+- la instancia fue reiniciada después de instalar Node, con el PATH corregido pasado explícitamente al proceso nuevo.
+
+Falta el último eslabón (el click real en el navegador) — pedido al usuario para cerrar el checkpoint del §17 del pedido ("QR real generado desde AlfaCore").
+
+### `dotnet publish` — verificado explícitamente
+
+`dotnet publish AlfaCore.csproj --configuration Release -o <carpeta temporal>`: `worker.mjs`, `package.json`, `package-lock.json` aparecen en `<publish>\Node\WhatsAppWebWorker\`, `node_modules` correctamente ausente (tal cual documentado en C2.4a). Carpeta temporal borrada después, no se desplegó nada.
+
+### Deuda de deployment (registrada, no resuelta ahora)
+
+Automatizar la preparación completa del worker en un deploy (Node + `npm ci`) sin versionar `node_modules` — hoy es un paso manual documentado. Candidato a script de bootstrap de deployment en una fase futura; no se resuelve ahora porque el QR local ya está en condiciones de probarse.
+
+### Archivos modificados en C2.4b
+
+Ninguno de código. Solo este documento. (Cambios de entorno: Node.js instalado a nivel de sistema, `node_modules` instalado en `bin\Release\net8.0\Node\WhatsAppWebWorker\` — no versionado, no forma parte del diff de git).
+
+### Validación técnica ejecutada
+
+`dotnet build AlfaCore.sln --configuration Release` → 0 errores. `check_catalogo.py` → 68 rutinas, 0 errores. `git diff --check` → limpio. `git status` → mismos 6 archivos de C2.4/C2.4a, sin cambios nuevos.
+
+Sin commit todavía. **Falta el clic real del usuario en "Conectar WhatsApp" para confirmar el checkpoint del §17** antes de seguir con expiración/cancelar/scan/reload/multicuenta.
+
+---
+
+## C2.5 — WhatsApp Business operativo: envío real + routing multicuenta + filtrado de Status
+
+**Avance confirmado por prueba real del usuario:** QR real, sesión conectada, mensajes entrantes reales llegando a Conversaciones. C2.5 corrige los dos bugs funcionales bloqueantes que aparecieron con uso real: mensajes salientes que quedaban en "Sin configuración" y un Estado de WhatsApp que creó una conversación fantasma ("Springfield").
+
+### Bug 1 — "Sin configuración" en salientes
+
+**Causa raíz confirmada por lectura de código** (no hipótesis): `ResolveWhatsAppDeliveryProvider(config)` en `ConversacionesService.cs` decide Meta Cloud vs WhatsApp Web leyendo **únicamente** `ProviderMode`/`DefaultProvider` — dos ajustes **globales de la base**, en Configuración → WhatsApp API. No mira en ningún momento de qué número (`IdNumeroWhatsApp`) es la conversación que se está respondiendo. Este gap ya estaba documentado como deuda conocida en C2.3 ("`ResolveWhatsAppDeliveryProvider` no tiene en cuenta el estado de conexión por número").
+
+Efecto concreto: si el select global "Proveedor predeterminado" de esa base seguía en Meta Cloud API (el default), **toda** conversación de WhatsApp Business quedaba evaluada como si fuera Meta — y como Meta no está configurado con credenciales reales, el mensaje se insertaba directo con `EstadoEnvio = "PENDIENTE_CONFIG"` (→ "Sin configuración" en la UI) **sin siquiera intentar** el envío real por la sesión Web ya conectada.
+
+**Fix aplicado** (`ConversacionesService.cs`, solo mensajes de texto — `SendMessageAsync`): nuevo `ResolveWhatsAppDeliveryProviderForNumero(config, numero)` que, si el número de la conversación (`conversation.IdNumeroWhatsApp`) tiene `WebInstanceName` seteado (se setea una única vez al conectar por QR/código en `WhatsAppWebSessionService.StartSessionAsync`, nunca para números agregados solo para Meta Cloud), fuerza el routing a WhatsApp Web **sin importar el select global**. Si el número no tiene instancia Web, cae exactamente al comportamiento anterior (`ResolveWhatsAppDeliveryProvider` global) — cero cambio de comportamiento para conversaciones de Meta Cloud reales. Se calcula una sola vez y se reutiliza tanto para decidir el estado inicial como para la rama de envío real (antes se llamaba al resolver global dos veces por separado, con el mismo resultado pero de forma redundante).
+
+El camino de envío real (`whatsAppWebSessionService.SendTextAsync(conversation.IdNumeroWhatsApp, ...)`) **ya existía y ya estaba bien implementado** desde C2.3 — nunca hizo falta tocarlo. El bug era exclusivamente de ruteo/decisión, no de la mecánica de envío en sí.
+
+**Adjuntos (`UploadAttachmentAsync`) quedaron sin tocar a propósito** (alcance C2.5 = solo texto, punto §25 del pedido): ese método sigue llamando al resolver global y sigue bloqueado explícitamente por `EnsureWhatsAppProviderImplemented` para WhatsApp Web ("ese conector todavía no está implementado") — comportamiento preexistente, deuda ya conocida, no ampliada ni corregida ahora.
+
+**No fallback a otra cuenta ni a Meta:** no se tocó `WhatsAppWebSessionService.SendTextAsync`, que ya lanza `InvalidOperationException` si la sesión no existe/no está conectada/no responde a tiempo — nunca reintenta con otra cuenta ni con Meta. El mensaje queda con `ERROR_ENVIO` (ya existente) y el usuario ve el error real, no un reloj eterno.
+
+### Bug 2 — Status de WhatsApp crea conversación fantasa ("Springfield")
+
+**Causa raíz confirmada leyendo `worker.mjs`:** Baileys entrega los Estados de WhatsApp por el **mismo evento** `messages.upsert` que los mensajes reales, con `remoteJid = "status@broadcast"`. `normalizeIncomingMessage` filtraba grupos (`@g.us`) y `fromMe`, pero no `@broadcast`. Para resolver el teléfono, el código prioriza `remoteJidAlt` sobre `remoteJid` (necesario para el caso real de `addressingMode:"lid"`) — y Baileys expone en `remoteJidAlt` el JID **real de quien publicó el estado** (para poder mostrar su nombre). Resultado: el filtro de teléfono de más abajo encontraba dígitos válidos ahí, y el Status pasaba como si fuera un mensaje directo normal del contacto que lo publicó — con su nombre real (pushName) como "Springfield" — creando contacto + conversación + mensaje + unread como si hubiera escrito de verdad.
+
+**Fix de dos capas** (defensa en profundidad, no redundancia decorativa — ver nota abajo):
+
+1. **`worker.mjs` (`normalizeIncomingMessage`), el más temprano posible:** se agregó `if (remoteJid.endsWith("@broadcast") || remoteJid.endsWith("@newsletter")) return null;` **antes** de mirar `remoteJidAlt`, y `if (entry?.message?.protocolMessage) return null;` (mensajes de protocolo — revoke, cambios de ephemeral, edits — que tampoco son conversación real, mismo patrón de bug). No se tocó el filtro de grupos (`@g.us`, sin cambios, sin regla de producto nueva para grupos) ni el de `fromMe` (se audita aparte, ver más abajo).
+2. **`ConversacionesService.cs` (`RegisterIncomingWhatsAppWebMessageAsync`), red de seguridad necesaria (no opcional):** nuevo `IsWhatsAppWebNonConversationalEvent(rawJson)` que inspecciona el JSON crudo de Baileys (`key.remoteJid`, `message.protocolMessage`) y descarta **antes** de tocar contacto/conversación/mensaje/contadores/automatizaciones. Es necesaria porque un worker que ya estaba corriendo (como la sesión real conectada de esta prueba) sigue vivo con el `worker.mjs` **viejo** hasta que se desvincule y reconecte — el fix del punto 1 solo protege conexiones nuevas. Se agrega un log de auditoría liviano (`_appEvents.LogAuditAsync`, evento `WhatsAppWebEventIgnored`, con `InstanceName` — sin remoteJid ni contenido) para diagnóstico, sin duplicar el árbol de decisión en dos lenguajes: la fuente de verdad de "qué es Status" es la misma condición (`remoteJid` termina en `@broadcast`/`@newsletter`, o `protocolMessage` presente) implementada una vez en cada lado por necesidad de proceso, no por preferencia de diseño.
+
+Otros eventos de Baileys (recibos, presence, typing, sync/history) **ya estaban excluidos por diseño**: el worker solo se suscribe a `messages.upsert` (`sock.ev.on("messages.upsert", handleMessagesUpsert)`) — nunca escuchó esos otros eventos, así que no hacía falta agregar nada para ellos. No se tocó el manejo de grupos: sigue sin definición de producto, tal cual estaba.
+
+### Conversación "Springfield" ya creada — diagnóstico, sin borrar
+
+**No se ejecutó ningún `DELETE`.** No pude confirmar el registro exacto contra la base real: la arquitectura es multi-tenant con ~135 bases SaaS (una base de datos real por tenant, resuelta por `IdBase`/`CentralBasesService`), y no tengo forma segura de saber a qué base de datos física corresponden los `IdBase` 106/4271 vistos en `App_Data\whatsapp-web\` sin arriesgarme a apuntar a la base equivocada.
+
+**Diagnóstico por código** (alta confianza dado el root cause confirmado arriba): el registro es casi con certeza una fila en `CONV_CONVERSACIONES` con `Canal = 'WHATSAPP'`, creada por `EnsureConversationAsync` a partir de un `IncomingWhatsAppMessage` con `SistemaAutor = 'WHATSAPP_WEB'`, nombre de contacto "Springfield" (el pushName de quien publicó el estado), y un único mensaje en `CONV_MENSAJES` con `Direction = 'ENTRANTE'`, `MessageType = 'TEXT'` y `Text` vacío o sin relación con una conversación real (los Status no llevan el texto real del status, ya que `normalizeIncomingMessage` solo lee `message.conversation`/`extendedTextMessage`/`imageMessage.caption`/`videoMessage.caption`, campos que un Status no llena de esa forma).
+
+**Query de verificación sugerida (solo lectura, para correr contra la base correcta una vez identificada):**
+
+```sql
+SELECT c.IdConversacion, c.Canal, c.NombreContacto, c.TelefonoWhatsApp, c.FechaHoraUltimoMensaje,
+       m.IdMensaje, m.Direction, m.MessageType, m.Text, m.SistemaAutor, m.FechaHora
+FROM dbo.CONV_CONVERSACIONES c
+JOIN dbo.CONV_MENSAJES m ON m.IdConversacion = c.IdConversacion
+WHERE c.NombreContacto = 'Springfield' AND c.Canal = 'WHATSAPP';
+```
+
+Si el resultado confirma un único mensaje entrante con texto vacío/inconsistente y `SistemaAutor = 'WHATSAPP_WEB'`, es seguro borrarlo manualmente (no vía UI, no automatizado) — pero **queda pendiente de tu autorización explícita y de que me confirmes o corras vos esa query contra la base correcta**.
+
+### Multicuenta — verificado, sin tocar código
+
+Durante esta fase se confirmó en vivo la existencia de **dos sesiones reales conectadas simultáneas** (`IdBase` 106 y 4271, mismo número físico `+5491153859509` vinculado como dos dispositivos distintos de WhatsApp) — cada una con su propio proceso Node independiente (`WebInstanceName`/carpeta de sesión/PID propios), confirmando en la práctica el aislamiento multicuenta ya documentado en C2.4. El fix de routing (Bug 1) es por `IdNumeroWhatsApp`, así que escala sin cambios a N cuentas.
+
+**Hallazgo colateral, no corregido ahora (fuera de alcance de C2.5):** el worker de la base 106 (PID 1728 según su `status.json`, que seguía marcando `CONNECTED`) ya no existía como proceso del sistema operativo al momento de esta revisión — se cayó de forma independiente a cualquier acción de esta fase (no se tocó ese proceso ni antes ni durante C2.5). Es el mismo gap ya documentado en C2.3: "no hay reconexión automática de sesiones ya conectadas... no hay watchdog." Reportado, no resuelto.
+
+### No regresión — verificado
+
+- **QR/conexión:** no se tocó `WhatsAppWebSessionService.StartSessionAsync`/`RefreshSessionAsync`/`StopSessionAsync`, ni el lifecycle de `ConversacionesConfiguracion.razor` (C2.4/C2.4a/C2.4b). Se confirmó explícitamente antes de reiniciar `AlfaCore.exe` que el proceso Node de la sesión real conectada (PID 6508) es independiente y sobrevivió el reinicio sin desconectarse (mismo `StartTime` antes y después).
+- **Meta Cloud API:** `ResolveWhatsAppDeliveryProvider` (el resolver global) no se modificó; `ResolveWhatsAppDeliveryProviderForNumero` es aditivo y cae exactamente a ese mismo resolver para cualquier número sin `WebInstanceName`. `SendToWhatsAppAsync` (envío real por Meta) no se tocó.
+- **`Program.cs`:** no aparece en el diff de C2.5 — sigue con el fix de `ResolveStaticAsset()` de la fase de CSS isolation, sin mezclar.
+- **Usuarios por número:** no se tocó ninguna tabla/relación de usuarios ni el binding de "Usuarios con acceso" en Configuración.
+
+### Schema
+
+**No se creó ninguna migración.** El fix de routing usa `WebInstanceName`, campo que ya existía. El filtro de Status no persiste nada nuevo (al contrario, evita persistir). No hizo falta ningún campo nuevo (JID de envío, message id de Baileys, receipts) para dejar el envío de texto operativo — quedan registrados como deuda para una fase posterior si se necesita ack/dedup/receipts más finos (ver "Pendiente" abajo).
+
+### Alcance NO cubierto en C2.5 (deuda explícita, no resuelta ahora)
+
+- **Eco/dedup de `fromMe`** (mensaje enviado por AlfaCore que vuelve por el inbound de Baileys) y **mensajes `fromMe` enviados desde el teléfono vinculado fuera de AlfaCore**: el filtro de `fromMe` en `normalizeIncomingMessage` sigue descartando **todo** `fromMe` sin distinguir estos dos casos (comportamiento preexistente, sin cambios en C2.5). Auditar y decidir el comportamiento correcto requiere observar casos reales (`entry.key.id` de Baileys vs `WhatsAppMessageId` ya guardado) — no se tocó a ciegas, según lo pedido explícitamente (§31-33, §47).
+- **Receipts (sent/delivered/read):** el worker no escucha ningún evento de acks de Baileys hoy; `EstadoEnvio` para WhatsApp Web queda en lo que devuelva `SendTextAsync` (que hoy es `"ENVIADO"` fijo en caso de éxito, ver `worker.mjs` → `writeCommandResult`). No se inventaron ticks.
+- **Message ID real de Baileys → AlfaCore:** `SendTextAsync` ya guarda `sent?.key?.id` como `ExternalMessageId` (preexistente); no se auditó si el modelo lo persiste en una columna dedicada o solo en el payload — no se tocó schema sin confirmar primero, según lo pedido.
+- **Icono reloj / estado en UI:** no se tocó `Conversaciones.razor` (fuera de alcance salvo que hiciera falta, y con el fix de Bug 1 el mensaje ya no debería quedarse en "Sin configuración" — el binding de estado existente debería reflejar `ENVIADO`/`ERROR_ENVIO` correctamente sin cambios, dado que ya lee `EstadoEnvio` en tiempo real).
+
+### Archivos modificados en C2.5
+
+`src/AlfaCore/Services/ConversacionesService.cs`, `src/AlfaCore/Node/WhatsAppWebWorker/worker.mjs`, este documento. No se tocó `WhatsAppWebSessionService.cs`, `Program.cs`, `ConversacionesConfiguracion.razor(.css)`, ni ningún archivo de Instagram/Facebook/Mercado Libre/OAuth.
+
+### Validación técnica ejecutada
+
+`dotnet build AlfaCore.sln --configuration Release` → 0 errores (mismos 3 warnings preexistentes). `check_catalogo.py` → 68 rutinas, 0 errores. `git diff --check` → limpio. Reinicio de `AlfaCore.exe` confirmado sin afectar la sesión Web real conectada (PID 6508 verificado antes/después, mismo `StartTime`).
+
+### ⚠️ Tests reales — NO ejecutados por mí (requieren teléfono/UI real)
+
+Igual que en C2.4/C2.4a/C2.4b: no tengo herramienta de automatización de navegador ni un teléfono para probar. Los tests §42-48 del pedido (inbound directo, outbound real, segunda cuenta, Status, mensaje posterior al Status, `fromMe`, sesión caída) **quedan pendientes de que los corras vos**. Los dos fixes de esta fase están verificados por lectura de código + build, no por ejecución end-to-end.
+
+C2 sigue pendiente hasta: **OUTBOUND real PASS + STATUS filtering PASS**, confirmados por vos.
+
+Sin commit todavía.
+
+---
+
+## C2.5A — Diagnóstico y fix del error real de envío ("no respondió a tiempo")
+
+Continuación directa de C2.5: la máquina de estados `PENDING → ERROR` ya funcionaba (confirmado por el usuario), pero el mensaje "prueba" a Alberto Antunez no llegó al teléfono. Esta fase encontró y corrigió la causa raíz real, con evidencia directa de archivo, no inferencia.
+
+### Identificación del mensaje "prueba" (solo lectura, autorizada por el usuario)
+
+El clasificador de auto-mode bloqueó inicialmente una consulta SQL directa contra la base real del tenant (dato sensible de cliente); se pidió autorización explícita al usuario antes de continuar, y se obtuvo. Se consultó primero `ALFA_CENTRAL.dbo.bases` (solo metadata: nombre/servidor/nombre de base, sin credenciales en el reporte) para resolver qué base física corresponde a los `IdBase` 106 y 4271 vistos en `App_Data\whatsapp-web\`:
+
+- `IdBase 106` → base `ALFANET2007` ("ALFA NET").
+- `IdBase 4271` → base `AW_112012807` ("Alberto conv") — la base de prueba de esta conversación.
+
+En `AW_112012807`: conversación `IdConversacion = 24`, `NombreVisible = "Alberto Antunez"`, `TelefonoWhatsApp = +5491156955241`, `IdNumeroWhatsApp = 2`. Mensaje "prueba" = `IdMensaje 150`, `EstadoEnvio = ERROR_ENVIO`, `PayloadJson`:
+
+```json
+{"Error":"WhatsApp Web no respondió a tiempo al comando de envío.","Type":"System.InvalidOperationException","FechaHora":"2026-08-19T11:59:58.09"}
+```
+
+Ese es el texto exacto que lanza `WhatsAppWebSessionService.SendTextAsync` al agotar su timeout de 35s esperando el archivo de resultado — confirmado, no inferido.
+
+### Mensaje "Si" — histórico, no tocado
+
+`IdMensaje 60` ("Si", conversación 24) sigue en DB como `EstadoEnvio = PENDIENTE_CONFIG`. Es de **antes** del fix de routing de C2.5: se creó cuando `ResolveWhatsAppDeliveryProvider` todavía resolvía Meta Cloud globalmente para esta conversación. No es cache de UI ni un bug nuevo — es un mensaje real que quedó atascado por el bug ya corregido. **No se reenvió, no se corrigió manualmente**, según lo pedido explícitamente.
+
+### Causa raíz real — confirmada con archivo, no hipótesis
+
+`IdNumeroWhatsApp = 2` (Alberto conv) tiene `WebInstanceName = "waweb-af78fa05"`, con un worker Node **realmente vivo** en el momento del diagnóstico (PID 6508, `status.json` con `lastUpdatedAtUtc` de hace 40 segundos al momento de revisarlo — heartbeat de 15s activo, sesión genuinamente sana, no un `CONNECTED` fantasma). Esto descartó de entrada la hipótesis "worker muerto" para este caso puntual.
+
+`outbox/`/`results/` en la carpeta real del worker (`bin\Release\net8.0\App_Data\whatsapp-web\4271\waweb-af78fa05\`) estaban vacías — ni rastro del comando de "prueba". Buscando en la copia paralela que existe en el árbol fuente (`src\AlfaCore\App_Data\whatsapp-web\4271\waweb-af78fa05\`, detectada ya en C2.4a como resto de un lanzamiento anterior con otro *working directory*), apareció el comando huérfano exacto:
+
+```json
+{
+  "id": "4726aff7699c47aebd4a17f212ce21be",
+  "type": "send_text",
+  "phone": "+5491156955241",
+  "text": "prueba",
+  "replyToMessageId": "",
+  "createdAtUtc": "2026-08-19T14:59:22.92Z"
+}
+```
+
+Timestamp y destinatario coinciden exactamente con el mensaje 150. **Confirmado: el comando se escribió en una carpeta física distinta a la que el worker real está mirando.**
+
+La causa es el mismo patrón de bug de C2.4a, pero en un método que nunca se corrigió: `WhatsAppWebSessionService.EnsureSessionDirectory()` seguía usando `environment.ContentRootPath` (por defecto, el *cwd* del proceso al arrancar) en vez de `AppContext.BaseDirectory` (la carpeta real del `.exe`, invariante). `StartSessionAsync` calculó la carpeta de la sesión **una vez**, al conectar (bajo un proceso cuyo `ContentRootPath` coincidía con `bin\Release\net8.0`, por eso el worker real vive ahí) — pero `SendTextAsync`/`RefreshSessionAsync`/`StopSessionAsync` **recalculan esa misma carpeta en cada llamada**. Se confirmó además, por evidencia directa de proceso, que el `AlfaCore.exe` que atendió el envío de "prueba" (PID 18412, arrancado a las 11:58:18 — **un minuto antes del envío, y no iniciado por mí en esta sesión**) es una instancia distinta de la que yo había dejado corriendo, consistente con haber sido lanzada con un *working directory* diferente. Con `ContentRootPath` distinto, `EnsureSessionDirectory()` recalculó una carpeta distinta a la del worker ya vivo — el comando fue a parar a `src\AlfaCore\App_Data\...` en vez de `bin\Release\net8.0\App_Data\...`, el worker real nunca lo vio, y a los 35s `SendTextAsync` tiró el timeout.
+
+**Se detectó el mismo patrón también en la recepción**: `ConversacionesService.ProcessWhatsAppWebInboxAsync` construye `sessionsRoot` con `environment.ContentRootPath` también — con la instancia mismatched (PID 18412) corriendo, los mensajes entrantes **nuevos** habrían dejado de detectarse silenciosamente (sin excepción visible, solo `Directory.Exists(sessionsRoot) == false` devolviendo 0 procesados). La recepción que sí funcionó durante la prueba del usuario ocurrió **antes** del cambio de PID (mensaje entrante de las 11:28, el cambio a PID 18412 fue a las 11:58) — coincide exactamente.
+
+**Interpretación según el árbol de casos del pedido:** ni Caso A (Baileys/socket falla) ni Caso C (ack mal mapeado) — es un **Caso B, pero no de payload sino de ruteo de archivos**: el comando nunca llegó físicamente al worker por una carpeta mal resuelta, no por un problema de Baileys ni de `.NET → worker` en el sentido de protocolo/IPC (el mecanismo en sí — archivos JSON en `outbox`/`results`, polling cada 1.2s en el worker, timeout de 35s en `.NET` — está bien diseñado y ya funcionaba correctamente en C2.3; nunca hizo falta tocarlo).
+
+### Fix aplicado (mínimo, mismo patrón ya usado en C2.4a)
+
+- `WhatsAppWebSessionService.EnsureSessionDirectory()`: `environment.ContentRootPath` → `AppContext.BaseDirectory`.
+- `ConversacionesService.ProcessWhatsAppWebInboxAsync()` (`sessionsRoot`): mismo cambio, mismo motivo — evita que la recepción sufra el mismo bug bajo una instancia con *cwd* distinto.
+
+No se tocó ninguna otra ocurrencia de `environment.ContentRootPath` en `ConversacionesService.cs` (uploads/adjuntos de conversaciones son un subsistema aparte, sin relación con el worker, fuera de alcance). No se tocó el mecanismo `.NET ↔ worker` en sí (archivos + polling), el JID/destino (`+5491156955241`, tomado directo de `conversation.TelefonoWhatsApp`, sin reconstrucción — no hizo falta tocar identidad/JID, la causa nunca fue esa), ni `sock.sendMessage` en `worker.mjs`.
+
+**No se generó QR, no se desvinculó nada, no se tocó `auth`, no se hizo fallback a otra cuenta ni a Meta, no se reintentó "prueba" automáticamente, no se tocó "Si".** El comando huérfano en `src\AlfaCore\App_Data\...\outbox\` se dejó tal cual (es basura de runtime sin valor, nunca se va a leer de nuevo con el fix; no se borró por precaución, queda a criterio del usuario limpiarlo).
+
+### Reinicio de una instancia que no había iniciado yo
+
+El PID que bloqueaba el build (18412) no lo había lanzado yo en esta sesión — evidencia de que alguien (probablemente el propio usuario, probando en paralelo) reinició AlfaCore de forma independiente. Se avisó explícitamente antes de tocarlo, se pidió confirmación, y solo entonces se detuvo. El worker real (PID 6508) se verificó **antes y después** del reinicio — mismo `StartTime`, sin desconexión.
+
+### Validación técnica ejecutada
+
+`dotnet build AlfaCore.sln --configuration Release` → 0 errores (mismos 3 warnings preexistentes). `check_catalogo.py` → 68 rutinas, 0 errores. `git diff --check` → limpio.
+
+### ⚠️ Test real post-fix — pendiente del usuario
+
+No reenvié "prueba" (según lo pedido). **Falta que el usuario envíe un mensaje nuevo** ("C2.5A salida final" o similar) desde la conversación de Alberto Antunez y confirme: llega al teléfono, sale por la cuenta correcta (`IdNumeroWhatsApp = 2`, worker PID 6508), no queda "Sin configuración" ni "Enviando" ni "Error", pasa a `ENVIADO`, y no aparece duplicado por eco de `fromMe`. Sin este test no se puede dar por cerrado el fix, igual que en fases anteriores — no tengo forma de hacer clic en la UI ni de escanear con un teléfono real.
+
+### Alcance NO tocado en C2.5A (confirmado, no explorado)
+
+`fromMe`/eco/dedup (§30-33 del pedido original de C2.5) no se auditó en esta pasada — el foco fue exclusivamente el timeout de envío. Queda para cuando el test real post-fix esté confirmado.
+
+Sin commit todavía.
+
+---
+
+## C2.5B — Acks reales: SENT / DELIVERED / READ
+
+Continuación de C2.5A: outbound real ya funciona (mensaje "Prueba" confirmado llegando al teléfono, check simple en AlfaCore, doble check en WhatsApp). Esta fase completa el lifecycle con acks reales de Baileys — sin fingir estados.
+
+### 1. Semántica del ✓ actual — confirmada, no asumida
+
+`IdMensaje 187` ("Prueba", conversación 24) = `EstadoEnvio = "ENVIADO"`, `WhatsAppMessageId = "3EB0998CF292728D6F76DD"` (id real de Baileys, ya persistido desde `SendTextAsync` → `sent?.key?.id`). Confirmado por consulta read-only (autorización ya vigente de C2.5A, misma base `AW_112012807`): el check ✓ = `GetDeliveryIcon("ENVIADO")` → `bi-check2` en `Conversaciones.razor`. Nada que corregir ahí — ya estaba bien.
+
+### 2. Eventos reales de Baileys (versión instalada, no documentación vieja)
+
+Confirmado en `node_modules/@whiskeysockets/baileys` (v7.0.0-rc14, `lib/Types/Events.d.ts`): existen `messages.update: WAMessageUpdate[]` (`{ key, update: Partial<WAMessage> }`) y `message-receipt.update` (más pensado para receipts por-usuario en grupos). Se usó `messages.update`, que alcanza para 1:1. El estado real viene de `proto.WebMessageInfo.Status` (`WAProto/index.d.ts`): `ERROR=0, PENDING=1, SERVER_ACK=2, DELIVERY_ACK=3, READ=4, PLAYED=5` — enum real de esta versión, no inventado ni de memoria.
+
+### 3. Mapeo de ack (mínimo, sin inventar estados)
+
+`SERVER_ACK` no se reporta (ya cubierto por "ENVIADO", seteado apenas `sock.sendMessage` resuelve — no hace falta esperar ningún ack para eso). Mapeo real:
+
+- `DELIVERY_ACK (3)` → `"ENTREGADO"`
+- `READ (4)` y `PLAYED (5)` → `"LEIDO"` (WhatsApp no distingue "reproducido" en la UI de AlfaCore; no existe un cuarto estado hoy y no hacía falta crear uno)
+- `ERROR (0)` → `"ERROR_ENVIO"` (reutiliza el estado ya existente, no uno nuevo)
+- `PENDING (1)` → ignorado (no aporta nada nuevo)
+
+Si Baileys no llega a emitir `DELIVERY_ACK`/`READ` para un mensaje puntual (ej. el destinatario tiene desactivada la confirmación de lectura), el mensaje simplemente se queda en "Enviado" — **no se simula ni se fuerza** ningún estado.
+
+### 4. Mecanismo worker → .NET (mismo patrón filesystem, sin infraestructura nueva)
+
+`worker.mjs`: nuevo listener `sock.ev.on("messages.update", handleMessagesUpdate)`. Por cada update con `key.fromMe === true` y `update.status` mapeable, escribe un archivo a una carpeta nueva `acks/` (hermana de `inbox`/`outbox`/`results`, mismo patrón) con `{ externalMessageId, status, timestampUtc }`. No se creó servidor HTTP, socket ni ningún IPC nuevo — mismo mecanismo de archivos ya validado en C2.3/C2.4/C2.5.
+
+`ConversacionesService.ProcessWhatsAppWebAcksAsync` (nuevo, en `IConversacionesService`): mismo patrón que `ProcessWhatsAppWebInboxAsync` pero escaneando `acks/` en vez de `inbox/`. **Nunca crea contacto/conversación/mensaje ni toca contadores/automatizaciones** (§10 del pedido) — busca el mensaje existente por `WhatsAppMessageId` (reutiliza `GetExistingMessageIdByWhatsAppIdAsync`-equivalente, con filtro `Direction='SALIENTE'`) y actualiza solo `EstadoEnvio` vía `UpdateMessageDeliveryAsync` (método ya existente, reutilizado sin cambios — se le pasan cadenas vacías para no tocar `WhatsAppMessageId`/`PayloadJson`).
+
+Registrado en el `WhatsAppWebInboxHostedService` **ya existente** (mismo ciclo de 5s por base, sin hosted service nuevo): llama a `ProcessWhatsAppWebAcksAsync` justo después de `ProcessWhatsAppWebInboxAsync`, por cada base SaaS.
+
+### 5. Guard de orden (sin sobre-ingeniería)
+
+`WhatsAppWebDeliveryRank` (Pendiente=0 < Enviado=1 < Entregado=2 < Leído=3): un ack solo se aplica si su rango es `>=` al estado actual del mensaje — evita que un `DELIVERY_ACK` tardío pise un `READ` que ya llegó antes. Un `ERROR` post-envío siempre se aplica (rango no acotado), porque es señal real de fallo, no un retroceso cosmético.
+
+### 6. Multicuenta / scope (§24)
+
+Cada base SaaS es una base de datos físicamente separada (confirmado en C2.5A vía `ALFA_CENTRAL.dbo.bases`) — no hay forma de que un ack de la Cuenta A actualice un mensaje de la Cuenta B aunque coincidiera el `WhatsAppMessageId` (imposible en la práctica, es un id aleatorio de Baileys). Dentro de la misma base, la carpeta `acks/` vive bajo la instancia (`WebInstanceName`) que la escribió — el ack ya viene acotado a esa cuenta antes de llegar a `.NET`.
+
+### 7. UI — no se tocó nada
+
+`Conversaciones.razor` **ya tenía** soporte completo para `ENTREGADO`/`LEIDO`: `GetDeliveryIcon`/`GetDeliveryClass`/`GetDeliveryLabel` (líneas ~11457-11495) ya mapean ambos estados a ✓✓ (`bi-check2-all`), clase `is-read` diferenciada para Leído, y tooltips "Entregado"/"Leído" ya en español. Estos mismos helpers ya se reutilizan tanto en la burbuja del mensaje (línea ~1781) como en el preview de la lista de conversaciones (línea ~920, vía `item.EstadoUltimoMensaje`) — sin lógica duplicada. **No hizo falta ningún cambio de UI.**
+
+### 8. Tiempo real sin F5 — ya existía
+
+`Conversaciones.razor` ya tiene un `PeriodicTimer` de 3s (`StartPolling`, ~línea 6486) que refresca conversaciones y mensajes. `EstadoUltimoMensaje` del preview de lista no es una columna persistida — se deriva en la query de conversaciones directo del último mensaje, así que se actualiza solo en el próximo poll sin ningún cambio adicional. **No se creó ningún mecanismo de tiempo real nuevo** — bastó con que el backend actualizara `CONV_MENSAJES.EstadoEnvio`; la UI ya lo recoge sola.
+
+### 9. `fromMe`/eco — auditado, confirmado sin duplicado (no ampliado)
+
+`normalizeIncomingMessage` sigue descartando **todo** `fromMe` en `messages.upsert` (sin cambios en C2.5B) — por eso "Prueba" (IdMensaje 187) aparece como **una sola fila** en `CONV_MENSAJES` (confirmado por consulta), sin eco duplicado. Distinguir "eco de AlfaCore" vs "mensaje enviado desde el teléfono vinculado" (§20-21, §32 del pedido) requeriría dejar pasar `fromMe` hacia `.NET` (el único lado con acceso a DB para decidir por `WhatsAppMessageId` si es eco o mensaje nuevo) — cambio real de alcance, no de una línea. **Reportado, no implementado en C2.5B**, según lo pedido explícitamente si "requiere demasiado cambio."
+
+### 10. Preservado, sin tocar
+
+`GetWorkerDirectory`/`EnsureSessionDirectory`/`ProcessWhatsAppWebInboxAsync` (fix de `AppContext.BaseDirectory` de C2.4a/C2.5A), el filtro `status@broadcast`/`protocolMessage` + guard defensivo en C# (C2.5), routing multicuenta (`ResolveWhatsAppDeliveryProviderForNumero`, C2.5), lifecycle de QR (C2.4), `Program.cs`. Ninguno de estos archivos requirió cambios adicionales en C2.5B más allá de lo ya hecho.
+
+### Schema
+
+**No se creó ninguna migración.** `WhatsAppMessageId` ya existía y ya se usaba (confirmado con el mensaje 187). Los tres nuevos estados de `EstadoEnvio` (`ENTREGADO`, `LEIDO`, reutilizando `ERROR_ENVIO`) son valores de texto libre en una columna que ya los aceptaba — la UI ya los mapeaba antes de esta fase.
+
+### Archivos modificados en C2.5B
+
+`src/AlfaCore/Node/WhatsAppWebWorker/worker.mjs`, `src/AlfaCore/Services/ConversacionesService.cs`, `src/AlfaCore/Services/IConversacionesService.cs`, `src/AlfaCore/Services/WhatsAppWebInboxHostedService.cs`, `src/AlfaCore/Models/ConversacionesModels.cs` (nuevo DTO), este documento. No se tocó `Conversaciones.razor`/`.razor.css`, `WhatsAppWebSessionService.cs`, ni ningún archivo de Meta/Instagram/Facebook/Mercado Libre.
+
+### Validación técnica ejecutada
+
+`dotnet build AlfaCore.sln --configuration Release` → 0 errores (mismos 3 warnings preexistentes). `check_catalogo.py` → 68 rutinas, 0 errores. `git diff --check` → limpio. Reinicio de `AlfaCore.exe` confirmado sin afectar la sesión Web real (PID 6508, mismo `StartTime` antes/después).
+
+### ⚠️ Limitación importante para los tests reales — sesión ya conectada corre con worker viejo
+
+El worker real de la conversación de Alberto Antunez (PID 6508) sigue vivo desde **antes** de este cambio — como todo proceso Node ya iniciado, no puede "recargar" su propio código: seguirá corriendo `worker.mjs` sin el listener de `messages.update` hasta que la sesión se desvincule y reconecte. Confirmado por disco: la carpeta `acks/` **todavía no existe** en la sesión real (`bin\Release\net8.0\App_Data\...\waweb-af78fa05\`) — señal directa de que el worker viejo nunca la creó.
+
+**No generé QR ni desvinculé nada** — está explícitamente prohibido en el pedido de esta fase. Esto significa:
+
+- **Test SENT (§28):** ya se puede dar por confirmado — no depende del fix nuevo, "Prueba" ya lo demostró.
+- **Test DELIVERED/READ (§29-30):** **no van a funcionar todavía** contra la sesión actual, no porque el fix esté mal, sino porque el worker que las generaría no tiene el código nuevo cargado. Van a funcionar recién en el **próximo mensaje enviado después de que esa sesión se reconecte** (o en cualquier cuenta que se conecte de cero de ahora en más).
+
+**Queda a tu criterio decidir si querés reconectar la sesión de prueba ahora** (implica un nuevo QR/código, fuera de lo que esta fase tenía permitido hacer sola) para poder validar DELIVERED/READ hoy, o si preferís dejarlo para la próxima vez que esa sesión se reconecte naturalmente.
+
+Sin commit todavía. C2 sigue sin cierre final hasta validar también Status (pendiente desde C2.5) y, ahora, DELIVERED/READ reales.
 
 ---
 

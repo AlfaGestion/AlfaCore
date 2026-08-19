@@ -74,6 +74,10 @@ public sealed class WhatsAppWebInboxHostedService(
                     var processed = await conversaciones.ProcessWhatsAppWebInboxAsync(ct);
                     if (processed > 0)
                         logger.LogInformation("WhatsApp Web inbox: {Count} mensaje(s) procesados en base {Base}.", processed, b.Nombre);
+
+                    var acksProcessed = await conversaciones.ProcessWhatsAppWebAcksAsync(ct);
+                    if (acksProcessed > 0)
+                        logger.LogInformation("WhatsApp Web acks: {Count} actualizado(s) en base {Base}.", acksProcessed, b.Nombre);
                 }
                 catch (Exception ex)
                 {
@@ -90,6 +94,10 @@ public sealed class WhatsAppWebInboxHostedService(
             var processed = await conversaciones.ProcessWhatsAppWebInboxAsync(ct);
             if (processed > 0)
                 logger.LogInformation("WhatsApp Web inbox: {Count} mensaje(s) procesados.", processed);
+
+            var acksProcessed = await conversaciones.ProcessWhatsAppWebAcksAsync(ct);
+            if (acksProcessed > 0)
+                logger.LogInformation("WhatsApp Web acks: {Count} actualizado(s).", acksProcessed);
         }
     }
 }

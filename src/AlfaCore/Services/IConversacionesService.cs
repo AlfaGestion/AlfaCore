@@ -70,6 +70,8 @@ public interface IConversacionesService
     Task<long> CreateInternalThreadAsync(ConversacionCrearHiloInternoRequest request, CancellationToken ct = default);
     Task<ConversacionCrearWhatsAppResultDto> CreateOrGetWhatsAppConversationAsync(ConversacionCrearWhatsAppRequest request, CancellationToken ct = default);
     Task<int> ProcessWhatsAppWebInboxAsync(CancellationToken ct = default);
+
+    Task<int> ProcessWhatsAppWebAcksAsync(CancellationToken ct = default);
     Task<ConversacionAdjuntoDto> UploadAttachmentAsync(ConversacionUploadAdjuntoRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionStickerFavoritoDto>> GetFavoriteStickersAsync(CancellationToken ct = default);
     Task SaveFavoriteStickerAsync(long idAdjunto, CancellationToken ct = default);

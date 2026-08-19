@@ -1275,17 +1275,25 @@
                             <p class="wa-number-card__error"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> @numero.WebLastError</p>
                         }
 
-                        @if (string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase) && numero.HasWebPairingCode)
+                        @if (HasPairingRegenerateError(numero))
+                        {
+                            <div class="wa-pairing wa-pairing--error">
+                                <div class="wa-pairing__details">
+                                    <p class="wa-field-note"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> No pudimos actualizar el código QR.</p>
+                                </div>
+                            </div>
+                        }
+                        else if (string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase) && ShouldShowPairingSurface(numero) && numero.HasWebPairingCode)
                         {
                             <div class="wa-pairing">
                                 <div class="wa-pairing__code">@FormatPairingCodeForDisplay(numero.WebPairingCode)</div>
                                 <div class="wa-pairing__details">
                                     <p class="wa-field-note">Ingresá este código en WhatsApp Business → Dispositivos vinculados → Vincular dispositivo → Vincular con número de teléfono.</p>
-                                    <p class="wa-field-note">Vence: @GetWhatsAppWebPairingExpirationLabel(numero)</p>
+                                    <p class="wa-field-note">Si el código vence, lo actualizamos automáticamente.</p>
                                 </div>
                             </div>
                         }
-                        else if (numero.HasWebPairingQr)
+                        else if (ShouldShowPairingSurface(numero) && numero.HasWebPairingQr)
                         {
                             <div class="wa-pairing">
                                 <div class="wa-pairing__qr">
@@ -1293,8 +1301,15 @@
                                 </div>
                                 <div class="wa-pairing__details">
                                     <p class="wa-field-note">Abrí WhatsApp Business → Dispositivos vinculados → Vincular dispositivo → escaneá este código.</p>
-                                    <p class="wa-field-note">Vence: @GetWhatsAppWebPairingExpirationLabel(numero)</p>
+                                    <p class="wa-field-note">Si el código vence, lo actualizamos automáticamente.</p>
                                 </div>
+                            </div>
+                        }
+                        else if (IsPairingRegenerating(numero))
+                        {
+                            <div class="wa-pairing wa-pairing--updating">
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                <span class="wa-field-note">Actualizando código QR...</span>
                             </div>
                         }
 
@@ -1304,7 +1319,14 @@
                                 <AlfaButton Variant="AlfaButtonVariant.Danger" Size="AlfaSize.Sm" Icon="bi bi-x-circle" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Desvincular</AlfaButton>
                             </div>
                         }
-                        else if (numero.HasWebPairingQr || numero.HasWebPairingCode)
+                        else if (HasPairingRegenerateError(numero))
+                        {
+                            <div class="wa-number-card__actions">
+                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-arrow-repeat" Loading="@(Saving || PairingBusy)" OnClick="@(() => RetryWhatsAppWebPairingAsync(numero))">Reintentar</AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-lg" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => ClearWhatsAppWebPairingAsync(numero))">Cancelar</AlfaButton>
+                            </div>
+                        }
+                        else if (IsPairingFlowVisible(numero))
                         {
                             <div class="wa-number-card__actions">
                                 <AlfaIconButton Icon="bi bi-arrow-repeat" Label="Actualizar código" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => RefreshWhatsAppWebSessionAsync(numero))" />
@@ -1633,6 +1655,19 @@
     private string _connectPhoneInput = string.Empty;
     private CancellationTokenSource? _pollingCts;
 
+    /// <summary>
+    /// Números cuyo QR/código de pairing fue iniciado explícitamente en esta sesión de UI.
+    /// El QR/código guardado en base sólo se muestra y se auto-renueva para IDs presentes acá --
+    /// evita precargar un pairing viejo/vencido de una sesión anterior solo porque la pantalla
+    /// se abrió o se recargó (regla de producto: entrar a WhatsApp Business nunca genera QR solo).
+    /// </summary>
+    private readonly HashSet<int> _pairingFlowActiveIds = new();
+    private int? _pairingRegenerateErrorForIdNumero;
+    private int _pairingStaleCycles;
+    private int _pairingFailureCount;
+    private const int PairingStaleCycleLimit = 5;
+    private const int PairingFailureLimit = 3;
+
     private sealed record SettingsNavItem(string Key, string Label, string Icon, string Hint);
 
     private static readonly IReadOnlyList<SettingsNavItem> SettingsNavItems =
@@ -1781,6 +1816,8 @@
         _activePrimaryTab = tab;
         if (tab != "canales")
             _feedbackScope = null;
+
+        SyncWhatsAppPollingWithNavigation();
     }
 
     private void SelectChannelTab(string tab)
@@ -1789,6 +1826,8 @@
         _activeChannelTab = tab;
         if (tab != "whatsapp")
             _feedbackScope = null;
+
+        SyncWhatsAppPollingWithNavigation();
     }
 
     private Task OnChannelTabChanged(string? tab)
@@ -1797,9 +1836,50 @@
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// El polling de QR/pairing sólo debe correr en segundo plano mientras el usuario está
+    /// efectivamente mirando WhatsApp Business (Canales > WhatsApp > WhatsApp Business). Al salir
+    /// de esa vista se detiene (no seguir generando QR fuera de pantalla); al volver, se retoma
+    /// sólo si hay un pairing propio de esta sesión todavía pendiente y sin error terminal.
+    /// </summary>
+    private void SyncWhatsAppPollingWithNavigation()
+    {
+        var onNumerosView = _activePrimaryTab == "canales"
+            && _activeChannelTab == "whatsapp"
+            && _activeWhatsAppSection == "numeros";
+
+        if (!onNumerosView)
+        {
+            StopPolling();
+            return;
+        }
+
+        ResumePollingIfPairingActive();
+    }
+
+    private void ResumePollingIfPairingActive()
+    {
+        if (_pollingCts is not null)
+            return;
+
+        foreach (var idNumero in _pairingFlowActiveIds)
+        {
+            if (idNumero == _pairingRegenerateErrorForIdNumero)
+                continue;
+
+            var numero = _numeros.FirstOrDefault(n => n.IdNumero == idNumero);
+            if (numero is null || numero.IsWebSessionReady)
+                continue;
+
+            StartPolling(numero);
+            return;
+        }
+    }
+
     private Task OnWhatsAppSectionChanged(string? section)
     {
         _activeWhatsAppSection = section ?? "numeros";
+        SyncWhatsAppPollingWithNavigation();
         return Task.CompletedTask;
     }
 
@@ -2346,6 +2426,19 @@
         else
         {
             _feedback = result.Feedback;
+
+            // StartSessionAsync puede fallar antes de tocar el worker (ej. "no existe el worker de
+            // WhatsApp Web") -- en ese caso no corrió ni PrepareSessionDirectory ni escribió
+            // status.json nuevo, así que no hay proceso real detrás. Si igual quedó un
+            // WebSessionStatus=PendingQr de un intento anterior, la tarjeta mostraría "Esperando
+            // escaneo" con la acción "Conectar WhatsApp" ya deshabilitada visualmente por error,
+            // sin ningún pairing activo de verdad. Se corrige el estado mostrado (no se toca auth,
+            // credenciales ni el registro del número) para que el usuario pueda reintentar.
+            _pairingFlowActiveIds.Remove(numero.IdNumero);
+            if (numero.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.PendingQr)
+            {
+                numero.WebSessionStatus = ConversacionWhatsAppWebSessionStatuses.Disconnected;
+            }
         }
 
         PairingBusy = false;
@@ -2445,6 +2538,12 @@
         if (numero.IdNumero <= 0 || numero.IsWebSessionReady)
             return;
 
+        _pairingFlowActiveIds.Add(numero.IdNumero);
+        if (_pairingRegenerateErrorForIdNumero == numero.IdNumero)
+            _pairingRegenerateErrorForIdNumero = null;
+        _pairingStaleCycles = 0;
+        _pairingFailureCount = 0;
+
         var cts = new CancellationTokenSource();
         _pollingCts = cts;
         _ = PollPairingStatusAsync(numero.IdNumero, cts.Token);
@@ -2457,10 +2556,49 @@
         _pollingCts = null;
     }
 
+    private void StopPollingWithRegenerateError(int idNumero)
+    {
+        _pairingRegenerateErrorForIdNumero = idNumero;
+        StopPolling();
+    }
+
+    private bool IsPairingFlowActive(int idNumero) => _pairingFlowActiveIds.Contains(idNumero);
+
+    private bool HasPairingRegenerateError(ConversacionWhatsAppNumeroDto numero)
+        => _pairingRegenerateErrorForIdNumero == numero.IdNumero;
+
+    private static bool IsPairingFresh(ConversacionWhatsAppNumeroDto numero)
+        => numero.WebPairingExpiresAtUtc.HasValue && numero.WebPairingExpiresAtUtc.Value > DateTime.UtcNow;
+
+    /// <summary>
+    /// El QR/código guardado en base sólo se muestra si esta sesión de UI lo inició explícitamente
+    /// (evita precargar un pairing viejo al abrir/recargar la pantalla) y sigue vigente según
+    /// expiresAtUtc del worker.
+    /// </summary>
+    private bool ShouldShowPairingSurface(ConversacionWhatsAppNumeroDto numero)
+        => IsPairingFlowActive(numero.IdNumero)
+           && !numero.IsWebSessionReady
+           && !HasPairingRegenerateError(numero)
+           && (numero.HasWebPairingQr || numero.HasWebPairingCode)
+           && IsPairingFresh(numero);
+
+    private bool IsPairingRegenerating(ConversacionWhatsAppNumeroDto numero)
+        => IsPairingFlowActive(numero.IdNumero)
+           && !numero.IsWebSessionReady
+           && !HasPairingRegenerateError(numero)
+           && (numero.HasWebPairingQr || numero.HasWebPairingCode)
+           && !IsPairingFresh(numero);
+
+    private bool IsPairingFlowVisible(ConversacionWhatsAppNumeroDto numero)
+        => IsPairingFlowActive(numero.IdNumero) && !numero.IsWebSessionReady;
+
     /// <summary>
     /// Refresca el estado del pairing cada pocos segundos mientras está pendiente, para que el
-    /// cliente no tenga que tocar "Actualizar" manualmente. Se detiene solo al conectar, fallar,
-    /// cancelar o destruirse el componente -- nunca queda como polling global permanente.
+    /// cliente no tenga que tocar "Actualizar" manualmente. Baileys rota el QR solo cada ~2 minutos
+    /// mientras el worker sigue vivo (nuevo qrPayload/expiresAtUtc en status.json), así que este
+    /// polling ya alcanza para reflejar la renovación -- no hace falta pedirle nada extra al backend.
+    /// Se detiene solo al conectar, fallar, cancelar, navegar fuera de esta vista o destruirse el
+    /// componente -- nunca queda como polling global permanente.
     /// </summary>
     private async Task PollPairingStatusAsync(int idNumero, CancellationToken token)
     {
@@ -2473,22 +2611,59 @@
                     return;
 
                 var numero = _numeros.FirstOrDefault(n => n.IdNumero == idNumero);
-                if (numero is null)
+                if (numero is null || !IsPairingFlowActive(idNumero))
                     return;
 
-                await RefreshWhatsAppWebSessionAsync(numero, silent: true);
+                var previousGeneratedAtUtc = numero.WebPairingGeneratedAtUtc;
+                var wasExpired = !IsPairingFresh(numero);
+
+                var refreshed = await RefreshWhatsAppWebSessionCoreAsync(numero, silent: true);
+
+                var actualizado = _numeros.FirstOrDefault(n => n.IdNumero == idNumero);
+                if (actualizado is null || !IsPairingFlowActive(idNumero))
+                    return;
+
+                if (!refreshed)
+                {
+                    _pairingFailureCount++;
+                    if (_pairingFailureCount >= PairingFailureLimit)
+                    {
+                        StopPollingWithRegenerateError(idNumero);
+                        await InvokeAsync(StateHasChanged);
+                        return;
+                    }
+
+                    await InvokeAsync(StateHasChanged);
+                    continue;
+                }
+
+                _pairingFailureCount = 0;
 
                 // Baileys pasa por RECONNECTING (p.ej. "Stream Errored (restart required)") como
                 // parte normal del handshake tras escanear el QR; eso queda como PendingQr, no
                 // como Disconnected, así que el polling sigue esperando en vez de darlo por fallido.
-                var actualizado = _numeros.FirstOrDefault(n => n.IdNumero == idNumero);
-                if (actualizado is null
-                    || actualizado.IsWebSessionReady
+                if (actualizado.IsWebSessionReady
                     || actualizado.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.Disconnected)
                 {
+                    _pairingFlowActiveIds.Remove(idNumero);
                     _pollingCts = null;
                     await InvokeAsync(StateHasChanged);
                     return;
+                }
+
+                if (wasExpired && actualizado.WebPairingGeneratedAtUtc == previousGeneratedAtUtc)
+                {
+                    _pairingStaleCycles++;
+                    if (_pairingStaleCycles >= PairingStaleCycleLimit)
+                    {
+                        StopPollingWithRegenerateError(idNumero);
+                        await InvokeAsync(StateHasChanged);
+                        return;
+                    }
+                }
+                else
+                {
+                    _pairingStaleCycles = 0;
                 }
 
                 await InvokeAsync(StateHasChanged);
@@ -2500,11 +2675,14 @@
         }
     }
 
-    private async Task RefreshWhatsAppWebSessionAsync(ConversacionWhatsAppNumeroDto numero, bool silent = false)
+    private Task RefreshWhatsAppWebSessionAsync(ConversacionWhatsAppNumeroDto numero, bool silent = false)
+        => RefreshWhatsAppWebSessionCoreAsync(numero, silent);
+
+    private async Task<bool> RefreshWhatsAppWebSessionCoreAsync(ConversacionWhatsAppNumeroDto numero, bool silent)
     {
         _feedbackScope = "whatsapp";
         if (numero.IdNumero <= 0)
-            return;
+            return true;
 
         if (!silent)
         {
@@ -2533,6 +2711,16 @@
 
         if (!silent)
             PairingBusy = false;
+
+        return result.Success;
+    }
+
+    private async Task RetryWhatsAppWebPairingAsync(ConversacionWhatsAppNumeroDto numero)
+    {
+        _pairingRegenerateErrorForIdNumero = null;
+        _pairingStaleCycles = 0;
+        _pairingFailureCount = 0;
+        await GenerateWhatsAppWebPairingAsync(numero);
     }
 
     private async Task ClearWhatsAppWebPairingAsync(ConversacionWhatsAppNumeroDto numero)
@@ -2542,6 +2730,9 @@
             return;
 
         StopPolling();
+        _pairingFlowActiveIds.Remove(numero.IdNumero);
+        if (_pairingRegenerateErrorForIdNumero == numero.IdNumero)
+            _pairingRegenerateErrorForIdNumero = null;
         PairingBusy = true;
         _feedback = null;
 
@@ -2992,11 +3183,6 @@
 
         return trimmed.Length == 8 ? $"{trimmed[..4]}-{trimmed[4..]}" : trimmed;
     }
-
-    private static string GetWhatsAppWebPairingExpirationLabel(ConversacionWhatsAppNumeroDto numero)
-        => numero.WebPairingExpiresAtUtc.HasValue
-            ? numero.WebPairingExpiresAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
-            : "Sin vencimiento";
 
     private string GetWhatsAppWebOverviewSummary()
     {

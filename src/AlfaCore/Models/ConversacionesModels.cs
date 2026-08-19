@@ -563,6 +563,18 @@ public sealed class ConversacionWhatsAppWebIncomingMessageDto
     public string RawJson { get; set; } = string.Empty;
 }
 
+/// <summary>
+/// Ack/receipt de un mensaje SALIENTE de WhatsApp Web (messages.update de Baileys) -- nunca es un
+/// mensaje nuevo, solo el cambio de estado de uno que AlfaCore ya envió. Ver worker.mjs, evento
+/// "messages.update" / proto.WebMessageInfo.Status.
+/// </summary>
+public sealed class ConversacionWhatsAppWebAckDto
+{
+    public string ExternalMessageId { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public DateTime TimestampUtc { get; set; }
+}
+
 public sealed class ConversacionWhatsAppWebSendResultDto
 {
     public string ExternalMessageId { get; set; } = string.Empty;

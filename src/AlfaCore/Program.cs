@@ -58,6 +58,13 @@ public class Program
                     return fullPath;
             }
 
+            // Debug y Release generan cada uno su propio bundle de CSS scoped. Cual de los dos
+            // esta al dia depende de cual config se compilo por ultima vez, asi que en vez de
+            // preferir un orden fijo (que puede servir un bundle viejo si el otro config no se
+            // reconstruyo), nos quedamos con el que tenga el contenido mas reciente en disco.
+            string? newestPath = null;
+            var newestWriteTimeUtc = DateTime.MinValue;
+
             foreach (var candidate in projectRootCandidates)
             {
                 var scopedCssCandidates = new[]
@@ -70,12 +77,19 @@ public class Program
 
                 foreach (var scopedCssPath in scopedCssCandidates)
                 {
-                    if (File.Exists(scopedCssPath))
-                        return scopedCssPath;
+                    if (!File.Exists(scopedCssPath))
+                        continue;
+
+                    var writeTimeUtc = File.GetLastWriteTimeUtc(scopedCssPath);
+                    if (newestPath is null || writeTimeUtc > newestWriteTimeUtc)
+                    {
+                        newestPath = scopedCssPath;
+                        newestWriteTimeUtc = writeTimeUtc;
+                    }
                 }
             }
 
-            return null;
+            return newestPath;
         }
 
         if (!string.IsNullOrWhiteSpace(startupConnectionString))
