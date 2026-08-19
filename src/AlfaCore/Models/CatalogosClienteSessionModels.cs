@@ -4,6 +4,7 @@ public sealed class CatalogosClienteSessionInfo
 {
     public string CodigoCliente { get; init; } = string.Empty;
     public string RazonSocial { get; init; } = string.Empty;
+    public string Email { get; init; } = string.Empty;
     public string IdWeb { get; init; } = string.Empty;
     public int IdBase { get; init; }
     public DateTime LoginAt { get; init; } = DateTime.Now;

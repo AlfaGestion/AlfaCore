@@ -14,18 +14,24 @@ public sealed class InterfacesCatalogosService(
     IAppUserSessionService appUserSession,
     IWebHostEnvironment environment,
     IAppEventService appEvents,
-    ILogger<InterfacesCatalogosService> logger) : IInterfacesCatalogosService
+    IArticuloImagenFtpService articuloImagenFtpService,
+    IPuntoVentaService puntoVentaService,
+    CatalogoPedidoProcessingGuard pedidoProcessingGuard) : IInterfacesCatalogosService
 {
     private const string ModuleName = "Interfaces";
     private const string ConfigGroup = "CATALOGOS";
     private const string MenuEnabledConfigKey = "CATALOGOS-MENU-HABILITADO";
     private const string PublicNameConfigKey = "CATALOGOS-NOMBRE-PUBLICO";
-    private const string PublicLogoConfigKey = "CATALOGOS-LOGO-PUBLICO";
     private const string PublicLogoFormatConfigKey = "CATALOGOS-LOGO-FORMATO";
     private const string PublicClasePrecioConfigKey = "CATALOGOS-CLASE-PRECIO";
     private const string DefaultClasePrecio = "1";
     private const string OfertaClasePrecioConfigKey = "CLASEPRECIOOFERTA";
+    private const string CarritoHabilitadoConfigKeyPrefix = "CATALOGOS-CARRITO";
+    private const string TcPedidoWeb = "NP";
+    private const string SucursalPedidoWeb = "9999";
+    private const string LetraPedidoWebDefault = "X";
     private const string DefaultPublicLogoUrl = "/logos/Logo.png";
+    private const string LogoFtpArticuloKey = "Logo";
     private const string ViewConfigPrefix = "USUVIEW-CATALOGOS-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
     private static readonly HashSet<string> AllowedLogoContentTypes = new(StringComparer.OrdinalIgnoreCase)
@@ -587,8 +593,9 @@ public sealed class InterfacesCatalogosService(
 
                 await tx.CommitAsync(token);
 
+                await SetCarritoHabilitadoAsync(cn, idInsert, request.HabilitarCarrito, token);
+
                 var url = BuildPublicUrl(idInsert);
-                var urlCliente = BuildClientUrl(idInsert);
                 await appEvents.LogAuditAsync(
                     ModuleName,
                     "SaveCatalogoVigencia",
@@ -604,7 +611,6 @@ public sealed class InterfacesCatalogosService(
                     Simulado = false,
                     IdInsert = idInsert,
                     UrlPublica = url,
-                    UrlCliente = urlCliente,
                     Mensaje = "Catálogo publicado correctamente."
                 };
             }
@@ -618,12 +624,316 @@ public sealed class InterfacesCatalogosService(
     public Task<CatalogosCatalogoAccessUrlsDto> GetCatalogoAccessUrlsAsync(int idInsert, string? idWeb = null, int? idBase = null, CancellationToken ct = default)
         => Task.FromResult(new CatalogosCatalogoAccessUrlsDto
         {
-            UrlPublica = BuildPublicUrl(idInsert, idWeb, idBase),
-            UrlCliente = BuildClientUrl(idInsert, idWeb, idBase)
+            UrlPublica = BuildPublicUrl(idInsert, idWeb, idBase)
         });
 
     public Task<CatalogosClienteSessionInfo> LoginClienteAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct = default)
         => ExecuteCatalogoClienteLoginAsync(request, ct);
+
+    private sealed record CabeceraPedidoWeb(int IdComprobante, string IdComprobanteTexto, string Numero, DateTime Fecha);
+
+    public async Task<CatalogoPedidoResultDto> ConfirmarPedidoCarritoAsync(CatalogoPedidoConfirmarRequestDto request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var codigoClienteSesion = (request.CodigoCliente ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(codigoClienteSesion))
+            throw new InvalidOperationException("No se pudo identificar al cliente. Volvé a iniciar sesión.");
+
+        var lineasSolicitadas = (request.Lineas ?? [])
+            .Where(l => !string.IsNullOrWhiteSpace(l.IdArticulo) && l.Cantidad > 0)
+            .GroupBy(l => l.IdArticulo.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => new CatalogoPedidoLineaSolicitudDto { IdArticulo = g.Key, Cantidad = g.Sum(x => x.Cantidad) })
+            .ToList();
+
+        if (lineasSolicitadas.Count == 0)
+            throw new InvalidOperationException("El carrito está vacío.");
+
+        if (!pedidoProcessingGuard.TryStart(request.IdInsert, codigoClienteSesion))
+            throw new InvalidOperationException("Ya hay un pedido en proceso para este carrito. Esperá un momento y verificá antes de reintentar.");
+
+        try
+        {
+            // 1) Catálogo: existe, publicado/vigente y con carrito habilitado. Nunca confío en
+            //    lo que venga del navegador para esto, siempre releo el catálogo real.
+            var catalogo = await GetCatalogoPublicoAsync(request.IdInsert, ct);
+            if (catalogo is null)
+                throw new InvalidOperationException("El catálogo no está disponible, no está publicado o venció su vigencia.");
+
+            if (!catalogo.HabilitarCarrito)
+                throw new InvalidOperationException("Este catálogo no tiene habilitada la toma de pedidos.");
+
+            // 2) Cada línea debe corresponder a un artículo real de ESTE catálogo, con el precio
+            //    exactamente como está publicado ahí (nunca se vuelve a calcular ni se reemplaza
+            //    por el precio vigente del maestro).
+            var articulosPorCodigo = catalogo.Articulos.ToDictionary(a => a.IdArticulo.Trim(), a => a, StringComparer.OrdinalIgnoreCase);
+            var lineasResueltas = new List<(CatalogosCatalogoItemDto Articulo, decimal Cantidad)>();
+            foreach (var linea in lineasSolicitadas)
+            {
+                if (!articulosPorCodigo.TryGetValue(linea.IdArticulo, out var articulo))
+                    throw new InvalidOperationException($"El artículo {linea.IdArticulo} no pertenece a este catálogo.");
+
+                if (CatalogosPriceDisplayHelper.GetPrecioAplicado(articulo) <= 0m)
+                    throw new InvalidOperationException($"El artículo {linea.IdArticulo} no tiene un precio válido en este catálogo.");
+
+                lineasResueltas.Add((articulo, linea.Cantidad));
+            }
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+
+            // 3) Revalido al cliente contra la fuente oficial: no confío únicamente en la sesión.
+            var cliente = await cn.QuerySingleOrDefaultAsync<(string? Codigo, string RazonSocial, string Email)>(new CommandDefinition(
+                """
+                SELECT TOP (1)
+                    LTRIM(RTRIM(CODIGO)) AS Codigo,
+                    ISNULL(LTRIM(RTRIM(RAZON_SOCIAL)), '') AS RazonSocial,
+                    ISNULL(LTRIM(RTRIM(MAIL)), '') AS Email
+                FROM dbo.VT_CLIENTES
+                WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)))
+                  AND ISNULL(Dada_De_Baja, 0) = 0;
+                """,
+                new { Codigo = codigoClienteSesion },
+                cancellationToken: ct));
+
+            if (cliente.Codigo is null)
+                throw new InvalidOperationException("No pudimos validar tu cuenta de cliente. Volvé a iniciar sesión e intentá nuevamente.");
+
+            var letra = await ResolveLetraPedidoWebAsync(cn, ct);
+            var observaciones = $"Pedido web - Catálogo #{request.IdInsert}";
+            if (observaciones.Length > 250)
+                observaciones = observaciones[..250];
+
+            // 4) Transacción con numeración protegida. La numeración legacy (MAX(NUMERO)+1 dentro
+            //    de sp_web_Alta_Comprobante) no tiene ningún candado propio, y confirmamos con datos
+            //    reales que SUCURSAL=9999/NP/X ya la está escribiendo otro proceso en este momento.
+            //    sp_getapplock protege la concurrencia dentro de AlfaCore; si igual choca con ese
+            //    otro proceso (violación de clave), reintentamos con una transacción nueva.
+            CabeceraPedidoWeb? cabecera = null;
+            const int maxIntentos = 5;
+
+            for (var intento = 1; intento <= maxIntentos; intento++)
+            {
+                await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct);
+                try
+                {
+                    await using (var lockCmd = new SqlCommand(
+                        "EXEC sp_getapplock @Resource = @Resource, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 15000;",
+                        cn, tx))
+                    {
+                        lockCmd.Parameters.AddWithValue("@Resource", $"ALFACORE-V_MV_CPTE-{TcPedidoWeb}-{SucursalPedidoWeb}-{letra}");
+                        await lockCmd.ExecuteNonQueryAsync(ct);
+                    }
+
+                    cabecera = await CrearCabeceraPedidoWebAsync(cn, tx, cliente.Codigo, letra, observaciones, ct);
+
+                    foreach (var (articulo, cantidad) in lineasResueltas)
+                        await AgregarLineaPedidoWebAsync(cn, tx, cabecera.IdComprobante, articulo, cantidad, ct);
+
+                    await tx.CommitAsync(ct);
+                    break;
+                }
+                catch (Exception ex) when (intento < maxIntentos && EsPosibleColisionDeNumeracion(ex))
+                {
+                    try { await tx.RollbackAsync(ct); } catch { }
+                    cabecera = null;
+                }
+                catch
+                {
+                    try { await tx.RollbackAsync(ct); } catch { }
+                    throw;
+                }
+            }
+
+            if (cabecera is null)
+                throw new InvalidOperationException("No se pudo registrar el pedido por demasiados intentos simultáneos. Esperá unos segundos y volvé a intentar.");
+
+            var lineasResultado = lineasResueltas
+                .Select(l => new CatalogoPedidoLineaResultDto
+                {
+                    IdArticulo = l.Articulo.IdArticulo,
+                    Descripcion = l.Articulo.DescripcionArticulo,
+                    Cantidad = l.Cantidad,
+                    PrecioUnitario = CatalogosPriceDisplayHelper.GetPrecioAplicado(l.Articulo),
+                    Subtotal = l.Cantidad * CatalogosPriceDisplayHelper.GetPrecioAplicado(l.Articulo)
+                })
+                .ToList();
+
+            var resultado = new CatalogoPedidoResultDto
+            {
+                Tc = TcPedidoWeb,
+                Sucursal = SucursalPedidoWeb,
+                Numero = cabecera.Numero,
+                Letra = letra,
+                IdComprobanteTexto = cabecera.IdComprobanteTexto,
+                IdComprobante = cabecera.IdComprobante,
+                Fecha = cabecera.Fecha,
+                CodigoCliente = cliente.Codigo,
+                RazonSocial = cliente.RazonSocial,
+                Email = cliente.Email,
+                Total = lineasResultado.Sum(l => l.Subtotal),
+                Lineas = lineasResultado
+            };
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "ConfirmarPedidoCarrito",
+                "V_MV_Cpte",
+                resultado.IdComprobanteTexto,
+                "Pedido NP generado desde el carrito de catálogos.",
+                new
+                {
+                    request.IdInsert,
+                    request.IdWeb,
+                    request.IdBase,
+                    CodigoCliente = resultado.CodigoCliente,
+                    resultado.IdComprobanteTexto,
+                    Articulos = resultado.Lineas.Count,
+                    resultado.Total
+                },
+                ct);
+
+            return resultado;
+        }
+        catch (InvalidOperationException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            const string mensaje = "No se pudo registrar el pedido. El carrito se conserva para que puedas reintentar.";
+            var incidentId = await appEvents.LogErrorAsync(
+                ModuleName,
+                "ConfirmarPedidoCarrito",
+                ex,
+                mensaje,
+                new { request.IdInsert, request.IdWeb, request.IdBase, CodigoCliente = codigoClienteSesion },
+                AppEventSeverity.Warning,
+                ct);
+
+            throw new AppUserFacingException(mensaje, incidentId, ex);
+        }
+        finally
+        {
+            pedidoProcessingGuard.Finish(request.IdInsert, codigoClienteSesion);
+        }
+    }
+
+    private async Task<string> ResolveLetraPedidoWebAsync(SqlConnection cn, CancellationToken ct)
+    {
+        if (!await SqlObjectExistsAsync(cn, "V_TA_Cpte", ct))
+            return LetraPedidoWebDefault;
+
+        var letras = await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(
+            """
+            SELECT TOP (1) ISNULL(LTRIM(RTRIM(LETRAS)), '')
+            FROM dbo.V_TA_Cpte
+            WHERE UPPER(LTRIM(RTRIM(CODIGO))) = @Codigo
+              AND ISNULL(X_SUC_DEFAULT, 0) = @Sucursal;
+            """,
+            new { Codigo = TcPedidoWeb, Sucursal = int.Parse(SucursalPedidoWeb) },
+            cancellationToken: ct));
+
+        if (string.IsNullOrWhiteSpace(letras))
+            return LetraPedidoWebDefault;
+
+        return letras.Contains('X') ? "X" : letras.Trim()[..1];
+    }
+
+    private async Task<CabeceraPedidoWeb> CrearCabeceraPedidoWebAsync(SqlConnection cn, SqlTransaction tx, string cliente, string letra, string observaciones, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand("dbo.sp_web_Alta_Comprobante", cn, tx)
+        {
+            CommandType = System.Data.CommandType.StoredProcedure
+        };
+
+        cmd.Parameters.AddWithValue("@pCliente", cliente);
+        cmd.Parameters.AddWithValue("@pVendedor", string.Empty);
+        cmd.Parameters.AddWithValue("@pFecha", DateTime.Today);
+        cmd.Parameters.AddWithValue("@pObservaciones", string.IsNullOrWhiteSpace(observaciones) ? DBNull.Value : observaciones);
+        cmd.Parameters.AddWithValue("@pLat", DBNull.Value);
+        cmd.Parameters.AddWithValue("@pLng", DBNull.Value);
+        cmd.Parameters.AddWithValue("@pTC", TcPedidoWeb);
+        cmd.Parameters.AddWithValue("@pSucursal", SucursalPedidoWeb);
+        cmd.Parameters.AddWithValue("@pNumero", DBNull.Value);
+        cmd.Parameters.AddWithValue("@pLetra", letra);
+
+        var resultadoParam = new SqlParameter("@pResultado", System.Data.SqlDbType.SmallInt) { Direction = System.Data.ParameterDirection.Output };
+        var mensajeParam = new SqlParameter("@pMensaje", System.Data.SqlDbType.VarChar, 255) { Direction = System.Data.ParameterDirection.Output };
+        var idParam = new SqlParameter("@pIdComprobanteRES", System.Data.SqlDbType.Int) { Direction = System.Data.ParameterDirection.Output };
+        cmd.Parameters.Add(resultadoParam);
+        cmd.Parameters.Add(mensajeParam);
+        cmd.Parameters.Add(idParam);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+
+        var resultado = resultadoParam.Value is null or DBNull ? (int?)null : Convert.ToInt32(resultadoParam.Value);
+        var mensaje = mensajeParam.Value is null or DBNull ? string.Empty : Convert.ToString(mensajeParam.Value) ?? string.Empty;
+
+        if (resultado != 11 || idParam.Value is null or DBNull)
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(mensaje) ? "No se pudo generar el comprobante del pedido." : mensaje);
+
+        var idComprobante = Convert.ToInt32(idParam.Value);
+
+        var row = await cn.QuerySingleOrDefaultAsync<(string? IdComprobanteTexto, string Numero, DateTime Fecha)>(new CommandDefinition(
+            """
+            SELECT TOP (1) LTRIM(RTRIM(IDCOMPROBANTE)) AS IdComprobanteTexto, LTRIM(RTRIM(NUMERO)) AS Numero, FECHA AS Fecha
+            FROM dbo.V_MV_Cpte
+            WHERE ID = @Id;
+            """,
+            new { Id = idComprobante },
+            transaction: tx,
+            cancellationToken: ct));
+
+        if (row.IdComprobanteTexto is null)
+            throw new InvalidOperationException("El pedido se generó pero no se pudo releer el comprobante.");
+
+        return new CabeceraPedidoWeb(idComprobante, row.IdComprobanteTexto, row.Numero, row.Fecha);
+    }
+
+    private async Task AgregarLineaPedidoWebAsync(SqlConnection cn, SqlTransaction tx, int idComprobante, CatalogosCatalogoItemDto articulo, decimal cantidad, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand("dbo.sp_web_CpteInsumos", cn, tx)
+        {
+            CommandType = System.Data.CommandType.StoredProcedure
+        };
+
+        cmd.Parameters.AddWithValue("@pIdCpte", idComprobante);
+        cmd.Parameters.AddWithValue("@pIdArticulo", articulo.IdArticulo.Trim());
+        cmd.Parameters.AddWithValue("@pCantidad", (double)cantidad);
+        cmd.Parameters.AddWithValue("@pImporteUnitario", CatalogosPriceDisplayHelper.GetPrecioAplicado(articulo));
+        cmd.Parameters.AddWithValue("@pPorcDescuento", "0");
+
+        var resultadoParam = new SqlParameter("@pResultado", System.Data.SqlDbType.SmallInt) { Direction = System.Data.ParameterDirection.Output };
+        var mensajeParam = new SqlParameter("@pMensaje", System.Data.SqlDbType.VarChar, 255) { Direction = System.Data.ParameterDirection.Output };
+        var idParam = new SqlParameter("@pIdVMVCpteInsumosRES", System.Data.SqlDbType.Int) { Direction = System.Data.ParameterDirection.Output };
+        cmd.Parameters.Add(resultadoParam);
+        cmd.Parameters.Add(mensajeParam);
+        cmd.Parameters.Add(idParam);
+
+        await cmd.ExecuteNonQueryAsync(ct);
+
+        var resultado = resultadoParam.Value is null or DBNull ? (int?)null : Convert.ToInt32(resultadoParam.Value);
+        if (resultado != 11)
+        {
+            var mensaje = mensajeParam.Value is null or DBNull ? string.Empty : Convert.ToString(mensajeParam.Value) ?? string.Empty;
+            throw new InvalidOperationException(string.IsNullOrWhiteSpace(mensaje)
+                ? $"No se pudo agregar el artículo {articulo.IdArticulo} al pedido."
+                : $"Artículo {articulo.IdArticulo}: {mensaje}");
+        }
+    }
+
+    private static bool EsPosibleColisionDeNumeracion(Exception ex)
+    {
+        if (ex is SqlException sqlEx && sqlEx.Number is 2627 or 2601)
+            return true;
+
+        var mensaje = ex.Message ?? string.Empty;
+        return mensaje.Contains("duplicate", StringComparison.OrdinalIgnoreCase)
+            || mensaje.Contains("PRIMARY KEY", StringComparison.OrdinalIgnoreCase)
+            || mensaje.Contains("UNIQUE", StringComparison.OrdinalIgnoreCase)
+            || mensaje.Contains("duplicad", StringComparison.OrdinalIgnoreCase);
+    }
 
     public Task FinalizarCatalogoAsync(int idInsert, string usuario, string pc, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "FinalizarCatalogo", async token =>
@@ -764,7 +1074,6 @@ public sealed class InterfacesCatalogosService(
             await cn.OpenAsync(token);
 
             var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
-            var scopedLogoKey = BuildScopedConfigKey(PublicLogoConfigKey, effectiveIdWeb);
             var scopedLogoFormatKey = BuildScopedConfigKey(PublicLogoFormatConfigKey, effectiveIdWeb);
             var sql = $"""
                 SELECT
@@ -772,7 +1081,7 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(VALOR, '') AS Valor,
                     ISNULL({detailColumn}, '') AS ValorAux
                 FROM dbo.TA_CONFIGURACION
-                WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (@NombreKey, @LogoKey, @LogoFormatKey, @LegacyLogoKey, @LegacyLogoFormatKey);
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (@NombreKey, @LogoFormatKey, @LegacyLogoFormatKey);
                 """;
 
             var rows = await cn.QueryAsync<(string Clave, string Valor, string ValorAux)>(new CommandDefinition(
@@ -780,9 +1089,7 @@ public sealed class InterfacesCatalogosService(
                 new
                 {
                     NombreKey = PublicNameConfigKey,
-                    LogoKey = scopedLogoKey,
                     LogoFormatKey = scopedLogoFormatKey,
-                    LegacyLogoKey = PublicLogoConfigKey,
                     LegacyLogoFormatKey = PublicLogoFormatConfigKey
                 },
                 cancellationToken: token));
@@ -790,16 +1097,16 @@ public sealed class InterfacesCatalogosService(
             var values = rows.ToDictionary(x => x.Clave, x => ResolveStoredValue(x.Valor, x.ValorAux), StringComparer.OrdinalIgnoreCase);
             var sessionFallback = sessionService.GetActiveSession()?.Nombre?.Trim();
             var activeBaseId = sessionService.GetActiveSession()?.BaseId;
-            var logoConfig = ReadFirstConfigValue(values, scopedLogoKey, PublicLogoConfigKey);
             var logoFormat = NormalizePublicLogoFormat(ReadFirstConfigValue(values, scopedLogoFormatKey, PublicLogoFormatConfigKey));
+            var logoPersonalizadoExiste = await ResolveLogoPersonalizadoExisteAsync(activeBaseId, token);
 
             return new CatalogosPublicIdentityDto
             {
                 NombreVisible = ResolvePublicName(values.TryGetValue(PublicNameConfigKey, out var rawName) ? rawName : string.Empty, sessionFallback),
                 NombreFallback = string.IsNullOrWhiteSpace(sessionFallback) ? "Catálogos" : sessionFallback,
-                LogoUrl = BuildPublicLogoUrl(effectiveIdWeb, logoConfig, activeBaseId),
+                LogoUrl = logoPersonalizadoExiste ? BuildPublicLogoUrl(effectiveIdWeb, activeBaseId) : DefaultPublicLogoUrl,
                 LogoFormato = logoFormat,
-                TieneLogoPersonalizado = !string.IsNullOrWhiteSpace(logoConfig) && TryResolvePublicLogoPhysicalPath(logoConfig, effectiveIdWeb) is { } logoPath && File.Exists(logoPath)
+                TieneLogoPersonalizado = logoPersonalizadoExiste
             };
         }, "No se pudo cargar la identidad pública de catálogos.", ct);
 
@@ -947,35 +1254,22 @@ public sealed class InterfacesCatalogosService(
             if (!AllowedLogoContentTypes.Contains(normalizedContentType))
                 throw new InvalidOperationException("El logo debe ser JPG, PNG, WebP o GIF.");
 
-            var directory = BuildPublicLogoDirectory(effectiveIdWeb);
-            Directory.CreateDirectory(directory);
+            var ftpCodigoCta = await ResolveFtpCodigoCtaAsync(token);
+            if (string.IsNullOrWhiteSpace(ftpCodigoCta))
+                throw new InvalidOperationException("Falta configurar el código de cuenta FTP (FTP_CODIGOCTA) para poder guardar el logo.");
 
-            foreach (var existing in Directory.GetFiles(directory, "logo.*"))
-            {
-                try { File.Delete(existing); } catch { }
-            }
-
-            var safeFileName = $"logo{extension}";
-            var physicalPath = Path.Combine(directory, safeFileName);
-            await using (var output = File.Create(physicalPath))
-            {
-                await content.CopyToAsync(output, token);
-            }
-
-            var relativePath = BuildPublicLogoStoredPath(effectiveIdWeb, safeFileName);
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
-            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
-            var configKey = BuildScopedConfigKey(PublicLogoConfigKey, effectiveIdWeb);
-            await UpsertConfigValueAsync(cn, detailColumn, configKey, relativePath, ConfigGroup, token);
+            var activeBaseId = sessionService.GetActiveSession()?.BaseId;
+            var subido = await articuloImagenFtpService.SubirImagenAsync(ftpCodigoCta, activeBaseId, LogoFtpArticuloKey, extension, content, thumbnail: false, ct: token);
+            if (!subido)
+                throw new InvalidOperationException("No se pudo subir el logo al servidor de imágenes. Probá de nuevo en unos minutos.");
 
             await appEvents.LogAuditAsync(
                 ModuleName,
                 "SavePublicIdentityLogo",
                 "TA_CONFIGURACION",
-                configKey,
+                ftpCodigoCta,
                 "Logo público del catálogo actualizado.",
-                new { UserName = userName.Trim(), RelativePath = relativePath, FileName = fileName, IdWeb = effectiveIdWeb },
+                new { UserName = userName.Trim(), FileName = fileName, IdWeb = effectiveIdWeb, IdBase = activeBaseId },
                 token);
 
             return await GetPublicIdentityAsync(effectiveIdWeb, token);
@@ -988,21 +1282,18 @@ public sealed class InterfacesCatalogosService(
                 throw new InvalidOperationException("No hay un usuario logueado para restaurar el logo público.");
 
             var effectiveIdWeb = GetEffectiveIdWeb(idWeb);
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
-            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
-            var configKey = BuildScopedConfigKey(PublicLogoConfigKey, effectiveIdWeb);
-            var currentPath = await ReadConfigValueAsync(cn, detailColumn, configKey, PublicLogoConfigKey, token);
-            DeletePublicLogoFile(currentPath);
-            await UpsertConfigValueAsync(cn, detailColumn, configKey, string.Empty, ConfigGroup, token);
+            var ftpCodigoCta = await ResolveFtpCodigoCtaAsync(token);
+            var activeBaseId = sessionService.GetActiveSession()?.BaseId;
+            if (!string.IsNullOrWhiteSpace(ftpCodigoCta))
+                await articuloImagenFtpService.EliminarImagenAsync(ftpCodigoCta, activeBaseId, LogoFtpArticuloKey, thumbnail: false, ct: token);
 
             await appEvents.LogAuditAsync(
                 ModuleName,
                 "ResetPublicIdentityLogo",
                 "TA_CONFIGURACION",
-                configKey,
+                ftpCodigoCta,
                 "Logo público del catálogo restaurado al valor predeterminado.",
-                new { UserName = userName.Trim(), IdWeb = effectiveIdWeb },
+                new { UserName = userName.Trim(), IdWeb = effectiveIdWeb, IdBase = activeBaseId },
                 token);
 
             return true;
@@ -1011,69 +1302,49 @@ public sealed class InterfacesCatalogosService(
     public Task<CatalogosPublicLogoServeDto?> GetPublicLogoForServeAsync(string? idWeb, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetPublicLogoForServe", async token =>
         {
-            var effectiveIdWeb = GetEffectiveIdWeb(idWeb);
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
-            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
-            var configKey = BuildScopedConfigKey(PublicLogoConfigKey, effectiveIdWeb);
-            logger.LogInformation("LOGO PUBLICO idweb={IdWeb} configKey={ConfigKey} detailColumn={DetailColumn}", effectiveIdWeb, configKey, detailColumn);
+            var activeBaseId = sessionService.GetActiveSession()?.BaseId;
+            var ftpCodigoCta = await ResolveFtpCodigoCtaAsync(token);
+            var imagen = string.IsNullOrWhiteSpace(ftpCodigoCta)
+                ? null
+                : await articuloImagenFtpService.ObtenerImagenAsync(ftpCodigoCta, activeBaseId, LogoFtpArticuloKey, thumbnail: false, ct: token);
 
-            var rawSql = $"""
-                SELECT TOP (1)
-                    ISNULL(GRUPO, '') AS Grupo,
-                    ISNULL(CLAVE, '') AS Clave,
-                    ISNULL(VALOR, '') AS Valor,
-                    ISNULL({detailColumn}, '') AS ValorAux
-                FROM dbo.TA_CONFIGURACION
-                WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (@Clave, @FallbackClave)
-                ORDER BY CASE WHEN UPPER(LTRIM(RTRIM(CLAVE))) = @Clave THEN 0 ELSE 1 END;
-                """;
-
-            var rawRow = await cn.QuerySingleOrDefaultAsync<(string Grupo, string Clave, string Valor, string ValorAux)>(new CommandDefinition(
-                rawSql,
-                new { Clave = configKey.ToUpperInvariant(), FallbackClave = PublicLogoConfigKey.ToUpperInvariant() },
-                cancellationToken: token));
-
-            logger.LogInformation(
-                "LOGO PUBLICO sql Grupo={Grupo} Clave={Clave} Valor={Valor} ValorAux={ValorAux}",
-                rawRow.Grupo,
-                rawRow.Clave,
-                rawRow.Valor,
-                rawRow.ValorAux);
-
-            var storedPath = ResolveStoredValue(rawRow.Valor, rawRow.ValorAux);
-            logger.LogInformation("LOGO PUBLICO storedPath={StoredPath}", storedPath);
-
-            var filePath = TryResolvePublicLogoPhysicalPath(storedPath, effectiveIdWeb);
-            var fileExists = !string.IsNullOrWhiteSpace(filePath) && File.Exists(filePath);
-            logger.LogInformation("LOGO PUBLICO physicalPath={PhysicalPath} exists={Exists}", filePath, fileExists);
-
-            if (!fileExists)
+            if (imagen is not null)
             {
-                var fallbackPath = GetDefaultPublicLogoPhysicalPath();
-                var fallbackExists = File.Exists(fallbackPath);
-                logger.LogInformation("LOGO PUBLICO fallbackPath={FallbackPath} exists={FallbackExists}", fallbackPath, fallbackExists);
-
-                if (!fallbackExists)
-                    return null;
-
-                logger.LogInformation("LOGO PUBLICO RETURN FALLBACK ALFA because custom logo was not found.");
                 return new CatalogosPublicLogoServeDto
                 {
-                    RutaCompleta = fallbackPath,
-                    NombreArchivo = Path.GetFileName(fallbackPath),
-                    MimeType = InferImageMimeType(fallbackPath)
+                    RutaCompleta = imagen.RutaCompleta,
+                    NombreArchivo = Path.GetFileName(imagen.RutaCompleta),
+                    MimeType = imagen.MimeType
                 };
             }
 
-            logger.LogInformation("LOGO PUBLICO RETURN CUSTOM LOGO");
+            var fallbackPath = GetDefaultPublicLogoPhysicalPath();
+            if (!File.Exists(fallbackPath))
+                return null;
+
             return new CatalogosPublicLogoServeDto
             {
-                RutaCompleta = filePath,
-                NombreArchivo = Path.GetFileName(filePath),
-                MimeType = InferImageMimeType(filePath)
+                RutaCompleta = fallbackPath,
+                NombreArchivo = Path.GetFileName(fallbackPath),
+                MimeType = InferImageMimeType(fallbackPath)
             };
         }, "No se pudo resolver el logo público del catálogo.", ct);
+
+    private async Task<bool> ResolveLogoPersonalizadoExisteAsync(int? idBase, CancellationToken ct)
+    {
+        var ftpCodigoCta = await ResolveFtpCodigoCtaAsync(ct);
+        if (string.IsNullOrWhiteSpace(ftpCodigoCta))
+            return false;
+
+        var imagen = await articuloImagenFtpService.ObtenerImagenAsync(ftpCodigoCta, idBase, LogoFtpArticuloKey, thumbnail: false, ct: ct);
+        return imagen is not null;
+    }
+
+    private async Task<string> ResolveFtpCodigoCtaAsync(CancellationToken ct)
+    {
+        var settings = await puntoVentaService.GetSettingsAsync(ct);
+        return (settings.FtpCodigoCta ?? string.Empty).Trim();
+    }
 
     public Task<CatalogosViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetViewSettings", async token =>
@@ -1235,9 +1506,47 @@ public sealed class InterfacesCatalogosService(
             header.Articulos = items;
 
             await EnrichOfertaHastaAsync(items, header.IdLista, token);
+            header.HabilitarCarrito = await GetCarritoHabilitadoAsync(idInsert, token);
 
             return header;
         }, soloPublico ? "No se pudo cargar el catálogo público." : "No se pudo cargar el catálogo.", ct);
+
+    private async Task<bool> GetCarritoHabilitadoAsync(int idInsert, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+
+        if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", ct))
+            return false;
+
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+        var sql = $"""
+            SELECT TOP (1)
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+            """;
+
+        var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(
+            sql,
+            new { Clave = BuildCarritoConfigKey(idInsert) },
+            cancellationToken: ct));
+        var raw = ResolveStoredValue(row.Valor ?? string.Empty, row.ValorAux ?? string.Empty);
+        return string.Equals(raw.Trim(), "SI", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private async Task SetCarritoHabilitadoAsync(SqlConnection cn, int idInsert, bool habilitado, CancellationToken ct)
+    {
+        if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", ct))
+            return;
+
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+        await UpsertConfigValueAsync(cn, detailColumn, BuildCarritoConfigKey(idInsert), habilitado ? "SI" : "NO", ConfigGroup, ct);
+    }
+
+    private static string BuildCarritoConfigKey(int idInsert)
+        => $"{CarritoHabilitadoConfigKeyPrefix}-{idInsert}".ToUpperInvariant();
 
     private async Task EnrichOfertaHastaAsync(List<CatalogosCatalogoItemDto> items, string idLista, CancellationToken ct)
     {
@@ -1335,9 +1644,6 @@ public sealed class InterfacesCatalogosService(
         return route;
     }
 
-    private static string BuildClientUrl(int idInsert, string? idWeb = null, int? idBase = null)
-        => $"{BuildPublicUrl(idInsert, idWeb, idBase)}/cliente";
-
     private static string NormalizeRoutePart(string value)
         => Uri.EscapeDataString((value ?? string.Empty).Trim());
 
@@ -1391,60 +1697,14 @@ public sealed class InterfacesCatalogosService(
             : $"{baseKey}-{normalizedIdWeb}";
     }
 
-    private string BuildPublicLogoUrl(string? idWeb, string storedPath, int? idBase)
+    private string BuildPublicLogoUrl(string? idWeb, int? idBase)
     {
         var routeIdWeb = GetEffectiveIdWeb(idWeb);
-        var physicalPath = TryResolvePublicLogoPhysicalPath(storedPath, routeIdWeb);
-        if (!string.IsNullOrWhiteSpace(physicalPath) && File.Exists(physicalPath))
-        {
-            var query = new List<string>();
-            if (idBase is > 0)
-                query.Add($"idbase={idBase.Value}");
+        if (idBase is > 0)
+            return $"/api/catalogos/logo-publico/{Uri.EscapeDataString(routeIdWeb)}?idbase={idBase.Value}";
 
-            query.Add($"v={GetFileVersionToken(physicalPath)}");
-            return $"/api/catalogos/logo-publico/{Uri.EscapeDataString(routeIdWeb)}?{string.Join("&", query)}";
-        }
-
-        return DefaultPublicLogoUrl;
+        return $"/api/catalogos/logo-publico/{Uri.EscapeDataString(routeIdWeb)}";
     }
-
-    private string? TryResolvePublicLogoPhysicalPath(string? storedPath, string? idWeb)
-    {
-        var normalized = (storedPath ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(normalized))
-            return null;
-
-        if (Uri.TryCreate(normalized, UriKind.Absolute, out _))
-            return null;
-
-        var relative = normalized.Replace('\\', '/').TrimStart('/');
-        if (relative.StartsWith("App_Data/", StringComparison.OrdinalIgnoreCase))
-            return Path.Combine(environment.ContentRootPath, relative.Replace('/', Path.DirectorySeparatorChar));
-
-        if (relative.StartsWith("imagenes/", StringComparison.OrdinalIgnoreCase))
-            return Path.Combine(environment.ContentRootPath, "App_Data", relative.Replace('/', Path.DirectorySeparatorChar));
-
-        if (relative.StartsWith("uploads/catalogos/", StringComparison.OrdinalIgnoreCase))
-        {
-            var webRoot = string.IsNullOrWhiteSpace(environment.WebRootPath)
-                ? Path.Combine(environment.ContentRootPath, "wwwroot")
-                : environment.WebRootPath;
-            return Path.Combine(webRoot, relative.Replace('/', Path.DirectorySeparatorChar));
-        }
-
-        if (Path.IsPathRooted(normalized))
-            return normalized;
-
-        var scopedFolder = BuildPublicLogoDirectory(idWeb);
-        var candidate = Path.Combine(scopedFolder, Path.GetFileName(normalized));
-        return candidate;
-    }
-
-    private string BuildPublicLogoStoredPath(string? idWeb, string fileName)
-        => Path.Combine("App_Data", "imagenes", GetEffectiveIdWeb(idWeb), fileName).Replace('\\', '/');
-
-    private string BuildPublicLogoDirectory(string? idWeb)
-        => Path.Combine(environment.ContentRootPath, "App_Data", "imagenes", GetEffectiveIdWeb(idWeb));
 
     private string GetDefaultPublicLogoPhysicalPath()
     {
@@ -1453,20 +1713,6 @@ public sealed class InterfacesCatalogosService(
             : environment.WebRootPath;
 
         return Path.Combine(webRoot, "logos", "Logo.png");
-    }
-
-    private static string GetFileVersionToken(string physicalPath)
-    {
-        try
-        {
-            var lastWrite = File.GetLastWriteTimeUtc(physicalPath).Ticks;
-            var length = new FileInfo(physicalPath).Length;
-            return $"{lastWrite:x}-{length:x}";
-        }
-        catch
-        {
-            return DateTime.UtcNow.Ticks.ToString("x");
-        }
     }
 
     private static string NormalizeIdWebSegment(string? value)
@@ -1555,22 +1801,6 @@ public sealed class InterfacesCatalogosService(
             ".gif" => "image/gif",
             _ => "application/octet-stream"
         };
-    }
-
-    private void DeletePublicLogoFile(string? storedPath)
-    {
-        var fullPath = TryResolvePublicLogoPhysicalPath(storedPath, null);
-        if (string.IsNullOrWhiteSpace(fullPath))
-            return;
-
-        try
-        {
-            if (File.Exists(fullPath))
-                File.Delete(fullPath);
-        }
-        catch
-        {
-        }
     }
 
     private async Task<string> ReadConfigValueAsync(SqlConnection cn, string detailColumn, string key, string fallbackKey, CancellationToken ct)
@@ -1689,9 +1919,13 @@ public sealed class InterfacesCatalogosService(
     {
         public string CodigoCliente { get; set; } = string.Empty;
         public string RazonSocial { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
         public string Clave { get; set; } = string.Empty;
         public string NumeroDocumento { get; set; } = string.Empty;
     }
+
+    private const string CredencialesInvalidasMensaje = "Código/email o contraseña incorrectos.";
+    private const string EmailAmbiguoMensaje = "El email está asociado a más de una cuenta. Ingresá con tu código de cliente.";
 
     private async Task<CatalogosClienteSessionInfo> ExecuteCatalogoClienteLoginAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct)
     {
@@ -1699,21 +1933,47 @@ public sealed class InterfacesCatalogosService(
         {
             ArgumentNullException.ThrowIfNull(request);
 
-            var codigoCliente = (request.CodigoCliente ?? string.Empty).Trim();
+            var identificador = (request.CodigoCliente ?? string.Empty).Trim();
             var password = request.Password ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(codigoCliente) || string.IsNullOrWhiteSpace(password))
-                throw new InvalidOperationException("Código de cliente o contraseña incorrectos.");
+            if (string.IsNullOrWhiteSpace(identificador) || string.IsNullOrWhiteSpace(password))
+                throw new InvalidOperationException(CredencialesInvalidasMensaje);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(ct);
 
             if (!await SqlObjectExistsAsync(cn, "VT_CLIENTES", ct) || !await SqlObjectExistsAsync(cn, "MA_CUENTASADIC", ct))
-                throw new InvalidOperationException("Código de cliente o contraseña incorrectos.");
+                throw new InvalidOperationException(CredencialesInvalidasMensaje);
+
+            var esEmail = identificador.Contains('@');
+            var codigoCliente = identificador;
+
+            if (esEmail)
+            {
+                const string sqlEmail = """
+                    SELECT DISTINCT LTRIM(RTRIM(cli.CODIGO)) AS Codigo
+                    FROM dbo.VT_CLIENTES cli
+                    WHERE UPPER(LTRIM(RTRIM(ISNULL(cli.MAIL, '')))) = UPPER(LTRIM(RTRIM(@Email)));
+                    """;
+
+                var codigos = (await cn.QueryAsync<string>(new CommandDefinition(
+                    sqlEmail,
+                    new { Email = identificador },
+                    cancellationToken: ct))).ToList();
+
+                if (codigos.Count == 0)
+                    throw new InvalidOperationException(CredencialesInvalidasMensaje);
+
+                if (codigos.Count > 1)
+                    throw new InvalidOperationException(EmailAmbiguoMensaje);
+
+                codigoCliente = codigos[0];
+            }
 
             const string sql = """
                 SELECT TOP (1)
                     ISNULL(LTRIM(RTRIM(cli.CODIGO)), '') AS CodigoCliente,
                     ISNULL(LTRIM(RTRIM(cli.RAZON_SOCIAL)), '') AS RazonSocial,
+                    ISNULL(LTRIM(RTRIM(cli.MAIL)), '') AS Email,
                     ISNULL(LTRIM(RTRIM(adic.CLAVE)), '') AS Clave,
                     ISNULL(LTRIM(RTRIM(adic.NUMERO_DOCUMENTO)), '') AS NumeroDocumento
                 FROM dbo.VT_CLIENTES cli
@@ -1728,19 +1988,20 @@ public sealed class InterfacesCatalogosService(
                 cancellationToken: ct));
 
             if (row is null)
-                throw new InvalidOperationException("Código de cliente o contraseña incorrectos.");
+                throw new InvalidOperationException(CredencialesInvalidasMensaje);
 
             var storedPassword = !string.IsNullOrWhiteSpace(row.Clave)
                 ? row.Clave
                 : row.NumeroDocumento;
 
             if (string.IsNullOrWhiteSpace(storedPassword) || !string.Equals(storedPassword, password, StringComparison.Ordinal))
-                throw new InvalidOperationException("Código de cliente o contraseña incorrectos.");
+                throw new InvalidOperationException(CredencialesInvalidasMensaje);
 
             return new CatalogosClienteSessionInfo
             {
                 CodigoCliente = row.CodigoCliente,
                 RazonSocial = row.RazonSocial,
+                Email = row.Email,
                 IdWeb = request.IdWeb?.Trim() ?? string.Empty,
                 IdBase = request.IdBase ?? 0,
                 LoginAt = DateTime.Now
@@ -1812,6 +2073,26 @@ public sealed class InterfacesCatalogosService(
         }
         catch (AppUserFacingException)
         {
+            throw;
+        }
+        catch (InvalidOperationException validationEx)
+        {
+            // Validación funcional esperable (ej. "Ingresá el nombre del catálogo"): se muestra
+            // tal cual al usuario en vez de reemplazarla por el mensaje genérico de friendlyMessage.
+            // Igual queda registrada para trazabilidad.
+            await appEvents.LogErrorAsync(
+                module,
+                action,
+                validationEx,
+                validationEx.Message,
+                new
+                {
+                    Usuario = appUserSession.GetCurrentUserName(Environment.UserName),
+                    SesionSql = sessionService.GetActiveSession()?.Nombre
+                },
+                AppEventSeverity.Warning,
+                ct);
+
             throw;
         }
         catch (Exception ex)

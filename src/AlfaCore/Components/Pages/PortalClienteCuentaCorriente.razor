@@ -1,0 +1,233 @@
+@page "/portal-cliente/cuenta-corriente"
+@page "/{idweb}/{idbase:int}/portal-cliente/cuenta-corriente"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits PortalClientePageBase
+@using AlfaCore.Models
+@using AlfaCore.Components.Shared
+@inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
+
+<PageTitle>Cuenta corriente | Portal Cliente</PageTitle>
+
+@if (NotFound)
+{
+    <section class="page-grid portal-cliente">
+        <section class="panel-card empty-state">
+            <h3 class="panel-card__title">Base no disponible</h3>
+            <p class="panel-card__subtitle">No se pudo resolver la base asociada a esta URL. Probá nuevamente desde el enlace correcto.</p>
+        </section>
+    </section>
+}
+else if (!IsAuthenticated)
+{
+    <CatalogoClienteLoginPanel @ref="_loginPanel"
+                                CatalogoNombre="Portal Cliente"
+                                BrandLogoUrl="@GetBrandingLogoUrl()"
+                                BrandName="@GetBrandingName()"
+                                Codigo="@ClienteCodigo"
+                                CodigoChanged="v => ClienteCodigo = v"
+                                Password="@ClientePassword"
+                                PasswordChanged="v => ClientePassword = v"
+                                ShowPassword="@ShowPassword"
+                                ShowPasswordChanged="v => ShowPassword = v"
+                                Busy="@SessionBusy"
+                                Feedback="@LoginFeedback"
+                                OnSubmit="LoginClienteAsync"
+                                VolverUrl="/"
+                                VolverTexto="Volver al inicio" />
+}
+else
+{
+    <section class="page-grid portal-cliente portal-cliente--detail">
+        <PortalClienteHeader BrandLogoUrl="@GetBrandingLogoUrl()"
+                              BrandName="@GetBrandingName()"
+                              LogoFrameClass="@GetBrandingLogoFrameClass()"
+                              ClientLabel="@GetCurrentClientLabel()"
+                              Busy="@SessionBusy"
+                              OnLogout="LogoutClienteAsync"
+                              ActiveTab="cuenta-corriente"
+                              RouteInicio="@BuildPortalRoute("")"
+                              RouteCuentaCorriente="@BuildPortalRoute("cuenta-corriente")"
+                              RouteListaPrecios="@BuildPortalRoute("lista-precios")"
+                              RouteCatalogos="@BuildPortalRoute("catalogos")"
+                              RouteCarrito="@BuildPortalRoute("carrito")"
+                              RoutePedidos="@BuildPortalRoute("pedidos")"
+                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
+
+        @if (_feedback is not null)
+        {
+            <div class="editor-msg editor-msg--warning">
+                <div><p>@_feedback</p></div>
+            </div>
+        }
+
+        <section class="portal-cliente__resumen-cards">
+            <div class="portal-cliente__resumen-card">
+                <span>Saldo actual</span>
+                <strong>@Money(_resumen.SaldoTotal)</strong>
+            </div>
+            <div class="portal-cliente__resumen-card portal-cliente__resumen-card--danger">
+                <span>Vencido</span>
+                <strong>@Money(_resumen.Vencido)</strong>
+            </div>
+            <div class="portal-cliente__resumen-card">
+                <span>A vencer</span>
+                <strong>@Money(_resumen.AVencer)</strong>
+            </div>
+            <div class="portal-cliente__resumen-card">
+                <span>Comprobantes pendientes</span>
+                <strong>@_resumen.CantidadPendientes</strong>
+            </div>
+        </section>
+
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Comprobantes pendientes</h3>
+                </div>
+            </div>
+
+            <div class="portal-cliente__filtros">
+                <div class="portal-cliente__filtro-tabs">
+                    <button type="button" class="portal-cliente__tab @(_filtro == PortalClienteComprobantesPendientesFiltro.Todos ? "is-active" : "")" @onclick="() => CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro.Todos)">Todos</button>
+                    <button type="button" class="portal-cliente__tab @(_filtro == PortalClienteComprobantesPendientesFiltro.Vencidos ? "is-active" : "")" @onclick="() => CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro.Vencidos)">Vencidos</button>
+                    <button type="button" class="portal-cliente__tab @(_filtro == PortalClienteComprobantesPendientesFiltro.AVencer ? "is-active" : "")" @onclick="() => CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro.AVencer)">A vencer</button>
+                </div>
+                <div class="field">
+                    <label>Fecha desde</label>
+                    <input type="date" @bind="_fechaDesde" @bind:after="CargarAsync" />
+                </div>
+                <div class="field">
+                    <label>Fecha hasta</label>
+                    <input type="date" @bind="_fechaHasta" @bind:after="CargarAsync" />
+                </div>
+            </div>
+
+            @if (_loading)
+            {
+                <p class="text-muted">Cargando cuenta corriente...</p>
+            }
+            else if (_pendientes.Count == 0)
+            {
+                <div class="empty-state">
+                    <p>Tu cuenta no registra comprobantes pendientes.</p>
+                </div>
+            }
+            else
+            {
+                <div class="portal-cliente__pedidos-list">
+                    @foreach (var item in _pendientes)
+                    {
+                        <PortalClienteComprobantePendienteRow Item="item" DetalleUrlBuilder="@(id => BuildPortalRoute($"cuenta-corriente/{id}"))" />
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Últimos pagos / cobranzas</h3>
+                </div>
+            </div>
+
+            @if (_loading)
+            {
+                <p class="text-muted">Cargando...</p>
+            }
+            else if (_cobranzas.Count == 0)
+            {
+                <div class="empty-state">
+                    <p>Todavía no registrás pagos o cobranzas.</p>
+                </div>
+            }
+            else
+            {
+                <div class="portal-cliente__pedidos-list">
+                    @foreach (var cobranza in _cobranzas)
+                    {
+                        <article class="portal-cliente__pedido-row">
+                            <div class="portal-cliente__pedido-row__main">
+                                <strong>@cobranza.Tc @cobranza.IdComprobante</strong>
+                                <span class="portal-cliente__pedido-row__fecha">@cobranza.Fecha.ToString("dd/MM/yyyy")</span>
+                            </div>
+                            <div class="portal-cliente__pedido-row__total">@Money(cobranza.Importe)</div>
+                        </article>
+                    }
+                </div>
+            }
+        </section>
+    </section>
+}
+
+@code {
+    private CatalogoClienteLoginPanel? _loginPanel;
+    private bool _loading;
+    private string? _feedback;
+    private PortalClienteComprobantesPendientesFiltro _filtro = PortalClienteComprobantesPendientesFiltro.Todos;
+    private DateTime? _fechaDesde;
+    private DateTime? _fechaHasta;
+    private PortalClienteCuentaCorrienteResumenDto _resumen = new();
+    private IReadOnlyList<PortalClienteComprobantePendienteDto> _pendientes = [];
+    private IReadOnlyList<PortalClienteCobranzaDto> _cobranzas = [];
+
+    protected override async Task OnAfterClientSessionRestoredAsync()
+    {
+        if (_loginPanel is not null)
+        {
+            try { await _loginPanel.FocusCodigoAsync(); }
+            catch { }
+        }
+
+        if (IsAuthenticated)
+        {
+            await CargarAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    protected override async Task OnAfterLoginAsync()
+        => await CargarAsync();
+
+    private Task CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro filtro)
+    {
+        _filtro = filtro;
+        return CargarAsync();
+    }
+
+    private async Task CargarAsync()
+    {
+        _loading = true;
+        _feedback = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => PortalClienteSvc.GetCuentaCorrienteAsync(new PortalClienteCuentaCorrienteFiltroDto
+            {
+                CodigoCliente = GetCurrentCodigoCliente(),
+                Filtro = _filtro,
+                FechaDesde = _fechaDesde,
+                FechaHasta = _fechaHasta
+            }), "No pudimos consultar tu cuenta corriente en este momento.");
+
+            if (result.Success && result.Value is not null)
+            {
+                _resumen = result.Value.Resumen;
+                _pendientes = result.Value.Pendientes;
+                _cobranzas = result.Value.Cobranzas;
+            }
+            else
+            {
+                _feedback = result.Feedback?.Message ?? "No pudimos consultar tu cuenta corriente en este momento.";
+            }
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string Money(decimal value)
+        => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+}

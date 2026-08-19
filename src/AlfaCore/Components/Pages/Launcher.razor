@@ -96,6 +96,31 @@ else
             </section>
         }
 
+        <section class="panel-card launcher-section launcher-portal-access">
+            <div class="launcher-portal-access__content">
+                <a class="launcher-portal-access__link"
+                   href="@GetPortalClienteUrl()"
+                   target="_blank"
+                   rel="noopener noreferrer">
+                    <span class="launcher-portal-access__icon"><i class="bi bi-person-badge"></i></span>
+                    <span class="launcher-portal-access__body">
+                        <strong>Portal Cliente</strong>
+                        <small>Acceso para que tus clientes consulten sus pedidos y catálogos.</small>
+                    </span>
+                    <i class="bi bi-chevron-right launcher-portal-access__chevron"></i>
+                </a>
+                <div class="actions launcher-portal-access__actions">
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CopyPortalClienteLinkAsync">
+                        <i class="bi bi-clipboard"></i> Copiar enlace
+                    </button>
+                </div>
+                @if (!string.IsNullOrWhiteSpace(_portalClienteFeedback))
+                {
+                    <small class="launcher-portal-access__feedback">@_portalClienteFeedback</small>
+                }
+            </div>
+        </section>
+
         @if (_home.Favorites.Count == 0 && _home.Recents.Count == 0)
         {
             <section class="panel-card">
@@ -112,6 +137,7 @@ else
     private bool _loading = true;
     private ShellHomeDto _home = new();
     private string _error = string.Empty;
+    private string _portalClienteFeedback = string.Empty;
     private bool _disposed;
     private int _loadVersion;
 
@@ -308,6 +334,34 @@ else
     {
         await RecentSvc.RegisterRecentAsync(item.Menu, item.Clave);
         Nav.NavigateTo(RouteContext.BuildRoute(item.RutaWeb));
+    }
+
+    private string GetPortalClienteUrl()
+        => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
+            Nav,
+            AlfaCore.Services.CatalogosUrlHelper.BuildRelativePortalClienteUrl(
+                idweb,
+                idbase,
+                Nav.Uri,
+                AppUserSession.CurrentUser?.IdWeb,
+                SessionSvc.GetActiveSession()?.BaseId));
+
+    private async Task CopyPortalClienteLinkAsync()
+    {
+        var url = GetPortalClienteUrl();
+        if (string.IsNullOrWhiteSpace(url))
+            return;
+
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            _portalClienteFeedback = "Enlace copiado";
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+            _portalClienteFeedback = string.Empty;
+        }
     }
 
     private async Task HandleNodeCardKeyDownAsync(KeyboardEventArgs args, ShellMenuNodeDto item)

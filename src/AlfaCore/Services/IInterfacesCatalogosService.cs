@@ -15,6 +15,7 @@ public interface IInterfacesCatalogosService
     Task<CatalogosCatalogoSaveResultDto> SaveCatalogoVigenciaAsync(CatalogosCatalogoSaveRequestDto request, CancellationToken ct = default);
     Task<CatalogosCatalogoAccessUrlsDto> GetCatalogoAccessUrlsAsync(int idInsert, string? idWeb = null, int? idBase = null, CancellationToken ct = default);
     Task<CatalogosClienteSessionInfo> LoginClienteAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct = default);
+    Task<CatalogoPedidoResultDto> ConfirmarPedidoCarritoAsync(CatalogoPedidoConfirmarRequestDto request, CancellationToken ct = default);
     Task FinalizarCatalogoAsync(int idInsert, string usuario, string pc, CancellationToken ct = default);
     Task<bool> GetMenuHabilitadoAsync(CancellationToken ct = default);
     Task SaveMenuHabilitadoAsync(string userName, bool habilitado, CancellationToken ct = default);

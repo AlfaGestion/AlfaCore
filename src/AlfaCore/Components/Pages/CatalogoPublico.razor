@@ -1,7 +1,5 @@
 @page "/catalogo/{IdInsert:int}"
-@page "/catalogo/{IdInsert:int}/cliente"
 @page "/{idweb}/{idbase:int}/catalogo/{IdInsert:int}"
-@page "/{idweb}/{idbase:int}/catalogo/{IdInsert:int}/cliente"
 @layout AlfaCore.Components.Layout.PublicLayout
 @inherits SaaSRoutePageBase
 @using AlfaCore.Models
@@ -31,6 +29,10 @@
                 {
                     <p class="catalogo-publico-hero__text">@GetCatalogHeaderSubtitle()</p>
                 }
+                @if (!string.IsNullOrWhiteSpace(_catalogo?.Observaciones))
+                {
+                    <p class="catalogo-publico-hero__description">@_catalogo.Observaciones.Trim()</p>
+                }
             </div>
         </div>
 
@@ -45,71 +47,12 @@
                     <i class="bi bi-box-arrow-right"></i> Cerrar sesión
                 </button>
             }
-            else if (IsClientLoginRoute)
-            {
-                <a class="btn btn--ghost btn--sm" href="@GetPublicCatalogUrl()">
-                    <i class="bi bi-arrow-left"></i> Volver al catálogo
-                </a>
-            }
-            else
-            {
-                <a class="btn btn--primary btn--sm" href="@GetClientLoginUrl()">
-                    <i class="bi bi-person-check"></i> Ingresar como cliente
-                </a>
-            }
         </div>
     </section>
 
     @if (_loading)
     {
         <div class="loading">Cargando catálogo...</div>
-    }
-    else if (IsClientLoginRoute && !IsAuthenticatedForCurrentCatalog)
-    {
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Ingresar como cliente</h3>
-                    <p class="panel-card__subtitle">Usá el código del cliente y su contraseña para identificarte en este catálogo.</p>
-                </div>
-            </div>
-
-            @if (_loginFeedback is not null)
-            {
-                <div class="editor-msg @GetFeedbackClass(_loginFeedback)">
-                    <div>
-                        <strong>@_loginFeedback.Title</strong>
-                        <p>@_loginFeedback.Message</p>
-                    </div>
-                </div>
-            }
-
-            <form class="auth-form" @onsubmit="LoginClienteAsync" @onsubmit:preventDefault="true">
-                <div class="row g-3">
-                    <div class="col-12 col-md-6">
-                        <div class="field">
-                            <label>Código de cliente</label>
-                            <input @bind="_clienteCodigo" @bind:event="oninput" autocomplete="username" disabled="@_sessionBusy" placeholder="Código de cliente" />
-                        </div>
-                    </div>
-                    <div class="col-12 col-md-6">
-                        <div class="field">
-                            <label>Contraseña</label>
-                            <input type="password" @bind="_clientePassword" @bind:event="oninput" autocomplete="current-password" disabled="@_sessionBusy" placeholder="Contraseña" />
-                        </div>
-                    </div>
-                </div>
-
-                <div class="actions mt-3">
-                    <button type="submit" class="btn btn--primary" disabled="@_sessionBusy">
-                        <i class="bi bi-box-arrow-in-right"></i> @(_sessionBusy ? "Consultando..." : "Ingresar")
-                    </button>
-                    <a class="btn btn--ghost" href="@GetPublicCatalogUrl()" disabled="@_sessionBusy">
-                        <i class="bi bi-arrow-left"></i> Volver al catálogo
-                    </a>
-                </div>
-            </form>
-        </section>
     }
     else if (_catalogo is null)
     {
@@ -352,13 +295,10 @@
 
     private CatalogosCatalogoDetalleDto? _catalogo;
     private CatalogosPublicIdentityDto _branding = new();
-    private AppUiMessage? _loginFeedback;
     private AppUiMessage? _catalogFeedback;
     private bool _loading = true;
     private bool _sessionBusy;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
-    private string _clienteCodigo = string.Empty;
-    private string _clientePassword = string.Empty;
     private bool _restoreAttempted;
     private bool _viewModeRestored;
     private CatalogoViewMode _viewMode = CatalogoViewMode.Lista;
@@ -450,16 +390,9 @@
     private void OnClientSessionStateChanged()
         => _ = InvokeAsync(async () =>
         {
-            if (IsClientLoginRoute && IsAuthenticatedForCurrentCatalog)
-                Nav.NavigateTo(GetPublicCatalogUrl(), replace: true);
-            else
-                await EnsureCatalogStateAsync();
-
+            await EnsureCatalogStateAsync();
             await InvokeAsync(StateHasChanged);
         });
-
-    private bool IsClientLoginRoute
-        => NormalizeRoutePath(Nav.ToBaseRelativePath(Nav.Uri)).EndsWith("/cliente", StringComparison.OrdinalIgnoreCase);
 
     private bool IsAuthenticatedForCurrentCatalog
         => CatalogoClienteSession.CurrentClient is { } client
@@ -468,13 +401,6 @@
 
     private async Task EnsureCatalogStateAsync()
     {
-        if (IsClientLoginRoute && !IsAuthenticatedForCurrentCatalog)
-        {
-            _loading = false;
-            _catalogo = null;
-            return;
-        }
-
         if (_routeSessionError)
         {
             _loading = false;
@@ -609,51 +535,13 @@
             if (!CatalogoClienteSession.TryRestoreFromToken(token))
             {
                 await Js.InvokeVoidAsync("localStorage.removeItem", ClientTokenStorageKey);
-                return;
             }
-
-            if (IsClientLoginRoute && IsAuthenticatedForCurrentCatalog)
-                Nav.NavigateTo(GetPublicCatalogUrl(), replace: true);
         }
         catch
         {
         }
 
         await EnsureCatalogStateAsync();
-    }
-
-    private async Task LoginClienteAsync()
-    {
-        _loginFeedback = null;
-        _sessionBusy = true;
-        await InvokeAsync(StateHasChanged);
-
-        try
-        {
-            var result = await UiOps.RunAsync(() => CatalogoClienteSession.LoginAsync(new CatalogosClienteLoginRequestDto
-            {
-                CodigoCliente = _clienteCodigo,
-                Password = _clientePassword,
-                IdWeb = idweb,
-                IdBase = idbase,
-                IdInsert = IdInsert
-            }), "No pudimos validar el acceso en este momento. Intentá nuevamente.");
-
-            if (!result.Success || result.Value is null)
-            {
-                _loginFeedback = result.Feedback;
-                return;
-            }
-
-            await Js.InvokeVoidAsync("localStorage.setItem", ClientTokenStorageKey, CatalogoClienteSession.CurrentToken ?? string.Empty);
-            _clientePassword = string.Empty;
-            Nav.NavigateTo(GetPublicCatalogUrl(), replace: true);
-        }
-        finally
-        {
-            _sessionBusy = false;
-            await InvokeAsync(StateHasChanged);
-        }
     }
 
     private async Task LogoutClienteAsync()
@@ -760,23 +648,13 @@
         };
 
     private static bool HasValidOffer(CatalogosCatalogoItemDto item)
-        => item.PrecioOferta.HasValue
-           && item.PrecioOferta.Value > 0m
-           && item.PrecioOferta.Value < item.Precio;
+        => AlfaCore.Services.CatalogosPriceDisplayHelper.HasValidOffer(item);
 
     private static int GetOfertaPercent(CatalogosCatalogoItemDto item)
-    {
-        if (!HasValidOffer(item) || item.Precio is not > 0m)
-            return 0;
-
-        var descuento = 1m - (item.PrecioOferta!.Value / item.Precio!.Value);
-        return (int)Math.Round(descuento * 100m, MidpointRounding.AwayFromZero);
-    }
+        => AlfaCore.Services.CatalogosPriceDisplayHelper.GetOfertaPercent(item);
 
     private static string GetOfertaHastaTexto(CatalogosCatalogoItemDto item)
-        => item.OfertaHasta.HasValue
-            ? $"Válido hasta {item.OfertaHasta.Value:dd/MM/yyyy}"
-            : string.Empty;
+        => AlfaCore.Services.CatalogosPriceDisplayHelper.GetOfertaHastaTexto(item);
 
     private RenderFragment RenderPrecio(CatalogosCatalogoItemDto item, bool alignEnd = true) =>
         @<div class="catalogo-publico-price @(alignEnd ? "catalogo-publico-price--list" : string.Empty) @(HasValidOffer(item) ? "catalogo-publico-price--offer" : string.Empty)">
@@ -800,7 +678,7 @@
            ?? string.Empty;
 
     private string GetPublicCatalogUrl()
-        => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(includeClientSuffix: false)).ToString();
+        => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl()).ToString();
 
     private string GetPdfExportUrl()
     {
@@ -819,13 +697,9 @@
         return relative;
     }
 
-    private string GetClientLoginUrl()
-        => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(includeClientSuffix: true)).ToString();
-
-    private string BuildCatalogRelativeUrl(bool includeClientSuffix)
+    private string BuildCatalogRelativeUrl()
         => AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCatalogUrl(
             IdInsert,
-            includeClientSuffix,
             idweb,
             idbase,
             Nav.Uri,
@@ -841,9 +715,6 @@
         var hasta = _catalogo.VigenciaHasta?.ToString("dd/MM/yyyy") ?? "sin fecha";
         return $"{desde} - {hasta}";
     }
-
-    private static string NormalizeRoutePath(string? value)
-        => (value ?? string.Empty).Split('?', '#')[0].Trim().Trim('/');
 
     private static string NormalizeRouteSegment(string? value)
         => (value ?? string.Empty).Trim().Trim('/');
@@ -896,7 +767,7 @@
         => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
 
     private static string Money(decimal? value)
-        => value.HasValue ? value.Value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR")) : "—";
+        => AlfaCore.Services.CatalogosPriceDisplayHelper.Money(value);
 
     private void SetFiltroRubro(string rubro)
         => _filtroRubro = rubro ?? string.Empty;

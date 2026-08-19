@@ -1,0 +1,144 @@
+@using AlfaCore.Models
+@using Microsoft.AspNetCore.Components.Web
+
+<div class="auth-page">
+    <LoginShell RootClass="auth-shell auth-shell--carrito">
+        <HeroContent>
+            <div class="auth-hero__brand">
+                <img class="central-brand-logo central-login-logo" src="@BrandLogoUrl" alt="@BrandName" loading="eager" decoding="async" />
+            </div>
+
+            <div class="auth-hero__copy">
+                <p class="auth-card__eyebrow">@BrandName</p>
+                <h2 class="auth-hero__title">Acceso de clientes</h2>
+                <p class="auth-hero__text">Ingresá para continuar desde este catálogo.</p>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(CatalogoNombre))
+            {
+                <div class="auth-hero__summary">
+                    <article class="auth-hero__summary-card auth-hero__summary-card--accent">
+                        <span class="auth-hero__summary-label">Catálogo</span>
+                        <strong>@CatalogoNombre</strong>
+                        @if (!string.IsNullOrWhiteSpace(VigenciaTexto))
+                        {
+                            <small>Vigencia: @VigenciaTexto</small>
+                        }
+                    </article>
+                </div>
+            }
+        </HeroContent>
+
+        <FormContent>
+            <div class="auth-form-panel__glow auth-form-panel__glow--one" aria-hidden="true"></div>
+            <div class="auth-form-panel__glow auth-form-panel__glow--two" aria-hidden="true"></div>
+
+            <div class="auth-form-panel__surface">
+                <div class="auth-mobile-brand" aria-hidden="true">
+                    <img class="central-brand-logo central-login-logo" src="@BrandLogoUrl" alt="@BrandName" loading="eager" decoding="async" />
+                </div>
+
+                <header class="auth-form-panel__header">
+                    <h1 class="auth-card__title">Ingresar</h1>
+                    <p class="auth-card__subtitle">Usá tu código de cliente o email y tu contraseña.</p>
+                </header>
+
+                @if (Feedback is not null)
+                {
+                    <div class="editor-msg editor-msg--error auth-card__error">
+                        <strong>@Feedback.Title</strong>
+                        <p>@Feedback.Message</p>
+                    </div>
+                }
+
+                <form class="auth-form" @onsubmit="HandleSubmitAsync" @onsubmit:preventDefault="true">
+                    <div class="auth-field">
+                        <label for="cliente-login-user">Código o email</label>
+                        <AuthInputField @ref="_codigoField"
+                                        Id="cliente-login-user"
+                                        Value="@Codigo"
+                                        ValueChanged="OnCodigoChangedAsync"
+                                        Placeholder="Código de cliente o email"
+                                        Disabled="@Busy"
+                                        Autocomplete="username"
+                                        InputMode="text"
+                                        InputClass="central-login-input auth-input-shell__input"
+                                        WrapperClass="auth-input-shell auth-input-shell--user"
+                                        IconClass="bi bi-person"
+                                        OnKeyDown="OnKeyDownAsync" />
+                    </div>
+
+                    <div class="auth-field">
+                        <label for="cliente-login-password">Contraseña</label>
+                        <AuthInputField Id="cliente-login-password"
+                                        Value="@Password"
+                                        ValueChanged="OnPasswordChangedAsync"
+                                        Placeholder="Contraseña"
+                                        Disabled="@Busy"
+                                        Autocomplete="current-password"
+                                        InputClass="central-login-input central-login-password__input auth-input-shell__input"
+                                        WrapperClass="auth-password central-login-password auth-input-shell auth-input-shell--password"
+                                        IconClass="bi bi-lock"
+                                        ShowPasswordToggle="true"
+                                        ShowPassword="@ShowPassword"
+                                        ShowPasswordChanged="OnShowPasswordChangedAsync"
+                                        PasswordToggleClass="auth-password__toggle central-login-password__toggle"
+                                        PasswordToggleIconClass="@(ShowPassword ? "bi bi-eye-slash" : "bi bi-eye")"
+                                        PasswordToggleTitle="@(ShowPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                        OnKeyDown="OnKeyDownAsync" />
+                    </div>
+
+                    <AuthActionButton Type="submit"
+                                      CssClass="btn btn--primary auth-card__submit"
+                                      Text="Ingresar"
+                                      BusyText="Ingresando..."
+                                      IconClass="bi bi-box-arrow-in-right"
+                                      BusyIconClass="spinner-border spinner-border-sm"
+                                      IsBusy="@Busy"
+                                      Disabled="@Busy" />
+
+                    <div class="actions">
+                        <a class="btn btn--ghost" href="@VolverUrl">
+                            <i class="bi bi-arrow-left"></i> @VolverTexto
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </FormContent>
+    </LoginShell>
+</div>
+
+@code {
+    private AuthInputField? _codigoField;
+
+    [Parameter] public string? CatalogoNombre { get; set; }
+    [Parameter] public string? VigenciaTexto { get; set; }
+    [Parameter, EditorRequired] public string BrandLogoUrl { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string BrandName { get; set; } = string.Empty;
+    [Parameter] public string Codigo { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> CodigoChanged { get; set; }
+    [Parameter] public string Password { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string> PasswordChanged { get; set; }
+    [Parameter] public bool ShowPassword { get; set; }
+    [Parameter] public EventCallback<bool> ShowPasswordChanged { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public AppUiMessage? Feedback { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnSubmit { get; set; }
+    [Parameter, EditorRequired] public string VolverUrl { get; set; } = string.Empty;
+    [Parameter] public string VolverTexto { get; set; } = "Volver al catálogo";
+
+    public ValueTask FocusCodigoAsync(bool preventScroll = true)
+        => _codigoField?.FocusAsync(preventScroll) ?? ValueTask.CompletedTask;
+
+    private Task OnCodigoChangedAsync(string value) => CodigoChanged.InvokeAsync(value);
+    private Task OnPasswordChangedAsync(string value) => PasswordChanged.InvokeAsync(value);
+    private Task OnShowPasswordChangedAsync(bool value) => ShowPasswordChanged.InvokeAsync(value);
+
+    private Task HandleSubmitAsync() => OnSubmit.InvokeAsync();
+
+    private async Task OnKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Enter", StringComparison.Ordinal))
+            await HandleSubmitAsync();
+    }
+}

@@ -1,0 +1,766 @@
+@page "/carrito-general/nuevo"
+@page "/carrito-general/{IdCarrito:int}"
+@page "/{idweb}/{idbase:int}/carrito-general/nuevo"
+@page "/{idweb}/{idbase:int}/carrito-general/{IdCarrito:int}"
+@inherits SaaSRoutePageBase
+@using AlfaCore.Models
+@inject AlfaCore.Services.ICarritoComprasService CarritoComprasSvc
+@inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
+@inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUiDialogService DialogSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Carrito general | Alfa Gestión</PageTitle>
+
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">@( _editingIdCarrito.HasValue ? $"Editar carrito general #{_editingIdCarrito}" : "Nuevo carrito")</h2>
+            <p class="page-intro__text">Configurá artículos y precios sin depender de un catálogo previo.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn--ghost" href="@BuildSaasRoute("/carrito-compras")">
+                <i class="bi bi-arrow-left"></i> Volver a Carritos
+            </a>
+            <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_loading">
+                <i class="bi bi-floppy"></i> Guardar
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_feedback))
+    {
+        <div class="panel-card">
+            <div class="editor-msg @(_feedbackIsError ? "is-error" : "is-success")">
+                <div>
+                    <strong>@_feedbackTitle</strong>
+                    <p>@_feedback</p>
+                </div>
+            </div>
+        </div>
+    }
+
+    <section class="section-block">
+        <div class="section-block__head">
+            <h4 class="section-block__title">Datos del carrito</h4>
+        </div>
+        <div class="row g-3">
+            <div class="col-12 col-lg-6">
+                <div class="field">
+                    <label>Nombre</label>
+                    <input @bind="_nombre" placeholder="Compra general" />
+                </div>
+            </div>
+            <div class="col-12 col-lg-6">
+                <div class="field">
+                    <label>Descripción</label>
+                    <input @bind="_descripcion" placeholder="Opcional" />
+                </div>
+            </div>
+            <div class="col-12">
+                <label class="catalogos-toggle">
+                    <input type="checkbox" class="catalogos-toggle__input" @bind="_activo" />
+                    <span class="catalogos-toggle__track" aria-hidden="true"></span>
+                    <span class="catalogos-toggle__label">
+                        <strong>Activo</strong>
+                        <small>Si lo desactivás, no se mostrará para tomar pedidos.</small>
+                    </span>
+                </label>
+            </div>
+        </div>
+    </section>
+
+    <section class="section-block mt-4">
+        <div class="section-block__head">
+            <h4 class="section-block__title">Origen de artículos</h4>
+        </div>
+        <div class="row g-3">
+            <div class="col-12 col-lg-6">
+                <button type="button" class="catalog-source-card @(string.Equals(_origenArticulos, CarritoComprasArticuloOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectOrigenArticulosAsync(CarritoComprasArticuloOrigenKeys.Maestro)">
+                    <strong>Maestro de artículos</strong>
+                </button>
+            </div>
+            <div class="col-12 col-lg-6">
+                <button type="button" class="catalog-source-card @(string.Equals(_origenArticulos, CarritoComprasArticuloOrigenKeys.Lista, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectOrigenArticulosAsync(CarritoComprasArticuloOrigenKeys.Lista)">
+                    <strong>Lista de precios</strong>
+                </button>
+            </div>
+        </div>
+        @if (string.Equals(_origenArticulos, CarritoComprasArticuloOrigenKeys.Lista, StringComparison.OrdinalIgnoreCase))
+        {
+            <div class="row g-3 mt-1">
+                <div class="col-12 col-lg-6 col-xxl-4">
+                    <div class="field">
+                        <label>Lista de artículos</label>
+                        <select @bind="_idListaArticulos" @bind:after="ResetLookupAsync">
+                            <option value="">Seleccionar...</option>
+                            @foreach (var lista in _listasPrecio)
+                            {
+                                <option value="@lista.IdLista">@lista.Nombre (@lista.IdLista)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+        }
+        <div class="toolbar mt-3">
+            <button type="button" class="btn btn--primary" @onclick="AbrirLookupArticulosAsync" disabled="@(_loading || _lookupLoading)">
+                <i class="bi bi-search"></i> Consultar artículos
+            </button>
+            @if (PuedeImportarListaCompleta())
+            {
+                <button type="button" class="btn btn--ghost" @onclick="ImportarListaCompletaAsync" disabled="@(_loading || _lookupLoading)">
+                    <i class="bi bi-cloud-arrow-down"></i> @( _importandoListaCompleta ? "Importando..." : "Importar lista completa" )
+                </button>
+            }
+            <button type="button" class="btn btn--ghost" @onclick="LimpiarArticulosAsync" disabled="@(!_articulosSeleccionados.Any())">
+                <i class="bi bi-trash"></i> Limpiar artículos
+            </button>
+        </div>
+
+        <div class="table-responsive mt-3">
+            @if (_articulosSeleccionados.Count == 0)
+            {
+                <div class="usuarios-empty">Todavía no hay artículos cargados.</div>
+            }
+            else
+            {
+                <table class="data-table usuarios-table">
+                    <thead>
+                        <tr>
+                            <th style="width:48px;"></th>
+                            <th>Código</th>
+                            <th>Descripción</th>
+                            <th>Presentación</th>
+                            <th>Marca</th>
+                            <th>Rubro</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _articulosSeleccionados)
+                        {
+                            <tr>
+                                <td>
+                                    @if (ShouldShowArticuloImage(item.IdArticulo))
+                                    {
+                                        <img class="catalogos-article-thumb catalogos-article-thumb--lookup"
+                                             src="@GetArticuloImageUrl(item.IdArticulo)"
+                                             alt="@item.DescripcionArticulo"
+                                             loading="lazy"
+                                             @onerror="@EventCallback.Factory.Create(this, () => HandleArticuloImageError(item.IdArticulo))" />
+                                    }
+                                    else
+                                    {
+                                        <div class="catalogos-article-thumb catalogos-article-thumb--lookup catalogos-article-thumb--fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                    }
+                                </td>
+                                <td><strong>@item.IdArticulo</strong></td>
+                                <td>@item.DescripcionArticulo</td>
+                                <td>@item.Presentacion</td>
+                                <td>@item.Marca</td>
+                                <td>@item.Rubro</td>
+                                <td class="text-end">
+                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarArticuloAsync(item.IdArticulo)">
+                                        <i class="bi bi-x-circle"></i> Quitar
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </section>
+
+    <section class="section-block mt-4">
+        <div class="section-block__head">
+            <h4 class="section-block__title">Origen de precios</h4>
+        </div>
+        <div class="row g-3">
+            <div class="col-12 col-lg-4">
+                <button type="button" class="catalog-source-card @(string.Equals(_origenPrecios, CarritoComprasPrecioOrigenKeys.SegunCliente, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectOrigenPreciosAsync(CarritoComprasPrecioOrigenKeys.SegunCliente)">
+                    <strong>Según cliente</strong>
+                </button>
+            </div>
+            <div class="col-12 col-lg-4">
+                <button type="button" class="catalog-source-card @(string.Equals(_origenPrecios, CarritoComprasPrecioOrigenKeys.ListaFija, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectOrigenPreciosAsync(CarritoComprasPrecioOrigenKeys.ListaFija)">
+                    <strong>Lista fija</strong>
+                </button>
+            </div>
+            <div class="col-12 col-lg-4">
+                <button type="button" class="catalog-source-card @(string.Equals(_origenPrecios, CarritoComprasPrecioOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectOrigenPreciosAsync(CarritoComprasPrecioOrigenKeys.Maestro)">
+                    <strong>Maestro de precios</strong>
+                </button>
+            </div>
+        </div>
+
+        @if (!string.Equals(_origenPrecios, CarritoComprasPrecioOrigenKeys.SegunCliente, StringComparison.OrdinalIgnoreCase))
+        {
+            <div class="row g-3 mt-1">
+                <div class="col-12 col-lg-6 col-xxl-4">
+                    <div class="field">
+                        <label>Lista de precios</label>
+                        <select @bind="_idListaPrecios">
+                            <option value="">Seleccionar...</option>
+                            @foreach (var lista in _listasPrecio)
+                            {
+                                <option value="@lista.IdLista">@lista.Nombre (@lista.IdLista)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="col-12 col-lg-3 col-xxl-2">
+                    <div class="field">
+                        <label>Clase de precio</label>
+                        <select @bind="_clasePrecio">
+                            <option value="">Automática</option>
+                            @for (var i = 1; i <= 8; i++)
+                            {
+                                <option value="@i">@i</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="context-card mt-3">
+                <span class="context-card__label">Según cliente</span>
+                <strong>ListaCliente → ListaVentas → MaestroPrecios</strong>
+                <span class="context-card__muted">La clase se resuelve como ClaseCliente y, si no existe, ClaseVenta.</span>
+            </div>
+        }
+    </section>
+</section>
+
+@if (_showLookupModal)
+{
+    <div class="catalogos-modal-backdrop" @onclick="CloseLookupArticulos"></div>
+    <div class="catalogos-modal" role="dialog" aria-modal="true" aria-labelledby="carrito-lookup-title">
+        <div class="catalogos-modal__card">
+            <div class="catalogos-modal__header">
+                <div>
+                    <h4 id="carrito-lookup-title">Consultar artículos</h4>
+                    <p>@(string.Equals(_origenArticulos, CarritoComprasArticuloOrigenKeys.Lista, StringComparison.OrdinalIgnoreCase) ? "Búsqueda filtrada por la lista seleccionada." : "Búsqueda sobre el maestro oficial de artículos.")</p>
+                </div>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="CloseLookupArticulos" disabled="@_lookupLoading">Cerrar</button>
+            </div>
+
+            <div class="row g-3 align-items-end">
+                <div class="col-12 col-lg-8">
+                    <div class="field">
+                        <label>Buscar</label>
+                        <input @bind="_lookupTexto" @bind:event="oninput" @onkeydown="HandleLookupKeyDownAsync" placeholder="Código o descripción" disabled="@_lookupLoading" />
+                    </div>
+                </div>
+                <div class="col-12 col-lg-2">
+                    <button type="button" class="btn btn--primary w-100" @onclick="() => BuscarArticulosAsync(true)" disabled="@_lookupLoading">
+                        <i class="bi bi-search"></i> Buscar
+                    </button>
+                </div>
+            </div>
+
+            <div class="catalogos-modal__meta">
+                <span>@(_lookupTotal == 0 ? "Sin resultados" : $"Mostrando {LookupPageFrom}-{LookupPageTo} de {_lookupTotal}")</span>
+            </div>
+
+            <div class="table-responsive catalogos-modal__table">
+                @if (_lookupResultados.Count == 0 && !_lookupLoading)
+                {
+                    <div class="usuarios-empty">No se encontraron artículos con los filtros actuales.</div>
+                }
+                else
+                {
+                    <table class="data-table usuarios-table">
+                        <thead>
+                            <tr>
+                                <th style="width:44px;"></th>
+                                <th style="width:72px;"></th>
+                                <th>Código</th>
+                                <th>Descripción</th>
+                                <th>Presentación</th>
+                                <th>Marca</th>
+                                <th>Rubro</th>
+                                <th style="text-align:right;">Precio</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _lookupResultados)
+                            {
+                                var alreadyAdded = IsArticuloAlreadyAdded(item.IdArticulo);
+                                <tr class="catalogos-modal__row @(alreadyAdded ? "is-duplicate" : string.Empty)" @onclick="() => ToggleLookupRowAsync(item.IdArticulo)">
+                                    <td>
+                                        <input type="checkbox"
+                                               checked="@_lookupSeleccionados.Contains(item.IdArticulo)"
+                                               disabled="@_lookupLoading"
+                                               @onclick:stopPropagation="true"
+                                               @onchange="(ChangeEventArgs args) => ToggleLookupSeleccionAsync(item.IdArticulo, args)" />
+                                    </td>
+                                    <td>
+                                        @if (ShouldShowArticuloImage(item.IdArticulo))
+                                        {
+                                            <img class="catalogos-article-thumb catalogos-article-thumb--lookup"
+                                                 src="@GetArticuloImageUrl(item.IdArticulo)"
+                                                 alt="@item.DescripcionArticulo"
+                                                 loading="lazy"
+                                                 @onerror="@EventCallback.Factory.Create(this, () => HandleArticuloImageError(item.IdArticulo))" />
+                                        }
+                                        else
+                                        {
+                                            <div class="catalogos-article-thumb catalogos-article-thumb--lookup catalogos-article-thumb--fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                        }
+                                    </td>
+                                    <td><strong>@item.IdArticulo</strong></td>
+                                    <td>@item.DescripcionArticulo</td>
+                                    <td>@item.Presentacion</td>
+                                    <td>@item.Marca</td>
+                                    <td>@item.Rubro</td>
+                                    <td style="text-align:right;">@Money(item.Precio)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+            </div>
+
+            <div class="catalogos-modal__pager">
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="LookupPreviousPageAsync" disabled="@(_lookupLoading || _lookupPageNumber <= 1)">
+                    <i class="bi bi-chevron-left"></i>
+                </button>
+                <span>Página @_lookupPageNumber de @(LookupTotalPages <= 0 ? 1 : LookupTotalPages)</span>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="LookupNextPageAsync" disabled="@(_lookupLoading || LookupTotalPages <= 0 || _lookupPageNumber >= LookupTotalPages)">
+                    <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+
+            <div class="catalogos-modal__footer">
+                <button type="button" class="btn btn--ghost" @onclick="CloseLookupArticulos" disabled="@_lookupLoading">Cancelar</button>
+                <button type="button" class="btn btn--primary" @onclick="AgregarSeleccionadosDesdeLookupAsync" disabled="@(_lookupLoading || !_lookupSeleccionados.Any())">
+                    @( _lookupLoading ? "Consultando..." : "Agregar seleccionados" )
+                </button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int? IdCarrito { get; set; }
+
+    private readonly List<CatalogosListaPrecioDto> _listasPrecio = [];
+    private readonly List<CatalogosArticuloBusquedaDto> _lookupResultados = [];
+    private readonly List<CarritoComprasGeneralArticuloDto> _articulosSeleccionados = [];
+    private readonly HashSet<string> _lookupSeleccionados = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _articuloImageFallbacks = new(StringComparer.OrdinalIgnoreCase);
+
+    private bool _loading;
+    private bool _lookupLoading;
+    private bool _importandoListaCompleta;
+    private bool _showLookupModal;
+    private string _nombre = string.Empty;
+    private string _descripcion = string.Empty;
+    private bool _activo = true;
+    private string _origenArticulos = CarritoComprasArticuloOrigenKeys.Maestro;
+    private string _idListaArticulos = string.Empty;
+    private string _origenPrecios = CarritoComprasPrecioOrigenKeys.SegunCliente;
+    private string _idListaPrecios = string.Empty;
+    private int? _clasePrecio;
+    private int? _editingIdCarrito;
+    private string _lookupTexto = string.Empty;
+    private int _lookupPageNumber = 1;
+    private int _lookupPageSize = 50;
+    private int _lookupTotal;
+    private string _feedback = string.Empty;
+    private string _feedbackTitle = string.Empty;
+    private bool _feedbackIsError;
+    private string _ftpCodigoCta = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var settingsTask = PuntoVentaSvc.GetSettingsAsync();
+        var listasTask = CatalogosSvc.GetListasPrecioAsync();
+        await Task.WhenAll(settingsTask, listasTask);
+
+        _ftpCodigoCta = (await settingsTask).FtpCodigoCta;
+        _listasPrecio.AddRange(await listasTask);
+
+        if (IdCarrito.HasValue)
+            await CargarAsync(IdCarrito.Value);
+    }
+
+    private async Task CargarAsync(int idCarrito)
+    {
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CarritoComprasSvc.GetGeneralAsync(idCarrito), "No se pudo cargar el carrito general.");
+            var detail = result.Value;
+            if (!result.Success || detail is null)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _editingIdCarrito = detail.IdCarrito;
+            _nombre = detail.Nombre;
+            _descripcion = detail.Descripcion;
+            _activo = detail.Activo;
+            _origenArticulos = detail.OrigenArticulos;
+            _idListaArticulos = detail.IdListaArticulos ?? string.Empty;
+            _origenPrecios = detail.OrigenPrecios;
+            _idListaPrecios = detail.IdListaPrecios ?? string.Empty;
+            _clasePrecio = detail.ClasePrecio;
+            _articulosSeleccionados.Clear();
+            _articulosSeleccionados.AddRange(detail.Articulos);
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_nombre))
+        {
+            SetFeedback("El nombre del carrito es obligatorio.", "Falta el nombre", true);
+            return;
+        }
+
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CarritoComprasSvc.SaveGeneralAsync(new CarritoComprasGeneralSaveRequestDto
+            {
+                IdCarrito = _editingIdCarrito,
+                Nombre = _nombre,
+                Descripcion = _descripcion,
+                Activo = _activo,
+                OrigenArticulos = _origenArticulos,
+                IdListaArticulos = _idListaArticulos,
+                OrigenPrecios = _origenPrecios,
+                IdListaPrecios = _idListaPrecios,
+                ClasePrecio = _clasePrecio,
+                Articulos = _articulosSeleccionados.ToArray(),
+                Usuario = Environment.UserName,
+                Pc = Environment.MachineName
+            }), "No se pudo guardar el carrito general.");
+
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _editingIdCarrito = result.Value;
+            SetFeedback($"Se guardó el carrito general #{result.Value}.", "Carrito guardado", false);
+            Nav.NavigateTo(BuildSaasRoute("/carrito-general/0"));
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task SelectOrigenArticulosAsync(string origen)
+    {
+        _origenArticulos = origen;
+        if (!string.Equals(origen, CarritoComprasArticuloOrigenKeys.Lista, StringComparison.OrdinalIgnoreCase))
+            _idListaArticulos = string.Empty;
+
+        await ResetLookupAsync();
+        await Task.CompletedTask;
+    }
+
+    private async Task SelectOrigenPreciosAsync(string origen)
+    {
+        _origenPrecios = origen;
+        if (string.Equals(origen, CarritoComprasPrecioOrigenKeys.SegunCliente, StringComparison.OrdinalIgnoreCase))
+        {
+            _idListaPrecios = string.Empty;
+            _clasePrecio = null;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private async Task AbrirLookupArticulosAsync()
+    {
+        if (string.Equals(_origenArticulos, CarritoComprasArticuloOrigenKeys.Lista, StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(_idListaArticulos))
+        {
+            SetFeedback("Elegí una lista de artículos antes de consultar.", "Falta la lista", true);
+            return;
+        }
+
+        _showLookupModal = true;
+        await BuscarArticulosAsync(true);
+    }
+
+    private async Task BuscarArticulosAsync(bool resetPage)
+    {
+        if (resetPage)
+            _lookupPageNumber = 1;
+
+        _lookupLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CatalogosSvc.SearchArticulosAsync(new CatalogosArticuloBusquedaFiltersDto
+            {
+                Texto = _lookupTexto,
+                IdLista = _idListaArticulos,
+                Origen = _origenArticulos,
+                PageNumber = _lookupPageNumber,
+                PageSize = _lookupPageSize,
+                IdWeb = idweb
+            }), "No se pudieron cargar los artículos.");
+
+            if (!result.Success || result.Value is null)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            _lookupResultados.Clear();
+            _lookupResultados.AddRange(result.Value.Items);
+            _lookupTotal = result.Value.Total;
+            _lookupPageNumber = result.Value.PageNumber;
+            _lookupPageSize = result.Value.PageSize;
+        }
+        finally
+        {
+            _lookupLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ImportarListaCompletaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_idListaArticulos))
+            return;
+
+        _importandoListaCompleta = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CatalogosSvc.GetArticulosDesdeListaAsync(_idListaArticulos, idweb, CancellationToken.None), "No se pudo importar la lista completa.");
+            if (!result.Success || result.Value is null)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            foreach (var item in result.Value)
+                AddArticulo(item);
+        }
+        finally
+        {
+            _importandoListaCompleta = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task AgregarSeleccionadosDesdeLookupAsync()
+    {
+        foreach (var idArticulo in _lookupSeleccionados.ToList())
+        {
+            var item = _lookupResultados.FirstOrDefault(x => string.Equals(x.IdArticulo, idArticulo, StringComparison.OrdinalIgnoreCase));
+            if (item is not null)
+                AddArticulo(item);
+        }
+
+        _lookupSeleccionados.Clear();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void AddArticulo(CatalogosArticuloBusquedaDto item)
+    {
+        if (_articulosSeleccionados.Any(x => string.Equals(x.IdArticulo, item.IdArticulo, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        _articulosSeleccionados.Add(new CarritoComprasGeneralArticuloDto
+        {
+            IdArticulo = item.IdArticulo,
+            DescripcionArticulo = item.DescripcionArticulo,
+            Presentacion = item.Presentacion,
+            Marca = item.Marca,
+            Rubro = item.Rubro
+        });
+    }
+
+    private async Task QuitarArticuloAsync(string idArticulo)
+    {
+        _articulosSeleccionados.RemoveAll(x => string.Equals(x.IdArticulo, idArticulo, StringComparison.OrdinalIgnoreCase));
+        await Task.CompletedTask;
+    }
+
+    private async Task LimpiarArticulosAsync()
+    {
+        if (_articulosSeleccionados.Count == 0)
+            return;
+
+        var confirm = await DialogSvc.ConfirmAsync(
+            "Limpiar artículos",
+            "Se quitarán todos los artículos del carrito.",
+            "Limpiar",
+            "Cancelar");
+
+        if (!confirm)
+            return;
+
+        _articulosSeleccionados.Clear();
+    }
+
+    private async Task CloseLookupArticulos()
+    {
+        _showLookupModal = false;
+        await ResetLookupAsync();
+        await Task.CompletedTask;
+    }
+
+    private Task ResetLookupAsync()
+    {
+        _lookupResultados.Clear();
+        _lookupSeleccionados.Clear();
+        _lookupTexto = string.Empty;
+        _lookupPageNumber = 1;
+        _lookupPageSize = 50;
+        _lookupTotal = 0;
+        return Task.CompletedTask;
+    }
+
+    private async Task ToggleLookupSeleccionAsync(string idArticulo, ChangeEventArgs args)
+    {
+        var seleccionar = args.Value is bool flag && flag;
+        if (seleccionar)
+            _lookupSeleccionados.Add(idArticulo);
+        else
+            _lookupSeleccionados.Remove(idArticulo);
+
+        await Task.CompletedTask;
+    }
+
+    private async Task ToggleLookupRowAsync(string idArticulo)
+    {
+        if (_lookupSeleccionados.Contains(idArticulo))
+            _lookupSeleccionados.Remove(idArticulo);
+        else
+            _lookupSeleccionados.Add(idArticulo);
+
+        await Task.CompletedTask;
+    }
+
+    private async Task HandleLookupKeyDownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
+    {
+        if (args.Key is "Enter" or "NumpadEnter")
+            await BuscarArticulosAsync(true);
+    }
+
+    private async Task LookupPreviousPageAsync()
+    {
+        if (_lookupLoading || _lookupPageNumber <= 1)
+            return;
+
+        _lookupPageNumber--;
+        await BuscarArticulosAsync(false);
+    }
+
+    private async Task LookupNextPageAsync()
+    {
+        if (_lookupLoading || LookupTotalPages <= 0 || _lookupPageNumber >= LookupTotalPages)
+            return;
+
+        _lookupPageNumber++;
+        await BuscarArticulosAsync(false);
+    }
+
+    private int LookupTotalPages
+        => _lookupTotal > 0 ? (int)Math.Ceiling(_lookupTotal / (double)_lookupPageSize) : 0;
+
+    private int LookupPageFrom
+        => _lookupTotal == 0 ? 0 : ((_lookupPageNumber - 1) * _lookupPageSize) + 1;
+
+    private int LookupPageTo
+        => _lookupTotal == 0 ? 0 : Math.Min(_lookupPageNumber * _lookupPageSize, _lookupTotal);
+
+    private bool PuedeImportarListaCompleta()
+        => string.Equals(_origenArticulos, CarritoComprasArticuloOrigenKeys.Lista, StringComparison.OrdinalIgnoreCase)
+           && !string.IsNullOrWhiteSpace(_idListaArticulos);
+
+    private bool IsArticuloAlreadyAdded(string idArticulo)
+        => _articulosSeleccionados.Any(x => string.Equals(x.IdArticulo, idArticulo, StringComparison.OrdinalIgnoreCase));
+
+    private bool ShouldShowArticuloImage(string idArticulo)
+        => !_articuloImageFallbacks.Contains(idArticulo) && !string.IsNullOrWhiteSpace(GetArticuloImageUrl(idArticulo));
+
+    private string GetArticuloImageUrl(string idArticulo)
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_ftpCodigoCta, idArticulo, idbase, thumbnail: true);
+
+    private void HandleArticuloImageError(string idArticulo)
+    {
+        if (!string.IsNullOrWhiteSpace(idArticulo))
+            _articuloImageFallbacks.Add(idArticulo);
+    }
+
+    private static string ProductInitials(string descripcion)
+    {
+        if (string.IsNullOrWhiteSpace(descripcion))
+            return "CA";
+
+        var parts = descripcion
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(x => char.ToUpperInvariant(x[0]));
+
+        return string.Concat(parts);
+    }
+
+    private static string Money(decimal value)
+        => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private string BuildSaasRoute(string route)
+    {
+        var normalizedRoute = string.IsNullOrWhiteSpace(route)
+            ? "/"
+            : (route.Trim().StartsWith('/') ? route.Trim() : "/" + route.Trim());
+
+        if (!string.IsNullOrWhiteSpace(idweb) && idbase.HasValue)
+            return $"/{Uri.EscapeDataString(idweb.Trim())}/{idbase.Value}{normalizedRoute}";
+
+        return RouteContext.BuildRoute(normalizedRoute);
+    }
+
+    private void SetFeedback(string message, string title = "Atención", bool isError = false)
+    {
+        _feedback = message;
+        _feedbackTitle = title;
+        _feedbackIsError = isError;
+    }
+
+    private void SetFeedback(AppUiMessage? feedback)
+    {
+        if (feedback is null)
+        {
+            _feedback = string.Empty;
+            _feedbackTitle = string.Empty;
+            _feedbackIsError = false;
+            return;
+        }
+
+        _feedback = feedback.Message;
+        _feedbackTitle = string.IsNullOrWhiteSpace(feedback.Title) ? "Atención" : feedback.Title;
+        _feedbackIsError = feedback.Severity is AppUiFeedbackSeverity.Error or AppUiFeedbackSeverity.Warning;
+    }
+}

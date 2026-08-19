@@ -1,0 +1,1196 @@
+@page "/carrito/{IdInsert:int}"
+@page "/{idweb}/{idbase:int}/carrito/{IdInsert:int}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits SaaSRoutePageBase
+@using AlfaCore.Models
+@using AlfaCore.Components.Shared
+@using System.Globalization
+@using Microsoft.AspNetCore.Components.Web
+@inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
+@inject AlfaCore.Services.ICarritoComprasService CarritoComprasSvc
+@inject AlfaCore.Services.ICatalogosClienteSessionService CatalogoClienteSession
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
+@inject AlfaCore.Services.IPedidosEmailService PedidosEmailSvc
+@inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+@implements IAsyncDisposable
+
+<PageTitle>Toma de pedidos | AlfaCore</PageTitle>
+
+@if (!_loading && !_notFound && !_carritoDeshabilitado && !IsAuthenticated)
+{
+    <CatalogoClienteLoginPanel @ref="_loginPanel"
+                                CatalogoNombre="@_catalogo?.Nombre"
+                                VigenciaTexto="@GetVigenciaTexto()"
+                                BrandLogoUrl="@GetBrandingLogoUrl()"
+                                BrandName="@GetBrandingName()"
+                                Codigo="@_clienteCodigo"
+                                CodigoChanged="v => _clienteCodigo = v"
+                                Password="@_clientePassword"
+                                PasswordChanged="v => _clientePassword = v"
+                                ShowPassword="@_showPassword"
+                                ShowPasswordChanged="v => _showPassword = v"
+                                Busy="@_sessionBusy"
+                                Feedback="@_loginFeedback"
+                                OnSubmit="LoginClienteAsync"
+                                VolverUrl="@GetReturnUrl()"
+                                VolverTexto="@GetReturnText()" />
+}
+else
+{
+    <section class="page-grid carrito-page">
+        @if (!Embedded)
+        {
+            <section class="panel-card d-flex flex-wrap justify-content-between align-items-center gap-2">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="carrito-page__logo @GetBrandingLogoFrameClass()">
+                        <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
+                    </div>
+                    <div>
+                        <p class="text-muted mb-0">Toma de pedidos</p>
+                        <h2 class="mb-0">@(_catalogo?.Nombre ?? "Catálogo")</h2>
+                        @if (!string.IsNullOrWhiteSpace(_catalogo?.Observaciones))
+                        {
+                            <p class="carrito-page__description mb-0">@_catalogo.Observaciones.Trim()</p>
+                        }
+                    </div>
+                </div>
+
+                @if (IsAuthenticated)
+                {
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="badge text-bg-secondary">Cliente: @GetCurrentClientLabel()</span>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LogoutClienteAsync" disabled="@_sessionBusy">
+                            <i class="bi bi-box-arrow-right"></i> Cerrar sesión
+                        </button>
+                    </div>
+                }
+            </section>
+        }
+
+        @if (_loading)
+        {
+            <section class="panel-card">
+                <p class="text-muted">Cargando...</p>
+            </section>
+        }
+        else if (_notFound)
+        {
+            <section class="panel-card">
+                <h3 class="panel-card__title">Catálogo no disponible</h3>
+                <p class="panel-card__subtitle">El catálogo no existe, no está publicado o venció su vigencia.</p>
+            </section>
+        }
+        else if (_carritoDeshabilitado)
+        {
+            <section class="panel-card">
+                <h3 class="panel-card__title">Toma de pedidos no disponible</h3>
+                <p class="panel-card__subtitle">Este catálogo no tiene habilitada la toma de pedidos.</p>
+                <a class="btn btn--ghost btn--sm" href="@GetPublicCatalogUrl()">
+                    <i class="bi bi-arrow-left"></i> Ver catálogo
+                </a>
+            </section>
+        }
+        else if (_catalogo is not null)
+        {
+            <section class="panel-card">
+                @if (_catalogo.Articulos.Count > 0)
+                {
+                    <div class="carrito-tabs" role="tablist" aria-label="Filtro por rubro">
+                        <div class="carrito-tabs__scroll">
+                            <button type="button"
+                                    role="tab"
+                                    aria-selected="@(string.IsNullOrEmpty(_filtroRubro))"
+                                    class="carrito-tabs__btn @(string.IsNullOrEmpty(_filtroRubro) ? "is-active" : string.Empty)"
+                                    @onclick="() => _filtroRubro = string.Empty">
+                                Todos
+                            </button>
+                            @foreach (var rubro in GetRubrosDisponibles())
+                            {
+                                <button type="button"
+                                        role="tab"
+                                        aria-selected="@(string.Equals(_filtroRubro, rubro, StringComparison.OrdinalIgnoreCase))"
+                                        class="carrito-tabs__btn @(string.Equals(_filtroRubro, rubro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)"
+                                        @onclick="() => _filtroRubro = rubro">
+                                    @rubro
+                                </button>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="carrito-filters">
+                        <div class="field carrito-filters__field">
+                            <label>Marca</label>
+                            <select @bind="_filtroMarca">
+                                <option value="">Todas</option>
+                                @foreach (var marca in GetMarcasDisponibles())
+                                {
+                                    <option value="@marca">@marca</option>
+                                }
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="carrito-grid">
+                        @foreach (var item in GetArticulosFiltrados())
+                        {
+                            <article class="carrito-card">
+                                <div class="carrito-card__media">
+                                    @if (ShouldShowImage(item))
+                                    {
+                                        <img class="carrito-card__img"
+                                             src="@GetProductThumbUrl(item)"
+                                             alt="@item.DescripcionArticulo"
+                                             loading="lazy"
+                                             @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(item.IdArticulo))" />
+                                    }
+                                    else
+                                    {
+                                        <div class="carrito-card__fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                    }
+                                </div>
+
+                                <div class="carrito-card__body">
+                                    <div class="carrito-card__title-row">
+                                        <strong class="carrito-card__title">@item.DescripcionArticulo</strong>
+                                        <span class="carrito-card__code">@item.IdArticulo</span>
+                                    </div>
+
+                                    @if (!string.IsNullOrWhiteSpace(item.Presentacion))
+                                    {
+                                        <p class="carrito-card__presentation">@item.Presentacion</p>
+                                    }
+
+                                    <div class="carrito-card__meta">
+                                        <span>@Display(item.Marca)</span>
+                                        <span>@Display(item.Rubro)</span>
+                                    </div>
+
+                                    @RenderPrecio(item)
+
+                                    <div class="carrito-card__actions">
+                                        @if (GetCantidad(item.IdArticulo) <= 0m)
+                                        {
+                                            <button type="button" class="btn btn--primary btn--sm carrito-card__add" @onclick="() => AgregarAsync(item)">
+                                                <i class="bi bi-cart-plus"></i> Agregar
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <div class="carrito-stepper">
+                                                <button type="button" class="carrito-stepper__btn" @onclick="() => DecrementarAsync(item)" title="Restar">−</button>
+                                                <input class="carrito-stepper__input"
+                                                       value="@GetCantidad(item.IdArticulo).ToString("N2", CultureEsAr)"
+                                                       @onchange="args => OnCantidadInputAsync(item, args)"
+                                                       inputmode="decimal" />
+                                                <button type="button" class="carrito-stepper__btn" @onclick="() => IncrementarAsync(item)" title="Sumar">+</button>
+                                            </div>
+                                        }
+                                    </div>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="text-muted">Este catálogo todavía no tiene artículos.</p>
+                }
+            </section>
+
+            @if (GetLineasCarrito().Count > 0)
+            {
+                <button type="button" class="carrito-fab" @onclick="() => _showCarritoDrawer = true">
+                    <i class="bi bi-cart3"></i>
+                    <span>Carrito (@GetArticulosDistintosCount())</span>
+                    <strong>@AlfaCore.Services.CatalogosPriceDisplayHelper.Money(GetTotalEstimado())</strong>
+                </button>
+            }
+        }
+    </section>
+}
+
+@if (_showCarritoDrawer)
+{
+    <div class="carrito-overlay" @onclick="() => _showCarritoDrawer = false">
+        <div class="carrito-drawer" @onclick:stopPropagation="true">
+            <div class="carrito-drawer__header">
+                <h3>Tu pedido</h3>
+                <button type="button" class="carrito-drawer__close" @onclick="() => _showCarritoDrawer = false" title="Cerrar">
+                    <i class="bi bi-x-lg"></i>
+                </button>
+            </div>
+
+            @if (GetLineasCarrito().Count == 0)
+            {
+                <p class="text-muted">Todavía no agregaste artículos.</p>
+            }
+            else
+            {
+                <div class="carrito-drawer__lines">
+                    @foreach (var linea in GetLineasCarrito())
+                    {
+                        <div class="carrito-line">
+                            <div class="carrito-line__media">
+                                @if (ShouldShowImage(linea.Item))
+                                {
+                                    <img src="@GetProductThumbUrl(linea.Item)" alt="@linea.Item.DescripcionArticulo" loading="lazy"
+                                         @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(linea.Item.IdArticulo))" />
+                                }
+                                else
+                                {
+                                    <div class="carrito-line__fallback">@ProductInitials(linea.Item.DescripcionArticulo)</div>
+                                }
+                            </div>
+
+                            <div class="carrito-line__body">
+                                <strong>@linea.Item.DescripcionArticulo</strong>
+                                <span class="carrito-line__code">@linea.Item.IdArticulo</span>
+                                <span class="carrito-line__unit">@AlfaCore.Services.CatalogosPriceDisplayHelper.Money(AlfaCore.Services.CatalogosPriceDisplayHelper.GetPrecioAplicado(linea.Item)) c/u</span>
+                            </div>
+
+                            <div class="carrito-line__qty">
+                                <div class="carrito-stepper carrito-stepper--sm">
+                                    <button type="button" class="carrito-stepper__btn" @onclick="() => DecrementarAsync(linea.Item)" title="Restar">−</button>
+                                    <input class="carrito-stepper__input"
+                                           value="@linea.Cantidad.ToString("N2", CultureEsAr)"
+                                           @onchange="args => OnCantidadInputAsync(linea.Item, args)"
+                                           inputmode="decimal" />
+                                    <button type="button" class="carrito-stepper__btn" @onclick="() => IncrementarAsync(linea.Item)" title="Sumar">+</button>
+                                </div>
+                            </div>
+
+                            <div class="carrito-line__subtotal">
+                                @AlfaCore.Services.CatalogosPriceDisplayHelper.Money(linea.Cantidad * AlfaCore.Services.CatalogosPriceDisplayHelper.GetPrecioAplicado(linea.Item))
+                            </div>
+
+                            <button type="button" class="carrito-line__remove" @onclick="() => QuitarAsync(linea.Item)" title="Quitar">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    }
+                </div>
+
+                <div class="carrito-drawer__summary">
+                    <div><span>Artículos distintos</span><strong>@GetArticulosDistintosCount()</strong></div>
+                    <div><span>Unidades</span><strong>@GetCantidadTotal().ToString("N2", CultureEsAr)</strong></div>
+                    <div class="carrito-drawer__total"><span>Total</span><strong>@AlfaCore.Services.CatalogosPriceDisplayHelper.Money(GetTotalEstimado())</strong></div>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(_validacionError))
+                {
+                    <div class="editor-msg editor-msg--error">
+                        <div><strong>No se puede continuar</strong><p>@_validacionError</p></div>
+                    </div>
+                }
+
+                <div class="actions mt-3">
+                    <button type="button" class="btn btn--primary" @onclick="ContinuarPedido">
+                        <i class="bi bi-arrow-right-circle"></i> Continuar pedido
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@if (_showConfirmModal && _catalogo is not null)
+{
+    <div class="carrito-overlay" @onclick="HandleConfirmOverlayClick">
+        <div class="carrito-drawer" @onclick:stopPropagation="true">
+            @if (_pedidoResultado is not null)
+            {
+                <div class="carrito-drawer__header">
+                    <h3>Pedido registrado correctamente</h3>
+                </div>
+
+                <div class="editor-msg editor-msg--success">
+                    <div>
+                        <strong>Pedido @_pedidoResultado.Tc @_pedidoResultado.IdComprobanteTexto</strong>
+                        <p>Fecha: @_pedidoResultado.Fecha.ToString("dd/MM/yyyy")</p>
+                        <p>Cliente: @_pedidoResultado.RazonSocial (@_pedidoResultado.CodigoCliente)</p>
+                        <p>@_pedidoResultado.Lineas.Count artículo(s) — Total: @AlfaCore.Services.CatalogosPriceDisplayHelper.Money(_pedidoResultado.Total)</p>
+                    </div>
+                </div>
+
+                @if (_actualizandoEmailCliente || _enviandoEmailPedido)
+                {
+                    <div class="editor-msg">
+                        <div><p><i class="bi bi-arrow-repeat spinner-border spinner-border-sm"></i> @(_actualizandoEmailCliente ? "Actualizando email del cliente..." : "Enviando email de confirmación...")</p></div>
+                    </div>
+                }
+                else if (_enviarCopiaEmail)
+                {
+                    @if (_emailEnvioResultado?.Enviado == true)
+                    {
+                        <div class="editor-msg editor-msg--success">
+                            <div><p>Pedido registrado y email enviado correctamente.</p></div>
+                        </div>
+                    }
+                    else if (_emailEnvioResultado is not null)
+                    {
+                        <div class="editor-msg editor-msg--warning">
+                            <div>
+                                <p>El pedido se registró correctamente, pero no pudimos enviar el email.</p>
+                                @if (!string.IsNullOrWhiteSpace(_emailEnvioResultado.MensajeError))
+                                {
+                                    <p class="text-muted mb-0">@_emailEnvioResultado.MensajeError</p>
+                                }
+                            </div>
+                        </div>
+                        <div class="actions mt-2">
+                            <button type="button" class="btn btn--ghost" @onclick="ReintentarEnvioEmailAsync" disabled="@_enviandoEmailPedido">
+                                <i class="bi bi-arrow-clockwise"></i> Reintentar envío
+                            </button>
+                        </div>
+                    }
+                }
+
+                @if (!string.IsNullOrWhiteSpace(_emailFeedback))
+                {
+                    <div class="editor-msg editor-msg--warning">
+                        <div><p>@_emailFeedback</p></div>
+                    </div>
+                }
+
+                <div class="actions mt-3">
+                    <button type="button" class="btn btn--primary" @onclick="CerrarConfirmacionExitosa">
+                        <i class="bi bi-check-lg"></i> Listo
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="carrito-drawer__header">
+                    <h3>Resumen del pedido</h3>
+                    <button type="button" class="carrito-drawer__close" @onclick="() => _showConfirmModal = false" disabled="@_confirmandoPedido" title="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+
+                <p class="carrito-confirm__cliente"><i class="bi bi-person-circle"></i> @GetCurrentClientLabel()</p>
+
+                <div class="carrito-drawer__lines">
+                    @foreach (var linea in GetLineasCarrito())
+                    {
+                        <div class="carrito-line carrito-line--readonly">
+                            <div class="carrito-line__body">
+                                <strong>@linea.Item.DescripcionArticulo</strong>
+                                <span class="carrito-line__code">@linea.Item.IdArticulo</span>
+                                <span class="carrito-line__unit">@linea.Cantidad.ToString("N2", CultureEsAr) x @AlfaCore.Services.CatalogosPriceDisplayHelper.Money(AlfaCore.Services.CatalogosPriceDisplayHelper.GetPrecioAplicado(linea.Item))</span>
+                            </div>
+                            <div class="carrito-line__subtotal">
+                                @AlfaCore.Services.CatalogosPriceDisplayHelper.Money(linea.Cantidad * AlfaCore.Services.CatalogosPriceDisplayHelper.GetPrecioAplicado(linea.Item))
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                <div class="carrito-drawer__summary">
+                    <div><span>Artículos distintos</span><strong>@GetArticulosDistintosCount()</strong></div>
+                    <div><span>Unidades</span><strong>@GetCantidadTotal().ToString("N2", CultureEsAr)</strong></div>
+                    <div class="carrito-drawer__total"><span>Total</span><strong>@AlfaCore.Services.CatalogosPriceDisplayHelper.Money(GetTotalEstimado())</strong></div>
+                </div>
+
+                <div class="field carrito-confirm__email">
+                    <label>Email para la confirmación</label>
+                    <input type="email" @bind="_emailPedido" @bind:event="oninput" placeholder="cliente@empresa.com" disabled="@_confirmandoPedido" />
+                </div>
+
+                <label class="carrito-toggle">
+                    <input type="checkbox" class="carrito-toggle__input" @bind="_enviarCopiaEmail" disabled="@_confirmandoPedido" />
+                    <span class="carrito-toggle__track" aria-hidden="true"></span>
+                    <span class="carrito-toggle__label">
+                        <strong>Enviar copia del pedido por email</strong>
+                        <small>Te lo mandamos apenas se registre el pedido.</small>
+                    </span>
+                </label>
+
+                @if (_enviarCopiaEmail && !string.IsNullOrWhiteSpace(_emailPedido) && !EsEmailValido(_emailPedido))
+                {
+                    <p class="carrito-confirm__email-error">El email no tiene un formato válido.</p>
+                }
+
+                @if (_enviarCopiaEmail && EsEmailValido(_emailPedido) && !string.Equals((_emailPedido ?? string.Empty).Trim(), _emailRegistradoOriginal, StringComparison.OrdinalIgnoreCase))
+                {
+                    <label class="carrito-toggle carrito-toggle--sub">
+                        <input type="checkbox" class="carrito-toggle__input" @bind="_actualizarEmailCliente" disabled="@_confirmandoPedido" />
+                        <span class="carrito-toggle__track" aria-hidden="true"></span>
+                        <span class="carrito-toggle__label">
+                            <strong>Actualizar también el email en la ficha del cliente</strong>
+                            <small>Si no lo marcás, se usa solo para este pedido.</small>
+                        </span>
+                    </label>
+                }
+
+                @if (_pedidoResultado is null)
+                {
+                    <div class="editor-msg editor-msg--success">
+                        <div><strong>El pedido está listo para confirmar.</strong></div>
+                    </div>
+                }
+
+                @if (_confirmFeedback is not null)
+                {
+                    <div class="editor-msg @(_confirmFeedback.Severity == AppUiFeedbackSeverity.Success ? "editor-msg--success" : "editor-msg--warning")">
+                        <div><p>@_confirmFeedback.Message</p></div>
+                    </div>
+                }
+
+                <div class="actions mt-3">
+                    <button type="button" class="btn btn--ghost" @onclick="() => _showConfirmModal = false" disabled="@_confirmandoPedido">
+                        <i class="bi bi-pencil"></i> Seguir editando
+                    </button>
+                    <button type="button" class="btn btn--primary" @onclick="ConfirmarPedidoAsync" disabled="@_confirmandoPedido">
+                        <i class="bi @(_confirmandoPedido ? "spinner-border spinner-border-sm" : "bi-check-circle")"></i> @(_confirmandoPedido ? "Registrando pedido..." : "Confirmar pedido")
+                    </button>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+@code {
+    private const string ClientTokenStorageKey = "alfacore_catalogo_cliente_token";
+    private static readonly CultureInfo CultureEsAr = CultureInfo.GetCultureInfo("es-AR");
+
+    private CatalogosCatalogoDetalleDto? _catalogo;
+    private PuntoVentaSettingsDto _puntoVentaSettings = new();
+    private bool _loading = true;
+    private bool _notFound;
+    private bool _carritoDeshabilitado;
+    private bool _restoreAttempted;
+    private bool _cartRestoreAttempted;
+
+    private AppUiMessage? _loginFeedback;
+    private bool _sessionBusy;
+    private bool _showPassword;
+    private string _clienteCodigo = string.Empty;
+    private string _clientePassword = string.Empty;
+    [Parameter] public bool Embedded { get; set; }
+    [Parameter] public string? VolverUrl { get; set; }
+    [Parameter] public string? VolverTexto { get; set; }
+    private CatalogoClienteLoginPanel? _loginPanel;
+    private CatalogosPublicIdentityDto _branding = new();
+
+    private string _filtroRubro = string.Empty;
+    private string _filtroMarca = string.Empty;
+    private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
+
+    private readonly Dictionary<string, decimal> _carrito = new(StringComparer.OrdinalIgnoreCase);
+    private bool _showCarritoDrawer;
+    private bool _showConfirmModal;
+    private string? _validacionError;
+    private AppUiMessage? _confirmFeedback;
+    private bool _confirmandoPedido;
+    private CatalogoPedidoResultDto? _pedidoResultado;
+
+    private string _emailPedido = string.Empty;
+    private string _emailRegistradoOriginal = string.Empty;
+    private bool _enviarCopiaEmail;
+    private bool _actualizarEmailCliente;
+    private bool _enviandoEmailPedido;
+    private bool _actualizandoEmailCliente;
+    private CatalogoPedidoEmailResultDto? _emailEnvioResultado;
+    private string? _emailFeedback;
+
+    private bool IsAuthenticated
+        => CatalogoClienteSession.CurrentClient is { } client
+           && string.Equals(client.IdWeb, NormalizeRouteSegment(idweb), StringComparison.OrdinalIgnoreCase)
+           && client.IdBase == (idbase ?? 0);
+
+    [Parameter]
+    public int IdInsert { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        CatalogoClienteSession.StateChanged += OnClientSessionStateChanged;
+        await EnsureRouteSessionAsync();
+        await LoadPublicIdentityAsync();
+        await LoadImageSettingsAsync();
+        await RefreshCatalogoAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await EnsureRouteSessionAsync();
+        await LoadPublicIdentityAsync();
+        await LoadImageSettingsAsync();
+        await RefreshCatalogoAsync();
+    }
+
+    private async Task LoadPublicIdentityAsync()
+    {
+        try
+        {
+            _branding = await CatalogosSvc.GetPublicIdentityAsync(idweb);
+        }
+        catch
+        {
+            _branding = new CatalogosPublicIdentityDto();
+        }
+    }
+
+    private async Task LoadImageSettingsAsync()
+    {
+        try
+        {
+            _puntoVentaSettings = await PuntoVentaSvc.GetSettingsAsync();
+        }
+        catch
+        {
+            _puntoVentaSettings = new PuntoVentaSettingsDto();
+        }
+    }
+
+    private int? _effectiveIdBase;
+
+    private async Task EnsureRouteSessionAsync()
+    {
+        if (idbase is > 0)
+        {
+            _effectiveIdBase = idbase;
+        }
+        else
+        {
+            var sessionBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+            _effectiveIdBase = sessionBaseId > 0 ? sessionBaseId : null;
+        }
+
+        if (!AppMode.IsSaaSMode || !idbase.HasValue)
+            return;
+
+        var routeBaseId = idbase.Value;
+        var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+        if (routeBase is null)
+        {
+            _notFound = true;
+            return;
+        }
+
+        SessionSvc.SetWebhookOverride(new SessionDto
+        {
+            Id = Guid.Parse($"00000000-0000-0000-0000-{routeBaseId:000000000000}"),
+            BaseId = routeBase.IdBase,
+            Nombre = routeBase.Nombre,
+            Servidor = routeBase.DbServer,
+            BaseDatos = routeBase.DbName,
+            Usuario = routeBase.DbUser,
+            Password = routeBase.DbPassword,
+            TrustServerCertificate = true,
+            Activa = true
+        });
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_restoreAttempted)
+        {
+            _restoreAttempted = true;
+            await RestoreClientSessionAsync();
+
+            if (IsAuthenticated)
+                await RefreshCatalogoAsync();
+
+            if (_loginPanel is not null)
+            {
+                try { await _loginPanel.FocusCodigoAsync(); }
+                catch { }
+            }
+        }
+
+        if (IsAuthenticated && _catalogo is not null && !_cartRestoreAttempted)
+        {
+            _cartRestoreAttempted = true;
+            await RestoreCarritoAsync();
+        }
+    }
+
+    private async Task RefreshCatalogoAsync()
+    {
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+
+        var catalogo = await CarritoComprasSvc.GetPublicCartAsync(IdInsert, idweb, CatalogoClienteSession.CurrentClient?.CodigoCliente);
+        _catalogo = catalogo;
+        _notFound = catalogo is null;
+        _carritoDeshabilitado = catalogo is not null && !catalogo.HabilitarCarrito;
+        _loading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task RestoreClientSessionAsync()
+    {
+        try
+        {
+            var token = await Js.InvokeAsync<string?>("localStorage.getItem", ClientTokenStorageKey);
+            if (string.IsNullOrWhiteSpace(token))
+                return;
+
+            if (!CatalogoClienteSession.TryRestoreFromToken(token))
+            {
+                await Js.InvokeVoidAsync("localStorage.removeItem", ClientTokenStorageKey);
+                return;
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+        }
+    }
+
+    private void OnClientSessionStateChanged()
+        => _ = InvokeAsync(StateHasChanged);
+
+    private async Task LoginClienteAsync()
+    {
+        _loginFeedback = null;
+        _sessionBusy = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CatalogoClienteSession.LoginAsync(new CatalogosClienteLoginRequestDto
+            {
+                CodigoCliente = _clienteCodigo,
+                Password = _clientePassword,
+                IdWeb = idweb,
+                IdBase = idbase,
+                IdInsert = IdInsert
+            }), "No pudimos validar el acceso en este momento. Intentá nuevamente.");
+
+            if (!result.Success || result.Value is null)
+            {
+                _loginFeedback = result.Feedback;
+                _clientePassword = string.Empty;
+                return;
+            }
+
+            await Js.InvokeVoidAsync("localStorage.setItem", ClientTokenStorageKey, CatalogoClienteSession.CurrentToken ?? string.Empty);
+            _clientePassword = string.Empty;
+            await RefreshCatalogoAsync();
+        }
+        finally
+        {
+            _sessionBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task LogoutClienteAsync()
+    {
+        _sessionBusy = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            CatalogoClienteSession.Logout();
+            await Js.InvokeVoidAsync("localStorage.removeItem", ClientTokenStorageKey);
+        }
+        finally
+        {
+            _sessionBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string GetCurrentClientLabel()
+        => CatalogoClienteSession.CurrentClient?.RazonSocial?.Trim()
+           ?? CatalogoClienteSession.CurrentClient?.CodigoCliente?.Trim()
+           ?? string.Empty;
+
+    private string GetPublicCatalogUrl()
+    {
+        if (IdInsert <= 0)
+            return "/";
+
+        return AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
+            Nav,
+            AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCatalogUrl(
+                IdInsert,
+                idweb,
+                idbase,
+                Nav.Uri,
+                CatalogoClienteSession.CurrentClient?.IdWeb));
+    }
+
+    private string GetReturnUrl()
+        => !string.IsNullOrWhiteSpace(VolverUrl)
+            ? VolverUrl.Trim()
+            : Embedded
+                ? BuildPortalBackUrl()
+                : GetPublicCatalogUrl();
+
+    private string GetReturnText()
+        => !string.IsNullOrWhiteSpace(VolverTexto)
+            ? VolverTexto.Trim()
+            : Embedded ? "Volver al portal" : "Volver al catálogo";
+
+    private string BuildPortalBackUrl()
+        => idweb is not null && idbase is not null
+            ? $"/{Uri.EscapeDataString(idweb)}/{idbase.Value}/portal-cliente"
+            : "/portal-cliente";
+
+    private static string NormalizeRouteSegment(string? value)
+        => (value ?? string.Empty).Trim().Trim('/');
+
+    private string GetBrandingName()
+        => string.IsNullOrWhiteSpace(_branding.NombreVisible)
+            ? "Catálogos"
+            : _branding.NombreVisible.Trim();
+
+    private string GetBrandingLogoUrl()
+        => string.IsNullOrWhiteSpace(_branding.LogoUrl)
+            ? "/logos/Logo.png"
+            : _branding.LogoUrl.Trim();
+
+    private string GetBrandingLogoFrameClass()
+        => _branding.LogoFormato?.Trim().ToLowerInvariant() switch
+        {
+            CatalogosPublicLogoFormatKeys.Square => "carrito-page__logo--square",
+            CatalogosPublicLogoFormatKeys.Horizontal => "carrito-page__logo--horizontal",
+            _ => "carrito-page__logo--auto"
+        };
+
+    private string? GetVigenciaTexto()
+    {
+        if (_catalogo is null || (_catalogo.VigenciaDesde is null && _catalogo.VigenciaHasta is null))
+            return null;
+
+        var desde = _catalogo.VigenciaDesde?.ToString("dd/MM/yyyy") ?? "—";
+        var hasta = _catalogo.VigenciaHasta?.ToString("dd/MM/yyyy") ?? "—";
+        return $"{desde} - {hasta}";
+    }
+
+    // --- Imágenes (mismo mecanismo que el catálogo público: miniatura por idbase, sin lógica nueva) ---
+
+    private int? GetEffectiveIdBase() => _effectiveIdBase;
+
+    private bool ShouldShowImage(CatalogosCatalogoItemDto item)
+        => !_imageFallbacks.Contains(item.IdArticulo) && !string.IsNullOrWhiteSpace(GetProductThumbUrl(item));
+
+    private void HandleImageError(string idArticulo)
+    {
+        if (!string.IsNullOrWhiteSpace(idArticulo))
+            _imageFallbacks.Add(idArticulo);
+    }
+
+    private string GetProductThumbUrl(CatalogosCatalogoItemDto item)
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), thumbnail: true);
+
+    private static string ProductInitials(string descripcion)
+    {
+        if (string.IsNullOrWhiteSpace(descripcion))
+            return "CA";
+
+        var parts = descripcion
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(x => char.ToUpperInvariant(x[0]));
+
+        return string.Concat(parts);
+    }
+
+    private static string Display(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
+
+    private RenderFragment RenderPrecio(CatalogosCatalogoItemDto item) =>
+        @<div class="carrito-card__price @(AlfaCore.Services.CatalogosPriceDisplayHelper.HasValidOffer(item) ? "carrito-card__price--offer" : string.Empty)">
+            <span class="carrito-card__price-current">@AlfaCore.Services.CatalogosPriceDisplayHelper.Money(item.Precio)</span>
+            @if (AlfaCore.Services.CatalogosPriceDisplayHelper.HasValidOffer(item))
+            {
+                <span class="carrito-card__price-offer-row">
+                    <span class="carrito-card__price-badge">-@AlfaCore.Services.CatalogosPriceDisplayHelper.GetOfertaPercent(item)%</span>
+                    <span class="carrito-card__price-offer">@AlfaCore.Services.CatalogosPriceDisplayHelper.Money(item.PrecioOferta)</span>
+                </span>
+            }
+        </div>;
+
+    // --- Filtros (mismo criterio que el catálogo público) ---
+
+    private IReadOnlyList<string> GetRubrosDisponibles()
+        => _catalogo?.Articulos
+            .Select(x => x.Rubro?.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList()
+           ?? [];
+
+    private IReadOnlyList<string> GetMarcasDisponibles()
+        => _catalogo?.Articulos
+            .Select(x => x.Marca?.Trim())
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .ToList()
+           ?? [];
+
+    private IReadOnlyList<CatalogosCatalogoItemDto> GetArticulosFiltrados()
+    {
+        if (_catalogo is null)
+            return [];
+
+        IEnumerable<CatalogosCatalogoItemDto> query = _catalogo.Articulos;
+
+        if (!string.IsNullOrWhiteSpace(_filtroRubro))
+            query = query.Where(x => string.Equals((x.Rubro ?? string.Empty).Trim(), _filtroRubro, StringComparison.OrdinalIgnoreCase));
+
+        if (!string.IsNullOrWhiteSpace(_filtroMarca))
+            query = query.Where(x => string.Equals((x.Marca ?? string.Empty).Trim(), _filtroMarca, StringComparison.OrdinalIgnoreCase));
+
+        return query.ToList();
+    }
+
+    // --- Estado del carrito: en memoria + localStorage (por catálogo y cliente), sin tablas nuevas ---
+
+    private string CarritoStorageKey
+        => $"alfacore_catalogo_carrito_{IdInsert}_{(CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty).Trim().ToUpperInvariant()}";
+
+    private async Task RestoreCarritoAsync()
+    {
+        try
+        {
+            var json = await Js.InvokeAsync<string?>("localStorage.getItem", CarritoStorageKey);
+            if (string.IsNullOrWhiteSpace(json))
+                return;
+
+            var data = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, decimal>>(json);
+            if (data is null || _catalogo is null)
+                return;
+
+            _carrito.Clear();
+            foreach (var (idArticulo, cantidad) in data)
+            {
+                // Solo restauro líneas cuyo artículo sigue existiendo en ESTE catálogo:
+                // no confío en lo que haya quedado guardado en el navegador.
+                if (cantidad > 0m && _catalogo.Articulos.Any(a => string.Equals(a.IdArticulo, idArticulo, StringComparison.OrdinalIgnoreCase)))
+                    _carrito[idArticulo] = cantidad;
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task PersistCarritoAsync()
+    {
+        try
+        {
+            var json = System.Text.Json.JsonSerializer.Serialize(_carrito);
+            await Js.InvokeVoidAsync("localStorage.setItem", CarritoStorageKey, json);
+        }
+        catch
+        {
+        }
+    }
+
+    private decimal GetCantidad(string idArticulo)
+        => _carrito.TryGetValue(idArticulo.Trim(), out var cantidad) ? cantidad : 0m;
+
+    private async Task SetCantidadAsync(string idArticulo, decimal nuevaCantidad)
+    {
+        var codigo = idArticulo.Trim();
+        if (string.IsNullOrWhiteSpace(codigo))
+            return;
+
+        var cantidad = Math.Max(0m, nuevaCantidad);
+        if (cantidad <= 0m)
+            _carrito.Remove(codigo);
+        else
+            _carrito[codigo] = cantidad;
+
+        _validacionError = null;
+        await PersistCarritoAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task IncrementarAsync(CatalogosCatalogoItemDto item)
+        => SetCantidadAsync(item.IdArticulo, GetCantidad(item.IdArticulo) + 1m);
+
+    private Task DecrementarAsync(CatalogosCatalogoItemDto item)
+        => SetCantidadAsync(item.IdArticulo, GetCantidad(item.IdArticulo) - 1m);
+
+    private Task AgregarAsync(CatalogosCatalogoItemDto item)
+        => SetCantidadAsync(item.IdArticulo, 1m);
+
+    private Task QuitarAsync(CatalogosCatalogoItemDto item)
+        => SetCantidadAsync(item.IdArticulo, 0m);
+
+    private Task OnCantidadInputAsync(CatalogosCatalogoItemDto item, ChangeEventArgs args)
+    {
+        var texto = args.Value?.ToString() ?? string.Empty;
+        return decimal.TryParse(texto, NumberStyles.Number, CultureEsAr, out var cantidad)
+            ? SetCantidadAsync(item.IdArticulo, cantidad)
+            : Task.CompletedTask;
+    }
+
+    private IReadOnlyList<(CatalogosCatalogoItemDto Item, decimal Cantidad)> GetLineasCarrito()
+        => _catalogo?.Articulos
+            .Where(a => GetCantidad(a.IdArticulo) > 0m)
+            .Select(a => (a, GetCantidad(a.IdArticulo)))
+            .ToList()
+           ?? [];
+
+    private int GetArticulosDistintosCount() => GetLineasCarrito().Count;
+
+    private decimal GetCantidadTotal() => GetLineasCarrito().Sum(l => l.Cantidad);
+
+    private decimal GetTotalEstimado()
+        => GetLineasCarrito().Sum(l => l.Cantidad * AlfaCore.Services.CatalogosPriceDisplayHelper.GetPrecioAplicado(l.Item));
+
+    // --- Continuar / confirmar (Etapa 2 no graba nada; deja el punto de entrada listo para la Etapa 3) ---
+
+    private bool ValidarParaContinuar()
+    {
+        _validacionError = null;
+
+        if (_catalogo is null)
+        {
+            _validacionError = "El catálogo no está disponible.";
+            return false;
+        }
+
+        var lineas = GetLineasCarrito();
+        if (lineas.Count == 0)
+        {
+            _validacionError = "Agregá al menos un artículo antes de continuar.";
+            return false;
+        }
+
+        if (lineas.Any(l => l.Cantidad <= 0m))
+        {
+            _validacionError = "Hay artículos con cantidad inválida.";
+            return false;
+        }
+
+        // Revalidación defensiva: cada línea debe corresponder a un artículo que
+        // realmente está en ESTE catálogo (no confío en el estado del navegador).
+        if (lineas.Any(l => !_catalogo.Articulos.Any(a => string.Equals(a.IdArticulo, l.Item.IdArticulo, StringComparison.OrdinalIgnoreCase))))
+        {
+            _validacionError = "Hay artículos que no pertenecen a este catálogo.";
+            return false;
+        }
+
+        if (lineas.Any(l => AlfaCore.Services.CatalogosPriceDisplayHelper.GetPrecioAplicado(l.Item) <= 0m))
+        {
+            _validacionError = "Hay artículos sin precio válido.";
+            return false;
+        }
+
+        return true;
+    }
+
+    private void ContinuarPedido()
+    {
+        if (!ValidarParaContinuar())
+            return;
+
+        _confirmFeedback = null;
+        _emailPedido = (CatalogoClienteSession.CurrentClient?.Email ?? string.Empty).Trim();
+        _emailRegistradoOriginal = _emailPedido;
+        _enviarCopiaEmail = EsEmailValido(_emailPedido);
+        _actualizarEmailCliente = false;
+        _emailEnvioResultado = null;
+        _emailFeedback = null;
+        _showCarritoDrawer = false;
+        _showConfirmModal = true;
+    }
+
+    private static bool EsEmailValido(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+            return false;
+        try
+        {
+            _ = new System.Net.Mail.MailAddress(email.Trim());
+            return true;
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+    }
+
+    private async Task ConfirmarPedidoAsync()
+    {
+        if (_confirmandoPedido || _catalogo is null)
+            return;
+
+        _confirmandoPedido = true;
+        _confirmFeedback = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var codigoCliente = CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty;
+            var lineas = GetLineasCarrito()
+                .Select(l => new CatalogoPedidoLineaSolicitudDto { IdArticulo = l.Item.IdArticulo, Cantidad = l.Cantidad })
+                .ToList();
+
+            var result = await UiOps.RunAsync(() => CarritoComprasSvc.ConfirmarPedidoPublicoAsync(new CatalogoPedidoConfirmarRequestDto
+            {
+                IdInsert = IdInsert,
+                CodigoCliente = codigoCliente,
+                IdWeb = idweb,
+                IdBase = idbase,
+                Lineas = lineas
+            }), "No se pudo registrar el pedido");
+
+            if (!result.Success || result.Value is null)
+            {
+                // El carrito se conserva tal cual estaba para que el cliente pueda reintentar.
+                _confirmFeedback = result.Feedback;
+                return;
+            }
+
+            _pedidoResultado = result.Value;
+            _carrito.Clear();
+            await PersistCarritoAsync();
+
+            await PostProcesarConfirmacionAsync();
+        }
+        finally
+        {
+            _confirmandoPedido = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    // El NP ya quedó confirmado en firme antes de llegar acá. Todo lo que sigue (actualizar el
+    // email del cliente, enviar la copia por mail) es best-effort: si falla, se informa pero
+    // el pedido registrado NUNCA se revierte ni se pierde.
+    private async Task PostProcesarConfirmacionAsync()
+    {
+        if (_pedidoResultado is null)
+            return;
+
+        var emailDestino = (_emailPedido ?? string.Empty).Trim();
+        var emailDistinto = !string.Equals(emailDestino, _emailRegistradoOriginal, StringComparison.OrdinalIgnoreCase);
+
+        if (_actualizarEmailCliente && emailDistinto && EsEmailValido(emailDestino))
+            await ActualizarEmailClienteAsync(emailDestino);
+
+        if (_enviarCopiaEmail && EsEmailValido(emailDestino))
+            await EnviarEmailPedidoAsync(emailDestino);
+    }
+
+    private async Task ActualizarEmailClienteAsync(string nuevoEmail)
+    {
+        if (_pedidoResultado is null)
+            return;
+
+        _actualizandoEmailCliente = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                var detalle = await CuentasSvc.GetByIdAsync(CuentaComercialTipo.Cliente, _pedidoResultado.CodigoCliente)
+                    ?? throw new InvalidOperationException("No se encontró la ficha del cliente para actualizar el email.");
+                detalle.Mail = nuevoEmail;
+                await CuentasSvc.SaveAsync(CuentaComercialTipo.Cliente, detalle);
+            }, "No se pudo actualizar el email del cliente");
+
+            if (!result.Success)
+                _emailFeedback = result.Feedback?.Message ?? "No se pudo actualizar el email del cliente.";
+        }
+        finally
+        {
+            _actualizandoEmailCliente = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task EnviarEmailPedidoAsync(string emailDestino)
+    {
+        if (_pedidoResultado is null)
+            return;
+
+        _enviandoEmailPedido = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var imagenes = _pedidoResultado.Lineas
+                .Select(l => (l.IdArticulo, Url: GetLineaImagenAbsolutaUrl(l.IdArticulo)))
+                .Where(x => !string.IsNullOrWhiteSpace(x.Url))
+                .ToDictionary(x => x.IdArticulo, x => x.Url!, StringComparer.OrdinalIgnoreCase);
+
+            _emailEnvioResultado = await PedidosEmailSvc.EnviarConfirmacionPedidoAsync(new CatalogoPedidoEmailRequestDto
+            {
+                Pedido = _pedidoResultado,
+                EmailDestino = emailDestino,
+                NombreEmpresa = GetBrandingName(),
+                LogoUrlAbsoluta = Nav.ToAbsoluteUri(GetBrandingLogoUrl()).ToString(),
+                ImagenesPorArticulo = imagenes
+            });
+        }
+        finally
+        {
+            _enviandoEmailPedido = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string? GetLineaImagenAbsolutaUrl(string idArticulo)
+    {
+        var relativa = AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, idArticulo, GetEffectiveIdBase(), thumbnail: true);
+        return string.IsNullOrWhiteSpace(relativa) ? null : Nav.ToAbsoluteUri(relativa).ToString();
+    }
+
+    private async Task ReintentarEnvioEmailAsync()
+    {
+        if (_pedidoResultado is null || _enviandoEmailPedido)
+            return;
+
+        var email = (_emailPedido ?? string.Empty).Trim();
+        if (!EsEmailValido(email))
+        {
+            _emailEnvioResultado = new CatalogoPedidoEmailResultDto { Enviado = false, MensajeError = "El email indicado no tiene un formato válido." };
+            return;
+        }
+
+        await EnviarEmailPedidoAsync(email);
+    }
+
+    private void HandleConfirmOverlayClick()
+    {
+        if (_confirmandoPedido)
+            return;
+
+        if (_pedidoResultado is not null)
+        {
+            CerrarConfirmacionExitosa();
+            return;
+        }
+
+        _showConfirmModal = false;
+    }
+
+    private void CerrarConfirmacionExitosa()
+    {
+        _showConfirmModal = false;
+        _pedidoResultado = null;
+        _confirmFeedback = null;
+        _emailEnvioResultado = null;
+        _emailFeedback = null;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        CatalogoClienteSession.StateChanged -= OnClientSessionStateChanged;
+        return ValueTask.CompletedTask;
+    }
+}

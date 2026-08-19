@@ -93,7 +93,9 @@ public sealed class AppUiOperationService : IAppUiOperationService
             {
                 Severity = AppUiFeedbackSeverity.Error,
                 Title = "No se pudo conectar a la base activa",
-                Message = "La sesión SQL seleccionada no está accesible en este momento. El sistema no pudo llegar al servidor o a la instancia configurada.",
+                Message = string.IsNullOrWhiteSpace(userMessage)
+                    ? "La sesión SQL seleccionada no está accesible en este momento. El sistema no pudo llegar al servidor o a la instancia configurada."
+                    : userMessage,
                 Code = code,
                 Suggestion = "Revisá la sesión activa, el nombre del servidor SQL, la instancia, la red y las credenciales antes de volver a intentar."
             };
@@ -104,8 +106,10 @@ public sealed class AppUiOperationService : IAppUiOperationService
             return new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Error,
-                Title = "No se pudo acceder al FTP configurado",
-                Message = "El sistema no pudo conectarse o subir los archivos al FTP configurado para Interfaces.",
+                Title = "No se pudo acceder al servidor FTP configurado",
+                Message = string.IsNullOrWhiteSpace(userMessage)
+                    ? "El sistema no pudo conectarse o transferir archivos con el servidor FTP configurado para esta función."
+                    : userMessage,
                 Code = code,
                 Suggestion = "Revisá el host, puerto, usuario, clave, modo pasivo y la conectividad al servidor FTP antes de volver a intentar."
             };
@@ -116,10 +120,12 @@ public sealed class AppUiOperationService : IAppUiOperationService
             return new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Error,
-                Title = "No se pudo acceder a la carpeta compartida",
-                Message = "El sistema no pudo guardar los archivos en la carpeta compartida configurada para Interfaces.",
+                Title = "No se pudo acceder a la carpeta configurada",
+                Message = string.IsNullOrWhiteSpace(userMessage)
+                    ? "El sistema no pudo leer o escribir en la carpeta configurada para esta función."
+                    : userMessage,
                 Code = code,
-                Suggestion = "Revisá la ruta configurada, que la carpeta exista, que el servidor esté accesible y que este equipo tenga permisos de lectura y escritura."
+                Suggestion = "Revisá la ruta configurada (puede ser una carpeta compartida en red o una carpeta local), que exista, que el servidor esté accesible y que el usuario con el que corre AlfaCore tenga permisos de lectura y escritura ahí."
             };
         }
 

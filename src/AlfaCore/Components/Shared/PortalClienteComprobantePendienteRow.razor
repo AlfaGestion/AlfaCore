@@ -1,0 +1,37 @@
+@using AlfaCore.Models
+
+<article class="portal-cliente__pedido-row">
+    <div class="portal-cliente__pedido-row__main">
+        <strong>@(string.IsNullOrWhiteSpace(Item.TcDescripcion) ? Item.Tc : Item.TcDescripcion) @Item.Sucursal-@Item.Numero@(string.IsNullOrWhiteSpace(Item.Letra) ? "" : $" {Item.Letra}")</strong>
+        <span class="portal-cliente__pedido-row__fecha">Fecha @Item.Fecha.ToString("dd/MM/yyyy") · Vence @Item.Vencimiento.ToString("dd/MM/yyyy")</span>
+        @if (Item.EstaVencido)
+        {
+            <span class="badge text-bg-danger">Vencido</span>
+        }
+        else
+        {
+            <span class="badge text-bg-secondary">A vencer</span>
+        }
+    </div>
+    <div class="portal-cliente__pedido-row__total">
+        @if (Item.ImporteOriginal is { } importe)
+        {
+            <div class="text-muted" style="font-size:.8rem;">Original @Money(importe)</div>
+        }
+        <div>@Money(Item.Saldo)</div>
+    </div>
+    @if (Item.IdComprobante is { } idComprobante)
+    {
+        <a class="btn btn--ghost btn--sm" href="@DetalleUrlBuilder(idComprobante)">
+            <i class="bi bi-eye"></i> Ver detalle
+        </a>
+    }
+</article>
+
+@code {
+    [Parameter, EditorRequired] public PortalClienteComprobantePendienteDto Item { get; set; } = null!;
+    [Parameter, EditorRequired] public Func<int, string> DetalleUrlBuilder { get; set; } = null!;
+
+    private static string Money(decimal value)
+        => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+}

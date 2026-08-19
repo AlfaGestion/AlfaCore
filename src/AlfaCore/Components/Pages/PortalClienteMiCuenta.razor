@@ -1,0 +1,72 @@
+@page "/portal-cliente/mi-cuenta"
+@page "/{idweb}/{idbase:int}/portal-cliente/mi-cuenta"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits PortalClientePageBase
+@using AlfaCore.Components.Shared
+
+<PageTitle>Mi cuenta | Portal Cliente</PageTitle>
+
+@if (NotFound)
+{
+    <section class="page-grid portal-cliente">
+        <section class="panel-card empty-state">
+            <h3 class="panel-card__title">Base no disponible</h3>
+            <p class="panel-card__subtitle">No se pudo resolver la base asociada a esta URL. Probá nuevamente desde el enlace correcto.</p>
+        </section>
+    </section>
+}
+else if (!IsAuthenticated)
+{
+    <CatalogoClienteLoginPanel @ref="_loginPanel"
+                                CatalogoNombre="Portal Cliente"
+                                BrandLogoUrl="@GetBrandingLogoUrl()"
+                                BrandName="@GetBrandingName()"
+                                Codigo="@ClienteCodigo"
+                                CodigoChanged="v => ClienteCodigo = v"
+                                Password="@ClientePassword"
+                                PasswordChanged="v => ClientePassword = v"
+                                ShowPassword="@ShowPassword"
+                                ShowPasswordChanged="v => ShowPassword = v"
+                                Busy="@SessionBusy"
+                                Feedback="@LoginFeedback"
+                                OnSubmit="LoginClienteAsync"
+                                VolverUrl="/"
+                                VolverTexto="Volver al inicio" />
+}
+else
+{
+    <section class="page-grid portal-cliente portal-cliente--detail">
+        <PortalClienteHeader BrandLogoUrl="@GetBrandingLogoUrl()"
+                              BrandName="@GetBrandingName()"
+                              LogoFrameClass="@GetBrandingLogoFrameClass()"
+                              ClientLabel="@GetCurrentClientLabel()"
+                              Busy="@SessionBusy"
+                              OnLogout="LogoutClienteAsync"
+                              ActiveTab="mi-cuenta"
+                              RouteInicio="@BuildPortalRoute("")"
+                              RouteCuentaCorriente="@BuildPortalRoute("cuenta-corriente")"
+                              RouteListaPrecios="@BuildPortalRoute("lista-precios")"
+                              RouteCatalogos="@BuildPortalRoute("catalogos")"
+                              RouteCarrito="@BuildPortalRoute("carrito")"
+                              RoutePedidos="@BuildPortalRoute("pedidos")"
+                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
+
+        <section class="panel-card empty-state">
+            <h3 class="panel-card__title">Mi cuenta</h3>
+            <p class="panel-card__subtitle">Estamos preparando esta sección. Todavía no hay datos editables acá.</p>
+        </section>
+    </section>
+}
+
+@code {
+    private CatalogoClienteLoginPanel? _loginPanel;
+
+    protected override async Task OnAfterClientSessionRestoredAsync()
+    {
+        if (_loginPanel is not null)
+        {
+            try { await _loginPanel.FocusCodigoAsync(); }
+            catch { }
+        }
+    }
+}

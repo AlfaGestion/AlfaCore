@@ -1,0 +1,101 @@
+@page "/portal-cliente/carrito"
+@page "/{idweb}/{idbase:int}/portal-cliente/carrito"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits PortalClientePageBase
+@using AlfaCore.Models
+@using AlfaCore.Components.Shared
+@inject AlfaCore.Services.ICarritoComprasService CarritoComprasSvc
+
+<PageTitle>Carrito de compra | Portal Cliente</PageTitle>
+
+@if (NotFound)
+{
+    <section class="page-grid portal-cliente">
+        <section class="panel-card empty-state">
+            <h3 class="panel-card__title">Base no disponible</h3>
+            <p class="panel-card__subtitle">No se pudo resolver la base asociada a esta URL. Probá nuevamente desde el enlace correcto.</p>
+        </section>
+    </section>
+}
+else if (_resolviendo)
+{
+    <section class="page-grid portal-cliente">
+        <section class="panel-card empty-state">
+            <p class="text-muted">Buscando tu carrito disponible...</p>
+        </section>
+    </section>
+}
+else if (IsAuthenticated)
+{
+    <section class="page-grid portal-cliente portal-cliente--detail">
+        <PortalClienteHeader BrandLogoUrl="@GetBrandingLogoUrl()"
+                              BrandName="@GetBrandingName()"
+                              LogoFrameClass="@GetBrandingLogoFrameClass()"
+                              ClientLabel="@GetCurrentClientLabel()"
+                              Busy="@SessionBusy"
+                              OnLogout="LogoutClienteAsync"
+                              ActiveTab="carrito"
+                              RouteInicio="@BuildPortalRoute("")"
+                              RouteCuentaCorriente="@BuildPortalRoute("cuenta-corriente")"
+                              RouteListaPrecios="@BuildPortalRoute("lista-precios")"
+                              RouteCatalogos="@BuildPortalRoute("catalogos")"
+                              RouteCarrito="@BuildPortalRoute("carrito")"
+                              RoutePedidos="@BuildPortalRoute("pedidos")"
+                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
+
+        <CatalogoCarrito idweb="@idweb"
+                         idbase="@idbase"
+                         IdInsert="@_carritoLogicalId"
+                         Embedded="true"
+                         VolverUrl="@BuildPortalRoute("")"
+                         VolverTexto="Volver al portal" />
+    </section>
+}
+else
+{
+    <CatalogoCarrito idweb="@idweb"
+                     idbase="@idbase"
+                     IdInsert="@_carritoLogicalId"
+                     Embedded="true"
+                     VolverUrl="@BuildPortalRoute("")"
+                     VolverTexto="Volver al portal" />
+}
+
+@code {
+    private bool _resolviendo = true;
+    private int _carritoLogicalId;
+
+    protected override async Task OnAfterClientSessionRestoredAsync()
+        => await ResolverYAbrirCarritoAsync();
+
+    protected override async Task OnAfterLoginAsync()
+        => await ResolverYAbrirCarritoAsync();
+
+    private async Task ResolverYAbrirCarritoAsync()
+    {
+        _resolviendo = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var item = await UiOps.RunAsync(() => CarritoComprasSvc.ResolvePortalCarritoAsync(idweb),
+                "No pudimos resolver tu carrito disponible.");
+
+            if (item.Success && item.Value is not null)
+            {
+                _carritoLogicalId = item.Value.TipoClave == CarritoComprasTipoKeys.General
+                    ? 0
+                    : item.Value.IdCatalogo ?? 0;
+            }
+            else
+            {
+                _carritoLogicalId = 0;
+            }
+        }
+        finally
+        {
+            _resolviendo = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

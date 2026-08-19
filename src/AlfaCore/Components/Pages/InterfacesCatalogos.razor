@@ -321,6 +321,18 @@
                             </div>
                         </div>
                     }
+                    <div class="col-12">
+                        <div class="field">
+                            <label class="catalogos-toggle">
+                                <input type="checkbox" class="catalogos-toggle__input" @bind="_habilitarCarrito" />
+                                <span class="catalogos-toggle__track" aria-hidden="true"></span>
+                                <span class="catalogos-toggle__label">
+                                    <strong>Habilitar carrito</strong>
+                                    <small>Permite a los clientes armar un pedido desde este catálogo (toma de pedidos).</small>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
         </section>
 
@@ -448,23 +460,10 @@
                 }
         </section>
 
-        @if (!string.IsNullOrWhiteSpace(_urlPublica) || !string.IsNullOrWhiteSpace(_urlCliente))
+        @if (!string.IsNullOrWhiteSpace(_urlPublica))
         {
             <div class="context-card mt-4">
                     <span class="context-card__label">Enlaces del catálogo</span>
-                    @if (!string.IsNullOrWhiteSpace(_urlCliente))
-                    {
-                        <strong>Acceso para clientes</strong>
-                        <div class="d-flex flex-wrap gap-2 align-items-center">
-                            <code class="text-break">@_urlCliente</code>
-                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CopiarEnlaceClienteAsync">
-                                <i class="bi bi-clipboard"></i> Copiar enlace
-                            </button>
-                            <a class="btn btn--ghost btn--sm" href="@_urlCliente" target="_blank" rel="noopener">
-                                <i class="bi bi-box-arrow-up-right"></i> Abrir
-                            </a>
-                        </div>
-                    }
                     @if (!string.IsNullOrWhiteSpace(_urlPublica))
                     {
                         <strong class="mt-3 d-block">Acceso público</strong>
@@ -474,6 +473,19 @@
                                 <i class="bi bi-clipboard"></i> Copiar enlace
                             </button>
                             <a class="btn btn--ghost btn--sm" href="@_urlPublica" target="_blank" rel="noopener">
+                                <i class="bi bi-box-arrow-up-right"></i> Abrir
+                            </a>
+                        </div>
+                    }
+                    @if (_habilitarCarrito && !string.IsNullOrWhiteSpace(_urlCarrito))
+                    {
+                        <strong class="mt-3 d-block">Toma de pedidos</strong>
+                        <div class="d-flex flex-wrap gap-2 align-items-center">
+                            <code class="text-break">@_urlCarrito</code>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="CopiarEnlaceCarritoAsync">
+                                <i class="bi bi-clipboard"></i> Copiar enlace
+                            </button>
+                            <a class="btn btn--ghost btn--sm" href="@_urlCarrito" target="_blank" rel="noopener">
                                 <i class="bi bi-box-arrow-up-right"></i> Abrir
                             </a>
                         </div>
@@ -676,11 +688,12 @@
                             {
                                 var alreadyAdded = IsArticuloAlreadyAdded(item.IdArticulo);
                                 var marcadoParaQuitar = alreadyAdded && _articulosQuitarSeleccionados.Contains(item.IdArticulo);
-                                <tr class="@(alreadyAdded ? "is-duplicate" : string.Empty)">
+                                <tr class="catalogos-modal__row @(alreadyAdded ? "is-duplicate" : string.Empty)" @onclick="() => ToggleLookupRow(item.IdArticulo, alreadyAdded)">
                                     <td>
                                         <input type="checkbox"
                                                checked="@(alreadyAdded ? !marcadoParaQuitar : _lookupSeleccionados.Contains(item.IdArticulo))"
                                                disabled="@_lookupLoading"
+                                               @onclick:stopPropagation="true"
                                                @onchange="(ChangeEventArgs args) => ToggleLookupSeleccionAsync(item.IdArticulo, alreadyAdded, args)" />
                                     </td>
                                     <td>
@@ -791,7 +804,8 @@
     private string _currentSection = SectionCatalogos;
     private int? _editingIdInsert;
     private string _urlPublica = string.Empty;
-    private string _urlCliente = string.Empty;
+    private string _urlCarrito = string.Empty;
+    private bool _habilitarCarrito;
     private bool _menuHabilitado;
     private bool _menuHabilitadoDraft;
     private CatalogosPublicIdentityDto _publicIdentity = new();
@@ -1284,7 +1298,8 @@
         _articulosQuitarSeleccionados.Clear();
         _showLookupModal = false;
         _urlPublica = string.Empty;
-        _urlCliente = string.Empty;
+        _urlCarrito = string.Empty;
+        _habilitarCarrito = false;
         _editingIdInsert = null;
     }
 
@@ -1886,6 +1901,26 @@
         await Task.CompletedTask;
     }
 
+    private void ToggleLookupRow(string idArticulo, bool alreadyAdded)
+    {
+        if (_lookupLoading)
+            return;
+
+        if (alreadyAdded)
+        {
+            if (_articulosQuitarSeleccionados.Contains(idArticulo))
+                _articulosQuitarSeleccionados.Remove(idArticulo);
+            else
+                _articulosQuitarSeleccionados.Add(idArticulo);
+            return;
+        }
+
+        if (_lookupSeleccionados.Contains(idArticulo))
+            _lookupSeleccionados.Remove(idArticulo);
+        else
+            _lookupSeleccionados.Add(idArticulo);
+    }
+
     private async Task AgregarSeleccionadosDesdeLookupAsync()
     {
         var seleccionados = _lookupSeleccionados
@@ -2169,6 +2204,7 @@
             IdLista = _idLista.Trim(),
             VigenciaDesde = _vigenciaDesde,
             VigenciaHasta = _vigenciaHasta,
+            HabilitarCarrito = _habilitarCarrito,
             Usuario = _catalogosUserName,
             Pc = Environment.MachineName,
             Articulos = _articulosSeleccionados.ToArray()
@@ -2311,6 +2347,7 @@
         _idLista = detail.IdLista;
         _vigenciaDesde = detail.VigenciaDesde;
         _vigenciaHasta = detail.VigenciaHasta;
+        _habilitarCarrito = detail.HabilitarCarrito;
         _articulosSeleccionados.Clear();
         _articulosSeleccionados.AddRange(detail.Articulos.Select(x => new CatalogosArticuloCatalogoDto
         {
@@ -2366,13 +2403,13 @@
         _feedback = AppUiMessage.Success("Enlace copiado", _urlPublica);
     }
 
-    private async Task CopiarEnlaceClienteAsync()
+    private async Task CopiarEnlaceCarritoAsync()
     {
-        if (string.IsNullOrWhiteSpace(_urlCliente))
+        if (string.IsNullOrWhiteSpace(_urlCarrito))
             return;
 
-        await Js.InvokeVoidAsync("navigator.clipboard.writeText", _urlCliente);
-        _feedback = AppUiMessage.Success("Enlace copiado", _urlCliente);
+        await Js.InvokeVoidAsync("navigator.clipboard.writeText", _urlCarrito);
+        _feedback = AppUiMessage.Success("Enlace copiado", _urlCarrito);
     }
 
     private async Task GuardarVistaAsync()
@@ -2486,21 +2523,28 @@
             : "Catálogo predeterminado";
 
     private string GetPublicUrl(int idInsert)
-        => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(idInsert, includeClientSuffix: false)).ToString();
+        => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(Nav, BuildCatalogRelativeUrl(idInsert));
 
-    private string GetClientUrl(int idInsert)
-        => Nav.ToAbsoluteUri(BuildCatalogRelativeUrl(idInsert, includeClientSuffix: true)).ToString();
+    private string GetCarritoUrl(int idInsert)
+        => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
+            Nav,
+            AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCarritoUrl(
+                idInsert,
+                idweb,
+                idbase,
+                Nav.Uri,
+                AppUserSession.CurrentUser?.IdWeb,
+                SessionSvc.GetActiveSession()?.BaseId));
 
     private void SetCatalogUrls(int idInsert)
     {
         _urlPublica = GetPublicUrl(idInsert);
-        _urlCliente = GetClientUrl(idInsert);
+        _urlCarrito = GetCarritoUrl(idInsert);
     }
 
-    private string BuildCatalogRelativeUrl(int idInsert, bool includeClientSuffix)
+    private string BuildCatalogRelativeUrl(int idInsert)
         => AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCatalogUrl(
             idInsert,
-            includeClientSuffix,
             idweb,
             idbase,
             Nav.Uri,

@@ -93,6 +93,14 @@
     line-height: 1.45;
 }
 
+.catalogo-publico-hero__description {
+    margin: 0.35rem 0 0;
+    color: var(--color-text);
+    font-size: 0.9rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
 .catalogo-publico-hero__actions {
     display: flex;
     flex-wrap: wrap;

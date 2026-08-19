@@ -1,0 +1,181 @@
+@page "/portal-cliente/pedidos/{IdComprobante:int}"
+@page "/{idweb}/{idbase:int}/portal-cliente/pedidos/{IdComprobante:int}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits PortalClientePageBase
+@using AlfaCore.Models
+@using AlfaCore.Components.Shared
+@inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
+
+<PageTitle>Pedido | Portal Cliente</PageTitle>
+
+@if (NotFound)
+{
+    <section class="page-grid">
+        <section class="panel-card empty-state">
+            <h3 class="panel-card__title">Base no disponible</h3>
+            <p class="panel-card__subtitle">No se pudo resolver la base asociada a esta URL. Probá nuevamente desde el enlace correcto.</p>
+        </section>
+    </section>
+}
+else if (!IsAuthenticated)
+{
+    <CatalogoClienteLoginPanel @ref="_loginPanel"
+                                CatalogoNombre="Portal Cliente"
+                                BrandLogoUrl="@GetBrandingLogoUrl()"
+                                BrandName="@GetBrandingName()"
+                                Codigo="@ClienteCodigo"
+                                CodigoChanged="v => ClienteCodigo = v"
+                                Password="@ClientePassword"
+                                PasswordChanged="v => ClientePassword = v"
+                                ShowPassword="@ShowPassword"
+                                ShowPasswordChanged="v => ShowPassword = v"
+                                Busy="@SessionBusy"
+                                Feedback="@LoginFeedback"
+                                OnSubmit="LoginClienteAsync"
+                                VolverUrl="/"
+                                VolverTexto="Volver al inicio" />
+}
+else
+{
+    <section class="page-grid">
+        <PortalClienteHeader BrandLogoUrl="@GetBrandingLogoUrl()"
+                              BrandName="@GetBrandingName()"
+                              LogoFrameClass="@GetBrandingLogoFrameClass()"
+                              ClientLabel="@GetCurrentClientLabel()"
+                              Busy="@SessionBusy"
+                              OnLogout="LogoutClienteAsync"
+                              ActiveTab="pedidos"
+                              RouteInicio="@BuildPortalRoute("")"
+                              RouteCuentaCorriente="@BuildPortalRoute("cuenta-corriente")"
+                              RouteListaPrecios="@BuildPortalRoute("lista-precios")"
+                              RouteCatalogos="@BuildPortalRoute("catalogos")"
+                              RouteCarrito="@BuildPortalRoute("carrito")"
+                              RoutePedidos="@BuildPortalRoute("pedidos")"
+                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
+
+        @if (_loading)
+        {
+            <section class="panel-card">
+                <p class="text-muted">Cargando pedido...</p>
+            </section>
+        }
+        else if (_pedido is null)
+        {
+            <section class="panel-card empty-state">
+                <h3 class="panel-card__title">Pedido no encontrado</h3>
+                <p class="panel-card__subtitle">No existe o no pertenece a tu cuenta.</p>
+                <a class="btn btn--ghost btn--sm" href="@BuildPortalRoute("pedidos")">
+                    <i class="bi bi-arrow-left"></i> Volver a pedidos
+                </a>
+            </section>
+        }
+        else
+        {
+            <section class="panel-card">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">@_pedido.Tc @_pedido.IdComprobanteTexto</h3>
+                        <p class="panel-card__subtitle">@_pedido.Fecha.ToString("dd/MM/yyyy")</p>
+                    </div>
+                    <a class="btn btn--ghost btn--sm" href="@BuildPortalRoute("pedidos")">
+                        <i class="bi bi-arrow-left"></i> Volver
+                    </a>
+                </div>
+
+                <div class="portal-cliente__detalle-meta">
+                    <div><span>Cliente</span><strong>@_pedido.RazonSocial</strong></div>
+                    <div><span>Total</span><strong>@Money(_pedido.Total)</strong></div>
+                    @if (_pedido.Anulada)
+                    {
+                        <div><span>Estado</span><strong class="text-danger">Anulado</strong></div>
+                    }
+                    @if (_pedido.EsPedidoWeb)
+                    {
+                        <div><span>Origen</span><strong>Pedido Web@(_pedido.IdCatalogoWeb is { } idCat ? $" (Catálogo #{idCat})" : "")</strong></div>
+                    }
+                </div>
+            </section>
+
+            <section class="panel-card">
+                <h3 class="panel-card__title">Artículos</h3>
+                <div class="table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Descripción</th>
+                                <th class="text-end">Cantidad</th>
+                                <th class="text-end">Precio</th>
+                                <th class="text-end">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var linea in _pedido.Lineas)
+                            {
+                                <tr>
+                                    <td>@linea.IdArticulo</td>
+                                    <td>@linea.Descripcion</td>
+                                    <td class="text-end">@linea.Cantidad.ToString("N2", CultureEsAr)</td>
+                                    <td class="text-end">@Money(linea.PrecioUnitario)</td>
+                                    <td class="text-end">@Money(linea.Subtotal)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        }
+    </section>
+}
+
+@code {
+    private static readonly System.Globalization.CultureInfo CultureEsAr = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    [Parameter] public int IdComprobante { get; set; }
+
+    private CatalogoClienteLoginPanel? _loginPanel;
+    private bool _loading;
+    private PortalClientePedidoDetalleDto? _pedido;
+
+    protected override async Task OnAfterClientSessionRestoredAsync()
+    {
+        if (_loginPanel is not null)
+        {
+            try { await _loginPanel.FocusCodigoAsync(); }
+            catch { }
+        }
+
+        if (IsAuthenticated)
+        {
+            await CargarDetalleAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    protected override async Task OnAfterLoginAsync()
+        => await CargarDetalleAsync();
+
+    private async Task CargarDetalleAsync()
+    {
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            // El servicio valida CodigoCliente contra la sesión autenticada — nunca contra un
+            // valor recibido del navegador. Un pedido de otro cliente devuelve null, no un error.
+            var result = await UiOps.RunAsync(() => PortalClienteSvc.GetPedidoClienteDetalleAsync(GetCurrentCodigoCliente(), IdComprobante),
+                "No se pudo cargar el pedido.");
+
+            _pedido = result.Success ? result.Value : null;
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static string Money(decimal value)
+        => value.ToString("C2", CultureEsAr);
+}

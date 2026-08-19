@@ -1,0 +1,243 @@
+/* Estas clases ya existen en InterfacesCatalogos.razor.css, pero el CSS de Blazor es aislado por
+   componente: sin este archivo, esta pantalla las usa sin ningún estilo (botones planos del
+   navegador, checkbox nativo). Se copian acá los mismos estilos para mantener la misma estética. */
+
+.section-block {
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 18px;
+    padding: 1rem;
+    background: rgba(8, 15, 31, 0.55);
+}
+
+.section-block__head {
+    margin-bottom: 1rem;
+}
+
+.section-block__title {
+    margin: 0;
+    font-size: 1.05rem;
+    font-weight: 700;
+}
+
+.catalogos-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.85rem;
+    padding: 0.6rem 0.1rem;
+    cursor: pointer;
+    user-select: none;
+}
+
+.catalogos-toggle__input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.catalogos-toggle__track {
+    position: relative;
+    flex: 0 0 auto;
+    width: 44px;
+    height: 26px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.28);
+    border: 1px solid rgba(148, 163, 184, 0.32);
+    transition: background-color 150ms ease, border-color 150ms ease;
+}
+
+.catalogos-toggle__track::before {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+    transition: transform 150ms ease, background-color 150ms ease;
+}
+
+.catalogos-toggle__input:checked + .catalogos-toggle__track {
+    background: linear-gradient(135deg, #38bdf8, #06b6d4);
+    border-color: rgba(56, 189, 248, 0.9);
+}
+
+.catalogos-toggle__input:checked + .catalogos-toggle__track::before {
+    transform: translateX(18px);
+    background: #ffffff;
+}
+
+.catalogos-toggle__input:focus-visible + .catalogos-toggle__track {
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35);
+}
+
+.catalogos-toggle__label {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+}
+
+.catalogos-toggle__label strong {
+    font-size: 0.95rem;
+    color: inherit;
+}
+
+.catalogos-toggle__label small {
+    color: rgba(226, 232, 240, 0.72);
+    font-size: 0.82rem;
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.catalog-source-card {
+    width: 100%;
+    min-height: 56px;
+    padding: 0.75rem 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 18px;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.95), rgba(10, 18, 36, 0.9));
+    color: inherit;
+    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.15;
+    transition: border-color 120ms ease, background-color 120ms ease, transform 120ms ease, box-shadow 120ms ease;
+}
+
+.catalog-source-card:hover,
+.catalog-source-card:focus-visible {
+    border-color: rgba(56, 189, 248, 0.45);
+    transform: translateY(-1px);
+}
+
+.catalog-source-card.is-active {
+    border-color: rgba(56, 189, 248, 0.7);
+    box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.15) inset;
+    background: linear-gradient(135deg, rgba(8, 145, 178, 0.24), rgba(10, 18, 36, 0.9));
+}
+
+.catalogos-article-thumb {
+    width: 54px;
+    height: 54px;
+    display: block;
+    border-radius: 12px;
+    object-fit: cover;
+    background: rgba(15, 23, 42, 0.72);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.catalogos-article-thumb--lookup {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+}
+
+.catalogos-article-thumb--fallback {
+    display: grid;
+    place-items: center;
+    color: rgba(226, 232, 240, 0.72);
+    font-weight: 800;
+    font-size: 0.7rem;
+    letter-spacing: 0.03em;
+}
+
+.catalogos-modal-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(2, 6, 23, 0.72);
+    z-index: 1040;
+}
+
+.catalogos-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1050;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+}
+
+.catalogos-modal__card {
+    width: min(1280px, 100%);
+    max-height: min(90vh, 980px);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 20px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: rgba(7, 13, 26, 0.98);
+    box-shadow: 0 25px 80px rgba(0, 0, 0, 0.45);
+}
+
+.catalogos-modal__header,
+.catalogos-modal__footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+}
+
+.catalogos-modal__header p,
+.catalogos-modal__meta {
+    margin: 0;
+    color: rgba(226, 232, 240, 0.72);
+    font-size: 0.92rem;
+}
+
+.catalogos-modal__meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+}
+
+.catalogos-modal__table {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+.catalogos-modal__pager {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    color: rgba(226, 232, 240, 0.8);
+    font-size: 0.92rem;
+}
+
+.catalogos-modal__table tr.is-duplicate {
+    opacity: 0.68;
+}
+
+.catalogos-modal__table tr.catalogos-modal__row {
+    cursor: pointer;
+}
+
+.catalogos-modal__table tr.catalogos-modal__row:hover {
+    background: rgba(56, 189, 248, 0.08);
+}
+
+.catalogos-modal__footer {
+    margin-top: auto;
+}
+
+@media (max-width: 768px) {
+    .toolbar {
+        flex-direction: column;
+        display: flex;
+    }
+
+    .catalog-source-card {
+        width: 100%;
+    }
+}

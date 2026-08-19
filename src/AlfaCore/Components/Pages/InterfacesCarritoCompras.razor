@@ -1,0 +1,373 @@
+@page "/carrito-compras"
+@page "/{idweb}/{idbase:int}/carrito-compras"
+@page "/interfaces/carrito-compras"
+@page "/{idweb}/{idbase:int}/interfaces/carrito-compras"
+@inherits SaaSRoutePageBase
+@using AlfaCore.Models
+@inject AlfaCore.Services.ICarritoComprasService CarritoComprasSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUiDialogService DialogSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>Carrito de compras | Alfa Gestión</PageTitle>
+
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Carritos de compra</h2>
+            <p class="page-intro__text">Administrá un único carrito general por base y los carritos derivados de catálogos.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn--ghost" href="@BuildSaasRoute("/interfaces")">
+                <i class="bi bi-arrow-left"></i> Volver a Interfaces
+            </a>
+            <a class="btn btn--primary" href="@CreateGeneralCartUrl()">
+                <i class="bi bi-plus-lg"></i> @(_general is null ? "Crear carrito general" : "Editar carrito general")
+            </a>
+        </div>
+    </div>
+
+    <section class="panel-card">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Carrito general</h3>
+                <p class="panel-card__subtitle">Solo puede existir uno por base. La URL pública siempre es <code>/carrito/0</code>.</p>
+            </div>
+        </div>
+
+        @if (_loadingGeneral)
+        {
+            <p class="text-muted">Cargando carrito general...</p>
+        }
+        else if (_general is null)
+        {
+            <div class="usuarios-empty d-flex flex-column gap-3">
+                <p class="mb-0">No hay un carrito general configurado.</p>
+                <div class="actions">
+                    <a class="btn btn--primary" href="@CreateGeneralCartUrl()">
+                        <i class="bi bi-plus-lg"></i> Crear carrito general
+                    </a>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="carrito-general-card">
+                <div class="carrito-general-card__meta">
+                    <strong>@_general.Nombre</strong>
+                    <span>Origen: General</span>
+                    <span>Artículos: @_general.Articulos.Count</span>
+                    <span>Precios: @GetGeneralPrecioTexto()</span>
+                    <span>Estado: @(_general.Activo ? "Activo" : "Inactivo")</span>
+                </div>
+                <div class="actions">
+                    <a class="btn btn--ghost btn--sm" href="@GetGeneralPublicUrl()" target="_blank" rel="noopener noreferrer">
+                        <i class="bi bi-box-arrow-up-right"></i> Abrir
+                    </a>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CopiarLinkAsync(GetGeneralPublicUrl())">
+                        <i class="bi bi-clipboard"></i> Copiar enlace
+                    </button>
+                    <a class="btn btn--ghost btn--sm" href="@GetGeneralEditUrl()">
+                        <i class="bi bi-pencil-square"></i> Editar
+                    </a>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleGeneralAsync" disabled="@_loadingGeneral">
+                        <i class="bi @(_general.Activo ? "bi-toggle-off" : "bi-toggle-on")"></i>
+                        @(_general.Activo ? "Desactivar" : "Activar")
+                    </button>
+                </div>
+                <div class="text-muted small">
+                    URL pública: <code>@GetGeneralPublicUrl()</code>
+                </div>
+            </div>
+        }
+    </section>
+
+    <ModuleListToolbar AriaLabel="Herramientas de carritos de catálogo"
+                       PagerAriaLabel="Paginación de carritos de catálogo"
+                       ShowPager="true"
+                       CurrentPage="@(_page?.PageNumber ?? 1)"
+                       TotalPages="@(_page?.TotalPages ?? 1)"
+                       IsLoading="@_loadingCatalogos"
+                       OnPageChanged="OnPageChangedAsync">
+        <SearchContent>
+            <div class="catalogos-toolbar">
+                <div class="field catalogos-toolbar__field catalogos-toolbar__field--wide">
+                    <label>Buscar</label>
+                    <input type="search"
+                           class="form-control"
+                           @bind="_texto"
+                           @bind:event="oninput"
+                           @onkeydown="HandleSearchKeyDownAsync"
+                           placeholder="Nombre o id del catálogo" />
+                </div>
+                <div class="field catalogos-toolbar__field">
+                    <label>Estado</label>
+                    <select class="form-select" @bind="_estadoFiltro">
+                        <option value="@CarritoComprasEstadoKeys.Todos">Todos</option>
+                        <option value="@CarritoComprasEstadoKeys.Activo">Activos</option>
+                        <option value="@CarritoComprasEstadoKeys.Inactivo">Inactivos</option>
+                    </select>
+                </div>
+                <div class="catalogos-toolbar__search-action">
+                    <button type="button" class="btn btn--primary" @onclick="() => BuscarCatalogosAsync(1)" disabled="@_loadingCatalogos">
+                        <i class="bi bi-search"></i> Buscar
+                    </button>
+                </div>
+            </div>
+        </SearchContent>
+    </ModuleListToolbar>
+
+    <section class="panel-card">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Carritos de catálogos</h3>
+                <p class="panel-card__subtitle">Solo se listan los catálogos con carrito habilitado.</p>
+            </div>
+        </div>
+
+        @if (_page is null)
+        {
+            <div class="loading">Cargando carritos de catálogos...</div>
+        }
+        else if (_page.Items.Count == 0)
+        {
+            <div class="usuarios-empty">No hay carritos de catálogo para los filtros actuales.</div>
+        }
+        else
+        {
+            <div class="table-responsive">
+                <table class="data-table usuarios-table">
+                    <thead>
+                        <tr>
+                            <th>ID catálogo</th>
+                            <th>Nombre</th>
+                            <th>Vigencia</th>
+                            <th class="text-end">Artículos</th>
+                            <th>Estado</th>
+                            <th>URL</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _page.Items)
+                        {
+                            <tr>
+                                <td><strong>@(item.IdCatalogo ?? 0)</strong></td>
+                                <td>
+                                    <div class="d-flex flex-column">
+                                        <strong>@item.Nombre</strong>
+                                        <span class="text-muted">@item.Tipo</span>
+                                    </div>
+                                </td>
+                                <td>@item.Vigencia</td>
+                                <td class="text-end">@item.CantidadArticulos</td>
+                                <td>
+                                    <span class="badge @(item.Activo ? "text-bg-success" : "text-bg-secondary")">
+                                        @(item.Activo ? "Activo" : "Inactivo")
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="@item.UrlCarrito" target="_blank" rel="noopener noreferrer">@item.UrlCarrito</a>
+                                </td>
+                                <td>
+                                    <div class="actions">
+                                        <a class="btn btn--ghost btn--sm" href="@item.UrlCarrito" target="_blank" rel="noopener noreferrer">
+                                            <i class="bi bi-box-arrow-up-right"></i> Abrir
+                                        </a>
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CopiarLinkAsync(item.UrlCarrito)">
+                                            <i class="bi bi-clipboard"></i> Copiar
+                                        </button>
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm"
+                                                @onclick="() => ToggleCatalogoAsync(item)"
+                                                disabled="@_loadingCatalogos">
+                                            <i class="bi @(item.Activo ? "bi-toggle-off" : "bi-toggle-on")"></i>
+                                            @(item.Activo ? "Desactivar" : "Activar")
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    </section>
+</section>
+
+@code {
+    private bool _loadingGeneral = true;
+    private bool _loadingCatalogos;
+    private string _texto = string.Empty;
+    private string _estadoFiltro = CarritoComprasEstadoKeys.Activo;
+    private PagedResult<CarritoComprasResumenDto>? _page;
+    private CarritoComprasGeneralDetalleDto? _general;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(CargarGeneralAsync(), BuscarCatalogosAsync(1));
+    }
+
+    private Task OnPageChangedAsync(int pageNumber)
+        => BuscarCatalogosAsync(pageNumber);
+
+    private Task HandleSearchKeyDownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
+        => args.Key is "Enter" or "NumpadEnter"
+            ? BuscarCatalogosAsync(1)
+            : Task.CompletedTask;
+
+    private async Task BuscarCatalogosAsync(int pageNumber)
+    {
+        _loadingCatalogos = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CarritoComprasSvc.SearchAsync(new CarritoComprasFiltroDto
+            {
+                Texto = string.IsNullOrWhiteSpace(_texto) ? null : _texto.Trim(),
+                Tipo = CarritoComprasTipoKeys.Catalogo,
+                Estado = _estadoFiltro,
+                PageNumber = pageNumber,
+                PageSize = 50
+            }), "No se pudieron cargar los carritos de catálogo.");
+
+            _page = result.Success && result.Value is not null
+                ? result.Value
+                : new PagedResult<CarritoComprasResumenDto>();
+
+            AjustarUrlsCatalogo();
+        }
+        finally
+        {
+            _loadingCatalogos = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task CargarGeneralAsync()
+    {
+        _loadingGeneral = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => CarritoComprasSvc.GetGeneralAsync(0), "No se pudo cargar el carrito general.");
+            _general = result.Success ? result.Value : null;
+        }
+        finally
+        {
+            _loadingGeneral = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void AjustarUrlsCatalogo()
+    {
+        if (_page is null)
+            return;
+
+        foreach (var item in _page.Items)
+        {
+            if (item.IdCatalogo is { } idCatalogo && idCatalogo > 0)
+            {
+                item.UrlCarrito = BuildCatalogoCarritoUrl(idCatalogo);
+                item.UrlEdicion = BuildCatalogoCarritoUrl(idCatalogo);
+            }
+        }
+    }
+
+    private string BuildCatalogoCarritoUrl(int idCatalogo)
+        => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
+            Nav,
+            AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCarritoUrl(
+                idCatalogo,
+                idweb,
+                idbase,
+                Nav.Uri));
+
+    private string GetGeneralPublicUrl()
+        => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
+            Nav,
+            AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCarritoGeneralUrl(
+                idweb,
+                idbase,
+                Nav.Uri));
+
+    private string GetGeneralEditUrl()
+        => BuildSaasRoute("/carrito-general/0");
+
+    private string CreateGeneralCartUrl()
+        => BuildSaasRoute("/carrito-general/0");
+
+    private string GetGeneralPrecioTexto()
+    {
+        if (_general is null)
+            return string.Empty;
+
+        return string.Equals(_general.OrigenPrecios, CarritoComprasPrecioOrigenKeys.ListaFija, StringComparison.OrdinalIgnoreCase)
+            ? $"Lista fija {(_general.IdListaPrecios ?? string.Empty).Trim()}"
+            : string.Equals(_general.OrigenPrecios, CarritoComprasPrecioOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase)
+                ? "Maestro"
+                : "Según cliente";
+    }
+
+    private async Task CopiarLinkAsync(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return;
+
+        await Js.InvokeVoidAsync("navigator.clipboard.writeText", url);
+    }
+
+    private async Task ToggleCatalogoAsync(CarritoComprasResumenDto item)
+    {
+        var confirmar = await DialogSvc.ConfirmAsync(
+            item.Activo ? "Desactivar carrito de catálogo" : "Activar carrito de catálogo",
+            "Esto solo cambia el acceso al carrito, no finaliza el catálogo ni borra artículos.",
+            item.Activo ? "Desactivar" : "Activar",
+            "Cancelar");
+
+        if (!confirmar)
+            return;
+
+        var idCatalogo = item.IdCatalogo ?? 0;
+        if (idCatalogo <= 0)
+            return;
+
+        await UiOps.RunAsync(() => CarritoComprasSvc.ToggleCatalogoAsync(idCatalogo, !item.Activo), "No se pudo cambiar el estado del carrito de catálogo.");
+        await BuscarCatalogosAsync(_page?.PageNumber ?? 1);
+    }
+
+    private async Task ToggleGeneralAsync()
+    {
+        if (_general is null)
+            return;
+
+        var confirmar = await DialogSvc.ConfirmAsync(
+            _general.Activo ? "Desactivar carrito general" : "Activar carrito general",
+            "Esto solo cambia el estado del carrito general.",
+            _general.Activo ? "Desactivar" : "Activar",
+            "Cancelar");
+
+        if (!confirmar)
+            return;
+
+        await UiOps.RunAsync(() => CarritoComprasSvc.ToggleGeneralAsync(_general.IdCarrito, !_general.Activo), "No se pudo actualizar el carrito general.");
+        await CargarGeneralAsync();
+    }
+
+    private string BuildSaasRoute(string route)
+    {
+        var normalizedRoute = string.IsNullOrWhiteSpace(route)
+            ? "/"
+            : (route.Trim().StartsWith('/') ? route.Trim() : "/" + route.Trim());
+
+        if (!string.IsNullOrWhiteSpace(idweb) && idbase.HasValue)
+            return $"/{Uri.EscapeDataString(idweb.Trim())}/{idbase.Value}{normalizedRoute}";
+
+        return RouteContext.BuildRoute(normalizedRoute);
+    }
+}

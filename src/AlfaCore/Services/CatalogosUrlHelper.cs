@@ -1,20 +1,54 @@
+using Microsoft.AspNetCore.Components;
+
 namespace AlfaCore.Services;
 
 public static class CatalogosUrlHelper
 {
     public static string BuildRelativeCatalogUrl(
         int idInsert,
-        bool includeClientSuffix,
         string? routeIdWeb,
         int? routeIdBase,
         string? currentUri,
         string? fallbackIdWeb = null,
         int? fallbackIdBase = null)
-    {
-        var path = includeClientSuffix
-            ? $"/catalogo/{idInsert}/cliente"
-            : $"/catalogo/{idInsert}";
+        => PrependIdWebIdBase($"/catalogo/{idInsert}", routeIdWeb, routeIdBase, currentUri, fallbackIdWeb, fallbackIdBase);
 
+    public static string BuildRelativeCarritoUrl(
+        int idInsert,
+        string? routeIdWeb,
+        int? routeIdBase,
+        string? currentUri,
+        string? fallbackIdWeb = null,
+        int? fallbackIdBase = null)
+        => PrependIdWebIdBase($"/carrito/{idInsert}", routeIdWeb, routeIdBase, currentUri, fallbackIdWeb, fallbackIdBase);
+
+    public static string BuildRelativeCarritoGeneralUrl(
+        string? routeIdWeb,
+        int? routeIdBase,
+        string? currentUri,
+        string? fallbackIdWeb = null,
+        int? fallbackIdBase = null)
+        => PrependIdWebIdBase("/carrito/0", routeIdWeb, routeIdBase, currentUri, fallbackIdWeb, fallbackIdBase);
+
+    public static string BuildRelativePortalClienteUrl(
+        string? routeIdWeb,
+        int? routeIdBase,
+        string? currentUri,
+        string? fallbackIdWeb = null,
+        int? fallbackIdBase = null)
+        => PrependIdWebIdBase("/portal-cliente", routeIdWeb, routeIdBase, currentUri, fallbackIdWeb, fallbackIdBase);
+
+    public static string BuildAbsoluteUrl(NavigationManager navigationManager, string relativeUrl)
+        => navigationManager.ToAbsoluteUri(relativeUrl).ToString();
+
+    private static string PrependIdWebIdBase(
+        string path,
+        string? routeIdWeb,
+        int? routeIdBase,
+        string? currentUri,
+        string? fallbackIdWeb,
+        int? fallbackIdBase)
+    {
         var idWeb = NormalizeIdWeb(routeIdWeb)
             ?? NormalizeIdWeb(fallbackIdWeb)
             ?? TryResolveIdWebFromUri(currentUri);

@@ -1,0 +1,48 @@
+@using AlfaCore.Models
+
+<article class="portal-cliente__pedido-row lista-precios__row">
+    <div class="lista-precios__row-media">
+        @if (!string.IsNullOrWhiteSpace(ImagenUrl) && !_imagenFallo)
+        {
+            <img src="@ImagenUrl" alt="@Item.Descripcion" loading="lazy" @onerror="() => _imagenFallo = true" />
+        }
+        else
+        {
+            <div class="lista-precios__row-media-fallback"><i class="bi bi-image"></i></div>
+        }
+    </div>
+    <div class="portal-cliente__pedido-row__main">
+        <strong>@Item.Descripcion</strong>
+        <span class="portal-cliente__pedido-row__fecha">
+            @Item.IdArticulo
+            @if (!string.IsNullOrWhiteSpace(Item.Presentacion)) { <text> · @Item.Presentacion</text> }
+            @if (!string.IsNullOrWhiteSpace(Item.Marca)) { <text> · @Item.Marca</text> }
+            @if (!string.IsNullOrWhiteSpace(Item.Rubro)) { <text> · @Item.Rubro</text> }
+        </span>
+    </div>
+    <div class="portal-cliente__pedido-row__total">
+        @if (Item.SinPrecio)
+        {
+            <span class="text-muted">Consultar</span>
+        }
+        else
+        {
+            @Money(Item.Precio)
+            @if (Margen > 0)
+            {
+                <span class="lista-precios__row-margen">Con margen: @Money(Item.Precio * (1 + Margen / 100m))</span>
+            }
+        }
+    </div>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public ListaPreciosArticuloDto Item { get; set; } = null!;
+    [Parameter] public string? ImagenUrl { get; set; }
+    [Parameter] public decimal Margen { get; set; }
+
+    private bool _imagenFallo;
+
+    private static string Money(decimal value)
+        => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+}

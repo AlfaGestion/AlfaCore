@@ -1,0 +1,129 @@
+@inject IJSRuntime Js
+@implements IAsyncDisposable
+
+<section class="panel-card portal-cliente__headerbar">
+    <div class="portal-cliente__header-brand">
+        <div class="portal-cliente__logo @LogoFrameClass" title="@BrandName">
+            <img src="@BrandLogoUrl" alt="@BrandName" />
+        </div>
+        <div class="portal-cliente__header-copy">
+            <p class="portal-cliente__header-eyebrow">Portal Cliente</p>
+            <h2 class="portal-cliente__header-title">Bienvenido, @ClientLabel</h2>
+        </div>
+    </div>
+
+    <div class="portal-cliente__header-actions">
+        <button type="button"
+                class="btn btn--ghost btn--sm portal-cliente__theme-button"
+                @onclick="ToggleThemeAsync"
+                title="@(_isDark ? "Cambiar a tema claro" : "Cambiar a tema oscuro")"
+                aria-label="@(_isDark ? "Cambiar a tema claro" : "Cambiar a tema oscuro")">
+            <i class="bi @(_isDark ? "bi-sun" : "bi-moon")"></i>
+        </button>
+        <button type="button" class="btn btn--ghost btn--sm" @onclick="OnLogout" disabled="@Busy">
+            <i class="bi bi-box-arrow-right"></i> <span>Cerrar sesión</span>
+        </button>
+    </div>
+</section>
+
+<nav class="portal-cliente__tabs" aria-label="Secciones del Portal Cliente">
+    <a class="portal-cliente__tab @(ActiveTab == "inicio" ? "is-active" : "")" href="@RouteInicio">
+        <i class="bi bi-house"></i> Inicio
+    </a>
+    <a class="portal-cliente__tab @(ActiveTab == "cuenta-corriente" ? "is-active" : "")" href="@RouteCuentaCorriente">
+        <i class="bi bi-cash-stack"></i> Cuenta corriente
+    </a>
+    <a class="portal-cliente__tab @(ActiveTab == "lista-precios" ? "is-active" : "")" href="@RouteListaPrecios">
+        <i class="bi bi-tags"></i> Lista de precios
+    </a>
+    <a class="portal-cliente__tab @(ActiveTab == "catalogos" ? "is-active" : "")" href="@RouteCatalogos">
+        <i class="bi bi-book"></i> Catálogos
+    </a>
+    <a class="portal-cliente__tab @(ActiveTab == "carrito" ? "is-active" : "")" href="@RouteCarrito">
+        <i class="bi bi-cart3"></i> Carrito de compra
+    </a>
+    <a class="portal-cliente__tab @(ActiveTab == "pedidos" ? "is-active" : "")" href="@RoutePedidos">
+        <i class="bi bi-receipt"></i> Pedidos
+    </a>
+    <a class="portal-cliente__tab @(ActiveTab == "mi-cuenta" ? "is-active" : "")" href="@RouteMiCuenta">
+        <i class="bi bi-person-circle"></i> Mi cuenta
+    </a>
+</nav>
+
+@code {
+    [Parameter, EditorRequired] public string BrandLogoUrl { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string BrandName { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string LogoFrameClass { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string ClientLabel { get; set; } = string.Empty;
+    [Parameter] public bool Busy { get; set; }
+    [Parameter, EditorRequired] public EventCallback OnLogout { get; set; }
+    [Parameter] public string ActiveTab { get; set; } = "inicio";
+    [Parameter, EditorRequired] public string RouteInicio { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string RouteCuentaCorriente { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string RouteListaPrecios { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string RouteCatalogos { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string RouteCarrito { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string RoutePedidos { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string RouteMiCuenta { get; set; } = string.Empty;
+
+    private bool _isDark = true;
+    private DotNetObjectReference<PortalClienteHeader>? _themeRef;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        await SyncThemeAsync();
+    }
+
+    private async Task SyncThemeAsync()
+    {
+        try
+        {
+            var theme = await Js.InvokeAsync<string>("dashboardTheme.get");
+            ApplyTheme(theme);
+
+            _themeRef ??= DotNetObjectReference.Create(this);
+            await Js.InvokeVoidAsync("dashboardTheme.watch", _themeRef);
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+        }
+    }
+
+    [JSInvokable]
+    public Task OnDashboardThemeChanged(string theme)
+    {
+        ApplyTheme(theme);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ToggleThemeAsync()
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("dashboardTheme.set", _isDark ? "light" : "dark");
+        }
+        catch
+        {
+        }
+    }
+
+    private void ApplyTheme(string? theme)
+        => _isDark = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("dashboardTheme.unwatch");
+        }
+        catch
+        {
+        }
+
+        _themeRef?.Dispose();
+    }
+}

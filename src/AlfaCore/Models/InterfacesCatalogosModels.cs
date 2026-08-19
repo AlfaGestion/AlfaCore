@@ -135,6 +135,7 @@ public sealed class CatalogosCatalogoDetalleDto
     public DateTime? VigenciaDesde { get; set; }
     public DateTime? VigenciaHasta { get; set; }
     public bool Finalizado { get; set; }
+    public bool HabilitarCarrito { get; set; }
     public IReadOnlyList<CatalogosCatalogoItemDto> Articulos { get; set; } = [];
 }
 
@@ -147,6 +148,7 @@ public sealed class CatalogosCatalogoSaveRequestDto
     public string IdLista { get; set; } = string.Empty;
     public DateTime? VigenciaDesde { get; set; }
     public DateTime? VigenciaHasta { get; set; }
+    public bool HabilitarCarrito { get; set; }
     public string Usuario { get; set; } = string.Empty;
     public string Pc { get; set; } = string.Empty;
     public IReadOnlyList<CatalogosArticuloCatalogoDto> Articulos { get; set; } = [];
@@ -158,14 +160,12 @@ public sealed class CatalogosCatalogoSaveResultDto
     public bool Simulado { get; set; }
     public int IdInsert { get; set; }
     public string UrlPublica { get; set; } = string.Empty;
-    public string UrlCliente { get; set; } = string.Empty;
     public string Mensaje { get; set; } = string.Empty;
 }
 
 public sealed class CatalogosCatalogoAccessUrlsDto
 {
     public string UrlPublica { get; set; } = string.Empty;
-    public string UrlCliente { get; set; } = string.Empty;
 }
 
 public sealed class CatalogosPublicIdentityDto
