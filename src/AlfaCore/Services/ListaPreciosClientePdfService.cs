@@ -14,7 +14,8 @@ public interface IListaPreciosClientePdfService
         byte[]? logoBytes,
         string nombreEmpresa,
         string nombreCliente,
-        string agruparPor);
+        string agruparPor,
+        bool truncado = false);
 }
 
 // PDF profesional de "lista de precios" para el Portal Cliente: logo, empresa, cliente, fecha,
@@ -30,7 +31,8 @@ public sealed class ListaPreciosClientePdfService : IListaPreciosClientePdfServi
         byte[]? logoBytes,
         string nombreEmpresa,
         string nombreCliente,
-        string agruparPor)
+        string agruparPor,
+        bool truncado = false)
     {
         var generadoEl = DateTime.Now;
         var listaTexto = resolucion.UsaMaestro
@@ -59,6 +61,13 @@ public sealed class ListaPreciosClientePdfService : IListaPreciosClientePdfServi
                         column.Item().AlignCenter().PaddingTop(40)
                             .Text("No encontramos artículos para esta búsqueda.")
                             .FontSize(11).FontColor(Colors.Grey.Darken1);
+                    }
+
+                    if (truncado)
+                    {
+                        column.Item().Background(Colors.Amber.Lighten3).Padding(6)
+                            .Text($"Se alcanzó el máximo de {articulos.Count:N0} artículos exportables de una vez. Refiná la búsqueda o los filtros para exportar el resto.")
+                            .FontSize(8).Bold().FontColor(Colors.Amber.Darken3);
                     }
 
                     foreach (var grupo in grupos)

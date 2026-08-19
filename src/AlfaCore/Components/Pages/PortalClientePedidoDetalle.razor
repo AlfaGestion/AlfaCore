@@ -4,13 +4,14 @@
 @inherits PortalClientePageBase
 @using AlfaCore.Models
 @using AlfaCore.Components.Shared
+@using AlfaCore.Components.Shared.AlfaDesign
 @inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
 
 <PageTitle>Pedido | Portal Cliente</PageTitle>
 
 @if (NotFound)
 {
-    <section class="page-grid">
+    <section class="page-grid portal-cliente">
         <section class="panel-card empty-state">
             <h3 class="panel-card__title">Base no disponible</h3>
             <p class="panel-card__subtitle">No se pudo resolver la base asociada a esta URL. Probá nuevamente desde el enlace correcto.</p>
@@ -39,7 +40,7 @@ else if (!IsAuthenticated)
 }
 else
 {
-    <section class="page-grid">
+    <section class="page-grid portal-cliente portal-cliente--detail">
         <PortalClienteHeader BrandLogoUrl="@GetBrandingLogoUrl()"
                               BrandName="@GetBrandingName()"
                               LogoFrameClass="@GetBrandingLogoFrameClass()"
@@ -57,49 +58,69 @@ else
 
         @if (_loading)
         {
-            <section class="panel-card">
-                <p class="text-muted">Cargando pedido...</p>
+            <section class="portal-cliente__section">
+                <div class="portal-cliente__loading-state">
+                    <p class="text-muted">Cargando pedido...</p>
+                </div>
             </section>
         }
         else if (_pedido is null)
         {
-            <section class="panel-card empty-state">
-                <h3 class="panel-card__title">Pedido no encontrado</h3>
-                <p class="panel-card__subtitle">No existe o no pertenece a tu cuenta.</p>
-                <a class="btn btn--ghost btn--sm" href="@BuildPortalRoute("pedidos")">
-                    <i class="bi bi-arrow-left"></i> Volver a pedidos
-                </a>
+            <section class="portal-cliente__section">
+                <div class="portal-cliente__empty-panel">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                                    Title="Pedido no encontrado"
+                                    Message="No existe o no pertenece a tu cuenta."
+                                    Class="portal-cliente__empty-state" />
+                </div>
+                <div class="portal-cliente__empty-panel">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrow-left" OnClick="VolverAPedidos">
+                        Volver a pedidos
+                    </AlfaButton>
+                </div>
             </section>
         }
         else
         {
-            <section class="panel-card">
-                <div class="panel-card__header">
+            <section class="portal-cliente__section">
+                <header class="portal-cliente__section-head">
                     <div>
-                        <h3 class="panel-card__title">@_pedido.Tc @_pedido.IdComprobanteTexto</h3>
-                        <p class="panel-card__subtitle">@_pedido.Fecha.ToString("dd/MM/yyyy")</p>
+                        <h3 class="portal-cliente__section-title">@_pedido.Tc @_pedido.IdComprobanteTexto</h3>
+                        <p class="portal-cliente__section-subtitle">@_pedido.Fecha.ToString("dd/MM/yyyy")</p>
                     </div>
-                    <a class="btn btn--ghost btn--sm" href="@BuildPortalRoute("pedidos")">
-                        <i class="bi bi-arrow-left"></i> Volver
-                    </a>
-                </div>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrow-left" OnClick="VolverAPedidos">
+                        Volver
+                    </AlfaButton>
+                </header>
 
                 <div class="portal-cliente__detalle-meta">
                     <div><span>Cliente</span><strong>@_pedido.RazonSocial</strong></div>
                     <div><span>Total</span><strong>@Money(_pedido.Total)</strong></div>
-                    @if (_pedido.Anulada)
+                    @if (_pedido.Anulada || _pedido.EsPedidoWeb)
                     {
-                        <div><span>Estado</span><strong class="text-danger">Anulado</strong></div>
-                    }
-                    @if (_pedido.EsPedidoWeb)
-                    {
-                        <div><span>Origen</span><strong>Pedido Web@(_pedido.IdCatalogoWeb is { } idCat ? $" (Catálogo #{idCat})" : "")</strong></div>
+                        <div>
+                            <span>Origen</span>
+                            <div class="portal-cliente__detalle-meta-tags">
+                                @if (_pedido.EsPedidoWeb)
+                                {
+                                    <AlfaTag Tone="AlfaTagTone.Accent">Pedido Web</AlfaTag>
+                                }
+                                @if (_pedido.EsPedidoWeb && _pedido.IdCatalogoWeb is { } idCat)
+                                {
+                                    <AlfaTag Tone="AlfaTagTone.Neutral">Catálogo #@idCat</AlfaTag>
+                                }
+                                @if (_pedido.Anulada)
+                                {
+                                    <AlfaTag Tone="AlfaTagTone.Danger">Anulado</AlfaTag>
+                                }
+                            </div>
+                        </div>
                     }
                 </div>
             </section>
 
-            <section class="panel-card">
-                <h3 class="panel-card__title">Artículos</h3>
+            <section class="portal-cliente__section">
+                <h3 class="portal-cliente__section-title">Artículos</h3>
                 <div class="table-wrap">
                     <table class="data-table">
                         <thead>
@@ -156,6 +177,9 @@ else
 
     protected override async Task OnAfterLoginAsync()
         => await CargarDetalleAsync();
+
+    private void VolverAPedidos()
+        => Nav.NavigateTo(BuildPortalRoute("pedidos"));
 
     private async Task CargarDetalleAsync()
     {

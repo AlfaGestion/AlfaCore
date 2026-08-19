@@ -4,6 +4,7 @@
 @inherits PortalClientePageBase
 @using AlfaCore.Models
 @using AlfaCore.Components.Shared
+@using AlfaCore.Components.Shared.AlfaDesign
 @inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
 
 <PageTitle>Cuenta corriente | Portal Cliente</PageTitle>
@@ -57,102 +58,131 @@ else
 
         @if (_feedback is not null)
         {
-            <div class="editor-msg editor-msg--warning">
+            <div class="editor-msg editor-msg--warning portal-cliente__feedback">
                 <div><p>@_feedback</p></div>
             </div>
         }
 
-        <section class="portal-cliente__resumen-cards">
-            <div class="portal-cliente__resumen-card">
+        <section class="portal-cliente__summary-grid" aria-label="Resumen de cuenta corriente">
+            <article class="portal-cliente__summary-card">
                 <span>Saldo actual</span>
                 <strong>@Money(_resumen.SaldoTotal)</strong>
-            </div>
-            <div class="portal-cliente__resumen-card portal-cliente__resumen-card--danger">
+            </article>
+            <article class="portal-cliente__summary-card portal-cliente__summary-card--danger">
                 <span>Vencido</span>
                 <strong>@Money(_resumen.Vencido)</strong>
-            </div>
-            <div class="portal-cliente__resumen-card">
+            </article>
+            <article class="portal-cliente__summary-card">
                 <span>A vencer</span>
                 <strong>@Money(_resumen.AVencer)</strong>
-            </div>
-            <div class="portal-cliente__resumen-card">
+            </article>
+            <article class="portal-cliente__summary-card">
                 <span>Comprobantes pendientes</span>
                 <strong>@_resumen.CantidadPendientes</strong>
-            </div>
+            </article>
         </section>
 
-        <section class="panel-card">
-            <div class="panel-card__header">
+        <section class="portal-cliente__section">
+            <header class="portal-cliente__section-head">
                 <div>
-                    <h3 class="panel-card__title">Comprobantes pendientes</h3>
+                    <h3 class="portal-cliente__section-title">Comprobantes pendientes</h3>
+                    <p class="portal-cliente__section-subtitle">Movimientos pendientes de tu cuenta.</p>
                 </div>
-            </div>
+            </header>
 
-            <div class="portal-cliente__filtros">
-                <div class="portal-cliente__filtro-tabs">
+            <div class="portal-cliente__filters">
+                <div class="portal-cliente__filter-tabs" role="tablist" aria-label="Filtro de comprobantes pendientes">
                     <button type="button" class="portal-cliente__tab @(_filtro == PortalClienteComprobantesPendientesFiltro.Todos ? "is-active" : "")" @onclick="() => CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro.Todos)">Todos</button>
                     <button type="button" class="portal-cliente__tab @(_filtro == PortalClienteComprobantesPendientesFiltro.Vencidos ? "is-active" : "")" @onclick="() => CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro.Vencidos)">Vencidos</button>
                     <button type="button" class="portal-cliente__tab @(_filtro == PortalClienteComprobantesPendientesFiltro.AVencer ? "is-active" : "")" @onclick="() => CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro.AVencer)">A vencer</button>
                 </div>
-                <div class="field">
-                    <label>Fecha desde</label>
-                    <input type="date" @bind="_fechaDesde" @bind:after="CargarAsync" />
-                </div>
-                <div class="field">
-                    <label>Fecha hasta</label>
-                    <input type="date" @bind="_fechaHasta" @bind:after="CargarAsync" />
+
+                <div class="portal-cliente__filters-grid">
+                    <AlfaInput Label="Fecha desde"
+                               Type="date"
+                               Value="@FechaDesdeTexto"
+                               ValueChanged="SetFechaDesdeAsync"
+                               Class="portal-cliente__filter-field portal-cliente__filter-field--date" />
+                    <AlfaInput Label="Fecha hasta"
+                               Type="date"
+                               Value="@FechaHastaTexto"
+                               ValueChanged="SetFechaHastaAsync"
+                               Class="portal-cliente__filter-field portal-cliente__filter-field--date" />
                 </div>
             </div>
 
             @if (_loading)
             {
-                <p class="text-muted">Cargando cuenta corriente...</p>
+                <div class="portal-cliente__loading-state">
+                    <p class="text-muted">Cargando cuenta corriente...</p>
+                </div>
             }
             else if (_pendientes.Count == 0)
             {
-                <div class="empty-state">
-                    <p>Tu cuenta no registra comprobantes pendientes.</p>
+                <div class="portal-cliente__empty-panel">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Tu cuenta no registra comprobantes pendientes."
+                                    Message="Cuando existan movimientos pendientes, van a aparecer en este listado."
+                                    Class="portal-cliente__empty-state" />
                 </div>
             }
             else
             {
-                <div class="portal-cliente__pedidos-list">
-                    @foreach (var item in _pendientes)
-                    {
-                        <PortalClienteComprobantePendienteRow Item="item" DetalleUrlBuilder="@(id => BuildPortalRoute($"cuenta-corriente/{id}"))" />
-                    }
+                <div class="portal-cliente__data-view">
+                    <div class="portal-cliente__data-view-header">
+                        <span>Detalle</span>
+                        <span class="text-end">Importe / acción</span>
+                    </div>
+
+                    <div class="portal-cliente__data-view-body">
+                        @foreach (var item in _pendientes)
+                        {
+                            <PortalClienteComprobantePendienteRow Item="item" DetalleUrlBuilder="@(id => BuildPortalRoute($"cuenta-corriente/{id}"))" />
+                        }
+                    </div>
+
+                    <div class="portal-cliente__data-view-footer">
+                        <span>@_pendientes.Count comprobante(s)</span>
+                        <span>Filtrado según la selección actual</span>
+                    </div>
                 </div>
             }
         </section>
 
-        <section class="panel-card">
-            <div class="panel-card__header">
+        <section class="portal-cliente__section">
+            <header class="portal-cliente__section-head">
                 <div>
-                    <h3 class="panel-card__title">Últimos pagos / cobranzas</h3>
+                    <h3 class="portal-cliente__section-title">Últimos pagos / cobranzas</h3>
+                    <p class="portal-cliente__section-subtitle">Pagos recientes registrados en la cuenta.</p>
                 </div>
-            </div>
+            </header>
 
             @if (_loading)
             {
-                <p class="text-muted">Cargando...</p>
+                <div class="portal-cliente__loading-state">
+                    <p class="text-muted">Cargando...</p>
+                </div>
             }
             else if (_cobranzas.Count == 0)
             {
-                <div class="empty-state">
-                    <p>Todavía no registrás pagos o cobranzas.</p>
+                <div class="portal-cliente__empty-panel">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Todavía no registrás pagos o cobranzas."
+                                    Message="Cuando haya registros de cobranzas, aparecerán en esta sección."
+                                    Class="portal-cliente__empty-state" />
                 </div>
             }
             else
             {
-                <div class="portal-cliente__pedidos-list">
+                <div class="portal-cliente__activity-list">
                     @foreach (var cobranza in _cobranzas)
                     {
-                        <article class="portal-cliente__pedido-row">
-                            <div class="portal-cliente__pedido-row__main">
+                        <article class="portal-cliente__activity-row">
+                            <div class="portal-cliente__activity-row-main">
                                 <strong>@cobranza.Tc @cobranza.IdComprobante</strong>
-                                <span class="portal-cliente__pedido-row__fecha">@cobranza.Fecha.ToString("dd/MM/yyyy")</span>
+                                <span class="portal-cliente__activity-row-date">@cobranza.Fecha.ToString("dd/MM/yyyy")</span>
                             </div>
-                            <div class="portal-cliente__pedido-row__total">@Money(cobranza.Importe)</div>
+                            <div class="portal-cliente__activity-row-amount">@Money(cobranza.Importe)</div>
                         </article>
                     }
                 </div>
@@ -196,6 +226,24 @@ else
         return CargarAsync();
     }
 
+    private string FechaDesdeTexto
+        => _fechaDesde?.ToString("yyyy-MM-dd") ?? string.Empty;
+
+    private string FechaHastaTexto
+        => _fechaHasta?.ToString("yyyy-MM-dd") ?? string.Empty;
+
+    private async Task SetFechaDesdeAsync(string? value)
+    {
+        _fechaDesde = ParseDate(value);
+        await CargarAsync();
+    }
+
+    private async Task SetFechaHastaAsync(string? value)
+    {
+        _fechaHasta = ParseDate(value);
+        await CargarAsync();
+    }
+
     private async Task CargarAsync()
     {
         _loading = true;
@@ -232,4 +280,7 @@ else
 
     private static string Money(decimal value)
         => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static DateTime? ParseDate(string? value)
+        => DateTime.TryParse(value, out var parsed) ? parsed.Date : null;
 }

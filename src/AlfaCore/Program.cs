@@ -582,7 +582,7 @@ public class Program
                 AgruparPor = agrupar
             }, ct);
 
-            var bytes = exporter.Exportar(resultado.Articulos, resultado.Resolucion, contexto.NombreEmpresa, contexto.NombreCliente, texto, agrupar);
+            var bytes = exporter.Exportar(resultado.Articulos, resultado.Resolucion, contexto.NombreEmpresa, contexto.NombreCliente, texto, agrupar, resultado.Truncado);
             return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ListaPreciosClienteExcelExporter.NombreArchivo());
         }).AllowAnonymous();
 
@@ -610,7 +610,7 @@ public class Program
                 AgruparPor = agrupar
             }, ct);
 
-            var pdfBytes = pdfSvc.GenerarPdf(resultado.Articulos, resultado.Resolucion, contexto.LogoBytes, contexto.NombreEmpresa, contexto.NombreCliente, agrupar);
+            var pdfBytes = pdfSvc.GenerarPdf(resultado.Articulos, resultado.Resolucion, contexto.LogoBytes, contexto.NombreEmpresa, contexto.NombreCliente, agrupar, resultado.Truncado);
             return Results.File(pdfBytes, "application/pdf", "lista-precios.pdf");
         }).AllowAnonymous();
 

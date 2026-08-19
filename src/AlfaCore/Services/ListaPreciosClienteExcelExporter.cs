@@ -16,7 +16,8 @@ public sealed class ListaPreciosClienteExcelExporter
         string nombreEmpresa,
         string nombreCliente,
         string? texto,
-        string agruparPor)
+        string agruparPor,
+        bool truncado = false)
     {
         using var wb = new XLWorkbook();
         var ws = wb.Worksheets.Add("Lista de precios");
@@ -25,6 +26,12 @@ public sealed class ListaPreciosClienteExcelExporter
         SetSubtitulo(ws, BuildSubtitulo(resolucion, nombreCliente, articulos.Count, texto, agruparPor));
 
         var row = 4;
+
+        if (truncado)
+        {
+            SetAviso(ws, row, $"Se alcanzó el máximo de {articulos.Count:N0} artículos exportables de una vez. Refiná la búsqueda o los filtros para exportar el resto.");
+            row++;
+        }
 
         if (agruparPor is ListaPreciosAgruparPorKeys.Familia or ListaPreciosAgruparPorKeys.Marca)
         {
@@ -132,6 +139,17 @@ public sealed class ListaPreciosClienteExcelExporter
         cell.Style.Font.FontSize = 9;
         cell.Style.Font.FontColor = XLColor.FromHtml("#64748b");
         ws.Range(2, 1, 2, Headers.Length).Merge();
+    }
+
+    private static void SetAviso(IXLWorksheet ws, int row, string texto)
+    {
+        var cell = ws.Cell(row, 1);
+        cell.Value = $"⚠ {texto}";
+        cell.Style.Font.Bold = true;
+        cell.Style.Font.FontSize = 9;
+        cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#fef3c7");
+        cell.Style.Font.FontColor = XLColor.FromHtml("#92400e");
+        ws.Range(row, 1, row, Headers.Length).Merge();
     }
 
     private static void SetGrupoHeader(IXLWorksheet ws, int row, string texto)

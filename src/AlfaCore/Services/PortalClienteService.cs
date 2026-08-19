@@ -348,6 +348,227 @@ public sealed class PortalClienteService(
             };
         }, "No pudimos consultar el comprobante en este momento.", ct);
 
+    // Mi cuenta: fuente oficial dbo.VT_CLIENTES (misma vista que ya usan Cuenta corriente, Lista de
+    // precios y Pedidos). Lista/Vendedor/Condición se resuelven contra las mismas vistas de
+    // referencia que ya usa CuentasComercialesService (V_MA_PreciosCab, V_TA_VENDEDORES,
+    // V_TA_Cpra_Vta) — no se inventa una fuente nueva.
+    public Task<PortalClienteMiCuentaDto?> GetMiCuentaAsync(string codigoCliente, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetMiCuenta", async token =>
+        {
+            var codigo = (codigoCliente ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(codigo))
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var fila = await cn.QuerySingleOrDefaultAsync<MiCuentaRow>(new CommandDefinition(
+                """
+                SELECT TOP (1)
+                    ISNULL(LTRIM(RTRIM(cli.CODIGO)), '') AS CodigoCliente,
+                    ISNULL(LTRIM(RTRIM(cli.RAZON_SOCIAL)), '') AS RazonSocial,
+                    ISNULL(LTRIM(RTRIM(cli.NUMERO_DOCUMENTO)), '') AS NumeroDocumento,
+                    ISNULL(LTRIM(RTRIM(cli.CALLE)), '') AS Calle,
+                    ISNULL(LTRIM(RTRIM(cli.NUMERO)), '') AS NumeroCalle,
+                    ISNULL(LTRIM(RTRIM(cli.PISO)), '') AS Piso,
+                    ISNULL(LTRIM(RTRIM(cli.DEPARTAMENTO)), '') AS Departamento,
+                    ISNULL(LTRIM(RTRIM(cli.LOCALIDAD)), '') AS Localidad,
+                    ISNULL(LTRIM(RTRIM(cli.PROVINCIA)), '') AS Provincia,
+                    ISNULL(LTRIM(RTRIM(cli.TELEFONO)), '') AS Telefono,
+                    ISNULL(LTRIM(RTRIM(cli.MAIL)), '') AS Email,
+                    ISNULL(cli.Clase, 0) AS Clase,
+                    ISNULL(LTRIM(RTRIM(lista.Nombre)), '') AS NombreLista,
+                    ISNULL(LTRIM(RTRIM(cv.Descripcion)), '') AS CondicionVenta,
+                    ISNULL(LTRIM(RTRIM(vd.Nombre)), '') AS Vendedor
+                FROM dbo.VT_CLIENTES cli
+                LEFT JOIN dbo.V_MA_PreciosCab lista
+                    ON UPPER(LTRIM(RTRIM(lista.IdLista))) = UPPER(LTRIM(RTRIM(ISNULL(cli.IdLista, ''))))
+                LEFT JOIN dbo.V_TA_Cpra_Vta cv
+                    ON UPPER(LTRIM(RTRIM(cv.IDCond_Cpra_Vta))) = UPPER(LTRIM(RTRIM(ISNULL(cli.idCond_Cpra_Vta, ''))))
+                LEFT JOIN dbo.V_TA_VENDEDORES vd
+                    ON UPPER(LTRIM(RTRIM(vd.IdVendedor))) = UPPER(LTRIM(RTRIM(ISNULL(cli.IdVendedor, ''))))
+                WHERE UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(@CodigoCliente)))
+                  AND ISNULL(cli.Dada_De_Baja, 0) = 0;
+                """,
+                new { CodigoCliente = codigo },
+                cancellationToken: token));
+
+            if (fila is null)
+                return null;
+
+            var domicilioPartes = new[] { fila.Calle, fila.NumeroCalle }.Where(p => !string.IsNullOrWhiteSpace(p));
+            var domicilio = string.Join(" ", domicilioPartes).Trim();
+            var pisoDepto = string.Join(" ", new[] { fila.Piso, fila.Departamento }.Where(p => !string.IsNullOrWhiteSpace(p)));
+            if (!string.IsNullOrWhiteSpace(pisoDepto))
+                domicilio = string.IsNullOrWhiteSpace(domicilio) ? pisoDepto : $"{domicilio}, {pisoDepto}";
+
+            return new PortalClienteMiCuentaDto
+            {
+                CodigoCliente = fila.CodigoCliente,
+                RazonSocial = fila.RazonSocial,
+                NumeroDocumento = fila.NumeroDocumento,
+                Domicilio = domicilio,
+                Localidad = fila.Localidad,
+                Provincia = fila.Provincia,
+                Telefono = fila.Telefono,
+                Email = fila.Email,
+                Clase = fila.Clase,
+                NombreLista = fila.NombreLista,
+                CondicionVenta = fila.CondicionVenta,
+                Vendedor = fila.Vendedor
+            };
+        }, "No pudimos consultar los datos de tu cuenta en este momento.", ct);
+
+    // Actualiza únicamente MA_CUENTASADIC.MAIL (misma tabla/columna que ya lee VT_CLIENTES.MAIL).
+    // No toca ningún otro campo del cliente: ni razón social, ni domicilio, ni condiciones
+    // comerciales. Si el email no cambió, no ejecuta ningún UPDATE.
+    public Task<PortalClienteActualizarEmailResultDto> ActualizarEmailAsync(PortalClienteActualizarEmailRequestDto request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "ActualizarEmail", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            var codigo = (request.CodigoCliente ?? string.Empty).Trim();
+            var email = (request.Email ?? string.Empty).Trim();
+
+            if (string.IsNullOrWhiteSpace(codigo))
+                throw new InvalidOperationException("No se pudo identificar al cliente. Volvé a iniciar sesión.");
+
+            if (string.IsNullOrWhiteSpace(email) || !EsEmailValido(email))
+                return new PortalClienteActualizarEmailResultDto { Exito = false, Mensaje = "Ingresá un email válido." };
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var emailActual = await cn.ExecuteScalarAsync<string>(new CommandDefinition(
+                "SELECT TOP (1) ISNULL(LTRIM(RTRIM(MAIL)), '') FROM dbo.VT_CLIENTES WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));",
+                new { Codigo = codigo },
+                cancellationToken: token)) ?? string.Empty;
+
+            if (string.Equals(emailActual.Trim(), email, StringComparison.OrdinalIgnoreCase))
+                return new PortalClienteActualizarEmailResultDto { Exito = true, SinCambios = true, Mensaje = "El email ya estaba actualizado.", Email = emailActual };
+
+            var actualizadas = await cn.ExecuteAsync(new CommandDefinition(
+                "UPDATE dbo.MA_CUENTASADIC SET MAIL = @Email WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));",
+                new { Email = email, Codigo = codigo },
+                cancellationToken: token));
+
+            if (actualizadas == 0)
+                return new PortalClienteActualizarEmailResultDto { Exito = false, Mensaje = "No pudimos actualizar tu email. Contactate con la empresa." };
+
+            await appEvents.LogAuditAsync(
+                ModuleName, "ActualizarEmail", "MA_CUENTASADIC", codigo,
+                "El cliente actualizó su email de contacto desde el Portal Cliente.",
+                new { CodigoCliente = codigo }, token);
+
+            return new PortalClienteActualizarEmailResultDto { Exito = true, Mensaje = "Email actualizado correctamente.", Email = email };
+        }, "No pudimos actualizar tu email en este momento.", ct);
+
+    // Cambio de contraseña autenticado: exige la contraseña actual (misma lógica de comparación que
+    // usa el login — CLAVE si existe, si no NUMERO_DOCUMENTO) antes de escribir. Distinto del flujo
+    // de recuperación por email (PortalClienteRecuperarClaveService), que no requiere sesión.
+    public Task<PortalClienteCambiarClaveResultDto> CambiarClaveAsync(PortalClienteCambiarClaveRequestDto request, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "CambiarClave", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            var codigo = (request.CodigoCliente ?? string.Empty).Trim();
+            var actual = request.ClaveActual ?? string.Empty;
+            var nueva = request.ClaveNueva ?? string.Empty;
+            var confirmar = request.ConfirmarClaveNueva ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(codigo))
+                throw new InvalidOperationException("No se pudo identificar al cliente. Volvé a iniciar sesión.");
+
+            if (nueva.Length < ClaveLongitudMinima)
+                return new PortalClienteCambiarClaveResultDto { Exito = false, Mensaje = $"La contraseña debe tener al menos {ClaveLongitudMinima} caracteres." };
+
+            if (nueva.Length > ClaveLongitudMaxima)
+                return new PortalClienteCambiarClaveResultDto { Exito = false, Mensaje = $"La contraseña no puede tener más de {ClaveLongitudMaxima} caracteres." };
+
+            if (!string.Equals(nueva, confirmar, StringComparison.Ordinal))
+                return new PortalClienteCambiarClaveResultDto { Exito = false, Mensaje = "Las contraseñas no coinciden." };
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var adic = await cn.QuerySingleOrDefaultAsync<ClaveRow>(new CommandDefinition(
+                """
+                SELECT TOP (1)
+                    ISNULL(LTRIM(RTRIM(CLAVE)), '') AS Clave,
+                    ISNULL(LTRIM(RTRIM(NUMERO_DOCUMENTO)), '') AS NumeroDocumento
+                FROM dbo.MA_CUENTASADIC
+                WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
+                """,
+                new { Codigo = codigo },
+                cancellationToken: token));
+
+            // Mismo criterio que el login: CLAVE si está seteada, si no NUMERO_DOCUMENTO.
+            var claveActualGuardada = adic is not null && !string.IsNullOrWhiteSpace(adic.Clave)
+                ? adic.Clave
+                : adic?.NumeroDocumento ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(claveActualGuardada) || !string.Equals(claveActualGuardada, actual, StringComparison.Ordinal))
+                return new PortalClienteCambiarClaveResultDto { Exito = false, Mensaje = "La contraseña actual no es correcta." };
+
+            // Solo CLAVE: nunca se toca NUMERO_DOCUMENTO ni ninguna otra columna.
+            var actualizadas = await cn.ExecuteAsync(new CommandDefinition(
+                "UPDATE dbo.MA_CUENTASADIC SET CLAVE = @Clave WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));",
+                new { Clave = nueva, Codigo = codigo },
+                cancellationToken: token));
+
+            if (actualizadas == 0)
+                return new PortalClienteCambiarClaveResultDto { Exito = false, Mensaje = "No pudimos actualizar tu contraseña. Contactate con la empresa." };
+
+            await appEvents.LogAuditAsync(
+                ModuleName, "CambiarClave", "MA_CUENTASADIC", codigo,
+                "El cliente cambió su contraseña desde Mi cuenta (Portal Cliente).",
+                new { CodigoCliente = codigo }, token);
+
+            return new PortalClienteCambiarClaveResultDto { Exito = true, Mensaje = "Contraseña actualizada correctamente." };
+        }, "No pudimos actualizar tu contraseña en este momento.", ct);
+
+    private static bool EsEmailValido(string email)
+    {
+        try
+        {
+            _ = new System.Net.Mail.MailAddress(email);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    // Mismos límites que PortalClienteRecuperarClaveService (misma columna MA_CUENTASADIC.CLAVE).
+    private const int ClaveLongitudMinima = 4;
+    private const int ClaveLongitudMaxima = 15;
+
+    private sealed class MiCuentaRow
+    {
+        public string CodigoCliente { get; set; } = string.Empty;
+        public string RazonSocial { get; set; } = string.Empty;
+        public string NumeroDocumento { get; set; } = string.Empty;
+        public string Calle { get; set; } = string.Empty;
+        public string NumeroCalle { get; set; } = string.Empty;
+        public string Piso { get; set; } = string.Empty;
+        public string Departamento { get; set; } = string.Empty;
+        public string Localidad { get; set; } = string.Empty;
+        public string Provincia { get; set; } = string.Empty;
+        public string Telefono { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public int Clase { get; set; }
+        public string NombreLista { get; set; } = string.Empty;
+        public string CondicionVenta { get; set; } = string.Empty;
+        public string Vendedor { get; set; } = string.Empty;
+    }
+
+    private sealed class ClaveRow
+    {
+        public string Clave { get; set; } = string.Empty;
+        public string NumeroDocumento { get; set; } = string.Empty;
+    }
+
     private static async Task<PortalClienteCuentaCorrienteResumenDto> ConsultarResumenAsync(SqlConnection cn, string codigoCliente, CancellationToken ct)
     {
         var fila = await cn.QuerySingleOrDefaultAsync<ResumenRow>(new CommandDefinition(

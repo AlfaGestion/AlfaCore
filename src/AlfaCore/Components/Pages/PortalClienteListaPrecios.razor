@@ -2,8 +2,9 @@
 @page "/{idweb}/{idbase:int}/portal-cliente/lista-precios"
 @layout AlfaCore.Components.Layout.PublicLayout
 @inherits PortalClientePageBase
-@using AlfaCore.Models
 @using AlfaCore.Components.Shared
+@using AlfaCore.Components.Shared.AlfaDesign
+@using AlfaCore.Models
 @inject AlfaCore.Services.IListaPreciosClienteService ListaPreciosSvc
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 
@@ -56,109 +57,166 @@ else
                               RoutePedidos="@BuildPortalRoute("pedidos")"
                               RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
 
-        <section class="panel-card">
-            <div class="panel-card__header">
+        <section class="portal-cliente__section portal-cliente__list-section">
+            <header class="portal-cliente__section-head portal-cliente__list-head">
                 <div>
-                    <h3 class="panel-card__title">Lista de precios</h3>
+                    <h3 class="portal-cliente__section-title">Lista de precios</h3>
                     @if (_resultado is not null)
                     {
-                        <p class="panel-card__subtitle">
-                            Lista: @GetNombreListaTexto() · Clase de precio: @_resultado.Resolucion.Clase
-                        </p>
+                        <div class="portal-cliente__list-meta">
+                            <AlfaTag Tone="AlfaTagTone.Accent">Lista: @GetNombreListaTexto()</AlfaTag>
+                            <AlfaTag Tone="AlfaTagTone.Neutral">Clase: @_resultado.Resolucion.Clase</AlfaTag>
+                            @if (_margen > 0)
+                            {
+                                <AlfaTag Tone="AlfaTagTone.Warning">Margen activo</AlfaTag>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="portal-cliente__section-subtitle">Buscá por código, descripción, marca o rubro y filtrá la vista sin salir del portal.</p>
                     }
                 </div>
-                <div class="actions">
-                    <a class="btn btn--ghost btn--sm" href="@BuildExportUrl("excel")">
-                        <i class="bi bi-file-earmark-excel"></i> Exportar Excel
-                    </a>
-                    <a class="btn btn--ghost btn--sm" href="@BuildExportUrl("pdf")">
-                        <i class="bi bi-file-earmark-pdf"></i> Exportar PDF
-                    </a>
+
+                <div class="portal-cliente__list-head-actions">
+                    <AlfaActionMenu Items="@ExportMenuItems"
+                                    TriggerLabel="Exportar"
+                                    MenuLabel="Exportar lista de precios"
+                                    TriggerIcon="bi bi-download"
+                                    Class="portal-cliente__export-menu"
+                                    Align="AlfaActionMenuAlign.End" />
+                </div>
+            </header>
+
+            <div class="portal-cliente__list-toolbar">
+                <div class="portal-cliente__toolbar-row portal-cliente__toolbar-row--search" @onkeydown="HandleSearchKeyDownAsync">
+                    <AlfaInput Label="Buscar"
+                               Type="search"
+                               Value="@_texto"
+                               ValueChanged="SetTextoAsync"
+                               Placeholder="Código, descripción, marca o rubro"
+                               Class="portal-cliente__toolbar-field portal-cliente__toolbar-field--search" />
+                </div>
+
+                <div class="portal-cliente__toolbar-row portal-cliente__toolbar-row--filters">
+                    <AlfaSelect Label="Agrupar por"
+                                Value="@_agruparPor"
+                                ValueChanged="SetAgruparPorAsync"
+                                Options="@GroupOptions"
+                                Class="portal-cliente__toolbar-field portal-cliente__toolbar-field--group" />
+                    <AlfaInput Label="Margen de ganancia %"
+                               Type="number"
+                               Value="@_margenTexto"
+                               ValueChanged="SetMargenAsync"
+                               Placeholder="0,00"
+                               HelpText="Solo simulación"
+                               Class="portal-cliente__toolbar-field portal-cliente__toolbar-field--margin" />
+                    <div class="portal-cliente__toolbar-actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary"
+                                Size="AlfaSize.Sm"
+                                Icon="bi bi-search"
+                                Disabled="@_loading"
+                                OnClick="@(_ => BuscarPrimeraPaginaAsync())">
+                            Buscar
+                        </AlfaButton>
+                    </div>
                 </div>
             </div>
 
-            <div class="portal-cliente__filtros">
-                <div class="field" style="flex:1 1 220px;">
-                    <label>Buscar</label>
-                    <input type="search"
-                           @bind="_texto"
-                           @bind:event="oninput"
-                           @onkeydown="HandleSearchKeyDownAsync"
-                           placeholder="Código, descripción, marca o rubro" />
-                </div>
-                <div class="field" style="flex:0 0 180px;">
-                    <label>Agrupar por</label>
-                    <select class="form-select" @bind="_agruparPor" @bind:after="() => BuscarAsync(1)">
-                        <option value="@ListaPreciosAgruparPorKeys.Ninguno">Sin agrupar</option>
-                        <option value="@ListaPreciosAgruparPorKeys.Familia">Familia</option>
-                        <option value="@ListaPreciosAgruparPorKeys.Marca">Marca</option>
-                    </select>
-                </div>
-                <div class="field" style="flex:0 0 160px;">
-                    <label>Margen de ganancia %</label>
-                    <input type="number" step="0.01" min="0" @bind="_margen" placeholder="0,00" />
-                </div>
-                <div class="field" style="align-self:end;">
-                    <button type="button" class="btn btn--primary" @onclick="() => BuscarAsync(1)" disabled="@_loading">
-                        <i class="bi bi-search"></i> Buscar
-                    </button>
-                </div>
+            <div class="portal-cliente__active-filters">
+                @if (!string.IsNullOrWhiteSpace(_texto))
+                {
+                    <AlfaTag Tone="AlfaTagTone.Neutral">Búsqueda: @_texto.Trim()</AlfaTag>
+                }
+                @if (!string.IsNullOrEmpty(_agruparPor))
+                {
+                    <AlfaTag Tone="AlfaTagTone.Neutral">Agrupar: @GetAgruparPorTexto()</AlfaTag>
+                }
+                @if (_margen > 0)
+                {
+                    <AlfaTag Tone="AlfaTagTone.Warning">Margen @GetMargenTexto() %</AlfaTag>
+                }
             </div>
-
-            @if (_margen > 0)
-            {
-                <p class="text-muted portal-cliente__margen-nota">
-                    <i class="bi bi-info-circle"></i>
-                    "Precio con margen" es solo una simulación de consulta: se calcula como Precio × (1 + Margen ÷ 100) sobre el precio que ya ves en pantalla.
-                    No modifica la lista, el maestro ni tus pedidos.
-                </p>
-            }
 
             @if (_loading)
             {
-                <p class="text-muted">Cargando lista de precios...</p>
+                <div class="portal-cliente__loading-state portal-cliente__list-loading">
+                    <span class="portal-cliente__loading-spinner" aria-hidden="true"></span>
+                    <span>Cargando lista de precios...</span>
+                </div>
             }
             else if (_resultado is null || _resultado.Pagina.Items.Count == 0)
             {
-                <div class="empty-state">
-                    <p>No encontramos artículos para esta búsqueda.</p>
-                </div>
-            }
-            else if (string.IsNullOrEmpty(_agruparPor))
-            {
-                <div class="portal-cliente__pedidos-list">
-                    @foreach (var item in _resultado.Pagina.Items)
-                    {
-                        <ListaPreciosArticuloRow Item="item" ImagenUrl="@GetImagenUrl(item.IdArticulo)" Margen="_margen" />
-                    }
-                </div>
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                                Title="No encontramos artículos para esta búsqueda."
+                                Message="Probá ajustar la búsqueda, la agrupación o los filtros activos."
+                                Class="portal-cliente__empty-state" />
             }
             else
             {
-                @foreach (var grupo in GetGrupos())
-                {
-                    <div class="lista-precios__grupo">
-                        <h4 class="lista-precios__grupo-titulo">@grupo.Titulo</h4>
-                        <div class="portal-cliente__pedidos-list">
-                            @foreach (var item in grupo.Items)
-                            {
-                                <ListaPreciosArticuloRow Item="item" ImagenUrl="@GetImagenUrl(item.IdArticulo)" Margen="_margen" />
-                            }
-                        </div>
+                <div class="portal-cliente__data-view portal-cliente__lista-precios-view">
+                    <div class="portal-cliente__data-view-header portal-cliente__lista-precios-header">
+                        <span>Artículo</span>
+                        <span class="text-end">Precio</span>
                     </div>
-                }
-            }
 
-            @if (_resultado is not null && _resultado.Pagina.TotalPages > 1)
-            {
-                <div class="portal-cliente__paginador">
-                    <button type="button" class="btn btn--ghost btn--sm" disabled="@(!_resultado.Pagina.HasPrev)" @onclick="() => BuscarAsync(_resultado.Pagina.PageNumber - 1)">
-                        <i class="bi bi-chevron-left"></i> Anterior
-                    </button>
-                    <span class="text-muted">Página @_resultado.Pagina.PageNumber de @_resultado.Pagina.TotalPages</span>
-                    <button type="button" class="btn btn--ghost btn--sm" disabled="@(!_resultado.Pagina.HasNext)" @onclick="() => BuscarAsync(_resultado.Pagina.PageNumber + 1)">
-                        Siguiente <i class="bi bi-chevron-right"></i>
-                    </button>
+                    <div class="portal-cliente__data-view-body">
+                        @if (string.IsNullOrEmpty(_agruparPor))
+                        {
+                            @foreach (var item in _resultado.Pagina.Items)
+                            {
+                                <ListaPreciosArticuloRow Item="item"
+                                                         ImagenUrl="@GetImagenUrl(item.IdArticulo)"
+                                                         Margen="_margen" />
+                            }
+                        }
+                        else
+                        {
+                            @foreach (var grupo in GetGrupos())
+                            {
+                                <section class="lista-precios__group">
+                                    <header class="lista-precios__group-head">
+                                        <div class="lista-precios__group-title">
+                                            <h4>@grupo.Titulo</h4>
+                                            <span>@grupo.Items.Count artículo(s)</span>
+                                        </div>
+                                    </header>
+                                    <div class="lista-precios__group-body">
+                                        @foreach (var item in grupo.Items)
+                                        {
+                                            <ListaPreciosArticuloRow Item="item"
+                                                                     ImagenUrl="@GetImagenUrl(item.IdArticulo)"
+                                                                     Margen="_margen" />
+                                        }
+                                    </div>
+                                </section>
+                            }
+                        }
+                    </div>
+
+                    @if (_resultado.Pagina.TotalPages > 1)
+                    {
+                        <footer class="alfa-data-view-footer portal-cliente__list-footer">
+                            <span class="alfa-data-view-footer__summary">@GetListSummaryText()</span>
+                            <div class="alfa-data-view-footer__controls portal-cliente__pagination-controls">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                            Size="AlfaSize.Sm"
+                                            Disabled="@(!_resultado.Pagina.HasPrev)"
+                                            OnClick="() => BuscarAsync(_resultado.Pagina.PageNumber - 1)">
+                                    <i class="bi bi-chevron-left"></i> Anterior
+                                </AlfaButton>
+                                <span class="portal-cliente__pagination-page">
+                                    Página @_resultado.Pagina.PageNumber de @_resultado.Pagina.TotalPages
+                                </span>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                            Size="AlfaSize.Sm"
+                                            Disabled="@(!_resultado.Pagina.HasNext)"
+                                            OnClick="() => BuscarAsync(_resultado.Pagina.PageNumber + 1)">
+                                    Siguiente <i class="bi bi-chevron-right"></i>
+                                </AlfaButton>
+                            </div>
+                        </footer>
+                    }
                 </div>
             }
         </section>
@@ -170,6 +228,7 @@ else
     private bool _loading;
     private string _texto = string.Empty;
     private string _agruparPor = ListaPreciosAgruparPorKeys.Ninguno;
+    private string _margenTexto = string.Empty;
     private decimal _margen;
     private ListaPreciosResultadoDto? _resultado;
     private PuntoVentaSettingsDto _puntoVentaSettings = new();
@@ -207,7 +266,29 @@ else
     private async Task HandleSearchKeyDownAsync(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs args)
     {
         if (args.Key == "Enter")
-            await BuscarAsync(1);
+            await BuscarPrimeraPaginaAsync();
+    }
+
+    private Task BuscarPrimeraPaginaAsync()
+        => BuscarAsync(1);
+
+    private Task SetTextoAsync(string? value)
+    {
+        _texto = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private async Task SetAgruparPorAsync(string? value)
+    {
+        _agruparPor = value ?? ListaPreciosAgruparPorKeys.Ninguno;
+        await BuscarAsync(1);
+    }
+
+    private Task SetMargenAsync(string? value)
+    {
+        _margenTexto = value ?? string.Empty;
+        _margen = ParseDecimal(_margenTexto);
+        return Task.CompletedTask;
     }
 
     private async Task BuscarAsync(int pageNumber)
@@ -284,4 +365,71 @@ else
         var relativa = AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, idArticulo, GetEffectiveIdBase(), thumbnail: true);
         return string.IsNullOrWhiteSpace(relativa) ? null : relativa;
     }
+
+    private string GetAgruparPorTexto()
+        => _agruparPor switch
+        {
+            ListaPreciosAgruparPorKeys.Familia => "Familia",
+            ListaPreciosAgruparPorKeys.Marca => "Marca",
+            _ => "Sin agrupar"
+        };
+
+    private string GetListSummaryText()
+    {
+        if (_resultado is null)
+            return string.Empty;
+
+        var pagina = _resultado.Pagina;
+        return $"{pagina.Total} artículo(s) · Página {pagina.PageNumber} de {pagina.TotalPages}";
+    }
+
+    private string GetMargenTexto()
+        => _margen.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static decimal ParseDecimal(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return 0m;
+
+        if (decimal.TryParse(value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.CurrentCulture, out var parsed))
+            return parsed;
+
+        if (decimal.TryParse(value, System.Globalization.NumberStyles.Number, System.Globalization.CultureInfo.InvariantCulture, out parsed))
+            return parsed;
+
+        return 0m;
+    }
+
+    private IReadOnlyList<AlfaSelectOption> GroupOptions { get; } = new[]
+    {
+        new AlfaSelectOption(ListaPreciosAgruparPorKeys.Ninguno, "Sin agrupar"),
+        new AlfaSelectOption(ListaPreciosAgruparPorKeys.Familia, "Familia"),
+        new AlfaSelectOption(ListaPreciosAgruparPorKeys.Marca, "Marca")
+    };
+
+    private IReadOnlyList<AlfaActionMenuItem> ExportMenuItems => new[]
+    {
+        new AlfaActionMenuItem
+        {
+            Key = "excel",
+            Label = "Exportar Excel",
+            Icon = "bi bi-file-earmark-excel",
+            OnClick = () =>
+            {
+                Nav.NavigateTo(BuildExportUrl("excel"), forceLoad: true);
+                return Task.CompletedTask;
+            }
+        },
+        new AlfaActionMenuItem
+        {
+            Key = "pdf",
+            Label = "Exportar PDF",
+            Icon = "bi bi-file-earmark-pdf",
+            OnClick = () =>
+            {
+                Nav.NavigateTo(BuildExportUrl("pdf"), forceLoad: true);
+                return Task.CompletedTask;
+            }
+        }
+    };
 }

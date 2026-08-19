@@ -4,6 +4,7 @@
 @inherits SaaSRoutePageBase
 @using AlfaCore.Models
 @using AlfaCore.Components.Shared
+@using AlfaCore.Components.Shared.AlfaDesign
 @using System.Globalization
 @using Microsoft.AspNetCore.Components.Web
 @inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
@@ -48,28 +49,28 @@ else
     <section class="page-grid carrito-page">
         @if (!Embedded)
         {
-            <section class="panel-card d-flex flex-wrap justify-content-between align-items-center gap-2">
-                <div class="d-flex align-items-center gap-3">
+            <section class="carrito-page__hero">
+                <div class="carrito-page__hero-brand">
                     <div class="carrito-page__logo @GetBrandingLogoFrameClass()">
                         <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
                     </div>
                     <div>
-                        <p class="text-muted mb-0">Toma de pedidos</p>
-                        <h2 class="mb-0">@(_catalogo?.Nombre ?? "Catálogo")</h2>
+                        <p class="carrito-page__eyebrow">Toma de pedidos</p>
+                        <h2 class="carrito-page__title">@(_catalogo?.Nombre ?? "Catálogo")</h2>
                         @if (!string.IsNullOrWhiteSpace(_catalogo?.Observaciones))
                         {
-                            <p class="carrito-page__description mb-0">@_catalogo.Observaciones.Trim()</p>
+                            <p class="carrito-page__description">@_catalogo.Observaciones.Trim()</p>
                         }
                     </div>
                 </div>
 
                 @if (IsAuthenticated)
                 {
-                    <div class="d-flex align-items-center gap-2">
-                        <span class="badge text-bg-secondary">Cliente: @GetCurrentClientLabel()</span>
-                        <button type="button" class="btn btn--ghost btn--sm" @onclick="LogoutClienteAsync" disabled="@_sessionBusy">
-                            <i class="bi bi-box-arrow-right"></i> Cerrar sesión
-                        </button>
+                    <div class="carrito-page__hero-actions">
+                        <AlfaTag Tone="AlfaTagTone.Neutral">Cliente: @GetCurrentClientLabel()</AlfaTag>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" Disabled="@_sessionBusy" OnClick="LogoutClienteAsync">
+                            Cerrar sesión
+                        </AlfaButton>
                     </div>
                 }
             </section>
@@ -77,26 +78,30 @@ else
 
         @if (_loading)
         {
-            <section class="panel-card">
+            <div class="carrito-page__loading-state">
                 <p class="text-muted">Cargando...</p>
-            </section>
+            </div>
         }
         else if (_notFound)
         {
-            <section class="panel-card">
-                <h3 class="panel-card__title">Catálogo no disponible</h3>
-                <p class="panel-card__subtitle">El catálogo no existe, no está publicado o venció su vigencia.</p>
-            </section>
+            <div class="carrito-page__empty-panel">
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                Title="Catálogo no disponible"
+                                Message="El catálogo no existe, no está publicado o venció su vigencia." />
+            </div>
         }
         else if (_carritoDeshabilitado)
         {
-            <section class="panel-card">
-                <h3 class="panel-card__title">Toma de pedidos no disponible</h3>
-                <p class="panel-card__subtitle">Este catálogo no tiene habilitada la toma de pedidos.</p>
-                <a class="btn btn--ghost btn--sm" href="@GetPublicCatalogUrl()">
+            <div class="carrito-page__empty-panel">
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                Title="Toma de pedidos no disponible"
+                                Message="Este catálogo no tiene habilitada la toma de pedidos." />
+            </div>
+            <div class="carrito-page__empty-panel">
+                <a class="alfa-link-button" href="@GetPublicCatalogUrl()">
                     <i class="bi bi-arrow-left"></i> Ver catálogo
                 </a>
-            </section>
+            </div>
         }
         else if (_catalogo is not null)
         {
@@ -126,16 +131,12 @@ else
                     </div>
 
                     <div class="carrito-filters">
-                        <div class="field carrito-filters__field">
-                            <label>Marca</label>
-                            <select @bind="_filtroMarca">
-                                <option value="">Todas</option>
-                                @foreach (var marca in GetMarcasDisponibles())
-                                {
-                                    <option value="@marca">@marca</option>
-                                }
-                            </select>
-                        </div>
+                        <AlfaSelect Label="Marca"
+                                    Value="@_filtroMarca"
+                                    ValueChanged="v => _filtroMarca = v ?? string.Empty"
+                                    Options="@GetMarcaOptions()"
+                                    Placeholder="Todas"
+                                    Class="carrito-filters__field" />
                     </div>
 
                     <div class="carrito-grid">
@@ -178,19 +179,19 @@ else
                                     <div class="carrito-card__actions">
                                         @if (GetCantidad(item.IdArticulo) <= 0m)
                                         {
-                                            <button type="button" class="btn btn--primary btn--sm carrito-card__add" @onclick="() => AgregarAsync(item)">
-                                                <i class="bi bi-cart-plus"></i> Agregar
-                                            </button>
+                                            <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-cart-plus" Class="carrito-card__add" OnClick="() => AgregarAsync(item)">
+                                                Agregar
+                                            </AlfaButton>
                                         }
                                         else
                                         {
                                             <div class="carrito-stepper">
-                                                <button type="button" class="carrito-stepper__btn" @onclick="() => DecrementarAsync(item)" title="Restar">−</button>
+                                                <button type="button" class="carrito-stepper__btn" @onclick="() => DecrementarAsync(item)" title="Restar" aria-label="Restar una unidad">−</button>
                                                 <input class="carrito-stepper__input"
                                                        value="@GetCantidad(item.IdArticulo).ToString("N2", CultureEsAr)"
                                                        @onchange="args => OnCantidadInputAsync(item, args)"
                                                        inputmode="decimal" />
-                                                <button type="button" class="carrito-stepper__btn" @onclick="() => IncrementarAsync(item)" title="Sumar">+</button>
+                                                <button type="button" class="carrito-stepper__btn" @onclick="() => IncrementarAsync(item)" title="Sumar" aria-label="Sumar una unidad">+</button>
                                             </div>
                                         }
                                     </div>
@@ -223,9 +224,7 @@ else
         <div class="carrito-drawer" @onclick:stopPropagation="true">
             <div class="carrito-drawer__header">
                 <h3>Tu pedido</h3>
-                <button type="button" class="carrito-drawer__close" @onclick="() => _showCarritoDrawer = false" title="Cerrar">
-                    <i class="bi bi-x-lg"></i>
-                </button>
+                <AlfaIconButton Icon="bi bi-x-lg" Label="Cerrar" Size="AlfaSize.Sm" OnClick="() => _showCarritoDrawer = false" />
             </div>
 
             @if (GetLineasCarrito().Count == 0)
@@ -258,12 +257,12 @@ else
 
                             <div class="carrito-line__qty">
                                 <div class="carrito-stepper carrito-stepper--sm">
-                                    <button type="button" class="carrito-stepper__btn" @onclick="() => DecrementarAsync(linea.Item)" title="Restar">−</button>
+                                    <button type="button" class="carrito-stepper__btn" @onclick="() => DecrementarAsync(linea.Item)" title="Restar" aria-label="Restar una unidad">−</button>
                                     <input class="carrito-stepper__input"
                                            value="@linea.Cantidad.ToString("N2", CultureEsAr)"
                                            @onchange="args => OnCantidadInputAsync(linea.Item, args)"
                                            inputmode="decimal" />
-                                    <button type="button" class="carrito-stepper__btn" @onclick="() => IncrementarAsync(linea.Item)" title="Sumar">+</button>
+                                    <button type="button" class="carrito-stepper__btn" @onclick="() => IncrementarAsync(linea.Item)" title="Sumar" aria-label="Sumar una unidad">+</button>
                                 </div>
                             </div>
 
@@ -271,9 +270,7 @@ else
                                 @AlfaCore.Services.CatalogosPriceDisplayHelper.Money(linea.Cantidad * AlfaCore.Services.CatalogosPriceDisplayHelper.GetPrecioAplicado(linea.Item))
                             </div>
 
-                            <button type="button" class="carrito-line__remove" @onclick="() => QuitarAsync(linea.Item)" title="Quitar">
-                                <i class="bi bi-trash"></i>
-                            </button>
+                            <AlfaIconButton Icon="bi bi-trash" Label="Quitar artículo" Size="AlfaSize.Sm" Class="carrito-line__remove" OnClick="() => QuitarAsync(linea.Item)" />
                         </div>
                     }
                 </div>
@@ -286,15 +283,16 @@ else
 
                 @if (!string.IsNullOrWhiteSpace(_validacionError))
                 {
-                    <div class="editor-msg editor-msg--error">
-                        <div><strong>No se puede continuar</strong><p>@_validacionError</p></div>
+                    <div class="carrito-feedback carrito-feedback--error">
+                        <strong>No se puede continuar</strong>
+                        <p>@_validacionError</p>
                     </div>
                 }
 
-                <div class="actions mt-3">
-                    <button type="button" class="btn btn--primary" @onclick="ContinuarPedido">
-                        <i class="bi bi-arrow-right-circle"></i> Continuar pedido
-                    </button>
+                <div class="carrito-drawer__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-right-circle" OnClick="ContinuarPedido">
+                        Continuar pedido
+                    </AlfaButton>
                 </div>
             }
         </div>
@@ -311,68 +309,62 @@ else
                     <h3>Pedido registrado correctamente</h3>
                 </div>
 
-                <div class="editor-msg editor-msg--success">
-                    <div>
-                        <strong>Pedido @_pedidoResultado.Tc @_pedidoResultado.IdComprobanteTexto</strong>
-                        <p>Fecha: @_pedidoResultado.Fecha.ToString("dd/MM/yyyy")</p>
-                        <p>Cliente: @_pedidoResultado.RazonSocial (@_pedidoResultado.CodigoCliente)</p>
-                        <p>@_pedidoResultado.Lineas.Count artículo(s) — Total: @AlfaCore.Services.CatalogosPriceDisplayHelper.Money(_pedidoResultado.Total)</p>
-                    </div>
+                <div class="carrito-feedback carrito-feedback--success">
+                    <strong>Pedido @_pedidoResultado.Tc @_pedidoResultado.IdComprobanteTexto</strong>
+                    <p>Fecha: @_pedidoResultado.Fecha.ToString("dd/MM/yyyy")</p>
+                    <p>Cliente: @_pedidoResultado.RazonSocial (@_pedidoResultado.CodigoCliente)</p>
+                    <p>@_pedidoResultado.Lineas.Count artículo(s) — Total: @AlfaCore.Services.CatalogosPriceDisplayHelper.Money(_pedidoResultado.Total)</p>
                 </div>
 
                 @if (_actualizandoEmailCliente || _enviandoEmailPedido)
                 {
-                    <div class="editor-msg">
-                        <div><p><i class="bi bi-arrow-repeat spinner-border spinner-border-sm"></i> @(_actualizandoEmailCliente ? "Actualizando email del cliente..." : "Enviando email de confirmación...")</p></div>
+                    <div class="carrito-feedback">
+                        <p><i class="bi bi-arrow-repeat"></i> @(_actualizandoEmailCliente ? "Actualizando email del cliente..." : "Enviando email de confirmación...")</p>
                     </div>
                 }
                 else if (_enviarCopiaEmail)
                 {
                     @if (_emailEnvioResultado?.Enviado == true)
                     {
-                        <div class="editor-msg editor-msg--success">
-                            <div><p>Pedido registrado y email enviado correctamente.</p></div>
+                        <div class="carrito-feedback carrito-feedback--success">
+                            <p>Pedido registrado y email enviado correctamente.</p>
                         </div>
                     }
                     else if (_emailEnvioResultado is not null)
                     {
-                        <div class="editor-msg editor-msg--warning">
-                            <div>
-                                <p>El pedido se registró correctamente, pero no pudimos enviar el email.</p>
-                                @if (!string.IsNullOrWhiteSpace(_emailEnvioResultado.MensajeError))
-                                {
-                                    <p class="text-muted mb-0">@_emailEnvioResultado.MensajeError</p>
-                                }
-                            </div>
+                        <div class="carrito-feedback carrito-feedback--warning">
+                            <p>El pedido se registró correctamente, pero no pudimos enviar el email.</p>
+                            @if (!string.IsNullOrWhiteSpace(_emailEnvioResultado.MensajeError))
+                            {
+                                <p class="text-muted">@_emailEnvioResultado.MensajeError</p>
+                            }
                         </div>
-                        <div class="actions mt-2">
-                            <button type="button" class="btn btn--ghost" @onclick="ReintentarEnvioEmailAsync" disabled="@_enviandoEmailPedido">
-                                <i class="bi bi-arrow-clockwise"></i> Reintentar envío
-                            </button>
+                        <div class="carrito-drawer__actions carrito-drawer__actions--start">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-arrow-clockwise" Disabled="@_enviandoEmailPedido" OnClick="ReintentarEnvioEmailAsync">
+                                Reintentar envío
+                            </AlfaButton>
                         </div>
                     }
                 }
 
                 @if (!string.IsNullOrWhiteSpace(_emailFeedback))
                 {
-                    <div class="editor-msg editor-msg--warning">
-                        <div><p>@_emailFeedback</p></div>
+                    <div class="carrito-feedback carrito-feedback--warning">
+                        <p>@_emailFeedback</p>
                     </div>
                 }
 
-                <div class="actions mt-3">
-                    <button type="button" class="btn btn--primary" @onclick="CerrarConfirmacionExitosa">
-                        <i class="bi bi-check-lg"></i> Listo
-                    </button>
+                <div class="carrito-drawer__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-check-lg" OnClick="CerrarConfirmacionExitosa">
+                        Listo
+                    </AlfaButton>
                 </div>
             }
             else
             {
                 <div class="carrito-drawer__header">
                     <h3>Resumen del pedido</h3>
-                    <button type="button" class="carrito-drawer__close" @onclick="() => _showConfirmModal = false" disabled="@_confirmandoPedido" title="Cerrar">
-                        <i class="bi bi-x-lg"></i>
-                    </button>
+                    <AlfaIconButton Icon="bi bi-x-lg" Label="Cerrar" Size="AlfaSize.Sm" Disabled="@_confirmandoPedido" OnClick="() => _showConfirmModal = false" />
                 </div>
 
                 <p class="carrito-confirm__cliente"><i class="bi bi-person-circle"></i> @GetCurrentClientLabel()</p>
@@ -399,19 +391,18 @@ else
                     <div class="carrito-drawer__total"><span>Total</span><strong>@AlfaCore.Services.CatalogosPriceDisplayHelper.Money(GetTotalEstimado())</strong></div>
                 </div>
 
-                <div class="field carrito-confirm__email">
-                    <label>Email para la confirmación</label>
-                    <input type="email" @bind="_emailPedido" @bind:event="oninput" placeholder="cliente@empresa.com" disabled="@_confirmandoPedido" />
-                </div>
+                <AlfaInput Label="Email para la confirmación"
+                           Type="email"
+                           Value="@_emailPedido"
+                           ValueChanged="v => _emailPedido = v ?? string.Empty"
+                           Placeholder="cliente@empresa.com"
+                           Disabled="@_confirmandoPedido"
+                           Class="carrito-confirm__email" />
 
-                <label class="carrito-toggle">
-                    <input type="checkbox" class="carrito-toggle__input" @bind="_enviarCopiaEmail" disabled="@_confirmandoPedido" />
-                    <span class="carrito-toggle__track" aria-hidden="true"></span>
-                    <span class="carrito-toggle__label">
-                        <strong>Enviar copia del pedido por email</strong>
-                        <small>Te lo mandamos apenas se registre el pedido.</small>
-                    </span>
-                </label>
+                <AlfaCheckbox Value="@_enviarCopiaEmail" ValueChanged="v => _enviarCopiaEmail = v ?? false" Disabled="@_confirmandoPedido" Class="carrito-toggle">
+                    <strong>Enviar copia del pedido por email</strong>
+                    <small>Te lo mandamos apenas se registre el pedido.</small>
+                </AlfaCheckbox>
 
                 @if (_enviarCopiaEmail && !string.IsNullOrWhiteSpace(_emailPedido) && !EsEmailValido(_emailPedido))
                 {
@@ -420,37 +411,33 @@ else
 
                 @if (_enviarCopiaEmail && EsEmailValido(_emailPedido) && !string.Equals((_emailPedido ?? string.Empty).Trim(), _emailRegistradoOriginal, StringComparison.OrdinalIgnoreCase))
                 {
-                    <label class="carrito-toggle carrito-toggle--sub">
-                        <input type="checkbox" class="carrito-toggle__input" @bind="_actualizarEmailCliente" disabled="@_confirmandoPedido" />
-                        <span class="carrito-toggle__track" aria-hidden="true"></span>
-                        <span class="carrito-toggle__label">
-                            <strong>Actualizar también el email en la ficha del cliente</strong>
-                            <small>Si no lo marcás, se usa solo para este pedido.</small>
-                        </span>
-                    </label>
+                    <AlfaCheckbox Value="@_actualizarEmailCliente" ValueChanged="v => _actualizarEmailCliente = v ?? false" Disabled="@_confirmandoPedido" Class="carrito-toggle carrito-toggle--sub">
+                        <strong>Actualizar también el email en la ficha del cliente</strong>
+                        <small>Si no lo marcás, se usa solo para este pedido.</small>
+                    </AlfaCheckbox>
                 }
 
                 @if (_pedidoResultado is null)
                 {
-                    <div class="editor-msg editor-msg--success">
-                        <div><strong>El pedido está listo para confirmar.</strong></div>
+                    <div class="carrito-feedback carrito-feedback--success">
+                        <strong>El pedido está listo para confirmar.</strong>
                     </div>
                 }
 
                 @if (_confirmFeedback is not null)
                 {
-                    <div class="editor-msg @(_confirmFeedback.Severity == AppUiFeedbackSeverity.Success ? "editor-msg--success" : "editor-msg--warning")">
-                        <div><p>@_confirmFeedback.Message</p></div>
+                    <div class="carrito-feedback @(_confirmFeedback.Severity == AppUiFeedbackSeverity.Success ? "carrito-feedback--success" : "carrito-feedback--warning")">
+                        <p>@_confirmFeedback.Message</p>
                     </div>
                 }
 
-                <div class="actions mt-3">
-                    <button type="button" class="btn btn--ghost" @onclick="() => _showConfirmModal = false" disabled="@_confirmandoPedido">
-                        <i class="bi bi-pencil"></i> Seguir editando
-                    </button>
-                    <button type="button" class="btn btn--primary" @onclick="ConfirmarPedidoAsync" disabled="@_confirmandoPedido">
-                        <i class="bi @(_confirmandoPedido ? "spinner-border spinner-border-sm" : "bi-check-circle")"></i> @(_confirmandoPedido ? "Registrando pedido..." : "Confirmar pedido")
-                    </button>
+                <div class="carrito-drawer__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-pencil" Disabled="@_confirmandoPedido" OnClick="() => _showConfirmModal = false">
+                        Seguir editando
+                    </AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="@(_confirmandoPedido ? "bi bi-arrow-repeat" : "bi bi-check-circle")" Loading="@_confirmandoPedido" Disabled="@_confirmandoPedido" OnClick="ConfirmarPedidoAsync">
+                        @(_confirmandoPedido ? "Registrando pedido..." : "Confirmar pedido")
+                    </AlfaButton>
                 </div>
             }
         </div>
@@ -835,6 +822,9 @@ else
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToList()
            ?? [];
+
+    private IReadOnlyList<AlfaSelectOption> GetMarcaOptions()
+        => GetMarcasDisponibles().Select(m => new AlfaSelectOption(m, m)).ToList();
 
     private IReadOnlyList<CatalogosCatalogoItemDto> GetArticulosFiltrados()
     {

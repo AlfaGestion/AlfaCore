@@ -2,7 +2,10 @@
 @page "/{idweb}/{idbase:int}/portal-cliente/mi-cuenta"
 @layout AlfaCore.Components.Layout.PublicLayout
 @inherits PortalClientePageBase
+@using AlfaCore.Models
 @using AlfaCore.Components.Shared
+@using AlfaCore.Components.Shared.AlfaDesign
+@inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
 
 <PageTitle>Mi cuenta | Portal Cliente</PageTitle>
 
@@ -53,15 +56,212 @@ else
                               RoutePedidos="@BuildPortalRoute("pedidos")"
                               RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
 
-        <section class="panel-card empty-state">
-            <h3 class="panel-card__title">Mi cuenta</h3>
-            <p class="panel-card__subtitle">Estamos preparando esta sección. Todavía no hay datos editables acá.</p>
+        <section class="portal-cliente__section">
+            <header class="portal-cliente__section-head">
+                <div>
+                    <h3 class="portal-cliente__section-title">Mi cuenta</h3>
+                </div>
+            </header>
+
+            <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
         </section>
+
+        @if (_loading)
+        {
+            <section class="portal-cliente__section">
+                <div class="portal-cliente__loading-state">
+                    <p class="text-muted">Cargando tu cuenta...</p>
+                </div>
+            </section>
+        }
+        else if (_miCuenta is null)
+        {
+            <section class="portal-cliente__section">
+                <div class="portal-cliente__empty-panel">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                    Title="No pudimos cargar tu cuenta"
+                                    Message="Probá recargar la página en unos minutos."
+                                    Class="portal-cliente__empty-state" />
+                </div>
+            </section>
+        }
+        else
+        {
+            <section class="portal-cliente__section">
+                <header class="portal-cliente__section-head">
+                    <div>
+                        <h3 class="portal-cliente__section-title">Datos de la cuenta</h3>
+                    </div>
+                </header>
+                <div class="portal-cliente__account-fields">
+                    <div class="portal-cliente__account-field"><span>Código</span><strong>@_miCuenta.CodigoCliente</strong></div>
+                    <div class="portal-cliente__account-field"><span>Razón social</span><strong>@_miCuenta.RazonSocial</strong></div>
+                    @if (!string.IsNullOrWhiteSpace(_miCuenta.NumeroDocumento))
+                    {
+                        <div class="portal-cliente__account-field"><span>CUIT / Documento</span><strong>@_miCuenta.NumeroDocumento</strong></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_miCuenta.Domicilio))
+                    {
+                        <div class="portal-cliente__account-field"><span>Domicilio</span><strong>@_miCuenta.Domicilio</strong></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_miCuenta.Localidad))
+                    {
+                        <div class="portal-cliente__account-field"><span>Localidad</span><strong>@_miCuenta.Localidad</strong></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_miCuenta.Provincia))
+                    {
+                        <div class="portal-cliente__account-field"><span>Provincia</span><strong>@_miCuenta.Provincia</strong></div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_miCuenta.Telefono))
+                    {
+                        <div class="portal-cliente__account-field"><span>Teléfono</span><strong>@_miCuenta.Telefono</strong></div>
+                    }
+                </div>
+            </section>
+
+            @if (_miCuenta.Clase > 0 || !string.IsNullOrWhiteSpace(_miCuenta.NombreLista) || !string.IsNullOrWhiteSpace(_miCuenta.CondicionVenta) || !string.IsNullOrWhiteSpace(_miCuenta.Vendedor))
+            {
+                <section class="portal-cliente__section portal-cliente__section--discreet">
+                    <header class="portal-cliente__section-head">
+                        <div>
+                            <h3 class="portal-cliente__section-title">Condiciones comerciales</h3>
+                            <p class="portal-cliente__section-subtitle">Información de referencia, gestionada por la empresa.</p>
+                        </div>
+                    </header>
+                    <div class="portal-cliente__account-fields">
+                        @if (!string.IsNullOrWhiteSpace(_miCuenta.NombreLista))
+                        {
+                            <div class="portal-cliente__account-field"><span>Lista de precios</span><strong>@_miCuenta.NombreLista</strong></div>
+                        }
+                        @if (_miCuenta.Clase > 0)
+                        {
+                            <div class="portal-cliente__account-field"><span>Clase</span><strong>@_miCuenta.Clase</strong></div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_miCuenta.CondicionVenta))
+                        {
+                            <div class="portal-cliente__account-field"><span>Condición de venta</span><strong>@_miCuenta.CondicionVenta</strong></div>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_miCuenta.Vendedor))
+                        {
+                            <div class="portal-cliente__account-field"><span>Vendedor</span><strong>@_miCuenta.Vendedor</strong></div>
+                        }
+                    </div>
+                </section>
+            }
+
+            <section class="portal-cliente__section">
+                <header class="portal-cliente__section-head">
+                    <div>
+                        <h3 class="portal-cliente__section-title">Datos de contacto</h3>
+                    </div>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-pencil" OnClick="AbrirEditarEmail">
+                        Editar email
+                    </AlfaButton>
+                </header>
+                <div class="portal-cliente__account-fields">
+                    <div class="portal-cliente__account-field">
+                        <span>Email</span>
+                        <strong>@(string.IsNullOrWhiteSpace(_miCuenta.Email) ? "Sin email registrado" : _miCuenta.Email)</strong>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(_miCuenta.Telefono))
+                    {
+                        <div class="portal-cliente__account-field"><span>Teléfono</span><strong>@_miCuenta.Telefono</strong></div>
+                    }
+                </div>
+            </section>
+
+            <section class="portal-cliente__section">
+                <header class="portal-cliente__section-head">
+                    <div>
+                        <h3 class="portal-cliente__section-title">Seguridad</h3>
+                    </div>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-key" OnClick="AbrirCambiarClave">
+                        Cambiar contraseña
+                    </AlfaButton>
+                </header>
+                <div class="portal-cliente__account-fields">
+                    <div class="portal-cliente__account-field"><span>Contraseña</span><strong>••••••••</strong></div>
+                </div>
+            </section>
+        }
+
+        <AlfaDialog Open="@_showEditarEmail"
+                    Title="Editar email"
+                    Description="Este email se usa para recuperar tu acceso al Portal Cliente."
+                    ErrorMessage="@_emailError"
+                    Loading="@_savingEmail"
+                    OnClose="CerrarEditarEmail">
+            <ChildContent>
+                <AlfaInput Label="Email"
+                           Type="email"
+                           Value="@_emailTexto"
+                           ValueChanged="v => _emailTexto = v ?? string.Empty"
+                           Placeholder="nombre@empresa.com"
+                           Disabled="@_savingEmail" />
+            </ChildContent>
+            <Footer>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_savingEmail" OnClick="CerrarEditarEmail">
+                    Cancelar
+                </AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Loading="@_savingEmail" OnClick="GuardarEmailAsync">
+                    Guardar
+                </AlfaButton>
+            </Footer>
+        </AlfaDialog>
+
+        <AlfaDialog Open="@_showCambiarClave"
+                    Title="Cambiar contraseña"
+                    ErrorMessage="@_claveError"
+                    Loading="@_savingClave"
+                    OnClose="CerrarCambiarClave">
+            <ChildContent>
+                <div class="portal-cliente__clave-form">
+                    <AlfaInput Label="Contraseña actual"
+                               Type="password"
+                               Value="@_claveActual"
+                               ValueChanged="v => _claveActual = v ?? string.Empty"
+                               Disabled="@_savingClave" />
+                    <AlfaInput Label="Nueva contraseña"
+                               Type="password"
+                               Value="@_claveNueva"
+                               ValueChanged="v => _claveNueva = v ?? string.Empty"
+                               Disabled="@_savingClave" />
+                    <AlfaInput Label="Confirmar nueva contraseña"
+                               Type="password"
+                               Value="@_claveConfirmar"
+                               ValueChanged="v => _claveConfirmar = v ?? string.Empty"
+                               Disabled="@_savingClave" />
+                </div>
+            </ChildContent>
+            <Footer>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@_savingClave" OnClick="CerrarCambiarClave">
+                    Cancelar
+                </AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Loading="@_savingClave" OnClick="GuardarClaveAsync">
+                    Guardar
+                </AlfaButton>
+            </Footer>
+        </AlfaDialog>
     </section>
 }
 
 @code {
     private CatalogoClienteLoginPanel? _loginPanel;
+    private bool _loading;
+    private PortalClienteMiCuentaDto? _miCuenta;
+    private AppUiMessage? _feedback;
+
+    private bool _showEditarEmail;
+    private string _emailTexto = string.Empty;
+    private string? _emailError;
+    private bool _savingEmail;
+
+    private bool _showCambiarClave;
+    private string _claveActual = string.Empty;
+    private string _claveNueva = string.Empty;
+    private string _claveConfirmar = string.Empty;
+    private string? _claveError;
+    private bool _savingClave;
 
     protected override async Task OnAfterClientSessionRestoredAsync()
     {
@@ -69,6 +269,190 @@ else
         {
             try { await _loginPanel.FocusCodigoAsync(); }
             catch { }
+        }
+
+        if (IsAuthenticated)
+        {
+            await CargarMiCuentaAsync();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    protected override async Task OnAfterLoginAsync()
+        => await CargarMiCuentaAsync();
+
+    private async Task CargarMiCuentaAsync()
+    {
+        _loading = true;
+        _feedback = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => PortalClienteSvc.GetMiCuentaAsync(GetCurrentCodigoCliente()), "No pudimos consultar los datos de tu cuenta.");
+
+            if (result.Success && result.Value is not null)
+            {
+                _miCuenta = result.Value;
+            }
+            else
+            {
+                _miCuenta = null;
+                _feedback = result.Feedback;
+            }
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void AbrirEditarEmail()
+    {
+        _emailTexto = _miCuenta?.Email ?? string.Empty;
+        _emailError = null;
+        _showEditarEmail = true;
+    }
+
+    private void CerrarEditarEmail()
+    {
+        if (_savingEmail)
+            return;
+
+        _showEditarEmail = false;
+        _emailError = null;
+    }
+
+    private async Task GuardarEmailAsync()
+    {
+        var nuevo = _emailTexto.Trim();
+        var actual = (_miCuenta?.Email ?? string.Empty).Trim();
+
+        if (string.Equals(nuevo, actual, StringComparison.OrdinalIgnoreCase))
+        {
+            // Sin cambios: no hace falta llamar al backend.
+            _showEditarEmail = false;
+            return;
+        }
+
+        if (!EsEmailValido(nuevo))
+        {
+            _emailError = "Ingresá un email válido.";
+            return;
+        }
+
+        _savingEmail = true;
+        _emailError = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => PortalClienteSvc.ActualizarEmailAsync(new PortalClienteActualizarEmailRequestDto
+            {
+                CodigoCliente = GetCurrentCodigoCliente(),
+                Email = nuevo
+            }), "No pudimos actualizar tu email en este momento.");
+
+            if (result.Success && result.Value is { Exito: true } value)
+            {
+                if (_miCuenta is not null)
+                    _miCuenta.Email = value.Email;
+
+                _showEditarEmail = false;
+                _feedback = AppUiMessage.Success("Listo", value.Mensaje);
+            }
+            else
+            {
+                _emailError = result.Value?.Mensaje ?? result.Feedback?.Message ?? "No pudimos actualizar tu email.";
+            }
+        }
+        finally
+        {
+            _savingEmail = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void AbrirCambiarClave()
+    {
+        _claveActual = string.Empty;
+        _claveNueva = string.Empty;
+        _claveConfirmar = string.Empty;
+        _claveError = null;
+        _showCambiarClave = true;
+    }
+
+    private void CerrarCambiarClave()
+    {
+        if (_savingClave)
+            return;
+
+        _showCambiarClave = false;
+        _claveActual = string.Empty;
+        _claveNueva = string.Empty;
+        _claveConfirmar = string.Empty;
+        _claveError = null;
+    }
+
+    private async Task GuardarClaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_claveActual) || string.IsNullOrWhiteSpace(_claveNueva) || string.IsNullOrWhiteSpace(_claveConfirmar))
+        {
+            _claveError = "Completá los tres campos.";
+            return;
+        }
+
+        if (!string.Equals(_claveNueva, _claveConfirmar, StringComparison.Ordinal))
+        {
+            _claveError = "Las contraseñas no coinciden.";
+            return;
+        }
+
+        _savingClave = true;
+        _claveError = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(() => PortalClienteSvc.CambiarClaveAsync(new PortalClienteCambiarClaveRequestDto
+            {
+                CodigoCliente = GetCurrentCodigoCliente(),
+                ClaveActual = _claveActual,
+                ClaveNueva = _claveNueva,
+                ConfirmarClaveNueva = _claveConfirmar
+            }), "No pudimos actualizar tu contraseña en este momento.");
+
+            if (result.Success && result.Value is { Exito: true } value)
+            {
+                _showCambiarClave = false;
+                _claveActual = string.Empty;
+                _claveNueva = string.Empty;
+                _claveConfirmar = string.Empty;
+                _feedback = AppUiMessage.Success("Listo", value.Mensaje);
+            }
+            else
+            {
+                _claveError = result.Value?.Mensaje ?? result.Feedback?.Message ?? "No pudimos actualizar tu contraseña.";
+            }
+        }
+        finally
+        {
+            _savingClave = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private static bool EsEmailValido(string email)
+    {
+        try
+        {
+            _ = new System.Net.Mail.MailAddress(email);
+            return true;
+        }
+        catch
+        {
+            return false;
         }
     }
 }

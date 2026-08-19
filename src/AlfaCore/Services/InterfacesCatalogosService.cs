@@ -100,9 +100,17 @@ public sealed class InterfacesCatalogosService(
             var skip = (pageNumber - 1) * pageSize;
             var textoLike = LikeContains(filters.Texto);
             var idLista = (filters.IdLista ?? string.Empty).Trim();
+            var idRubro = (filters.IdRubro ?? string.Empty).Trim();
+            var idFamilia = (filters.IdFamilia ?? string.Empty).Trim();
+            var idTipo = (filters.IdTipo ?? string.Empty).Trim();
             var origen = (filters.Origen ?? string.Empty).Trim();
             var usarLista = string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase);
             var clasePrecio = ParseClasePrecio(await GetPublicClasePrecioAsync(filters.IdWeb, token));
+            var excludedIds = (filters.ExcludedIds ?? [])
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Select(id => id.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -117,6 +125,17 @@ public sealed class InterfacesCatalogosService(
                 return EmptyArticuloPage(pageNumber, pageSize);
 
             var ofertaClase = usarLista ? await GetOfertaClasePrecioAsync(cn, token) : 0;
+            var tieneFamilias = await SqlObjectExistsAsync(cn, "V_TA_FAMILIAS", token);
+            var familiaJoin = tieneFamilias
+                ? "LEFT JOIN dbo.V_TA_FAMILIAS f ON LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))) = LTRIM(RTRIM(f.IdFamilia))"
+                : string.Empty;
+            var familiaSelect = tieneFamilias ? "ISNULL(LTRIM(RTRIM(f.Descripcion)), '')" : "''";
+            // Solo se agrega el fragmento si realmente hay IDs a excluir: "NOT IN ()" es inválido en
+            // SQL Server, y no tiene sentido pagar el costo del filtro cuando la lista viene vacía
+            // (catálogo/carrito recién creado, sin artículos todavía).
+            var exclusionFilter = excludedIds.Count > 0
+                ? "AND a.IDARTICULO NOT IN @ExcludedIds"
+                : string.Empty;
 
             var sql = usarLista
                 ? $"""
@@ -126,6 +145,7 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(LTRIM(RTRIM(a.Presentacion)), '') AS Presentacion,
                     ISNULL(LTRIM(RTRIM(t.Descripcion)), '') AS Marca,
                     ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
+                    {familiaSelect} AS Familia,
                     ISNULL(LTRIM(RTRIM(p.IdLista)), '') AS ListaPrecio,
                     N'' AS NombreListaPrecio,
                     ISNULL(p.Precio{clasePrecio}, 0) AS Precio,
@@ -143,10 +163,14 @@ public sealed class InterfacesCatalogosService(
                     ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
                 LEFT JOIN dbo.V_TA_TipoArticulo t
                     ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
+                {familiaJoin}
                 WHERE UPPER(LTRIM(RTRIM(ISNULL(p.IdLista, '')))) = UPPER(LTRIM(RTRIM(@IdLista)))
                   AND UPPER(LTRIM(RTRIM(ISNULL(p.TipoLista, 'V')))) = 'V'
                   AND ISNULL(a.Suspendido, 0) <> 1
                   AND ISNULL(a.SuspendidoV, 0) <> 1
+                  AND (@IdRubro = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDRUBRO, '')))) = UPPER(@IdRubro))
+                  AND (@IdFamilia = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IdFamilia, '')))) = UPPER(@IdFamilia))
+                  AND (@IdTipo = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDTIPO, '')))) = UPPER(@IdTipo))
                   AND (
                         @TextoLike = ''
                         OR UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @TextoLike
@@ -155,6 +179,7 @@ public sealed class InterfacesCatalogosService(
                         OR UPPER(LTRIM(RTRIM(ISNULL(t.Descripcion, '')))) LIKE @TextoLike
                         OR UPPER(LTRIM(RTRIM(ISNULL(r.Descripcion, '')))) LIKE @TextoLike
                       )
+                  {exclusionFilter}
                 ORDER BY a.DESCRIPCION, a.IDARTICULO
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
                 """
@@ -165,6 +190,7 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(LTRIM(RTRIM(a.Presentacion)), '') AS Presentacion,
                     ISNULL(LTRIM(RTRIM(t.Descripcion)), '') AS Marca,
                     ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
+                    {familiaSelect} AS Familia,
                     N'' AS ListaPrecio,
                     N'' AS NombreListaPrecio,
                     ISNULL(a.Precio{clasePrecio}, 0) AS Precio,
@@ -175,8 +201,12 @@ public sealed class InterfacesCatalogosService(
                     ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
                 LEFT JOIN dbo.V_TA_TipoArticulo t
                     ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
+                {familiaJoin}
                 WHERE ISNULL(a.Suspendido, 0) <> 1
                   AND ISNULL(a.SuspendidoV, 0) <> 1
+                  AND (@IdRubro = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDRUBRO, '')))) = UPPER(@IdRubro))
+                  AND (@IdFamilia = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IdFamilia, '')))) = UPPER(@IdFamilia))
+                  AND (@IdTipo = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDTIPO, '')))) = UPPER(@IdTipo))
                   AND (
                         @TextoLike = ''
                         OR UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @TextoLike
@@ -185,13 +215,14 @@ public sealed class InterfacesCatalogosService(
                         OR UPPER(LTRIM(RTRIM(ISNULL(t.Descripcion, '')))) LIKE @TextoLike
                         OR UPPER(LTRIM(RTRIM(ISNULL(r.Descripcion, '')))) LIKE @TextoLike
                       )
+                  {exclusionFilter}
                 ORDER BY a.DESCRIPCION, a.IDARTICULO
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
                 """;
 
             var rows = (await cn.QueryAsync<CatalogosArticuloBusquedaPageRowDto>(new CommandDefinition(
                 sql,
-                new { IdLista = idLista, TextoLike = textoLike, Skip = skip, PageSize = pageSize },
+                new { IdLista = idLista, IdRubro = idRubro, IdFamilia = idFamilia, IdTipo = idTipo, TextoLike = textoLike, ExcludedIds = excludedIds, Skip = skip, PageSize = pageSize },
                 cancellationToken: token))).ToList();
 
             var total = rows.FirstOrDefault()?.TotalRows ?? 0;
@@ -202,6 +233,7 @@ public sealed class InterfacesCatalogosService(
                 Presentacion = row.Presentacion,
                 Marca = row.Marca,
                 Rubro = row.Rubro,
+                Familia = row.Familia,
                 ListaPrecio = row.ListaPrecio,
                 NombreListaPrecio = row.NombreListaPrecio,
                 Precio = row.Precio,
@@ -216,6 +248,72 @@ public sealed class InterfacesCatalogosService(
                 PageSize = pageSize
             };
         }, "No se pudieron buscar los artículos.", ct);
+
+    public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetRubrosArticuloAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetRubrosArticulo", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await SqlObjectExistsAsync(cn, "V_TA_Rubros", token))
+                return (IReadOnlyList<CatalogosClasificacionOpcionDto>)Array.Empty<CatalogosClasificacionOpcionDto>();
+
+            var rows = await cn.QueryAsync<CatalogosClasificacionOpcionDto>(new CommandDefinition(
+                """
+                SELECT
+                    LTRIM(RTRIM(IdRubro)) AS Codigo,
+                    ISNULL(LTRIM(RTRIM(Descripcion)), '') AS Descripcion
+                FROM dbo.V_TA_Rubros
+                ORDER BY Descripcion, IdRubro;
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<CatalogosClasificacionOpcionDto>)rows.ToList();
+        }, "No se pudieron cargar los rubros.", ct);
+
+    public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetFamiliasArticuloAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetFamiliasArticulo", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await SqlObjectExistsAsync(cn, "V_TA_FAMILIAS", token))
+                return (IReadOnlyList<CatalogosClasificacionOpcionDto>)Array.Empty<CatalogosClasificacionOpcionDto>();
+
+            var rows = await cn.QueryAsync<CatalogosClasificacionOpcionDto>(new CommandDefinition(
+                """
+                SELECT
+                    LTRIM(RTRIM(IdFamilia)) AS Codigo,
+                    ISNULL(LTRIM(RTRIM(Descripcion)), '') AS Descripcion
+                FROM dbo.V_TA_FAMILIAS
+                ORDER BY Descripcion, IdFamilia;
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<CatalogosClasificacionOpcionDto>)rows.ToList();
+        }, "No se pudieron cargar las familias.", ct);
+
+    public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetMarcasArticuloAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetMarcasArticulo", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await SqlObjectExistsAsync(cn, "V_TA_TipoArticulo", token))
+                return (IReadOnlyList<CatalogosClasificacionOpcionDto>)Array.Empty<CatalogosClasificacionOpcionDto>();
+
+            var rows = await cn.QueryAsync<CatalogosClasificacionOpcionDto>(new CommandDefinition(
+                """
+                SELECT
+                    LTRIM(RTRIM(IdTipo)) AS Codigo,
+                    ISNULL(LTRIM(RTRIM(Descripcion)), '') AS Descripcion
+                FROM dbo.V_TA_TipoArticulo
+                ORDER BY Descripcion, IdTipo;
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<CatalogosClasificacionOpcionDto>)rows.ToList();
+        }, "No se pudieron cargar las marcas.", ct);
 
     public Task<int> CountArticulosDesdeListaAsync(string idLista, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "CountArticulosDesdeLista", async token =>

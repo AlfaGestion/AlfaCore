@@ -1,6 +1,7 @@
+@using AlfaCore.Components.Shared.AlfaDesign
 @using AlfaCore.Models
 
-<article class="portal-cliente__pedido-row lista-precios__row">
+<article class="lista-precios__row">
     <div class="lista-precios__row-media">
         @if (!string.IsNullOrWhiteSpace(ImagenUrl) && !_imagenFallo)
         {
@@ -11,26 +12,44 @@
             <div class="lista-precios__row-media-fallback"><i class="bi bi-image"></i></div>
         }
     </div>
-    <div class="portal-cliente__pedido-row__main">
-        <strong>@Item.Descripcion</strong>
-        <span class="portal-cliente__pedido-row__fecha">
-            @Item.IdArticulo
-            @if (!string.IsNullOrWhiteSpace(Item.Presentacion)) { <text> · @Item.Presentacion</text> }
-            @if (!string.IsNullOrWhiteSpace(Item.Marca)) { <text> · @Item.Marca</text> }
-            @if (!string.IsNullOrWhiteSpace(Item.Rubro)) { <text> · @Item.Rubro</text> }
-        </span>
+
+    <div class="lista-precios__row-main">
+        <div class="lista-precios__row-title">
+            <strong>@Item.Descripcion</strong>
+            @if (!string.IsNullOrWhiteSpace(Item.Presentacion))
+            {
+                <span class="lista-precios__row-presentation">@Item.Presentacion</span>
+            }
+        </div>
+
+        <div class="lista-precios__row-meta">
+            <span class="lista-precios__row-code">@Item.IdArticulo</span>
+            @if (!string.IsNullOrWhiteSpace(Item.Marca))
+            {
+                <span>@Item.Marca</span>
+            }
+            @if (!string.IsNullOrWhiteSpace(Item.Familia))
+            {
+                <span>@Item.Familia</span>
+            }
+            @if (!string.IsNullOrWhiteSpace(Item.Rubro))
+            {
+                <span>@Item.Rubro</span>
+            }
+        </div>
     </div>
-    <div class="portal-cliente__pedido-row__total">
+
+    <div class="lista-precios__row-price">
         @if (Item.SinPrecio)
         {
-            <span class="text-muted">Consultar</span>
+            <AlfaTag Tone="AlfaTagTone.Warning">Consultar</AlfaTag>
         }
         else
         {
-            @Money(Item.Precio)
+            <strong class="lista-precios__row-price-main">@Money(Item.Precio)</strong>
             @if (Margen > 0)
             {
-                <span class="lista-precios__row-margen">Con margen: @Money(Item.Precio * (1 + Margen / 100m))</span>
+                <span class="lista-precios__row-price-secondary">Con margen: @Money(Item.Precio * (1 + Margen / 100m))</span>
             }
         }
     </div>

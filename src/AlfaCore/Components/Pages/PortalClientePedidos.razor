@@ -4,6 +4,7 @@
 @inherits PortalClientePageBase
 @using AlfaCore.Models
 @using AlfaCore.Components.Shared
+@using AlfaCore.Components.Shared.AlfaDesign
 @inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
 
 <PageTitle>Pedidos | Portal Cliente</PageTitle>
@@ -55,60 +56,79 @@ else
                               RoutePedidos="@BuildPortalRoute("pedidos")"
                               RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
 
-        <section class="panel-card">
-            <div class="panel-card__header">
+        <section class="portal-cliente__section">
+            <header class="portal-cliente__section-head">
                 <div>
-                    <h3 class="panel-card__title">Pedidos</h3>
-                    <p class="panel-card__subtitle">Notas de pedido registradas a tu nombre.</p>
+                    <h3 class="portal-cliente__section-title">Pedidos</h3>
+                    <p class="portal-cliente__section-subtitle">Consultá tus pedidos registrados.</p>
                 </div>
-            </div>
+            </header>
 
-            <div class="portal-cliente__filtros">
-                <div class="field">
-                    <label>Fecha desde</label>
-                    <input type="date" @bind="_fechaDesde" @bind:after="AplicarFiltrosAsync" />
-                </div>
-                <div class="field">
-                    <label>Fecha hasta</label>
-                    <input type="date" @bind="_fechaHasta" @bind:after="AplicarFiltrosAsync" />
-                </div>
-                <div class="field">
-                    <label>Número</label>
-                    <input type="text" placeholder="9999-00001234" @bind="_numero" @bind:event="oninput" @bind:after="AplicarFiltrosAsync" />
+            <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+            <div class="portal-cliente__filters">
+                <AlfaInput Label="Número"
+                           Type="search"
+                           Value="@_numero"
+                           ValueChanged="SetNumeroAsync"
+                           Placeholder="9999-00001234"
+                           Class="portal-cliente__filter-field portal-cliente__filter-field--search" />
+                <div class="portal-cliente__filters-grid">
+                    <AlfaInput Label="Fecha desde"
+                               Type="date"
+                               Value="@FechaDesdeTexto"
+                               ValueChanged="SetFechaDesdeAsync"
+                               Class="portal-cliente__filter-field portal-cliente__filter-field--date" />
+                    <AlfaInput Label="Fecha hasta"
+                               Type="date"
+                               Value="@FechaHastaTexto"
+                               ValueChanged="SetFechaHastaAsync"
+                               Class="portal-cliente__filter-field portal-cliente__filter-field--date" />
                 </div>
             </div>
 
             @if (_loading)
             {
-                <p class="text-muted">Cargando pedidos...</p>
+                <div class="portal-cliente__loading-state">
+                    <p class="text-muted">Cargando pedidos...</p>
+                </div>
             }
             else if (_pedidos.Items.Count == 0)
             {
-                <div class="empty-state">
-                    <p>Todavía no tenés pedidos registrados.</p>
+                <div class="portal-cliente__empty-panel">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Todavía no tenés pedidos registrados."
+                                    Class="portal-cliente__empty-state" />
                 </div>
             }
             else
             {
-                <div class="portal-cliente__pedidos-list">
-                    @foreach (var pedido in _pedidos.Items)
-                    {
-                        <PortalClientePedidoRow Pedido="pedido" DetalleUrl="@BuildPortalRoute($"pedidos/{pedido.IdComprobante}")" />
-                    }
+                <div class="portal-cliente__data-view">
+                    <div class="portal-cliente__data-view-header">
+                        <span>Pedido</span>
+                        <span class="text-end">Importe / acción</span>
+                    </div>
+
+                    <div class="portal-cliente__data-view-body">
+                        @foreach (var pedido in _pedidos.Items)
+                        {
+                            <PortalClientePedidoRow Pedido="pedido" DetalleUrl="@BuildPortalRoute($"pedidos/{pedido.IdComprobante}")" />
+                        }
+                    </div>
                 </div>
 
-                @if (_pedidos.TotalPages > 1)
-                {
-                    <div class="portal-cliente__paginador">
-                        <button type="button" class="btn btn--ghost btn--sm" disabled="@(!_pedidos.HasPrev)" @onclick="() => CambiarPaginaAsync(_pageNumber - 1)">
+                <footer class="alfa-data-view-footer portal-cliente__list-footer">
+                    <span class="alfa-data-view-footer__summary">@GetPedidosSummaryText()</span>
+                    <div class="alfa-data-view-footer__controls portal-cliente__pagination-controls">
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(!_pedidos.HasPrev)" OnClick="() => CambiarPaginaAsync(_pageNumber - 1)">
                             <i class="bi bi-chevron-left"></i> Anterior
-                        </button>
-                        <span class="text-muted">Página @_pedidos.PageNumber de @_pedidos.TotalPages</span>
-                        <button type="button" class="btn btn--ghost btn--sm" disabled="@(!_pedidos.HasNext)" @onclick="() => CambiarPaginaAsync(_pageNumber + 1)">
+                        </AlfaButton>
+                        <span class="portal-cliente__pagination-page">Página @_pedidos.PageNumber de @Math.Max(_pedidos.TotalPages, 1)</span>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(!_pedidos.HasNext)" OnClick="() => CambiarPaginaAsync(_pageNumber + 1)">
                             Siguiente <i class="bi bi-chevron-right"></i>
-                        </button>
+                        </AlfaButton>
                     </div>
-                }
+                </footer>
             }
         </section>
     </section>
@@ -123,6 +143,7 @@ else
     private DateTime? _fechaHasta;
     private string _numero = string.Empty;
     private PagedResult<PortalClientePedidoResumenDto> _pedidos = new();
+    private AppUiMessage? _feedback;
 
     protected override async Task OnAfterClientSessionRestoredAsync()
     {
@@ -148,6 +169,36 @@ else
         return CargarPedidosAsync();
     }
 
+    private string FechaDesdeTexto
+        => _fechaDesde?.ToString("yyyy-MM-dd") ?? string.Empty;
+
+    private string FechaHastaTexto
+        => _fechaHasta?.ToString("yyyy-MM-dd") ?? string.Empty;
+
+    private Task SetFechaDesdeAsync(string? value)
+    {
+        _fechaDesde = ParseDate(value);
+        return AplicarFiltrosAsync();
+    }
+
+    private Task SetFechaHastaAsync(string? value)
+    {
+        _fechaHasta = ParseDate(value);
+        return AplicarFiltrosAsync();
+    }
+
+    private Task SetNumeroAsync(string? value)
+    {
+        _numero = value ?? string.Empty;
+        return AplicarFiltrosAsync();
+    }
+
+    private string GetPedidosSummaryText()
+        => $"{_pedidos.Total} {(_pedidos.Total == 1 ? "pedido" : "pedidos")} · Página {_pedidos.PageNumber} de {Math.Max(_pedidos.TotalPages, 1)}";
+
+    private static DateTime? ParseDate(string? value)
+        => DateTime.TryParse(value, out var parsed) ? parsed.Date : null;
+
     private Task CambiarPaginaAsync(int pageNumber)
     {
         if (pageNumber < 1 || pageNumber > _pedidos.TotalPages)
@@ -160,6 +211,7 @@ else
     private async Task CargarPedidosAsync()
     {
         _loading = true;
+        _feedback = null;
         await InvokeAsync(StateHasChanged);
 
         try
@@ -174,7 +226,15 @@ else
                 PageSize = PageSize
             }), "No se pudieron cargar los pedidos.");
 
-            _pedidos = result.Success && result.Value is not null ? result.Value : new PagedResult<PortalClientePedidoResumenDto>();
+            if (result.Success && result.Value is not null)
+            {
+                _pedidos = result.Value;
+            }
+            else
+            {
+                _pedidos = new PagedResult<PortalClientePedidoResumenDto>();
+                _feedback = result.Feedback;
+            }
         }
         finally
         {

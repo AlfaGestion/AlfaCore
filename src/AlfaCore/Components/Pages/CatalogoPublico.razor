@@ -3,6 +3,7 @@
 @layout AlfaCore.Components.Layout.PublicLayout
 @inherits SaaSRoutePageBase
 @using AlfaCore.Models
+@using AlfaCore.Components.Shared.AlfaDesign
 @inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
 @inject AlfaCore.Services.ICatalogosClienteSessionService CatalogoClienteSession
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
@@ -39,15 +40,16 @@
             </div>
 
             <div class="catalogo-publico-hero__actions">
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleThemeAsync" title="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")">
-                    <i class="bi @(_isDark ? "bi-sun" : "bi-moon")"></i>
-                </button>
+                <AlfaIconButton Icon="@(_isDark ? "bi bi-sun" : "bi bi-moon")"
+                                Label="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")"
+                                Size="AlfaSize.Sm"
+                                OnClick="ToggleThemeAsync" />
                 @if (IsAuthenticatedForCurrentCatalog)
                 {
-                    <span class="badge text-bg-secondary">Cliente: @GetCurrentClientLabel()</span>
-                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LogoutClienteAsync" disabled="@_sessionBusy">
-                        <i class="bi bi-box-arrow-right"></i> Cerrar sesión
-                    </button>
+                    <AlfaTag Tone="AlfaTagTone.Neutral">Cliente: @GetCurrentClientLabel()</AlfaTag>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" Disabled="@_sessionBusy" OnClick="LogoutClienteAsync">
+                        Cerrar sesión
+                    </AlfaButton>
                 }
             </div>
         </section>
@@ -55,22 +57,21 @@
 
     @if (_loading)
     {
-        <div class="loading">Cargando catálogo...</div>
+        <div class="catalogo-publico-loading-state">
+            <p class="text-muted">Cargando catálogo...</p>
+        </div>
     }
     else if (_catalogo is null)
     {
-        <div class="panel-card empty-state">
-            @if (_catalogFeedback is not null)
-            {
-                <div class="editor-msg @GetFeedbackClass(_catalogFeedback)">
-                    <div>
-                        <strong>@_catalogFeedback.Title</strong>
-                        <p>@_catalogFeedback.Message</p>
-                    </div>
-                </div>
-            }
-            <p>El catálogo no está disponible, fue finalizado o todavía no cumple la vigencia requerida.</p>
+        <div class="catalogo-publico-empty-panel">
+            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                            Title="Catálogo no disponible"
+                            Message="El catálogo no está disponible, fue finalizado o todavía no cumple la vigencia requerida." />
         </div>
+        @if (_catalogFeedback is not null)
+        {
+            <AlfaNotification Message="@_catalogFeedback" OnDismiss="() => _catalogFeedback = null" />
+        }
     }
     else
     {
@@ -82,7 +83,7 @@
                 </div>
                 @if (_catalogo.Articulos.Count > 0)
                 {
-                    <a class="btn btn--ghost btn--sm" href="@GetPdfExportUrl()" target="_blank" rel="noopener">
+                    <a class="alfa-link-button" href="@GetPdfExportUrl()" target="_blank" rel="noopener">
                         <i class="bi bi-file-earmark-pdf"></i> Exportar PDF
                     </a>
                 }
@@ -113,34 +114,26 @@
                 </div>
 
                 <div class="catalogo-publico-filters">
-                    <div class="field catalogo-publico-filters__field">
-                        <label>Marca</label>
-                        <select @bind="_filtroMarca">
-                            <option value="">Todas</option>
-                            @foreach (var marca in GetMarcasDisponibles())
-                            {
-                                <option value="@marca">@marca</option>
-                            }
-                        </select>
-                    </div>
-                    <label class="catalogo-publico-filters__toggle">
-                        <input type="checkbox" class="catalogo-publico-filters__toggle-input" @bind="_agruparPorMarca" />
-                        <span class="catalogo-publico-filters__toggle-track" aria-hidden="true"></span>
-                        <span>Agrupar por marca</span>
-                    </label>
+                    <AlfaSelect Label="Marca"
+                                Value="@_filtroMarca"
+                                ValueChanged="v => _filtroMarca = v ?? string.Empty"
+                                Options="@GetMarcaOptions()"
+                                Placeholder="Todas"
+                                Class="catalogo-publico-filters__field" />
+                    <AlfaCheckbox Value="@_agruparPorMarca" ValueChanged="v => _agruparPorMarca = v ?? false" Class="catalogo-publico-filters__toggle">
+                        Agrupar por marca
+                    </AlfaCheckbox>
                     <div class="catalogo-publico-view-switch catalogo-publico-filters__view" role="group" aria-label="Selector de vista de artículos">
-                        <button type="button"
-                                class="catalogo-publico-view-switch__btn @GetViewModeClass(CatalogoViewMode.Lista)"
-                                @onclick="() => SetViewModeAsync(CatalogoViewMode.Lista)">
-                            <i class="bi bi-list-ul"></i>
-                            <span>Lista</span>
-                        </button>
-                        <button type="button"
-                                class="catalogo-publico-view-switch__btn @GetViewModeClass(CatalogoViewMode.Cuadricula)"
-                                @onclick="() => SetViewModeAsync(CatalogoViewMode.Cuadricula)">
-                            <i class="bi bi-grid-3x3-gap"></i>
-                            <span>Cuadrícula</span>
-                        </button>
+                        <AlfaIconButton Icon="bi bi-list-ul"
+                                        Label="Vista de lista"
+                                        Active="@(_viewMode == CatalogoViewMode.Lista)"
+                                        Class="catalogo-publico-view-switch__btn"
+                                        OnClick="() => SetViewModeAsync(CatalogoViewMode.Lista)" />
+                        <AlfaIconButton Icon="bi bi-grid-3x3-gap"
+                                        Label="Vista de cuadrícula"
+                                        Active="@(_viewMode == CatalogoViewMode.Cuadricula)"
+                                        Class="catalogo-publico-view-switch__btn"
+                                        OnClick="() => SetViewModeAsync(CatalogoViewMode.Cuadricula)" />
                     </div>
                 </div>
             }
@@ -151,14 +144,14 @@
 
             @if (_catalogo.Articulos.Count == 0)
             {
-                <div class="empty-state">
-                    <p>Este catálogo no tiene artículos publicados.</p>
+                <div class="catalogo-publico-empty-panel">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData" Title="Este catálogo no tiene artículos publicados." />
                 </div>
             }
             else if (gruposVisibles.Count == 0)
             {
-                <div class="empty-state">
-                    <p>No se encontraron artículos con los filtros seleccionados.</p>
+                <div class="catalogo-publico-empty-panel">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No se encontraron artículos con los filtros seleccionados." />
                 </div>
             }
             else
@@ -759,14 +752,6 @@
         return string.Concat(parts);
     }
 
-    private static string GetFeedbackClass(AppUiMessage message)
-        => message.Severity switch
-        {
-            AppUiFeedbackSeverity.Success => "editor-msg--success",
-            AppUiFeedbackSeverity.Warning => "editor-msg--warning",
-            _ => "editor-msg--error"
-        };
-
     private static string Display(string? value)
         => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
 
@@ -795,6 +780,9 @@
             .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
             .ToList()
            ?? [];
+
+    private IReadOnlyList<AlfaSelectOption> GetMarcaOptions()
+        => GetMarcasDisponibles().Select(m => new AlfaSelectOption(m, m)).ToList();
 
     private IReadOnlyList<CatalogosCatalogoItemDto> GetArticulosFiltrados()
     {

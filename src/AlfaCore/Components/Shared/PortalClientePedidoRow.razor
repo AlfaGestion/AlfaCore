@@ -1,26 +1,38 @@
 @using AlfaCore.Models
+@using AlfaCore.Components.Shared.AlfaDesign
 
-<article class="portal-cliente__pedido-row">
-    <div class="portal-cliente__pedido-row__main">
-        <strong>@Pedido.Tc @Pedido.IdComprobanteTexto</strong>
-        <span class="portal-cliente__pedido-row__fecha">@Pedido.Fecha.ToString("dd/MM/yyyy")</span>
-        @if (Pedido.EsPedidoWeb)
-        {
-            <span class="badge text-bg-info">Pedido Web</span>
-        }
-        @if (Pedido.EsPedidoWeb && Pedido.IdCatalogoWeb is { } idCatalogo)
-        {
-            <span class="badge text-bg-secondary">Catálogo #@idCatalogo</span>
-        }
-        @if (Pedido.Anulada)
-        {
-            <span class="badge text-bg-danger">Anulado</span>
-        }
+<article class="portal-cliente__account-row">
+    <div class="portal-cliente__account-row-main">
+        <div class="portal-cliente__account-row-title">
+            <strong>@Pedido.Tc @Pedido.IdComprobanteTexto</strong>
+            <div class="portal-cliente__account-row-tags">
+                @if (Pedido.EsPedidoWeb)
+                {
+                    <AlfaTag Tone="AlfaTagTone.Accent">Pedido Web</AlfaTag>
+                }
+                @if (Pedido.EsPedidoWeb && Pedido.IdCatalogoWeb is { } idCatalogo)
+                {
+                    <AlfaTag Tone="AlfaTagTone.Neutral">Catálogo #@idCatalogo</AlfaTag>
+                }
+                @if (Pedido.Anulada)
+                {
+                    <AlfaTag Tone="AlfaTagTone.Danger">Anulado</AlfaTag>
+                }
+            </div>
+        </div>
+
+        <span class="portal-cliente__account-row-date">Fecha @Pedido.Fecha.ToString("dd/MM/yyyy")</span>
     </div>
-    <div class="portal-cliente__pedido-row__total">@Money(Pedido.Total)</div>
-    <a class="btn btn--ghost btn--sm" href="@DetalleUrl">
-        <i class="bi bi-eye"></i> Ver detalle
-    </a>
+
+    <div class="portal-cliente__account-row-side">
+        <div class="portal-cliente__account-row-amounts">
+            <strong>@Money(Pedido.Total)</strong>
+        </div>
+
+        <a class="portal-cliente__account-row-action" href="@DetalleUrl">
+            <i class="bi bi-eye"></i> Ver detalle
+        </a>
+    </div>
 </article>
 
 @code {

@@ -21,9 +21,16 @@ public sealed class CatalogosArticuloBusquedaFiltersDto
     public string Texto { get; set; } = string.Empty;
     public string IdLista { get; set; } = string.Empty;
     public string Origen { get; set; } = CatalogosArticuloOrigenKeys.ListaPrecio;
+    public string? IdRubro { get; set; }
+    public string? IdFamilia { get; set; }
+    public string? IdTipo { get; set; }
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
     public string? IdWeb { get; set; }
+
+    // Artículos que ya pertenecen al catálogo/carrito que se está editando: se excluyen en la
+    // consulta SQL (no se traen para después ocultarlos en el cliente).
+    public IReadOnlyCollection<string> ExcludedIds { get; set; } = [];
 }
 
 public sealed class CatalogosArticuloBusquedaDto
@@ -33,10 +40,19 @@ public sealed class CatalogosArticuloBusquedaDto
     public string Presentacion { get; set; } = string.Empty;
     public string Marca { get; set; } = string.Empty;
     public string Rubro { get; set; } = string.Empty;
+    public string Familia { get; set; } = string.Empty;
     public string ListaPrecio { get; set; } = string.Empty;
     public string NombreListaPrecio { get; set; } = string.Empty;
     public decimal Precio { get; set; }
     public decimal? PrecioOferta { get; set; }
+}
+
+// Opción simple (código/descripción) para los combos de clasificación del picker de artículos
+// (Rubro, Familia, Marca). Reutilizable: no repite código/descripción como tipos anónimos.
+public sealed class CatalogosClasificacionOpcionDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string Descripcion { get; set; } = string.Empty;
 }
 
 public sealed class CatalogosArticuloCatalogoDto

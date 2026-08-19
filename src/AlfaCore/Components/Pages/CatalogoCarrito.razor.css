@@ -1,5 +1,67 @@
 .carrito-page {
     padding-bottom: 5rem;
+    gap: 1rem;
+}
+
+/* Header standalone — mismas proporciones/tokens que el hero de CatalogoPublico, sin ser
+   panel-card genérico ni duplicar su CSS: componente distinto, mismo lenguaje visual. */
+.carrito-page__hero {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.1rem 1.25rem;
+    border-radius: var(--radius-xl, 18px);
+    border: 1px solid var(--color-border);
+    background: var(--color-panel-strong);
+    box-shadow: var(--shadow-soft);
+}
+
+.carrito-page__hero-brand {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    min-width: 0;
+}
+
+.carrito-page__hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.carrito-page__eyebrow {
+    margin: 0 0 0.15rem;
+    color: var(--color-primary);
+    font-size: 0.7rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.carrito-page__title {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: var(--color-text);
+}
+
+.carrito-page__loading-state {
+    min-height: 3rem;
+    display: grid;
+    place-items: center;
+}
+
+.carrito-page__empty-panel {
+    display: flex;
+    justify-content: center;
+    padding: 0.1rem 0 0.2rem;
+}
+
+.carrito-page__empty-panel ::deep .alfa-empty-state {
+    width: min(100%, 680px);
 }
 
 .carrito-page__logo {
@@ -91,7 +153,7 @@
     margin-bottom: 1rem;
 }
 
-.carrito-filters__field {
+.carrito-filters ::deep .carrito-filters__field {
     min-width: 200px;
 }
 
@@ -117,7 +179,7 @@
     place-items: center;
     aspect-ratio: 4 / 3;
     padding: 1rem;
-    background: #f5f6f8;
+    background: var(--color-panel);
     border-bottom: 1px solid rgba(15, 23, 42, 0.1);
 }
 
@@ -235,7 +297,7 @@
     padding-top: 0.5rem;
 }
 
-.carrito-card__add {
+.carrito-card__actions ::deep .carrito-card__add {
     width: 100%;
     justify-content: center;
 }
@@ -264,10 +326,22 @@
     font-weight: 800;
     cursor: pointer;
     line-height: 1;
+    transition: background-color 140ms ease, color 140ms ease;
 }
 
 .carrito-stepper__btn:hover {
     background: var(--hover-bg);
+}
+
+.carrito-stepper__btn:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
+}
+
+.carrito-stepper__btn:disabled {
+    color: var(--color-muted);
+    cursor: not-allowed;
+    opacity: .6;
 }
 
 .carrito-stepper__input {
@@ -280,6 +354,11 @@
     font-weight: 700;
     min-width: 0;
     padding: 0.35rem 0.25rem;
+}
+
+.carrito-stepper__input:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: -2px;
 }
 
 /* Botón flotante del carrito */
@@ -343,12 +422,17 @@
     color: var(--color-text);
 }
 
-.carrito-drawer__close {
-    border: 0;
-    background: transparent;
-    color: var(--color-muted);
-    font-size: 1.1rem;
-    cursor: pointer;
+.carrito-drawer__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.6rem;
+    margin-top: 1rem;
+}
+
+.carrito-drawer__actions--start {
+    justify-content: flex-start;
+    margin-top: 0.5rem;
 }
 
 .carrito-drawer__lines {
@@ -376,7 +460,7 @@
     height: 52px;
     border-radius: 10px;
     overflow: hidden;
-    background: #f5f6f8;
+    background: var(--color-panel);
     display: grid;
     place-items: center;
 }
@@ -418,12 +502,14 @@
     white-space: nowrap;
 }
 
-.carrito-line__remove {
-    border: 0;
-    background: transparent;
-    color: #dc2626;
-    font-size: 1.05rem;
-    cursor: pointer;
+/* AlfaIconButton (hijo): ::deep para alcanzar su <button> real desde este CSS aislado. */
+.carrito-drawer ::deep .carrito-line__remove {
+    color: var(--color-danger, #dc2626);
+}
+
+.carrito-drawer ::deep .carrito-line__remove:hover {
+    background: color-mix(in srgb, var(--color-danger, #dc2626) 14%, transparent);
+    color: var(--color-danger, #dc2626);
 }
 
 .carrito-drawer__summary {
@@ -457,88 +543,77 @@
     margin: 0 0 0.75rem;
 }
 
-.carrito-confirm__email {
+/* AlfaInput y AlfaCheckbox son hijos: Class="..." termina en su propio elemento raíz, con su
+   propio scope de aislamiento — hace falta ::deep para alcanzarlo desde este CSS. */
+.carrito-drawer ::deep .carrito-confirm__email {
     margin: 0.75rem 0;
 }
 
 .carrito-confirm__email-error {
     margin: -0.35rem 0 0.6rem;
-    color: #dc2626;
+    color: var(--color-danger, #dc2626);
     font-size: 0.82rem;
 }
 
-.carrito-toggle {
-    display: flex;
-    align-items: center;
-    gap: 0.85rem;
+.carrito-drawer ::deep .carrito-toggle {
     padding: 0.5rem 0.1rem;
-    cursor: pointer;
-    user-select: none;
 }
 
-.carrito-toggle--sub {
-    margin-left: 0.5rem;
+.carrito-drawer ::deep .carrito-toggle--sub {
+    margin-left: 1.9rem;
     opacity: 0.92;
 }
 
-.carrito-toggle__input {
-    position: absolute;
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.carrito-toggle__track {
-    position: relative;
-    flex: 0 0 auto;
-    width: 40px;
-    height: 24px;
-    border-radius: 999px;
-    background: var(--color-border);
-    border: 1px solid var(--color-border);
-    transition: background-color 150ms ease, border-color 150ms ease;
-}
-
-.carrito-toggle__track::before {
-    content: "";
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-    transition: transform 150ms ease, background-color 150ms ease;
-}
-
-.carrito-toggle__input:checked + .carrito-toggle__track {
-    background: var(--color-primary);
-    border-color: var(--color-primary);
-}
-
-.carrito-toggle__input:checked + .carrito-toggle__track::before {
-    transform: translateX(16px);
-}
-
-.carrito-toggle__input:focus-visible + .carrito-toggle__track {
-    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35);
-}
-
-.carrito-toggle__label {
+.carrito-drawer ::deep .carrito-toggle .alfa-checkbox__label {
     display: flex;
     flex-direction: column;
     gap: 0.1rem;
+    text-align: left;
 }
 
-.carrito-toggle__label strong {
+.carrito-drawer ::deep .carrito-toggle .alfa-checkbox__label strong {
     font-size: 0.9rem;
     color: var(--color-text);
 }
 
-.carrito-toggle__label small {
+.carrito-drawer ::deep .carrito-toggle .alfa-checkbox__label small {
     color: var(--color-muted);
     font-size: 0.78rem;
+}
+
+/* Feedback inline (no flotante): reemplaza los antiguos .editor-msg dentro del drawer/modal.
+   AlfaNotification es position:fixed y no encaja acá — este bloque respeta el mismo lenguaje
+   de severidad (success/warning/error) con los tokens ya aprobados de la familia navy. */
+.carrito-feedback {
+    display: grid;
+    gap: 0.2rem;
+    margin-top: 0.85rem;
+    padding: 0.7rem 0.85rem;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
+    background: var(--color-panel);
+    color: var(--color-text);
+    font-size: 0.86rem;
+}
+
+.carrito-feedback p,
+.carrito-feedback strong {
+    margin: 0;
+}
+
+.carrito-feedback--success {
+    border-color: color-mix(in srgb, var(--color-success) 40%, var(--color-border));
+    background: color-mix(in srgb, var(--color-success) 12%, var(--color-panel));
+}
+
+.carrito-feedback--warning {
+    border-color: color-mix(in srgb, var(--color-warning) 45%, var(--color-border));
+    background: color-mix(in srgb, var(--color-warning) 12%, var(--color-panel));
+}
+
+.carrito-feedback--error {
+    border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+    background: color-mix(in srgb, var(--color-danger) 12%, var(--color-panel));
 }
 
 @media (max-width: 640px) {
@@ -559,11 +634,105 @@
     .carrito-line__body { grid-area: body; }
     .carrito-line__qty { grid-area: qty; }
     .carrito-line__subtotal { grid-area: subtotal; }
-    .carrito-line__remove { grid-area: remove; justify-self: end; }
+    .carrito-line ::deep .carrito-line__remove { grid-area: remove; justify-self: end; }
 
     .carrito-fab {
         right: 0.75rem;
         bottom: 0.75rem;
         padding: 0.7rem 1rem;
     }
+
+    .carrito-page__hero {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .carrito-page__hero-actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+}
+
+/* Navy AlfaDesign — dark mode. Mismos tokens --portal-surface-*/--portal-border/--portal-focus
+   que ya aprobó Portal Cliente y ahora también CatalogoPublico (definidos en app.css). Los
+   componentes AlfaSelect/AlfaCheckbox/AlfaButton/AlfaIconButton/AlfaInput/AlfaTag/AlfaEmptyState
+   son hijos: ::deep para alcanzar su markup real desde este CSS aislado. */
+html[data-theme="dark"] .carrito-page ::deep .alfa-input__control,
+html[data-theme="dark"] .carrito-page ::deep .alfa-select__control {
+    background: var(--portal-surface-3);
+    border-color: var(--portal-border-input);
+    color: var(--portal-text);
+}
+
+html[data-theme="dark"] .carrito-page ::deep .alfa-input__control:hover,
+html[data-theme="dark"] .carrito-page ::deep .alfa-select__control:hover {
+    background: var(--portal-surface-3-hover);
+}
+
+html[data-theme="dark"] .carrito-page ::deep .alfa-input__control:focus,
+html[data-theme="dark"] .carrito-page ::deep .alfa-select__control:focus {
+    border-color: var(--portal-focus);
+    outline-color: color-mix(in srgb, var(--portal-focus) 34%, transparent);
+}
+
+html[data-theme="dark"] .carrito-page ::deep .alfa-select__control option {
+    background: var(--portal-surface-3);
+    color: var(--portal-text);
+}
+
+html[data-theme="dark"] .carrito-page ::deep .alfa-field__label,
+html[data-theme="dark"] .carrito-page ::deep .alfa-select__label {
+    color: var(--color-muted);
+}
+
+html[data-theme="dark"] .carrito-page ::deep .alfa-checkbox__box {
+    background: var(--portal-surface-3);
+    border-color: var(--portal-border-input);
+}
+
+html[data-theme="dark"] .carrito-page ::deep .alfa-tag:not(.alfa-tag--accent):not(.alfa-tag--success):not(.alfa-tag--warning):not(.alfa-tag--danger) {
+    background: var(--portal-surface-2);
+    border-color: var(--portal-border);
+    color: var(--portal-text);
+}
+
+html[data-theme="dark"] .carrito-page ::deep .alfa-empty-state {
+    background: var(--portal-surface-1);
+    border-color: var(--portal-border);
+}
+
+html[data-theme="dark"] .carrito-page ::deep .alfa-empty-state__icon {
+    background: var(--portal-surface-2);
+}
+
+html[data-theme="dark"] .carrito-page ::deep .alfa-icon-button:hover:not(:disabled),
+html[data-theme="dark"] .carrito-page ::deep .alfa-icon-button.is-active {
+    background: color-mix(in srgb, var(--portal-surface-2) 70%, var(--portal-focus) 12%);
+    color: var(--portal-focus);
+}
+
+html[data-theme="dark"] .carrito-page__hero,
+html[data-theme="dark"] .carrito-drawer,
+html[data-theme="dark"] .carrito-card,
+html[data-theme="dark"] .carrito-line,
+html[data-theme="dark"] .carrito-stepper {
+    background: var(--portal-surface-1);
+    border-color: var(--portal-border);
+}
+
+html[data-theme="dark"] .carrito-stepper__btn,
+html[data-theme="dark"] .carrito-stepper__input {
+    background: var(--portal-surface-2);
+}
+
+html[data-theme="dark"] .carrito-card__media,
+html[data-theme="dark"] .carrito-line__media {
+    background: var(--portal-surface-2);
+}
+
+html[data-theme="dark"] .carrito-tabs__btn,
+html[data-theme="dark"] .carrito-page__logo,
+html[data-theme="dark"] .carrito-card__code {
+    background: var(--portal-surface-2);
+    border-color: var(--portal-border);
 }
