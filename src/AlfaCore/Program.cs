@@ -201,6 +201,7 @@ public class Program
         builder.Services.AddScoped<IGestionDashboardService, GestionDashboardService>();
         builder.Services.AddScoped<IPuntoVentaService, PuntoVentaService>();
         builder.Services.AddScoped<IPortalClienteService, PortalClienteService>();
+        builder.Services.AddScoped<IPortalClienteRecuperarClaveService, PortalClienteRecuperarClaveService>();
         builder.Services.AddScoped<ICarritoComprasService, CarritoComprasService>();
         builder.Services.AddScoped<IListaPreciosClienteService, ListaPreciosClienteService>();
         builder.Services.AddSingleton<ListaPreciosClienteExcelExporter>();

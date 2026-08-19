@@ -112,6 +112,113 @@ public sealed class PedidosEmailService(
         return new CatalogoPedidoEmailResultDto { Enviado = false, MensajeError = "No pudimos enviar el email de confirmación. Podés reintentar el envío más tarde." };
     }
 
+    public async Task<bool> EnviarRecuperacionClaveAsync(
+        string emailDestino,
+        string nombreCliente,
+        string nombreEmpresa,
+        string? logoUrlAbsoluta,
+        string urlRestablecer,
+        CancellationToken ct = default)
+    {
+        var to = (emailDestino ?? string.Empty).Trim();
+        if (to.Length == 0 || string.IsNullOrWhiteSpace(urlRestablecer))
+            return false;
+
+        try
+        {
+            _ = new MailAddress(to);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        IReadOnlyList<MailInfo> cuentas;
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            cuentas = await ResolveMailAccountsAsync(cn, ct);
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                ModuleName, "EnviarRecuperacionClave", ex, "No se pudo resolver la configuración de correo saliente.",
+                new { Destinatario = to }, AppEventSeverity.Warning, ct);
+            return false;
+        }
+
+        var html = BuildRecuperacionClaveHtml(nombreCliente, nombreEmpresa, logoUrlAbsoluta, urlRestablecer);
+        var asunto = string.IsNullOrWhiteSpace(nombreEmpresa) ? "Recuperar contraseña" : $"Recuperar contraseña - {nombreEmpresa.Trim()}";
+
+        Exception? ultimoError = null;
+        foreach (var cuenta in cuentas)
+        {
+            try
+            {
+                using var message = new MailMessage
+                {
+                    From = new MailAddress(cuenta.From, string.IsNullOrWhiteSpace(nombreEmpresa) ? cuenta.From : nombreEmpresa.Trim()),
+                    Subject = asunto,
+                    Body = html,
+                    IsBodyHtml = true
+                };
+                message.To.Add(to);
+
+                using var client = new SmtpClient(cuenta.Server, cuenta.Port)
+                {
+                    EnableSsl = cuenta.EnableSsl,
+                    DeliveryMethod = SmtpDeliveryMethod.Network,
+                    UseDefaultCredentials = false,
+                    Credentials = new NetworkCredential(cuenta.From, cuenta.Password)
+                };
+                await client.SendMailAsync(message, ct);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ultimoError = ex;
+                await appEvents.LogErrorAsync(
+                    ModuleName, "EnviarRecuperacionClave", ex, $"Fallo el envío con la cuenta {cuenta.From}.",
+                    new { Destinatario = to, Cuenta = cuenta.From }, AppEventSeverity.Warning, ct);
+            }
+        }
+
+        await appEvents.LogErrorAsync(
+            ModuleName, "EnviarRecuperacionClave", ultimoError ?? new InvalidOperationException("Sin cuentas de envío disponibles."),
+            "Fallo el envío del email de recuperación de contraseña con todas las cuentas configuradas.",
+            new { Destinatario = to }, AppEventSeverity.Error, ct);
+        return false;
+    }
+
+    private static string BuildRecuperacionClaveHtml(string nombreCliente, string nombreEmpresa, string? logoUrlAbsoluta, string urlRestablecer)
+    {
+        string E(string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
+
+        var sb = new StringBuilder();
+        sb.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Recuperar contraseña</title></head>");
+        sb.Append("<body style=\"margin:0;padding:24px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;color:#0f172a;\">");
+        sb.Append("<div style=\"max-width:560px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;\">");
+
+        sb.Append("<div style=\"padding:22px 24px;background:linear-gradient(135deg,#0f172a,#1e3a8a);color:#ffffff;\">");
+        if (!string.IsNullOrWhiteSpace(logoUrlAbsoluta))
+            sb.Append("<img src=\"").Append(E(logoUrlAbsoluta)).Append("\" alt=\"").Append(E(nombreEmpresa))
+              .Append("\" style=\"max-height:44px;max-width:220px;display:block;margin-bottom:10px;\" />");
+        sb.Append("<div style=\"font-size:20px;font-weight:700;\">Recuperar contraseña</div>");
+        sb.Append("</div>");
+
+        sb.Append("<div style=\"padding:20px 24px;\">");
+        sb.Append("<p style=\"font-size:14px;line-height:1.5;margin:0 0 12px;\">Hola").Append(string.IsNullOrWhiteSpace(nombreCliente) ? "" : $" {E(nombreCliente)}").Append(",</p>");
+        sb.Append("<p style=\"font-size:14px;line-height:1.5;margin:0 0 20px;\">Recibimos una solicitud para restablecer tu contraseña de acceso al Portal Cliente. Si fuiste vos, hacé clic en el siguiente botón para definir una nueva contraseña:</p>");
+        sb.Append("<div style=\"text-align:center;margin:0 0 20px;\">");
+        sb.Append("<a href=\"").Append(E(urlRestablecer)).Append("\" style=\"display:inline-block;padding:12px 28px;background:#0ea5e9;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;\">Definir nueva contraseña</a>");
+        sb.Append("</div>");
+        sb.Append("<p style=\"font-size:12px;line-height:1.5;color:#64748b;margin:0 0 8px;\">Este enlace vence en 1 hora y solo puede usarse una vez.</p>");
+        sb.Append("<p style=\"font-size:12px;line-height:1.5;color:#64748b;margin:0;\">Si no solicitaste este cambio, podés ignorar este email: tu contraseña actual sigue funcionando normalmente.</p>");
+        sb.Append("</div></div></body></html>");
+        return sb.ToString();
+    }
+
     private static string BuildSubject(CatalogoPedidoEmailRequestDto request)
     {
         var p = request.Pedido;

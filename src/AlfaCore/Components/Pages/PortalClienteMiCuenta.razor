@@ -21,6 +21,8 @@ else if (!IsAuthenticated)
                                 CatalogoNombre="Portal Cliente"
                                 BrandLogoUrl="@GetBrandingLogoUrl()"
                                 BrandName="@GetBrandingName()"
+                                IdWeb="@idweb"
+                                IdBase="@idbase"
                                 Codigo="@ClienteCodigo"
                                 CodigoChanged="v => ClienteCodigo = v"
                                 Password="@ClientePassword"
@@ -31,7 +33,7 @@ else if (!IsAuthenticated)
                                 Feedback="@LoginFeedback"
                                 OnSubmit="LoginClienteAsync"
                                 VolverUrl="/"
-                                VolverTexto="Volver al inicio" />
+                                VolverTexto="Volver" />
 }
 else
 {
