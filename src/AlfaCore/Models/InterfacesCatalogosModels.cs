@@ -122,6 +122,7 @@ public sealed class CatalogosCatalogoResumenDto
     public DateTime? FechaCarga { get; set; }
     public int CantidadArticulos { get; set; }
     public bool Finalizado { get; set; }
+    public bool Predeterminado { get; set; }
 }
 
 public sealed class CatalogosCatalogoDetalleDto
@@ -136,6 +137,7 @@ public sealed class CatalogosCatalogoDetalleDto
     public DateTime? VigenciaHasta { get; set; }
     public bool Finalizado { get; set; }
     public bool HabilitarCarrito { get; set; }
+    public bool Predeterminado { get; set; }
     public IReadOnlyList<CatalogosCatalogoItemDto> Articulos { get; set; } = [];
 }
 

@@ -27,6 +27,7 @@ public sealed class InterfacesCatalogosService(
     private const string DefaultClasePrecio = "1";
     private const string OfertaClasePrecioConfigKey = "CLASEPRECIOOFERTA";
     private const string CarritoHabilitadoConfigKeyPrefix = "CATALOGOS-CARRITO";
+    private const string PredeterminadoConfigKey = "CATALOGOS-PREDETERMINADO";
     private const string TcPedidoWeb = "NP";
     private const string SucursalPedidoWeb = "9999";
     private const string LetraPedidoWebDefault = "X";
@@ -378,6 +379,13 @@ public sealed class InterfacesCatalogosService(
                 new { TextoLike = normalizedText, TipoFiltro = normalizedTipo, EstadoFiltro = normalizedEstado, FechaFiltro = fecha, Skip = skip, PageSize = pageSize },
                 cancellationToken: token))).ToList();
 
+            var predeterminadoId = await GetCatalogoPredeterminadoIdInternalAsync(cn, token);
+            if (predeterminadoId > 0)
+            {
+                foreach (var item in items)
+                    item.Predeterminado = item.IdInsert == predeterminadoId;
+            }
+
             var total = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
                 """
                 SELECT COUNT(1)
@@ -626,6 +634,72 @@ public sealed class InterfacesCatalogosService(
         {
             UrlPublica = BuildPublicUrl(idInsert, idWeb, idBase)
         });
+
+    public async Task<int> GetCatalogoPredeterminadoIdAsync(CancellationToken ct = default)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        return await GetCatalogoPredeterminadoIdInternalAsync(cn, ct);
+    }
+
+    public Task SetCatalogoPredeterminadoAsync(string userName, int idInsert, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SetCatalogoPredeterminado", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(userName))
+                throw new InvalidOperationException("No hay un usuario logueado para marcar el catálogo predeterminado.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (idInsert > 0)
+            {
+                var existe = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                    "SELECT COUNT(1) FROM dbo.V_MV_INSERT WHERE IDINSERT = @IdInsert;",
+                    new { IdInsert = idInsert },
+                    cancellationToken: token));
+
+                if (existe == 0)
+                    throw new InvalidOperationException("El catálogo indicado no existe.");
+            }
+
+            var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
+            var valor = idInsert > 0 ? idInsert.ToString() : string.Empty;
+            await UpsertConfigValueAsync(cn, detailColumn, PredeterminadoConfigKey, valor, ConfigGroup, token);
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SetCatalogoPredeterminado",
+                "TA_CONFIGURACION",
+                PredeterminadoConfigKey,
+                idInsert > 0 ? $"Catálogo #{idInsert} marcado como predeterminado (accesible vía /catalogo/0)." : "Se quitó el catálogo predeterminado.",
+                new { UserName = userName.Trim(), IdInsert = idInsert },
+                token);
+
+            return true;
+        }, "No se pudo actualizar el catálogo predeterminado.", ct);
+
+    private async Task<int> GetCatalogoPredeterminadoIdInternalAsync(SqlConnection cn, CancellationToken ct)
+    {
+        if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", ct))
+            return 0;
+
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+        var sql = $"""
+            SELECT TOP (1)
+                ISNULL(VALOR, ''),
+                ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+            """;
+
+        var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(
+            sql,
+            new { Clave = PredeterminadoConfigKey },
+            cancellationToken: ct));
+
+        var raw = ResolveStoredValue(row.Valor ?? string.Empty, row.ValorAux ?? string.Empty);
+        return int.TryParse(raw.Trim(), out var idInsert) && idInsert > 0 ? idInsert : 0;
+    }
 
     public Task<CatalogosClienteSessionInfo> LoginClienteAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct = default)
         => ExecuteCatalogoClienteLoginAsync(request, ct);
@@ -1451,6 +1525,16 @@ public sealed class InterfacesCatalogosService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
+            // IdInsert = 0 es un alias fijo para "el catálogo predeterminado" (configurado desde
+            // Interfaces > Catálogos), así /catalogo/0 y /carrito/0 siempre resuelven al mismo
+            // catálogo sin necesidad de conocer su IDINSERT real.
+            if (idInsert <= 0)
+            {
+                idInsert = await GetCatalogoPredeterminadoIdInternalAsync(cn, token);
+                if (idInsert <= 0)
+                    return null;
+            }
+
             const string where = "WHERE c.IDINSERT = @IdInsert";
 
             var sql = $"""
@@ -1507,6 +1591,7 @@ public sealed class InterfacesCatalogosService(
 
             await EnrichOfertaHastaAsync(items, header.IdLista, token);
             header.HabilitarCarrito = await GetCarritoHabilitadoAsync(idInsert, token);
+            header.Predeterminado = idInsert == await GetCatalogoPredeterminadoIdInternalAsync(cn, token);
 
             return header;
         }, soloPublico ? "No se pudo cargar el catálogo público." : "No se pudo cargar el catálogo.", ct);

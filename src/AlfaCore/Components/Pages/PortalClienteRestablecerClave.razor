@@ -1,0 +1,190 @@
+@page "/portal-cliente/restablecer-clave"
+@page "/{idweb}/{idbase:int}/portal-cliente/restablecer-clave"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits PortalClientePageBase
+@using AlfaCore.Models
+@using AlfaCore.Components.Shared
+@inject AlfaCore.Services.IPortalClienteRecuperarClaveService RecuperarClaveSvc
+
+<PageTitle>Restablecer contraseña | Portal Cliente</PageTitle>
+
+@if (NotFound)
+{
+    <section class="page-grid">
+        <section class="panel-card empty-state">
+            <h3 class="panel-card__title">Base no disponible</h3>
+            <p class="panel-card__subtitle">No se pudo resolver la base asociada a esta URL. Probá nuevamente desde el enlace correcto.</p>
+        </section>
+    </section>
+}
+else
+{
+    <div class="auth-page">
+        <LoginShell RootClass="auth-shell auth-shell--carrito">
+            <HeroContent>
+                <div class="auth-hero__brand">
+                    <img class="central-brand-logo central-login-logo" src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" loading="eager" decoding="async" />
+                </div>
+
+                <div class="auth-hero__copy">
+                    <p class="auth-card__eyebrow">@GetBrandingName()</p>
+                    <h2 class="auth-hero__title">Restablecer contraseña</h2>
+                    <p class="auth-hero__text">Definí una nueva contraseña para volver a acceder a tu cuenta.</p>
+                </div>
+            </HeroContent>
+
+            <FormContent>
+                <div class="auth-form-panel__glow auth-form-panel__glow--one" aria-hidden="true"></div>
+                <div class="auth-form-panel__glow auth-form-panel__glow--two" aria-hidden="true"></div>
+
+                <div class="auth-form-panel__surface">
+                    <div class="auth-mobile-brand" aria-hidden="true">
+                        <img class="central-brand-logo central-login-logo" src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" loading="eager" decoding="async" />
+                    </div>
+
+                    @if (_validando)
+                    {
+                        <p class="text-muted">Validando enlace...</p>
+                    }
+                    else if (!_tokenValido)
+                    {
+                        <header class="auth-form-panel__header">
+                            <h1 class="auth-card__title">Enlace no válido</h1>
+                            <p class="auth-card__subtitle">@_mensaje</p>
+                        </header>
+                        <div class="actions">
+                            <a class="btn btn--ghost" href="@BuildPortalRoute("")">
+                                <i class="bi bi-arrow-left"></i> Volver
+                            </a>
+                        </div>
+                    }
+                    else if (_exito)
+                    {
+                        <header class="auth-form-panel__header">
+                            <h1 class="auth-card__title">Contraseña actualizada</h1>
+                            <p class="auth-card__subtitle">@_mensaje</p>
+                        </header>
+                        <div class="actions">
+                            <a class="btn btn--primary" href="@BuildPortalRoute("")">
+                                <i class="bi bi-box-arrow-in-right"></i> Ir a iniciar sesión
+                            </a>
+                        </div>
+                    }
+                    else
+                    {
+                        <header class="auth-form-panel__header">
+                            <h1 class="auth-card__title">Nueva contraseña</h1>
+                            <p class="auth-card__subtitle">Elegí una contraseña de hasta 15 caracteres.</p>
+                        </header>
+
+                        @if (_mensaje is not null)
+                        {
+                            <div class="editor-msg editor-msg--error auth-card__error">
+                                <p>@_mensaje</p>
+                            </div>
+                        }
+
+                        <form class="auth-form" @onsubmit="GuardarAsync" @onsubmit:preventDefault="true">
+                            <div class="auth-field">
+                                <label for="restablecer-nueva-clave">Nueva contraseña</label>
+                                <AuthInputField Id="restablecer-nueva-clave"
+                                                Value="@_nuevaClave"
+                                                ValueChanged="v => _nuevaClave = v"
+                                                Placeholder="Nueva contraseña"
+                                                Disabled="@_guardando"
+                                                InputClass="central-login-input central-login-password__input auth-input-shell__input"
+                                                WrapperClass="auth-password central-login-password auth-input-shell auth-input-shell--password"
+                                                IconClass="bi bi-lock"
+                                                ShowPasswordToggle="true"
+                                                ShowPassword="@_show1"
+                                                ShowPasswordChanged="v => _show1 = v"
+                                                PasswordToggleClass="auth-password__toggle central-login-password__toggle"
+                                                PasswordToggleIconClass="@(_show1 ? "bi bi-eye-slash" : "bi bi-eye")"
+                                                PasswordToggleTitle="@(_show1 ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                                AdditionalAttributes="@_maxLengthAttr" />
+                            </div>
+
+                            <div class="auth-field">
+                                <label for="restablecer-confirmar-clave">Confirmar contraseña</label>
+                                <AuthInputField Id="restablecer-confirmar-clave"
+                                                Value="@_confirmarClave"
+                                                ValueChanged="v => _confirmarClave = v"
+                                                Placeholder="Confirmar contraseña"
+                                                Disabled="@_guardando"
+                                                InputClass="central-login-input central-login-password__input auth-input-shell__input"
+                                                WrapperClass="auth-password central-login-password auth-input-shell auth-input-shell--password"
+                                                IconClass="bi bi-lock"
+                                                ShowPasswordToggle="true"
+                                                ShowPassword="@_show2"
+                                                ShowPasswordChanged="v => _show2 = v"
+                                                PasswordToggleClass="auth-password__toggle central-login-password__toggle"
+                                                PasswordToggleIconClass="@(_show2 ? "bi bi-eye-slash" : "bi bi-eye")"
+                                                PasswordToggleTitle="@(_show2 ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                                AdditionalAttributes="@_maxLengthAttr" />
+                            </div>
+
+                            <AuthActionButton Type="submit"
+                                              CssClass="btn btn--primary auth-card__submit"
+                                              Text="Guardar contraseña"
+                                              BusyText="Guardando..."
+                                              IconClass="bi bi-check2"
+                                              BusyIconClass="spinner-border spinner-border-sm"
+                                              IsBusy="@_guardando"
+                                              Disabled="@_guardando" />
+                        </form>
+                    }
+                </div>
+            </FormContent>
+        </LoginShell>
+    </div>
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery] public string? token { get; set; }
+
+    private static readonly IReadOnlyDictionary<string, object> _maxLengthAttr = new Dictionary<string, object> { ["maxlength"] = "15" };
+
+    private bool _validando = true;
+    private bool _tokenValido;
+    private bool _exito;
+    private bool _guardando;
+    private string? _mensaje;
+    private string _nuevaClave = string.Empty;
+    private string _confirmarClave = string.Empty;
+    private bool _show1;
+    private bool _show2;
+
+    protected override async Task OnPortalInitializedAsync()
+    {
+        _validando = true;
+        var result = await RecuperarClaveSvc.ValidarTokenAsync(token ?? string.Empty);
+        _tokenValido = result.Valido;
+        _mensaje = result.Mensaje;
+        _validando = false;
+    }
+
+    private async Task GuardarAsync()
+    {
+        _guardando = true;
+        _mensaje = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await RecuperarClaveSvc.RestablecerAsync(new PortalClienteRestablecerClaveRequestDto
+            {
+                Token = token ?? string.Empty,
+                NuevaClave = _nuevaClave,
+                ConfirmarClave = _confirmarClave
+            });
+
+            _mensaje = result.Mensaje;
+            _exito = result.Exito;
+        }
+        finally
+        {
+            _guardando = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

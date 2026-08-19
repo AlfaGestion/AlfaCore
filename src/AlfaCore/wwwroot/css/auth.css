@@ -129,6 +129,43 @@ html:has(.app-login-overlay) {
     display: none;
 }
 
+/* Login comercial del Portal Cliente / carrito público: mismo shell que el resto de AlfaCore,
+   pero más compacto, sin el bloque "Catálogo" y con el formulario centrado y protagonista. */
+.auth-shell--carrito {
+    grid-template-columns: minmax(0, .88fr) minmax(380px, 1.12fr);
+    min-height: 0;
+}
+
+.auth-shell--carrito .auth-hero {
+    grid-template-rows: auto auto;
+    gap: 22px;
+    padding: 40px 36px;
+}
+
+.auth-shell--carrito .auth-hero__brand {
+    min-height: 0;
+}
+
+.auth-shell--carrito .central-brand-logo,
+.auth-shell--carrito .central-login-logo {
+    height: 140px;
+    max-width: 92%;
+}
+
+.auth-shell--carrito .auth-hero__copy {
+    max-width: 380px;
+}
+
+.auth-shell--carrito .auth-form-panel {
+    align-items: center;
+    padding: 24px 32px;
+}
+
+.auth-shell--carrito .auth-form-panel__surface {
+    width: min(100%, 400px);
+    padding: 26px 26px 22px;
+}
+
 .auth-hero {
     position: relative;
     display: grid;
@@ -966,6 +1003,27 @@ html:not([data-theme="light"]) .app-login-modal--compact .auth-input-shell__icon
 .auth-card__submit:focus-visible:not(:disabled) {
     transform: translateY(-1px);
     box-shadow: 0 22px 46px rgba(8, 145, 178, .42);
+    outline: none;
+}
+
+.auth-forgot-link {
+    display: block;
+    width: 100%;
+    margin: 2px 0 0;
+    padding: 4px 0 0;
+    border: 0;
+    background: transparent;
+    color: #7dd3fc;
+    font-size: .86rem;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.auth-forgot-link:hover,
+.auth-forgot-link:focus-visible {
+    text-decoration: underline;
     outline: none;
 }
 
@@ -1949,6 +2007,48 @@ html[data-theme="light"] .auth-page .base-search-input:focus-visible {
 }
 
 @media (max-width: 768px) {
+    .auth-page .auth-shell--carrito {
+        display: block;
+        min-height: 0;
+        max-height: calc(100dvh - 24px);
+        overflow: auto;
+        border-radius: 20px;
+    }
+
+    .auth-page .auth-shell--carrito .auth-hero {
+        display: none;
+    }
+
+    .auth-page .auth-shell--carrito .auth-form-panel {
+        width: 100%;
+        padding: 0;
+        background: transparent;
+    }
+
+    .auth-page .auth-shell--carrito .auth-form-panel__surface {
+        width: min(100%, 440px);
+        max-width: 440px;
+        margin: 0 auto;
+        padding: 22px 20px 18px;
+        border-radius: 22px;
+    }
+
+    .auth-page .auth-shell--carrito .auth-mobile-brand {
+        display: grid;
+        place-items: center;
+        margin: 2px 0 18px;
+    }
+
+    .auth-page .auth-shell--carrito .auth-mobile-brand .central-login-logo {
+        width: min(200px, 68vw);
+        max-width: 200px;
+        height: auto;
+        margin: 0;
+        object-position: center center;
+    }
+}
+
+@media (max-width: 768px) {
     .auth-page {
         padding: 12px 10px;
         align-items: center;
@@ -2716,6 +2816,10 @@ html[data-theme="light"] .auth-card__submit {
     border-color: rgba(6, 182, 212, .34) !important;
     background: linear-gradient(135deg, #0284c7 0%, #14b8a6 100%) !important;
     box-shadow: 0 16px 34px rgba(14, 165, 233, .20);
+}
+
+html[data-theme="light"] .auth-forgot-link {
+    color: #0284c7;
 }
 
 html[data-theme="light"] .auth-base-grid {

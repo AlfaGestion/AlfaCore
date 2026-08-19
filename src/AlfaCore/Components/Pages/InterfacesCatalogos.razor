@@ -219,6 +219,10 @@
                                                         break;
                                                     case CatalogosViewColumnKeys.Nombre:
                                                         @item.Nombre
+                                                        @if (item.Predeterminado)
+                                                        {
+                                                            <span class="badge text-bg-primary ms-1" title="Accesible vía /catalogo/0">Predeterminado</span>
+                                                        }
                                                         break;
                                                     case CatalogosViewColumnKeys.Vigencia:
                                                         @item.Vigencia
@@ -243,6 +247,18 @@
                                                 <button type="button" class="btn btn--ghost btn--sm" @onclick="() => FinalizarCatalogoAsync(item.IdInsert)" disabled="@item.Finalizado">
                                                     <i class="bi bi-check2-circle"></i> Finalizar
                                                 </button>
+                                                @if (item.Predeterminado)
+                                                {
+                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarPredeterminadoAsync()">
+                                                        <i class="bi bi-star-fill"></i> Quitar predeterminado
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MarcarPredeterminadoAsync(item.IdInsert)">
+                                                        <i class="bi bi-star"></i> Marcar como predeterminado
+                                                    </button>
+                                                }
                                             </div>
                                         </td>
                                     </tr>
@@ -2380,6 +2396,42 @@
         }
 
         _feedback = AppUiMessage.Success("Catálogo finalizado", $"El catálogo #{idInsert} quedó marcado como finalizado.");
+        await BuscarCatalogosAsync();
+    }
+
+    private async Task MarcarPredeterminadoAsync(int idInsert)
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await CatalogosSvc.SetCatalogoPredeterminadoAsync(_catalogosUserName, idInsert, _disposeCts.Token);
+            return true;
+        }, "No se pudo marcar el catálogo como predeterminado.");
+
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _feedback = AppUiMessage.Success("Catálogo predeterminado", $"El catálogo #{idInsert} ahora es accesible vía /catalogo/0.");
+        await BuscarCatalogosAsync();
+    }
+
+    private async Task QuitarPredeterminadoAsync()
+    {
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await CatalogosSvc.SetCatalogoPredeterminadoAsync(_catalogosUserName, 0, _disposeCts.Token);
+            return true;
+        }, "No se pudo quitar el catálogo predeterminado.");
+
+        if (!result.Success)
+        {
+            _feedback = result.Feedback;
+            return;
+        }
+
+        _feedback = AppUiMessage.Success("Catálogo predeterminado", "Ya no hay ningún catálogo marcado como predeterminado.");
         await BuscarCatalogosAsync();
     }
 

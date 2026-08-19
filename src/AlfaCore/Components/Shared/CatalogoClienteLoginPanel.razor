@@ -1,5 +1,7 @@
 @using AlfaCore.Models
 @using Microsoft.AspNetCore.Components.Web
+@inject AlfaCore.Services.IPortalClienteRecuperarClaveService RecuperarClaveSvc
+@inject NavigationManager Nav
 
 <div class="auth-page">
     <LoginShell RootClass="auth-shell auth-shell--carrito">
@@ -10,23 +12,9 @@
 
             <div class="auth-hero__copy">
                 <p class="auth-card__eyebrow">@BrandName</p>
-                <h2 class="auth-hero__title">Acceso de clientes</h2>
-                <p class="auth-hero__text">Ingresá para continuar desde este catálogo.</p>
+                <h2 class="auth-hero__title">Compras y pedidos online</h2>
+                <p class="auth-hero__text">Accedé a tu cuenta para consultar productos, hacer pedidos y revisar tus movimientos.</p>
             </div>
-
-            @if (!string.IsNullOrWhiteSpace(CatalogoNombre))
-            {
-                <div class="auth-hero__summary">
-                    <article class="auth-hero__summary-card auth-hero__summary-card--accent">
-                        <span class="auth-hero__summary-label">Catálogo</span>
-                        <strong>@CatalogoNombre</strong>
-                        @if (!string.IsNullOrWhiteSpace(VigenciaTexto))
-                        {
-                            <small>Vigencia: @VigenciaTexto</small>
-                        }
-                    </article>
-                </div>
-            }
         </HeroContent>
 
         <FormContent>
@@ -38,71 +26,117 @@
                     <img class="central-brand-logo central-login-logo" src="@BrandLogoUrl" alt="@BrandName" loading="eager" decoding="async" />
                 </div>
 
-                <header class="auth-form-panel__header">
-                    <h1 class="auth-card__title">Ingresar</h1>
-                    <p class="auth-card__subtitle">Usá tu código de cliente o email y tu contraseña.</p>
-                </header>
-
-                @if (Feedback is not null)
+                @if (!_recuperarAbierto)
                 {
-                    <div class="editor-msg editor-msg--error auth-card__error">
-                        <strong>@Feedback.Title</strong>
-                        <p>@Feedback.Message</p>
-                    </div>
+                    <header class="auth-form-panel__header">
+                        <h1 class="auth-card__title">Acceso clientes</h1>
+                        <p class="auth-card__subtitle">Usá tu código de cliente o email y tu contraseña.</p>
+                    </header>
+
+                    @if (Feedback is not null)
+                    {
+                        <div class="editor-msg editor-msg--error auth-card__error">
+                            <strong>@Feedback.Title</strong>
+                            <p>@Feedback.Message</p>
+                        </div>
+                    }
+
+                    <form class="auth-form" @onsubmit="HandleSubmitAsync" @onsubmit:preventDefault="true">
+                        <div class="auth-field">
+                            <label for="cliente-login-user">Código o email</label>
+                            <AuthInputField @ref="_codigoField"
+                                            Id="cliente-login-user"
+                                            Value="@Codigo"
+                                            ValueChanged="OnCodigoChangedAsync"
+                                            Placeholder="Código de cliente o email"
+                                            Disabled="@Busy"
+                                            Autocomplete="username"
+                                            InputMode="text"
+                                            InputClass="central-login-input auth-input-shell__input"
+                                            WrapperClass="auth-input-shell auth-input-shell--user"
+                                            IconClass="bi bi-person"
+                                            OnKeyDown="OnKeyDownAsync" />
+                        </div>
+
+                        <div class="auth-field">
+                            <label for="cliente-login-password">Contraseña</label>
+                            <AuthInputField Id="cliente-login-password"
+                                            Value="@Password"
+                                            ValueChanged="OnPasswordChangedAsync"
+                                            Placeholder="Contraseña"
+                                            Disabled="@Busy"
+                                            Autocomplete="current-password"
+                                            InputClass="central-login-input central-login-password__input auth-input-shell__input"
+                                            WrapperClass="auth-password central-login-password auth-input-shell auth-input-shell--password"
+                                            IconClass="bi bi-lock"
+                                            ShowPasswordToggle="true"
+                                            ShowPassword="@ShowPassword"
+                                            ShowPasswordChanged="OnShowPasswordChangedAsync"
+                                            PasswordToggleClass="auth-password__toggle central-login-password__toggle"
+                                            PasswordToggleIconClass="@(ShowPassword ? "bi bi-eye-slash" : "bi bi-eye")"
+                                            PasswordToggleTitle="@(ShowPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
+                                            OnKeyDown="OnKeyDownAsync" />
+                        </div>
+
+                        <AuthActionButton Type="submit"
+                                          CssClass="btn btn--primary auth-card__submit"
+                                          Text="Ingresar"
+                                          BusyText="Ingresando..."
+                                          IconClass="bi bi-box-arrow-in-right"
+                                          BusyIconClass="spinner-border spinner-border-sm"
+                                          IsBusy="@Busy"
+                                          Disabled="@Busy" />
+
+                        <button type="button" class="auth-forgot-link" @onclick="AbrirRecuperarAsync">¿Olvidaste tu contraseña?</button>
+
+                        <div class="actions">
+                            <a class="btn btn--ghost" href="@VolverUrl">
+                                <i class="bi bi-arrow-left"></i> @VolverTexto
+                            </a>
+                        </div>
+                    </form>
                 }
+                else
+                {
+                    <header class="auth-form-panel__header">
+                        <h1 class="auth-card__title">Recuperar contraseña</h1>
+                        <p class="auth-card__subtitle">Ingresá tu código de cliente o email y te enviaremos instrucciones para recuperar el acceso.</p>
+                    </header>
 
-                <form class="auth-form" @onsubmit="HandleSubmitAsync" @onsubmit:preventDefault="true">
-                    <div class="auth-field">
-                        <label for="cliente-login-user">Código o email</label>
-                        <AuthInputField @ref="_codigoField"
-                                        Id="cliente-login-user"
-                                        Value="@Codigo"
-                                        ValueChanged="OnCodigoChangedAsync"
-                                        Placeholder="Código de cliente o email"
-                                        Disabled="@Busy"
-                                        Autocomplete="username"
-                                        InputMode="text"
-                                        InputClass="central-login-input auth-input-shell__input"
-                                        WrapperClass="auth-input-shell auth-input-shell--user"
-                                        IconClass="bi bi-person"
-                                        OnKeyDown="OnKeyDownAsync" />
-                    </div>
+                    @if (_recuperarMensaje is not null)
+                    {
+                        <div class="editor-msg editor-msg--ok auth-card__error">
+                            <p>@_recuperarMensaje</p>
+                        </div>
+                    }
 
-                    <div class="auth-field">
-                        <label for="cliente-login-password">Contraseña</label>
-                        <AuthInputField Id="cliente-login-password"
-                                        Value="@Password"
-                                        ValueChanged="OnPasswordChangedAsync"
-                                        Placeholder="Contraseña"
-                                        Disabled="@Busy"
-                                        Autocomplete="current-password"
-                                        InputClass="central-login-input central-login-password__input auth-input-shell__input"
-                                        WrapperClass="auth-password central-login-password auth-input-shell auth-input-shell--password"
-                                        IconClass="bi bi-lock"
-                                        ShowPasswordToggle="true"
-                                        ShowPassword="@ShowPassword"
-                                        ShowPasswordChanged="OnShowPasswordChangedAsync"
-                                        PasswordToggleClass="auth-password__toggle central-login-password__toggle"
-                                        PasswordToggleIconClass="@(ShowPassword ? "bi bi-eye-slash" : "bi bi-eye")"
-                                        PasswordToggleTitle="@(ShowPassword ? "Ocultar contraseña" : "Mostrar contraseña")"
-                                        OnKeyDown="OnKeyDownAsync" />
-                    </div>
+                    <form class="auth-form" @onsubmit="SolicitarRecuperacionAsync" @onsubmit:preventDefault="true">
+                        <div class="auth-field">
+                            <label for="cliente-recuperar-user">Código o email</label>
+                            <AuthInputField Id="cliente-recuperar-user"
+                                            Value="@_recuperarIdentificador"
+                                            ValueChanged="v => _recuperarIdentificador = v"
+                                            Placeholder="Código de cliente o email"
+                                            Disabled="@_recuperarBusy"
+                                            Autocomplete="username"
+                                            InputMode="text"
+                                            InputClass="central-login-input auth-input-shell__input"
+                                            WrapperClass="auth-input-shell auth-input-shell--user"
+                                            IconClass="bi bi-person" />
+                        </div>
 
-                    <AuthActionButton Type="submit"
-                                      CssClass="btn btn--primary auth-card__submit"
-                                      Text="Ingresar"
-                                      BusyText="Ingresando..."
-                                      IconClass="bi bi-box-arrow-in-right"
-                                      BusyIconClass="spinner-border spinner-border-sm"
-                                      IsBusy="@Busy"
-                                      Disabled="@Busy" />
+                        <AuthActionButton Type="submit"
+                                          CssClass="btn btn--primary auth-card__submit"
+                                          Text="Enviar instrucciones"
+                                          BusyText="Enviando..."
+                                          IconClass="bi bi-send"
+                                          BusyIconClass="spinner-border spinner-border-sm"
+                                          IsBusy="@_recuperarBusy"
+                                          Disabled="@_recuperarBusy" />
 
-                    <div class="actions">
-                        <a class="btn btn--ghost" href="@VolverUrl">
-                            <i class="bi bi-arrow-left"></i> @VolverTexto
-                        </a>
-                    </div>
-                </form>
+                        <button type="button" class="auth-forgot-link" @onclick="CerrarRecuperarAsync">Volver a ingresar</button>
+                    </form>
+                }
             </div>
         </FormContent>
     </LoginShell>
@@ -110,11 +144,17 @@
 
 @code {
     private AuthInputField? _codigoField;
+    private bool _recuperarAbierto;
+    private bool _recuperarBusy;
+    private string _recuperarIdentificador = string.Empty;
+    private string? _recuperarMensaje;
 
     [Parameter] public string? CatalogoNombre { get; set; }
     [Parameter] public string? VigenciaTexto { get; set; }
     [Parameter, EditorRequired] public string BrandLogoUrl { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string BrandName { get; set; } = string.Empty;
+    [Parameter] public string? IdWeb { get; set; }
+    [Parameter] public int? IdBase { get; set; }
     [Parameter] public string Codigo { get; set; } = string.Empty;
     [Parameter] public EventCallback<string> CodigoChanged { get; set; }
     [Parameter] public string Password { get; set; } = string.Empty;
@@ -140,5 +180,63 @@
     {
         if (string.Equals(args.Key, "Enter", StringComparison.Ordinal))
             await HandleSubmitAsync();
+    }
+
+    private Task AbrirRecuperarAsync()
+    {
+        _recuperarAbierto = true;
+        _recuperarIdentificador = Codigo;
+        _recuperarMensaje = null;
+        return Task.CompletedTask;
+    }
+
+    private Task CerrarRecuperarAsync()
+    {
+        _recuperarAbierto = false;
+        _recuperarMensaje = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task SolicitarRecuperacionAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_recuperarIdentificador))
+            return;
+
+        _recuperarBusy = true;
+        _recuperarMensaje = null;
+        StateHasChanged();
+
+        try
+        {
+            var result = await RecuperarClaveSvc.SolicitarAsync(new PortalClienteRecuperarClaveRequestDto
+            {
+                Identificador = _recuperarIdentificador,
+                IdWeb = IdWeb,
+                IdBase = IdBase,
+                UrlBaseRestablecer = BuildRestablecerUrlAbsoluta(),
+                NombreEmpresa = BrandName,
+                LogoUrlAbsoluta = string.IsNullOrWhiteSpace(BrandLogoUrl) ? null : Nav.ToAbsoluteUri(BrandLogoUrl).ToString()
+            });
+
+            _recuperarMensaje = result.Mensaje;
+        }
+        catch
+        {
+            _recuperarMensaje = "No pudimos procesar la solicitud en este momento. Intentá nuevamente.";
+        }
+        finally
+        {
+            _recuperarBusy = false;
+            StateHasChanged();
+        }
+    }
+
+    private string BuildRestablecerUrlAbsoluta()
+    {
+        var path = "/portal-cliente/restablecer-clave";
+        if (!string.IsNullOrWhiteSpace(IdWeb) && IdBase is > 0)
+            path = $"/{Uri.EscapeDataString(IdWeb)}/{IdBase.Value}{path}";
+
+        return Nav.ToAbsoluteUri(path).ToString();
     }
 }
