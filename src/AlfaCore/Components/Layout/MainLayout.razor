@@ -2003,14 +2003,17 @@ else
         if (!IsDirectMode)
             return false;
 
-        var normalizedPath = GetNormalizedCurrentPath();
+        // GetEffectiveCurrentPath() saca el prefijo /{idweb}/{idbase} en modo SaaS antes de comparar.
+        // Comparar contra GetNormalizedCurrentPath() (ruta cruda, con prefijo) hacia que esto nunca
+        // matcheara en SaaS y te mandara de vuelta al home del modulo perdiendo tenant y subruta.
+        var normalizedPath = GetEffectiveCurrentPath();
         var isAllowedModuleRoute = normalizedPath == _directModuleKey
             || normalizedPath.StartsWith($"{_directModuleKey}/", StringComparison.OrdinalIgnoreCase);
 
         if (isAllowedModuleRoute)
             return false;
 
-        var target = $"/{_directModuleKey}?directo=1";
+        var target = AppendDirectFlag(RouteContext.BuildRoute("/" + _directModuleKey));
         Nav.NavigateTo(target);
         return true;
     }
