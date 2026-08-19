@@ -13,39 +13,43 @@
     </div>
 
     <div class="portal-cliente__header-actions">
-        <button type="button"
-                class="btn btn--ghost btn--sm portal-cliente__theme-button"
-                @onclick="ToggleThemeAsync"
-                title="@(_isDark ? "Cambiar a tema claro" : "Cambiar a tema oscuro")"
-                aria-label="@(_isDark ? "Cambiar a tema claro" : "Cambiar a tema oscuro")">
-            <i class="bi @(_isDark ? "bi-sun" : "bi-moon")"></i>
-        </button>
-        <button type="button" class="btn btn--ghost btn--sm" @onclick="OnLogout" disabled="@Busy">
-            <i class="bi bi-box-arrow-right"></i> <span>Cerrar sesión</span>
-        </button>
+        <AlfaIconButton Icon="@(_isDark ? "bi bi-sun" : "bi bi-moon")"
+                        Label="@(_isDark ? "Cambiar a tema claro" : "Cambiar a tema oscuro")"
+                        Tooltip="@(_isDark ? "Cambiar a tema claro" : "Cambiar a tema oscuro")"
+                        Size="AlfaSize.Sm"
+                        Class="portal-cliente__theme-button"
+                        OnClick="ToggleThemeClickAsync" />
+        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                    Size="AlfaSize.Sm"
+                    Icon="bi bi-box-arrow-right"
+                    Class="portal-cliente__logout-button"
+                    Disabled="@Busy"
+                    OnClick="HandleLogoutClickAsync">
+            Cerrar sesión
+        </AlfaButton>
     </div>
 </section>
 
 <nav class="portal-cliente__tabs" aria-label="Secciones del Portal Cliente">
-    <a class="portal-cliente__tab @(ActiveTab == "inicio" ? "is-active" : "")" href="@RouteInicio">
+    <a class="portal-cliente__tab @(ActiveTab == "inicio" ? "is-active" : "")" href="@RouteInicio" aria-current="@(ActiveTab == "inicio" ? "page" : null)">
         <i class="bi bi-house"></i> Inicio
     </a>
-    <a class="portal-cliente__tab @(ActiveTab == "cuenta-corriente" ? "is-active" : "")" href="@RouteCuentaCorriente">
+    <a class="portal-cliente__tab @(ActiveTab == "cuenta-corriente" ? "is-active" : "")" href="@RouteCuentaCorriente" aria-current="@(ActiveTab == "cuenta-corriente" ? "page" : null)">
         <i class="bi bi-cash-stack"></i> Cuenta corriente
     </a>
-    <a class="portal-cliente__tab @(ActiveTab == "lista-precios" ? "is-active" : "")" href="@RouteListaPrecios">
+    <a class="portal-cliente__tab @(ActiveTab == "lista-precios" ? "is-active" : "")" href="@RouteListaPrecios" aria-current="@(ActiveTab == "lista-precios" ? "page" : null)">
         <i class="bi bi-tags"></i> Lista de precios
     </a>
-    <a class="portal-cliente__tab @(ActiveTab == "catalogos" ? "is-active" : "")" href="@RouteCatalogos">
+    <a class="portal-cliente__tab @(ActiveTab == "catalogos" ? "is-active" : "")" href="@RouteCatalogos" aria-current="@(ActiveTab == "catalogos" ? "page" : null)">
         <i class="bi bi-book"></i> Catálogos
     </a>
-    <a class="portal-cliente__tab @(ActiveTab == "carrito" ? "is-active" : "")" href="@RouteCarrito">
+    <a class="portal-cliente__tab @(ActiveTab == "carrito" ? "is-active" : "")" href="@RouteCarrito" aria-current="@(ActiveTab == "carrito" ? "page" : null)">
         <i class="bi bi-cart3"></i> Carrito de compra
     </a>
-    <a class="portal-cliente__tab @(ActiveTab == "pedidos" ? "is-active" : "")" href="@RoutePedidos">
+    <a class="portal-cliente__tab @(ActiveTab == "pedidos" ? "is-active" : "")" href="@RoutePedidos" aria-current="@(ActiveTab == "pedidos" ? "page" : null)">
         <i class="bi bi-receipt"></i> Pedidos
     </a>
-    <a class="portal-cliente__tab @(ActiveTab == "mi-cuenta" ? "is-active" : "")" href="@RouteMiCuenta">
+    <a class="portal-cliente__tab @(ActiveTab == "mi-cuenta" ? "is-active" : "")" href="@RouteMiCuenta" aria-current="@(ActiveTab == "mi-cuenta" ? "page" : null)">
         <i class="bi bi-person-circle"></i> Mi cuenta
     </a>
 </nav>
@@ -110,6 +114,12 @@
         {
         }
     }
+
+    private Task ToggleThemeClickAsync(MouseEventArgs _)
+        => ToggleThemeAsync();
+
+    private Task HandleLogoutClickAsync(MouseEventArgs _)
+        => OnLogout.InvokeAsync();
 
     private void ApplyTheme(string? theme)
         => _isDark = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);

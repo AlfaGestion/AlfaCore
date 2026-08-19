@@ -53,10 +53,10 @@ else
                               RoutePedidos="@BuildPortalRoute("pedidos")"
                               RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
 
-        <section class="panel-card empty-state">
-            <h3 class="panel-card__title">Catálogos</h3>
-            <p class="panel-card__subtitle">Estamos preparando esta sección. Todavía no hay catálogos disponibles acá.</p>
-        </section>
+        <CatalogoPublico idweb="@idweb"
+                         idbase="@idbase"
+                         IdInsert="0"
+                         Embedded="true" />
     </section>
 }
 

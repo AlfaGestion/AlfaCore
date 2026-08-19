@@ -107,9 +107,10 @@ else
             }
             else if (_pedidosRecientes.Count == 0)
             {
-                <div class="empty-state">
-                    <p>Todavía no tenés pedidos registrados.</p>
-                </div>
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                Title="Todavía no tenés pedidos registrados."
+                                Message="Tus pedidos recientes van a aparecer acá cuando hagas operaciones desde el portal."
+                                Class="portal-cliente__empty-state" />
             }
             else
             {

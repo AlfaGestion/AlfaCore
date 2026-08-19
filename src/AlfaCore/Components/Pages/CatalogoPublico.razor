@@ -16,39 +16,42 @@
 
 <PageTitle>Catálogo público | AlfaCore</PageTitle>
 
-<section class="page-grid catalogo-publico-page">
-    <section class="catalogo-publico-hero panel-card catalogo-publico-hero--sticky">
-        <div class="catalogo-publico-hero__brand">
-            <a class="catalogo-publico-hero__logo @GetBrandingLogoFrameClass()" href="@GetPublicCatalogUrl()" title="Catálogo público" aria-label="Catálogo público">
-                <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
-            </a>
-            <div class="catalogo-publico-hero__copy">
-                <p class="catalogo-publico-hero__eyebrow">@GetBrandingName()</p>
-                <h2 class="catalogo-publico-hero__title">@GetCatalogHeaderTitle()</h2>
-                @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderSubtitle()))
+<section class="@(Embedded ? "catalogo-publico-page catalogo-publico-page--embedded" : "page-grid catalogo-publico-page")">
+    @if (!Embedded)
+    {
+        <section class="catalogo-publico-hero panel-card catalogo-publico-hero--sticky">
+            <div class="catalogo-publico-hero__brand">
+                <a class="catalogo-publico-hero__logo @GetBrandingLogoFrameClass()" href="@GetPublicCatalogUrl()" title="Catálogo público" aria-label="Catálogo público">
+                    <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
+                </a>
+                <div class="catalogo-publico-hero__copy">
+                    <p class="catalogo-publico-hero__eyebrow">@GetBrandingName()</p>
+                    <h2 class="catalogo-publico-hero__title">@GetCatalogHeaderTitle()</h2>
+                    @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderSubtitle()))
+                    {
+                        <p class="catalogo-publico-hero__text">@GetCatalogHeaderSubtitle()</p>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(_catalogo?.Observaciones))
+                    {
+                        <p class="catalogo-publico-hero__description">@_catalogo.Observaciones.Trim()</p>
+                    }
+                </div>
+            </div>
+
+            <div class="catalogo-publico-hero__actions">
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleThemeAsync" title="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")">
+                    <i class="bi @(_isDark ? "bi-sun" : "bi-moon")"></i>
+                </button>
+                @if (IsAuthenticatedForCurrentCatalog)
                 {
-                    <p class="catalogo-publico-hero__text">@GetCatalogHeaderSubtitle()</p>
-                }
-                @if (!string.IsNullOrWhiteSpace(_catalogo?.Observaciones))
-                {
-                    <p class="catalogo-publico-hero__description">@_catalogo.Observaciones.Trim()</p>
+                    <span class="badge text-bg-secondary">Cliente: @GetCurrentClientLabel()</span>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="LogoutClienteAsync" disabled="@_sessionBusy">
+                        <i class="bi bi-box-arrow-right"></i> Cerrar sesión
+                    </button>
                 }
             </div>
-        </div>
-
-        <div class="catalogo-publico-hero__actions">
-            <button type="button" class="btn btn--ghost btn--sm" @onclick="ToggleThemeAsync" title="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")">
-                <i class="bi @(_isDark ? "bi-sun" : "bi-moon")"></i>
-            </button>
-            @if (IsAuthenticatedForCurrentCatalog)
-            {
-                <span class="badge text-bg-secondary">Cliente: @GetCurrentClientLabel()</span>
-                <button type="button" class="btn btn--ghost btn--sm" @onclick="LogoutClienteAsync" disabled="@_sessionBusy">
-                    <i class="bi bi-box-arrow-right"></i> Cerrar sesión
-                </button>
-            }
-        </div>
-    </section>
+        </section>
+    }
 
     @if (_loading)
     {
@@ -292,6 +295,7 @@
     private const string ClientTokenStorageKey = "alfacore_catalogo_cliente_token";
 
     [Parameter] public int IdInsert { get; set; }
+    [Parameter] public bool Embedded { get; set; }
 
     private CatalogosCatalogoDetalleDto? _catalogo;
     private CatalogosPublicIdentityDto _branding = new();

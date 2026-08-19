@@ -108,7 +108,9 @@ public sealed class CentralRegistrationService(
             await UpsertPendingAsync(central, normalized, verificationCode, ct);
 
             var verificationUrl = BuildVerificationUrl(normalized.PublicBaseUrl, verificationCode);
-            await SendVerificationEmailAsync(normalized, verificationUrl, ct);
+            var companyName = ResolvePublicCompanyName();
+            var logoUrl = ResolvePublicLogoUrl(normalized.PublicBaseUrl);
+            await SendVerificationEmailAsync(normalized, companyName, logoUrl, verificationUrl, ct);
 
             await appEvents.LogAuditAsync(
                 ModuleName,
@@ -700,7 +702,12 @@ public sealed class CentralRegistrationService(
             cancellationToken: ct));
     }
 
-    private async Task SendVerificationEmailAsync(PublicRegistrationRequest request, string verificationUrl, CancellationToken ct)
+    private async Task SendVerificationEmailAsync(
+        PublicRegistrationRequest request,
+        string companyName,
+        string? logoUrl,
+        string verificationUrl,
+        CancellationToken ct)
     {
         var smtpServer = ResolveServerConfig("RegistroPublico:EmailServer", "EMAIL_SERVER");
         var smtpPort = ResolveServerConfig("RegistroPublico:EmailPort", "EMAIL_PORT");
@@ -719,11 +726,13 @@ public sealed class CentralRegistrationService(
         if (!int.TryParse(smtpPort, out var port) || port <= 0)
             throw new InvalidOperationException("El puerto SMTP del registro público no es válido.");
 
+        var displayName = string.IsNullOrWhiteSpace(companyName) ? smtpAccount.Trim() : companyName.Trim();
+
         using var message = new MailMessage
         {
-            From = new MailAddress(smtpAccount.Trim()),
-            Subject = "Verificación cuenta Alfa Net",
-            Body = BuildVerificationEmailHtml(request.Nombre, verificationUrl),
+            From = new MailAddress(smtpAccount.Trim(), displayName),
+            Subject = $"Verificación cuenta {displayName}",
+            Body = BuildVerificationEmailHtml(request.Nombre, displayName, logoUrl, verificationUrl),
             IsBodyHtml = true
         };
 
@@ -747,7 +756,43 @@ public sealed class CentralRegistrationService(
            ?? configuration[fallbackKey]?.Trim()
            ?? string.Empty;
 
-    private static string BuildVerificationEmailHtml(string nombre, string verificationUrl)
+    private string ResolvePublicCompanyName()
+    {
+        var companyName = configuration["NOMBRE"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(companyName))
+            return companyName;
+
+        companyName = configuration["RegistroPublico:NOMBRE"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(companyName))
+            return companyName;
+
+        companyName = configuration["RegistroPublico:NombreEmpresa"]?.Trim();
+        if (!string.IsNullOrWhiteSpace(companyName))
+            return companyName;
+
+        companyName = configuration["ServidorWeb:NombreAplicacion"]?.Trim();
+        return string.IsNullOrWhiteSpace(companyName) ? "Alfa Gestión" : companyName;
+    }
+
+    private string? ResolvePublicLogoUrl(string publicBaseUrl)
+    {
+        var logo = configuration["LOGO"]?.Trim();
+        if (string.IsNullOrWhiteSpace(logo))
+            logo = configuration["RegistroPublico:LogoUrl"]?.Trim();
+
+        if (string.IsNullOrWhiteSpace(logo))
+            logo = "/logos/Logo.png";
+
+        if (Uri.TryCreate(logo, UriKind.Absolute, out var absolute))
+            return absolute.ToString();
+
+        if (string.IsNullOrWhiteSpace(publicBaseUrl) || !Uri.TryCreate(publicBaseUrl, UriKind.Absolute, out var baseUri))
+            return logo;
+
+        return new Uri(baseUri, logo.TrimStart('/')).ToString();
+    }
+
+    private static string BuildVerificationEmailHtml(string nombre, string companyName, string? logoUrl, string verificationUrl)
     {
         static string E(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
 
@@ -757,12 +802,25 @@ public sealed class CentralRegistrationService(
             <html lang="es">
             <head>
               <meta charset="utf-8" />
-              <title>Verificación cuenta Alfa Net</title>
+            """);
+        sb.Append("              <title>Verificación cuenta ").Append(E(companyName)).AppendLine("</title>");
+        sb.Append("""
             </head>
             <body style="font-family:Segoe UI,Arial,sans-serif;background:#f4f7fb;padding:24px;color:#142133;">
               <div style="max-width:720px;margin:0 auto;background:#ffffff;border:1px solid #d9e3ef;border-radius:18px;overflow:hidden;">
                 <div style="padding:24px 28px;background:#0f2138;color:#ffffff;">
-                  <h1 style="margin:0;font-size:28px;">Alfa Net Web</h1>
+            """);
+        if (!string.IsNullOrWhiteSpace(logoUrl))
+        {
+            sb.Append("<img src=\"").Append(E(logoUrl)).Append("\" alt=\"").Append(E(companyName))
+              .Append("\" style=\"max-height:44px;max-width:220px;display:block;margin-bottom:10px;\" />");
+        }
+        sb.Append("""
+                  <h1 style="margin:0;font-size:28px;">
+            """);
+        sb.Append(E(companyName));
+        sb.Append("""
+                  </h1>
                   <p style="margin:8px 0 0;font-size:15px;opacity:.92;">Confirmación de cuenta</p>
                 </div>
                 <div style="padding:28px;">

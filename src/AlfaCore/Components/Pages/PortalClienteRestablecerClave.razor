@@ -77,7 +77,7 @@ else
                             <p class="auth-card__subtitle">Elegí una contraseña de hasta 15 caracteres.</p>
                         </header>
 
-                        @if (_mensaje is not null)
+                        @if (!string.IsNullOrWhiteSpace(_mensaje))
                         {
                             <div class="editor-msg editor-msg--error auth-card__error">
                                 <p>@_mensaje</p>
@@ -159,7 +159,7 @@ else
         _validando = true;
         var result = await RecuperarClaveSvc.ValidarTokenAsync(token ?? string.Empty);
         _tokenValido = result.Valido;
-        _mensaje = result.Mensaje;
+        _mensaje = string.IsNullOrWhiteSpace(result.Mensaje) ? null : result.Mensaje;
         _validando = false;
     }
 
@@ -178,7 +178,7 @@ else
                 ConfirmarClave = _confirmarClave
             });
 
-            _mensaje = result.Mensaje;
+            _mensaje = string.IsNullOrWhiteSpace(result.Mensaje) ? null : result.Mensaje;
             _exito = result.Exito;
         }
         finally
