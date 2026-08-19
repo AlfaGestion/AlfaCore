@@ -5,6 +5,7 @@
 @using Microsoft.AspNetCore.Components
 @inject ICentralRegistrationService RegistrationService
 @inject ICentralAdminService AdminService
+@inject IPlanesService PlanesSvc
 
 <PageTitle>Verificación | AlfaNet</PageTitle>
 
@@ -41,9 +42,9 @@
                 {
                     <div class="modulos">
                         <div class="modulos__intro">
-                            <span class="modulos__badge">30 días gratis</span>
+                            <span class="modulos__badge">Probá gratis</span>
                             <h3>Elegí con qué querés arrancar</h3>
-                            <p>Activá todos los que quieras probar sin costo. Te avisamos por email antes de que venza cada prueba — si no lo contratás, se desactiva solo, sin sorpresas.</p>
+                            <p>Activá todos los que quieras probar sin costo — los días de prueba de cada uno dependen del plan que elijas. Te avisamos por email antes de que venza cada prueba; si no la contratás, se desactiva sola, sin sorpresas.</p>
                         </div>
 
                         @if (_modulosLoading)
@@ -59,22 +60,66 @@
                             <div class="modulos__grid">
                                 @foreach (var modulo in _modulos)
                                 {
-                                    var seleccionado = _seleccionados.Contains(modulo.Id);
                                     var info = GetModuloInfo(modulo.Codigo);
-                                    <label @key="modulo.Id" class="modulo-card @(seleccionado ? "is-selected" : string.Empty)">
-                                        <input type="checkbox" class="modulo-card__checkbox" checked="@seleccionado"
-                                               @onchange="args => ToggleModulo(modulo.Id, args)" />
-                                        <span class="modulo-card__icon"><i class="bi @info.Icono"></i></span>
-                                        <span class="modulo-card__body">
-                                            <span class="modulo-card__name">@modulo.Nombre</span>
-                                            <span class="modulo-card__desc">@info.Descripcion</span>
-                                            @if (modulo.Precio > 0)
-                                            {
-                                                <span class="modulo-card__price">USD @modulo.Precio.ToString("0.##")/mes después de la prueba</span>
-                                            }
-                                        </span>
-                                        <span class="modulo-card__mark"><i class="bi bi-check-lg"></i></span>
-                                    </label>
+                                    var planes = _planesPorModulo.TryGetValue(modulo.Codigo, out var planesModulo) ? planesModulo : [];
+
+                                    if (planes.Count > 0)
+                                    {
+                                        <div @key="modulo.Id" class="modulo-card modulo-card--planes">
+                                            <span class="modulo-card__icon"><i class="bi @info.Icono"></i></span>
+                                            <span class="modulo-card__body">
+                                                <span class="modulo-card__name">@modulo.Nombre</span>
+                                                <span class="modulo-card__desc">@info.Descripcion</span>
+                                                <div class="plan-option-list">
+                                                    @foreach (var plan in planes)
+                                                    {
+                                                        var idModuloActual = modulo.Id;
+                                                        var idPlanActual = plan.Id;
+                                                        var seleccionado = _planesSeleccionados.TryGetValue(idModuloActual, out var idPlanElegido) && idPlanElegido == idPlanActual;
+                                                        <label @key="plan.Id" class="plan-option @(seleccionado ? "is-selected" : string.Empty)">
+                                                            <input type="radio" name="@($"plan-modulo-{idModuloActual}")" class="plan-option__radio"
+                                                                   checked="@seleccionado" @onchange="() => ElegirPlan(idModuloActual, idPlanActual)" />
+                                                            <span class="plan-option__body">
+                                                                <span class="plan-option__name">@plan.Nombre</span>
+                                                                <span class="plan-option__price">@plan.Moneda @plan.Precio.ToString("0.##")@PlanDisplayHelper.FormatPeriodoCorto(plan.TipoFacturacion)</span>
+                                                                @if (plan.DiasPrueba > 0)
+                                                                {
+                                                                    <span class="plan-option__trial"><i class="bi bi-gift-fill"></i> @plan.DiasPrueba días gratis</span>
+                                                                }
+                                                            </span>
+                                                            <span class="plan-option__mark"><i class="bi bi-check-lg"></i></span>
+                                                        </label>
+                                                    }
+                                                    <label class="plan-option plan-option--none @(!_planesSeleccionados.ContainsKey(modulo.Id) ? "is-selected" : string.Empty)">
+                                                        <input type="radio" name="@($"plan-modulo-{modulo.Id}")" class="plan-option__radio"
+                                                               checked="@(!_planesSeleccionados.ContainsKey(modulo.Id))" @onchange="() => QuitarPlan(modulo.Id)" />
+                                                        <span class="plan-option__body">
+                                                            <span class="plan-option__name">No, gracias</span>
+                                                        </span>
+                                                        <span class="plan-option__mark"><i class="bi bi-check-lg"></i></span>
+                                                    </label>
+                                                </div>
+                                            </span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        var seleccionado = _seleccionados.Contains(modulo.Id);
+                                        <label @key="modulo.Id" class="modulo-card @(seleccionado ? "is-selected" : string.Empty)">
+                                            <input type="checkbox" class="modulo-card__checkbox" checked="@seleccionado"
+                                                   @onchange="args => ToggleModulo(modulo.Id, args)" />
+                                            <span class="modulo-card__icon"><i class="bi @info.Icono"></i></span>
+                                            <span class="modulo-card__body">
+                                                <span class="modulo-card__name">@modulo.Nombre</span>
+                                                <span class="modulo-card__desc">@info.Descripcion</span>
+                                                @if (modulo.Precio > 0)
+                                                {
+                                                    <span class="modulo-card__price">USD @modulo.Precio.ToString("0.##")/mes después de la prueba</span>
+                                                }
+                                            </span>
+                                            <span class="modulo-card__mark"><i class="bi bi-check-lg"></i></span>
+                                        </label>
+                                    }
                                 }
                             </div>
 
@@ -84,8 +129,8 @@
                             }
 
                             <div class="public-verify__actions">
-                                <button type="button" class="btn btn--primary" disabled="@(_pruebaEnCurso || _seleccionados.Count == 0)" @onclick="IniciarPruebaAsync">
-                                    @(_pruebaEnCurso ? "Activando..." : _seleccionados.Count == 0 ? "Elegí al menos un módulo" : $"Empezar prueba gratis ({_seleccionados.Count})")
+                                <button type="button" class="btn btn--primary" disabled="@(_pruebaEnCurso || TotalSeleccionados == 0)" @onclick="IniciarPruebaAsync">
+                                    @(_pruebaEnCurso ? "Activando..." : TotalSeleccionados == 0 ? "Elegí al menos un módulo" : $"Empezar prueba gratis ({TotalSeleccionados})")
                                 </button>
                                 <button type="button" class="btn btn--ghost" disabled="@_pruebaEnCurso" @onclick="() => _pruebaFinalizada = true">
                                     Elegir más tarde
@@ -99,6 +144,10 @@
                     @if (_result?.Success == true && !string.IsNullOrWhiteSpace(_result.ModuloPreactivado))
                     {
                         <div class="public-verify__db">Ya activamos tu prueba de <strong>@_result.ModuloPreactivado</strong>. Iniciá sesión para empezar.</div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_pruebaResultMessage))
+                    {
+                        <div class="public-verify__db">@_pruebaResultMessage</div>
                     }
 
                     <div class="public-verify__actions">
@@ -120,9 +169,16 @@
     private bool _modulosLoading;
     private IReadOnlyList<ModuloDto> _modulos = [];
     private readonly HashSet<int> _seleccionados = [];
+    /// <summary>Planes reales de cada módulo (ver IPlanesService), agrupados por Código de módulo — un módulo presente acá muestra el selector de planes en vez del checkbox clásico.</summary>
+    private IReadOnlyDictionary<string, IReadOnlyList<PlanDto>> _planesPorModulo = new Dictionary<string, IReadOnlyList<PlanDto>>(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Plan elegido por módulo (IdModulo -> IdPlan) para los módulos que ya tienen Planes reales.</summary>
+    private readonly Dictionary<int, int> _planesSeleccionados = [];
     private bool _pruebaEnCurso;
     private bool _pruebaFinalizada;
     private string? _pruebaFeedback;
+    private string? _pruebaResultMessage;
+
+    private int TotalSeleccionados => _seleccionados.Count + _planesSeleccionados.Count;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -142,21 +198,38 @@
     private async Task CargarModulosAsync()
     {
         _modulosLoading = true;
+
+        IReadOnlyList<ModuloDto> catalogoCompleto;
         try
         {
-            // Los módulos base sin costo (Clientes/Técnicos) se activan solos en cascada cuando
-            // se elige cualquier módulo que dependa de ellos — no tiene sentido ofrecerlos como
-            // opción propia en el selector de prueba.
-            _modulos = (await AdminService.GetModulosAsync()).Where(m => m.Precio > 0).ToArray();
+            catalogoCompleto = await AdminService.GetModulosAsync();
         }
         catch
         {
-            _modulos = [];
+            catalogoCompleto = [];
         }
-        finally
+
+        try
         {
-            _modulosLoading = false;
+            _planesPorModulo = await PlanesSvc.GetPlanesVisiblesPorCodigoModuloAsync();
         }
+        catch
+        {
+            // Si dbo.Planes todavía no existe en esta base (migración de Fase 2 sin correr) o
+            // falla por cualquier motivo, se cae al comportamiento histórico de checkbox + prueba
+            // fija de 30 días para todos los módulos — nunca rompe el selector completo.
+            _planesPorModulo = new Dictionary<string, IReadOnlyList<PlanDto>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        // Los módulos base sin costo (Clientes/Técnicos) se activan solos en cascada cuando se
+        // elige cualquier módulo que dependa de ellos — no tiene sentido ofrecerlos como opción
+        // propia. Un módulo entra al selector si tiene precio de catálogo (flujo histórico) o si
+        // ya tiene Planes reales cargados (aunque Modulos.Precio no se haya actualizado).
+        _modulos = catalogoCompleto
+            .Where(m => m.Precio > 0 || (_planesPorModulo.TryGetValue(m.Codigo, out var planes) && planes.Count > 0))
+            .ToArray();
+
+        _modulosLoading = false;
     }
 
     private void ToggleModulo(int idModulo, ChangeEventArgs args)
@@ -168,23 +241,48 @@
             _seleccionados.Remove(idModulo);
     }
 
+    private void ElegirPlan(int idModulo, int idPlan) => _planesSeleccionados[idModulo] = idPlan;
+
+    private void QuitarPlan(int idModulo) => _planesSeleccionados.Remove(idModulo);
+
     private async Task IniciarPruebaAsync()
     {
-        if (_seleccionados.Count == 0 || _pruebaEnCurso)
+        if (TotalSeleccionados == 0 || _pruebaEnCurso)
             return;
 
         _pruebaEnCurso = true;
         _pruebaFeedback = null;
         try
         {
-            var resultado = await RegistrationService.IniciarPruebaModulosAsync(Code, _seleccionados.ToArray());
-            if (resultado.Success)
+            var mensajesError = new List<string>();
+            var mensajesOk = new List<string>();
+
+            if (_seleccionados.Count > 0)
             {
-                _pruebaFinalizada = true;
+                var resultadoModulos = await RegistrationService.IniciarPruebaModulosAsync(Code, _seleccionados.ToArray());
+                if (resultadoModulos.Success)
+                    mensajesOk.Add(resultadoModulos.Message);
+                else
+                    mensajesError.Add(resultadoModulos.Message);
+            }
+
+            if (_planesSeleccionados.Count > 0)
+            {
+                var resultadoPlanes = await RegistrationService.ElegirPlanesAsync(Code, _planesSeleccionados.Values.ToArray());
+                if (resultadoPlanes.Success)
+                    mensajesOk.Add(resultadoPlanes.Message);
+                else
+                    mensajesError.Add(resultadoPlanes.Message);
+            }
+
+            if (mensajesError.Count > 0)
+            {
+                _pruebaFeedback = string.Join(" ", mensajesError);
             }
             else
             {
-                _pruebaFeedback = resultado.Message;
+                _pruebaResultMessage = string.Join(" ", mensajesOk);
+                _pruebaFinalizada = true;
             }
         }
         finally

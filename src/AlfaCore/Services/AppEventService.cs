@@ -12,6 +12,8 @@ public sealed class AppEventService(
     IWebHostEnvironment env,
     IHttpContextAccessor httpContextAccessor,
     IAuxErrRepository auxErrRepository,
+    IAppAuditRepository auditRepository,
+    IAppAuditActorAccessor auditActor,
     ILogger<AppEventService> logger) : IAppEventService
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -90,6 +92,106 @@ public sealed class AppEventService(
         return eventId.ToString("N");
     }
 
+    public async Task<Guid> WriteAuditAsync(AuditWriteRequest request, CancellationToken ct = default)
+    {
+        var prepared = PrepareAudit(request);
+        var availability = await auditRepository.CheckAvailabilityAsync(ct);
+        if (!availability.Available)
+            throw new InvalidOperationException($"El esquema de auditoría no está disponible: {string.Join(", ", availability.MissingObjects)}.");
+
+        await auditRepository.WriteAsync(prepared.Record, prepared.Changes, ct);
+        await WriteAsync(prepared.Record, ct);
+        LogPersisted(prepared.Record, prepared.Changes.Length);
+        return prepared.Record.Id;
+    }
+
+    public async Task<Guid> WriteAuditAsync(
+        AuditWriteRequest request,
+        SqlConnection connection,
+        SqlTransaction transaction,
+        CancellationToken ct = default)
+    {
+        var prepared = PrepareAudit(request);
+        await auditRepository.WriteAsync(prepared.Record, prepared.Changes, connection, transaction, ct);
+        LogPersisted(prepared.Record, prepared.Changes.Length);
+        return prepared.Record.Id;
+    }
+
+    private (AppEventRecord Record, AuditChangeWriteDto[] Changes) PrepareAudit(AuditWriteRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var entityType = Required(request.EntityType, nameof(request.EntityType), 80);
+        var recordId = Required(request.RecordId, nameof(request.RecordId), 120);
+        var operation = Required(request.Operation, nameof(request.Operation), 120);
+        var module = Required(request.Module, nameof(request.Module), 80);
+
+        var changes = request.Changes
+            .Where(change => !AuditDataProtector.IsSensitiveName(change.FieldName))
+            .Select((change, index) => new AuditChangeWriteDto
+            {
+                FieldName = Required(change.FieldName, nameof(change.FieldName), 120),
+                OldValue = AuditDataProtector.ProtectValue(change.FieldName, change.OldValue, AuditDataProtector.MaxChangeValueLength),
+                NewValue = AuditDataProtector.ProtectValue(change.FieldName, change.NewValue, AuditDataProtector.MaxChangeValueLength),
+                Order = change.Order > 0 ? change.Order : checked((short)(index + 1))
+            })
+            .ToArray();
+
+        var safeMetadata = request.Metadata
+            .Where(item => !AuditDataProtector.IsSensitiveName(item.Key))
+            .ToDictionary(
+                item => Required(item.Key, "Metadata.Key", 120),
+                item => AuditDataProtector.ProtectValue(item.Key, item.Value, AuditDataProtector.MaxMetadataValueLength));
+
+        var eventId = Guid.NewGuid();
+        var record = CreateBaseRecord(
+            AppEventKind.Audit,
+            AppEventSeverity.Info,
+            module,
+            operation,
+            Truncate(request.Message, 500),
+            safeMetadata,
+            eventId);
+        record.EntityType = entityType;
+        record.EntityId = recordId;
+        record.Message = Truncate(request.Message, 1000);
+        record.UserName = ResolveFunctionalUser();
+
+        return (record, changes);
+    }
+
+    private void LogPersisted(AppEventRecord record, int changeCount)
+    {
+        logger.LogInformation(
+            "[{EventId}] AUDIT persistida {Module}/{Operation} {EntityType} {RecordId} con {ChangeCount} cambio(s).",
+            record.Id, record.Module, record.Action, record.EntityType, record.EntityId, changeCount);
+    }
+
+    /// <summary>
+    /// Lectura de infraestructura. No debe exponerse como endpoint genérico: el módulo consumidor
+    /// debe autorizar primero el acceso a la entidad solicitada.
+    /// </summary>
+    public Task<AuditActivityPageDto> GetActivityAsync(
+        string entityType,
+        string recordId,
+        int pageNumber = 1,
+        int pageSize = 20,
+        CancellationToken ct = default)
+        => auditRepository.GetActivityAsync(
+            Required(entityType, nameof(entityType), 80),
+            Required(recordId, nameof(recordId), 120),
+            Math.Max(1, pageNumber),
+            Math.Clamp(pageSize <= 0 ? 20 : pageSize, 1, 100),
+            ct);
+
+    public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(CancellationToken ct = default)
+        => auditRepository.CheckAvailabilityAsync(ct);
+
+    public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(
+        SqlConnection connection,
+        SqlTransaction? transaction = null,
+        CancellationToken ct = default)
+        => auditRepository.CheckAvailabilityAsync(connection, transaction, ct);
+
     private AppEventRecord CreateBaseRecord(
         AppEventKind kind,
         AppEventSeverity severity,
@@ -100,9 +202,7 @@ public sealed class AppEventService(
         Guid eventId)
     {
         var http = httpContextAccessor.HttpContext;
-        var userName = http?.User?.Identity?.Name;
-        if (string.IsNullOrWhiteSpace(userName))
-            userName = Environment.UserName;
+        var userName = ResolveFunctionalUser();
 
         return new AppEventRecord
         {
@@ -122,6 +222,35 @@ public sealed class AppEventService(
             UserMessage = userMessage,
             DataJson = SerializeData(data)
         };
+    }
+
+    private string ResolveFunctionalUser()
+    {
+        var userName = auditActor.UserName.Trim();
+        if (!string.IsNullOrWhiteSpace(userName))
+            return userName;
+
+        userName = httpContextAccessor.HttpContext?.User?.Identity?.Name?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(userName))
+            return userName;
+
+        var centralLogin = auditActor.CentralLogin.Trim();
+        return string.IsNullOrWhiteSpace(centralLogin) ? "Sistema" : centralLogin;
+    }
+
+    private static string Required(string? value, string parameterName, int maxLength)
+    {
+        var normalized = value?.Trim() ?? string.Empty;
+        if (normalized.Length == 0)
+            throw new ArgumentException("El valor es obligatorio.", parameterName);
+        return Truncate(normalized, maxLength);
+    }
+
+    private static string Truncate(string? value, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+        return value.Length <= maxLength ? value : value[..maxLength];
     }
 
     private AuxErrEntry CreateAuxErrEntry(AppEventRecord record, Exception exception)

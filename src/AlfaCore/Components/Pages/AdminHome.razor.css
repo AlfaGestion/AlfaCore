@@ -1,7 +1,6 @@
 .admin-client-row {
     cursor: pointer;
 }
-
 .admin-client-row:hover {
     background: rgba(34, 211, 238, 0.06);
 }
@@ -87,4 +86,3 @@
     display: grid;
     gap: 0.45rem;
 }
-

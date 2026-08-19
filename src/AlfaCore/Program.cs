@@ -1,4 +1,5 @@
 using AlfaCore.Components;
+using AlfaCore.Components.Shared.AlfaDesign;
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Repositories;
@@ -116,6 +117,9 @@ public class Program
         builder.Services.AddScoped<ICentralBackupControlService, CentralBackupControlService>();
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
+        builder.Services.AddScoped<IPlanesService, PlanesService>();
+        builder.Services.AddScoped<IPaymentProvider, ManualPaymentProvider>();
+        builder.Services.AddScoped<IBillingService, BillingService>();
         builder.Services.AddScoped<ICentralAuthService, CentralAuthService>();
         builder.Services.AddScoped<IRecaptchaValidationService, RecaptchaValidationService>();
         builder.Services.AddScoped<ICentralProvisioningService, CentralProvisioningService>();
@@ -131,6 +135,7 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IConversacionesInformesService, ConversacionesInformesService>();
         builder.Services.AddScoped<ITablasReferenciaService, TablasReferenciaService>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
@@ -170,6 +175,7 @@ public class Program
         builder.Services.AddScoped<IViajePreviewStateService, ViajePreviewStateService>();
         builder.Services.AddScoped<IComprobanteViewerService, ComprobanteViewerService>();
         builder.Services.AddSingleton<AppUserSessionStore>();
+        builder.Services.AddScoped<IAppAuditActorAccessor, AppAuditActorAccessor>();
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();
         builder.Services.AddSingleton<CatalogosClienteSessionStore>();
         builder.Services.AddScoped<ICatalogosClienteSessionService, CatalogosClienteSessionService>();
@@ -197,7 +203,9 @@ public class Program
         builder.Services.AddScoped<IFloatingWindowService, FloatingWindowService>();
         builder.Services.AddScoped<IPageHeaderService, PageHeaderService>();
         builder.Services.AddScoped<IPageHeaderNavigationService, PageHeaderNavigationService>();
+        builder.Services.AddScoped<AlfaActionMenuCoordinator>();
         builder.Services.AddScoped<IAuxErrRepository, AuxErrRepository>();
+        builder.Services.AddScoped<IAppAuditRepository, AppAuditRepository>();
         builder.Services.AddScoped<IAppEventService, AppEventService>();
         builder.Services.AddSingleton<ConsultasExcelExporter>();
         builder.Services.AddSingleton<AuditoriaExcelExporter>();
@@ -226,8 +234,11 @@ public class Program
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
         builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
+        builder.Services.AddHostedService<BillingHostedService>();
         builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
         builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+        builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
+        builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
 
         var app = builder.Build();
 

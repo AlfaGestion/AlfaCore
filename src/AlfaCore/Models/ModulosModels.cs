@@ -77,6 +77,20 @@ public sealed class ClienteModuloDto
     public string? SolicitadoPor { get; init; }
     /// <summary>Solo tiene valor cuando <see cref="Estado"/> es <see cref="ClienteModuloEstados.Prueba"/>.</summary>
     public DateTime? PruebaVenceUtc { get; init; }
+
+    /// <summary>
+    /// Plan de comercialización contratado (Fase 4) — <c>null</c> si el módulo todavía no tiene
+    /// un plan asignado (ej. dependencias gratuitas como Clientes/Técnicos, o un módulo del
+    /// piloto sin contratar todavía). Ver <c>ICentralAdminService.ContratarPlanAsync</c>/
+    /// <c>CambiarPlanAsync</c>.
+    /// </summary>
+    public int? IdPlan { get; init; }
+    public string? PlanNombre { get; init; }
+    public string? PlanTipoFacturacion { get; init; }
+    public decimal? PrecioContratado { get; init; }
+    public string? MonedaContratada { get; init; }
+    public DateTime? FechaProximoCobro { get; init; }
+    public bool RenovacionAutomatica { get; init; } = true;
 }
 
 public static class ClienteModuloEstados
@@ -130,6 +144,15 @@ public sealed class SolicitarModuloRequest
     public string IdCliente { get; set; } = string.Empty;
     public int IdModulo { get; set; }
     public string SolicitadoPor { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Plan elegido para este módulo (opcional — módulos sin Planes cargados no mandan esto). Se
+    /// guarda en <c>dbo.ClienteModulos.IdPlan</c> aunque la fila quede en <c>Solicitado</c>, para
+    /// que el admin sepa qué plan contratar al aprobar desde <c>/admin/solicitudes</c> (ver
+    /// <c>AdminSolicitudesModulos.razor</c>, que llama a <c>ContratarPlanAsync</c> en vez de
+    /// <c>ActivarModuloAsync</c> cuando esto viene cargado).
+    /// </summary>
+    public int? IdPlan { get; set; }
 }
 
 public sealed class RechazarModuloRequest
@@ -153,6 +176,10 @@ public sealed class SolicitudModuloDto
     public decimal Precio { get; init; }
     public DateTime? SolicitadoUtc { get; init; }
     public string? SolicitadoPor { get; init; }
+
+    /// <summary>Plan elegido al solicitar (null = módulo sin Planes cargados, solicitud "a secas").</summary>
+    public int? IdPlan { get; init; }
+    public string? PlanNombre { get; init; }
 }
 
 /// <summary>

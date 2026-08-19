@@ -18,6 +18,7 @@ public sealed class ConversacionesService(
     IHttpClientFactory httpClientFactory,
     ICentralBasesService centralBasesService,
     IConversacionesConfigService conversacionesConfigService,
+    IWhatsAppWebSessionService whatsAppWebSessionService,
     INotificacionesPushService notificacionesPushService,
     ICentralAdminService centralAdminService,
     IConversacionAsistenteService asistenteService,
@@ -27,6 +28,13 @@ public sealed class ConversacionesService(
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
     private const string ManualWhatsAppConversationSummary = "Conversaci\u00f3n iniciada manualmente.";
+
+    /// <summary>
+    /// El worker de WhatsApp Web (Node) escribe los archivos de inbox en camelCase (phone,
+    /// contactName, text...). System.Text.Json es case-sensitive por defecto, as\u00ed que sin esta
+    /// opci\u00f3n cada propiedad del DTO quedaba en su valor default (vac\u00edo) al deserializar.
+    /// </summary>
+    private static readonly JsonSerializerOptions WhatsAppWebInboxJsonOptions = new(JsonSerializerDefaults.Web);
     private const string ManualWhatsAppInitialState = "PENDIENTE";
     private const string InternalEventDirection = "NOTA_INTERNA";
     private const string InternalEventMessageType = "SYSTEM";
@@ -2198,11 +2206,14 @@ public sealed class ConversacionesService(
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
                 if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                     whatsAppConfig.PhoneNumberId = conversation.PhoneNumberId;
+                var deliveryProvider = ResolveWhatsAppDeliveryProvider(whatsAppConfig);
                 var windowActive = await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
                 if (!windowActive)
                     throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
 
-                initialState = whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
+                initialState = string.Equals(deliveryProvider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase)
+                    ? "PENDIENTE"
+                    : whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
             }
             else if (isInstagram)
             {
@@ -2267,7 +2278,23 @@ public sealed class ConversacionesService(
             string finalState = initialState;
             string payload = string.Empty;
 
-            if (!isInternal && whatsAppConfig?.IsConfiguredForSend == true)
+            if (isWhatsApp && whatsAppConfig is not null && string.Equals(ResolveWhatsAppDeliveryProvider(whatsAppConfig), ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    var sendResult = await whatsAppWebSessionService.SendTextAsync(conversation.IdNumeroWhatsApp, conversation.TelefonoWhatsApp, request.Texto.Trim(), request.WhatsAppReplyToMessageId, token);
+                    whatsAppMessageId = sendResult.ExternalMessageId;
+                    finalState = sendResult.EstadoEnvio;
+                    payload = sendResult.PayloadJson;
+                }
+                catch (Exception ex)
+                {
+                    await UpdateMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
+                    await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
+                    throw new InvalidOperationException("No se pudo enviar el mensaje por WhatsApp Web. Quedó marcado con error en la conversación.", ex);
+                }
+            }
+            else if (!isInternal && whatsAppConfig?.IsConfiguredForSend == true)
             {
                 try
                 {
@@ -2435,6 +2462,7 @@ public sealed class ConversacionesService(
             var config = await configTask;
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                 config.PhoneNumberId = conversation.PhoneNumberId;
+            EnsureWhatsAppMetaProvider(config, "enviar reacciones");
             var now = BusinessNow();
             var text = emoji;
 
@@ -2773,6 +2801,7 @@ public sealed class ConversacionesService(
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                 config.PhoneNumberId = conversation.PhoneNumberId;
+            EnsureWhatsAppMetaProvider(config, "enviar plantillas");
             if (!string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
             {
                 var meta = await GetMetaTemplateStatusAsync(config, template, token);
@@ -3374,6 +3403,161 @@ public sealed class ConversacionesService(
             };
         }, "No se pudo procesar el webhook de WhatsApp.", ct);
 
+    public async Task RegisterIncomingWhatsAppWebMessageAsync(ConversacionWhatsAppWebIncomingMessageDto request, CancellationToken ct = default)
+    {
+        await ExecuteLoggedAsync("Conversaciones", "RegisterIncomingWhatsAppWebMessage", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+
+            var payloadJson = string.IsNullOrWhiteSpace(request.RawJson)
+                ? JsonSerializer.Serialize(request)
+                : request.RawJson;
+
+            var webhookLogId = await InsertWebhookLogAsync("WHATSAPP_WEB", "InboxFile", payloadJson, string.Empty, token);
+            try
+            {
+                var incoming = new IncomingWhatsAppMessage
+                {
+                    Phone = request.Phone?.Trim() ?? string.Empty,
+                    PhoneNumberId = string.IsNullOrWhiteSpace(request.PhoneNumberId)
+                        ? request.InstanceName?.Trim() ?? string.Empty
+                        : request.PhoneNumberId.Trim(),
+                    DisplayPhoneNumber = string.Empty,
+                    ContactName = request.ContactName?.Trim() ?? string.Empty,
+                    MessageType = string.IsNullOrWhiteSpace(request.MessageType) ? "TEXT" : request.MessageType.Trim().ToUpperInvariant(),
+                    WhatsAppMessageId = request.MessageId?.Trim() ?? string.Empty,
+                    WhatsAppReplyToMessageId = request.ReplyToMessageId?.Trim() ?? string.Empty,
+                    Timestamp = request.TimestampUtc == default ? BusinessNow() : request.TimestampUtc,
+                    Text = request.Text?.Trim() ?? string.Empty,
+                    RawJson = payloadJson
+                };
+
+                var conversationId = await EnsureConversationAsync(incoming, token);
+                var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
+                if (messageId <= 0)
+                {
+                    messageId = await InsertMessageAsync(new PendingMessageInsert
+                    {
+                        ConversationId = conversationId,
+                        Phone = incoming.Phone,
+                        MessageType = incoming.MessageType,
+                        Direction = "ENTRANTE",
+                        EstadoEnvio = "RECIBIDO",
+                        Text = incoming.Text,
+                        PayloadJson = incoming.RawJson,
+                        FechaHora = NormalizeIncomingTimestamp(incoming.Timestamp),
+                        UsuarioAutor = string.Empty,
+                        SistemaAutor = "WHATSAPP_WEB",
+                        IdTecnicoAutor = string.Empty,
+                        WhatsAppMessageId = incoming.WhatsAppMessageId,
+                        ReplyToMessageId = incoming.WhatsAppReplyToMessageId
+                    }, token);
+                }
+
+                if (string.Equals(incoming.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase))
+                {
+                    await RefreshConversationAsync(
+                        conversationId,
+                        NormalizeIncomingTimestamp(incoming.Timestamp),
+                        BuildReactionSummary(incoming.Text, incoming: true),
+                        token,
+                        reopenIfClosed: false);
+                }
+                else
+                {
+                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
+                    await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                    if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                    {
+                        await TryAutoReplyWelcomeAsync(conversationId, token);
+                        await TryAutoReplyOutOfHoursAsync(conversationId, token);
+                        await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                    }
+                }
+
+                await UpdateWebhookLogAsync(webhookLogId, true, string.Empty, token);
+            }
+            catch (Exception ex)
+            {
+                await UpdateWebhookLogAsync(webhookLogId, false, ex.Message, token);
+                throw;
+            }
+        }, "No se pudo registrar el mensaje entrante de WhatsApp Web.", ct);
+    }
+
+    public Task<int> ProcessWhatsAppWebInboxAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "ProcessWhatsAppWebInbox", async token =>
+        {
+            var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
+            if (activeBaseId <= 0)
+                return 0;
+
+            var sessionsRoot = Path.Combine(
+                environment.ContentRootPath,
+                "App_Data",
+                "whatsapp-web",
+                activeBaseId.ToString(CultureInfo.InvariantCulture));
+
+            if (!Directory.Exists(sessionsRoot))
+                return 0;
+
+            var inboxFiles = Directory
+                .EnumerateFiles(sessionsRoot, "*.json", SearchOption.AllDirectories)
+                .Where(path => string.Equals(Path.GetFileName(Path.GetDirectoryName(path)), "inbox", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var processed = 0;
+            foreach (var inboxFile in inboxFiles)
+            {
+                token.ThrowIfCancellationRequested();
+                try
+                {
+                    var json = await File.ReadAllTextAsync(inboxFile, token);
+                    var incoming = JsonSerializer.Deserialize<ConversacionWhatsAppWebIncomingMessageDto>(json, WhatsAppWebInboxJsonOptions);
+                    if (incoming is null)
+                    {
+                        throw new InvalidOperationException("El archivo de inbox no contiene un mensaje válido.");
+                    }
+
+                    var inboxDir = Path.GetDirectoryName(inboxFile);
+                    var instanceDir = string.IsNullOrWhiteSpace(inboxDir)
+                        ? null
+                        : Directory.GetParent(inboxDir);
+                    var instanceName = instanceDir?.Name ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(instanceName))
+                    {
+                        incoming.InstanceName = instanceName;
+                        var numero = await conversacionesConfigService.GetWhatsAppNumeroByInstanceNameAsync(instanceName, token);
+                        if (numero is null)
+                        {
+                            throw new InvalidOperationException($"No existe un número de WhatsApp configurado para la instancia '{instanceName}'.");
+                        }
+
+                        incoming.PhoneNumberId = numero.PhoneNumberId;
+                    }
+
+                    incoming.RawJson = string.IsNullOrWhiteSpace(incoming.RawJson) ? json : incoming.RawJson;
+                    await RegisterIncomingWhatsAppWebMessageAsync(incoming, token);
+                    File.Delete(inboxFile);
+                    processed++;
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    await _appEvents.LogErrorAsync(
+                        "Conversaciones",
+                        "ProcessWhatsAppWebInbox",
+                        ex,
+                        "No se pudo procesar un archivo del inbox de WhatsApp Web.",
+                        new { InboxFile = inboxFile },
+                        AppEventSeverity.Warning,
+                        token);
+                }
+            }
+
+            return processed;
+        }, "No se pudo procesar la bandeja de entrada de WhatsApp Web.", ct);
+
     public Task<ConversacionWebhookResultDto> RegisterIncomingInstagramWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingInstagramWebhook", async token =>
         {
@@ -3726,9 +3910,9 @@ public sealed class ConversacionesService(
         {
             var phone = NormalizePhone(request.TelefonoWhatsApp);
             if (string.IsNullOrWhiteSpace(phone))
-                throw new InvalidOperationException("IngresÃ¡ un nÃºmero de celular para crear la conversaciÃ³n.");
+                throw new InvalidOperationException("Ingresá un número de celular para crear la conversación.");
             if (phone.Length < 8)
-                throw new InvalidOperationException("El nÃºmero de celular parece incompleto.");
+                throw new InvalidOperationException("El número de celular parece incompleto.");
 
             var technicianId = await ResolveTechnicianIdOrNullAsync(request.IdTecnico, token);
 
@@ -3858,6 +4042,8 @@ public sealed class ConversacionesService(
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
                 if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                     whatsAppConfig.PhoneNumberId = conversation.PhoneNumberId;
+                var deliveryProvider = ResolveWhatsAppDeliveryProvider(whatsAppConfig);
+                EnsureWhatsAppProviderImplemented(deliveryProvider, "enviar adjuntos");
                 var windowActive = await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
                 if (!windowActive && !request.PermitirEnvioConVentanaVencida)
                     throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
@@ -6277,7 +6463,8 @@ public sealed class ConversacionesService(
                 ISNULL(c.Canal, 'WHATSAPP'),
                 ISNULL(c.IdentificadorExternoContacto, ''),
                 ISNULL(c.IdentificadorExternoConversacion, ''),
-                ISNULL(n.PhoneNumberId, '')
+                ISNULL(n.PhoneNumberId, ''),
+                c.IdNumeroWhatsApp
             FROM dbo.CONV_CONVERSACIONES c
             LEFT JOIN dbo.CONV_WHATSAPP_NUMEROS n ON n.IdNumero = c.IdNumeroWhatsApp
             WHERE c.IdConversacion = @IdConversacion
@@ -6299,7 +6486,8 @@ public sealed class ConversacionesService(
             Canal = GetString(rd, 2),
             IdentificadorExternoContacto = GetString(rd, 3),
             IdentificadorExternoConversacion = GetString(rd, 4),
-            PhoneNumberId = GetString(rd, 5)
+            PhoneNumberId = GetString(rd, 5),
+            IdNumeroWhatsApp = rd.IsDBNull(6) ? null : rd.GetInt32(6)
         };
     }
 
@@ -6483,11 +6671,9 @@ public sealed class ConversacionesService(
         }
     }
 
-    // Bot autónomo con guardarraíles. Responde con el Asistente IA (comportamiento + información
-    // del negocio configurados, vía OpenAI) si: el bot está activo, hay API key de OpenAI, no hay
-    // palabras de escalado, la conversación está sin asignar (si corresponde), la ventana del canal
-    // está activa, no se superó el tope de respuestas y no hay otra automática encima. La política
-    // del asistente decide qué pasa cuando la info no alcanza; si no puede resolver, escala a humano.
+    // Entrada del bot autónomo desde el webhook: si hay que esperar antes de contestar (para darle
+    // margen a un agente humano), no responde ahora — encola la conversación y la retoma el job de
+    // espera. Si no, corre los guardarraíles y responde ya (ver EjecutarRespuestaBotAsync).
     private async Task TryAutoReplyBotAsync(long idConversacion, string? incomingText, CancellationToken ct)
     {
         try
@@ -6503,120 +6689,13 @@ public sealed class ConversacionesService(
             if (texto.Length == 0)
                 return;
 
-            if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+            if (config.BotEsperaMinutos > 0)
+            {
+                await EncolarRespuestaBotAsync(idConversacion, config.BotEsperaMinutos, ct).ConfigureAwait(false);
                 return;
-
-            if (config.BotSoloSinAsignar)
-            {
-                var tecnico = await GetConversationTechnicianIdAsync(idConversacion, ct).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(tecnico))
-                    return;
             }
 
-            var canalBot = await GetConversationChannelAsync(idConversacion, ct).ConfigureAwait(false);
-            if (!await IsSendWindowActiveAsync(idConversacion, canalBot, ct).ConfigureAwait(false))
-                return;
-
-            var (botCount, lastSistema) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
-            if (botCount >= Math.Max(1, config.BotMaxRespuestas))
-                return;
-            // No encimar sobre otra automática (bienvenida, fuera de horario, auto-cierre, etc.).
-            if (IsAutomaticSystem(lastSistema))
-                return;
-
-            var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
-            var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
-
-            // Datos del cliente: rubro (para razonar la respuesta) y si es un cliente prioritario
-            // (su clasificación está entre las configuradas como prioridad de atención).
-            var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, ct).ConfigureAwait(false);
-
-            // Prioridad de la conversación (solo sube, nunca baja): urgencia -> URGENTE; cliente
-            // prioritario -> ALTA. A los clientes prioritarios (restaurantes/POS, etc.) siempre se los prioriza.
-            if (esUrgente)
-                await SubirPrioridadAsync(idConversacion, "URGENTE", ct).ConfigureAwait(false);
-            else if (esPrioritario)
-                await SubirPrioridadAsync(idConversacion, "ALTA", ct).ConfigureAwait(false);
-
-            // Fuera de horario, dejamos nota para que un operador decida atender ahora (las urgencias y
-            // los clientes prioritarios se atienden en cualquier horario).
-            if (fueraDeHorario && (esUrgente || esPrioritario))
-            {
-                var motivo = esUrgente ? "posible URGENCIA" : "cliente prioritario";
-                var conRubro = string.IsNullOrWhiteSpace(rubro) ? string.Empty : $" (rubro: {rubro})";
-                await AddInternalEventCoreAsync(idConversacion,
-                    $"⏰🚨 Fuera de horario, {motivo}{conRubro}. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
-                    null, null, "AlfaCore", "URGENCIA", ct).ConfigureAwait(false);
-            }
-
-            var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
-
-            // Fase 2: sumar AlfaKnowledge como fuente. Recuperamos fragmentos de los documentos y se
-            // los damos al asistente para que responda combinando: comportamiento + info pegada + base.
-            var conocimientoBase = string.Empty;
-            if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
-                conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, ct).ConfigureAwait(false);
-
-            var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
-
-            var result = await asistenteService.ResponderAsync(
-                config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-                texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, ct).ConfigureAwait(false);
-
-            // Nunca dejamos al cliente sin respuesta. El asistente decide el tipo:
-            //   RESUELVE -> resolvió; ACLARA -> repregunta para poder resolver (esperamos su respuesta);
-            //   DERIVA -> manda una contención y hay que pasar a un humano.
-            // Si por algún error no vino texto, mandamos igual una contención fija y derivamos.
-            var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
-            var respuesta = result is not null && !string.IsNullOrWhiteSpace(result.Respuesta)
-                ? result.Respuesta.Trim()
-                : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
-            if (result is null || string.IsNullOrWhiteSpace(result.Respuesta))
-                tipo = "DERIVA";
-
-            await SendMessageAsync(new ConversacionSendMessageRequest
-            {
-                IdConversacion = idConversacion,
-                Texto = respuesta,
-                MessageType = "TEXT",
-                UsuarioAccion = "AlfaCore",
-                SistemaAccion = "BOT"
-            }, ct).ConfigureAwait(false);
-
-            if (tipo == "ACLARA")
-            {
-                await _appEvents.LogAuditAsync(
-                    "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
-                    idConversacion.ToString(CultureInfo.InvariantCulture),
-                    "El asistente le pidió una aclaración al cliente para poder resolver.",
-                    new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
-            }
-            else if (tipo == "DERIVA")
-            {
-                // Contención enviada: dejamos el caso listo para que un humano lo tome (nota + prioridad),
-                // salvo fuera de horario, donde de por sí queda para el próximo día hábil.
-                if (!fueraDeHorario)
-                {
-                    await AddInternalEventCoreAsync(idConversacion,
-                        "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
-                        null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
-                    if (!esUrgente && !esPrioritario)
-                        await SubirPrioridadAsync(idConversacion, "MEDIA", ct).ConfigureAwait(false);
-                }
-                await _appEvents.LogAuditAsync(
-                    "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
-                    idConversacion.ToString(CultureInfo.InvariantCulture),
-                    "El asistente mandó una contención y derivó a un humano (no pudo resolver).",
-                    new { idConversacion, config.AsistentePolitica, fueraDeHorario }, ct).ConfigureAwait(false);
-            }
-            else
-            {
-                await _appEvents.LogAuditAsync(
-                    "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
-                    idConversacion.ToString(CultureInfo.InvariantCulture),
-                    "El asistente respondió automáticamente.",
-                    new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, ct).ConfigureAwait(false);
-            }
+            await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -6624,6 +6703,241 @@ public sealed class ConversacionesService(
                 "Conversaciones", "BotAutoReply", ex,
                 "No se pudo procesar la respuesta automática del bot.",
                 new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+        }
+    }
+
+    // Cola de espera (dbo.CONV_BOT_PENDIENTES): a lo sumo una fila PENDIENTE por conversación. Si el
+    // cliente escribe de nuevo mientras se espera, no reprograma el reloj (para que no charlar
+    // indefinidamente evite la respuesta del bot); el job de espera usa el mensaje más reciente al
+    // momento de responder.
+    private async Task EncolarRespuestaBotAsync(long idConversacion, int minutos, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        const string sql = """
+            IF NOT EXISTS (
+                SELECT 1 FROM dbo.CONV_BOT_PENDIENTES
+                WHERE IdConversacion = @IdConversacion AND Estado = N'PENDIENTE')
+            INSERT INTO dbo.CONV_BOT_PENDIENTES (IdConversacion, FechaProgramada)
+            VALUES (@IdConversacion, @FechaProgramada);
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@FechaProgramada", BusinessNow().AddMinutes(minutos));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    // Job en segundo plano (ver ConversacionesBotEsperaHostedService): retoma las conversaciones cuya
+    // espera configurada ya se cumplió. Vuelve a correr todos los guardarraíles del bot con el mensaje
+    // entrante más reciente — por si el cliente escribió de nuevo, o si un agente humano ya la tomó
+    // mientras tanto (en cuyo caso el bot calla).
+    public async Task<int> ProcesarRespuestasBotPendientesAsync(CancellationToken ct = default)
+    {
+        var pendientes = new List<(long IdPendiente, long IdConversacion)>();
+        await using (var cn = new SqlConnection(ConnectionString))
+        {
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            const string sql = """
+                IF OBJECT_ID(N'dbo.CONV_BOT_PENDIENTES', N'U') IS NOT NULL
+                    SELECT TOP (200) IdPendiente, IdConversacion
+                    FROM dbo.CONV_BOT_PENDIENTES
+                    WHERE Estado = N'PENDIENTE' AND FechaProgramada <= @Ahora
+                    ORDER BY FechaProgramada;
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Ahora", BusinessNow());
+            await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+            while (await rd.ReadAsync(ct).ConfigureAwait(false))
+                pendientes.Add((rd.GetInt64(0), rd.GetInt64(1)));
+        }
+
+        if (pendientes.Count == 0)
+            return 0;
+
+        var procesados = 0;
+        foreach (var (idPendiente, idConversacion) in pendientes)
+        {
+            ct.ThrowIfCancellationRequested();
+            try
+            {
+                if (await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+                {
+                    var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
+                    if (config.BotActivo && asistenteService.IsConfigured)
+                    {
+                        var texto = await GetLastIncomingTextAsync(idConversacion, ct).ConfigureAwait(false);
+                        if (!string.IsNullOrWhiteSpace(texto))
+                            await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
+                    }
+                }
+
+                await MarcarBotPendienteProcesadoAsync(idPendiente, ct).ConfigureAwait(false);
+                procesados++;
+            }
+            catch (Exception ex)
+            {
+                await _appEvents.LogErrorAsync(
+                    "Conversaciones", "BotAutoReplyPendiente", ex,
+                    "No se pudo procesar la respuesta en espera del bot.",
+                    new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
+            }
+        }
+
+        return procesados;
+    }
+
+    private async Task<string> GetLastIncomingTextAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) ISNULL(CAST(Texto AS nvarchar(max)), '')
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'
+            ORDER BY FechaHora DESC, IdMensaje DESC;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Id", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result as string ?? string.Empty;
+    }
+
+    private async Task MarcarBotPendienteProcesadoAsync(long idPendiente, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        await using var cmd = new SqlCommand(
+            "UPDATE dbo.CONV_BOT_PENDIENTES SET Estado = N'PROCESADO', FechaProcesado = GETDATE() WHERE IdPendiente = @Id;", cn);
+        cmd.Parameters.AddWithValue("@Id", idPendiente);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    // Bot autónomo con guardarraíles. Responde con el Asistente IA (comportamiento + información
+    // del negocio configurados, vía OpenAI) si: no hay palabras de escalado, la conversación está sin
+    // asignar (si corresponde), estamos en el horario permitido (si "solo fuera de horario" está
+    // activo), la ventana del canal está activa, no se superó el tope de respuestas y no hay otra
+    // automática encima. La política del asistente decide qué pasa cuando la info no alcanza; si no
+    // puede resolver, escala a humano. Se llama tanto al llegar el mensaje (sin espera configurada)
+    // como desde el job de espera, ya con todos los chequeos de activación resueltos.
+    private async Task EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct)
+    {
+        if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+            return;
+
+        if (config.BotSoloSinAsignar)
+        {
+            var tecnico = await GetConversationTechnicianIdAsync(idConversacion, ct).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(tecnico))
+                return;
+        }
+
+        var canalBot = await GetConversationChannelAsync(idConversacion, ct).ConfigureAwait(false);
+        if (!await IsSendWindowActiveAsync(idConversacion, canalBot, ct).ConfigureAwait(false))
+            return;
+
+        var (botCount, lastSistema) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
+        if (botCount >= Math.Max(1, config.BotMaxRespuestas))
+            return;
+        // No encimar sobre otra automática (bienvenida, fuera de horario, auto-cierre, etc.).
+        if (IsAutomaticSystem(lastSistema))
+            return;
+
+        var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
+        // Configurado para responder solo fuera de horario: en horario, calla y lo deja para un humano.
+        if (config.BotSoloFueraHorario && !fueraDeHorario)
+            return;
+
+        var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
+
+        // Datos del cliente: rubro (para razonar la respuesta) y si es un cliente prioritario
+        // (su clasificación está entre las configuradas como prioridad de atención).
+        var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, ct).ConfigureAwait(false);
+
+        // Prioridad de la conversación (solo sube, nunca baja): urgencia -> URGENTE; cliente
+        // prioritario -> ALTA. A los clientes prioritarios (restaurantes/POS, etc.) siempre se los prioriza.
+        if (esUrgente)
+            await SubirPrioridadAsync(idConversacion, "URGENTE", ct).ConfigureAwait(false);
+        else if (esPrioritario)
+            await SubirPrioridadAsync(idConversacion, "ALTA", ct).ConfigureAwait(false);
+
+        // Fuera de horario, dejamos nota para que un operador decida atender ahora (las urgencias y
+        // los clientes prioritarios se atienden en cualquier horario).
+        if (fueraDeHorario && (esUrgente || esPrioritario))
+        {
+            var motivo = esUrgente ? "posible URGENCIA" : "cliente prioritario";
+            var conRubro = string.IsNullOrWhiteSpace(rubro) ? string.Empty : $" (rubro: {rubro})";
+            await AddInternalEventCoreAsync(idConversacion,
+                $"⏰🚨 Fuera de horario, {motivo}{conRubro}. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
+                null, null, "AlfaCore", "URGENCIA", ct).ConfigureAwait(false);
+        }
+
+        var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
+
+        // Fase 2: sumar AlfaKnowledge como fuente. Recuperamos fragmentos de los documentos y se
+        // los damos al asistente para que responda combinando: comportamiento + info pegada + base.
+        var conocimientoBase = string.Empty;
+        if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
+            conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, ct).ConfigureAwait(false);
+
+        var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
+
+        var result = await asistenteService.ResponderAsync(
+            config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
+            texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, ct).ConfigureAwait(false);
+
+        // Nunca dejamos al cliente sin respuesta. El asistente decide el tipo:
+        //   RESUELVE -> resolvió; ACLARA -> repregunta para poder resolver (esperamos su respuesta);
+        //   DERIVA -> manda una contención y hay que pasar a un humano.
+        // Si por algún error no vino texto, mandamos igual una contención fija y derivamos.
+        var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
+        var respuesta = result is not null && !string.IsNullOrWhiteSpace(result.Respuesta)
+            ? result.Respuesta.Trim()
+            : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
+        if (result is null || string.IsNullOrWhiteSpace(result.Respuesta))
+            tipo = "DERIVA";
+
+        await SendMessageAsync(new ConversacionSendMessageRequest
+        {
+            IdConversacion = idConversacion,
+            Texto = respuesta,
+            MessageType = "TEXT",
+            UsuarioAccion = "AlfaCore",
+            SistemaAccion = "BOT"
+        }, ct).ConfigureAwait(false);
+
+        if (tipo == "ACLARA")
+        {
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "El asistente le pidió una aclaración al cliente para poder resolver.",
+                new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
+        }
+        else if (tipo == "DERIVA")
+        {
+            // Contención enviada: dejamos el caso listo para que un humano lo tome (nota + prioridad),
+            // salvo fuera de horario, donde de por sí queda para el próximo día hábil.
+            if (!fueraDeHorario)
+            {
+                await AddInternalEventCoreAsync(idConversacion,
+                    "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
+                    null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
+                if (!esUrgente && !esPrioritario)
+                    await SubirPrioridadAsync(idConversacion, "MEDIA", ct).ConfigureAwait(false);
+            }
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "El asistente mandó una contención y derivó a un humano (no pudo resolver).",
+                new { idConversacion, config.AsistentePolitica, fueraDeHorario }, ct).ConfigureAwait(false);
+        }
+        else
+        {
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "El asistente respondió automáticamente.",
+                new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, ct).ConfigureAwait(false);
         }
     }
 
@@ -8708,6 +9022,43 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@HeaderJson", DbNullable(headerJson));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private static string ResolveWhatsAppDeliveryProvider(ConversacionWhatsAppConfigDto config)
+    {
+        var providerMode = (config.ProviderMode ?? string.Empty).Trim().ToUpperInvariant();
+        var defaultProvider = (config.DefaultProvider ?? string.Empty).Trim().ToUpperInvariant();
+
+        if (providerMode == ConversacionWhatsAppProviderModes.WebOnly)
+            return ConversacionWhatsAppProviders.WhatsAppWeb;
+
+        if (providerMode == ConversacionWhatsAppProviderModes.MetaAndWeb)
+            return defaultProvider == ConversacionWhatsAppProviders.WhatsAppWeb
+                ? ConversacionWhatsAppProviders.WhatsAppWeb
+                : ConversacionWhatsAppProviders.MetaCloud;
+
+        return ConversacionWhatsAppProviders.MetaCloud;
+    }
+
+    private static void EnsureWhatsAppProviderImplemented(string provider, string actionLabel)
+    {
+        if (string.Equals(provider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"La base está configurada para usar WhatsApp Web al {actionLabel}, pero ese conector todavía no está implementado en AlfaCore. " +
+                "Por ahora dejá el proveedor en Meta Cloud API o en convivencia con Meta como predeterminado.");
+        }
+    }
+
+    private static void EnsureWhatsAppMetaProvider(ConversacionWhatsAppConfigDto config, string actionLabel)
+    {
+        var provider = ResolveWhatsAppDeliveryProvider(config);
+        if (!string.Equals(provider, ConversacionWhatsAppProviders.MetaCloud, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                $"La acción de {actionLabel} hoy solo está disponible con Meta Cloud API. " +
+                "Si querés usarla, dejá Meta como proveedor predeterminado para WhatsApp.");
+        }
     }
 
     private async Task UpdateWebhookLogAsync(long idWebhookLog, bool procesadoOk, string? errorDescripcion, CancellationToken ct)
@@ -11965,6 +12316,25 @@ public sealed class ConversacionesService(
         }
     }
 
+    private async Task ExecuteLoggedAsync(
+        string module,
+        string action,
+        Func<CancellationToken, Task> operation,
+        string userMessage,
+        CancellationToken ct)
+    {
+        await ExecuteLoggedAsync(
+            module,
+            action,
+            async token =>
+            {
+                await operation(token);
+                return true;
+            },
+            userMessage,
+            ct);
+    }
+
     private async Task TryLogConversationSchemaCheckFailureAsync(Exception exception, CancellationToken ct)
     {
         if (ct.IsCancellationRequested)
@@ -12008,6 +12378,7 @@ public sealed class ConversacionesService(
     private sealed class ConversationIdentity
     {
         public long IdConversacion { get; init; }
+        public int? IdNumeroWhatsApp { get; init; }
         public string TelefonoWhatsApp { get; init; } = string.Empty;
         public string Canal { get; init; } = string.Empty;
         public string IdentificadorExternoContacto { get; init; } = string.Empty;

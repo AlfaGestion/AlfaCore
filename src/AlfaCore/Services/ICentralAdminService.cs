@@ -58,6 +58,36 @@ public interface ICentralAdminService
     Task SuspenderModuloAsync(string idCliente, int idModulo, CancellationToken ct = default);
 
     /// <summary>
+    /// Contrata un Plan para un cliente: reusa el núcleo de activación en cascada (dependencias
+    /// obligatorias gratis) para dejar el <c>ClienteModulos</c> del módulo dueño del plan en
+    /// <c>Activo</c>, o en <c>Prueba</c> si el plan tiene <c>DiasPrueba</c> y el cliente todavía no
+    /// usó una prueba para ese módulo. Setea <c>PrecioContratado</c>/<c>MonedaContratada</c> como
+    /// snapshot del precio del plan al momento de contratar (no cambia si el plan sube de precio
+    /// después) y calcula <c>FechaProximoCobro</c> según <c>TipoFacturacion</c>.
+    /// </summary>
+    Task ContratarPlanAsync(string idCliente, int idPlan, string contratadoPor, CancellationToken ct = default);
+
+    /// <summary>
+    /// Cambia el plan contratado de un <c>ClienteModulos</c> ya existente. Sin prorrateo (decisión
+    /// de producto): solo actualiza <c>IdPlan</c>/<c>PrecioContratado</c>/<c>MonedaContratada</c>
+    /// para que el PRÓXIMO cargo que genere <see cref="IBillingService"/> use el plan nuevo — no
+    /// toca cargos ya emitidos ni el período en curso.
+    /// </summary>
+    Task CambiarPlanAsync(string idCliente, int idModulo, int nuevoIdPlan, string cambiadoPor, CancellationToken ct = default);
+
+    /// <summary>
+    /// True si el cliente ya tuvo alguna vez una prueba gratuita de este módulo (<c>PruebaVenceUtc</c>
+    /// cargado en su fila de <c>ClienteModulos</c> alguna vez, sea cual sea el estado actual hoy) —
+    /// mismo criterio que usa <see cref="ContratarPlanAsync"/> para decidir si una contratación
+    /// nueva arranca en <c>Prueba</c> o directo en <c>Activo</c>. Expuesto públicamente para que el
+    /// registro público (ver <c>CentralRegistrationService</c>) pueda decidir, ANTES de llamar a
+    /// <see cref="ContratarPlanAsync"/>, si la elección de un plan puede autoservirse en Prueba o
+    /// si tiene que quedar como solicitud pendiente de aprobación manual — el registro público
+    /// nunca debe dejar un <c>ClienteModulos</c> en <c>Activo</c> directo sin pago confirmado.
+    /// </summary>
+    Task<bool> ClienteYaUsoPruebaModuloAsync(string idCliente, int idModulo, CancellationToken ct = default);
+
+    /// <summary>
     /// Autoservicio: arranca la prueba gratuita de 30 días para los módulos elegidos al
     /// confirmar el registro público (ver <see cref="PruebaModuloDefaults"/>).
     /// </summary>

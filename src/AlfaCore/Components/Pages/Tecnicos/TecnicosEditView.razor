@@ -1,0 +1,220 @@
+@namespace AlfaCore.Components.Pages
+@using AlfaCore.Models
+
+<section class="tecnicos-edit-shell" aria-label="@(CreateMode ? "Nuevo técnico" : "Editar técnico")">
+    <header class="tecnicos-edit-header">
+        <div class="tecnicos-edit-header__identity">
+            <span class="tecnicos-edit-header__avatar" aria-hidden="true">@AvatarText</span>
+            <div class="tecnicos-edit-header__copy">
+                <h2>@DisplayName</h2>
+                <div class="tecnicos-edit-header__meta">
+                    <AlfaTag Tone="@(CreateMode ? AlfaTagTone.Accent : Active ? AlfaTagTone.Success : AlfaTagTone.Neutral)">
+                        @(CreateMode ? "Nuevo" : Active ? "Activo" : "Dado de baja")
+                    </AlfaTag>
+                    <span>Código @(string.IsNullOrWhiteSpace(Model.IdTecnico) ? "pendiente" : Model.IdTecnico)</span>
+                    @if (!CreateMode)
+                    {
+                        <span>Editando registro existente</span>
+                    }
+                </div>
+            </div>
+        </div>
+        <span class="tecnicos-edit-header__context">Técnico de soporte</span>
+    </header>
+
+    <article class="tecnicos-edit-card">
+        <div class="tecnicos-edit-card__scroll">
+            <div class="tecnicos-edit-content">
+                <section class="tecnicos-edit-section">
+                    <div class="tecnicos-edit-section__heading">
+                        <h3>Datos generales</h3>
+                        <p>Identificación principal del técnico dentro de Alfa Gestión.</p>
+                    </div>
+                    <div class="tecnicos-edit-grid">
+                        <AlfaInput Label="Código"
+                                   Required
+                                   MaxLength="4"
+                                   Value="@Model.IdTecnico"
+                                   ValueChanged="@(value => SetTextAsync(nameof(Model.IdTecnico), value))"
+                                   ErrorText="@Error("id-tecnico")"
+                                   Disabled="@(Saving || !CreateMode)"
+                                   Class="tecnicos-edit-field--code" />
+                        <AlfaInput Label="Nombre"
+                                   Required
+                                   MaxLength="100"
+                                   Value="@Model.Nombre"
+                                   ValueChanged="@(value => SetTextAsync(nameof(Model.Nombre), value))"
+                                   ErrorText="@Error("nombre")"
+                                   Disabled="@Saving" />
+                        <AlfaInput Label="Cargo"
+                                   Required
+                                   MaxLength="100"
+                                   Value="@Model.Cargo"
+                                   ValueChanged="@(value => SetTextAsync(nameof(Model.Cargo), value))"
+                                   ErrorText="@Error("cargo")"
+                                   Disabled="@Saving" />
+                    </div>
+                </section>
+
+                <section class="tecnicos-edit-section">
+                    <div class="tecnicos-edit-section__heading">
+                        <h3>Ubicación y contacto</h3>
+                        <p>Domicilio y medios de contacto utilizados para la operación.</p>
+                    </div>
+                    <div class="tecnicos-edit-grid">
+                        <AlfaInput Label="Domicilio"
+                                   MaxLength="100"
+                                   Value="@Model.Domicilio"
+                                   ValueChanged="@(value => SetTextAsync(nameof(Model.Domicilio), value))"
+                                   ErrorText="@Error("domicilio")"
+                                   Disabled="@Saving" />
+                        <AlfaInput Label="Localidad"
+                                   MaxLength="100"
+                                   Value="@Model.Localidad"
+                                   ValueChanged="@(value => SetTextAsync(nameof(Model.Localidad), value))"
+                                   ErrorText="@Error("localidad")"
+                                   Disabled="@Saving" />
+                        <AlfaSelect Label="Provincia"
+                                    Value="@Model.IdProvincia"
+                                    ValueChanged="SetProvinceAsync"
+                                    Options="@ProvinceOptions"
+                                    Placeholder="— Sin provincia —"
+                                    ErrorText="@Error("id-provincia")"
+                                    Disabled="@Saving" />
+                        <AlfaInput Label="Teléfono"
+                                   MaxLength="50"
+                                   Value="@Model.Telefono"
+                                   ValueChanged="@(value => SetTextAsync(nameof(Model.Telefono), value))"
+                                   ErrorText="@Error("telefono")"
+                                   Disabled="@Saving" />
+                    </div>
+                </section>
+
+                <section class="tecnicos-edit-section">
+                    <div class="tecnicos-edit-section__heading">
+                        <h3>Configuración</h3>
+                        <p>Costo operativo, visibilidad de cliente y cuenta de acceso opcional.</p>
+                    </div>
+                    <div class="tecnicos-edit-grid tecnicos-edit-grid--configuration">
+                        <AlfaInput Label="Costo por hora"
+                                   Type="number"
+                                   Value="@CostPerHour"
+                                   ValueChanged="SetCostPerHourAsync"
+                                   ErrorText="@Error("costo-hora")"
+                                   HelpText="Usá un valor mayor o igual a cero."
+                                   Disabled="@Saving"
+                                   Class="tecnicos-edit-field--money" />
+                        <div class="tecnicos-edit-user-field">
+                            <AlfaSelect Label="Usuario asociado"
+                                        Value="@Model.UsuarioAsociado"
+                                        ValueChanged="SetUserAsync"
+                                        Options="@UserOptions"
+                                        Placeholder="— Sin usuario asociado —"
+                                        ErrorText="@Error("usuario-asociado")"
+                                        Disabled="@Saving" />
+                            <div class="tecnicos-edit-user-field__actions">
+                                <AlfaIconButton Icon="bi bi-arrow-clockwise"
+                                                Label="Recargar usuarios"
+                                                Size="AlfaSize.Sm"
+                                                Disabled="@Saving"
+                                                OnClick="_ => OnReloadUsers.InvokeAsync()" />
+                                <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                                            Size="AlfaSize.Sm"
+                                            Icon="bi bi-person-plus"
+                                            Disabled="@Saving"
+                                            OnClick="_ => OnCreateUser.InvokeAsync()">Crear usuario</AlfaButton>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tecnicos-edit-option">
+                        <AlfaCheckbox Value="@Model.OcultarCliente"
+                                      ValueChanged="SetHideClientAsync"
+                                      Disabled="@Saving">Ocultar los datos del cliente</AlfaCheckbox>
+                        <p>Limita la información del cliente visible para este técnico.</p>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(UserCreatedNote))
+                    {
+                        <div class="tecnicos-edit-pending-user" role="status" aria-live="polite">
+                            <i class="bi bi-person-check" aria-hidden="true"></i>
+                            <div>
+                                <strong>Usuario listo</strong>
+                                <p>@UserCreatedNote</p>
+                                <span>Guardá el técnico para completar la asociación.</span>
+                            </div>
+                        </div>
+                    }
+                </section>
+            </div>
+        </div>
+    </article>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public TecnicoSaveRequest Model { get; set; } = new();
+    [Parameter] public bool CreateMode { get; set; }
+    [Parameter] public bool Active { get; set; } = true;
+    [Parameter] public bool Saving { get; set; }
+    [Parameter] public string CostPerHour { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string?> CostPerHourChanged { get; set; }
+    [Parameter] public IReadOnlyList<EstadoItemDto> Provinces { get; set; } = [];
+    [Parameter] public IReadOnlyList<string> Users { get; set; } = [];
+    [Parameter] public IReadOnlyDictionary<string, string> FieldErrors { get; set; } = new Dictionary<string, string>();
+    [Parameter] public string UserCreatedNote { get; set; } = string.Empty;
+    [Parameter] public EventCallback OnReloadUsers { get; set; }
+    [Parameter] public EventCallback OnCreateUser { get; set; }
+
+    private string DisplayName => string.IsNullOrWhiteSpace(Model.Nombre)
+        ? CreateMode ? "Nuevo técnico" : "Técnico sin nombre"
+        : Model.Nombre.Trim();
+    private string AvatarText => string.IsNullOrWhiteSpace(Model.Nombre)
+        ? "T"
+        : Model.Nombre.Trim()[0].ToString().ToUpperInvariant();
+    private string Error(string key) => FieldErrors.TryGetValue(key, out var message) ? message : string.Empty;
+    private IReadOnlyList<AlfaSelectOption> ProvinceOptions => Provinces
+        .Select(item => new AlfaSelectOption(item.Codigo, item.Descripcion))
+        .ToList();
+    private IReadOnlyList<AlfaSelectOption> UserOptions => Users
+        .Select(user => new AlfaSelectOption(user, user))
+        .ToList();
+
+    private Task SetTextAsync(string property, string? value)
+    {
+        var text = value ?? string.Empty;
+        switch (property)
+        {
+            case nameof(Model.IdTecnico): Model.IdTecnico = text; break;
+            case nameof(Model.Nombre): Model.Nombre = text; break;
+            case nameof(Model.Cargo): Model.Cargo = text; break;
+            case nameof(Model.Domicilio): Model.Domicilio = text; break;
+            case nameof(Model.Localidad): Model.Localidad = text; break;
+            case nameof(Model.Telefono): Model.Telefono = text; break;
+        }
+        return Task.CompletedTask;
+    }
+
+    private Task SetProvinceAsync(string? value)
+    {
+        Model.IdProvincia = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task SetUserAsync(string? value)
+    {
+        Model.UsuarioAsociado = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task SetCostPerHourAsync(string? value)
+    {
+        CostPerHour = value ?? string.Empty;
+        return CostPerHourChanged.InvokeAsync(CostPerHour);
+    }
+
+    private Task SetHideClientAsync(bool? value)
+    {
+        Model.OcultarCliente = value is true;
+        return Task.CompletedTask;
+    }
+}

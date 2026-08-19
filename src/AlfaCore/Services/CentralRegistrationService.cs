@@ -21,6 +21,19 @@ public interface ICentralRegistrationService
     /// endpoint que active módulos de cualquier cliente sin probar nada.
     /// </summary>
     Task<PublicTrialResult> IniciarPruebaModulosAsync(string code, IReadOnlyCollection<int> idsModulos, CancellationToken ct = default);
+
+    /// <summary>
+    /// Autoservicio: procesa los Planes elegidos en el selector de Verify.razor para los módulos
+    /// que ya tienen Planes reales cargados (a diferencia de <see cref="IniciarPruebaModulosAsync"/>,
+    /// que sigue siendo el camino para módulos sin Planes todavía). Para cada plan: si tiene
+    /// <c>DiasPrueba &gt; 0</c> y el cliente nunca usó una prueba de ese módulo, se contrata en
+    /// <c>Prueba</c> (<c>ICentralAdminService.ContratarPlanAsync</c>); en cualquier otro caso queda
+    /// como solicitud pendiente de aprobación manual (<c>SolicitarModuloAsync</c>, con el plan
+    /// guardado). Nunca deja un módulo en <c>Activo</c> directo — no hay pasarela de pago online
+    /// todavía, así que solo un admin de Alfa puede activar un contrato pago de verdad. Mismo
+    /// patrón de identificación por código de verificación que <see cref="IniciarPruebaModulosAsync"/>.
+    /// </summary>
+    Task<PublicTrialResult> ElegirPlanesAsync(string code, IReadOnlyCollection<int> idsPlanes, CancellationToken ct = default);
 }
 
 public sealed class CentralRegistrationService(
@@ -29,6 +42,7 @@ public sealed class CentralRegistrationService(
     IRecaptchaValidationService recaptchaValidationService,
     ICentralProvisioningService provisioningService,
     ICentralAdminService centralAdminService,
+    IPlanesService planesService,
     IAppEventService appEvents) : ICentralRegistrationService
 {
     private const string ModuleName = "RegistroPublico";
@@ -345,6 +359,125 @@ public sealed class CentralRegistrationService(
             {
                 Success = false,
                 Message = $"No se pudo activar la prueba gratuita. Podés seguir usando el sistema y activarla más tarde desde soporte. (Incidente: {incidentId})"
+            };
+        }
+    }
+
+    public async Task<PublicTrialResult> ElegirPlanesAsync(string code, IReadOnlyCollection<int> idsPlanes, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(code))
+            return new PublicTrialResult { Success = false, Message = "El código de verificación es inválido." };
+
+        if (idsPlanes.Count == 0)
+            return new PublicTrialResult { Success = true, Message = "No se eligió ningún plan." };
+
+        try
+        {
+            await using var central = new SqlConnection(CentralConnectionString);
+            await central.OpenAsync(ct);
+
+            var pending = await LoadRegistrationByCodeAsync(central, code.Trim(), ct);
+            if (pending is null || !pending.Verified)
+            {
+                return new PublicTrialResult
+                {
+                    Success = false,
+                    Message = "No se pudo identificar la cuenta para procesar el plan elegido. Confirmá primero tu cuenta desde el link del email."
+                };
+            }
+
+            var fallas = new List<string>();
+            var nombresEnPrueba = new List<string>();
+            var nombresSolicitados = new List<string>();
+            foreach (var idPlan in idsPlanes.Distinct())
+            {
+                try
+                {
+                    var plan = await planesService.GetByIdAsync(idPlan, ct);
+                    if (plan is null || !plan.Activo)
+                    {
+                        fallas.Add("Uno de los planes elegidos ya no está disponible.");
+                        continue;
+                    }
+
+                    // Regla de seguridad de negocio (no negociable): el registro público nunca deja
+                    // un ClienteModulos en Activo directo — no hay pasarela de pago online todavía.
+                    // Solo se autoservicio en Prueba cuando el plan la ofrece y el cliente nunca la
+                    // usó para ese módulo (mismo criterio que ContratarPlanAsync aplica internamente);
+                    // en cualquier otro caso queda como solicitud pendiente de aprobación manual.
+                    var yaUsoPrueba = await centralAdminService.ClienteYaUsoPruebaModuloAsync(pending.IdCliente, plan.IdModulo, ct);
+                    var puedeAutoservirseEnPrueba = plan.DiasPrueba > 0 && !yaUsoPrueba;
+
+                    if (puedeAutoservirseEnPrueba)
+                    {
+                        await centralAdminService.ContratarPlanAsync(pending.IdCliente, plan.Id, "auto-registro", ct);
+                        nombresEnPrueba.Add(plan.Nombre);
+                    }
+                    else
+                    {
+                        await centralAdminService.SolicitarModuloAsync(new SolicitarModuloRequest
+                        {
+                            IdCliente = pending.IdCliente,
+                            IdModulo = plan.IdModulo,
+                            IdPlan = plan.Id,
+                            SolicitadoPor = "auto-registro"
+                        }, ct);
+                        nombresSolicitados.Add(plan.Nombre);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await appEvents.LogErrorAsync(
+                        ModuleName,
+                        "ElegirPlan",
+                        ex,
+                        "No se pudo procesar un plan elegido en el registro público.",
+                        new { Code = code.Trim(), idPlan },
+                        AppEventSeverity.Warning,
+                        ct);
+                    fallas.Add(ex.Message);
+                }
+            }
+
+            if (fallas.Count > 0)
+            {
+                return new PublicTrialResult
+                {
+                    Success = false,
+                    Message = $"Se procesaron los planes elegidos, pero hubo un problema con {fallas.Count} de ellos: {string.Join(" | ", fallas)}"
+                };
+            }
+
+            // Mensaje distinto según lo que haya pasado con cada plan: los que arrancaron en
+            // Prueba ya están activos; los que quedaron como solicitud necesitan que Alfa confirme
+            // el pago — el cliente tiene que saber que todavía no puede usarlos.
+            var partes = new List<string>();
+            if (nombresEnPrueba.Count > 0)
+                partes.Add($"Ya activamos la prueba gratuita de {string.Join(", ", nombresEnPrueba)}.");
+            if (nombresSolicitados.Count > 0)
+                partes.Add($"Dejamos pedido {string.Join(", ", nombresSolicitados)} — un asesor de Alfa va a confirmar el pago para activarlo.");
+
+            return new PublicTrialResult
+            {
+                Success = true,
+                Message = partes.Count > 0 ? string.Join(" ", partes) : "Listo. Ya procesamos los planes que elegiste."
+            };
+        }
+        catch (Exception ex)
+        {
+            var incidentId = await appEvents.LogErrorAsync(
+                ModuleName,
+                "ElegirPlanes",
+                ex,
+                "No se pudieron procesar los planes elegidos del registro público.",
+                new { Code = code.Trim(), IdsPlanes = idsPlanes },
+                AppEventSeverity.Error,
+                ct);
+
+            return new PublicTrialResult
+            {
+                Success = false,
+                Message = $"No se pudieron procesar los planes elegidos. Podés seguir usando el sistema y activarlos más tarde desde soporte. (Incidente: {incidentId})"
             };
         }
     }
@@ -716,10 +849,20 @@ public sealed class CentralRegistrationService(
     }
 
     /// <summary>
-    /// Activa la prueba de 30 días del módulo que el visitante eligió en /landing/{slug}, sin
-    /// pasarlo por el selector manual de Verify.razor. No es fatal si falla (el módulo no existe
-    /// más, AlfaKnowledge no pudo aprovisionar, etc.) — la cuenta ya quedó creada igual; devuelve
-    /// null y Verify.razor cae al selector manual como si no hubiera venido de una landing.
+    /// Activa sola la prueba del módulo que el visitante eligió en /landing/{slug}, sin pasarlo
+    /// por el selector manual de Verify.razor. Dos caminos según si el módulo ya tiene Planes
+    /// reales cargados (ver IPlanesService):
+    /// - Sin Planes todavía: comportamiento histórico, prueba fija de 30 días
+    ///   (IniciarPruebaModulosAsync).
+    /// - Con Planes: solo se autoactiva si hay exactamente UN plan con DiasPrueba &gt; 0 y el
+    ///   cliente nunca usó una prueba de ese módulo (ContratarPlanAsync, que arranca en Prueba
+    ///   bajo esa condición — nunca en Activo directo). Si hay 0, 2+ planes con prueba, o el
+    ///   cliente ya usó la prueba antes, no se autoactiva nada acá: Verify.razor muestra el
+    ///   selector de planes para ese módulo como con cualquier otro (no hay ambigüedad segura que
+    ///   resolver sola).
+    /// No es fatal si falla (el módulo no existe más, AlfaKnowledge no pudo aprovisionar, etc.) —
+    /// la cuenta ya quedó creada igual; devuelve null y Verify.razor cae al selector manual como
+    /// si no hubiera venido de una landing.
     /// </summary>
     private async Task<string?> TryActivarModuloDeLandingAsync(string idCliente, string moduloSlug, CancellationToken ct)
     {
@@ -734,13 +877,35 @@ public sealed class CentralRegistrationService(
             if (modulo is null)
                 return null;
 
-            await centralAdminService.IniciarPruebaModulosAsync(new IniciarPruebaModulosRequest
-            {
-                IdCliente = idCliente,
-                IdsModulos = [modulo.Id]
-            }, ct);
+            var planes = await planesService.GetByModuloAsync(modulo.Id, ct);
+            var planesVisibles = planes.Where(p => p.Activo && p.VisibleCatalogo).ToArray();
 
-            return contenido.Nombre;
+            if (planesVisibles.Length == 0)
+            {
+                // Módulo sin Planes reales todavía: comportamiento histórico.
+                await centralAdminService.IniciarPruebaModulosAsync(new IniciarPruebaModulosRequest
+                {
+                    IdCliente = idCliente,
+                    IdsModulos = [modulo.Id]
+                }, ct);
+
+                return contenido.Nombre;
+            }
+
+            var planesConPrueba = planesVisibles.Where(p => p.DiasPrueba > 0).ToArray();
+            if (planesConPrueba.Length == 1)
+            {
+                var yaUsoPrueba = await centralAdminService.ClienteYaUsoPruebaModuloAsync(idCliente, modulo.Id, ct);
+                if (!yaUsoPrueba)
+                {
+                    await centralAdminService.ContratarPlanAsync(idCliente, planesConPrueba[0].Id, "auto-registro-landing", ct);
+                    return contenido.Nombre;
+                }
+            }
+
+            // Módulo con Planes reales pero sin un único plan de prueba inequívoco (0, 2+, o
+            // prueba ya usada) — se deja que el cliente elija a mano en Verify.razor.
+            return null;
         }
         catch (Exception ex)
         {

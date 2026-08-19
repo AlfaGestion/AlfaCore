@@ -1,0 +1,91 @@
+.alfa-lookup { position: relative; }
+
+.alfa-lookup__label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-small);
+    font-weight: 650;
+}
+
+.alfa-lookup__control {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--alfa-space-8);
+    min-height: var(--alfa-control-md);
+    padding: 0 10px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-secondary);
+}
+
+.alfa-lookup__control:focus-within,
+.alfa-lookup__control.is-open {
+    border-color: var(--alfa-accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--alfa-accent) 22%, transparent);
+}
+
+.alfa-lookup__control input {
+    min-width: 0;
+    height: 34px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--alfa-text-primary);
+    font: inherit;
+    font-size: var(--alfa-font-body);
+}
+
+.alfa-lookup__control input::placeholder { color: var(--alfa-text-secondary); }
+
+.alfa-lookup__spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid color-mix(in srgb, var(--alfa-text-secondary) 35%, transparent);
+    border-top-color: var(--alfa-accent);
+    border-radius: 50%;
+    animation: alfa-lookup-spin .7s linear infinite;
+}
+
+.alfa-lookup__results {
+    position: relative;
+    z-index: 1;
+    max-height: 160px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    margin-top: 6px;
+    padding: 6px;
+    border: 1px solid var(--alfa-border-strong);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+}
+
+.alfa-lookup__option {
+    display: block;
+    width: 100%;
+    padding: 9px 10px;
+    border: 0;
+    border-radius: var(--alfa-radius-sm);
+    background: transparent;
+    color: var(--alfa-text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+
+.alfa-lookup__option:hover,
+.alfa-lookup__option:focus-visible { background: var(--alfa-state-hover); outline: none; }
+.alfa-lookup__option.is-selected { background: var(--alfa-state-selected); }
+
+.alfa-lookup__state {
+    padding: 12px 10px;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    line-height: 18px;
+}
+
+.alfa-lookup__state--error { color: color-mix(in srgb, var(--alfa-danger) 72%, white); }
+
+@keyframes alfa-lookup-spin { to { transform: rotate(360deg); } }

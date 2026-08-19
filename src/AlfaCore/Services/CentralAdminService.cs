@@ -821,9 +821,13 @@ public sealed class CentralAdminService(
         var esLegacy = await IsClienteLegacyAsync(cn, normalizedIdCliente, ct).ConfigureAwait(false);
 
         const string activosSql = """
-            SELECT IdModulo, Estado, ActivadoUtc, ActivadoPor, SolicitadoUtc, SolicitadoPor, PruebaVenceUtc
-            FROM dbo.ClienteModulos
-            WHERE IdCliente = @IdCliente;
+            SELECT cm.IdModulo, cm.Estado, cm.ActivadoUtc, cm.ActivadoPor, cm.SolicitadoUtc, cm.SolicitadoPor,
+                   cm.PruebaVenceUtc, cm.IdPlan, p.Nombre AS PlanNombre, p.TipoFacturacion AS PlanTipoFacturacion,
+                   cm.PrecioContratado, cm.MonedaContratada, cm.FechaProximoCobro,
+                   ISNULL(cm.RenovacionAutomatica, 1) AS RenovacionAutomatica
+            FROM dbo.ClienteModulos cm
+            LEFT JOIN dbo.Planes p ON p.Id = cm.IdPlan
+            WHERE cm.IdCliente = @IdCliente;
             """;
         var activos = (await cn.QueryAsync<ClienteModuloRow>(new CommandDefinition(activosSql, new { IdCliente = normalizedIdCliente }, cancellationToken: ct)).ConfigureAwait(false))
             .ToDictionary(x => x.IdModulo);
@@ -853,7 +857,14 @@ public sealed class CentralAdminService(
                     ActivadoPor = activoRow?.ActivadoPor,
                     SolicitadoUtc = activoRow?.SolicitadoUtc,
                     SolicitadoPor = activoRow?.SolicitadoPor,
-                    PruebaVenceUtc = activoRow?.PruebaVenceUtc
+                    PruebaVenceUtc = activoRow?.PruebaVenceUtc,
+                    IdPlan = activoRow?.IdPlan,
+                    PlanNombre = activoRow?.PlanNombre,
+                    PlanTipoFacturacion = activoRow?.PlanTipoFacturacion,
+                    PrecioContratado = activoRow?.PrecioContratado,
+                    MonedaContratada = activoRow?.MonedaContratada,
+                    FechaProximoCobro = activoRow?.FechaProximoCobro,
+                    RenovacionAutomatica = activoRow?.RenovacionAutomatica ?? true
                 };
             })
             .OrderBy(x => x.Nombre)
@@ -1188,6 +1199,142 @@ public sealed class CentralAdminService(
     }
 
     /// <summary>
+    /// Contrata un Plan para un cliente — ver <see cref="ICentralAdminService.ContratarPlanAsync"/>.
+    /// Reusa <see cref="ActivarConEstadoAsync"/> para la cascada de dependencias obligatorias y el
+    /// aprovisionamiento de AlfaKnowledge; después sella el contrato (Plan/precio/próximo cobro)
+    /// con un UPDATE aparte, igual de simple que el resto de las operaciones de este servicio.
+    /// </summary>
+    public async Task ContratarPlanAsync(string idCliente, int idPlan, string contratadoPor, CancellationToken ct = default)
+    {
+        var normalizedIdCliente = NormalizeKey(idCliente);
+        if (string.IsNullOrWhiteSpace(normalizedIdCliente))
+            throw new AppUserFacingException("El cliente es obligatorio.", "ADMIN_PLAN_CLIENTE");
+        if (!await ExistsClienteAsync(normalizedIdCliente, ct).ConfigureAwait(false))
+            throw new AppUserFacingException("El cliente central no existe.", "ADMIN_PLAN_CLIENTE_NO_EXISTE");
+
+        var plan = await GetPlanRowAsync(idPlan, ct).ConfigureAwait(false);
+        if (plan is null || !plan.Activo)
+            throw new AppUserFacingException("El plan seleccionado no existe o está dado de baja.", "ADMIN_PLAN_NO_EXISTE");
+
+        var normalizedContratadoPor = NormalizeText(contratadoPor);
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        // "No usó prueba antes para ese módulo" = nunca se cargó PruebaVenceUtc en su fila de
+        // ClienteModulos (sea cual sea el estado actual). Si ya lo tuvo, esta contratación arranca
+        // directo en Activo aunque el plan tenga DiasPrueba > 0. Ver ClienteYaUsoPruebaModuloAsync
+        // (misma lógica, expuesta públicamente para que el registro público la reuse).
+        var yaUsoPrueba = await ClienteYaUsoPruebaModuloAsync(normalizedIdCliente, plan.IdModulo, ct).ConfigureAwait(false);
+        var arrancaEnPrueba = plan.DiasPrueba > 0 && !yaUsoPrueba;
+        var pruebaVenceUtc = arrancaEnPrueba ? DateTime.UtcNow.AddDays(plan.DiasPrueba) : (DateTime?)null;
+        var estado = arrancaEnPrueba ? ClienteModuloEstados.Prueba : ClienteModuloEstados.Activo;
+
+        await ActivarConEstadoAsync(normalizedIdCliente, plan.IdModulo, estado, normalizedContratadoPor, pruebaVenceUtc, ct).ConfigureAwait(false);
+
+        // El primer cobro se calcula desde el fin de la prueba (si arrancó en Prueba) o desde ahora
+        // (contratación directa). Ver PlanBillingHelper para el detalle de cada TipoFacturacion.
+        var baseCiclo = pruebaVenceUtc ?? DateTime.UtcNow;
+        var fechaProximoCobro = PlanBillingHelper.CalcularProximoCobro(plan.TipoFacturacion, baseCiclo, plan.CantidadIncluida);
+
+        const string contratoSql = """
+            UPDATE dbo.ClienteModulos
+            SET IdPlan = @IdPlan,
+                PrecioContratado = @Precio,
+                MonedaContratada = @Moneda,
+                FechaProximoCobro = @FechaProximoCobro,
+                RenovacionAutomatica = @RenovacionAutomatica
+            WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo;
+            """;
+        await cn.ExecuteAsync(new CommandDefinition(contratoSql, new
+        {
+            IdPlan = plan.Id,
+            plan.Precio,
+            plan.Moneda,
+            FechaProximoCobro = fechaProximoCobro,
+            RenovacionAutomatica = plan.RenovacionAutomaticaDefault,
+            IdCliente = normalizedIdCliente,
+            IdModulo = plan.IdModulo
+        }, cancellationToken: ct)).ConfigureAwait(false);
+
+        await appEvents.LogAuditAsync(
+            "Central", "ContratarPlan", "ClienteModulos", normalizedIdCliente,
+            $"Plan '{plan.Codigo}' contratado para el módulo {plan.IdModulo} (estado {estado}).",
+            new { normalizedIdCliente, plan.Id, plan.IdModulo, estado, fechaProximoCobro }, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Cambia el plan contratado — ver <see cref="ICentralAdminService.CambiarPlanAsync"/>. Sin
+    /// prorrateo: solo actualiza el contrato, el período en curso (y su cargo ya emitido, si lo
+    /// hay) no se tocan.
+    /// </summary>
+    public async Task CambiarPlanAsync(string idCliente, int idModulo, int nuevoIdPlan, string cambiadoPor, CancellationToken ct = default)
+    {
+        var normalizedIdCliente = NormalizeKey(idCliente);
+        if (string.IsNullOrWhiteSpace(normalizedIdCliente))
+            throw new AppUserFacingException("El cliente es obligatorio.", "ADMIN_PLAN_CLIENTE");
+        if (!await ExistsClienteAsync(normalizedIdCliente, ct).ConfigureAwait(false))
+            throw new AppUserFacingException("El cliente central no existe.", "ADMIN_PLAN_CLIENTE_NO_EXISTE");
+
+        var plan = await GetPlanRowAsync(nuevoIdPlan, ct).ConfigureAwait(false);
+        if (plan is null || !plan.Activo)
+            throw new AppUserFacingException("El plan seleccionado no existe o está dado de baja.", "ADMIN_PLAN_NO_EXISTE");
+        if (plan.IdModulo != idModulo)
+            throw new AppUserFacingException("El plan elegido no pertenece a este módulo.", "ADMIN_PLAN_MODULO_MISMATCH");
+
+        const string sql = """
+            UPDATE dbo.ClienteModulos
+            SET IdPlan = @IdPlan, PrecioContratado = @Precio, MonedaContratada = @Moneda
+            WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var filas = await cn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            IdPlan = plan.Id,
+            plan.Precio,
+            plan.Moneda,
+            IdCliente = normalizedIdCliente,
+            IdModulo = idModulo
+        }, cancellationToken: ct)).ConfigureAwait(false);
+
+        if (filas == 0)
+            throw new AppUserFacingException("El cliente no tiene contratado ese módulo todavía.", "ADMIN_PLAN_MODULO_NO_CONTRATADO");
+
+        await appEvents.LogAuditAsync(
+            "Central", "CambiarPlan", "ClienteModulos", normalizedIdCliente,
+            $"Plan cambiado a '{plan.Codigo}' para el módulo {idModulo}. Efectivo desde el próximo período (sin prorrateo).",
+            new { normalizedIdCliente, idModulo, nuevoIdPlan = plan.Id, cambiadoPor = NormalizeText(cambiadoPor) }, ct).ConfigureAwait(false);
+    }
+
+    public async Task<bool> ClienteYaUsoPruebaModuloAsync(string idCliente, int idModulo, CancellationToken ct = default)
+    {
+        var normalizedIdCliente = NormalizeKey(idCliente);
+        if (string.IsNullOrWhiteSpace(normalizedIdCliente))
+            return false;
+
+        const string sql = "SELECT PruebaVenceUtc FROM dbo.ClienteModulos WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo;";
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        var pruebaPrevia = await cn.ExecuteScalarAsync<DateTime?>(new CommandDefinition(sql, new { IdCliente = normalizedIdCliente, IdModulo = idModulo }, cancellationToken: ct)).ConfigureAwait(false);
+        return pruebaPrevia is not null;
+    }
+
+    private async Task<PlanContratoRow?> GetPlanRowAsync(int idPlan, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT Id, IdModulo, Codigo, TipoFacturacion, Precio, Moneda, DiasPrueba, DiasGracia,
+                   CantidadIncluida, RenovacionAutomaticaDefault, Activo
+            FROM dbo.Planes
+            WHERE Id = @IdPlan;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+        return await cn.QuerySingleOrDefaultAsync<PlanContratoRow>(new CommandDefinition(sql, new { IdPlan = idPlan }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Pruebas gratuitas vigentes que vencen dentro de <paramref name="diasAntes"/> días y todavía
     /// no recibieron un aviso en las últimas 24hs — para el job de recordatorios. El email sale
     /// de <c>dbo.users</c> (mismo login con el que el cliente se registró), no de <c>dbo.Clientes</c>
@@ -1265,10 +1412,13 @@ public sealed class CentralAdminService(
                 m.Nombre,
                 m.Precio,
                 cm.SolicitadoUtc,
-                cm.SolicitadoPor
+                cm.SolicitadoPor,
+                cm.IdPlan,
+                p.Nombre AS PlanNombre
             FROM dbo.ClienteModulos cm
             JOIN dbo.Modulos m ON m.Id = cm.IdModulo
             JOIN dbo.Clientes c ON c.idcliente = cm.IdCliente
+            LEFT JOIN dbo.Planes p ON p.Id = cm.IdPlan
             WHERE cm.Estado = N'Solicitado'
             ORDER BY cm.SolicitadoUtc;
             """;
@@ -1294,6 +1444,17 @@ public sealed class CentralAdminService(
         if (modulos.All(m => m.Id != request.IdModulo || !m.Activo))
             throw new AppUserFacingException("El módulo seleccionado no existe o está dado de baja.", "ADMIN_CLIENTEMODULO_MODULO_NO_EXISTE");
 
+        // Si se eligió un plan (registro público con Planes reales, o el admin lo carga a mano),
+        // validamos que sea del mismo módulo antes de guardarlo — se persiste igual aunque la fila
+        // quede en Solicitado, para que AdminSolicitudesModulos.razor sepa qué plan contratar al
+        // aprobar (ver ContratarPlanAsync).
+        if (request.IdPlan is int idPlanSolicitado)
+        {
+            var planSolicitado = await GetPlanRowAsync(idPlanSolicitado, ct).ConfigureAwait(false);
+            if (planSolicitado is null || planSolicitado.IdModulo != request.IdModulo)
+                throw new AppUserFacingException("El plan elegido no pertenece a este módulo.", "ADMIN_SOLICITUD_PLAN_MODULO_MISMATCH");
+        }
+
         var solicitadoPor = NormalizeText(request.SolicitadoPor);
 
         // El WHERE Estado <> 'Activo' en la rama UPDATE evita que "Solicitar" por error sobre un
@@ -1302,18 +1463,19 @@ public sealed class CentralAdminService(
             IF EXISTS (SELECT 1 FROM dbo.ClienteModulos WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo)
                 UPDATE dbo.ClienteModulos
                 SET Estado = N'Solicitado', SolicitadoUtc = GETUTCDATE(), SolicitadoPor = @SolicitadoPor,
-                    DecididoUtc = NULL, DecididoPor = NULL
+                    DecididoUtc = NULL, DecididoPor = NULL, IdPlan = @IdPlan
                 WHERE IdCliente = @IdCliente AND IdModulo = @IdModulo AND Estado <> N'Activo';
             ELSE
-                INSERT INTO dbo.ClienteModulos (IdCliente, IdModulo, Estado, SolicitadoUtc, SolicitadoPor)
-                VALUES (@IdCliente, @IdModulo, N'Solicitado', GETUTCDATE(), @SolicitadoPor);
+                INSERT INTO dbo.ClienteModulos (IdCliente, IdModulo, Estado, SolicitadoUtc, SolicitadoPor, IdPlan)
+                VALUES (@IdCliente, @IdModulo, N'Solicitado', GETUTCDATE(), @SolicitadoPor, @IdPlan);
             """;
 
         await cn.ExecuteAsync(new CommandDefinition(upsertSql, new
         {
             IdCliente = idCliente,
             IdModulo = request.IdModulo,
-            SolicitadoPor = string.IsNullOrWhiteSpace(solicitadoPor) ? null : solicitadoPor
+            SolicitadoPor = string.IsNullOrWhiteSpace(solicitadoPor) ? null : solicitadoPor,
+            request.IdPlan
         }, cancellationToken: ct)).ConfigureAwait(false);
     }
 
@@ -1657,6 +1819,29 @@ public sealed class CentralAdminService(
         public DateTime? SolicitadoUtc { get; set; }
         public string? SolicitadoPor { get; set; }
         public DateTime? PruebaVenceUtc { get; set; }
+        public int? IdPlan { get; set; }
+        public string? PlanNombre { get; set; }
+        public string? PlanTipoFacturacion { get; set; }
+        public decimal? PrecioContratado { get; set; }
+        public string? MonedaContratada { get; set; }
+        public DateTime? FechaProximoCobro { get; set; }
+        public bool RenovacionAutomatica { get; set; } = true;
+    }
+
+    /// <summary>Fila de dbo.Planes usada por ContratarPlanAsync/CambiarPlanAsync.</summary>
+    private sealed class PlanContratoRow
+    {
+        public int Id { get; set; }
+        public int IdModulo { get; set; }
+        public string Codigo { get; set; } = string.Empty;
+        public string TipoFacturacion { get; set; } = string.Empty;
+        public decimal Precio { get; set; }
+        public string Moneda { get; set; } = string.Empty;
+        public int DiasPrueba { get; set; }
+        public int DiasGracia { get; set; }
+        public int? CantidadIncluida { get; set; }
+        public bool RenovacionAutomaticaDefault { get; set; }
+        public bool Activo { get; set; }
     }
 
     /// <summary>

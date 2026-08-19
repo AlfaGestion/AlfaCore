@@ -16,6 +16,587 @@ general del repo).
 
 ---
 
+## Actualización 2026-08-18 (4): planes reales en landing pages + selección de plan en el registro público
+
+**Contexto de negocio** (decidido con el dueño del producto en esta misma conversación, no estaba
+escrito en ningún doc hasta esta entrada): hasta esta tarea, "probar un módulo gratis" era: el
+cliente tildaba checkboxes de módulos en `Verify.razor` (o llegaba desde una landing con un módulo
+pre-elegido) y arrancaba una prueba fija de `PruebaModuloDefaults.DiasDuracion` (30 días), sin
+relación con ningún `Plan`. Ahora que existen Planes reales (Fase 2/3/4 ya cerradas más arriba en
+este documento — `dbo.Planes`, `ContratarPlanAsync`, etc.), el dueño del producto pidió tres cosas:
+
+1. Que las landing pages muestren precios/planes reales cuando el módulo ya los tenga cargados, en
+   vez de (o además de) el precio hardcodeado de `LandingContenidoCatalogo`.
+2. Que el cliente elija un plan al registrarse, no solo tilde el módulo — y que los días de prueba
+   salgan de `Plan.DiasPrueba` en vez del default fijo de 30 días.
+3. **Regla de seguridad de negocio, no negociable**: elegir un plan en el registro público SOLO
+   puede dejar al cliente en `Prueba` (autoservicio, igual que ya funcionaba la prueba gratuita) —
+   NUNCA en `Activo` directo, porque no hay ninguna integración de pago online todavía
+   (`ManualPaymentProvider` es el único proveedor, requiere que alguien de Alfa confirme el pago a
+   mano). Si el plan elegido no tiene `DiasPrueba > 0`, o el cliente ya usó una prueba antes para
+   ese módulo, la elección queda como pedido pendiente de aprobación (mismo mecanismo que ya
+   existía: `Estado = Solicitado`, cola en `/admin/solicitudes`) — nunca se activa directo sin pago
+   confirmado.
+
+**Archivos nuevos**: ninguno — todo se hizo extendiendo servicios/páginas ya existentes de la
+Fase 3/4, sin duplicar mecanismos.
+
+**Archivos modificados**:
+- `src/AlfaCore/Models/ModulosModels.cs` — `SolicitarModuloRequest.IdPlan` (nullable, opcional) y
+  `SolicitudModuloDto.IdPlan`/`PlanNombre` (nullable): permiten guardar y mostrar qué plan pidió el
+  cliente cuando una solicitud viene de un módulo con Planes reales, reusando la columna
+  `ClienteModulos.IdPlan` que ya existía desde la Fase 2 (no hizo falta ninguna columna nueva).
+- `src/AlfaCore/Models/PlanesModels.cs` — `PlanDisplayHelper.FormatPeriodoCorto(tipoFacturacion)`,
+  helper estático chico (switch de `TipoFacturacion` a sufijo tipo "/mes"/"/año"/"/ciclo") usado
+  por las 3 pantallas nuevas (`LandingModulos.razor`, `LandingModulo.razor`, `Verify.razor`) para no
+  repetir el mismo switch tres veces.
+- `src/AlfaCore/Services/IPlanesService.cs` / `PlanesService.cs` — método nuevo
+  `GetPlanesVisiblesPorCodigoModuloAsync()`: un solo `JOIN` entre `dbo.Planes` y `dbo.Modulos`
+  (`Activo = 1 AND VisibleCatalogo = 1` del lado del plan, módulo también activo), agrupado por
+  `Modulos.Codigo` (case-insensitive) — evita que cada pantalla pública tenga que resolver
+  `Codigo -> IdModulo` a mano y haga N llamadas a `GetByModuloAsync`. Un módulo sin ningún plan
+  cargado simplemente no aparece en el diccionario.
+- `src/AlfaCore/Services/ICentralAdminService.cs` / `CentralAdminService.cs` — método nuevo
+  `ClienteYaUsoPruebaModuloAsync(idCliente, idModulo)`: extrae a un método público la consulta que
+  `ContratarPlanAsync` ya usaba internamente (`PruebaVenceUtc` cargado alguna vez en
+  `ClienteModulos`, sea cual sea el estado actual) para no duplicar esa regla en
+  `CentralRegistrationService` — el registro público la necesita para decidir, ANTES de llamar a
+  `ContratarPlanAsync`, si puede autoservirse en Prueba o si tiene que quedar como solicitud
+  pendiente (nunca llama a `ContratarPlanAsync` si eso resultaría en `Activo` directo).
+  `ContratarPlanAsync` se refactorizó para llamar a este método nuevo en vez de repetir la consulta
+  inline (elimina duplicación, mismo comportamiento). `SolicitarModuloAsync` ahora acepta
+  `request.IdPlan` opcional: si viene cargado, valida que el plan pertenezca al módulo pedido (reusa
+  el `GetPlanRowAsync` privado que ya usaban `ContratarPlanAsync`/`CambiarPlanAsync`) y lo persiste
+  en `ClienteModulos.IdPlan` aunque la fila quede en `Solicitado`. `GetSolicitudesPendientesAsync`
+  ahora hace `LEFT JOIN dbo.Planes` para traer `IdPlan`/`PlanNombre` a la cola de aprobación.
+- `src/AlfaCore/Services/CentralRegistrationService.cs` — inyecta `IPlanesService` (nueva
+  dependencia del constructor). Método nuevo `ElegirPlanesAsync(code, idsPlanes)` en
+  `ICentralRegistrationService`: para cada plan elegido en el selector de `Verify.razor`, aplica la
+  regla de seguridad de negocio (si `DiasPrueba > 0` y el cliente nunca usó la prueba de ese módulo
+  → `ContratarPlanAsync`, que arranca en `Prueba`; en cualquier otro caso → `SolicitarModuloAsync`
+  con el `IdPlan` guardado, queda `Solicitado`) — nunca deja nada en `Activo` directo. Devuelve un
+  mensaje que distingue qué planes arrancaron en prueba y cuáles quedaron pendientes de aprobación,
+  para que el cliente sepa cuáles puede usar ya mismo. `TryActivarModuloDeLandingAsync` (la
+  activación automática al confirmar el email cuando se vino de `/landing/{slug}`) ahora consulta
+  los Planes del módulo antes de decidir: sin Planes reales → comportamiento histórico (prueba fija
+  de 30 días vía `IniciarPruebaModulosAsync`, sin cambios); con Planes y exactamente UNO que ofrece
+  prueba y el cliente nunca la usó → se autoactiva ese plan directo con `ContratarPlanAsync` (mismo
+  resultado visible que antes: "Ya activamos tu prueba de X"); con 0, 2+ planes con prueba, o prueba
+  ya usada → no autoactiva nada, `Verify.razor` muestra el selector de planes para ese módulo como
+  con cualquier otro (no hay forma segura de elegir sola por el usuario).
+- `src/AlfaCore/Components/Pages/Verify.razor` / `.razor.css` — el selector de módulos que aparece
+  al confirmar el email ahora es mixto: para cada módulo con Planes reales cargados (consulta única
+  a `GetPlanesVisiblesPorCodigoModuloAsync`) se muestra un selector de planes (radios con
+  nombre/precio+moneda/período/días de prueba, más una opción "No, gracias") en vez del checkbox;
+  los módulos sin Planes siguen mostrando el checkbox de siempre, sin cambios de comportamiento. Al
+  confirmar, se llaman `IniciarPruebaModulosAsync` (módulos por checkbox, sin cambios) y
+  `ElegirPlanesAsync` (módulos por plan) en la misma acción, y se combinan los mensajes de
+  resultado. Si `GetPlanesVisiblesPorCodigoModuloAsync` falla por cualquier motivo (ej. `dbo.Planes`
+  todavía no existe en una base que no corrió la migración de Fase 2), se cae en silencio al
+  comportamiento 100% checkbox de siempre — nunca rompe el selector completo. CSS nuevo:
+  `.plan-option-list`/`.plan-option`/etc. en `Verify.razor.css`, mismo estilo visual que
+  `.modulo-card`.
+- `src/AlfaCore/Components/Pages/LandingModulo.razor` — si el módulo tiene Planes reales
+  (`_planes.Count > 0`), oculta el precio hardcodeado del hero y agrega una sección "Elegí tu plan"
+  con una tarjeta por plan (nombre, precio+moneda, período, días de prueba si tiene). Sin Planes:
+  comportamiento histórico sin cambios (precio hardcodeado de `LandingContenidoCatalogo`). El CTA
+  final ajusta el copy ("elegí tu plan" vs. "prueba gratuita de 30 días") según corresponda.
+- `src/AlfaCore/Components/Pages/LandingModulos.razor` (índice `/modulos`) — la tarjeta de cada
+  módulo muestra "Desde {moneda} {precio del plan más barato}{período}" si el módulo ya tiene Planes
+  reales, o el precio hardcodeado de siempre si no.
+- `src/AlfaCore/wwwroot/css/landing.css` — sección nueva `.landing-planes`/`.landing-plan-card`/etc.
+  para la grilla de planes de `LandingModulo.razor`, mismo lenguaje visual que `.landing-features`.
+- `src/AlfaCore/Components/Pages/AdminSolicitudesModulos.razor` — columna nueva "Plan" en la tabla
+  (nombre del plan pedido, o "—" si la solicitud no tiene uno). "Aprobar" ahora llama a
+  `ContratarPlanAsync` cuando la solicitud tiene `IdPlan` guardado (deja el contrato con ese plan,
+  precio y próximo cobro calculados) en vez de `ActivarModuloAsync` — mismo criterio que "Confirmar
+  pago" en el panel Cliente → Módulos: es acá donde un humano de Alfa confirma el pago. Las
+  solicitudes viejas sin `IdPlan` (o los módulos que todavía no tienen Planes) siguen usando
+  `ActivarModuloAsync` exactamente como antes — compatibilidad total con la cola existente.
+
+**Compatibilidad con módulos sin Planes todavía**: en cada punto de esta tarea se comprobó
+explícitamente el camino "el módulo no tiene ningún plan cargado" y se dejó el comportamiento
+histórico intacto (checkbox de 30 días fijos en `Verify.razor`, precio hardcodeado en las landings,
+`ActivarModuloAsync` en la cola de solicitudes). Como solo `CONVERSACIONES` tiene Planes reales
+cargados hoy (MENSUAL $150 ARS con 30 días de prueba y 5 de gracia; ANUAL $1500 ARS sin prueba y 10
+de gracia — cargados en una sesión anterior desde `/admin/modulos/{id}/planes`), el resto del
+catálogo (`TICKETS`, `ALFAKNOWLEDGE`, `PARTES_HORAS`, `AUTOMATIZACIONES`, `LOGISTICA`,
+`POS - PUNTO DE VENTA`) sigue viéndose y comportándose exactamente igual que antes de esta tarea.
+
+**Se puede probar en vivo** (a diferencia de las Fases 2/3/4, acá SÍ — la migración de Fase 2 ya
+corrió contra `ALFA_CENTRAL` y `CONVERSACIONES` ya tiene los 2 planes reales cargados):
+1. `/modulos` y `/landing/conversaciones` deberían mostrar "Desde ARS 150/mes" en vez de
+   "USD 150/mes", y la landing de detalle debería mostrar la sección "Elegí tu plan" con las 2
+   tarjetas (MENSUAL con badge "30 días de prueba gratis", ANUAL sin badge).
+2. Registrarse desde `/registrarme?modulo=conversaciones` (un solo plan con prueba de
+   CONVERSACIONES — el MENSUAL) → al confirmar el email debería autoactivarse solo en `Prueba`
+   (mismo mensaje "Ya activamos tu prueba de Conversaciones" que antes), sin pasar por el selector.
+3. Registrarse desde `/registrarme` (sin módulo de landing) → en el paso de Verify, el módulo
+   Conversaciones debería aparecer con el selector de 2 planes (no checkbox); elegir el MENSUAL para
+   un cliente que nunca usó la prueba debería dejarlo en `Prueba` de inmediato; elegir el ANUAL (sin
+   `DiasPrueba`) debería dejarlo como solicitud pendiente visible en `/admin/solicitudes` con la
+   columna "Plan" mostrando "Anual" — y "Aprobar" ahí debería llamar a `ContratarPlanAsync` en vez
+   de `ActivarModuloAsync` (contrato con `PrecioContratado`/`FechaProximoCobro` calculados, no solo
+   `Estado = Activo`).
+4. Ningún módulo distinto de `CONVERSACIONES` debería mostrar cambios visibles en ningún paso —
+   confirmar que el checkbox viejo sigue intacto para `TICKETS`/`ALFAKNOWLEDGE`/etc.
+5. Nada de esto se ejecutó en vivo en esta sesión — solo se compiló (`dotnet build`, 0 errores,
+   mismas 3 advertencias preexistentes de `InterfacesCatalogosService.cs`) y pasó
+   `check_catalogo.py` (68 rutinas, 0 advertencias, 0 errores).
+
+---
+
+## Actualización 2026-08-18 (3): Fase 4 implementada — pantallas de administración
+
+Implementación de la Fase 4 descripta más abajo ("plan de implementación" → "Fase 4 —
+Administración (Blazor)"). Compiló limpio (`dotnet build`, 0 errores, mismas 3 advertencias
+preexistentes de `InterfacesCatalogosService.cs`, no tocado en esta tarea) y pasó
+`check_catalogo.py` (68 rutinas, 0 advertencias, 0 errores — el conteo no cambió porque el script
+valida consistencia interna de `docs/CATALOGO_RUTINAS.md`, no que cada página nueva esté
+catalogada). **Sigue sin poder probarse en vivo**: el script de la Fase 2
+(`planes_cargos_pagos_modelo_inicial.sql`) todavía no corrió contra `ALFA_CENTRAL` — sin
+`dbo.Planes`/`dbo.Cargos`/`dbo.Pagos` ni las columnas nuevas de `ClienteModulos`, las pantallas
+nuevas van a fallar contra la base real apenas se toque algo real. Ese sigue siendo el paso manual
+previo obligatorio.
+
+**Archivos nuevos**:
+- `src/AlfaCore/Components/Pages/AdminPlanes.razor` (`/admin/modulos/{idModulo:int}/planes`) —
+  ABM de planes de un módulo puntual, mismo layout de dos columnas (formulario + listado) que
+  `AdminModulos.razor`. Botón "Planes" agregado a cada fila de `AdminModulos.razor` que navega
+  acá. Alta/edición/baja lógica vía `IPlanesService` (ya existía de la Fase 3, sin cambios). Gate
+  `superadmin=1`. Sin paginación ni "Configurar vista" — ver decisión 1 más abajo.
+- `src/AlfaCore/Components/Pages/AdminCargos.razor` (`/admin/cargos`) — listado paginado
+  server-side (OFFSET/FETCH, regla 27) de `dbo.Cargos` con filtros (cliente/estado/vencimiento) y
+  "Configurar vista" (columnas Cliente/Concepto/Período/Importe/Moneda/Vencimiento/Estado,
+  activables y reordenables, persistida por usuario). Sin alta manual ni botón "Anular" — ver
+  decisión 2. Gate `superadmin=1`.
+- `src/AlfaCore/Components/Pages/AdminPagos.razor` (`/admin/pagos`) — mismo patrón de listado
+  paginado + "Configurar vista" (Cliente/Fecha/Importe/Moneda/Medio de
+  pago/Estado/Referencia) sobre `dbo.Pagos`, más un modal "Registrar pago" (Cliente → combo que
+  carga los cargos `PENDIENTE`/`VENCIDO` de ese cliente → Cargo, Fecha, Importe, Moneda, Medio de
+  pago, Referencia, Observaciones) que llama a `IBillingService.RegistrarPagoManualAsync` (ya
+  existía de la Fase 3, sin cambios). Gate `superadmin=1`.
+
+**Archivos modificados**:
+- `src/AlfaCore/Models/BillingModels.cs` — `CargosFilters`/`PagosFilters` (con
+  `PageNumber`/`PageSize`, regla 27); `ClienteNombre` agregado como propiedad enriquecida (no es
+  columna de `dbo.Cargos`/`dbo.Pagos`) a `CargoDto`/`PagoDto`, poblada solo por los métodos de
+  búsqueda nuevos; DTOs de "Configurar vista" para ambos listados
+  (`CargosViewSettingsDto`/`CargosViewColumnDto`/`CargosViewColumnKeys`/`CargosViewGroupKeys` y
+  el equivalente para Pagos), siguiendo al pie de la letra la estructura que pide la regla 26.3 de
+  `CODEX_RULES.md`.
+- `src/AlfaCore/Services/IBillingService.cs` / `BillingService.cs` — se agregó
+  `SearchCargosAsync`/`SearchPagosAsync` (mismo patrón OFFSET/FETCH + COUNT que
+  `PlanesService.SearchAsync`, con `LEFT JOIN dbo.Clientes` para resolver el nombre a mostrar en
+  la grilla) y el mecanismo completo de "Configurar vista" por usuario
+  (`Get/SaveCargosViewSettingsAsync`, `Get/SavePagosViewSettingsAsync`), calcado de
+  `ContactosService`/`UsuariosService` (misma clave hasheada `USUVIEW-{MODULO}-{hash24}`, misma
+  resolución de columna de detalle `VALORAUX`/`DESCRIPCION` en `TA_CONFIGURACION`). Diferencia
+  importante de diseño: esa configuración de vista es una preferencia de UI del usuario, no un
+  dato de negocio de ALFA_CENTRAL — así que se guarda en `dbo.TA_CONFIGURACION` de la base de
+  **cliente activa en la sesión** (`ISessionService.GetConnectionString()`, nuevo parámetro del
+  constructor), exactamente igual que `ContactosService`/`UsuariosService`, mientras que
+  Cargos/Pagos/Planes en sí siguen leyéndose de ALFA_CENTRAL como el resto de la Fase 3. `BillingService`
+  ahora depende de dos connection strings distintas a la vez (`ConnectionString` → ALFA_CENTRAL,
+  `TenantConnectionString` → base de cliente activa), documentado con comentarios en el código
+  para que no se confunda con un error.
+- `src/AlfaCore/Models/ModulosModels.cs` — `ClienteModuloDto` extendido con `IdPlan`,
+  `PlanNombre`, `PlanTipoFacturacion`, `PrecioContratado`, `MonedaContratada`,
+  `FechaProximoCobro`, `RenovacionAutomatica` — todos nullable/con default salvo
+  `RenovacionAutomatica` (default `true`), aditivo, no rompe nada existente.
+- `src/AlfaCore/Services/CentralAdminService.cs` — `GetClienteModulosAsync` ahora hace `LEFT JOIN
+  dbo.Planes` sobre `ClienteModulos.IdPlan` para traer el nombre/tipo de facturación del plan
+  contratado y lo mapea al DTO extendido. `ContratarPlanAsync`/`CambiarPlanAsync` (ya existían de
+  la Fase 3) no se tocaron.
+- `src/AlfaCore/Components/Pages/AdminModulos.razor` — botón "Planes" nuevo por fila, navega a
+  `/admin/modulos/{id}/planes`.
+- `src/AlfaCore/Components/Pages/AdminHome.razor` — panel Cliente → Módulos extendido: nueva
+  columna "Plan" (nombre del plan contratado + próximo vencimiento, o "—" si no tiene), botón
+  "Contratar plan"/"Cambiar plan" (oculto para módulos que son dependencia obligatoria de otro,
+  que no llevan plan) que abre un modal con el catálogo de planes activos de ese módulo
+  (`IPlanesService.GetByModuloAsync`) y llama a `ContratarPlanAsync`/`CambiarPlanAsync` según
+  corresponda. Botones nuevos "Cargos"/"Pagos" en el header principal, junto al que ya llevaba a
+  "Módulos". Nada de lo existente (Activar/Suspender/Solicitar/Rechazar) se tocó.
+
+**Decisiones tomadas durante la implementación (no estaban 100% cerradas en el plan)**:
+
+1. **Planes: sin paginación ni "Configurar vista".** El plan original ("Fase 4" más abajo) sugería
+   la ruta `/admin/modulos/{codigo}/planes` (se usó `/admin/modulos/{idModulo:int}/planes` — id
+   numérico en vez de código, más simple para el route constraint de Blazor) pero no era
+   explícito sobre paginación/vista configurable. Se decidió NO agregarlas, siguiendo el
+   precedente real más cercano en el propio código: el catálogo de módulos en `AdminModulos.razor`
+   (mismo tipo de pantalla — catálogo chico administrado por superadmin) tampoco las tiene. La
+   cantidad de planes por módulo está acotada por diseño (unos pocos por módulo del piloto), así
+   que no se justifica ese costo. Cargos/Pagos sí las llevan (pedido explícito de la tarea,
+   volumen genuinamente transaccional).
+2. **"Anular cargo": fuera de alcance, confirmado.** `BillingService` no tiene ningún método para
+   anular/cancelar un `Cargo` (solo `GenerarCargoAsync`, `RegistrarPagoManualAsync`,
+   `ProcesarVencimientosAsync`, `ProcesarGraciaYSuspensionAsync` — nada que mueva `Estado` a
+   `ANULADO`). Agregarlo hoy hubiera significado inventar una regla de negocio nueva (¿qué pasa
+   con `ClienteModulos.FechaProximoCobro` si se anula el cargo que lo iba a mover? ¿hace falta un
+   motivo?) sin que el dueño del producto la haya confirmado — CODEX_RULES lo prohíbe
+   explícitamente ("no inventar reglas no confirmadas"). `AdminCargos.razor` queda sin ese botón;
+   queda anotado como pendiente para una fase futura si se necesita en producción.
+3. **No se creó el script SQL de menú (`ALFACORE_MENU_WEB`/`TA_TAREAS`) para `/admin/cargos`,
+   `/admin/pagos` ni `/admin/modulos/.../planes`, a pesar de que el pedido original lo sugería.**
+   Investigación previa a escribir código: no existe ningún script así para `/admin/modulos` ni
+   `/admin/solicitudes` (los dos precedentes más directos, ambos ya en producción). La razón,
+   confirmada leyendo `MenuService.cs`: el nodo "Administrar" del menú lateral **no es una fila
+   real de `ALFACORE_MENU_WEB`** — se inyecta a mano en `LoadVisibleMenuAsync`
+   (`MenuService.cs` ~línea 215-223) como un `ShellModuleDto` sintético con
+   `RutaWeb = "/admin"` **hardcodeado**, exclusivamente para usuarios con `SuperAdmin = true`. Al
+   navegar, el click va directo a `/admin` (`AdminHome.razor`) — nunca pasa por
+   `/shell/{ModuleKey}` (`ShellWorkspacePage.razor`), que es la única pantalla que efectivamente
+   lista filas de `ALFACORE_MENU_WEB` agrupadas por `PadreClave`. Como "ADMINISTRAR" no existe
+   como `Clave` real en esa tabla, cualquier fila que se insertara con `PadreClave = 'ADMINISTRAR'`
+   quedaría huérfana: no la muestra ningún camino de navegación real, porque nada resuelve
+   `/shell/ADMINISTRAR`. Insertar esas filas igual habría sido "trabajo muerto" — CODEX_RULES 12.2
+   ("no rehacer/reestructurar sin necesidad") y la regla de oro de este documento
+   ("reusar antes de inventar mecanismos nuevos") apuntan en la misma dirección: se replicó en
+   cambio el patrón real que ya usan `AdminModulos.razor`/`AdminSolicitudesModulos.razor` —
+   navegación por botones dentro de `AdminHome.razor` (`GoCargos`/`GoPagos`, más `GoPlanes` en
+   `AdminModulos.razor`), sin fila de menú. Si en el futuro se decide que "Administrar" pase a ser
+   un nodo real navegable por `/shell/ADMINISTRAR` (cambiando el `RutaWeb` hardcodeado a un valor
+   vacío para que caiga en el fallback `/shell/{clave}`), ahí sí tendría sentido escribir el
+   script de menú para colgar estas pantallas — no antes.
+4. **Botón "Plan" oculto para dependencias obligatorias.** En el panel Cliente → Módulos, el
+   botón "Contratar plan"/"Cambiar plan" no se muestra para filas con `EsDependenciaDeOtro = true`
+   (ej. Clientes/Técnicos) porque esos módulos son gratuitos por diseño (decisión de producto ya
+   confirmada en la Fase 2) y no tienen — ni deberían tener — un `Plan` asociado.
+
+**Pendiente antes de poder probar en vivo** (todo lo de la Fase 3 sigue pendiente, más lo nuevo):
+1. Correr `docs/base-datos/sql-referencia/planes_cargos_pagos_modelo_inicial.sql` contra
+   `ALFA_CENTRAL` (sigue bloqueado para el agente).
+2. Cargar al menos un `Plan` real para un módulo del piloto — ahora sí se puede hacer desde
+   `/admin/modulos/{id}/planes` en vez de a mano por SQL.
+3. Probar en vivo: `/admin/modulos/{id}/planes` (alta/edición/baja de plan) → `AdminHome.razor`
+   "Contratar plan" (llama a `ContratarPlanAsync`, ya cubierto por la Fase 3) → `/admin/cargos`
+   muestra el cargo generado por el job diario → `/admin/pagos` → "Registrar pago" lo marca pagado
+   → columna "Plan" de `AdminHome.razor` refleja el `FechaProximoCobro` actualizado.
+4. Probar "Configurar vista" en `/admin/cargos`/`/admin/pagos` en vivo (activar/desactivar
+   columnas, reordenar, guardar, recargar la página y confirmar que persiste) — solo se revisó por
+   código, no se ejecutó contra una base real.
+5. "Anular cargo" sigue sin implementar (ver decisión 2) — pendiente de que el dueño del producto
+   confirme la regla de negocio si hace falta en producción.
+
+---
+
+## Actualización 2026-08-18 (2): Fase 3 implementada — servicios de dominio de comercialización
+
+Implementación de la Fase 3 descripta en la entrada de más abajo ("plan de implementación").
+Compiló limpio (`dotnet build`, 0 errores, mismas 3 advertencias preexistentes de
+`InterfacesCatalogosService.cs`, no tocado en esta tarea) y pasó `check_catalogo.py` (68 rutinas,
+0 advertencias, 0 errores). **Nada de esto se puede probar en vivo todavía**: el script SQL de la
+Fase 2 (`planes_cargos_pagos_modelo_inicial.sql`) sigue sin correrse contra `ALFA_CENTRAL` — sin
+`dbo.Planes`/`dbo.Cargos`/`dbo.Pagos` y las columnas nuevas de `ClienteModulos`, cualquier consulta
+de los servicios nuevos va a fallar contra la base real. Este es el próximo paso manual antes de
+poder probar algo de esta fase.
+
+**Archivos nuevos**:
+- `src/AlfaCore/Models/PlanesModels.cs` — `PlanDto`, `PlanTipoFacturacion` (8 valores del CHECK),
+  `MonedaValores`, `PlanesFilters` (con `PageNumber`/`PageSize`, regla 27), `CrearPlanRequest`.
+- `src/AlfaCore/Models/BillingModels.cs` — `CargoDto`, `CargoEstados`, `PagoDto`, `PagoEstados`,
+  `MedioPagoValores`, `RegistrarPagoManualRequest`.
+- `src/AlfaCore/Services/IPlanesService.cs` / `PlanesService.cs` — CRUD de planes por módulo
+  (listar paginado, listar por módulo, obtener, crear, editar, activar/desactivar = baja lógica).
+  Mismo patrón de connection string a `ALFA_CENTRAL` que `CentralAdminService`.
+- `src/AlfaCore/Services/IPaymentProvider.cs` / `ManualPaymentProvider.cs` — abstracción mínima del
+  medio de cobro (un solo método, `RegistrarPagoAsync`, recibe la conexión/transacción ya abiertas
+  por `BillingService` para que la creación del pago sea atómica con la actualización de
+  Cargo/ClienteModulos). `ManualPaymentProvider` es la única implementación: el pago nace
+  `APROBADO` directo porque ya fue confirmado por fuera del sistema. Mercado Pago queda sin
+  implementar, tal como decidió el dueño del producto.
+- `src/AlfaCore/Services/IBillingService.cs` / `BillingService.cs` — `GenerarCargoAsync`
+  (idempotente por `(IdClienteModulo, PeriodoDesde)`, con gracia ante el conflicto de la constraint
+  `UNIQUE` en vez de excepción cruda), `RegistrarPagoManualAsync` (transacción Dapper: pago
+  aprobado → cargo pagado → `FechaProximoCobro` avanzado → reactiva si estaba `Suspendido` por
+  mora), `ProcesarVencimientosAsync` (genera cargos de módulos `Activo` vencidos sin cargo abierto)
+  y `ProcesarGraciaYSuspensionAsync` (marca `VENCIDO` y suspende fuera de gracia, con auditoría).
+- `src/AlfaCore/Services/PlanBillingHelper.cs` — cálculo de `FechaProximoCobro` según
+  `TipoFacturacion`, compartido entre `CentralAdminService.ContratarPlanAsync` (primer cobro) y
+  `BillingService.RegistrarPagoManualAsync` (avance de período). `internal static`, sin DI.
+- `src/AlfaCore/Services/BillingHostedService.cs` — job diario (no cada 6hs como el de pruebas,
+  calcado de `ModuloPruebaRecordatorioHostedService` en todo lo demás: gate `IsSaaSMode` +
+  `ConnectionStrings:AlfaCentral`, `CreateScope()` por ciclo). Llama
+  `ProcesarVencimientosAsync` y después `ProcesarGraciaYSuspensionAsync`.
+
+**Archivos modificados**:
+- `src/AlfaCore/Services/ICentralAdminService.cs` / `CentralAdminService.cs` — se agregaron
+  `ContratarPlanAsync` y `CambiarPlanAsync` (no se creó un `SubscriptionService` nuevo, tal como
+  indicaba el plan). `ContratarPlanAsync` reusa el núcleo privado `ActivarConEstadoAsync` (mismo que
+  usan `ActivarModuloAsync`/`IniciarPruebaModulosAsync`) para la cascada de dependencias
+  obligatorias y el aprovisionamiento de AlfaKnowledge, y después sella el contrato
+  (`IdPlan`/`PrecioContratado`/`MonedaContratada`/`FechaProximoCobro`/`RenovacionAutomatica`) con un
+  `UPDATE` aparte. `CambiarPlanAsync` es un único `UPDATE` sin prorrateo (decisión de producto 3).
+- `src/AlfaCore/Program.cs` — registro de `IPlanesService`/`PlanesService`,
+  `IPaymentProvider`/`ManualPaymentProvider`, `IBillingService`/`BillingService` (mismo scope que
+  `ICentralAdminService`) y `AddHostedService<BillingHostedService>()` junto a
+  `ModuloPruebaRecordatorioHostedService`.
+
+**Decisiones tomadas durante la implementación (no estaban 100% cerradas en el plan)**:
+
+1. **Duración del ciclo para `TipoFacturacion = DIAS`**: el modelo de datos de la Fase 2 no define
+   un campo dedicado a "cantidad de días del ciclo" para este tipo de facturación. Se reusa
+   `Planes.CantidadIncluida` (ya existía para otro propósito — cupo de uso en `POR_USO`) como
+   cantidad de días cuando el plan es `DIAS`, con `30` como default si queda sin cargar
+   (`PlanBillingHelper.DiasCicloPorDefecto`). Ninguno de los módulos del piloto usa `DIAS` todavía,
+   así que esto no bloquea nada real hoy, pero si se llega a necesitar un ciclo de días distinto de
+   "cupo de uso" habría que agregar un campo propio en una fase de datos futura.
+2. **"No usó prueba antes" (para decidir si `ContratarPlanAsync` arranca en `Prueba`)**: se
+   interpretó como "la fila de `ClienteModulos` de ese cliente+módulo nunca tuvo `PruebaVenceUtc`
+   cargado", sin importar el estado actual. Si ya lo tuvo alguna vez (incluso si terminó
+   `Suspendido` por vencimiento), la contratación nueva arranca directo en `Activo`, no repite la
+   prueba.
+3. **Fecha base del primer cobro tras una prueba**: `FechaProximoCobro` se calcula desde
+   `PruebaVenceUtc` (no desde "ahora") cuando la contratación arranca en `Prueba` — el primer cobro
+   real cae recién cuando termina la prueba, no un ciclo completo después.
+4. **Suspensión por mora dentro de `ProcesarGraciaYSuspensionAsync`**: se hace con un `UPDATE`
+   directo dentro de la misma transacción Dapper que marca el `Cargo` como `VENCIDO`, en vez de
+   llamar a `CentralAdminService.SuspenderModuloAsync` (que abre su propia conexión) — mantiene
+   atómica la pareja Cargo+ClienteModulos sin salir de la transacción a mitad de camino. Es la
+   misma sentencia SQL que usa `SuspenderModuloAsync`, solo que inline.
+5. **Límite de agentes**: tal como pedía el alcance de esta fase, no se escribió ningún método que
+   cuente agentes reales ni bloquee por cupo — los campos (`CantidadAgentesIncluida`,
+   `CantidadAgentesContratados`, `PrecioPorAgenteExcedente`) solo existen en el modelo de datos y
+   los DTOs nuevos, listos para cargarse desde una pantalla de administración futura.
+
+**Pendiente antes de poder probar en vivo**:
+1. Correr `docs/base-datos/sql-referencia/planes_cargos_pagos_modelo_inicial.sql` contra
+   `ALFA_CENTRAL` (bloqueado para el agente por el clasificador de seguridad, igual que todas las
+   migraciones anteriores de este sistema).
+2. Cargar al menos un `Plan` real para un módulo del piloto (`CONVERSACIONES`/`TICKETS`/
+   `ALFAKNOWLEDGE`/`PARTES_HORAS`/`AUTOMATIZACIONES`) — hoy no hay pantalla de administración para
+   eso (es la Fase 4, todavía no arrancada), así que habría que insertarlo a mano o esperar a la
+   Fase 4.
+3. Probar el flujo completo: `ContratarPlanAsync` → `BillingHostedService.ProcesarVencimientosAsync`
+   genera el cargo del período → `RegistrarPagoManualAsync` lo marca pagado y avanza
+   `FechaProximoCobro` → si no se paga y se pasa la gracia, `ProcesarGraciaYSuspensionAsync`
+   suspende el módulo. Nada de esto se ejecutó todavía, solo se compiló y se revisó por código.
+4. No hay pantallas todavía para nada de esto (Fase 4 — `AdminPlanes`/`AdminCargos`/`AdminPagos`),
+   así que estos servicios no son alcanzables desde la UI hasta que se construyan.
+
+---
+
+## Actualización 2026-08-18: plan de implementación — motor de comercialización/suscripciones
+
+Diagnóstico solicitado a partir de un prompt externo (GPT) que pedía construir de cero un motor
+completo de módulos/planes/suscripciones/licencias/cobranzas/pagos/consumos/créditos para
+AlfaCore. Se comparó ese prompt contra el estado real del repo (ver secciones de abajo de este
+mismo documento) y contra `docs/CODEX_RULES.md`/`AGENTS.md`. Conclusión: la separación conceptual
+que proponía (Módulo ≠ Plan ≠ Suscripción ≠ Entitlement ≠ Cargo ≠ Pago) es correcta y es la misma
+dirección en la que este sistema ya venía — pero el prompt asumía un módulo de módulos "muy
+básico" que no existe más: `Modulos`/`ClienteModulos` ya cubren catálogo, dependencias en
+cascada, trial de 30 días, cola de aprobación, filtro de menú por módulo y un
+`BillingService`-en-miniatura (`ModuloPruebaRecordatorioHostedService`). Lo que falta de verdad es
+la capa de dinero: **Plan (con modalidad), Cargo, Pago, Consumo y Créditos**. Este plan solo
+construye eso, reusando lo existente sin romperlo.
+
+**Regla de trabajo para todas las fases**: seguir el patrón de este mismo documento — cada fase
+se implementa, se compila limpio, se corre `check_catalogo.py`, y se anota acá qué quedó pendiente
+de correr manualmente en `ALFA_CENTRAL` (todo `ALTER TABLE`/`CREATE TABLE` nuevo en producción
+sigue bloqueado para el agente por el clasificador de seguridad, igual que las migraciones
+anteriores de este sistema). No se arranca una fase nueva sin cerrar o anotar explícitamente lo
+pendiente de la anterior.
+
+### Decisiones de producto — confirmadas 2026-08-18
+
+1. **Moneda: explícita desde ya.** `Planes`, `Cargos` y `Pagos` llevan columna `Moneda`
+   (`ARS`/`USD`, `CHECK` constraint) en vez del criterio implícito que usa hoy `Modulos.Precio`.
+2. **Asientos/agentes: se resuelve ahora.** `Planes.CantidadAgentesIncluida` +
+   `Planes.PrecioPorAgenteExcedente` (tope incluido en el plan + precio por excedente) y
+   `ClienteModulos.CantidadAgentesContratados` (excedente comprado aparte del incluido). **Punto
+   abierto real, no de producto sino técnico**: para validar el límite en runtime hace falta saber
+   cómo se identifica hoy un "agente" de Conversaciones en el esquema (¿fila en
+   `TA_USUARIOS`/`V_TA_Tecnicos` con algún flag, tabla de asignación aparte?) — no se inventa esa
+   estructura; se investiga como paso previo a construir `ValidarLimiteAgentesAsync` en la Fase 3.
+3. **Sin prorrateo.** Cambio de plan queda efectivo recién en el próximo período, confirmado.
+4. **Piloto: `CONVERSACIONES` y los módulos que ya tienen precio propio hoy** (`TICKETS`,
+   `ALFAKNOWLEDGE`, `PARTES_HORAS`, `AUTOMATIZACIONES`). `CLIENTES`/`TECNICOS` siguen como
+   dependencias obligatorias gratuitas — no llevan `Plan`.
+5. **Tests: no por ahora.** No se bootstrapea xUnit para esta iniciativa. Se compensa con el mismo
+   criterio manual que ya usa este documento en cada actualización ("compiló limpio +
+   `check_catalogo.py`, pendiente probar en vivo: ...").
+
+### Fase 2 — cerrada (script SQL listo, falta correrlo)
+
+`docs/base-datos/sql-referencia/planes_cargos_pagos_modelo_inicial.sql` (nuevo, ejecutar
+manualmente contra `ALFA_CENTRAL`, igual que las migraciones anteriores de este sistema — bloqueado
+para el agente por el clasificador de seguridad al ser `CREATE TABLE`/`ALTER TABLE`). Crea
+`dbo.Planes`, `dbo.Cargos`, `dbo.Pagos`; extiende `dbo.ClienteModulos` con `IdPlan`,
+`PrecioContratado`, `MonedaContratada`, `FechaProximoCobro`, `RenovacionAutomatica`,
+`CantidadAgentesContratados`. No toca `dbo.Modulos` ni `dbo.ModulosDependencias`. Idempotente,
+mismo patrón `BEGIN TRY/TRAN` + FKs en batch separado que los scripts anteriores.
+
+`Consumos`/`BilleteraCreditos`/`MovimientosCreditos` quedan fuera de este script — ninguno de los
+módulos del piloto (decisión 4) factura por uso todavía, se agregan en un script aparte el día que
+haga falta un plan `POR_USO`/`PAQUETE_USOS`/`CREDITOS` real.
+
+**Pendiente para que funcione en producción**: correr el script contra `ALFA_CENTRAL`; después,
+Fase 3 (servicios de dominio).
+
+---
+
+### Revisión manual de la Fase 3 (2026-08-18)
+
+Se revisó a mano el diff completo de la Fase 3 (el skill de revisión automática corrió en un
+entorno aislado que no veía los cambios sin commitear, devolvió falso negativo). Dos hallazgos:
+
+1. **Corregido**: `BillingService.RegistrarPagoManualAsync` calculaba `FechaProximoCobro` desde la
+   fecha del pago (`DateTime.UtcNow`) en vez de desde el fin del período ya facturado
+   (`Cargo.PeriodoHasta`). Un pago atrasado (dentro de la gracia) corría el aniversario de
+   facturación para siempre — el ciclo se desalineaba cada vez más con cada mora. Fix: se agregó
+   `PlanBillingHelper.EsRecurrente` y ahora se usa `cargo.PeriodoHasta + 1 día` como base del
+   próximo ciclo. `dotnet build` limpio después del fix.
+2. **Confirmado, se deja como está**: `ContratarPlanAsync` no genera un `Cargo` para el primer
+   período de un plan pago sin trial — `FechaProximoCobro` queda apuntando al final del primer
+   ciclo, así que ese primer período nunca aparece en `Cargos`/`Pagos`. Decisión del dueño del
+   producto: el flujo real ya cobra el primer período por fuera del sistema antes de contratar en
+   Admin, así que el hueco es solo de registro contable, no de dinero — no se cambia por ahora.
+
+### Fase 1 — Diagnóstico (cerrada, este mismo bloque)
+
+Ya hecho: comparación del prompt externo contra el código real (`Modulos`, `ClienteModulos`,
+`ICentralAdminService`, `MenuService`, `PermissionService`, `ModuloPruebaRecordatorioHostedService`,
+patrón ABM de `Contactos`) y contra `CODEX_RULES.md`. Sin código tocado.
+
+### Fase 2 — Modelo de datos (nuevas tablas en `ALFA_CENTRAL`, no tocar `Modulos`/`ClienteModulos`)
+
+Mapeo de conceptos: **no se crea una tabla "Suscripciones" separada** — `dbo.ClienteModulos` ya
+es, conceptualmente, la suscripción+entitlement combinados (Cliente + Módulo + Estado + vigencia).
+Se la extiende con una FK a `Planes` en vez de duplicar el concepto. Esto respeta la regla 1 de
+`CODEX_RULES.md` ("no rehacer desde cero si ya existe una base funcional").
+
+```
+dbo.Planes
+  Id, IdModulo (FK Modulos), Codigo, Nombre, Descripcion
+  TipoFacturacion        -- catálogo: GRATIS/MENSUAL/ANUAL/DIAS/PAGO_UNICO/POR_USO/PAQUETE_USOS/CREDITOS
+  Precio, Moneda
+  DiasPrueba, DiasGracia
+  CantidadIncluida, PermiteExcedentes, PrecioExcedente   -- para POR_USO
+  RenovacionAutomaticaDefault
+  Activo, VisibleCatalogo
+  FechaCreacion, FechaModificacion
+
+dbo.ClienteModulos                       -- YA EXISTE — solo se agrega:
+  + IdPlan (FK Planes, nullable al principio para no romper filas actuales)
+  + PrecioContratado, Moneda             -- precio histórico, no depende del precio actual del plan
+  + FechaProximoCobro, RenovacionAutomatica
+
+dbo.Cargos
+  Id, IdCliente, IdClienteModulo (FK ClienteModulos)
+  Concepto, PeriodoDesde, PeriodoHasta
+  Importe, Moneda
+  FechaEmision, FechaVencimiento
+  Estado            -- BORRADOR/PENDIENTE/PAGADO/PAGO_PARCIAL/VENCIDO/ANULADO
+  FechaCreacion, FechaModificacion
+
+dbo.Pagos
+  Id, IdCliente, IdCargo (FK Cargos, nullable — puede haber pago sin cargo, ej. compra de créditos)
+  Fecha, Importe, Moneda
+  Estado            -- CREADO/PENDIENTE/APROBADO/RECHAZADO/CANCELADO/REEMBOLSADO
+  MedioPago         -- catálogo: EFECTIVO/TRANSFERENCIA/MERCADO_PAGO/TARJETA/DEBITO_AUTOMATICO/OTRO
+  Provider, ProviderPaymentId, ProviderTransactionId    -- NULL en v1 (solo ManualPaymentProvider)
+  Referencia, Observaciones, RegistradoPor
+  FechaCreacion, FechaModificacion
+
+dbo.Consumos                             -- solo si algún plan usa POR_USO/PAQUETE_USOS
+  Id, IdCliente, IdModulo, IdClienteModulo
+  Fecha, TipoConsumo, Cantidad
+  ReferenciaTipo, ReferenciaId, Descripcion
+  FechaCreacion
+
+dbo.BilleteraCreditos
+  IdCliente, IdModulo, SaldoActual
+
+dbo.MovimientosCreditos
+  Id, IdCliente, IdModulo, TipoMovimiento   -- COMPRA/CONSUMO/BONIFICACION/AJUSTE/VENCIMIENTO/REVERSA
+  Cantidad, SaldoAnterior, SaldoNuevo, Referencia, Fecha, RegistradoPor
+```
+
+`Consumos`/`Créditos` solo se crean si en la Fase de piloto (decisión 4 de arriba) el módulo
+elegido realmente factura por uso — si el piloto es `CONVERSACIONES` con planes mensuales simples,
+estas dos tablas se posponen a cuando haya un módulo POR_USO real, para no construir en el vacío.
+
+Auditoría: no se crea `AUDITORIA_SUSCRIPCIONES` aparte — se reusa el mecanismo centralizado que ya
+pide `AGENTS.md` (`AUX_ERR` + `AppAuditRepository`, el mismo que usa `LogAuditAsync` en
+`CentralAdminService` hoy para activaciones de módulo).
+
+### Fase 3 — Servicios de dominio
+
+No se crea un `SubscriptionService` nuevo desde cero — se extiende `ICentralAdminService` /
+`CentralAdminService` (mismo patrón ya usado en las 6 actualizaciones anteriores de este
+documento: "no se creó un servicio nuevo, se reusó el que ya consumen las páginas `/admin/*`").
+Se agregan:
+
+- `PlanesService` (nuevo, por ser una entidad nueva sin dueño previo): CRUD de planes por módulo,
+  duplicar plan, activar/desactivar.
+- `CentralAdminService`: `ContratarPlanAsync` (crea/actualiza `ClienteModulos` con `IdPlan` +
+  `PrecioContratado` + calcula `FechaFinPrueba`/`FechaProximoCobro` según `TipoFacturacion`),
+  `CambiarPlanAsync` (efectivo en el próximo período, sin prorrateo — ver decisión 3).
+- `BillingService` (nuevo): `GenerarCargoAsync`, `ProcesarVencimientoAsync`,
+  `ProcesarGraciaAsync`, `RegistrarPagoManualAsync` (aprueba pago → actualiza cargo → actualiza
+  `ClienteModulos`, todo en una transacción Dapper). Reemplaza y generaliza lo que hoy hace
+  a mano `ModuloPruebaRecordatorioHostedService` para el caso trial.
+- `CreditService` (nuevo, solo si Fase 2 incluyó créditos): `ConsumirCredito`,
+  `AcreditarCredito`, siempre por movimiento (nunca `UPDATE` directo del saldo).
+- `IPaymentProvider` (interfaz nueva) + `ManualPaymentProvider` (única implementación v1 — refleja
+  el flujo real de hoy: alguien de Alfa confirma la transferencia y carga el pago a mano). Mercado
+  Pago queda como interfaz preparada, sin implementar, igual que pide el prompt original (punto 11).
+
+Idempotencia: `GenerarCargoAsync`/`ProcesarVencimientoAsync` deben poder correr todos los días sin
+duplicar cargos — clave única `(IdClienteModulo, PeriodoDesde)`.
+
+### Fase 4 — Administración (Blazor)
+
+Nuevas páginas, siguiendo el patrón ABM ya usado en `Contactos`/`AdminModulos`:
+
+- `AdminPlanes.razor` (`/admin/modulos/{codigo}/planes`) — colgado del módulo, no independiente.
+- `AdminCargos.razor` (`/admin/cargos`) — listado paginado (OFFSET/FETCH, regla 27 de
+  `CODEX_RULES.md`), filtro por cliente/estado/vencimiento.
+- `AdminPagos.razor` (`/admin/pagos`) — registrar pago manual (Cliente, Cargo, Fecha, Importe,
+  Medio, Referencia), botón Aprobar.
+- Extender `AdminHome.razor` (panel Cliente → Módulos, ya existe): mostrar plan contratado y
+  próximo vencimiento en vez de solo Activo/Suspendido.
+
+### Fase 5 — Portal del cliente ("Mi Cuenta")
+
+Nueva sección, reusando el layout/menú existente — no es prioridad de la v1 salvo que el piloto
+(decisión 4) la necesite para probar el flujo end-to-end. Si se hace: "Mis módulos" (plan, estado,
+próximo vencimiento), historial de pagos, botón "Cancelar renovación" (marca
+`RenovacionAutomatica = false`, no corta acceso hasta `FechaProximoCobro` — distinción explícita
+del punto 31 del prompt original).
+
+### Fase 6 — Scheduler
+
+Un solo `BackgroundService` nuevo, `BillingHostedService`, mismo patrón que
+`ModuloPruebaRecordatorioHostedService` (gateado por `ModoSaaS` + `ConnectionStrings:AlfaCentral`
+configurados, `IServiceProvider.CreateScope()` por ciclo). Corre 1 vez por día: genera cargos de
+suscripciones que vencen, procesa gracia, procesa suspensión por falta de pago. No se agrega
+Quartz/Hangfire — no hace falta, el proyecto ya resolvió esto con `BackgroundService` puro.
+
+### Fase 7 — Tests
+
+Depende de la decisión 5 de arriba. Si se aprueba: bootstrap mínimo de xUnit apuntando solo a los
+servicios de dominio nuevos (`BillingService`, `CreditService`, cálculo de vencimientos/gracia) —
+sin tocar UI. Si no se aprueba: documentar acá la decisión y compensar con pruebas manuales
+guiadas (mismo criterio que ya usa este documento: "compiló limpio + `check_catalogo.py`, no
+probado en vivo, pendiente: ...").
+
+### Fase 8 — Documentación
+
+Actualizar `docs/modulos/` (si no existe la carpeta, crearla — ya está prevista en la convención
+de `AGENTS.md`) con el modelo final de datos + diagrama de estados de `ClienteModulos`/`Cargos`.
+Seguir anotando avances en este mismo documento, sección por sección, como hasta ahora.
+
+### Orden real recomendado
+
+Fase 1 (cerrada) → confirmar las 5 decisiones abiertas → Fase 2 (piloto acotado a un solo módulo)
+→ Fase 3 → Fase 6 (scheduler, antes que las pantallas — sin generación de cargos automática las
+pantallas de admin no tienen nada que mostrar) → Fase 4 → Fase 5 (si el piloto lo requiere) →
+Fase 7/8 en paralelo a medida que cada pieza se prueba en vivo.
+
+---
+
 ## Actualización 2026-08-08: landing pages públicas por módulo + activación automática al confirmar
 
 Primer paso hacia un acceso público tipo "sitio de marketing" (a futuro, algo manejable como el

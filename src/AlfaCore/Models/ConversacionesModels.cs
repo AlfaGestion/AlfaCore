@@ -549,6 +549,27 @@ public sealed class ConversacionWebhookRequest
     public IDictionary<string, string> Headers { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 }
 
+public sealed class ConversacionWhatsAppWebIncomingMessageDto
+{
+    public string InstanceName { get; set; } = string.Empty;
+    public string PhoneNumberId { get; set; } = string.Empty;
+    public string Phone { get; set; } = string.Empty;
+    public string ContactName { get; set; } = string.Empty;
+    public string MessageId { get; set; } = string.Empty;
+    public string ReplyToMessageId { get; set; } = string.Empty;
+    public string MessageType { get; set; } = "TEXT";
+    public string Text { get; set; } = string.Empty;
+    public DateTime TimestampUtc { get; set; }
+    public string RawJson { get; set; } = string.Empty;
+}
+
+public sealed class ConversacionWhatsAppWebSendResultDto
+{
+    public string ExternalMessageId { get; set; } = string.Empty;
+    public string EstadoEnvio { get; set; } = string.Empty;
+    public string PayloadJson { get; set; } = string.Empty;
+}
+
 public sealed class ConversacionTecnicoOptionDto
 {
     public string IdTecnico { get; set; } = string.Empty;

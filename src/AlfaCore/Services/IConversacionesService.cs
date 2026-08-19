@@ -42,6 +42,10 @@ public interface IConversacionesService
 
     Task<int> ProcesarSeguimientosSlaAsync(CancellationToken ct = default);
 
+    /// <summary>Retoma las conversaciones cuya espera configurada para el Asistente IA ("esperar N minutos
+    /// antes de responder") ya se cumplió. Devuelve cuántas procesó.</summary>
+    Task<int> ProcesarRespuestasBotPendientesAsync(CancellationToken ct = default);
+
     // Mensajes programados (envío diferido)
     Task<long> ProgramarMensajeAsync(ConversacionProgramarRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionMensajeProgramadoDto>> GetMensajesProgramadosAsync(long idConversacion, CancellationToken ct = default);
@@ -52,6 +56,7 @@ public interface IConversacionesService
     Task SetConversationPinAsync(long idConversacion, string usuario, string? sistema, bool fijada, CancellationToken ct = default);
     Task MarkConversationReadAsync(long idConversacion, string usuario, string? sistema, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
+    Task RegisterIncomingWhatsAppWebMessageAsync(ConversacionWhatsAppWebIncomingMessageDto request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingInstagramWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingFacebookWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
     Task<ConversacionWebhookResultDto> RegisterIncomingMercadoLibreWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default);
@@ -64,6 +69,7 @@ public interface IConversacionesService
     Task<string> GetContextoClienteAsistenteAsync(long idConversacion, CancellationToken ct = default);
     Task<long> CreateInternalThreadAsync(ConversacionCrearHiloInternoRequest request, CancellationToken ct = default);
     Task<ConversacionCrearWhatsAppResultDto> CreateOrGetWhatsAppConversationAsync(ConversacionCrearWhatsAppRequest request, CancellationToken ct = default);
+    Task<int> ProcessWhatsAppWebInboxAsync(CancellationToken ct = default);
     Task<ConversacionAdjuntoDto> UploadAttachmentAsync(ConversacionUploadAdjuntoRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionStickerFavoritoDto>> GetFavoriteStickersAsync(CancellationToken ct = default);
     Task SaveFavoriteStickerAsync(long idAdjunto, CancellationToken ct = default);

@@ -3,7 +3,7 @@
     display: none;
     overflow: hidden;
     z-index: 1700;
-    pointer-events: auto;
+    pointer-events: none;
 }
 
 .alfacore-sticky-list-header.is-visible {

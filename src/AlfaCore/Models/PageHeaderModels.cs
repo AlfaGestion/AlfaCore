@@ -31,17 +31,27 @@ public enum PageHeaderActionPriority
     Overflow
 }
 
+public enum PageHeaderShellMode
+{
+    Legacy,
+    AlfaDesignPilot
+}
+
 public sealed class PageHeaderConfig
 {
     public string Title { get; init; } = string.Empty;
     public IReadOnlyList<string> Breadcrumb { get; init; } = [];
     public PageHeaderState State { get; init; } = PageHeaderState.Idle;
+    public PageHeaderShellMode ShellMode { get; init; } = PageHeaderShellMode.Legacy;
+    public IReadOnlyList<PageHeaderTopNavItem> TopNavigationItems { get; init; } = [];
     public PageHeaderSearchConfig? Search { get; init; }
     public RenderFragment? SearchContent { get; init; }
     public IReadOnlyList<PageHeaderAction> Actions { get; init; } = [];
     public IReadOnlyList<PageHeaderViewButton> ViewButtons { get; init; } = [];
+    public PageHeaderPaginationConfig? Pagination { get; init; }
     public bool InlineViewButtons { get; init; }
     public bool ActionsBelowViewButtons { get; init; }
+    public bool RecordToolbar { get; init; }
     public bool AlwaysVisible { get; init; }
     public bool ShowHistoryNavigation { get; init; } = true;
     public bool ShowHomeNavigation { get; init; }
@@ -55,6 +65,17 @@ public sealed class PageHeaderConfig
     public static PageHeaderConfig Empty { get; } = new();
 }
 
+public sealed class PageHeaderTopNavItem
+{
+    public string Key { get; init; } = string.Empty;
+    public string Label { get; init; } = string.Empty;
+    public string Url { get; init; } = string.Empty;
+    public string Icon { get; init; } = string.Empty;
+    public bool Active { get; init; }
+    public bool Disabled { get; init; }
+    public Func<Task>? OnClick { get; init; }
+}
+
 public sealed class PageHeaderSearchConfig
 {
     public string Placeholder { get; init; } = "Buscar...";
@@ -65,6 +86,17 @@ public sealed class PageHeaderSearchConfig
     public Func<string, Task>? OnTextChanged { get; init; }
     public Func<Task>? OnSearch { get; init; }
     public Func<Task>? OnToggleFilters { get; init; }
+}
+
+public sealed class PageHeaderPaginationConfig
+{
+    public string Label { get; init; } = string.Empty;
+    public string PageLabel { get; init; } = string.Empty;
+    public bool HasPrevious { get; init; }
+    public bool HasNext { get; init; }
+    public bool Disabled { get; init; }
+    public Func<Task>? OnPrevious { get; init; }
+    public Func<Task>? OnNext { get; init; }
 }
 
 public sealed class PageHeaderAction

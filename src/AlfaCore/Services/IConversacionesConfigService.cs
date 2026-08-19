@@ -7,6 +7,8 @@ public interface IConversacionesConfigService
     Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default);
     Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(string connectionString, CancellationToken ct = default);
     Task SaveWhatsAppConfigAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct = default);
+    Task<ConversacionWhatsAppConfigDto> GenerateWhatsAppWebPairingAsync(ConversacionWhatsAppWebPairingRequestDto request, CancellationToken ct = default);
+    Task<ConversacionWhatsAppConfigDto> ClearWhatsAppWebPairingAsync(CancellationToken ct = default);
     Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(CancellationToken ct = default);
     Task SaveInstagramConfigAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default);
     Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(CancellationToken ct = default);
@@ -41,7 +43,10 @@ public interface IConversacionesConfigService
 
     /// <summary>Números de WhatsApp configurados y, para cada uno, los usuarios vinculados.</summary>
     Task<IReadOnlyList<ConversacionWhatsAppNumeroDto>> GetWhatsAppNumerosAsync(CancellationToken ct = default);
+    Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroAsync(int idNumero, CancellationToken ct = default);
+    Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroByInstanceNameAsync(string instanceName, CancellationToken ct = default);
     Task SaveWhatsAppNumeroAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default);
+    Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default);
 
     /// <summary>Usuarios marcados como administradores de Conversaciones (ven/responden por cualquier número).</summary>
     Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default);

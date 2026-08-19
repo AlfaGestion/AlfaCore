@@ -5,6 +5,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
+@inject AlfaCore.Services.IPlanesService PlanesSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -20,6 +21,8 @@
             </div>
             <div class="d-flex gap-2 flex-wrap">
                 <button type="button" class="btn btn-outline-light" @onclick="GoModulos">Módulos</button>
+                <button type="button" class="btn btn-outline-light" @onclick="GoCargos">Cargos</button>
+                <button type="button" class="btn btn-outline-light" @onclick="GoPagos">Pagos</button>
                 <button type="button" class="btn btn-primary" @onclick="StartNewAccount">Nueva cuenta</button>
                 <button type="button" class="btn btn-outline-light" @onclick="() => ReloadAsync()">Actualizar</button>
             </div>
@@ -340,6 +343,7 @@
                                                 <th>Módulo</th>
                                                 <th>Precio</th>
                                                 <th>Estado</th>
+                                                <th>Plan</th>
                                                 <th>Activado</th>
                                                 <th></th>
                                             </tr>
@@ -357,6 +361,20 @@
                                                     </td>
                                                     <td>@item.Precio.ToString("C2")</td>
                                                     <td>@GetEstadoLabel(item)</td>
+                                                    <td>
+                                                        @if (item.IdPlan is not null)
+                                                        {
+                                                            <div>@item.PlanNombre</div>
+                                                            @if (item.FechaProximoCobro is not null)
+                                                            {
+                                                                <span class="shell-empty-state__eyebrow">Próx. cobro: @item.FechaProximoCobro.Value.ToString("dd/MM/yyyy")</span>
+                                                            }
+                                                        }
+                                                        else
+                                                        {
+                                                            <span>—</span>
+                                                        }
+                                                    </td>
                                                     <td>
                                                         @if (item.EstaActivo && item.ActivadoUtc is not null)
                                                         {
@@ -402,6 +420,10 @@
                                                                 }
                                                                 <button type="button" class="btn btn-sm btn-primary" @onclick="() => ActivarModuloAsync(item)">Activar</button>
                                                             }
+                                                            @if (!item.EsDependenciaDeOtro)
+                                                            {
+                                                                <button type="button" class="btn btn-sm btn-outline-light" @onclick="() => AbrirPlanModal(item)">@(item.IdPlan is null ? "Contratar plan" : "Cambiar plan")</button>
+                                                            }
                                                         </div>
                                                     </td>
                                                 </tr>
@@ -421,6 +443,59 @@
         }
     </section>
 </div>
+
+@if (_showPlanModal && _planModalItem is not null)
+{
+    <div class="modal-overlay" @onclick="CancelarPlanModal">
+        <section class="panel-card app-modal admin-modal" role="dialog" aria-modal="true" aria-labelledby="admin-plan-modal-title" @onclick:stopPropagation="true">
+            <div class="panel-card__header">
+                <div>
+                    <h2 id="admin-plan-modal-title" class="panel-card__title">@(_planModalItem.IdPlan is null ? "Contratar plan" : "Cambiar plan")</h2>
+                    <p class="panel-card__subtitle">@_planModalItem.Nombre — sin prorrateo: un cambio de plan queda efectivo recién en el próximo período.</p>
+                </div>
+                <button type="button" class="btn btn-outline-light" @onclick="CancelarPlanModal">Cerrar</button>
+            </div>
+
+            @if (!string.IsNullOrWhiteSpace(_planModalError))
+            {
+                <div class="editor-msg editor-msg--warning">
+                    <strong>No se pudo completar la operación</strong>
+                    <p>@_planModalError</p>
+                </div>
+            }
+
+            @if (_planModalLoading)
+            {
+                <p>Cargando planes del módulo...</p>
+            }
+            else if (_planModalOpciones.Count == 0)
+            {
+                <div class="shell-empty-state">
+                    <strong>Este módulo todavía no tiene planes cargados.</strong>
+                    <span>Cargalos primero desde Administrar → Módulos → Planes.</span>
+                </div>
+            }
+            else
+            {
+                <div class="mb-3">
+                    <label class="form-label">Plan</label>
+                    <select class="form-select" @bind="_planModalIdPlanSeleccionado">
+                        <option value="0">Elegí un plan...</option>
+                        @foreach (var plan in _planModalOpciones)
+                        {
+                            <option value="@plan.Id">@plan.Nombre — @plan.Precio.ToString("N2") @plan.Moneda (@GetTipoFacturacionLabel(plan.TipoFacturacion))</option>
+                        }
+                    </select>
+                </div>
+
+                <div class="d-flex gap-2">
+                    <button type="button" class="btn btn-primary" disabled="@_planModalBusy" @onclick="ConfirmarPlanAsync">@(_planModalItem.IdPlan is null ? "Contratar" : "Cambiar")</button>
+                    <button type="button" class="btn btn-outline-light" disabled="@_planModalBusy" @onclick="CancelarPlanModal">Cancelar</button>
+                </div>
+            }
+        </section>
+    </div>
+}
 
 @if (_showClientEditor)
 {
@@ -732,6 +807,7 @@
     private readonly List<AlfaCore.Models.AdminBaseDto> _bases = [];
     private readonly List<AlfaCore.Models.AdminUserDto> _users = [];
     private readonly List<AlfaCore.Models.ClienteModuloDto> _clienteModulos = [];
+    private readonly List<AlfaCore.Models.PlanDto> _planModalOpciones = [];
     private readonly CrearClienteRequest _clientForm = new();
     private readonly CrearBaseRequest _baseForm = new();
     private readonly CrearUserRequest _userForm = new();
@@ -757,6 +833,13 @@
     private string _syncConfigRutaWebService = "https://alfanetac.ddns.net/api/v3/";
     private string _syncConfigUser = string.Empty;
     private string _syncConfigPassword = string.Empty;
+
+    private bool _showPlanModal;
+    private bool _planModalLoading;
+    private bool _planModalBusy;
+    private string _planModalError = string.Empty;
+    private AlfaCore.Models.ClienteModuloDto? _planModalItem;
+    private int _planModalIdPlanSeleccionado;
 
     private IReadOnlyList<AlfaCore.Models.AdminClienteDto> FilteredClients => string.IsNullOrWhiteSpace(_clientSearch)
         ? _clients
@@ -885,6 +968,12 @@
     private void GoSolicitudes()
         => Nav.NavigateTo(RouteContext.BuildRoute("/admin/solicitudes"));
 
+    private void GoCargos()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/admin/cargos"));
+
+    private void GoPagos()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/admin/pagos"));
+
     private async Task LoadClienteModulosAsync(string idCliente)
     {
         _clienteModulos.Clear();
@@ -1011,6 +1100,95 @@
                 : ex.Message;
         }
     }
+
+    private async Task AbrirPlanModal(AlfaCore.Models.ClienteModuloDto item)
+    {
+        _planModalItem = item;
+        _planModalError = string.Empty;
+        _planModalIdPlanSeleccionado = item.IdPlan ?? 0;
+        _planModalOpciones.Clear();
+        _showPlanModal = true;
+        _planModalLoading = true;
+
+        try
+        {
+            var planes = await PlanesSvc.GetByModuloAsync(item.IdModulo);
+            _planModalOpciones.AddRange(planes.Where(p => p.Activo));
+        }
+        catch (Exception ex)
+        {
+            _planModalError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+        finally
+        {
+            _planModalLoading = false;
+        }
+    }
+
+    private void CancelarPlanModal()
+    {
+        _showPlanModal = false;
+        _planModalItem = null;
+        _planModalOpciones.Clear();
+        _planModalError = string.Empty;
+    }
+
+    private async Task ConfirmarPlanAsync()
+    {
+        if (_planModalItem is null || !HasSelectedClient)
+            return;
+
+        if (_planModalIdPlanSeleccionado <= 0)
+        {
+            _planModalError = "Elegí un plan.";
+            return;
+        }
+
+        _planModalBusy = true;
+        _planModalError = string.Empty;
+
+        try
+        {
+            var usuario = AppUserSession.CurrentUser?.UserName ?? string.Empty;
+            if (_planModalItem.IdPlan is null)
+            {
+                await AdminSvc.ContratarPlanAsync(_selectedClientId!, _planModalIdPlanSeleccionado, usuario);
+            }
+            else
+            {
+                await AdminSvc.CambiarPlanAsync(_selectedClientId!, _planModalItem.IdModulo, _planModalIdPlanSeleccionado, usuario);
+            }
+
+            await LoadClienteModulosAsync(_selectedClientId!);
+            _message = $"Plan actualizado para {_planModalItem.Nombre}.";
+            CancelarPlanModal();
+        }
+        catch (Exception ex)
+        {
+            _planModalError = ex is AlfaCore.Services.AppUserFacingException userFacing
+                ? userFacing.UserMessage
+                : ex.Message;
+        }
+        finally
+        {
+            _planModalBusy = false;
+        }
+    }
+
+    private static string GetTipoFacturacionLabel(string tipo) => tipo switch
+    {
+        AlfaCore.Models.PlanTipoFacturacion.Gratis => "Gratis",
+        AlfaCore.Models.PlanTipoFacturacion.Mensual => "Mensual",
+        AlfaCore.Models.PlanTipoFacturacion.Anual => "Anual",
+        AlfaCore.Models.PlanTipoFacturacion.Dias => "Por días",
+        AlfaCore.Models.PlanTipoFacturacion.PagoUnico => "Pago único",
+        AlfaCore.Models.PlanTipoFacturacion.PorUso => "Por uso",
+        AlfaCore.Models.PlanTipoFacturacion.PaqueteUsos => "Paquete de usos",
+        AlfaCore.Models.PlanTipoFacturacion.Creditos => "Créditos",
+        _ => tipo
+    };
 
     private static string GetEstadoLabel(AlfaCore.Models.ClienteModuloDto item)
     {

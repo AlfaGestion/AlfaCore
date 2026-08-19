@@ -6,11 +6,230 @@
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
 @inject IRouteContextService RouteContext
+@inject IPageHeaderService PageHeader
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
 @implements IAsyncDisposable
 
+@if (IsClienteBrowseAlfaDesign)
+{
+    <div class="cuentas-page cuentas-page--list" @onclick="HandlePageClickAsync">
+        <AlfaNotification Message="@_feedback" OnDismiss="DismissFeedback" />
+
+        <AlfaDialog Open="@_showViewSettings"
+                    Title="Configurar vista"
+                    Eyebrow="Listado de clientes"
+                    Description="Elegí las columnas visibles, su orden y la agrupación de la grilla."
+                    Size="AlfaDialogSize.Md"
+                    Loading="@_savingViewSettings"
+                    OnClose="CancelarConfiguracionVista">
+            <ChildContent>
+                <div class="cuentas-view-settings-alfa">
+                    <AlfaSelect Label="Agrupar por"
+                                Value="@_draftAgruparPor"
+                                ValueChanged="SetDraftGrouping"
+                                Options="@ViewGroupingOptions"
+                                Disabled="@_savingViewSettings" />
+
+                    <div class="cuentas-view-settings-alfa__list" aria-label="Columnas del listado">
+                        @foreach (var column in _viewSettingsDraft.OrderBy(c => c.Order))
+                        {
+                            var orderedColumns = _viewSettingsDraft.OrderBy(c => c.Order).ToList();
+                            var columnIndex = orderedColumns.FindIndex(item => string.Equals(item.Key, column.Key, StringComparison.OrdinalIgnoreCase));
+                            <div class="cuentas-view-settings-alfa__item">
+                                <AlfaCheckbox Value="@column.Visible"
+                                              ValueChanged="value => SetViewColumnVisibility(column.Key, value)"
+                                              Disabled="@_savingViewSettings">
+                                    @column.Label
+                                </AlfaCheckbox>
+                                <div class="cuentas-view-settings-alfa__order" aria-label="Ordenar @column.Label">
+                                    <AlfaIconButton Icon="bi bi-arrow-up"
+                                                    Label="@($"Subir {column.Label}")"
+                                                    Size="AlfaSize.Sm"
+                                                    Disabled="@(_savingViewSettings || columnIndex <= 0)"
+                                                    OnClick="_ => MoveViewColumn(column.Key, -1)" />
+                                    <AlfaIconButton Icon="bi bi-arrow-down"
+                                                    Label="@($"Bajar {column.Label}")"
+                                                    Size="AlfaSize.Sm"
+                                                    Disabled="@(_savingViewSettings || columnIndex == orderedColumns.Count - 1)"
+                                                    OnClick="_ => MoveViewColumn(column.Key, 1)" />
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </ChildContent>
+            <Footer>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                            Icon="bi bi-arrow-counterclockwise"
+                            Disabled="@_savingViewSettings"
+                            OnClick="_ => RestablecerAnchosAsync()">Restablecer anchos</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                            Disabled="@_savingViewSettings"
+                            OnClick="_ => CancelarConfiguracionVista()">Cancelar</AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary"
+                            Icon="bi bi-floppy"
+                            Loading="@_savingViewSettings"
+                            OnClick="_ => GuardarConfiguracionVistaAsync()">Guardar vista</AlfaButton>
+            </Footer>
+        </AlfaDialog>
+
+        @{
+            var visibleColumns = GetVisibleColumns();
+            var groups = BuildGridGroups();
+        }
+
+        <section class="cuentas-list-shell @(_selectedCodes.Count > 0 ? "cuentas-list-shell--selection" : string.Empty)"
+                 @ref="_clientesDataViewRoot">
+            @if (_loadingList)
+            {
+                <div class="cuentas-list-shell__state">
+                    <AlfaEmptyState Title="Cargando clientes"
+                                    Message="Estamos consultando la base activa con los filtros actuales." />
+                </div>
+            }
+            else if (_listLoadFailed)
+            {
+                <div class="cuentas-list-shell__state">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                    Title="No se pudieron cargar los clientes"
+                                    Message="Reintentá la consulta sobre la base activa."
+                                    ActionLabel="Reintentar"
+                                    ActionIcon="bi bi-arrow-clockwise"
+                                    OnAction="_ => BuscarAsync()" />
+                </div>
+            }
+            else if (_items.Count == 0)
+            {
+                <div class="cuentas-list-shell__state">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                                    Title="No encontramos clientes"
+                                    Message="No hay clientes para los filtros seleccionados."
+                                    ActionLabel="Limpiar filtros"
+                                    ActionIcon="bi bi-eraser"
+                                    OnAction="_ => LimpiarFiltrosAsync()" />
+                </div>
+            }
+            else
+            {
+                <div class="cuentas-list-shell__table-scroll">
+                    <table class="cuentas-list-table"
+                           style="@GetDataViewTableStyle(visibleColumns)"
+                           aria-label="Clientes encontrados">
+                        <colgroup>
+                            <col class="cuentas-list-table__select-col" />
+                            @foreach (var column in visibleColumns)
+                            {
+                                <col style="@GetColumnWidthStyle(column)" />
+                            }
+                            <col class="cuentas-list-table__actions-col" />
+                        </colgroup>
+                        <thead>
+                            <tr>
+                                <th class="cuentas-list-table__select">
+                                    <input type="checkbox"
+                                           class="cuentas-list-table__checkbox"
+                                           checked="@AreAllCurrentPageSelected"
+                                           @onchange="ToggleSelectAll"
+                                           aria-label="Seleccionar todos los clientes visibles"
+                                           title="Seleccionar todos los clientes visibles" />
+                                </th>
+                                @foreach (var column in visibleColumns)
+                                {
+                                    var sizing = GetCuentaColumnSizing(column.Key);
+                                    <th class="@GetCuentaColumnCssClass(column.Key)"
+                                        style="@GetColumnWidthStyle(column)"
+                                        data-alfa-column-key="@column.Key"
+                                        data-alfa-column-min="@sizing.MinWidth"
+                                        data-alfa-column-default="@sizing.DefaultWidth"
+                                        data-alfa-column-max="@sizing.MaxWidth">
+                                        <span class="cuentas-list-table__header-label">@column.Label</span>
+                                        @if (sizing.Resizable)
+                                        {
+                                            <span class="alfa-data-view-column-resizer"
+                                                  role="separator"
+                                                  aria-hidden="true"
+                                                  title="Arrastrar para redimensionar"
+                                                  data-alfa-column-resizer
+                                                  data-alfa-column-key="@column.Key"
+                                                  data-alfa-column-min="@sizing.MinWidth"
+                                                  data-alfa-column-default="@sizing.DefaultWidth"
+                                                  data-alfa-column-max="@sizing.MaxWidth"
+                                                  data-alfa-column-width="@GetColumnWidth(column)"></span>
+                                        }
+                                    </th>
+                                }
+                                <th class="cuentas-list-table__actions">Acciones</th>
+                            </tr>
+                        </thead>
+                        @foreach (var group in groups)
+                        {
+                            <tbody>
+                                @if (group.ShowHeader)
+                                {
+                                    <tr class="cuentas-list-table__group">
+                                        <td colspan="@(visibleColumns.Count + 2)">@group.Label</td>
+                                    </tr>
+                                }
+                                @foreach (var item in group.Items)
+                                {
+                                    <tr class="cuentas-list-table__row @(IsSelected(item) ? "is-selected" : string.Empty)"
+                                        @onclick="() => SeleccionarFila(item.Codigo)"
+                                        @ondblclick="() => AbrirEditorAsync(item.Codigo)">
+                                        <td class="cuentas-list-table__select" @onclick:stopPropagation="true">
+                                            <input type="checkbox"
+                                                   class="cuentas-list-table__checkbox"
+                                                   checked="@_selectedCodes.Contains(item.Codigo)"
+                                                   @onchange="args => ToggleRowSelection(item.Codigo, args)"
+                                                   aria-label="@($"Seleccionar {SingularLabelLower}")"
+                                                   title="@($"Seleccionar {SingularLabelLower}")" />
+                                        </td>
+                                        @foreach (var column in visibleColumns)
+                                        {
+                                            <td class="@GetCuentaColumnCssClass(column.Key)"
+                                                style="@GetColumnWidthStyle(column)">
+                                                @RenderAlfaBrowseCell(item, column.Key)
+                                            </td>
+                                        }
+                                        <td class="cuentas-list-table__actions" @onclick:stopPropagation="true">
+                                            <AlfaActionMenu Items="@BuildRowActions(item)"
+                                                            TriggerLabel="@($"Acciones de {item.RazonSocial}")"
+                                                            MenuLabel="Acciones del cliente"
+                                                            Align="AlfaActionMenuAlign.End" />
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        }
+                    </table>
+                </div>
+            }
+            <footer class="alfa-data-view-footer">
+                <span class="alfa-data-view-footer__summary">@GetBrowseSummary()</span>
+                <div class="alfa-data-view-footer__controls">
+                    <AlfaSelect Value="@_filters.PageSize.ToString()"
+                                ValueChanged="SetPageSizeAsync"
+                                Options="@PageSizeOptions"
+                                Disabled="@_loadingList"
+                                Class="alfa-data-view-footer__page-size" />
+                </div>
+            </footer>
+        </section>
+
+        <AlfaConfirmDialog Open="@_showBulkDeactivateConfirm"
+                           Title="@GetBulkDeactivateTitle()"
+                           Message="@GetBulkDeactivateMessage()"
+                           SecondaryMessage="La baja es lógica: los registros seleccionados quedarán inactivos."
+                           ConfirmLabel="Dar de baja"
+                           CancelLabel="Cancelar"
+                           Loading="@_saving"
+                           OnConfirm="ConfirmBulkDeactivateAsync"
+                           OnCancel="CloseBulkDeactivateConfirm" />
+    </div>
+}
+else
+{
 <div class="page-grid" @onclick="HandlePageClickAsync">
     <section class="page-intro">
         <div>
@@ -1320,6 +1539,7 @@
         </section>
     </div>
 }
+}
 
 @code {
     [Parameter] public CuentaComercialTipo Tipo { get; set; }
@@ -1332,6 +1552,9 @@
     private readonly HashSet<string> _selectedCodes = new(StringComparer.OrdinalIgnoreCase);
 
     private IJSObjectReference? _richEditorJs;
+    private IJSObjectReference? _dataViewColumnsJs;
+    private DotNetObjectReference<CuentasComercialesPage>? _dataViewColumnsSelf;
+    private ElementReference _clientesDataViewRoot;
     private ElementReference _manualEditor;
     private ElementReference _notaCuentaEditor;
     private CuentaComercialFilters _filters = new();
@@ -1357,6 +1580,10 @@
     private bool _showSearchPanel;
     private bool _showBulkDeactivateConfirm;
     private bool _notesEditorsReady;
+    private bool _listLoadFailed;
+    private bool _savingViewSettings;
+    private bool _dataViewColumnsInitialized;
+    private bool _savingColumnWidths;
     private bool _isNewMode = true;
     private bool _selectedActivo = true;
     private bool _loadingLinkCandidates;
@@ -1430,16 +1657,47 @@
     private string IntroText => Tipo == CuentaComercialTipo.Cliente
         ? "Administrá el maestro comercial de clientes sobre la base actual, usando la cuenta contable y sus datos adicionales."
         : "Administrá el maestro comercial de proveedores sobre la base actual, usando la cuenta contable y sus datos adicionales.";
+    private bool IsClienteBrowseAlfaDesign => Tipo == CuentaComercialTipo.Cliente && !_showEditor;
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedCodes.Contains(item.Codigo));
+    private static readonly IReadOnlyList<AlfaSelectOption> PageSizeOptions =
+    [
+        new("25", "25 por página"),
+        new("50", "50 por página"),
+        new("100", "100 por página")
+    ];
+    private static readonly IReadOnlyList<AlfaSelectOption> ViewGroupingOptions =
+    [
+        new(CuentaComercialViewGroupKeys.None, "Sin agrupar"),
+        new(CuentaComercialViewGroupKeys.Activo, "Estado"),
+        new(CuentaComercialViewGroupKeys.Provincia, "Provincia"),
+        new(CuentaComercialViewGroupKeys.Bloqueado, "Bloqueo")
+    ];
+    private static readonly IReadOnlyDictionary<string, AlfaDataViewColumnSizing> CuentaColumnSizing = new Dictionary<string, AlfaDataViewColumnSizing>(StringComparer.OrdinalIgnoreCase)
+    {
+        [CuentaComercialViewColumnKeys.Codigo] = new(CuentaComercialViewColumnKeys.Codigo, 80, 110, 180),
+        [CuentaComercialViewColumnKeys.RazonSocial] = new(CuentaComercialViewColumnKeys.RazonSocial, 160, 280, 520),
+        [CuentaComercialViewColumnKeys.Contacto] = new(CuentaComercialViewColumnKeys.Contacto, 120, 190, 420),
+        [CuentaComercialViewColumnKeys.Localidad] = new(CuentaComercialViewColumnKeys.Localidad, 110, 150, 320),
+        [CuentaComercialViewColumnKeys.Provincia] = new(CuentaComercialViewColumnKeys.Provincia, 110, 150, 320),
+        [CuentaComercialViewColumnKeys.Telefono] = new(CuentaComercialViewColumnKeys.Telefono, 110, 150, 260),
+        [CuentaComercialViewColumnKeys.Mail] = new(CuentaComercialViewColumnKeys.Mail, 140, 220, 460),
+        [CuentaComercialViewColumnKeys.Documento] = new(CuentaComercialViewColumnKeys.Documento, 120, 150, 260),
+        [CuentaComercialViewColumnKeys.Iva] = new(CuentaComercialViewColumnKeys.Iva, 120, 150, 320),
+        [CuentaComercialViewColumnKeys.Vendedor] = new(CuentaComercialViewColumnKeys.Vendedor, 120, 150, 320),
+        [CuentaComercialViewColumnKeys.Lista] = new(CuentaComercialViewColumnKeys.Lista, 90, 112, 180),
+        [CuentaComercialViewColumnKeys.Bloqueado] = new(CuentaComercialViewColumnKeys.Bloqueado, 110, 130, 180)
+    };
 
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
         Nav.LocationChanged += OnLocationChanged;
+        UpdatePageHeader();
         await LoadLookupsAsync();
         await EnsureViewSettingsLoadedAsync();
         await BuscarAsync();
         await ApplyStartupQueryAsync();
+        UpdatePageHeader();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -1449,6 +1707,8 @@
 
         if (_showEditor && _activeTab == CuentaComercialTab.Notas && !_notesEditorsReady && _richEditorJs is not null)
             await InitializeNotesEditorsAsync();
+
+        await SyncDataViewColumnResizeAsync();
 
         if (_scrollFeedbackAfterRender && _feedback is not null)
         {
@@ -1461,6 +1721,7 @@
     {
         AppUserSession.StateChanged -= OnAppUserSessionChanged;
         Nav.LocationChanged -= OnLocationChanged;
+        PageHeader.Clear();
         _searchDebounceCts?.Cancel();
         _searchDebounceCts?.Dispose();
     }
@@ -1490,18 +1751,66 @@
 
     public async ValueTask DisposeAsync()
     {
+        if (_dataViewColumnsJs is not null)
+        {
+            try
+            {
+                await _dataViewColumnsJs.InvokeVoidAsync("deactivate", _clientesDataViewRoot);
+                await _dataViewColumnsJs.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+            }
+        }
+
+        _dataViewColumnsSelf?.Dispose();
+
         if (_richEditorJs is not null)
             await _richEditorJs.DisposeAsync();
     }
 
+    private async Task SyncDataViewColumnResizeAsync()
+    {
+        if (!IsClienteBrowseAlfaDesign)
+        {
+            if (_dataViewColumnsInitialized && _dataViewColumnsJs is not null)
+            {
+                await _dataViewColumnsJs.InvokeVoidAsync("deactivate", _clientesDataViewRoot);
+                _dataViewColumnsInitialized = false;
+            }
+
+            return;
+        }
+
+        if (!_dataViewColumnsInitialized)
+        {
+            _dataViewColumnsJs ??= await Js.InvokeAsync<IJSObjectReference>("import", "/js/alfa-data-view-columns.js?v=20260814-clientes-widths-fix");
+            _dataViewColumnsSelf ??= DotNetObjectReference.Create(this);
+            await _dataViewColumnsJs.InvokeVoidAsync("activate", _clientesDataViewRoot, _dataViewColumnsSelf);
+            _dataViewColumnsInitialized = true;
+        }
+    }
+
     private void OpenSearchPanel()
-        => _showSearchPanel = true;
+    {
+        _showSearchPanel = true;
+        UpdatePageHeader();
+    }
 
     private void ToggleSearchPanel()
-        => _showSearchPanel = !_showSearchPanel;
+    {
+        _showSearchPanel = !_showSearchPanel;
+        UpdatePageHeader();
+    }
 
     private void CloseSearchPanel()
-        => _showSearchPanel = false;
+    {
+        if (!_showSearchPanel)
+            return;
+
+        _showSearchPanel = false;
+        UpdatePageHeader();
+    }
 
     private async Task HandlePageClickAsync()
     {
@@ -1561,6 +1870,187 @@
             _form.NotaCuenta = html;
     }
 
+    private RenderFragment RenderClientesSmartSearch() => @<div class="smart-search" @onclick:stopPropagation @onkeydown="OnSearchKeyDownAsync">
+        @{ var activeChips = BuildFilterChips(); }
+        <div class="smart-search__bar @(_showSearchPanel ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true">
+                <i class="bi bi-search"></i>
+            </span>
+            <button type="button"
+                    class="smart-search__filter-button @(_showSearchPanel || activeChips.Count > 0 ? "is-active" : string.Empty)"
+                    title="Abrir filtros"
+                    aria-label="Abrir filtros"
+                    aria-expanded="@_showSearchPanel"
+                    @onclick="ToggleSearchPanel">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @foreach (var chip in activeChips.Take(2))
+                {
+                    <button type="button"
+                            class="smart-search__active-filter"
+                            title="@($"Quitar filtro {chip.Label}")"
+                            aria-label="@($"Quitar filtro {chip.Label}")"
+                            @onclick="() => RemoveChipAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true">
+                            <i class="bi bi-x"></i>
+                        </span>
+                    </button>
+                }
+                @if (activeChips.Count > 2)
+                {
+                    <span class="smart-search__more-filters" title="@string.Join(", ", activeChips.Skip(2).Select(chip => chip.Label))">+@(activeChips.Count - 2)</span>
+                }
+            </div>
+            <input type="search"
+                   placeholder="Buscar por código, razón social, contacto, localidad, teléfono, email o CUIT..."
+                   value="@_filters.Texto"
+                   @onfocus="OpenSearchPanel"
+                   @oninput="OnSearchInput"
+                   @onkeydown="OnSearchKeyDownAsync" />
+            <button type="button"
+                    class="smart-search__toggle"
+                    @onclick="ToggleSearchPanel"
+                    aria-label="Mostrar filtros"
+                    aria-expanded="@_showSearchPanel">
+                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_showSearchPanel)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseSearchPanel"></button>
+            <div class="smart-search__panel smart-search__panel--standard" @onclick:stopPropagation @onkeydown="OnSearchKeyDownAsync">
+                <div class="smart-search__column smart-search__section smart-search__section--status">
+                    <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
+                    <button type="button" class="@GetSmartOptionClass(_activoFiltro == "1")" @onclick='() => SetStatusFilterAsync("1")'>Activos</button>
+                    <button type="button" class="@GetSmartOptionClass(_activoFiltro == "0")" @onclick='() => SetStatusFilterAsync("0")'>Inactivos</button>
+                    <button type="button" class="@GetSmartOptionClass(string.IsNullOrWhiteSpace(_activoFiltro))" @onclick='() => SetStatusFilterAsync("")'>Todos</button>
+                </div>
+                <div class="smart-search__column smart-search__section smart-search__section--block">
+                    <h4><i class="bi bi-shield-fill-exclamation"></i> Bloqueo</h4>
+                    <button type="button" class="@GetSmartOptionClass(string.IsNullOrWhiteSpace(_bloqueoFiltro))" @onclick='() => SetBlockFilterAsync("")'>Todos</button>
+                    <button type="button" class="@GetSmartOptionClass(_bloqueoFiltro == "1")" @onclick='() => SetBlockFilterAsync("1")'>Bloqueados</button>
+                    <button type="button" class="@GetSmartOptionClass(_bloqueoFiltro == "0")" @onclick='() => SetBlockFilterAsync("0")'>Sin bloquear</button>
+                </div>
+                <div class="smart-search__column smart-search__section smart-search__section--group">
+                    <h4><i class="bi bi-stack"></i> Agrupar por</h4>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.None)" @onclick='() => SetGroupAsync(CuentaComercialViewGroupKeys.None)'>Sin agrupar</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.Activo)" @onclick='() => SetGroupAsync(CuentaComercialViewGroupKeys.Activo)'>Estado</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.Provincia)" @onclick='() => SetGroupAsync(CuentaComercialViewGroupKeys.Provincia)'>Provincia</button>
+                    <button type="button" class="@GetSmartOptionClass(_viewSettings.AgruparPor == CuentaComercialViewGroupKeys.Bloqueado)" @onclick='() => SetGroupAsync(CuentaComercialViewGroupKeys.Bloqueado)'>Bloqueo</button>
+                </div>
+                <div class="smart-search__column smart-search__section smart-search__section--location">
+                    <h4><i class="bi bi-geo-alt-fill"></i> Ubicación</h4>
+                    <div class="smart-search__inline">
+                        <label>Provincia</label>
+                        <select value="@_filters.ProvinciaCodigo" @onchange="OnProvinciaChangedAsync">
+                            <option value="">Todas</option>
+                            @foreach (var provincia in _lookups.Provincias)
+                            {
+                                <option value="@provincia.Codigo">@provincia.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="smart-search__inline">
+                        <label>País</label>
+                        <select value="@_filters.PaisCodigo" @onchange="OnPaisChangedAsync">
+                            <option value="">Todos</option>
+                            @foreach (var pais in _lookups.Paises)
+                            {
+                                <option value="@pais.Codigo">@pais.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="smart-search__column smart-search__section smart-search__section--actions">
+                    <h4><i class="bi bi-lightning-charge-fill"></i> Acciones</h4>
+                    <div class="actions smart-search__actions">
+                        <AlfaButton Variant="AlfaButtonVariant.Primary"
+                                    Size="AlfaSize.Sm"
+                                    Icon="bi bi-search"
+                                    Disabled="@_loadingList"
+                                    OnClick="_ => AplicarFiltrosAsync()">Aplicar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                    Size="AlfaSize.Sm"
+                                    Icon="bi bi-eraser"
+                                    Disabled="@_loadingList"
+                                    OnClick="_ => LimpiarFiltrosAsync()">Limpiar</AlfaButton>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void UpdatePageHeader()
+    {
+        if (!IsClienteBrowseAlfaDesign)
+        {
+            PageHeader.Clear();
+            return;
+        }
+
+        var actions = new List<PageHeaderAction>();
+        if (_selectedCodes.Count > 0)
+        {
+            actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedCodes.Count} seleccionados", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
+            actions.Add(new PageHeaderAction { Key = "baja-masiva", Label = "Dar de baja", Icon = "bi-person-dash", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = OpenBulkDeactivateFromHeaderAsync });
+            actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ClearSelectionAsync });
+        }
+
+        actions.Add(new PageHeaderAction { Key = "nuevo", Label = "Nuevo cliente", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _loadingList, OnClick = BeginNewAsync });
+        actions.Add(new PageHeaderAction { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _loadingList, OnClick = RecargarAsync });
+        actions.Add(new PageHeaderAction { Key = "vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loadingList, OnClick = () => { AbrirConfiguracionVista(); UpdatePageHeader(); return Task.CompletedTask; } });
+        actions.Add(new PageHeaderAction { Key = "agrupar", Label = GetGroupingLabel(_viewSettings.AgruparPor), Icon = "bi-collection", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ToggleSearchPanelAsync });
+
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = "Clientes",
+            Breadcrumb = ["Comercial", "Clientes"],
+            State = _loadingList ? PageHeaderState.Loading : _selectedCodes.Count > 0 ? PageHeaderState.Selection : PageHeaderState.List,
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            ShowHistoryNavigation = true,
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderClientesSmartSearch(),
+            Pagination = BuildHeaderPagination(),
+            Actions = actions
+        });
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private PageHeaderPaginationConfig BuildHeaderPagination()
+        => new()
+        {
+            Label = $"{_pagedTotal:N0} registros",
+            PageLabel = $"{_pageNumber} / {_totalPages}",
+            HasPrevious = _hasPrev,
+            HasNext = _hasNext,
+            Disabled = _loadingList,
+            OnPrevious = () => CambiarPaginaAsync(_pageNumber - 1),
+            OnNext = () => CambiarPaginaAsync(_pageNumber + 1)
+        };
+
+    private Task ToggleSearchPanelAsync()
+    {
+        ToggleSearchPanel();
+        return Task.CompletedTask;
+    }
+
+    private Task ClearSelectionAsync()
+    {
+        _selectedCodes.Clear();
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    private Task OpenBulkDeactivateFromHeaderAsync()
+    {
+        EjecutarAccionSeleccionadaAsync();
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
     private async Task LoadLookupsAsync()
     {
         var result = await UiOps.RunAsync(() => CuentasSvc.GetLookupDataAsync(Tipo), $"No se pudieron cargar las referencias de {PluralLabelLower}.");
@@ -1579,11 +2069,13 @@
         await LoadLookupsAsync();
         await EnsureViewSettingsLoadedAsync(force: true);
         await BuscarAsync();
+        UpdatePageHeader();
     }
 
     private void OnSearchInput(ChangeEventArgs e)
     {
         _filters.Texto = e.Value?.ToString() ?? string.Empty;
+        UpdatePageHeader();
         DebounceSearch();
     }
 
@@ -1602,6 +2094,7 @@
         _filters.PageNumber = 1;
         CloseSearchPanel();
         await BuscarAsync();
+        UpdatePageHeader();
     }
 
     private void DebounceSearch()
@@ -1620,6 +2113,7 @@
 
                 _filters.PageNumber = 1;
                 await BuscarAsync();
+                UpdatePageHeader();
             }
             catch (TaskCanceledException)
             {
@@ -1643,6 +2137,7 @@
     {
         _viewSettings.AgruparPor = group;
         await AplicarFiltrosAsync();
+        UpdatePageHeader();
     }
 
     private async Task OnProvinciaChangedAsync(ChangeEventArgs e)
@@ -1667,18 +2162,22 @@
     {
         _filters.PageNumber = 1;
         await BuscarAsync();
+        UpdatePageHeader();
     }
 
     private async Task BuscarAsync()
     {
         SyncFilters();
+        _listLoadFailed = false;
         _loadingList = true;
+        UpdatePageHeader();
 
         try
         {
             var result = await UiOps.RunAsync(() => CuentasSvc.SearchAsync(Tipo, _filters), $"No se pudieron cargar los {PluralLabelLower}.");
             if (!result.Success || result.Value is null)
             {
+                _listLoadFailed = true;
                 _items.Clear();
                 _pagedTotal = 0;
                 _pageNumber = 1;
@@ -1703,6 +2202,7 @@
         finally
         {
             _loadingList = false;
+            UpdatePageHeader();
         }
     }
 
@@ -1713,6 +2213,7 @@
 
         _filters.PageNumber = page;
         await BuscarAsync();
+        UpdatePageHeader();
     }
 
     private async Task OnPageSizeChangedAsync(ChangeEventArgs e)
@@ -1722,6 +2223,17 @@
 
         _filters.PageNumber = 1;
         await BuscarAsync();
+        UpdatePageHeader();
+    }
+
+    private async Task SetPageSizeAsync(string? value)
+    {
+        if (int.TryParse(value, out var size) && size is 25 or 50 or 100)
+            _filters.PageSize = size;
+
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+        UpdatePageHeader();
     }
 
     private async Task BeginNewAsync()
@@ -1738,6 +2250,7 @@
         _notesEditorsReady = false;
         _showSearchPanel = false;
         ResetContactosState();
+        UpdatePageHeader();
 
         _form = new CuentaComercialSaveRequest
         {
@@ -1758,6 +2271,7 @@
         }
 
         _form.Codigo = result.Value;
+        UpdatePageHeader();
     }
 
     private async Task SeleccionarAsync(string codigo)
@@ -1804,7 +2318,10 @@
     }
 
     private void SeleccionarFila(string codigo)
-        => _selectedCodigo = codigo?.Trim() ?? string.Empty;
+    {
+        _selectedCodigo = codigo?.Trim() ?? string.Empty;
+        UpdatePageHeader();
+    }
 
     private void ToggleRowSelection(string codigo, ChangeEventArgs args)
     {
@@ -1816,6 +2333,8 @@
             _selectedCodes.Add(normalized);
         else
             _selectedCodes.Remove(normalized);
+
+        UpdatePageHeader();
     }
 
     private void ToggleSelectAll(ChangeEventArgs args)
@@ -1828,6 +2347,8 @@
             else
                 _selectedCodes.Remove(codigo);
         }
+
+        UpdatePageHeader();
     }
 
     private async Task AbrirEditorAsync(string codigo, bool updateUrl = true)
@@ -1844,6 +2365,7 @@
         _showEditor = true;
         _showViewSettings = false;
         _showSearchPanel = false;
+        UpdatePageHeader();
         await SeleccionarAsync(codigo);
     }
 
@@ -1853,6 +2375,7 @@
         _showEditor = false;
         _notesEditorsReady = false;
         ResetContactosState();
+        UpdatePageHeader();
     }
 
     private void ResetForm()
@@ -2271,6 +2794,7 @@
 
         _bulkDeactivateConfirmCount = _selectedCodes.Count;
         _showBulkDeactivateConfirm = true;
+        UpdatePageHeader();
     }
 
     private void CloseBulkDeactivateConfirm()
@@ -2279,6 +2803,7 @@
             return;
 
         _showBulkDeactivateConfirm = false;
+        UpdatePageHeader();
     }
 
     private async Task ConfirmBulkDeactivateAsync()
@@ -2287,11 +2812,13 @@
         if (codigos.Length == 0 || _saving)
         {
             _showBulkDeactivateConfirm = false;
+            UpdatePageHeader();
             return;
         }
 
         _showBulkDeactivateConfirm = false;
         _saving = true;
+        UpdatePageHeader();
         try
         {
             foreach (var codigo in codigos)
@@ -2306,6 +2833,7 @@
 
             SetFeedback(AppUiMessage.Success($"{PluralLabel} actualizados", $"Se dieron de baja {codigos.Length} {PluralLabelLower} seleccionados."));
             await BuscarAsync();
+            UpdatePageHeader();
         }
         catch (Exception ex)
         {
@@ -2314,6 +2842,7 @@
         finally
         {
             _saving = false;
+            UpdatePageHeader();
         }
     }
 
@@ -2455,6 +2984,7 @@
         _draftAgruparPor = _viewSettings.AgruparPor;
         _viewSettingsDraft.Clear();
         _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
+        UpdatePageHeader();
     }
 
     private void CancelarConfiguracionVista()
@@ -2463,6 +2993,21 @@
         _draftAgruparPor = _viewSettings.AgruparPor;
         _viewSettingsDraft.Clear();
         _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
+        UpdatePageHeader();
+    }
+
+    private void SetDraftGrouping(string? value)
+        => _draftAgruparPor = value ?? CuentaComercialViewGroupKeys.None;
+
+    private void SetViewColumnVisibility(string key, bool? value)
+    {
+        var column = _viewSettingsDraft.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+            return;
+
+        column.Visible = value is true;
+        if (!_viewSettingsDraft.Any(c => c.Visible))
+            column.Visible = true;
     }
 
     private void ToggleViewColumn(string key, ChangeEventArgs args)
@@ -2495,8 +3040,17 @@
         _viewSettingsDraft.AddRange(ordered);
     }
 
-    private async Task GuardarConfiguracionVistaAsync()
+    private async Task RestablecerAnchosAsync()
     {
+        if (_savingViewSettings)
+            return;
+
+        foreach (var column in _viewSettingsDraft)
+            column.WidthPx = null;
+
+        foreach (var column in _viewSettings.Columnas)
+            column.WidthPx = null;
+
         var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(currentUser))
         {
@@ -2515,21 +3069,79 @@
             Columnas = CloneColumns(_viewSettingsDraft)
         };
 
-        var result = await UiOps.RunAsync(async () =>
+        _savingViewSettings = true;
+        try
         {
-            await CuentasSvc.SaveViewSettingsAsync(Tipo, currentUser, settings);
-            return true;
-        }, "No se pudo guardar la configuración de vista.");
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await CuentasSvc.SaveViewSettingsAsync(Tipo, currentUser, settings);
+                return true;
+            }, "No se pudieron restablecer los anchos de columnas.");
 
-        if (!result.Success)
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            ApplyViewSettings(settings, currentUser);
+            _showViewSettings = true;
+            SetFeedback(AppUiMessage.Success("Anchos restablecidos", "Las columnas volvieron a sus anchos predeterminados."));
+        }
+        finally
         {
-            SetFeedback(result.Feedback);
+            _savingViewSettings = false;
+            UpdatePageHeader();
+        }
+    }
+
+    private async Task GuardarConfiguracionVistaAsync()
+    {
+        if (_savingViewSettings)
+            return;
+
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Sesión requerida",
+                Message = "Necesitás iniciar sesión para guardar la configuración de vista."
+            });
             return;
         }
 
-        ApplyViewSettings(settings, currentUser);
-        _showViewSettings = false;
-        SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de la grilla quedó actualizada para tu usuario."));
+        var settings = new CuentaComercialViewSettingsDto
+        {
+            AgruparPor = _draftAgruparPor,
+            Columnas = CloneColumns(_viewSettingsDraft)
+        };
+
+        _savingViewSettings = true;
+        try
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await CuentasSvc.SaveViewSettingsAsync(Tipo, currentUser, settings);
+                return true;
+            }, "No se pudo guardar la configuración de vista.");
+
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            ApplyViewSettings(settings, currentUser);
+            _showViewSettings = false;
+            SetFeedback(AppUiMessage.Success("Vista guardada", "La configuración de la grilla quedó actualizada para tu usuario."));
+        }
+        finally
+        {
+            _savingViewSettings = false;
+            UpdatePageHeader();
+        }
     }
 
     private void ApplyViewSettings(CuentaComercialViewSettingsDto settings, string userName)
@@ -2547,12 +3159,62 @@
         _ = InvokeAsync(async () =>
         {
             await EnsureViewSettingsLoadedAsync(force: true);
+            UpdatePageHeader();
             StateHasChanged();
         });
     }
 
     private IReadOnlyList<CuentaComercialViewColumnDto> GetVisibleColumns()
         => _viewSettings.Columnas.Where(c => c.Visible).OrderBy(c => c.Order).ToList();
+
+    private async Task PersistViewSettingsAsync(string successTitle, string successMessage)
+    {
+        if (_savingViewSettings)
+            return;
+
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(currentUser))
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Sesión requerida",
+                Message = "Necesitás iniciar sesión para guardar la configuración de vista."
+            });
+            return;
+        }
+
+        var settings = new CuentaComercialViewSettingsDto
+        {
+            AgruparPor = _draftAgruparPor,
+            Columnas = CloneColumns(_viewSettingsDraft)
+        };
+
+        _savingViewSettings = true;
+        try
+        {
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await CuentasSvc.SaveViewSettingsAsync(Tipo, currentUser, settings);
+                return true;
+            }, "No se pudo guardar la configuración de vista.");
+
+            if (!result.Success)
+            {
+                SetFeedback(result.Feedback);
+                return;
+            }
+
+            ApplyViewSettings(settings, currentUser);
+            _showViewSettings = false;
+            SetFeedback(AppUiMessage.Success(successTitle, successMessage));
+        }
+        finally
+        {
+            _savingViewSettings = false;
+            UpdatePageHeader();
+        }
+    }
 
     private IReadOnlyList<GridGroup> BuildGridGroups()
     {
@@ -2700,6 +3362,211 @@
             ? $"Seleccioná uno o más {PluralLabelLower} para ejecutar acciones."
             : $"{_selectedCodes.Count} {PluralLabelLower} seleccionado(s).";
 
+    private string GetBrowseSummary()
+    {
+        var values = new List<string>
+        {
+            $"{FormatRecordCount(_pagedTotal)} · Página {_pageNumber} de {_totalPages}"
+        };
+
+        if (_selectedCodes.Count > 0)
+            values.Add(FormatSelectedCount(_selectedCodes.Count));
+
+        if (!string.Equals(_viewSettings.AgruparPor, CuentaComercialViewGroupKeys.None, StringComparison.OrdinalIgnoreCase))
+            values.Add(GetGroupingLabel(_viewSettings.AgruparPor));
+
+        var filters = BuildFilterChips().Count;
+        if (filters > 0)
+            values.Add(FormatFilterCount(filters));
+
+        return string.Join(" · ", values);
+    }
+
+    private static string FormatRecordCount(int count)
+        => count == 1 ? "1 registro" : $"{count:N0} registros";
+
+    private static string FormatSelectedCount(int count)
+        => count == 1 ? "1 seleccionado" : $"{count} seleccionados";
+
+    private static string FormatFilterCount(int count)
+        => count == 1 ? "1 filtro" : $"{count} filtros";
+
+    private string GetBulkDeactivateTitle()
+        => _bulkDeactivateConfirmCount == 1 ? "Dar de baja cliente" : "Dar de baja clientes";
+
+    private string GetBulkDeactivateMessage()
+        => _bulkDeactivateConfirmCount == 1
+            ? "El cliente seleccionado dejará de estar activo."
+            : $"{_bulkDeactivateConfirmCount} clientes seleccionados dejarán de estar activos.";
+
+    private IReadOnlyList<AlfaActionMenuItem> BuildRowActions(CuentaComercialGridItemDto item)
+        =>
+        [
+            new()
+            {
+                Key = "editar",
+                Label = "Editar",
+                Icon = "bi bi-pencil-square",
+                OnClick = () => AbrirEditorAsync(item.Codigo)
+            }
+        ];
+
+    private RenderFragment RenderAlfaBrowseCell(CuentaComercialGridItemDto item, string key)
+        => key switch
+        {
+            CuentaComercialViewColumnKeys.Codigo => @<span class="cuentas-list-table__code">@item.Codigo</span>,
+            CuentaComercialViewColumnKeys.RazonSocial => @<strong>@item.RazonSocial</strong>,
+            CuentaComercialViewColumnKeys.Bloqueado => @<AlfaTag Tone="@(item.Bloqueado ? AlfaTagTone.Danger : AlfaTagTone.Success)">@(item.Bloqueado ? "Bloqueado" : "Sin bloqueo")</AlfaTag>,
+            _ => @<span title="@FormatNullable(RenderCell(item, key)?.ToString())">@RenderCell(item, key)</span>
+        };
+
+    [JSInvokable]
+    public Task PreviewAlfaDataViewColumnWidth(string key, int width)
+    {
+        SetCuentaColumnWidth(key, width);
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public async Task CommitAlfaDataViewColumnWidth(string key, int width)
+    {
+        if (_savingColumnWidths)
+            return;
+
+        var column = _viewSettings.Columnas.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+            return;
+
+        SetCuentaColumnWidth(key, width);
+
+        _savingColumnWidths = true;
+        try
+        {
+            await PersistCurrentViewSettingsQuietlyAsync();
+        }
+        finally
+        {
+            _savingColumnWidths = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task ResetAlfaDataViewColumnWidth(string key)
+    {
+        if (!ResetCuentaColumnWidth(key) || _savingColumnWidths)
+            return;
+
+        _savingColumnWidths = true;
+        try
+        {
+            await PersistCurrentViewSettingsQuietlyAsync();
+            StateHasChanged();
+        }
+        finally
+        {
+            _savingColumnWidths = false;
+        }
+    }
+
+    private async Task PersistCurrentViewSettingsQuietlyAsync()
+    {
+        var currentUser = AppUserSession.GetCurrentUserName(string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(currentUser))
+            return;
+
+        var settings = new CuentaComercialViewSettingsDto
+        {
+            AgruparPor = _viewSettings.AgruparPor,
+            Columnas = CloneColumns(_viewSettings.Columnas)
+        };
+
+        var result = await UiOps.RunAsync(async () =>
+        {
+            await CuentasSvc.SaveViewSettingsAsync(Tipo, currentUser, settings);
+            return true;
+        }, "No se pudieron guardar los anchos de columnas.");
+
+        if (!result.Success)
+            SetFeedback(result.Feedback);
+    }
+
+    private bool SetCuentaColumnWidth(string key, int width)
+    {
+        var column = _viewSettings.Columnas.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+            return false;
+
+        var clamped = GetCuentaColumnSizing(key).Clamp(width);
+        if (column.WidthPx == clamped)
+            return false;
+
+        column.WidthPx = clamped;
+
+        var draft = _viewSettingsDraft.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (draft is not null)
+            draft.WidthPx = clamped;
+
+        return true;
+    }
+
+    private bool ResetCuentaColumnWidth(string key)
+    {
+        var changed = false;
+        foreach (var column in _viewSettings.Columnas.Where(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase)))
+        {
+            changed |= column.WidthPx.HasValue;
+            column.WidthPx = null;
+        }
+
+        foreach (var column in _viewSettingsDraft.Where(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase)))
+        {
+            changed |= column.WidthPx.HasValue;
+            column.WidthPx = null;
+        }
+
+        return changed;
+    }
+
+    private static AlfaDataViewColumnSizing GetCuentaColumnSizing(string key)
+        => CuentaColumnSizing.TryGetValue(key, out var sizing)
+            ? sizing
+            : new AlfaDataViewColumnSizing(key, 96, 160, 360);
+
+    private static int GetColumnWidth(CuentaComercialViewColumnDto column)
+        => GetCuentaColumnSizing(column.Key).Clamp(column.WidthPx ?? 0);
+
+    private static string GetColumnWidthStyle(CuentaComercialViewColumnDto column)
+    {
+        var sizing = GetCuentaColumnSizing(column.Key);
+        var width = sizing.Clamp(column.WidthPx ?? 0);
+        return $"width: {width}px; min-width: {sizing.MinWidth}px; max-width: {sizing.MaxWidth}px;";
+    }
+
+    private static string GetDataViewTableStyle(IReadOnlyList<CuentaComercialViewColumnDto> columns)
+    {
+        var width = 108 + columns.Sum(GetColumnWidth);
+        return $"width: max(100%, {width}px); min-width: {width}px;";
+    }
+
+    private static string GetCuentaColumnCssClass(string key)
+        => key switch
+        {
+            CuentaComercialViewColumnKeys.Codigo => "cuentas-list-table__col cuentas-list-table__col--codigo",
+            CuentaComercialViewColumnKeys.RazonSocial => "cuentas-list-table__col cuentas-list-table__col--razon-social",
+            CuentaComercialViewColumnKeys.Contacto => "cuentas-list-table__col cuentas-list-table__col--contacto",
+            CuentaComercialViewColumnKeys.Localidad => "cuentas-list-table__col cuentas-list-table__col--localidad",
+            CuentaComercialViewColumnKeys.Provincia => "cuentas-list-table__col cuentas-list-table__col--provincia",
+            CuentaComercialViewColumnKeys.Telefono => "cuentas-list-table__col cuentas-list-table__col--telefono",
+            CuentaComercialViewColumnKeys.Mail => "cuentas-list-table__col cuentas-list-table__col--mail",
+            CuentaComercialViewColumnKeys.Documento => "cuentas-list-table__col cuentas-list-table__col--documento",
+            CuentaComercialViewColumnKeys.Iva => "cuentas-list-table__col cuentas-list-table__col--iva",
+            CuentaComercialViewColumnKeys.Vendedor => "cuentas-list-table__col cuentas-list-table__col--vendedor",
+            CuentaComercialViewColumnKeys.Lista => "cuentas-list-table__col cuentas-list-table__col--lista",
+            CuentaComercialViewColumnKeys.Bloqueado => "cuentas-list-table__col cuentas-list-table__col--bloqueado",
+            _ => "cuentas-list-table__col"
+        };
+
     private object RenderCell(CuentaComercialGridItemDto item, string key)
         => key switch
         {
@@ -2774,7 +3641,8 @@
                         Key = defaultCol.Key,
                         Label = defaultCol.Label,
                         Visible = defaultCol.Visible,
-                        Order = defaultCol.Order
+                        Order = defaultCol.Order,
+                        WidthPx = null
                     };
                 }
 
@@ -2783,7 +3651,8 @@
                     Key = defaultCol.Key,
                     Label = defaultCol.Label,
                     Visible = source.Visible,
-                    Order = source.Order
+                    Order = source.Order,
+                    WidthPx = NormalizeCuentaColumnWidth(defaultCol.Key, source.WidthPx)
                 };
             })
             .OrderBy(c => c.Order)
@@ -2817,9 +3686,13 @@
                 Key = c.Key,
                 Label = c.Label,
                 Visible = c.Visible,
-                Order = c.Order
+                Order = c.Order,
+                WidthPx = NormalizeCuentaColumnWidth(c.Key, c.WidthPx)
             })
             .ToList();
+
+    private static int? NormalizeCuentaColumnWidth(string key, int? width)
+        => width.HasValue && width.Value > 0 ? GetCuentaColumnSizing(key).Clamp(width.Value) : null;
 
     private void ClearFieldErrors()
         => _fieldErrors.Clear();

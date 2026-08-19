@@ -10,7 +10,7 @@
 
 1. [Panorama: qué hace la IA en Conversaciones](#1-panorama-qué-hace-la-ia-en-conversaciones)
 2. [Antes de empezar: asignate la conversación](#2-antes-de-empezar-asignate-la-conversación)
-3. [El panel del asistente (se abre solo)](#3-el-panel-del-asistente-se-abre-solo)
+3. [El panel del asistente (apertura manual)](#3-el-panel-del-asistente-apertura-manual)
 4. [Análisis de la conversación (resumen, intención, sentimiento)](#4-análisis-de-la-conversación)
 5. [La respuesta sugerida y el indicador de confianza](#5-la-respuesta-sugerida-y-el-indicador-de-confianza)
 6. [Aprobar y enviar, o editar antes](#6-aprobar-y-enviar-o-editar-antes)
@@ -49,7 +49,11 @@ agentes respondan a la vez y deja registro de quién atiende.
 
 ---
 
-## 3. El panel del asistente (se abre solo)
+## 3. El panel del asistente (apertura manual)
+
+El asistente no se abre automáticamente al entrar a una conversación.
+
+Se abre de forma manual cuando el operador hace clic en el botón de sugerencia IA. Esto evita consumir créditos o tokens cada vez que se navega entre conversaciones.
 
 Al entrar a Conversaciones, si el módulo AlfaKnowledge está habilitado, el panel del asistente
 **se abre automáticamente** a la derecha (tercera columna en escritorio). Podés cerrarlo con la
@@ -173,6 +177,13 @@ guardarraíles; si falla cualquiera, **escala silenciosamente a un humano** (que
 4. **Ventana de 24h de WhatsApp activa.**
 5. **No superó el tope** de respuestas por conversación (configurable, evita loops).
 6. **La IA tiene respaldo suficiente** (contexto + fuentes citadas, sin pedir aclaración).
+7. **"Responder solo fuera de horario"** (opcional): si está tildado, el bot solo contesta fuera del
+   horario de atención configurado; en horario calla y lo dejan los agentes humanos.
+8. **"Esperar N minutos antes de responder"** (opcional): si tiene minutos cargados, el bot no
+   contesta apenas llega el mensaje — espera ese tiempo (para darle margen a un agente humano) y
+   recién ahí vuelve a chequear todos los guardarraíles con el último mensaje del cliente. Si un
+   agente ya respondió o tomó la conversación mientras tanto, el bot no dice nada. 0 = responde
+   de inmediato.
 
 Cada respuesta automática (`BotAutoReply`) y cada escalado (`BotHandoff`) quedan **auditados**.
 
@@ -225,7 +236,7 @@ Diagnóstico rápido:
 - *No aparece el asistente* → módulo ALFAKNOWLEDGE inactivo o AlfaKnowledge sin configurar.
 - *"El análisis por IA no está configurado"* → falta `OPENAI_API_KEY` (reiniciar la app).
 - *La sugerencia no trae fuentes* → el sector de conocimiento no tiene contenido indexado.
-- *El bot no responde* → revisar los 6 guardarraíles y la auditoría `BotHandoff`.
+- *El bot no responde* → revisar los 8 guardarraíles y la auditoría `BotHandoff`.
 
 ---
 

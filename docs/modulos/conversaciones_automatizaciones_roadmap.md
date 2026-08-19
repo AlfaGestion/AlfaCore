@@ -40,7 +40,7 @@ Bienvenida, "ya te respondemos", fuera de horario (hecho), respuesta por
 
 ### Nivel 1 — Copiloto proactivo (mejor ROI, casi todo ya está) — **EN CURSO**
 - Sugerencia de respuesta **proactiva** (al abrir la conversación / llegar un mensaje),
-  no solo a demanda. (El panel ya se abre solo al entrar a Conversaciones.)
+  no solo a demanda. (Hoy el panel se abre manualmente para evitar consumo automático al entrar a Conversaciones.)
 - **Resumen** de la conversación + **intención** + **sentimiento**.
 - **Extracción de datos** (pedido, dirección, cliente) para prellenar oportunidad/cotización.
 - Borrador con **tono configurable** y traducción.

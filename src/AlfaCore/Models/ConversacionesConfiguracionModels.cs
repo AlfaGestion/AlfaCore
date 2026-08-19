@@ -1,7 +1,35 @@
 namespace AlfaCore.Models;
 
+public static class ConversacionWhatsAppProviderModes
+{
+    public const string MetaOnly = "META_ONLY";
+    public const string WebOnly = "WEB_ONLY";
+    public const string MetaAndWeb = "META_AND_WEB";
+}
+
+public static class ConversacionWhatsAppProviders
+{
+    public const string MetaCloud = "META_CLOUD";
+    public const string WhatsAppWeb = "WHATSAPP_WEB";
+}
+
+public static class ConversacionWhatsAppWebSessionModes
+{
+    public const string Qr = "QR";
+    public const string PhoneNumber = "PHONE_NUMBER";
+}
+
+public static class ConversacionWhatsAppWebSessionStatuses
+{
+    public const string Disconnected = "DISCONNECTED";
+    public const string PendingQr = "PENDING_QR";
+    public const string Connected = "CONNECTED";
+}
+
 public sealed class ConversacionWhatsAppConfigDto
 {
+    public string ProviderMode { get; set; } = ConversacionWhatsAppProviderModes.MetaOnly;
+    public string DefaultProvider { get; set; } = ConversacionWhatsAppProviders.MetaCloud;
     public string VerifyToken { get; set; } = string.Empty;
     public string AccessToken { get; set; } = string.Empty;
     public string PhoneNumberId { get; set; } = string.Empty;
@@ -10,6 +38,21 @@ public sealed class ConversacionWhatsAppConfigDto
     public string ApiVersion { get; set; } = "v22.0";
     public string PublicBaseUrl { get; set; } = string.Empty;
     public string WebhookPath { get; set; } = "/api/conversaciones/whatsapp/webhook";
+    public string WebSessionMode { get; set; } = ConversacionWhatsAppWebSessionModes.Qr;
+    public string WebPhoneNumber { get; set; } = string.Empty;
+    public string WebSessionStatus { get; set; } = ConversacionWhatsAppWebSessionStatuses.Disconnected;
+    public string WebDisplayName { get; set; } = string.Empty;
+    public string WebInstanceName { get; set; } = string.Empty;
+    public string WebPairingToken { get; set; } = string.Empty;
+    public string WebPairingCode { get; set; } = string.Empty;
+    public string WebPairingQrPayload { get; set; } = string.Empty;
+    public string WebPairingQrDataUrl { get; set; } = string.Empty;
+    public DateTime? WebPairingGeneratedAtUtc { get; set; }
+    public DateTime? WebPairingExpiresAtUtc { get; set; }
+    public string WebRuntimeState { get; set; } = string.Empty;
+    public string WebLastError { get; set; } = string.Empty;
+    public int? WebWorkerProcessId { get; set; }
+    public DateTime? WebRuntimeUpdatedAtUtc { get; set; }
     public string ConfigSource { get; set; } = string.Empty;
 
     public bool IsConfiguredForSend =>
@@ -24,6 +67,26 @@ public sealed class ConversacionWhatsAppConfigDto
         IsConfiguredForVerify &&
         !string.IsNullOrWhiteSpace(PublicBaseUrl);
 
+    public bool UsesMetaProvider =>
+        string.Equals(ProviderMode, ConversacionWhatsAppProviderModes.MetaOnly, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(ProviderMode, ConversacionWhatsAppProviderModes.MetaAndWeb, StringComparison.OrdinalIgnoreCase);
+
+    public bool UsesWebProvider =>
+        string.Equals(ProviderMode, ConversacionWhatsAppProviderModes.WebOnly, StringComparison.OrdinalIgnoreCase) ||
+        string.Equals(ProviderMode, ConversacionWhatsAppProviderModes.MetaAndWeb, StringComparison.OrdinalIgnoreCase);
+
+    public bool IsWebSessionReady =>
+        string.Equals(WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(WebInstanceName);
+
+    public bool HasWebPairingQr =>
+        !string.IsNullOrWhiteSpace(WebPairingQrDataUrl) &&
+        WebPairingExpiresAtUtc.HasValue;
+
+    public bool HasWebPairingCode =>
+        !string.IsNullOrWhiteSpace(WebPairingCode) &&
+        WebPairingExpiresAtUtc.HasValue;
+
     public string GetWebhookUrl()
     {
         var baseUrl = (PublicBaseUrl ?? string.Empty).Trim().TrimEnd('/');
@@ -33,6 +96,11 @@ public sealed class ConversacionWhatsAppConfigDto
 
         return string.IsNullOrWhiteSpace(baseUrl) ? path : $"{baseUrl}{path}";
     }
+}
+
+public sealed class ConversacionWhatsAppWebPairingRequestDto
+{
+    public bool IncludeTextCode { get; set; } = true;
 }
 
 public sealed class ConversacionInstagramConfigDto
@@ -209,6 +277,14 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>Tope de respuestas automáticas por conversación antes de escalar (evita loops).</summary>
     public int BotMaxRespuestas { get; set; } = 5;
 
+    /// <summary>El bot solo responde fuera del horario de atención configurado (Automatizaciones); dentro
+    /// del horario calla y lo dejan para un agente humano.</summary>
+    public bool BotSoloFueraHorario { get; set; }
+
+    /// <summary>Minutos de espera desde que llega el mensaje antes de que el bot responda, para darle
+    /// margen a un agente humano a atender primero. 0 = responde de inmediato.</summary>
+    public int BotEsperaMinutos { get; set; }
+
     // Auto-cierre por inactividad. Cierra conversaciones donde estamos esperando al cliente
     // (último mensaje nuestro) y no responde. Manda un aviso previo antes de cerrar. Apagado por
     // defecto. Aplica a todos los canales; el aviso/cierre solo se envían si el canal lo permite.
@@ -298,7 +374,34 @@ public sealed class ConversacionWhatsAppNumeroDto
     public string PhoneNumberId { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
+    public string WebSessionMode { get; set; } = ConversacionWhatsAppWebSessionModes.Qr;
+    public string WebPhoneNumber { get; set; } = string.Empty;
+    public string WebSessionStatus { get; set; } = ConversacionWhatsAppWebSessionStatuses.Disconnected;
+    public string WebDisplayName { get; set; } = string.Empty;
+    public string WebInstanceName { get; set; } = string.Empty;
+    public string WebPairingToken { get; set; } = string.Empty;
+    public string WebPairingCode { get; set; } = string.Empty;
+    public string WebPairingQrPayload { get; set; } = string.Empty;
+    public string WebPairingQrDataUrl { get; set; } = string.Empty;
+    public DateTime? WebPairingGeneratedAtUtc { get; set; }
+    public DateTime? WebPairingExpiresAtUtc { get; set; }
+    public string WebRuntimeState { get; set; } = string.Empty;
+    public string WebLastError { get; set; } = string.Empty;
+    public int? WebWorkerProcessId { get; set; }
+    public DateTime? WebRuntimeUpdatedAtUtc { get; set; }
     public List<string> Usuarios { get; set; } = [];
+
+    public bool IsWebSessionReady =>
+        string.Equals(WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase)
+        && !string.IsNullOrWhiteSpace(WebInstanceName);
+
+    public bool HasWebPairingQr =>
+        !string.IsNullOrWhiteSpace(WebPairingQrDataUrl) &&
+        WebPairingExpiresAtUtc.HasValue;
+
+    public bool HasWebPairingCode =>
+        !string.IsNullOrWhiteSpace(WebPairingCode) &&
+        WebPairingExpiresAtUtc.HasValue;
 }
 
 public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
@@ -311,8 +414,6 @@ public sealed class ConversacionAlfaKnowledgeConnectionTestResultDto
     public string KnowledgeBase { get; set; } = string.Empty;
     public string Message { get; set; } = string.Empty;
 }
-
-
 /// <summary>
 /// Regla del motor de palabras clave de Conversaciones. Vigila los mensajes entrantes
 /// de cualquier canal y, si coincide una palabra clave, aplica sus acciones (responder,

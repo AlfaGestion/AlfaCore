@@ -2,32 +2,23 @@
 @page "/{idweb}/{idbase:int}/conversaciones/configuracion"
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IConversacionesService ConvSvc
+@inject AlfaCore.Services.IWhatsAppWebSessionService WhatsAppWebSessionSvc
 @inject AlfaCore.Services.IAnyDeskLocalSettingsService AnyDeskSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Configuración de canales | Alfa Gestión</PageTitle>
 
-<section class="page-grid">
-    <div class="page-intro">
-        <div>
-            <h2 class="page-intro__title">Configuración de canales</h2>
-            <p class="page-intro__text">Administrá desde AlfaCore los parámetros de mensajería por canal. Esta configuración se guarda en <code>TA_CONFIGURACION</code> y <code>appsettings</code> queda solo como respaldo mínimo.</p>
-        </div>
-        <div class="actions">
-            <a class="btn btn--ghost" href="/conversaciones">
-                <i class="bi bi-arrow-left"></i> Volver al inbox
-            </a>
-            <button type="button" class="btn btn--ghost" @onclick="LoadAsync" disabled="@(Loading || Saving)">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </div>
+<section class="page-grid settings-page">
+    <AlfaNotification Message="@WhatsAppFeedback" OnDismiss="DismissWhatsAppFeedback" />
 
-    @if (_feedback is not null)
+    @if (_feedback is not null && _feedbackScope != "whatsapp")
     {
         <div class="conversations-inline @GetFeedbackClass(_feedback)">
             <strong>@_feedback.Title</strong>
@@ -42,141 +33,211 @@
             }
         </div>
     }
-    @if (AppMode.IsSaaSMode)
+
+    <div class="settings-workspace">
+        <nav class="settings-nav" aria-label="Secciones de Configuración">
+            @foreach (var item in SettingsNavItems)
+            {
+                <button type="button" class="@GetPrimaryTabClass(item.Key)" @onclick="() => SelectPrimaryTab(item.Key)">
+                    <i class="bi @item.Icon" aria-hidden="true"></i>
+                    <span>@item.Label</span>
+                </button>
+            }
+        </nav>
+
+        <div class="settings-content">
+
+    @if (_activePrimaryTab == "resumen")
     {
-        <div class="conversations-inline @(HasWebhookToken ? "conversations-inline--ok" : "conversations-inline--error")">
-            <strong>@(HasWebhookToken ? "Webhook identificado por base" : "Webhook sin identificación de base")</strong>
-            <div>@GetWebhookTenantHelp("los mensajes entrantes")</div>
+    <header class="settings-section-header">
+        <h2>Resumen</h2>
+        <p>Puntos de entrada a la configuración de Conversaciones. El detalle y el estado de cada canal viven dentro de su propia sección.</p>
+    </header>
+    <div class="settings-summary-grid">
+        @foreach (var item in SettingsNavItems.Where(i => i.Key != "resumen"))
+        {
+            <button type="button" class="settings-summary-card" @onclick="() => SelectPrimaryTab(item.Key)">
+                <i class="bi @item.Icon" aria-hidden="true"></i>
+                <span class="settings-summary-card__label">@item.Label</span>
+                <span class="settings-summary-card__hint">@item.Hint</span>
+            </button>
+        }
+    </div>
+    }
+
+    @if (_activePrimaryTab == "canales")
+    {
+    <header class="settings-section-header">
+        <h2>Canales</h2>
+        <p>Elegí el canal para administrar su conexión, credenciales y webhook.</p>
+    </header>
+    <AlfaTabs Items="@_channelTabItems" ActiveKey="@_activeChannelTab" ActiveKeyChanged="@OnChannelTabChanged" AriaLabel="Canales" />
+    }
+    @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp")
+    {
+    <header class="settings-content-header">
+        <h3>WhatsApp</h3>
+    </header>
+    <AlfaTabs Items="@_whatsAppSectionTabItems" ActiveKey="@_activeWhatsAppSection" ActiveKeyChanged="@OnWhatsAppSectionChanged" AriaLabel="WhatsApp Business o WhatsApp API" />
+
+    @if (_activeWhatsAppSection == "numeros")
+    {
+        <p class="wa-content-lead">Conectá los números que usás para atender conversaciones.</p>
+        <div class="wa-status-summary">
+            <span class="wa-status-chip"><i class="bi bi-telephone-fill" aria-hidden="true"></i> @GetWhatsAppNumerosSummary()</span>
         </div>
     }
-    <div class="conv-config-status-grid">
-            <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Envío Cloud API</span>
-                <strong class="@GetStatusClass(_config.IsConfiguredForSend)">@GetStatusLabel(_config.IsConfiguredForSend)</strong>
-                <p class="panel-card__subtitle">Requiere <code>access token</code> y <code>phone_number_id</code>.</p>
-            </article>
+    else
+    {
+        <p class="wa-content-lead">Configuración avanzada para la integración oficial de WhatsApp (Meta Cloud API).</p>
+        <div class="wa-status-summary">
+            <span class="@GetWhatsAppApiStatusChipClass(_config.IsConfiguredForSend)"><i class="bi bi-circle-fill" aria-hidden="true"></i> API: @GetStatusLabel(_config.IsConfiguredForSend)</span>
+            <span class="@GetWhatsAppApiStatusChipClass(_config.IsConfiguredForVerify)"><i class="bi bi-circle-fill" aria-hidden="true"></i> Webhook: @GetStatusLabel(_config.IsConfiguredForVerify)</span>
+            <span class="@GetWhatsAppApiStatusChipClass(_config.IsReadyForMetaSetup)"><i class="bi bi-circle-fill" aria-hidden="true"></i> @GetPublicationLabel()</span>
+        </div>
+    }
 
-            <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Webhook de verificación</span>
-                <strong class="@GetStatusClass(_config.IsConfiguredForVerify)">@GetStatusLabel(_config.IsConfiguredForVerify)</strong>
-                <p class="panel-card__subtitle">Requiere <code>verify_token</code> para validar el callback de Meta.</p>
-            </article>
+    @if (_activeWhatsAppSection == "general")
+    {
+    <div class="wa-layout">
+            <section class="wa-panel">
+                <details class="wa-settings-section" open>
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-diagram-3 wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Conexión</span>
+                        <span class="wa-settings-section__hint">Modo del canal, proveedor y datos de identificación en Meta.</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <p class="wa-field-note">@GetWhatsAppProviderSummary() La integración productiva actual sigue siendo Meta Cloud API; la sesión de WhatsApp Business queda configurada por separado para no mezclar credenciales ni webhook.</p>
 
-            <article class="panel-card conv-status-card">
-                <span class="panel-card__tag">Publicación</span>
-                <strong class="@GetStatusClass(_config.IsReadyForMetaSetup)">@GetPublicationLabel()</strong>
-                <p class="panel-card__subtitle">Meta necesita una URL pública HTTPS para llamar al webhook.</p>
-            </article>
-    </div>
-
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Parámetros del canal</h3>
-                        <p class="panel-card__subtitle">Origen actual: @DisplaySource(_config.ConfigSource)</p>
+                        <div class="wa-fields">
+                            <AlfaSelect Label="Modo del canal" Options="@_providerModeOptions" @bind-Value="_config.ProviderMode" />
+                            <AlfaSelect Label="Proveedor predeterminado" Options="@_defaultProviderOptions" @bind-Value="_config.DefaultProvider" />
+                            <AlfaInput Label="Phone Number ID" @bind-Value="_config.PhoneNumberId" Placeholder="Ej. 123456789012345" />
+                            <AlfaInput Label="WhatsApp Business Account ID" @bind-Value="_config.BusinessAccountId" Placeholder="Ej. 109876543210987" />
+                        </div>
                     </div>
-                    <span class="panel-card__tag">TA_CONFIGURACION</span>
-                </div>
+                </details>
 
-                <div class="conv-config-fields">
-                    <div class="field">
-                        <label for="wa-public-url">Base pública HTTPS</label>
-                        <input id="wa-public-url" @bind="_config.PublicBaseUrl" placeholder="@_suggestedBaseUrl" />
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-key-fill wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Credenciales</span>
+                        <span class="wa-settings-section__hint">Access Token, Verify Token y App Secret de Meta.</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <p class="wa-field-note">@GetWhatsAppMetaSummary()</p>
+
+                        <div class="wa-field wa-fields__full">
+                            <label class="wa-field__label" for="wa-access-token">Access Token</label>
+                            <textarea id="wa-access-token" class="wa-textarea" rows="4" @bind="_config.AccessToken" placeholder="Pegá acá el token permanente o del sistema"></textarea>
+                        </div>
+
+                        <div class="wa-fields">
+                            <AlfaInput Label="Verify Token" @bind-Value="_config.VerifyToken" Placeholder="Texto secreto que definís vos" />
+                            <AlfaInput Label="App Secret" @bind-Value="_config.AppSecret" Placeholder="Opcional por ahora, recomendado para firma" />
+                        </div>
                     </div>
+                </details>
 
-                    <div class="field">
-                        <label for="wa-api-version">Versión Graph API</label>
-                        <input id="wa-api-version" @bind="_config.ApiVersion" placeholder="v22.0" />
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-hdd-network wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Webhook</span>
+                        <span class="wa-settings-section__hint">Base pública, versión de Graph API y callback a informar en Meta.</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <div class="wa-fields">
+                            <AlfaInput Label="Base pública HTTPS" @bind-Value="_config.PublicBaseUrl" Placeholder="@_suggestedBaseUrl" />
+                            <AlfaInput Label="Versión Graph API" @bind-Value="_config.ApiVersion" Placeholder="v22.0" />
+                        </div>
+
+                        <div class="wa-field wa-fields__full">
+                            <label class="wa-field__label" for="wa-webhook-path">Webhook interno</label>
+                            <input id="wa-webhook-path" class="wa-input-readonly" value="@_config.WebhookPath" readonly />
+                        </div>
+
+                        <p class="wa-field-note"><strong>Callback a informar en Meta:</strong> @GetWebhookUrlPreview()</p>
+                        <p class="wa-field-note">
+                            Routing por base:
+                            @if (HasWebhookToken)
+                            {
+                                <text>configurado — los mensajes entrantes se identifican sin depender de la sesión activa.</text>
+                            }
+                            else
+                            {
+                                <text>sin token propio todavía — no usar este callback en producción SaaS hasta generarlo.</text>
+                            }
+                        </p>
+                        <p class="wa-field-note">@GetWhatsAppWebOverviewSummary() La sesión por QR se administra por número en la pestaña "WhatsApp Business".</p>
                     </div>
+                </details>
 
-                    <div class="field">
-                        <label for="wa-phone-id">Phone Number ID</label>
-                        <input id="wa-phone-id" @bind="_config.PhoneNumberId" placeholder="Ej. 123456789012345" />
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-plus-circle wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Números por Phone Number ID</span>
+                        <span class="wa-settings-section__hint">Para multinúmero configurado directamente contra Meta Cloud API.</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <p class="wa-field-note">Los números conectados por QR se administran en la pestaña "WhatsApp Business". Usá esto solo si necesitás registrar un número identificado por su <code>Phone Number ID</code> técnico de Meta.</p>
+                        <div class="wa-fields">
+                            <AlfaInput Label="Nombre del número nuevo" @bind-Value="_nuevoNumero.Nombre" Placeholder="Ej: Ventas Sur" />
+                            <AlfaInput Label="Phone Number ID" @bind-Value="_nuevoNumero.PhoneNumberId" Placeholder="Ej: 109876543211" />
+                        </div>
+                        <div class="actions">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" Disabled="@(Loading || Saving)" OnClick="AddNumeroAsync">Agregar número</AlfaButton>
+                        </div>
                     </div>
-
-                    <div class="field">
-                        <label for="wa-business-id">WhatsApp Business Account ID</label>
-                        <input id="wa-business-id" @bind="_config.BusinessAccountId" placeholder="Ej. 109876543210987" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="wa-access-token">Access Token</label>
-                        <textarea id="wa-access-token" rows="4" @bind="_config.AccessToken" placeholder="Pegá acá el token permanente o del sistema"></textarea>
-                    </div>
-
-                    <div class="field">
-                        <label for="wa-verify-token">Verify Token</label>
-                        <input id="wa-verify-token" @bind="_config.VerifyToken" placeholder="Texto secreto que definís vos" />
-                    </div>
-
-                    <div class="field">
-                        <label for="wa-app-secret">App Secret</label>
-                        <input id="wa-app-secret" @bind="_config.AppSecret" placeholder="Opcional por ahora, recomendado para firma" />
-                    </div>
-
-                    <div class="field conv-config-fields__full">
-                        <label for="wa-webhook-path">Webhook interno</label>
-                        <input id="wa-webhook-path" value="@_config.WebhookPath" readonly />
-                    </div>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">URL de callback a informar en Meta</span>
-                    <strong>@GetWebhookUrlPreview()</strong>
-                    <span class="context-card__muted">
-                        Si no cargás la base pública, se sugiere la URL actual del navegador.
-                        @if (string.IsNullOrWhiteSpace(_webhookToken))
-                        {
-                            <text> Esta base todavía no tiene token de webhook propio. No uses este callback para producción SaaS porque el servidor no puede identificar el cliente del mensaje entrante.</text>
-                        }
-                        else
-                        {
-                            <text> El token al final de la URL es propio de esta base: identifica a qué cliente pertenece cada mensaje entrante, sin depender de ninguna sesión.</text>
-                        }
-                    </span>
-                </div>
+                </details>
 
                 <div class="actions">
-                    <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@(Loading || Saving)">
-                        <i class="bi bi-floppy-fill"></i> Guardar configuración
-                    </button>
+                    <AlfaButton Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="SaveAsync">Guardar configuración</AlfaButton>
                 </div>
             </section>
 
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Qué necesitás en Meta</h3>
-                        <p class="panel-card__subtitle">Guía rápida para dejar operativo el canal.</p>
+            <aside class="wa-help">
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-question-circle wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">¿Necesitás ayuda para configurar Meta Cloud API?</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <ol class="conv-config-steps">
+                            <li>Crear o usar una app tipo negocio en Meta for Developers y agregar el producto WhatsApp.</li>
+                            <li>Obtener el <code>Phone Number ID</code> del número que vas a conectar.</li>
+                            <li>Obtener el <code>WhatsApp Business Account ID</code> de la cuenta de negocio.</li>
+                            <li>Generar un <code>Access Token</code> válido para el envío de mensajes.</li>
+                            <li>Definir un <code>Verify Token</code> propio y cargar la URL pública del webhook en Meta.</li>
+                            <li>Suscribir el webhook al menos a eventos de mensajes y estados.</li>
+                            <li>Probar verificación, envío y recepción antes de pasar a producción.</li>
+                        </ol>
                     </div>
-                    <span class="panel-card__tag">Cloud API</span>
-                </div>
+                </details>
 
-                <ol class="conv-config-steps">
-                    <li>Crear o usar una app tipo negocio en Meta for Developers y agregar el producto WhatsApp.</li>
-                    <li>Obtener el <code>Phone Number ID</code> del número que vas a conectar.</li>
-                    <li>Obtener el <code>WhatsApp Business Account ID</code> de la cuenta de negocio.</li>
-                    <li>Generar un <code>Access Token</code> válido para el envío de mensajes.</li>
-                    <li>Definir un <code>Verify Token</code> propio y cargar la URL pública del webhook en Meta.</li>
-                    <li>Suscribir el webhook al menos a eventos de mensajes y estados.</li>
-                    <li>Probar verificación, envío y recepción antes de pasar a producción.</li>
-                </ol>
-
-                <div class="context-card">
-                    <span class="context-card__label">Dónde queda guardado</span>
-                    <strong>dbo.TA_CONFIGURACION</strong>
-                    <span class="context-card__muted">Claves usadas: <code>CONV_WHATSAPP_*</code>.</span>
-                </div>
-
-                <div class="context-card">
-                    <span class="context-card__label">Manual interno</span>
-                    <strong><code>docs/conversaciones_whatsapp_conexion.md</code></strong>
-                    <span class="context-card__muted">Ahí te dejo el paso a paso completo y el mapa entre Meta y AlfaCore.</span>
-                </div>
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-info-circle wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Información técnica</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <p class="wa-field-note">Fuente: <code>TA_CONFIGURACION</code> (@DisplaySource(_config.ConfigSource)). Claves: <code>CONV_WHATSAPP_*</code>.</p>
+                        <p class="wa-field-note">Manual interno: <code>docs/conversaciones_whatsapp_conexion.md</code>.</p>
+                    </div>
+                </details>
             </aside>
     </div>
+    }
+    }
 
+    @if (_activePrimaryTab == "canales" && _activeChannelTab == "instagram")
+    {
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form conv-config-form--instagram">
                 <div class="panel-card__header">
@@ -287,7 +348,10 @@
                 </div>
             </aside>
     </div>
+    }
 
+    @if (_activePrimaryTab == "canales" && _activeChannelTab == "facebook")
+    {
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form conv-config-form--facebook">
                 <div class="panel-card__header">
@@ -398,7 +462,10 @@
                 </div>
             </aside>
     </div>
+    }
 
+    @if (_activePrimaryTab == "canales" && _activeChannelTab == "mercadolibre")
+    {
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form conv-config-form--mercadolibre">
                 <div class="panel-card__header">
@@ -541,6 +608,14 @@
             </aside>
     </div>
 
+    }
+
+    @if (_activePrimaryTab == "integraciones-ia")
+    {
+    <header class="settings-content-header">
+        <h3>Integraciones IA</h3>
+        <p>Conectá AlfaKnowledge como base de conocimiento del asistente y del copiloto.</p>
+    </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -628,7 +703,14 @@
                 </div>
             </aside>
     </div>
+    }
 
+    @if (_activePrimaryTab == "automatizacion")
+    {
+    <header class="settings-content-header">
+        <h3>Automatización</h3>
+        <p>Horarios, bienvenida, asistente, auto-cierre, SLA y reglas por palabras clave.</p>
+    </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -647,183 +729,225 @@
                     </article>
                 </div>
 
-                <div class="conv-config-fields">
-                    <div class="field">
-                        <label class="conv-config-checkbox">
-                            <input type="checkbox" @bind="_automatizacionesConfig.Activo" />
-                            <span>Activar respuesta fuera de horario</span>
-                        </label>
-                    </div>
+                <details class="conv-config-collapsible" open>
+                    <summary class="conv-config-collapsible__summary">
+                        <span class="conv-config-collapsible__title"><i class="bi bi-clock-history"></i> Horario y mensaje fijo</span>
+                        <span class="conv-config-collapsible__hint">Fuera de horario, días de atención y mensaje automático base.</span>
+                    </summary>
+                    <div class="conv-config-collapsible__body conv-config-fields">
+                        <div class="field">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.Activo" />
+                                <span>Activar respuesta fuera de horario</span>
+                            </label>
+                        </div>
 
-                    <div class="field conv-config-fields__full">
-                        <label for="auto-mensaje">Mensaje fuera de horario</label>
-                        <textarea id="auto-mensaje" rows="3" @bind="_automatizacionesConfig.MensajeFueraHorario"></textarea>
-                    </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="auto-mensaje">Mensaje fuera de horario</label>
+                            <textarea id="auto-mensaje" rows="3" @bind="_automatizacionesConfig.MensajeFueraHorario"></textarea>
+                        </div>
 
-                    <div class="field">
-                        <label for="auto-desde">Horario de atención — desde</label>
-                        <input id="auto-desde" type="text" placeholder="09:00" @bind="_automatizacionesConfig.HoraDesde" />
-                    </div>
+                        <div class="field">
+                            <label for="auto-desde">Horario de atención — desde</label>
+                            <input id="auto-desde" type="text" placeholder="09:00" @bind="_automatizacionesConfig.HoraDesde" />
+                        </div>
 
-                    <div class="field">
-                        <label for="auto-hasta">Horario de atención — hasta</label>
-                        <input id="auto-hasta" type="text" placeholder="18:00" @bind="_automatizacionesConfig.HoraHasta" />
-                    </div>
+                        <div class="field">
+                            <label for="auto-hasta">Horario de atención — hasta</label>
+                            <input id="auto-hasta" type="text" placeholder="18:00" @bind="_automatizacionesConfig.HoraHasta" />
+                        </div>
 
-                    <div class="field conv-config-fields__full">
-                        <label>Días de atención</label>
-                        <div class="conv-config-dias">
-                            <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Lunes" /><span>Lun</span></label>
-                            <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Martes" /><span>Mar</span></label>
-                            <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Miercoles" /><span>Mié</span></label>
-                            <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Jueves" /><span>Jue</span></label>
-                            <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Viernes" /><span>Vie</span></label>
-                            <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Sabado" /><span>Sáb</span></label>
-                            <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Domingo" /><span>Dom</span></label>
+                        <div class="field conv-config-fields__full">
+                            <label>Días de atención</label>
+                            <div class="conv-config-dias">
+                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Lunes" /><span>Lun</span></label>
+                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Martes" /><span>Mar</span></label>
+                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Miercoles" /><span>Mié</span></label>
+                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Jueves" /><span>Jue</span></label>
+                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Viernes" /><span>Vie</span></label>
+                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Sabado" /><span>Sáb</span></label>
+                                <label class="conv-config-checkbox"><input type="checkbox" @bind="_automatizacionesConfig.Domingo" /><span>Dom</span></label>
+                            </div>
                         </div>
                     </div>
-                </div>
+                </details>
 
-                <div class="conv-config-fields conv-bot-config">
-                    <div class="conv-config-fields__full">
-                        <h4 class="conv-bot-config__title"><i class="bi bi-hand-thumbs-up"></i> Bienvenida al primer contacto</h4>
-                        <p class="panel-card__subtitle">Se manda una sola vez, cuando llega el primer mensaje de una conversación nueva de WhatsApp y todavía no le respondimos nada.</p>
+                <details class="conv-config-collapsible">
+                    <summary class="conv-config-collapsible__summary">
+                        <span class="conv-config-collapsible__title"><i class="bi bi-hand-thumbs-up"></i> Bienvenida al primer contacto</span>
+                        <span class="conv-config-collapsible__hint">Saludo inicial una sola vez por conversación nueva.</span>
+                    </summary>
+                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
+                        <div class="conv-config-fields__full">
+                            <p class="panel-card__subtitle">Se manda una sola vez, cuando llega el primer mensaje de una conversación nueva de WhatsApp y todavía no le respondimos nada.</p>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.BienvenidaActivo" />
+                                <span>Activar mensaje de bienvenida</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="bienvenida-msg">Mensaje de bienvenida</label>
+                            <textarea id="bienvenida-msg" rows="2" @bind="_automatizacionesConfig.BienvenidaMensaje"></textarea>
+                        </div>
                     </div>
-                    <div class="field conv-config-fields__full">
-                        <label class="conv-config-checkbox">
-                            <input type="checkbox" @bind="_automatizacionesConfig.BienvenidaActivo" />
-                            <span>Activar mensaje de bienvenida</span>
-                        </label>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="bienvenida-msg">Mensaje de bienvenida</label>
-                        <textarea id="bienvenida-msg" rows="2" @bind="_automatizacionesConfig.BienvenidaMensaje"></textarea>
-                    </div>
-                </div>
+                </details>
 
-                <div class="conv-config-fields conv-bot-config">
-                    <div class="conv-config-fields__full">
-                        <h4 class="conv-bot-config__title"><i class="bi bi-robot"></i> Asistente IA (responde solo)</h4>
-                        <p class="panel-card__subtitle">Un asistente estilo «proyecto de GPT»: definís su comportamiento y le pegás la información del negocio, y responde solo las consultas entrantes (todos los canales). Apagado por defecto. Requiere la API key de OpenAI configurada en el servidor. Los archivos (base de conocimiento) llegan en una fase siguiente.</p>
+                <details class="conv-config-collapsible">
+                    <summary class="conv-config-collapsible__summary">
+                        <span class="conv-config-collapsible__title"><i class="bi bi-robot"></i> Asistente IA</span>
+                        <span class="conv-config-collapsible__hint">Persona, conocimiento, guardarraíles y escalado a humano.</span>
+                    </summary>
+                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
+                        <div class="conv-config-fields__full">
+                            <p class="panel-card__subtitle">Un asistente estilo «proyecto de GPT»: definís su comportamiento y le pegás la información del negocio, y responde solo las consultas entrantes (todos los canales). Apagado por defecto. Requiere la API key de OpenAI configurada en el servidor. Los archivos (base de conocimiento) llegan en una fase siguiente.</p>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.BotActivo" />
+                                <span>Activar el asistente (responde automáticamente)</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="asis-comportamiento">Comportamiento (quién es, tono, qué puede y qué no)</label>
+                            <textarea id="asis-comportamiento" rows="3" @bind="_automatizacionesConfig.AsistenteComportamiento"
+                                      placeholder="Sos el asesor de ventas de [Empresa]. Cordial y breve. No des precios que no figuren en la información. Si piden hablar con una persona, derivá."></textarea>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="asis-informacion">Información del negocio (la fuente de verdad para responder)</label>
+                            <textarea id="asis-informacion" rows="8" @bind="_automatizacionesConfig.AsistenteInformacion"
+                                      placeholder="Pegá acá lo que el asistente tiene que saber: horario de soporte, canales, cómo actualizar el sistema, pasos de las consultas más frecuentes, qué derivar a una persona… Cuanto más concreto, mejor responde."></textarea>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="asis-politica">¿Qué hace cuando la información no alcanza?</label>
+                            <select id="asis-politica" @bind="_automatizacionesConfig.AsistentePolitica">
+                                <option value="SOLO_INFO">Responder solo con la información dada; si no sabe, pasar a un humano</option>
+                                <option value="GENERAL_AVISA">Responder igual con conocimiento general, avisando que un asesor confirmará</option>
+                                <option value="GENERAL">Responder igual con conocimiento general (mayor cobertura, más riesgo)</option>
+                            </select>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.AsistenteUsaKnowledge" />
+                                <span>Usar AlfaKnowledge como fuente: además del comportamiento y la información pegada, busca en los documentos/instructivos subidos a tu base de conocimiento</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.AsistenteFueraHorario" />
+                                <span>Fuera de horario, que atienda el asistente (en vez del mensaje fijo): se presenta como IA, intenta ayudar y, si no puede, deja el mensaje para un operador</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="asis-urgencia">Palabras que marcan urgencia (se atienden en cualquier horario: suben prioridad y avisan al operador)</label>
+                            <input id="asis-urgencia" @bind="_automatizacionesConfig.AsistenteUrgenciaPalabras"
+                                   placeholder="no puedo facturar, no anda el sistema, no arranca, sistema caido" />
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.BotSoloSinAsignar" />
+                                <span>Responder solo conversaciones sin asignar (si un humano la tomó, el asistente calla)</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.BotSoloFueraHorario" />
+                                <span>Responder solo fuera del horario de atención (en horario, lo dejan los agentes humanos)</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="bot-escalado">Palabras que fuerzan pasar a un humano</label>
+                            <input id="bot-escalado" @bind="_automatizacionesConfig.BotPalabrasEscalado" placeholder="humano, persona, reclamo, operador" />
+                        </div>
+                        <div class="field">
+                            <label for="bot-max">Máx. respuestas del asistente por conversación</label>
+                            <input id="bot-max" type="number" min="1" @bind="_automatizacionesConfig.BotMaxRespuestas" />
+                        </div>
+                        <div class="field">
+                            <label for="bot-espera">Esperar minutos antes de responder</label>
+                            <input id="bot-espera" type="number" min="0" @bind="_automatizacionesConfig.BotEsperaMinutos" />
+                            <small class="field__hint">Le da tiempo a un agente humano a responder primero. 0 = el asistente responde de inmediato.</small>
+                        </div>
                     </div>
-                    <div class="field conv-config-fields__full">
-                        <label class="conv-config-checkbox">
-                            <input type="checkbox" @bind="_automatizacionesConfig.BotActivo" />
-                            <span>Activar el asistente (responde automáticamente)</span>
-                        </label>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="asis-comportamiento">Comportamiento (quién es, tono, qué puede y qué no)</label>
-                        <textarea id="asis-comportamiento" rows="3" @bind="_automatizacionesConfig.AsistenteComportamiento"
-                                  placeholder="Sos el asesor de ventas de [Empresa]. Cordial y breve. No des precios que no figuren en la información. Si piden hablar con una persona, derivá."></textarea>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="asis-informacion">Información del negocio (la fuente de verdad para responder)</label>
-                        <textarea id="asis-informacion" rows="8" @bind="_automatizacionesConfig.AsistenteInformacion"
-                                  placeholder="Pegá acá lo que el asistente tiene que saber: horario de soporte, canales, cómo actualizar el sistema, pasos de las consultas más frecuentes, qué derivar a una persona… Cuanto más concreto, mejor responde."></textarea>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="asis-politica">¿Qué hace cuando la información no alcanza?</label>
-                        <select id="asis-politica" @bind="_automatizacionesConfig.AsistentePolitica">
-                            <option value="SOLO_INFO">Responder solo con la información dada; si no sabe, pasar a un humano</option>
-                            <option value="GENERAL_AVISA">Responder igual con conocimiento general, avisando que un asesor confirmará</option>
-                            <option value="GENERAL">Responder igual con conocimiento general (mayor cobertura, más riesgo)</option>
-                        </select>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label class="conv-config-checkbox">
-                            <input type="checkbox" @bind="_automatizacionesConfig.AsistenteUsaKnowledge" />
-                            <span>Usar AlfaKnowledge como fuente: además del comportamiento y la información pegada, busca en los documentos/instructivos subidos a tu base de conocimiento</span>
-                        </label>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label class="conv-config-checkbox">
-                            <input type="checkbox" @bind="_automatizacionesConfig.AsistenteFueraHorario" />
-                            <span>Fuera de horario, que atienda el asistente (en vez del mensaje fijo): se presenta como IA, intenta ayudar y, si no puede, deja el mensaje para un operador</span>
-                        </label>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="asis-urgencia">Palabras que marcan urgencia (se atienden en cualquier horario: suben prioridad y avisan al operador)</label>
-                        <input id="asis-urgencia" @bind="_automatizacionesConfig.AsistenteUrgenciaPalabras"
-                               placeholder="no puedo facturar, no anda el sistema, no arranca, sistema caido" />
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label class="conv-config-checkbox">
-                            <input type="checkbox" @bind="_automatizacionesConfig.BotSoloSinAsignar" />
-                            <span>Responder solo conversaciones sin asignar (si un humano la tomó, el asistente calla)</span>
-                        </label>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="bot-escalado">Palabras que fuerzan pasar a un humano</label>
-                        <input id="bot-escalado" @bind="_automatizacionesConfig.BotPalabrasEscalado" placeholder="humano, persona, reclamo, operador" />
-                    </div>
-                    <div class="field">
-                        <label for="bot-max">Máx. respuestas del asistente por conversación</label>
-                        <input id="bot-max" type="number" min="1" @bind="_automatizacionesConfig.BotMaxRespuestas" />
-                    </div>
-                </div>
+                </details>
 
-                <div class="conv-config-fields conv-bot-config">
-                    <div class="conv-config-fields__full">
-                        <h4 class="conv-bot-config__title"><i class="bi bi-door-closed"></i> Auto-cierre por inactividad</h4>
-                        <p class="panel-card__subtitle">Cierra conversaciones donde estamos esperando al cliente (último mensaje nuestro) y no responde. Manda un aviso previo y, si sigue sin responder, cierra. Aplica a todos los canales. Apagado por defecto.</p>
+                <details class="conv-config-collapsible">
+                    <summary class="conv-config-collapsible__summary">
+                        <span class="conv-config-collapsible__title"><i class="bi bi-door-closed"></i> Auto-cierre por inactividad</span>
+                        <span class="conv-config-collapsible__hint">Aviso y cierre automático cuando el cliente no responde.</span>
+                    </summary>
+                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
+                        <div class="conv-config-fields__full">
+                            <p class="panel-card__subtitle">Cierra conversaciones donde estamos esperando al cliente (último mensaje nuestro) y no responde. Manda un aviso previo y, si sigue sin responder, cierra. Aplica a todos los canales. Apagado por defecto.</p>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.AutoCierreActivo" />
+                                <span>Activar auto-cierre por inactividad</span>
+                            </label>
+                        </div>
+                        <div class="field">
+                            <label for="ac-aviso">Horas de inactividad para el aviso</label>
+                            <input id="ac-aviso" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasAviso" />
+                        </div>
+                        <div class="field">
+                            <label for="ac-cierre">Horas tras el aviso para cerrar</label>
+                            <input id="ac-cierre" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasCierre" />
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="ac-msg-aviso">Mensaje de aviso</label>
+                            <textarea id="ac-msg-aviso" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeAviso"></textarea>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="ac-msg-cierre">Mensaje de cierre (opcional)</label>
+                            <textarea id="ac-msg-cierre" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeCierre"></textarea>
+                        </div>
                     </div>
-                    <div class="field conv-config-fields__full">
-                        <label class="conv-config-checkbox">
-                            <input type="checkbox" @bind="_automatizacionesConfig.AutoCierreActivo" />
-                            <span>Activar auto-cierre por inactividad</span>
-                        </label>
-                    </div>
-                    <div class="field">
-                        <label for="ac-aviso">Horas de inactividad para el aviso</label>
-                        <input id="ac-aviso" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasAviso" />
-                    </div>
-                    <div class="field">
-                        <label for="ac-cierre">Horas tras el aviso para cerrar</label>
-                        <input id="ac-cierre" type="number" min="1" @bind="_automatizacionesConfig.AutoCierreHorasCierre" />
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="ac-msg-aviso">Mensaje de aviso</label>
-                        <textarea id="ac-msg-aviso" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeAviso"></textarea>
-                    </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="ac-msg-cierre">Mensaje de cierre (opcional)</label>
-                        <textarea id="ac-msg-cierre" rows="2" @bind="_automatizacionesConfig.AutoCierreMensajeCierre"></textarea>
-                    </div>
-                </div>
+                </details>
 
-                <div class="conv-config-fields conv-bot-config">
-                    <div class="conv-config-fields__full">
-                        <h4 class="conv-bot-config__title"><i class="bi bi-alarm"></i> Seguimientos / SLA</h4>
-                        <p class="panel-card__subtitle">Vigila las conversaciones donde el cliente espera respuesta (último mensaje entrante). A las horas configuradas deja una nota interna de recordatorio; si sigue sin responderse y estaba asignada, la desasigna para que otro la tome. No manda nada al cliente. Aplica a todos los canales. Apagado por defecto.</p>
+                <details class="conv-config-collapsible">
+                    <summary class="conv-config-collapsible__summary">
+                        <span class="conv-config-collapsible__title"><i class="bi bi-alarm"></i> Seguimientos / SLA</span>
+                        <span class="conv-config-collapsible__hint">Recordatorios internos y reasignación cuando el cliente espera.</span>
+                    </summary>
+                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
+                        <div class="conv-config-fields__full">
+                            <p class="panel-card__subtitle">Vigila las conversaciones donde el cliente espera respuesta (último mensaje entrante). A las horas configuradas deja una nota interna de recordatorio; si sigue sin responderse y estaba asignada, la desasigna para que otro la tome. No manda nada al cliente. Aplica a todos los canales. Apagado por defecto.</p>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.SlaActivo" />
+                                <span>Activar seguimientos / SLA</span>
+                            </label>
+                        </div>
+                        <div class="field">
+                            <label for="sla-recordatorio">Horas sin respuesta para el recordatorio</label>
+                            <input id="sla-recordatorio" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasRecordatorio" />
+                        </div>
+                        <div class="field">
+                            <label for="sla-reasignar">Horas sin respuesta para reasignar</label>
+                            <input id="sla-reasignar" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasReasignar" />
+                        </div>
                     </div>
-                    <div class="field conv-config-fields__full">
-                        <label class="conv-config-checkbox">
-                            <input type="checkbox" @bind="_automatizacionesConfig.SlaActivo" />
-                            <span>Activar seguimientos / SLA</span>
-                        </label>
-                    </div>
-                    <div class="field">
-                        <label for="sla-recordatorio">Horas sin respuesta para el recordatorio</label>
-                        <input id="sla-recordatorio" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasRecordatorio" />
-                    </div>
-                    <div class="field">
-                        <label for="sla-reasignar">Horas sin respuesta para reasignar</label>
-                        <input id="sla-reasignar" type="number" min="1" @bind="_automatizacionesConfig.SlaHorasReasignar" />
-                    </div>
-                </div>
+                </details>
 
-                <div class="conv-config-fields conv-bot-config">
-                    <div class="conv-config-fields__full">
-                        <h4 class="conv-bot-config__title"><i class="bi bi-file-earmark-bar-graph-fill"></i> Informe mensual (resumen IA)</h4>
-                        <p class="panel-card__subtitle">Tono e instrucciones que usa la IA al redactar el resumen de atención por cliente en Informes. Definís solo el estilo; el formato (viñetas, largo, no inventar, sin saludo/firma) queda fijo para que siempre salga prolijo. Si lo dejás vacío, se usa el texto por defecto.</p>
+                <details class="conv-config-collapsible">
+                    <summary class="conv-config-collapsible__summary">
+                        <span class="conv-config-collapsible__title"><i class="bi bi-file-earmark-bar-graph-fill"></i> Informe mensual</span>
+                        <span class="conv-config-collapsible__hint">Tono y estilo del resumen IA por cliente.</span>
+                    </summary>
+                    <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
+                        <div class="conv-config-fields__full">
+                            <p class="panel-card__subtitle">Tono e instrucciones que usa la IA al redactar el resumen de atención por cliente en Informes. Definís solo el estilo; el formato (viñetas, largo, no inventar, sin saludo/firma) queda fijo para que siempre salga prolijo. Si lo dejás vacío, se usa el texto por defecto.</p>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label for="informe-instrucciones">Instrucciones del informe (tono / persona)</label>
+                            <textarea id="informe-instrucciones" rows="4" @bind="_automatizacionesConfig.InformeInstrucciones"
+                                      placeholder="@AlfaCore.Models.ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones"></textarea>
+                        </div>
                     </div>
-                    <div class="field conv-config-fields__full">
-                        <label for="informe-instrucciones">Instrucciones del informe (tono / persona)</label>
-                        <textarea id="informe-instrucciones" rows="4" @bind="_automatizacionesConfig.InformeInstrucciones"
-                                  placeholder="@AlfaCore.Models.ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones"></textarea>
-                    </div>
-                </div>
+                </details>
 
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="SaveAutomatizacionesAsync" disabled="@(Loading || Saving)">
@@ -1021,6 +1145,14 @@
             </aside>
     </div>
 
+    }
+
+    @if (_activePrimaryTab == "operacion-accesos")
+    {
+    <header class="settings-content-header">
+        <h3>Operación y accesos</h3>
+        <p>Prioridad de atención y administradores de Conversaciones.</p>
+    </header>
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -1089,99 +1221,247 @@
                 </ol>
             </aside>
     </div>
+    }
 
-    <div class="conv-config-layout">
-            <section class="panel-card conv-config-form">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Números de WhatsApp</h3>
-                        <p class="panel-card__subtitle">Cada número queda atendido por los usuarios que marques. Un número sin usuarios queda visible solo para los administradores de conversaciones.</p>
+    @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "numeros")
+    {
+    <div class="wa-layout">
+            <section class="wa-panel">
+
+                @if (_numeros.Count == 0)
+                {
+                    <div class="wa-empty-connect">
+                        <p class="wa-content-lead">Conectá tu WhatsApp para atender conversaciones desde AlfaCore.</p>
+                        @if (_connectMethodPromptForIdNumero == 0)
+                        {
+                            <div class="wa-connect-chooser">
+                                <p class="wa-field-note">Elegí cómo querés vincular tu cuenta.</p>
+                                <div class="wa-connect-chooser__methods">
+                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.Qr, null))">Código QR</AlfaButton>
+                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-keyboard" OnClick="@(() => ShowConnectPhoneInput(0))">Número de teléfono</AlfaButton>
+                                </div>
+                                @if (_connectPhoneChooserFor == 0)
+                                {
+                                    <AlfaInput Label="Número de teléfono (con código de país)" @bind-Value="_connectPhoneInput" Placeholder="+54 9 11 1234 5678" />
+                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-keyboard" Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.PhoneNumber, _connectPhoneInput))">Generar código</AlfaButton>
+                                }
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CloseConnectMethodChooser">Cancelar</AlfaButton>
+                            </div>
+                        }
+                        else
+                        {
+                            <AlfaButton Icon="bi bi-qr-code" OnClick="@(() => OpenConnectMethodChooser(0))">Conectar WhatsApp</AlfaButton>
+                        }
                     </div>
-                    <span class="panel-card__tag">CONV_WHATSAPP_NUMEROS</span>
-                </div>
+                }
 
                 @foreach (var numero in _numeros)
                 {
-                    <div class="conv-whatsapp-numero-card">
-                        <div class="conv-config-fields">
-                            <div class="field">
-                                <label>Nombre</label>
-                                <input @bind="numero.Nombre" placeholder="Ej: Ventas Norte" />
+                    <div class="wa-number-card">
+                        <div class="wa-number-card__header">
+                            <div>
+                                <strong class="wa-number-card__name">@(string.IsNullOrWhiteSpace(numero.Nombre) ? "Número sin nombre" : numero.Nombre)</strong>
+                                <span class="wa-number-card__phone">@(string.IsNullOrWhiteSpace(numero.WebPhoneNumber) ? numero.PhoneNumberId : numero.WebPhoneNumber)</span>
                             </div>
-                            <div class="field">
-                                <label>Phone Number ID</label>
-                                <input @bind="numero.PhoneNumberId" placeholder="Ej: 109876543210" />
+                            <AlfaCheckbox Value="@numero.Activo" ValueChanged="@(v => numero.Activo = v ?? false)">Activo</AlfaCheckbox>
+                        </div>
+
+                        <div class="wa-number-card__status">
+                            <AlfaTag Tone="@GetNumeroEstadoTone(numero)">@GetNumeroEstadoLabel(numero)</AlfaTag>
+                        </div>
+
+                        @if (numero.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.Disconnected && !string.IsNullOrWhiteSpace(numero.WebLastError))
+                        {
+                            <p class="wa-number-card__error"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> @numero.WebLastError</p>
+                        }
+
+                        @if (string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase) && numero.HasWebPairingCode)
+                        {
+                            <div class="wa-pairing">
+                                <div class="wa-pairing__code">@FormatPairingCodeForDisplay(numero.WebPairingCode)</div>
+                                <div class="wa-pairing__details">
+                                    <p class="wa-field-note">Ingresá este código en WhatsApp Business → Dispositivos vinculados → Vincular dispositivo → Vincular con número de teléfono.</p>
+                                    <p class="wa-field-note">Vence: @GetWhatsAppWebPairingExpirationLabel(numero)</p>
+                                </div>
                             </div>
-                        </div>
-                        <div class="field">
-                            <label class="conv-config-checkbox">
-                                <input type="checkbox" @bind="numero.Activo" />
-                                <span>Activo</span>
-                            </label>
-                        </div>
-                        <div class="field conv-config-fields__full">
-                            <label>Usuarios con acceso a este número</label>
-                            <div class="conv-config-checklist">
-                                @foreach (var usuario in _usuariosSistema)
+                        }
+                        else if (numero.HasWebPairingQr)
+                        {
+                            <div class="wa-pairing">
+                                <div class="wa-pairing__qr">
+                                    <img src="@numero.WebPairingQrDataUrl" alt="QR de emparejamiento de WhatsApp Business" />
+                                </div>
+                                <div class="wa-pairing__details">
+                                    <p class="wa-field-note">Abrí WhatsApp Business → Dispositivos vinculados → Vincular dispositivo → escaneá este código.</p>
+                                    <p class="wa-field-note">Vence: @GetWhatsAppWebPairingExpirationLabel(numero)</p>
+                                </div>
+                            </div>
+                        }
+
+                        @if (numero.IsWebSessionReady)
+                        {
+                            <div class="wa-number-card__actions">
+                                <AlfaButton Variant="AlfaButtonVariant.Danger" Size="AlfaSize.Sm" Icon="bi bi-x-circle" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Desvincular</AlfaButton>
+                            </div>
+                        }
+                        else if (numero.HasWebPairingQr || numero.HasWebPairingCode)
+                        {
+                            <div class="wa-number-card__actions">
+                                <AlfaIconButton Icon="bi bi-arrow-repeat" Label="Actualizar código" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => RefreshWhatsAppWebSessionAsync(numero))" />
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-lg" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => ClearWhatsAppWebPairingAsync(numero))">Cancelar</AlfaButton>
+                            </div>
+                        }
+                        else if (_connectMethodPromptForIdNumero == numero.IdNumero)
+                        {
+                            <div class="wa-connect-chooser">
+                                <p class="wa-field-note">Elegí cómo querés vincular esta cuenta.</p>
+                                <div class="wa-connect-chooser__methods">
+                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" Loading="@(Saving || PairingBusy)" OnClick="@(() => ConectarWhatsAppBusinessAsync(numero, ConversacionWhatsAppWebSessionModes.Qr, null))">Código QR</AlfaButton>
+                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-keyboard" OnClick="@(() => ShowConnectPhoneInput(numero.IdNumero))">Número de teléfono</AlfaButton>
+                                </div>
+                                @if (_connectPhoneChooserFor == numero.IdNumero)
                                 {
-                                    <label class="conv-config-checkbox">
-                                        <input type="checkbox"
-                                               checked="@numero.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
-                                               @onchange="args => ToggleNumeroUsuario(numero, usuario.Nombre, args.Value is bool b && b)" />
-                                        <span>@usuario.Nombre</span>
-                                    </label>
+                                    <AlfaInput Label="Número de teléfono (con código de país)" @bind-Value="_connectPhoneInput" Placeholder="+54 9 11 1234 5678" />
+                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-keyboard" Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)" Loading="@(Saving || PairingBusy)" OnClick="@(() => ConectarWhatsAppBusinessAsync(numero, ConversacionWhatsAppWebSessionModes.PhoneNumber, _connectPhoneInput))">Generar código</AlfaButton>
                                 }
-                                @if (_usuariosSistema.Count == 0)
-                                {
-                                    <span class="panel-card__subtitle">No hay usuarios activos en este sistema.</span>
-                                }
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CloseConnectMethodChooser">Cancelar</AlfaButton>
                             </div>
-                        </div>
+                        }
+                        else
+                        {
+                            <div class="wa-number-card__actions">
+                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" OnClick="@(() => OpenConnectMethodChooser(numero.IdNumero))">Conectar WhatsApp</AlfaButton>
+                            </div>
+                        }
+
+                        <details class="wa-settings-section">
+                            <summary class="wa-settings-section__summary">
+                                <span class="wa-settings-section__title">Usuarios con acceso</span>
+                                <span class="wa-settings-section__hint">@numero.Usuarios.Count</span>
+                                <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                            </summary>
+                            <div class="wa-settings-section__body">
+                                <div class="wa-user-grid">
+                                    @foreach (var usuario in _usuariosSistema)
+                                    {
+                                        <AlfaCheckbox Value="@numero.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
+                                                      ValueChanged="@(v => ToggleNumeroUsuario(numero, usuario.Nombre, v ?? false))">
+                                            @usuario.Nombre
+                                        </AlfaCheckbox>
+                                    }
+                                    @if (_usuariosSistema.Count == 0)
+                                    {
+                                        <span class="wa-field-note">No hay usuarios activos en este sistema.</span>
+                                    }
+                                </div>
+                            </div>
+                        </details>
+
+                        <details class="wa-settings-section">
+                            <summary class="wa-settings-section__summary">
+                                <span class="wa-settings-section__title">Opciones avanzadas</span>
+                                <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                            </summary>
+                            <div class="wa-settings-section__body">
+                                <div class="wa-fields">
+                                    <AlfaInput Label="Nombre" @bind-Value="numero.Nombre" Placeholder="Ej: Ventas Norte" />
+                                    <AlfaInput Label="Phone Number ID" @bind-Value="numero.PhoneNumberId" Placeholder="Ej: 109876543210" />
+                                    <AlfaInput Label="Nombre visible sesión Web" @bind-Value="numero.WebDisplayName" Placeholder="Ej: WhatsApp Sucursal Centro" />
+                                    <AlfaInput Label="Instancia sesión Web" @bind-Value="numero.WebInstanceName" Placeholder="Se genera sola si la dejás vacía" />
+                                    <AlfaSelect Label="Método de inicio" Options="@_webSessionModeOptions" @bind-Value="numero.WebSessionMode" />
+                                    <AlfaInput Label="Número para sesión Web" @bind-Value="numero.WebPhoneNumber" Placeholder="Ej: +54 11 1234-5678" />
+                                </div>
+                                <AlfaCheckbox Value="@_includeTextPairingCode" ValueChanged="@(v => _includeTextPairingCode = v ?? false)">Generar también código de texto al conectar</AlfaCheckbox>
+                            </div>
+                        </details>
+
+                        @if (!string.IsNullOrWhiteSpace(numero.WebRuntimeState) || numero.WebWorkerProcessId.HasValue)
+                        {
+                            <details class="wa-settings-section">
+                                <summary class="wa-settings-section__summary">
+                                    <span class="wa-settings-section__title">Soporte / runtime</span>
+                                    <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                                </summary>
+                                <div class="wa-settings-section__body">
+                                    <p class="wa-field-note">
+                                        Estado runtime: @DisplayPairingValue(numero.WebRuntimeState)
+                                        · PID: @(numero.WebWorkerProcessId?.ToString() ?? "sin proceso")
+                                        @if (numero.WebRuntimeUpdatedAtUtc.HasValue)
+                                        {
+                                            <text> · Actualizado: @numero.WebRuntimeUpdatedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</text>
+                                        }
+                                    </p>
+                                </div>
+                            </details>
+                        }
+
                         <div class="actions">
-                            <button type="button" class="btn btn--primary btn--sm" @onclick="() => SaveNumeroAsync(numero)" disabled="@(Loading || Saving)">
-                                <i class="bi bi-floppy-fill"></i> Guardar número
-                            </button>
+                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="@(() => SaveNumeroAsync(numero))">Guardar número</AlfaButton>
                         </div>
                     </div>
                 }
 
-                <div class="conv-whatsapp-numero-card conv-whatsapp-numero-card--nuevo">
-                    <div class="conv-config-fields">
-                        <div class="field">
-                            <label>Nombre del número nuevo</label>
-                            <input @bind="_nuevoNumero.Nombre" placeholder="Ej: Ventas Sur" />
+                @if (_numeros.Count > 0)
+                {
+                    @if (_connectMethodPromptForIdNumero == 0)
+                    {
+                        <div class="wa-connect-chooser">
+                            <p class="wa-field-note">Elegí cómo querés vincular la nueva cuenta.</p>
+                            <div class="wa-connect-chooser__methods">
+                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.Qr, null))">Código QR</AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-keyboard" OnClick="@(() => ShowConnectPhoneInput(0))">Número de teléfono</AlfaButton>
+                            </div>
+                            @if (_connectPhoneChooserFor == 0)
+                            {
+                                <AlfaInput Label="Número de teléfono (con código de país)" @bind-Value="_connectPhoneInput" Placeholder="+54 9 11 1234 5678" />
+                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-keyboard" Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.PhoneNumber, _connectPhoneInput))">Generar código</AlfaButton>
+                            }
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CloseConnectMethodChooser">Cancelar</AlfaButton>
                         </div>
-                        <div class="field">
-                            <label>Phone Number ID</label>
-                            <input @bind="_nuevoNumero.PhoneNumberId" placeholder="Ej: 109876543211" />
+                    }
+                    else
+                    {
+                        <div class="actions">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="@(() => OpenConnectMethodChooser(0))">Conectar otro WhatsApp</AlfaButton>
                         </div>
-                    </div>
-                    <div class="actions">
-                        <button type="button" class="btn btn--ghost" @onclick="AddNumeroAsync" disabled="@(Loading || Saving)">
-                            <i class="bi bi-plus-circle"></i> Agregar número
-                        </button>
-                    </div>
-                </div>
+                    }
+                }
             </section>
 
-            <aside class="panel-card conv-config-help">
-                <div class="panel-card__header">
-                    <div>
-                        <h3 class="panel-card__title">Cómo funciona</h3>
-                        <p class="panel-card__subtitle">Qué cambia al tener más de un número.</p>
+            <aside class="wa-help">
+                <details class="wa-settings-section">
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-question-circle wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">¿Necesitás ayuda para conectar WhatsApp Business?</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        <ol class="conv-config-steps">
+                            <li>Tocá "Conectar WhatsApp" en el número que querés vincular.</li>
+                            <li>Abrí WhatsApp Business en el teléfono → Dispositivos vinculados → Vincular dispositivo.</li>
+                            <li>Escaneá el código QR que aparece en pantalla.</li>
+                            <li>Un usuario normal solo ve, en el inbox, las conversaciones de los números donde está marcado como usuario.</li>
+                            <li>Un administrador de conversaciones ve y puede responder por cualquier número, sin restricción.</li>
+                            <li>Desactivar un número (sin borrarlo) deja de mostrarlo para asignar usuarios nuevos, pero no toca las conversaciones que ya tiene.</li>
+                        </ol>
                     </div>
-                    <span class="panel-card__tag">Multi-número</span>
-                </div>
-
-                <ol class="conv-config-steps">
-                    <li>Un usuario normal solo ve, en el inbox, las conversaciones de los números donde está marcado como usuario acá.</li>
-                    <li>Un administrador de conversaciones (sección de abajo) ve y puede responder por cualquier número, sin restricción.</li>
-                    <li>Apenas entra el primer mensaje de un cliente, la conversación queda fijada a ese número para siempre — Meta habilita 24 h de respuesta por par número-cliente, así que no conviene cambiarlo después.</li>
-                    <li>Desactivar un número (sin borrarlo) deja de mostrarlo para asignar usuarios nuevos, pero no toca las conversaciones que ya tiene.</li>
-                </ol>
+                </details>
             </aside>
     </div>
 
+    <AlfaConfirmDialog Open="_stopSessionOpen"
+                        Title="Desvincular WhatsApp"
+                        Message="@GetStopSessionMessage()"
+                        SecondaryMessage="Vas a tener que volver a escanear un código para reconectarlo."
+                        ConfirmLabel="Desvincular"
+                        CancelLabel="Cancelar"
+                        Loading="_stopSessionBusy"
+                        OnConfirm="ConfirmStopWhatsAppWebSessionAsync"
+                        OnCancel="CancelStopWhatsAppWebSession" />
+    }
+
+    @if (_activePrimaryTab == "operacion-accesos")
+    {
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -1230,7 +1510,21 @@
                 </ol>
             </aside>
     </div>
+    }
 
+    @if (_activePrimaryTab == "soporte")
+    {
+    <header class="settings-content-header">
+        <h3>Soporte</h3>
+        <p>Herramientas técnicas y de diagnóstico. No reemplaza la configuración funcional de cada canal.</p>
+    </header>
+    @if (AppMode.IsSaaSMode)
+    {
+        <div class="conversations-inline @(HasWebhookToken ? "conversations-inline--ok" : "conversations-inline--error")">
+            <strong>@(HasWebhookToken ? "Webhook identificado por base" : "Webhook sin identificación de base")</strong>
+            <div>@GetWebhookTenantHelp("los mensajes entrantes")</div>
+        </div>
+    }
     <div class="conv-config-layout">
             <section class="panel-card conv-config-form">
                 <div class="panel-card__header">
@@ -1292,6 +1586,10 @@
                 </div>
             </aside>
     </div>
+    }
+
+        </div>
+    </div>
 </section>
 
 @code {
@@ -1312,20 +1610,139 @@
     private ConversacionWhatsAppNumeroDto _nuevoNumero = new() { Activo = true };
     private HashSet<string> _administradores = new(StringComparer.OrdinalIgnoreCase);
     private string _anyDeskPath = string.Empty;
+    private string _activePrimaryTab = "resumen";
+    private string _activeChannelTab = "whatsapp";
+    private string _activeWhatsAppSection = "numeros";
     private bool Loading { get; set; }
     private bool Saving { get; set; }
     private bool AnyDeskSaving { get; set; }
     private AppUiMessage? _feedback;
+    private string? _feedbackScope;
+    private AppUiMessage? WhatsAppFeedback => _feedbackScope == "whatsapp" ? _feedback : null;
     private AppUiMessage? _anyDeskFeedback;
     private string _suggestedBaseUrl = string.Empty;
     private string? _webhookToken;
+    private bool _includeTextPairingCode = true;
     private bool HasWebhookToken => !string.IsNullOrWhiteSpace(_webhookToken);
+    private bool PairingBusy { get; set; }
+    private ConversacionWhatsAppNumeroDto? _stopSessionTarget;
+    private bool _stopSessionOpen;
+    private bool _stopSessionBusy;
+    private int? _connectMethodPromptForIdNumero;
+    private int? _connectPhoneChooserFor;
+    private string _connectPhoneInput = string.Empty;
+    private CancellationTokenSource? _pollingCts;
+
+    private sealed record SettingsNavItem(string Key, string Label, string Icon, string Hint);
+
+    private static readonly IReadOnlyList<SettingsNavItem> SettingsNavItems =
+    [
+        new("resumen", "Resumen", "bi-grid-1x2-fill", "Puntos de entrada a la configuración."),
+        new("canales", "Canales", "bi-broadcast", "WhatsApp, Instagram, Facebook y Mercado Libre."),
+        new("automatizacion", "Automatización", "bi-gear-wide-connected", "Horarios, bienvenida, auto-cierre, SLA y reglas."),
+        new("integraciones-ia", "Integraciones IA", "bi-stars", "AlfaKnowledge y el resto de integraciones de IA."),
+        new("operacion-accesos", "Operación y accesos", "bi-people-fill", "Prioridad de atención y administradores."),
+        new("soporte", "Soporte", "bi-life-preserver", "Herramientas técnicas y de diagnóstico.")
+    ];
+
+    private static readonly IReadOnlyList<AlfaTabItem> _channelTabItems =
+    [
+        new("whatsapp", "WhatsApp"),
+        new("instagram", "Instagram"),
+        new("facebook", "Facebook"),
+        new("mercadolibre", "Mercado Libre")
+    ];
+
+    private static readonly IReadOnlyList<AlfaTabItem> _whatsAppSectionTabItems =
+    [
+        new("numeros", "WhatsApp Business"),
+        new("general", "WhatsApp API")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> _providerModeOptions =
+    [
+        new(ConversacionWhatsAppProviderModes.MetaOnly, "Solo Meta Cloud API"),
+        new(ConversacionWhatsAppProviderModes.WebOnly, "Solo WhatsApp Business (QR)"),
+        new(ConversacionWhatsAppProviderModes.MetaAndWeb, "Convivencia Meta + WhatsApp Business")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> _defaultProviderOptions =
+    [
+        new(ConversacionWhatsAppProviders.MetaCloud, "Meta Cloud API"),
+        new(ConversacionWhatsAppProviders.WhatsAppWeb, "WhatsApp Business (QR)")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> _webSessionModeOptions =
+    [
+        new(ConversacionWhatsAppWebSessionModes.Qr, "Escanear QR"),
+        new(ConversacionWhatsAppWebSessionModes.PhoneNumber, "Ingresar número de teléfono")
+    ];
+
+    private bool IsDirectMode
+        => Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri)
+           && System.Web.HttpUtility.ParseQueryString(uri.Query)["directo"] == "1";
 
     protected override async Task OnInitializedAsync()
     {
         _suggestedBaseUrl = GetCurrentBaseUrl();
+        UpdatePageHeader();
         await LoadWebhookTokenAsync();
         await LoadAsync();
+    }
+
+    public void Dispose()
+    {
+        StopPolling();
+        PageHeader.Clear();
+    }
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = "Configuración",
+            Breadcrumb = ["Conversaciones", "Configuración"],
+            State = PageHeaderState.List,
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = BuildTopNavigationItems(),
+            OnBack = () =>
+            {
+                Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones"));
+                return Task.CompletedTask;
+            },
+            Actions =
+            [
+                new()
+                {
+                    Key = "recargar",
+                    Label = "Recargar",
+                    Icon = "bi-arrow-clockwise",
+                    Disabled = Loading,
+                    OnClick = LoadAsync
+                }
+            ]
+        });
+    }
+
+    private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
+    {
+        var items = new List<PageHeaderTopNavItem>
+        {
+            new() { Key = "conversaciones", Label = "Conversaciones", Url = RouteContext.BuildRoute("/conversaciones") }
+        };
+
+        if (!IsDirectMode)
+        {
+            items.Add(new() { Key = "contactos", Label = "Contactos", Url = RouteContext.BuildRoute("/contactos") });
+            items.Add(new() { Key = "clientes", Label = "Clientes", Url = RouteContext.BuildRoute("/clientes") });
+        }
+
+        items.Add(new() { Key = "plantillas", Label = "Plantillas", Url = RouteContext.BuildRoute("/conversaciones/plantillas") });
+        items.Add(new() { Key = "configuracion", Label = "Configuración", Url = RouteContext.BuildRoute("/conversaciones/configuracion"), Active = true });
+        items.Add(new() { Key = "estadisticas", Label = "Estadísticas", Url = RouteContext.BuildRoute("/conversaciones/estadisticas") });
+        items.Add(new() { Key = "informes", Label = "Informes", Url = RouteContext.BuildRoute("/conversaciones/informes") });
+
+        return items;
     }
 
     private async Task LoadWebhookTokenAsync()
@@ -1359,6 +1776,33 @@
     private string? BuildTokenizedWebhookUrl(string basePath)
         => string.IsNullOrWhiteSpace(_webhookToken) ? null : $"{basePath}/{_webhookToken}";
 
+    private void SelectPrimaryTab(string tab)
+    {
+        _activePrimaryTab = tab;
+        if (tab != "canales")
+            _feedbackScope = null;
+    }
+
+    private void SelectChannelTab(string tab)
+    {
+        _activePrimaryTab = "canales";
+        _activeChannelTab = tab;
+        if (tab != "whatsapp")
+            _feedbackScope = null;
+    }
+
+    private Task OnChannelTabChanged(string? tab)
+    {
+        SelectChannelTab(tab ?? "whatsapp");
+        return Task.CompletedTask;
+    }
+
+    private Task OnWhatsAppSectionChanged(string? section)
+    {
+        _activeWhatsAppSection = section ?? "numeros";
+        return Task.CompletedTask;
+    }
+
     private bool EnsureSaaSWebhookTokenReady()
     {
         if (!AppMode.IsSaaSMode || HasWebhookToken)
@@ -1382,7 +1826,9 @@
     private async Task LoadAsync()
     {
         Loading = true;
+        UpdatePageHeader();
         _feedback = null;
+        _feedbackScope = null;
 
         var result = await UiOps.RunAsync(
             () => ConfigSvc.GetWhatsAppConfigAsync(),
@@ -1542,6 +1988,7 @@
         }
 
         Loading = false;
+        UpdatePageHeader();
     }
 
     private async Task LoadReglasAsync()
@@ -1721,6 +2168,7 @@
 
     private async Task SaveNumeroAsync(ConversacionWhatsAppNumeroDto numero)
     {
+        _feedbackScope = "whatsapp";
         Saving = true;
         _feedback = null;
 
@@ -1743,6 +2191,7 @@
 
     private async Task AddNumeroAsync()
     {
+        _feedbackScope = "whatsapp";
         if (string.IsNullOrWhiteSpace(_nuevoNumero.PhoneNumberId) || string.IsNullOrWhiteSpace(_nuevoNumero.Nombre))
         {
             _feedback = new AppUiMessage
@@ -1833,6 +2282,7 @@
 
     private async Task SaveAsync()
     {
+        _feedbackScope = "whatsapp";
         Saving = true;
         _feedback = null;
 
@@ -1863,6 +2313,292 @@
 
         Saving = false;
     }
+
+    private async Task GenerateWhatsAppWebPairingAsync(ConversacionWhatsAppNumeroDto numero)
+    {
+        _feedbackScope = "whatsapp";
+        if (numero.IdNumero <= 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Guardá primero el número",
+                Message = "Antes de generar el QR, primero guardá este número para crear su sesión propia."
+            };
+            return;
+        }
+
+        PairingBusy = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => WhatsAppWebSessionSvc.StartSessionAsync(numero.IdNumero, _includeTextPairingCode),
+            "No se pudo iniciar la sesión real de WhatsApp Web.");
+
+        if (result.Success && result.Value is not null)
+        {
+            ReplaceNumero(result.Value);
+            _feedback = AppUiMessage.Success(
+                "Sesión Web iniciada",
+                $"'{result.Value.Nombre}' ya tiene disponible su QR o código temporal según el modo elegido.");
+            StartPolling(result.Value);
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        PairingBusy = false;
+    }
+
+    private void OpenConnectMethodChooser(int idNumero)
+    {
+        _connectMethodPromptForIdNumero = idNumero;
+        _connectPhoneChooserFor = null;
+        _connectPhoneInput = string.Empty;
+    }
+
+    private void CloseConnectMethodChooser()
+    {
+        _connectMethodPromptForIdNumero = null;
+        _connectPhoneChooserFor = null;
+        _connectPhoneInput = string.Empty;
+    }
+
+    private void ShowConnectPhoneInput(int idNumero)
+        => _connectPhoneChooserFor = idNumero;
+
+    /// <summary>
+    /// Punto de entrada único para conectar WhatsApp Business por QR o por código de teléfono.
+    /// Antes de generar el pairing, persiste el número (nuevo o existente) para que
+    /// StartSessionAsync -- que relee el número desde la base -- encuentre el modo y el teléfono
+    /// recién elegidos.
+    /// </summary>
+    private static string NormalizePhoneDigits(string? value)
+        => new string((value ?? string.Empty).Where(char.IsDigit).ToArray());
+
+    private async Task ConectarWhatsAppBusinessAsync(ConversacionWhatsAppNumeroDto numero, string method, string? telefono)
+    {
+        _feedbackScope = "whatsapp";
+        numero.WebSessionMode = method;
+        if (!string.IsNullOrWhiteSpace(telefono))
+            numero.WebPhoneNumber = telefono.Trim();
+
+        if (numero.IdNumero <= 0 && !string.IsNullOrWhiteSpace(telefono))
+        {
+            var telefonoDigits = NormalizePhoneDigits(telefono);
+            var yaConectado = _numeros.FirstOrDefault(n =>
+                n.IsWebSessionReady && NormalizePhoneDigits(n.WebPhoneNumber) == telefonoDigits && telefonoDigits.Length > 0);
+            if (yaConectado is not null)
+            {
+                _feedback = new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Warning,
+                    Title = "Ese número ya está conectado",
+                    Message = $"\"{yaConectado.Nombre}\" ya está vinculado con ese teléfono. No hace falta conectarlo de nuevo."
+                };
+                return;
+            }
+        }
+
+        if (numero.IdNumero <= 0)
+        {
+            Saving = true;
+            var creado = await UiOps.RunAsync(() => ConfigSvc.SaveWhatsAppNumeroAsync(numero), "No se pudo crear el nuevo WhatsApp Business.");
+            Saving = false;
+            if (!creado.Success)
+            {
+                _feedback = creado.Feedback;
+                return;
+            }
+
+            await LoadNumerosAsync();
+            var registrado = _numeros.FirstOrDefault(n => n.PhoneNumberId == numero.PhoneNumberId);
+            if (registrado is null)
+                return;
+
+            numero = registrado;
+        }
+        else
+        {
+            await SaveNumeroAsync(numero);
+        }
+
+        CloseConnectMethodChooser();
+        await GenerateWhatsAppWebPairingAsync(numero);
+    }
+
+    private Task IniciarNuevoWhatsAppBusinessAsync(string method, string? telefono)
+    {
+        var nuevo = new ConversacionWhatsAppNumeroDto
+        {
+            Nombre = $"WhatsApp Business {_numeros.Count + 1}",
+            PhoneNumberId = $"WEBPENDING-{Guid.NewGuid():N}"[..24],
+            Activo = true
+        };
+        return ConectarWhatsAppBusinessAsync(nuevo, method, telefono);
+    }
+
+    private void StartPolling(ConversacionWhatsAppNumeroDto numero)
+    {
+        StopPolling();
+        if (numero.IdNumero <= 0 || numero.IsWebSessionReady)
+            return;
+
+        var cts = new CancellationTokenSource();
+        _pollingCts = cts;
+        _ = PollPairingStatusAsync(numero.IdNumero, cts.Token);
+    }
+
+    private void StopPolling()
+    {
+        _pollingCts?.Cancel();
+        _pollingCts?.Dispose();
+        _pollingCts = null;
+    }
+
+    /// <summary>
+    /// Refresca el estado del pairing cada pocos segundos mientras está pendiente, para que el
+    /// cliente no tenga que tocar "Actualizar" manualmente. Se detiene solo al conectar, fallar,
+    /// cancelar o destruirse el componente -- nunca queda como polling global permanente.
+    /// </summary>
+    private async Task PollPairingStatusAsync(int idNumero, CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(4), token);
+                if (token.IsCancellationRequested)
+                    return;
+
+                var numero = _numeros.FirstOrDefault(n => n.IdNumero == idNumero);
+                if (numero is null)
+                    return;
+
+                await RefreshWhatsAppWebSessionAsync(numero, silent: true);
+
+                // Baileys pasa por RECONNECTING (p.ej. "Stream Errored (restart required)") como
+                // parte normal del handshake tras escanear el QR; eso queda como PendingQr, no
+                // como Disconnected, así que el polling sigue esperando en vez de darlo por fallido.
+                var actualizado = _numeros.FirstOrDefault(n => n.IdNumero == idNumero);
+                if (actualizado is null
+                    || actualizado.IsWebSessionReady
+                    || actualizado.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.Disconnected)
+                {
+                    _pollingCts = null;
+                    await InvokeAsync(StateHasChanged);
+                    return;
+                }
+
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // Cancelado explícitamente (conectado, cancelado por el usuario o componente destruido).
+        }
+    }
+
+    private async Task RefreshWhatsAppWebSessionAsync(ConversacionWhatsAppNumeroDto numero, bool silent = false)
+    {
+        _feedbackScope = "whatsapp";
+        if (numero.IdNumero <= 0)
+            return;
+
+        if (!silent)
+        {
+            PairingBusy = true;
+            _feedback = null;
+        }
+
+        var result = await UiOps.RunAsync(
+            () => WhatsAppWebSessionSvc.RefreshSessionAsync(numero.IdNumero),
+            "No se pudo refrescar el estado de WhatsApp Web.");
+
+        if (result.Success && result.Value is not null)
+        {
+            ReplaceNumero(result.Value);
+            if (!silent)
+            {
+                _feedback = AppUiMessage.Success(
+                    "Estado actualizado",
+                    $"La sesión Web de '{result.Value.Nombre}' fue refrescada con el último estado reportado por el worker.");
+            }
+        }
+        else if (!silent)
+        {
+            _feedback = result.Feedback;
+        }
+
+        if (!silent)
+            PairingBusy = false;
+    }
+
+    private async Task ClearWhatsAppWebPairingAsync(ConversacionWhatsAppNumeroDto numero)
+    {
+        _feedbackScope = "whatsapp";
+        if (numero.IdNumero <= 0)
+            return;
+
+        StopPolling();
+        PairingBusy = true;
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(
+            () => WhatsAppWebSessionSvc.StopSessionAsync(numero.IdNumero),
+            "No se pudo detener la sesión de WhatsApp Web.");
+
+        if (result.Success && result.Value is not null)
+        {
+            ReplaceNumero(result.Value);
+            _feedback = AppUiMessage.Success(
+                "Sesión detenida",
+                $"Se detuvo la sesión Web de '{result.Value.Nombre}' y se limpiaron los artefactos temporales de emparejamiento.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        PairingBusy = false;
+    }
+
+    private void RequestStopWhatsAppWebSession(ConversacionWhatsAppNumeroDto numero)
+    {
+        _stopSessionTarget = numero;
+        _stopSessionOpen = true;
+    }
+
+    private void DismissWhatsAppFeedback()
+    {
+        _feedback = null;
+        _feedbackScope = null;
+    }
+
+    private void CancelStopWhatsAppWebSession()
+    {
+        _stopSessionOpen = false;
+        _stopSessionTarget = null;
+    }
+
+    private async Task ConfirmStopWhatsAppWebSessionAsync()
+    {
+        if (_stopSessionTarget is null)
+            return;
+
+        _stopSessionBusy = true;
+        StopPolling();
+        await ClearWhatsAppWebPairingAsync(_stopSessionTarget);
+        _stopSessionBusy = false;
+        _stopSessionOpen = false;
+        _stopSessionTarget = null;
+    }
+
+    private string GetStopSessionMessage()
+        => _stopSessionTarget is null
+            ? "¿Desvincular este WhatsApp?"
+            : $"¿Desvincular \"{_stopSessionTarget.Nombre}\"? Va a dejar de recibir y enviar mensajes hasta que lo conectes de nuevo.";
 
     private async Task SaveInstagramAsync()
     {
@@ -2063,11 +2799,18 @@
 
     private void EnsureDefaults()
     {
+        if (string.IsNullOrWhiteSpace(_config.ProviderMode))
+            _config.ProviderMode = ConversacionWhatsAppProviderModes.MetaOnly;
+
+        if (string.IsNullOrWhiteSpace(_config.DefaultProvider))
+            _config.DefaultProvider = ConversacionWhatsAppProviders.MetaCloud;
+
         if (string.IsNullOrWhiteSpace(_config.WebhookPath))
             _config.WebhookPath = "/api/conversaciones/whatsapp/webhook";
 
         if (string.IsNullOrWhiteSpace(_config.ApiVersion))
             _config.ApiVersion = "v22.0";
+
     }
 
     private void EnsureInstagramDefaults()
@@ -2175,10 +2918,112 @@
             ? "Completá la Base URL"
             : _alfaKnowledgeConfig.FullChatUrl;
 
+    private string GetPrimaryTabClass(string tab)
+        => tab == _activePrimaryTab ? "settings-nav__item is-active" : "settings-nav__item";
+
     private string GetStatusLabel(bool ready) => ready ? "Listo" : "Pendiente";
 
     private string GetPublicationLabel()
         => _config.IsReadyForMetaSetup ? "Lista para configurar en Meta" : "Falta completar datos";
+
+    private string GetWhatsAppProviderModeLabel()
+        => _config.ProviderMode switch
+        {
+            ConversacionWhatsAppProviderModes.WebOnly => "Solo sesión WhatsApp Web",
+            ConversacionWhatsAppProviderModes.MetaAndWeb => "Meta + WhatsApp Web",
+            _ => "Solo Meta Cloud API"
+        };
+
+    private string GetWhatsAppProviderSummary()
+        => $"{GetWhatsAppProviderModeLabel()} · Predeterminado: {GetWhatsAppDefaultProviderLabel()}";
+
+    private string GetWhatsAppDefaultProviderLabel()
+        => _config.DefaultProvider == ConversacionWhatsAppProviders.WhatsAppWeb
+            ? "WhatsApp Web"
+            : "Meta Cloud API";
+
+    private string GetWhatsAppMetaSummary()
+        => _config.IsConfiguredForSend
+            ? $"Configurado para enviar con el número {(_config.PhoneNumberId.Length > 0 ? _config.PhoneNumberId : "sin Phone Number ID")}."
+            : "Todavía faltan credenciales para operar con Meta Cloud API.";
+
+    private void ReplaceNumero(ConversacionWhatsAppNumeroDto numero)
+    {
+        var actualizados = _numeros.ToList();
+        var index = actualizados.FindIndex(x => x.IdNumero == numero.IdNumero);
+        if (index >= 0)
+            actualizados[index] = numero;
+        else
+            actualizados.Add(numero);
+
+        _numeros = actualizados;
+    }
+
+    /// <summary>
+    /// El estado de sesión manda sobre el último error: Baileys reporta "Stream Errored (restart
+    /// required)" como parte normal y transitoria del handshake al escanear el QR (reconecta solo
+    /// con las credenciales ya guardadas). Mientras el worker sigue en PENDING_QR/RECONNECTING no
+    /// es un error real, aunque WebLastError tenga texto — sólo se muestra "Error" cuando el
+    /// worker ya no está reintentando (WebSessionStatus == Disconnected).
+    /// </summary>
+    private static AlfaTagTone GetNumeroEstadoTone(ConversacionWhatsAppNumeroDto numero)
+        => numero.WebSessionStatus switch
+        {
+            ConversacionWhatsAppWebSessionStatuses.Connected => AlfaTagTone.Success,
+            ConversacionWhatsAppWebSessionStatuses.PendingQr => AlfaTagTone.Warning,
+            _ when !string.IsNullOrWhiteSpace(numero.WebLastError) => AlfaTagTone.Danger,
+            _ => AlfaTagTone.Neutral
+        };
+
+    private static string GetNumeroEstadoLabel(ConversacionWhatsAppNumeroDto numero)
+        => numero.WebSessionStatus switch
+        {
+            ConversacionWhatsAppWebSessionStatuses.Connected => "Conectado",
+            ConversacionWhatsAppWebSessionStatuses.PendingQr => "Esperando escaneo",
+            _ when !string.IsNullOrWhiteSpace(numero.WebLastError) => "Error",
+            _ => "Desconectado"
+        };
+
+    private static string FormatPairingCodeForDisplay(string? code)
+    {
+        var trimmed = (code ?? string.Empty).Trim();
+        if (trimmed.Contains('-'))
+            return trimmed;
+
+        return trimmed.Length == 8 ? $"{trimmed[..4]}-{trimmed[4..]}" : trimmed;
+    }
+
+    private static string GetWhatsAppWebPairingExpirationLabel(ConversacionWhatsAppNumeroDto numero)
+        => numero.WebPairingExpiresAtUtc.HasValue
+            ? numero.WebPairingExpiresAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+            : "Sin vencimiento";
+
+    private string GetWhatsAppWebOverviewSummary()
+    {
+        if (_numeros.Count == 0)
+            return "Todavía no hay números cargados para administrar sesiones Web.";
+
+        var connected = _numeros.Count(n => n.IsWebSessionReady);
+        var configured = _numeros.Count(n => !string.IsNullOrWhiteSpace(n.WebInstanceName) || !string.IsNullOrWhiteSpace(n.WebDisplayName) || !string.IsNullOrWhiteSpace(n.WebPhoneNumber));
+        return $"{connected} conectada(s) · {configured} con preparación Web cargada · {_numeros.Count} número(s) en total";
+    }
+
+    private static string DisplayPairingValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "No definido" : value.Trim();
+
+    private string GetWhatsAppNumerosSummary()
+    {
+        if (_numeros.Count == 0)
+            return "Todavía no agregaste ningún número.";
+
+        var conectados = _numeros.Count(n => n.IsWebSessionReady);
+        var plural = _numeros.Count == 1 ? "número" : "números";
+        var conectadosPlural = conectados == 1 ? "conectado" : "conectados";
+        return $"{_numeros.Count} {plural} · {conectados} {conectadosPlural}";
+    }
+
+    private static string GetWhatsAppApiStatusChipClass(bool ready)
+        => ready ? "wa-status-chip wa-status-chip--ok" : "wa-status-chip wa-status-chip--pending";
 
     private static string GetStatusClass(bool ready)
         => ready ? "conv-config-status conv-config-status--ok" : "conv-config-status conv-config-status--pending";

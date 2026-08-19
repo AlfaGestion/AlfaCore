@@ -27,6 +27,212 @@ Se trabajó sobre la base actual del proyecto.
 
 ---
 
+## Actualización 2026-08-18: Conversaciones + WhatsApp Web por número
+
+Se avanzó sobre el módulo `Conversaciones` para ordenar la configuración y pasar de una
+sesión WhatsApp Web global a un esquema de **sesión Web por número**.
+
+### Objetivo de esta etapa
+
+Permitir que el usuario pueda:
+
+- configurar un número;
+- vincular ese número con QR o código;
+- agregar otro número después;
+- evitar que mensajes o runtime se mezclen entre bases o líneas.
+
+### Cambios ya implementados
+
+1. **Reorden de configuración**
+   - se separó la pantalla en tabs:
+     - `Canales`
+     - `IA y automatizaciones`
+     - `Operación`
+     - `Herramientas`
+
+2. **Apertura manual del asistente**
+   - quedó alineado el criterio funcional para que el asistente no se abra solo al entrar a
+     una conversación, evitando consumo innecesario de créditos.
+
+3. **WhatsApp Web real**
+   - se implementó flujo de sesión Web con worker Node;
+   - se soporta:
+     - QR
+     - código de texto opcional
+
+4. **Aislamiento por base**
+   - el inbox Web se restringe a:
+     `App_Data/whatsapp-web/{baseId}/...`
+   - esto se hizo para que no vuelva a pasar la mezcla entre la base local y otra base.
+
+5. **Multi-número**
+   - `CONV_WHATSAPP_NUMEROS` pasó a ser la entidad que guarda la sesión Web de cada número;
+   - se agregaron campos de pairing/runtime/instancia al modelo y a la persistencia;
+   - la UI para generar QR quedó dentro de la tarjeta de cada número.
+
+6. **Envío y recepción**
+   - el envío Web usa `IdNumeroWhatsApp` de la conversación;
+   - el inbox Web resuelve `instanceName` y la traduce al número correcto antes de grabar.
+
+### Commits importantes de esta etapa
+
+Branch:
+
+- `conversaciones-asistente-espera-horario`
+
+Commits relevantes:
+
+- `1bc88e7` `Reordena configuracion de conversaciones`
+- `f624500` `Add WhatsApp Web session flow for conversaciones`
+- `bf2afc9` `Fix WhatsApp Web session isolation by base`
+- `f56366c` `Support multiple WhatsApp Web sessions per number`
+
+### Script SQL agregado
+
+Se creó:
+
+- `src/AlfaCore/App_Data/updates/2026-08-18-010__conversaciones_whatsapp_web_por_numero.sql`
+
+Ese script agrega a `dbo.CONV_WHATSAPP_NUMEROS` las columnas Web nuevas:
+
+- `WebSessionMode`
+- `WebPhoneNumber`
+- `WebSessionStatus`
+- `WebDisplayName`
+- `WebInstanceName`
+- `WebPairingToken`
+- `WebPairingCode`
+- `WebPairingQrPayload`
+- `WebPairingGeneratedAtUtc`
+- `WebPairingExpiresAtUtc`
+- `WebRuntimeState`
+- `WebLastError`
+- `WebWorkerProcessId`
+- `WebRuntimeUpdatedAtUtc`
+
+### Problemas detectados en esta etapa
+
+#### 1. Mezcla de mensajes entre bases
+
+Situación reportada por el usuario:
+
+- una sesión Web configurada en la base local `AW_112012806` dejaba ver mensajes también en
+  otra base (`ALFANET2007` / `10.8.0.31`).
+
+Acción tomada:
+
+- aislamiento por `baseId`;
+- objetivo explícito: “que no vuelva a pasar”.
+
+#### 2. Bases sin columnas nuevas
+
+En bases donde todavía no corrió el update SQL, `GetWhatsAppNumeros` fallaba con errores:
+
+- `El nombre de columna 'WebSessionMode' no es válido`
+
+Se dejó compatibilidad en código para que:
+
+- la pantalla pueda abrir aunque falten esas columnas;
+- el guardado del número normal no dependa de la migración;
+- el guardado de la **sesión Web** sí exija correr el script y devuelva un mensaje claro.
+
+#### 3. Build roto por archivos runtime
+
+Problema:
+
+- MSBuild intentaba copiar archivos temporales de:
+  `src/AlfaCore/App_Data/whatsapp-web/...`
+- fallaba con errores tipo:
+  `No se pudo copiar ... pre-key-65.json porque no se encontró`
+
+Acción tomada:
+
+- se excluyó `App_Data\whatsapp-web\**` del `.csproj`.
+
+### Estado actual real al cerrar esta sesión
+
+Hay **dos cambios locales todavía sin commit/push**:
+
+- `src/AlfaCore/AlfaCore.csproj`
+- `src/AlfaCore/Services/ConversacionesConfigService.cs`
+
+Estos cambios corresponden a:
+
+1. exclusión de `App_Data\whatsapp-web\**` del build/publish;
+2. fallback para bases que todavía no tengan las columnas Web nuevas.
+
+Verificación:
+
+- `dotnet build C:\dev\AlfaCore\AlfaCore.sln` terminó OK al final de la sesión.
+
+### Bug abierto al cierre
+
+El usuario fue a:
+
+- `Conversaciones > Configuración > Operación > Números de WhatsApp`
+
+completó:
+
+- `Nombre del número nuevo`
+- `Phone Number ID`
+
+y al hacer clic en:
+
+- `Agregar número`
+
+reportó que **“no lo tomó”**.
+
+Estado de este bug:
+
+- todavía no está diagnosticado por completo;
+- en los logs revisados no apareció un `SaveWhatsAppNumero` nuevo correspondiente a esa prueba;
+- eso sugiere:
+  - UI Blazor vieja en memoria, o
+  - el click no está llegando al backend como se espera.
+
+### Qué debe hacer primero quien retome
+
+1. Confirmar que AlfaCore esté corriendo con la versión nueva.
+   - pedir `Ctrl + F5`
+   - si sigue igual, reiniciar el proceso
+
+2. Repetir la prueba mínima:
+   - ir a `Operación > Números de WhatsApp`
+   - completar nombre + ID
+   - hacer clic en `Agregar número`
+
+3. Si vuelve a fallar:
+   - revisar `src/AlfaCore/App_Data/diagnostics/app-events-202608.jsonl`
+   - buscar:
+     - `Action":"SaveWhatsAppNumero"`
+     - `Action":"GetWhatsAppNumeros"`
+
+4. Si el número se guarda:
+   - debe aparecer una tarjeta editable arriba del formulario “nuevo”;
+   - recién ahí probar:
+     - `Generar QR`
+     - `Refrescar estado`
+     - `Detener sesión`
+
+5. Antes de usar sesión Web real en una base no migrada:
+   - correr:
+     `src/AlfaCore/App_Data/updates/2026-08-18-010__conversaciones_whatsapp_web_por_numero.sql`
+
+### Archivos principales de esta etapa
+
+- `src/AlfaCore/Components/Pages/ConversacionesConfiguracion.razor`
+- `src/AlfaCore/Models/ConversacionesConfiguracionModels.cs`
+- `src/AlfaCore/Models/ConversacionesModels.cs`
+- `src/AlfaCore/Services/ConversacionesConfigService.cs`
+- `src/AlfaCore/Services/ConversacionesService.cs`
+- `src/AlfaCore/Services/IConversacionesConfigService.cs`
+- `src/AlfaCore/Services/IWhatsAppWebSessionService.cs`
+- `src/AlfaCore/Services/WhatsAppWebSessionService.cs`
+- `src/AlfaCore/AlfaCore.csproj`
+- `src/AlfaCore/App_Data/updates/2026-08-18-010__conversaciones_whatsapp_web_por_numero.sql`
+
+---
+
 ## Actualización 2026-08-05: AlfaCore modular (catálogo de módulos + panel Administrar)
 
 Se abrió un análisis de arquitectura (todavía sin código) para convertir AlfaCore en un ERP
