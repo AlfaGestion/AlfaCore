@@ -267,11 +267,22 @@ public sealed class WhatsAppWebSessionService(
         }
     }
 
+    /// <summary>
+    /// Mismo motivo que GetWorkerDirectory(): AppContext.BaseDirectory es estable sin importar el cwd
+    /// con el que se lanzó el proceso. Esta carpeta la calculan por separado StartSessionAsync (crea
+    /// la sesión y arranca el worker con este path como argumento), y RefreshSessionAsync/
+    /// SendTextAsync/StopSessionAsync (la recalculan en cada llamada) -- si el proceso que atiende un
+    /// request usa un ContentRootPath distinto al que tenía el proceso que arrancó el worker (ej. la
+    /// app se reinició con otro cwd mientras un worker seguía vivo de antes), cada lado termina
+    /// mirando una carpeta física distinta: el comando de envío se escribe en una carpeta que el
+    /// worker real nunca lee, y el timeout de 35s de SendTextAsync se dispara siempre. Usar
+    /// AppContext.BaseDirectory en los dos lados elimina esa dependencia del cwd del lanzador.
+    /// </summary>
     private string EnsureSessionDirectory(string instanceName)
     {
         var safeInstanceName = SanitizeInstanceName(instanceName);
         var baseId = sessionService.GetActiveSession()?.BaseId ?? 0;
-        var path = Path.Combine(environment.ContentRootPath, SessionsRootDir, baseId.ToString(CultureInfo.InvariantCulture), safeInstanceName);
+        var path = Path.Combine(AppContext.BaseDirectory, SessionsRootDir, baseId.ToString(CultureInfo.InvariantCulture), safeInstanceName);
         Directory.CreateDirectory(path);
         return path;
     }
@@ -290,8 +301,38 @@ public sealed class WhatsAppWebSessionService(
         return safe.Length > 40 ? safe[..40] : safe;
     }
 
+    /// <summary>
+    /// AppContext.BaseDirectory es la ubicación física real del ensamblado (exe/dll) -- estable sin
+    /// importar desde qué carpeta se lanzó el proceso ni si corre como Windows Service. A diferencia
+    /// de IWebHostEnvironment.ContentRootPath (por defecto el cwd del proceso al arrancar): con
+    /// AlfaCore.exe lanzado desde su propia carpeta de salida (doble click, servicio, tarea
+    /// programada) ContentRootPath coincide y esto no cambia nada; pero si se lanza con otro cwd
+    /// (ej. un acceso directo o un `Start-Process -WorkingDirectory` distinto), ContentRootPath ya
+    /// no apunta a la carpeta de salida real y "Node\WhatsAppWebWorker" se resuelve mal.
+    /// El worker (worker.mjs + package.json/package-lock.json, ver AlfaCore.csproj) se copia a esa
+    /// misma carpeta de salida en cada build/publish -- node_modules NO se copia ahí (no se
+    /// commitea a git); hace falta `npm ci` una vez dentro de esa carpeta de salida, ver
+    /// docs/ui/conversaciones-configuracion-redesign.md.
+    /// En Development, si el build todavía no copió el worker a la salida (o se corre con
+    /// `dotnet run`/F5 antes del primer build), se cae al árbol fuente del proyecto -- mismo
+    /// patrón ya usado en Program.cs para resolver wwwroot/scopedcss en desarrollo.
+    /// </summary>
     private string GetWorkerDirectory()
-        => Path.Combine(environment.ContentRootPath, WorkerRelativeDir);
+    {
+        var outputWorkerDir = Path.Combine(AppContext.BaseDirectory, WorkerRelativeDir);
+        if (File.Exists(Path.Combine(outputWorkerDir, WorkerScriptName)))
+            return outputWorkerDir;
+
+        if (environment.IsDevelopment())
+        {
+            var projectDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+            var sourceWorkerDir = Path.Combine(projectDir, WorkerRelativeDir);
+            if (File.Exists(Path.Combine(sourceWorkerDir, WorkerScriptName)))
+                return sourceWorkerDir;
+        }
+
+        return outputWorkerDir;
+    }
 
     private void EnsureWorkerFilesExist()
     {

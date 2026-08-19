@@ -27,6 +27,27 @@
   <ItemGroup>
     <Content Remove="App_Data\whatsapp-web\**" />
     <None Remove="App_Data\whatsapp-web\**" />
+    <!-- node_modules del worker de WhatsApp Web nunca se commitea (ver .gitignore); si un dev lo
+         instaló localmente no queremos que MSBuild lo evalúe como item de proyecto en cada build. -->
+    <None Remove="Node\WhatsAppWebWorker\node_modules\**" />
+    <!-- WhatsAppWebSessionService.GetWorkerDirectory() resuelve el worker por AppContext.BaseDirectory
+         (la carpeta de salida real), no por el árbol fuente: necesita el código del worker + su
+         manifiesto de dependencias físicamente al lado del .exe en Debug/Release/publish.
+         node_modules NO se copia acá a propósito (miles de archivos, no versionado): después del
+         build/publish hace falta npm ci una vez dentro de la carpeta de salida
+         Node\WhatsAppWebWorker, ver docs/ui/conversaciones-configuracion-redesign.md. -->
+    <None Update="Node\WhatsAppWebWorker\worker.mjs">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="Node\WhatsAppWebWorker\package.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="Node\WhatsAppWebWorker\package-lock.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
     <Content Update="wwwroot\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>

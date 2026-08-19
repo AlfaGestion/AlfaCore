@@ -2197,6 +2197,7 @@ public sealed class ConversacionesService(
             ConversacionInstagramConfigDto? instagramConfig = null;
             ConversacionFacebookConfigDto? facebookConfig = null;
             ConversacionMercadoLibreConfigDto? mercadoLibreConfig = null;
+            string whatsAppDeliveryProvider = ConversacionWhatsAppProviders.MetaCloud;
             if (isInternal)
             {
                 initialState = "ENVIADO";
@@ -2206,12 +2207,24 @@ public sealed class ConversacionesService(
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
                 if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                     whatsAppConfig.PhoneNumberId = conversation.PhoneNumberId;
-                var deliveryProvider = ResolveWhatsAppDeliveryProvider(whatsAppConfig);
+
+                // El proveedor global (Meta vs Web) es sólo un default de base: la conversación ya
+                // sabe de qué número entró (IdNumeroWhatsApp). Si ese número específico tiene una
+                // instancia de WhatsApp Web propia (WebInstanceName, seteado una sola vez al conectar
+                // por QR/código), la respuesta SIEMPRE sale por esa sesión -- sin importar que el
+                // "Proveedor predeterminado" global de la base todavía diga Meta Cloud. Evita que una
+                // conversación real de WhatsApp Business quede en "Sin configuración" solo porque
+                // nadie cambió el select global (gap ya documentado en C2.3).
+                var numeroWeb = conversation.IdNumeroWhatsApp.HasValue
+                    ? await conversacionesConfigService.GetWhatsAppNumeroAsync(conversation.IdNumeroWhatsApp.Value, token)
+                    : null;
+                whatsAppDeliveryProvider = ResolveWhatsAppDeliveryProviderForNumero(whatsAppConfig, numeroWeb);
+
                 var windowActive = await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
                 if (!windowActive)
                     throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
 
-                initialState = string.Equals(deliveryProvider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase)
+                initialState = string.Equals(whatsAppDeliveryProvider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase)
                     ? "PENDIENTE"
                     : whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
             }
@@ -2278,7 +2291,7 @@ public sealed class ConversacionesService(
             string finalState = initialState;
             string payload = string.Empty;
 
-            if (isWhatsApp && whatsAppConfig is not null && string.Equals(ResolveWhatsAppDeliveryProvider(whatsAppConfig), ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase))
+            if (isWhatsApp && whatsAppConfig is not null && string.Equals(whatsAppDeliveryProvider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
@@ -3403,11 +3416,61 @@ public sealed class ConversacionesService(
             };
         }, "No se pudo procesar el webhook de WhatsApp.", ct);
 
+    /// <summary>
+    /// Baileys entrega Status de WhatsApp (remoteJid "status@broadcast"), canales/newsletters y
+    /// mensajes de protocolo (revoke, cambios de ephemeral, edits) por el mismo evento
+    /// messages.upsert que los mensajes reales. Se identifican por el remoteJid/estructura del
+    /// mensaje original de Baileys (rawJson), no por el teléfono/nombre que el worker ya normalizó
+    /// -- para un Status, ese teléfono es el de quien lo publicó, no un remitente real de chat.
+    /// </summary>
+    private static bool IsWhatsAppWebNonConversationalEvent(string? rawJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawJson))
+            return false;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            var remoteJid = doc.RootElement.TryGetProperty("key", out var keyElement)
+                && keyElement.TryGetProperty("remoteJid", out var remoteJidElement)
+                    ? remoteJidElement.GetString() ?? string.Empty
+                    : string.Empty;
+
+            if (remoteJid.EndsWith("@broadcast", StringComparison.OrdinalIgnoreCase)
+                || remoteJid.EndsWith("@newsletter", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            return doc.RootElement.TryGetProperty("message", out var messageElement)
+                && messageElement.TryGetProperty("protocolMessage", out _);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
     public async Task RegisterIncomingWhatsAppWebMessageAsync(ConversacionWhatsAppWebIncomingMessageDto request, CancellationToken ct = default)
     {
         await ExecuteLoggedAsync("Conversaciones", "RegisterIncomingWhatsAppWebMessage", async token =>
         {
             ArgumentNullException.ThrowIfNull(request);
+
+            // Red de seguridad además del filtro en worker.mjs: una sesión que ya estaba corriendo
+            // cuando se desplegó ese fix sigue viva con el worker.mjs viejo hasta que se desvincule y
+            // reconecte, así que puede seguir escribiendo archivos de inbox de Status/broadcast hasta
+            // ese momento. Se corta acá antes de tocar contacto/conversación/mensaje/contadores.
+            if (IsWhatsAppWebNonConversationalEvent(request.RawJson))
+            {
+                await _appEvents.LogAuditAsync(
+                    "Conversaciones",
+                    "WhatsAppWebEventIgnored",
+                    "CONV_WHATSAPP_NUMEROS",
+                    request.InstanceName ?? string.Empty,
+                    "Evento de WhatsApp Web ignorado: no es un mensaje de conversación (status/broadcast/newsletter/protocolo).",
+                    new { request.InstanceName },
+                    token);
+                return;
+            }
 
             var payloadJson = string.IsNullOrWhiteSpace(request.RawJson)
                 ? JsonSerializer.Serialize(request)
@@ -3492,8 +3555,14 @@ public sealed class ConversacionesService(
             if (activeBaseId <= 0)
                 return 0;
 
+            // AppContext.BaseDirectory, no ContentRootPath: mismo motivo que
+            // WhatsAppWebSessionService.EnsureSessionDirectory()/GetWorkerDirectory() -- el worker
+            // real escribe su carpeta de sesión (y su inbox) ahí, invariante al cwd con el que se
+            // lanzó el proceso. Si este servicio usara un ContentRootPath distinto al que tenía el
+            // proceso que arrancó el worker, dejaría de encontrar mensajes entrantes reales sin
+            // ningún error visible -- simplemente Directory.Exists(sessionsRoot) da false más abajo.
             var sessionsRoot = Path.Combine(
-                environment.ContentRootPath,
+                AppContext.BaseDirectory,
                 "App_Data",
                 "whatsapp-web",
                 activeBaseId.ToString(CultureInfo.InvariantCulture));
@@ -3557,6 +3626,116 @@ public sealed class ConversacionesService(
 
             return processed;
         }, "No se pudo procesar la bandeja de entrada de WhatsApp Web.", ct);
+
+    private static readonly Dictionary<string, int> WhatsAppWebDeliveryRank = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["PENDIENTE"] = 0,
+        ["ENVIADO"] = 1,
+        ["ENTREGADO"] = 2,
+        ["LEIDO"] = 3
+    };
+
+    private static string MapWhatsAppWebAckStatus(string status) => status.Trim().ToUpperInvariant() switch
+    {
+        "DELIVERED" => "ENTREGADO",
+        "READ" => "LEIDO",
+        "ERROR" => "ERROR_ENVIO",
+        _ => string.Empty
+    };
+
+    private async Task<(long IdMensaje, string EstadoEnvio)> GetOutgoingWhatsAppWebMessageAsync(string whatsAppMessageId, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(whatsAppMessageId))
+            return (0, string.Empty);
+
+        const string sql = """
+            SELECT TOP (1) IdMensaje, ISNULL(EstadoEnvio, '')
+            FROM dbo.CONV_MENSAJES
+            WHERE WhatsAppMessageId = @WhatsAppMessageId
+              AND Direction = 'SALIENTE';
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@WhatsAppMessageId", whatsAppMessageId.Trim());
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return (0, string.Empty);
+
+        return (rd.GetInt64(0), rd.GetString(1));
+    }
+
+    /// <summary>
+    /// Acks/receipts de mensajes SALIENTES (messages.update de Baileys, ver worker.mjs). A
+    /// diferencia de ProcessWhatsAppWebInboxAsync, esto nunca crea contacto/conversación/mensaje ni
+    /// toca contadores/automatizaciones -- solo actualiza el EstadoEnvio de un mensaje que AlfaCore
+    /// ya envió, identificado por WhatsAppMessageId. Guard de orden simple (WhatsAppWebDeliveryRank)
+    /// para no regresar Leído a Entregado si un ack tardío llega desordenado; un ERROR post-send
+    /// siempre se aplica.
+    /// </summary>
+    public Task<int> ProcessWhatsAppWebAcksAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "ProcessWhatsAppWebAcks", async token =>
+        {
+            var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
+            if (activeBaseId <= 0)
+                return 0;
+
+            var sessionsRoot = Path.Combine(
+                AppContext.BaseDirectory,
+                "App_Data",
+                "whatsapp-web",
+                activeBaseId.ToString(CultureInfo.InvariantCulture));
+
+            if (!Directory.Exists(sessionsRoot))
+                return 0;
+
+            var ackFiles = Directory
+                .EnumerateFiles(sessionsRoot, "*.json", SearchOption.AllDirectories)
+                .Where(path => string.Equals(Path.GetFileName(Path.GetDirectoryName(path)), "acks", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var processed = 0;
+            foreach (var ackFile in ackFiles)
+            {
+                token.ThrowIfCancellationRequested();
+                try
+                {
+                    var json = await File.ReadAllTextAsync(ackFile, token);
+                    var ack = JsonSerializer.Deserialize<ConversacionWhatsAppWebAckDto>(json, WhatsAppWebInboxJsonOptions);
+                    var mappedState = MapWhatsAppWebAckStatus(ack?.Status ?? string.Empty);
+
+                    if (ack is not null && !string.IsNullOrWhiteSpace(ack.ExternalMessageId) && !string.IsNullOrEmpty(mappedState))
+                    {
+                        var (idMensaje, currentState) = await GetOutgoingWhatsAppWebMessageAsync(ack.ExternalMessageId, token);
+                        var currentRank = WhatsAppWebDeliveryRank.GetValueOrDefault(currentState.Trim().ToUpperInvariant(), -1);
+                        var newRank = WhatsAppWebDeliveryRank.GetValueOrDefault(mappedState, int.MaxValue);
+
+                        if (idMensaje > 0 && newRank >= currentRank)
+                        {
+                            await UpdateMessageDeliveryAsync(idMensaje, mappedState, string.Empty, string.Empty, token);
+                            processed++;
+                        }
+                    }
+
+                    File.Delete(ackFile);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    await _appEvents.LogErrorAsync(
+                        "Conversaciones",
+                        "ProcessWhatsAppWebAcks",
+                        ex,
+                        "No se pudo procesar un ack de WhatsApp Web.",
+                        new { AckFile = ackFile },
+                        AppEventSeverity.Warning,
+                        token);
+                }
+            }
+
+            return processed;
+        }, "No se pudo procesar los acks de WhatsApp Web.", ct);
 
     public Task<ConversacionWebhookResultDto> RegisterIncomingInstagramWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingInstagramWebhook", async token =>
@@ -9039,6 +9218,22 @@ public sealed class ConversacionesService(
 
         return ConversacionWhatsAppProviders.MetaCloud;
     }
+
+    /// <summary>
+    /// ResolveWhatsAppDeliveryProvider es un default GLOBAL de base (Modo del canal/Proveedor
+    /// predeterminado en Configuración) -- no sabe nada de la conversación puntual. Una conversación
+    /// ya sabe de qué número entró (IdNumeroWhatsApp); si ESE número tiene su propia instancia de
+    /// WhatsApp Web (WebInstanceName, seteado una única vez al conectar por QR/código en
+    /// WhatsAppWebSessionService.StartSessionAsync), el routing de esa conversación puntual es Web
+    /// pase lo que pase con el select global -- nunca cae a Meta Cloud ni a "otra sesión conectada"
+    /// solo porque el default de la base todavía diga Meta. Números agregados solo para Meta Cloud
+    /// (sin pasar nunca por el flujo de conexión Business) no tienen WebInstanceName, así que siguen
+    /// el default global exactamente como antes.
+    /// </summary>
+    private static string ResolveWhatsAppDeliveryProviderForNumero(ConversacionWhatsAppConfigDto config, ConversacionWhatsAppNumeroDto? numero)
+        => !string.IsNullOrWhiteSpace(numero?.WebInstanceName)
+            ? ConversacionWhatsAppProviders.WhatsAppWeb
+            : ResolveWhatsAppDeliveryProvider(config);
 
     private static void EnsureWhatsAppProviderImplemented(string provider, string actionLabel)
     {

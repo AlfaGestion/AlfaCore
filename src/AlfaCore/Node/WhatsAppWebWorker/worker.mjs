@@ -22,6 +22,7 @@ const statusFile = path.join(sessionDir, "status.json");
 const inboxDir = path.join(sessionDir, "inbox");
 const outboxDir = path.join(sessionDir, "outbox");
 const resultsDir = path.join(sessionDir, "results");
+const acksDir = path.join(sessionDir, "acks");
 const mode = String(modeArg || "QR").toUpperCase() === "PHONE_NUMBER" ? "PHONE_NUMBER" : "QR";
 const phone = String(phoneArg || "").replace(/\D/g, "");
 const includeTextCode = includeCodeArg === "1";
@@ -31,6 +32,7 @@ await fsp.mkdir(authDir, { recursive: true });
 await fsp.mkdir(inboxDir, { recursive: true });
 await fsp.mkdir(outboxDir, { recursive: true });
 await fsp.mkdir(resultsDir, { recursive: true });
+await fsp.mkdir(acksDir, { recursive: true });
 
 let sock;
 let isSocketOpen = false;
@@ -114,6 +116,7 @@ async function connectSocket() {
 
     sock.ev.on("creds.update", saveCreds);
     sock.ev.on("messages.upsert", handleMessagesUpsert);
+    sock.ev.on("messages.update", handleMessagesUpdate);
     sock.ev.on("connection.update", handleConnectionUpdate);
   } catch (error) {
     const errorMessage = serializeError(error);
@@ -340,13 +343,90 @@ async function handleMessagesUpsert(event) {
   }
 }
 
+// proto.WebMessageInfo.Status real de esta versión de Baileys (7.0.0-rc14):
+// ERROR=0, PENDING=1, SERVER_ACK=2, DELIVERY_ACK=3, READ=4, PLAYED=5.
+// SERVER_ACK ya está cubierto por el "ENVIADO" que AlfaCore setea apenas sock.sendMessage resuelve
+// -- solo interesan las transiciones posteriores (entregado/leído/error) para no reescribir un
+// estado que ya está bien.
+const ACK_STATUS_LABELS = {
+  0: "ERROR",
+  3: "DELIVERED",
+  4: "READ",
+  5: "READ"
+};
+
+/**
+ * Los acks/receipts de mensajes salientes (fromMe) llegan por messages.update, separado de
+ * messages.upsert -- nunca crean una conversación/mensaje nuevo, solo reportan el cambio de estado
+ * de un mensaje que AlfaCore ya envió. Se identifican por key.id, el mismo id que
+ * WhatsAppMessageId guarda en AlfaCore desde SendTextAsync.
+ */
+async function handleMessagesUpdate(updates) {
+  const list = Array.isArray(updates) ? updates : [];
+  for (const entry of list) {
+    try {
+      const externalMessageId = String(entry?.key?.id || "");
+      const isFromMe = entry?.key?.fromMe === true;
+      const status = entry?.update?.status;
+      const label = ACK_STATUS_LABELS[status];
+      if (!externalMessageId || !isFromMe || !label) {
+        continue;
+      }
+
+      const ackFile = path.join(
+        acksDir,
+        `${new Date().toISOString().replaceAll(":", "-")}-${externalMessageId}.json`
+      );
+
+      await fsp.writeFile(
+        ackFile,
+        JSON.stringify(
+          {
+            externalMessageId,
+            status: label,
+            timestampUtc: new Date().toISOString()
+          },
+          null,
+          2
+        ),
+        "utf8"
+      );
+    } catch (error) {
+      await writeStatus({
+        ...(await readStatus()),
+        state: "ERROR",
+        sessionId: instanceName,
+        processId: process.pid,
+        error: `Ack error: ${serializeError(error)}`,
+        lastUpdatedAtUtc: new Date().toISOString()
+      });
+    }
+  }
+}
+
 function normalizeIncomingMessage(entry) {
   const remoteJid = String(entry?.key?.remoteJid || "");
   if (!remoteJid || remoteJid.endsWith("@g.us")) {
     return null;
   }
 
+  // Estados de WhatsApp (remoteJid = "status@broadcast") y canales/newsletters llegan por el mismo
+  // evento messages.upsert que los mensajes reales. Se descartan por remoteJid ANTES de mirar
+  // remoteJidAlt: Baileys expone ahí el JID real de quien publicó el estado (para poder mostrar el
+  // nombre), lo que hacía que el filtro de teléfono de más abajo lo dejara pasar como si fuera un
+  // mensaje directo normal -- creando una conversación fantasma con el nombre del contacto.
+  if (remoteJid.endsWith("@broadcast") || remoteJid.endsWith("@newsletter")) {
+    return null;
+  }
+
   if (entry?.key?.fromMe) {
+    return null;
+  }
+
+  // Mensajes de protocolo (revoke, cambios de ephemeral, edits, etc.) viajan sin contenido real
+  // dentro de messages.upsert -- dejarlos pasar crearía una conversación/mensaje vacío por un
+  // evento que no es una conversación, igual que el bug de Status.
+  if (entry?.message?.protocolMessage) {
     return null;
   }
 
