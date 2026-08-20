@@ -106,9 +106,12 @@ public sealed class InterfacesCatalogosService(
             var origen = (filters.Origen ?? string.Empty).Trim();
             var usarLista = string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase);
             var clasePrecio = ParseClasePrecio(await GetPublicClasePrecioAsync(filters.IdWeb, token));
+            // IDARTICULO en V_MA_ARTICULOS viene con padding (algunos códigos numéricos quedan
+            // con espacios a la izquierda) — hay que normalizar en mayúsculas + trim para que la
+            // exclusión matchee igual que el resto de la consulta (LTRIM/RTRIM en SELECT/ORDER BY).
             var excludedIds = (filters.ExcludedIds ?? [])
                 .Where(id => !string.IsNullOrWhiteSpace(id))
-                .Select(id => id.Trim())
+                .Select(id => id.Trim().ToUpperInvariant())
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
@@ -134,7 +137,7 @@ public sealed class InterfacesCatalogosService(
             // SQL Server, y no tiene sentido pagar el costo del filtro cuando la lista viene vacía
             // (catálogo/carrito recién creado, sin artículos todavía).
             var exclusionFilter = excludedIds.Count > 0
-                ? "AND a.IDARTICULO NOT IN @ExcludedIds"
+                ? "AND UPPER(LTRIM(RTRIM(a.IDARTICULO))) NOT IN @ExcludedIds"
                 : string.Empty;
 
             var sql = usarLista
