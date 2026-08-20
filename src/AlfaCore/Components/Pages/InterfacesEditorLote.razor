@@ -1,0 +1,337 @@
+@page "/interfaces/lote"
+@page "/{idweb}/{idbase:int}/interfaces/lote"
+@using AlfaCore.Models
+@using Microsoft.AspNetCore.Components.Forms
+@inject AlfaCore.Services.IInterfacesService InterfacesSvc
+@inject AlfaCore.Services.IInterfacesConfigService InterfacesConfigSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+
+<PageTitle>Alta por lote | Interfaces</PageTitle>
+
+<div class="page-grid interfaces-page interfaces-editor-page">
+    <section class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Alta por lote</h2>
+            <p class="page-intro__text">Subí varios comprobantes sueltos de una vez. Los archivos que compartan un patrón de nombre (páginas, "1de2", etc.) se agrupan automáticamente en un mismo comprobante; el resto queda uno por archivo y, si dos terminan siendo la misma factura, la cola de lectura IA los fusiona sola al terminar de leerlos.</p>
+        </div>
+        <div class="actions">
+            <a class="btn btn--ghost" href="/interfaces">
+                <i class="bi bi-arrow-left"></i> Volver al listado
+            </a>
+        </div>
+    </section>
+
+    @if (_feedback is not null)
+    {
+        <section class="panel-card">
+            <div class="editor-msg @GetFeedbackClass(_feedback)">
+                <div>
+                    <strong>@_feedback.Title</strong>
+                    <p>@_feedback.Message</p>
+                    @if (_feedback.HasSuggestion)
+                    {
+                        <small>@_feedback.Suggestion</small>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+
+    @if (_resultado is not null)
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Lote procesado</h3>
+                    <p class="panel-card__subtitle">Se crearon @_resultado.Comprobantes.Count comprobante(s) a partir de @_archivosEnviados archivo(s). Quedaron en cola para lectura automática.</p>
+                </div>
+            </div>
+            <div class="interfaces-pending-files">
+                @foreach (var item in _resultado.Comprobantes)
+                {
+                    <article class="interfaces-pending-file">
+                        <div>
+                            <strong>Comprobante #@item.IdComprobanteRecibido</strong>
+                            <span>@item.ArchivosOrigen</span>
+                        </div>
+                        <div class="actions">
+                            <a class="btn btn--ghost btn--sm" href="/interfaces/@item.IdComprobanteRecibido" target="_blank">
+                                <i class="bi bi-eye"></i> Ver
+                            </a>
+                        </div>
+                    </article>
+                }
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn--ghost" @onclick="EmpezarOtroLote">
+                    <i class="bi bi-arrow-repeat"></i> Cargar otro lote
+                </button>
+            </div>
+        </section>
+    }
+    else
+    {
+        <section class="panel-card">
+            <div class="panel-card__header">
+                <div>
+                    <h3 class="panel-card__title">Archivos del lote</h3>
+                    <p class="panel-card__subtitle">La carga usa la configuración activa del módulo.</p>
+                </div>
+            </div>
+
+            <div class="contactos-form">
+                <div class="contactos-form__grid">
+                    <div class="field">
+                        <label>Tipo documental</label>
+                        <select @bind="_idTipoDocumento" disabled="@_saving">
+                            <option value="0">Seleccionar...</option>
+                            @foreach (var item in _documentTypes)
+                            {
+                                <option value="@item.IdTipoDocumento">@item.Descripcion</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+
+                <div id="interfaces-lote-dropzone" class="interfaces-upload-dropzone" tabindex="0">
+                    <div class="interfaces-upload-dropzone__head">
+                        <div>
+                            <h4>Archivos</h4>
+                            <p>Podés seleccionar todos los archivos sueltos del lote de una sola vez.</p>
+                        </div>
+                        <div class="interfaces-upload-actions">
+                            <InputFile id="interfaces-lote-file-picker"
+                                       @key="@($"file-{_filePickerVersion}")"
+                                       style="display:none"
+                                       OnChange="HandleFilesSelectedAsync"
+                                       multiple
+                                       disabled="@_saving" />
+                            <label class="btn btn--secondary interfaces-file-trigger @(_saving ? "is-disabled" : string.Empty)"
+                                   for="interfaces-lote-file-picker"
+                                   aria-disabled="@_saving">
+                                <i class="bi bi-paperclip"></i>
+                                <span>Seleccionar archivos</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    @if (_selectedFiles.Count == 0)
+                    {
+                        <div class="interfaces-empty-upload">Todavía no agregaste archivos.</div>
+                    }
+                    else
+                    {
+                        <div class="interfaces-pending-files">
+                            @foreach (var file in _selectedFiles)
+                            {
+                                <article class="interfaces-pending-file">
+                                    <div>
+                                        <strong>@file.NombreArchivo</strong>
+                                        <span>@FormatSize(file.TamanoBytes)</span>
+                                    </div>
+                                    <div class="actions">
+                                        <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarArchivoPendiente(file.Id)" disabled="@_saving">
+                                            <i class="bi bi-x-circle"></i> Quitar
+                                        </button>
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="actions usuarios-editor__actions">
+                    <button type="button" class="btn btn--primary" @onclick="ProcesarLoteAsync" disabled="@_saving">
+                        <i class="bi bi-floppy"></i>
+                        <span>@(_saving ? "Procesando..." : "Procesar lote")</span>
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="LimpiarSeleccion" disabled="@_saving">
+                        <i class="bi bi-eraser"></i>
+                        <span>Limpiar</span>
+                    </button>
+                </div>
+            </div>
+        </section>
+    }
+</div>
+
+@code {
+    private readonly List<PendingUploadFile> _selectedFiles = [];
+    private readonly List<InterfacesTipoDocumentoOptionDto> _documentTypes = [];
+    private int _idTipoDocumento;
+    private InterfacesUploadSettingsDto? _settings;
+    private AppUiMessage? _feedback;
+    private InterfacesLoteResultadoDto? _resultado;
+    private int _archivosEnviados;
+    private bool _saving;
+    private int _filePickerVersion;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _documentTypes.Clear();
+        _documentTypes.AddRange(await InterfacesSvc.GetDocumentTypesAsync());
+        _settings = await InterfacesConfigSvc.GetUploadSettingsAsync();
+
+        var compras = _documentTypes.FirstOrDefault(t => string.Equals(t.Codigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase));
+        if (compras is not null)
+            _idTipoDocumento = compras.IdTipoDocumento;
+    }
+
+    private async Task HandleFilesSelectedAsync(InputFileChangeEventArgs e)
+    {
+        if (_settings is null)
+            return;
+
+        foreach (var file in e.GetMultipleFiles(200))
+            _selectedFiles.Add(await PendingUploadFile.CreateAsync(file, _settings.TamanoMaximoBytes));
+
+        _filePickerVersion++;
+    }
+
+    private void QuitarArchivoPendiente(Guid id)
+    {
+        var index = _selectedFiles.FindIndex(x => x.Id == id);
+        if (index >= 0)
+            _selectedFiles.RemoveAt(index);
+        _filePickerVersion++;
+    }
+
+    private void LimpiarSeleccion()
+    {
+        _selectedFiles.Clear();
+        _filePickerVersion++;
+        _feedback = null;
+    }
+
+    private void EmpezarOtroLote()
+    {
+        _resultado = null;
+        _archivosEnviados = 0;
+        LimpiarSeleccion();
+    }
+
+    private async Task ProcesarLoteAsync()
+    {
+        _feedback = null;
+
+        if (_idTipoDocumento <= 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Falta el tipo documental",
+                Message = "Elegí el tipo documental que corresponde a este lote."
+            };
+            return;
+        }
+
+        if (_selectedFiles.Count == 0)
+        {
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Faltan archivos",
+                Message = "Seleccioná al menos un archivo para procesar el lote."
+            };
+            return;
+        }
+
+        _saving = true;
+        try
+        {
+            var archivos = new List<InterfacesCrearAdjuntoRequest>();
+            var streams = new List<Stream>();
+            try
+            {
+                foreach (var file in _selectedFiles)
+                {
+                    var stream = file.OpenReadStream();
+                    streams.Add(stream);
+                    archivos.Add(new InterfacesCrearAdjuntoRequest
+                    {
+                        NombreArchivo = file.NombreArchivo,
+                        MimeType = file.MimeType,
+                        TamanoBytes = file.TamanoBytes,
+                        ContentHash = file.ContentHash,
+                        Contenido = stream
+                    });
+                }
+
+                var result = await UiOps.RunAsync(() => InterfacesSvc.CreateLoteAsync(new InterfacesCrearLoteRequest
+                {
+                    IdTipoDocumento = _idTipoDocumento,
+                    UsuarioAccion = CurrentUserName,
+                    PcAccion = Environment.MachineName,
+                    Archivos = archivos
+                }), "No se pudo procesar el alta por lote.");
+
+                if (!result.Success)
+                {
+                    _feedback = result.Feedback;
+                    return;
+                }
+
+                _archivosEnviados = _selectedFiles.Count;
+                _resultado = result.Value;
+            }
+            finally
+            {
+                foreach (var stream in streams)
+                    await stream.DisposeAsync();
+            }
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private string CurrentUserName => AppUserSession.GetCurrentUserName(Environment.UserName);
+
+    private static string FormatSize(long bytes)
+    {
+        if (bytes < 1024) return $"{bytes} B";
+        if (bytes < 1024 * 1024) return $"{bytes / 1024d:N1} KB";
+        return $"{bytes / 1024d / 1024d:N1} MB";
+    }
+
+    private static string GetFeedbackClass(AppUiMessage message)
+        => message.Severity switch
+        {
+            AppUiFeedbackSeverity.Success => "editor-msg--ok",
+            AppUiFeedbackSeverity.Warning => "editor-msg--warning",
+            _ => "editor-msg--error"
+        };
+
+    private sealed class PendingUploadFile
+    {
+        private PendingUploadFile(string nombreArchivo, string mimeType, long tamanoBytes, byte[] contenido, string contentHash)
+        {
+            NombreArchivo = nombreArchivo;
+            MimeType = mimeType;
+            TamanoBytes = tamanoBytes;
+            Contenido = contenido;
+            ContentHash = contentHash;
+        }
+
+        public Guid Id { get; } = Guid.NewGuid();
+        public string NombreArchivo { get; }
+        public string MimeType { get; }
+        public long TamanoBytes { get; }
+        public byte[] Contenido { get; }
+        public string ContentHash { get; }
+
+        public static async Task<PendingUploadFile> CreateAsync(IBrowserFile file, long maxBytes)
+        {
+            await using var source = file.OpenReadStream(maxBytes);
+            await using var ms = new MemoryStream();
+            await source.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+            var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+            return new PendingUploadFile(file.Name, file.ContentType, file.Size, bytes, hash);
+        }
+
+        public Stream OpenReadStream() => new MemoryStream(Contenido, writable: false);
+    }
+}

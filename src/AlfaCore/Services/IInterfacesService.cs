@@ -9,6 +9,7 @@ public interface IInterfacesService
     Task<PagedResult<InterfacesInboxItemDto>> SearchAsync(InterfacesFilters filters, CancellationToken ct = default);
     Task<InterfacesDetalleDto?> GetByIdAsync(long idComprobanteRecibido, CancellationToken ct = default);
     Task<long> CreateAsync(InterfacesCrearComprobanteRequest request, CancellationToken ct = default);
+    Task<InterfacesLoteResultadoDto> CreateLoteAsync(InterfacesCrearLoteRequest request, CancellationToken ct = default);
     Task UpdateAsync(InterfacesActualizarComprobanteRequest request, CancellationToken ct = default);
     Task AddAttachmentsAsync(InterfacesAgregarAdjuntosRequest request, CancellationToken ct = default);
     Task RemoveAttachmentAsync(InterfacesEliminarAdjuntoRequest request, CancellationToken ct = default);

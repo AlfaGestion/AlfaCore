@@ -207,6 +207,7 @@ public sealed class InterfacesDetalleDto
     public string RutaBase { get; set; } = string.Empty;
     public string ReferenciaExterna { get; set; } = string.Empty;
     public bool Eliminado { get; set; }
+    public Guid? LoteId { get; set; }
     public InterfacesCompraIaResultadoDto? LecturaCompra { get; set; }
     public IReadOnlyList<InterfacesAdjuntoDto> Adjuntos { get; set; } = [];
     public IReadOnlyList<InterfacesHistorialDto> Historial { get; set; } = [];
@@ -333,6 +334,40 @@ public sealed class InterfacesCrearComprobanteRequest
     public string UsuarioAccion { get; set; } = string.Empty;
     public string PcAccion { get; set; } = string.Empty;
     public IReadOnlyList<InterfacesCrearAdjuntoRequest> Adjuntos { get; set; } = [];
+
+    /// <summary>
+    /// Solo lo completa <see cref="AlfaCore.Services.InterfacesService.CreateLoteAsync"/>: marca todos los
+    /// comprobantes creados desde el mismo lote para que, una vez leídos por IA, se puedan fusionar los que
+    /// resulten ser el mismo comprobante (páginas sueltas que no se agruparon por nombre de archivo).
+    /// </summary>
+    public Guid? LoteId { get; set; }
+}
+
+/// <summary>
+/// Alta por lote: agrupa archivos sueltos por patrón de nombre (sin costo de IA) y crea un
+/// <see cref="InterfacesCrearComprobanteRequest"/> por grupo resultante, todos con el mismo LoteId.
+/// Los archivos que en verdad pertenecen al mismo comprobante pero no matchearon por nombre quedan
+/// como comprobantes separados hasta que la cola de lectura IA los procese: ahí, si dos comprobantes
+/// del mismo lote resultan tener la misma identidad (proveedor+tipo+letra+PV+número), se fusionan solos.
+/// </summary>
+public sealed class InterfacesCrearLoteRequest
+{
+    public int IdTipoDocumento { get; set; }
+    public string UsuarioAccion { get; set; } = string.Empty;
+    public string PcAccion { get; set; } = string.Empty;
+    public IReadOnlyList<InterfacesCrearAdjuntoRequest> Archivos { get; set; } = [];
+}
+
+public sealed class InterfacesLoteGrupoResultadoDto
+{
+    public long IdComprobanteRecibido { get; set; }
+    public string ArchivosOrigen { get; set; } = string.Empty;
+}
+
+public sealed class InterfacesLoteResultadoDto
+{
+    public Guid LoteId { get; set; }
+    public IReadOnlyList<InterfacesLoteGrupoResultadoDto> Comprobantes { get; set; } = [];
 }
 
 public sealed class InterfacesCambioEstadoRequest

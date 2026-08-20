@@ -19,6 +19,8 @@
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IPageHeaderNavigationService HeaderNavigation
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.RouteSessionUpdatesGuard RouteUpdatesGuard
+@inject IServiceProvider ServiceProviderRoot
 @inject ILogger<MainLayout> Logger
 @implements IDisposable
 
@@ -1802,6 +1804,8 @@ else
             return;
         }
 
+        QueuePendingUpdatesCheckIfNeeded(routeSession);
+
         if (SessionSvc.GetActiveSession() is null)
         {
             SessionSvc.SwitchSession(routeSession.Id);
@@ -1841,6 +1845,52 @@ else
             routeSession.BaseId,
             routeSession.Nombre);
         _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.BaseDatos}";
+    }
+
+    /// <summary>
+    /// Dispara la verificación de actualizaciones pendientes (App_Data/updates) para la base recién
+    /// activada por URL, sin bloquear el render de esta página y sin repetirla si ya se hizo antes en
+    /// este proceso o si otro usuario la está ejecutando en simultáneo (RouteUpdatesGuard.TryClaim es
+    /// atómico, y ActualizacionesService.ExecutePendingAsync además toma un sp_getapplock por base).
+    /// Cubre el hueco documentado en docs/modulos/contactos-auditoria.md: el chequeo ya corría al
+    /// iniciar el servicio y al cambiar de base desde el drawer de sesiones, pero no al activarse por
+    /// ruta/ticket (el camino normal de entrada en SaaS).
+    /// </summary>
+    private void QueuePendingUpdatesCheckIfNeeded(SessionDto routeSession)
+    {
+        if (!RouteUpdatesGuard.TryClaim(routeSession.Servidor, routeSession.BaseDatos))
+            return;
+
+        var rootProvider = ServiceProviderRoot;
+        var targetSession = routeSession;
+
+        _ = Task.Run(async () =>
+        {
+            using var scope = rootProvider.CreateScope();
+            var sessionSvc = scope.ServiceProvider.GetRequiredService<AlfaCore.Services.ISessionService>();
+            var updatesSvc = scope.ServiceProvider.GetRequiredService<AlfaCore.Services.IActualizacionesService>();
+            var appEvents = scope.ServiceProvider.GetRequiredService<AlfaCore.Services.IAppEventService>();
+
+            try
+            {
+                sessionSvc.SetWebhookOverride(targetSession);
+                await updatesSvc.ExecutePendingAsync(new ActualizacionesRunRequest
+                {
+                    UsuarioAccion = "SYSTEM",
+                    PcAccion = Environment.MachineName,
+                    EsEjecucionAutomatica = true
+                });
+            }
+            catch (Exception ex)
+            {
+                await appEvents.LogErrorAsync(
+                    "Actualizaciones",
+                    "AutoCheckPorRuta",
+                    ex,
+                    "No se pudieron ejecutar automáticamente las actualizaciones pendientes al activar la base por URL.",
+                    new { targetSession.BaseId, targetSession.Servidor, targetSession.BaseDatos });
+            }
+        });
     }
 
     private async Task EnsureInternalLoginUsersAsync()

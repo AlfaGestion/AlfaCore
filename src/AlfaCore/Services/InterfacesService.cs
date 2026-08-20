@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace AlfaCore.Services;
 
@@ -367,7 +368,8 @@ public sealed class InterfacesService(
                     ISNULL(c.CantidadAdjuntos, 0),
                     ISNULL(c.RutaBase, ''),
                     ISNULL(c.ReferenciaExterna, ''),
-                    ISNULL(c.Eliminado, 0)
+                    ISNULL(c.Eliminado, 0),
+                    c.LoteId
                 FROM dbo.INT_COMPROBANTE_RECIBIDO c
                 INNER JOIN dbo.INT_ESTADO e
                     ON e.IdEstado = c.IdEstado
@@ -411,7 +413,8 @@ public sealed class InterfacesService(
                         CantidadAdjuntos = GetInt(rd, 20),
                         RutaBase = GetString(rd, 21),
                         ReferenciaExterna = GetString(rd, 22),
-                        Eliminado = GetBool(rd, 23)
+                        Eliminado = GetBool(rd, 23),
+                        LoteId = rd.IsDBNull(24) ? null : rd.GetGuid(24)
                     };
                 }
             }
@@ -460,7 +463,8 @@ public sealed class InterfacesService(
                         CantidadAdjuntos,
                         RutaBase,
                         FechaHoraEstado,
-                        Eliminado
+                        Eliminado,
+                        LoteId
                     )
                     VALUES
                     (
@@ -473,7 +477,8 @@ public sealed class InterfacesService(
                         0,
                         @RutaBase,
                         GETDATE(),
-                        0
+                        0,
+                        @LoteId
                     );
 
                     SELECT CAST(SCOPE_IDENTITY() AS bigint);
@@ -491,6 +496,7 @@ public sealed class InterfacesService(
                     cmd.Parameters.AddWithValue("@Observacion", DbNullable(request.Observacion, 1000));
                     cmd.Parameters.AddWithValue("@ReferenciaExterna", DbNullable(request.PromptIaAdicional, maxReferenciaExternaLength));
                     cmd.Parameters.AddWithValue("@RutaBase", DbNullable(storedBase, 500));
+                    cmd.Parameters.AddWithValue("@LoteId", (object?)request.LoteId ?? DBNull.Value);
                     idComprobante = Convert.ToInt64(await cmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
                 }
 
@@ -619,6 +625,318 @@ public sealed class InterfacesService(
                 throw;
             }
         }, "No se pudo registrar el comprobante recibido.", ct);
+
+    public Task<InterfacesLoteResultadoDto> CreateLoteAsync(InterfacesCrearLoteRequest request, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Interfaces", "CreateLote", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(request);
+            if (request.Archivos.Count == 0)
+                throw new InvalidOperationException("Debés adjuntar al menos un archivo para el alta por lote.");
+
+            var loteId = Guid.NewGuid();
+            var grupos = AgruparArchivosPorNombre(request.Archivos);
+
+            var resultados = new List<InterfacesLoteGrupoResultadoDto>();
+            foreach (var grupo in grupos)
+            {
+                var idComprobante = await CreateAsync(new InterfacesCrearComprobanteRequest
+                {
+                    IdTipoDocumento = request.IdTipoDocumento,
+                    UsuarioAccion = request.UsuarioAccion,
+                    PcAccion = request.PcAccion,
+                    Adjuntos = grupo,
+                    LoteId = loteId
+                }, token);
+
+                resultados.Add(new InterfacesLoteGrupoResultadoDto
+                {
+                    IdComprobanteRecibido = idComprobante,
+                    ArchivosOrigen = string.Join(", ", grupo.Select(a => a.NombreArchivo))
+                });
+            }
+
+            await _appEvents.LogAuditAsync(
+                "Interfaces",
+                "CreateLote",
+                "INT_COMPROBANTE_RECIBIDO",
+                loteId.ToString(),
+                "Alta por lote: comprobantes creados desde archivos sueltos.",
+                new { LoteId = loteId, ArchivosRecibidos = request.Archivos.Count, ComprobantesCreados = resultados.Count },
+                token);
+
+            return new InterfacesLoteResultadoDto { LoteId = loteId, Comprobantes = resultados };
+        }, "No se pudo procesar el alta por lote.", ct);
+
+    /// <summary>
+    /// Agrupa archivos sueltos por patrón de nombre — puerto simplificado de la heurística "sin IA" de
+    /// agente_staging_comprobantes.py (patrones "1de3"/"pag1"/"hoja1", e índice final secuencial para
+    /// imágenes). No incluye agrupación por contenido ni el caso de PDFs con sufijo "(2)": los archivos
+    /// que en verdad pertenecen al mismo comprobante pero no matchean por nombre quedan como comprobantes
+    /// separados y se fusionan más tarde si la cola de lectura IA les detecta la misma identidad
+    /// (ver TryMergeLoteSiblingsAsync).
+    /// </summary>
+    private static IReadOnlyList<IReadOnlyList<InterfacesCrearAdjuntoRequest>> AgruparArchivosPorNombre(
+        IReadOnlyList<InterfacesCrearAdjuntoRequest> archivos)
+    {
+        var explicitGroups = new Dictionary<string, List<(int Indice, InterfacesCrearAdjuntoRequest Archivo)>>(StringComparer.OrdinalIgnoreCase);
+        var trailingGroups = new Dictionary<string, List<(int Indice, InterfacesCrearAdjuntoRequest Archivo)>>(StringComparer.OrdinalIgnoreCase);
+        var singles = new List<InterfacesCrearAdjuntoRequest>();
+
+        foreach (var archivo in archivos)
+        {
+            var stem = Path.GetFileNameWithoutExtension(archivo.NombreArchivo ?? string.Empty);
+            var explicitMatch = MatchPagePattern(stem);
+            if (explicitMatch is not null)
+            {
+                if (!explicitGroups.TryGetValue(explicitMatch.Value.BaseKey, out var list))
+                    explicitGroups[explicitMatch.Value.BaseKey] = list = [];
+                list.Add((explicitMatch.Value.Indice, archivo));
+                continue;
+            }
+
+            var extension = Path.GetExtension(archivo.NombreArchivo ?? string.Empty);
+            if (!string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase))
+            {
+                var trailingMatch = MatchTrailingIndex(stem);
+                if (trailingMatch is not null)
+                {
+                    if (!trailingGroups.TryGetValue(trailingMatch.Value.BaseKey, out var list))
+                        trailingGroups[trailingMatch.Value.BaseKey] = list = [];
+                    list.Add((trailingMatch.Value.Indice, archivo));
+                    continue;
+                }
+            }
+
+            singles.Add(archivo);
+        }
+
+        var grupos = new List<IReadOnlyList<InterfacesCrearAdjuntoRequest>>();
+
+        foreach (var items in explicitGroups.Values)
+        {
+            if (items.Count > 1)
+                grupos.Add(items.OrderBy(i => i.Indice).Select(i => i.Archivo).ToArray());
+            else
+                singles.Add(items[0].Archivo);
+        }
+
+        foreach (var items in trailingGroups.Values)
+        {
+            var ordered = items.OrderBy(i => i.Indice).ToArray();
+            var esSecuencial = ordered.Select((i, idx) => i.Indice == idx + 1).All(ok => ok);
+            if (ordered.Length > 1 && esSecuencial)
+                grupos.Add(ordered.Select(i => i.Archivo).ToArray());
+            else
+                singles.AddRange(ordered.Select(i => i.Archivo));
+        }
+
+        foreach (var archivo in singles)
+            grupos.Add([archivo]);
+
+        return grupos;
+    }
+
+    private static (string BaseKey, int Indice)? MatchPagePattern(string stem)
+    {
+        var m = Regex.Match(stem, @"^(?<base>.+?)[ _-]*(?<idx>\d+)de(?<total>\d+)$", RegexOptions.IgnoreCase);
+        if (!m.Success)
+            m = Regex.Match(stem, @"^(?<base>.+?)[ _-]*(?:pag|page|hoja)[ _-]*(?<idx>\d+)(?:de\d+)?$", RegexOptions.IgnoreCase);
+        if (!m.Success)
+            return null;
+
+        var baseKey = m.Groups["base"].Value.TrimEnd(' ', '_', '-');
+        if (baseKey.Length == 0 || !int.TryParse(m.Groups["idx"].Value, out var idx) || idx < 1)
+            return null;
+
+        return (baseKey.ToLowerInvariant(), idx);
+    }
+
+    private static (string BaseKey, int Indice)? MatchTrailingIndex(string stem)
+    {
+        var m = Regex.Match(stem, @"^(?<base>.*[A-Za-z_])(?<idx>\d{1,2})$");
+        if (!m.Success)
+            return null;
+
+        var baseKey = m.Groups["base"].Value.TrimEnd(' ', '_', '-');
+        if (baseKey.Length == 0 || !int.TryParse(m.Groups["idx"].Value, out var idx) || idx < 1)
+            return null;
+
+        return (baseKey.ToLowerInvariant(), idx);
+    }
+
+    /// <summary>
+    /// Si <paramref name="detail"/> viene de un alta por lote (<see cref="InterfacesDetalleDto.LoteId"/>),
+    /// busca otros comprobantes del mismo lote ya leídos con la misma identidad de negocio
+    /// (proveedor+tipo+letra+PV+número) y los fusiona en uno solo — resuelve el caso de páginas sueltas
+    /// que no se agruparon por nombre de archivo al momento de la carga (ver AgruparArchivosPorNombre).
+    /// </summary>
+    private async Task TryMergeLoteSiblingsAsync(
+        SqlConnection cn,
+        InterfacesDetalleDto detail,
+        InterfacesCompraIaPayload payload,
+        string user,
+        string pc,
+        CancellationToken ct)
+    {
+        if (detail.LoteId is not Guid loteId)
+            return;
+
+        var tipo = payload.TipoComprobante.Trim();
+        var letra = payload.Letra.Trim();
+        var puntoVenta = DigitsOnly(payload.PuntoVenta);
+        var numero = DigitsOnly(payload.Numero);
+        if (tipo.Length == 0 || puntoVenta.Length == 0 || numero.Length == 0)
+            return;
+
+        var proveedorClave = ResolveProveedorClave(payload.CuentaContable, payload.ProveedorCuit, payload.ProveedorNombre);
+        if (proveedorClave.Length == 0)
+            return;
+
+        const string candidatesSql = """
+            SELECT c.IdComprobanteRecibido, cab.Cuenta_Contable, cab.Proveedor_CUIT, cab.Proveedor_Nombre,
+                   cab.TipoComprobante, cab.Letra, cab.PuntoVenta, cab.Numero
+            FROM dbo.INT_COMPROBANTE_RECIBIDO c
+            CROSS APPLY (
+                SELECT TOP (1)
+                    cab2.Cuenta_Contable, cab2.Proveedor_CUIT, cab2.Proveedor_Nombre,
+                    cab2.TipoComprobante, cab2.Letra, cab2.PuntoVenta, cab2.Numero, cab2.Estado
+                FROM dbo.IA_Compras_CAB cab2
+                WHERE cab2.IdComprobanteRecibido = c.IdComprobanteRecibido
+                ORDER BY cab2.FechaHora_Proceso DESC, cab2.ID DESC
+            ) cab
+            WHERE c.LoteId = @LoteId
+              AND c.Eliminado = 0
+              AND cab.Estado IN ('PROCESADO', 'SIN_PROVEEDOR')
+            """;
+
+        var candidatos = new List<long>();
+        await using (var cmd = new SqlCommand(candidatesSql, cn))
+        {
+            cmd.Parameters.AddWithValue("@LoteId", loteId);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            while (await rd.ReadAsync(ct))
+            {
+                var otroTipo = GetString(rd, 4).Trim();
+                var otraLetra = GetString(rd, 5).Trim();
+                var otroPv = DigitsOnly(GetString(rd, 6));
+                var otroNumero = DigitsOnly(GetString(rd, 7));
+
+                if (!string.Equals(otroTipo, tipo, StringComparison.OrdinalIgnoreCase)) continue;
+                if (!string.Equals(otraLetra, letra, StringComparison.OrdinalIgnoreCase)) continue;
+                if (otroPv != puntoVenta || otroNumero != numero) continue;
+
+                var otraClave = ResolveProveedorClave(GetString(rd, 1), GetString(rd, 2), GetString(rd, 3));
+                if (!string.Equals(otraClave, proveedorClave, StringComparison.OrdinalIgnoreCase)) continue;
+
+                candidatos.Add(rd.GetInt64(0));
+            }
+        }
+
+        if (candidatos.Count <= 1)
+            return;
+
+        var ganadorId = candidatos.Min();
+        foreach (var perdedorId in candidatos.Where(id => id != ganadorId))
+            await MergeComprobanteIntoAsync(cn, perdedorId, ganadorId, user, pc, ct);
+    }
+
+    private static string ResolveProveedorClave(string cuentaContable, string cuit, string nombre)
+    {
+        if (!string.IsNullOrWhiteSpace(cuentaContable))
+            return cuentaContable.Trim();
+
+        var digitsCuit = DigitsOnly(cuit);
+        if (digitsCuit.Length > 0)
+            return digitsCuit;
+
+        return nombre.Trim();
+    }
+
+    private static string DigitsOnly(string? value)
+        => value is null ? string.Empty : new string(value.Where(char.IsDigit).ToArray());
+
+    private async Task MergeComprobanteIntoAsync(
+        SqlConnection cn,
+        long idPerdedor,
+        long idGanador,
+        string user,
+        string pc,
+        CancellationToken ct)
+    {
+        await using var tx = await cn.BeginTransactionAsync(ct);
+        try
+        {
+            int ordenBase;
+            await using (var maxCmd = new SqlCommand(
+                "SELECT ISNULL(MAX(Orden), 0) FROM dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO WHERE IdComprobanteRecibido = @Id AND Eliminado = 0",
+                cn, (SqlTransaction)tx))
+            {
+                maxCmd.Parameters.AddWithValue("@Id", idGanador);
+                ordenBase = Convert.ToInt32(await maxCmd.ExecuteScalarAsync(ct), CultureInfo.InvariantCulture);
+            }
+
+            var adjuntosPerdedor = new List<long>();
+            await using (var selCmd = new SqlCommand(
+                "SELECT IdAdjunto FROM dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO WHERE IdComprobanteRecibido = @Id AND Eliminado = 0 ORDER BY Orden",
+                cn, (SqlTransaction)tx))
+            {
+                selCmd.Parameters.AddWithValue("@Id", idPerdedor);
+                await using var rd = await selCmd.ExecuteReaderAsync(ct);
+                while (await rd.ReadAsync(ct))
+                    adjuntosPerdedor.Add(rd.GetInt64(0));
+            }
+
+            foreach (var idAdjunto in adjuntosPerdedor)
+            {
+                ordenBase++;
+                await using var updCmd = new SqlCommand(
+                    "UPDATE dbo.INT_COMPROBANTE_RECIBIDO_ADJUNTO SET IdComprobanteRecibido = @IdGanador, Orden = @Orden, EsPrincipal = 0 WHERE IdAdjunto = @IdAdjunto",
+                    cn, (SqlTransaction)tx);
+                updCmd.Parameters.AddWithValue("@IdGanador", idGanador);
+                updCmd.Parameters.AddWithValue("@Orden", ordenBase);
+                updCmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
+                await updCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await UpdateAttachmentCountAsync(cn, (SqlTransaction)tx, idGanador, ordenBase, ct);
+
+            await using (var delCmd = new SqlCommand(
+                """
+                UPDATE dbo.INT_COMPROBANTE_RECIBIDO
+                SET Eliminado = 1, UsuarioAnulacion = @Usuario, PcAnulacion = @Pc,
+                    FechaHoraAnulacion = GETDATE(), MotivoAnulacion = @Motivo
+                WHERE IdComprobanteRecibido = @Id
+                """,
+                cn, (SqlTransaction)tx))
+            {
+                delCmd.Parameters.AddWithValue("@Usuario", user);
+                delCmd.Parameters.AddWithValue("@Pc", pc);
+                delCmd.Parameters.AddWithValue("@Motivo", Truncate(
+                    $"Fusionado automáticamente con el comprobante #{idGanador} (mismo lote, misma factura detectada por IA).", 500));
+                delCmd.Parameters.AddWithValue("@Id", idPerdedor);
+                await delCmd.ExecuteNonQueryAsync(ct);
+            }
+
+            await InsertHistoryAsync(
+                cn, (SqlTransaction)tx, idGanador, "FUSION_LOTE", null, null, user, pc,
+                $"Se incorporaron los adjuntos del comprobante #{idPerdedor} (mismo lote, misma factura detectada por IA).",
+                new { IdComprobanteOrigen = idPerdedor }, ct);
+
+            await tx.CommitAsync(ct);
+        }
+        catch
+        {
+            try
+            {
+                await tx.RollbackAsync(ct);
+            }
+            catch
+            {
+            }
+
+            throw;
+        }
+    }
 
     private async Task TryAutoQueueCompraDetectionAfterCreateAsync(long idComprobanteRecibido, string user, string pc, CancellationToken ct)
     {
@@ -2528,6 +2846,8 @@ public sealed class InterfacesService(
                 null,
                 pc,
                 ct);
+
+            await TryMergeLoteSiblingsAsync(cn, detail, payload, user, pc, ct);
 
             var saved = queueId.HasValue
                 ? await GetCompraDetectionByQueueIdInternalAsync(cn, queueId.Value, ct)
