@@ -127,6 +127,7 @@ public sealed class WhatsAppWebSessionService(
         if (string.IsNullOrWhiteSpace(numero.WebInstanceName))
             return numero;
 
+        var previousInstanceName = numero.WebInstanceName;
         var sessionDir = EnsureSessionDirectory(numero.WebInstanceName);
         var statusFile = Path.Combine(sessionDir, StatusFileName);
         StopProcessIfRunning(statusFile);
@@ -143,6 +144,12 @@ public sealed class WhatsAppWebSessionService(
         numero.WebPairingExpiresAtUtc = null;
         numero.WebPairingToken = string.Empty;
 
+        // ResolveWhatsAppDeliveryProviderForNumero() en ConversacionesService rutea por WhatsApp Web
+        // apenas WebInstanceName no está vacío, sin mirar WebSessionStatus -- si no lo limpiamos acá,
+        // "Desvincular" deja el número visualmente Disconnected pero cada envío sigue intentando (y
+        // fallando) contra un worker Web que ya no existe, en vez de volver a Meta Cloud API.
+        numero.WebInstanceName = string.Empty;
+
         await configService.SaveWhatsAppNumeroWebSessionAsync(numero, ct);
 
         await appEvents.LogAuditAsync(
@@ -151,7 +158,7 @@ public sealed class WhatsAppWebSessionService(
             "CONV_WHATSAPP_NUMEROS",
             idNumero.ToString(CultureInfo.InvariantCulture),
             "Sesión de WhatsApp Web detenida.",
-            new { idNumero, numero.WebInstanceName },
+            new { idNumero, previousInstanceName },
             ct);
 
         return numero;

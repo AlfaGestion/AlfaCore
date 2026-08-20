@@ -1361,6 +1361,16 @@
                         {
                             <div class="wa-number-card__actions">
                                 <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" OnClick="@(() => OpenConnectMethodChooser(numero.IdNumero))">Conectar WhatsApp</AlfaButton>
+                                @if (!string.IsNullOrWhiteSpace(numero.WebInstanceName))
+                                {
+                                    // Este número tocó WhatsApp Web alguna vez (quedó un WebInstanceName
+                                    // grabado) pero no está conectado ahora -- sin este botón no hay forma
+                                    // de soltarlo: ResolveWhatsAppDeliveryProviderForNumero() sigue
+                                    // ruteando cada envío por Web (y fallando) aunque la base tenga Meta
+                                    // Cloud API como proveedor predeterminado, y "Desvincular" solo
+                                    // aparecía cuando el estado era Connected.
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-circle" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Quitar WhatsApp Web</AlfaButton>
+                                }
                             </div>
                         }
 
