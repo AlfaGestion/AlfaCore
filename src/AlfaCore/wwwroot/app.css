@@ -26967,6 +26967,12 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     grid-column: 2 !important;
     display: grid !important;
     grid-template-columns: minmax(0, 1fr) !important;
+    /* Sin esto, la fila implícita del grid es "auto": se ajusta al contenido de
+       .conversations-chat en vez de estirarse al 100% de este workspace. Con pocos
+       mensajes, .conversations-chat termina midiendo solo su contenido (header +
+       hilo corto + composer), dejando el resto del alto disponible como un
+       rectángulo vacío del fondo de .conversations-layout por debajo del composer. */
+    grid-template-rows: minmax(0, 1fr) !important;
     min-width: 0 !important;
     min-height: 0 !important;
     height: 100% !important;

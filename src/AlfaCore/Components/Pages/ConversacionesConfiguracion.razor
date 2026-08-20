@@ -1236,7 +1236,7 @@
                     </div>
                 }
 
-                @if (_numeros.Count == 0)
+                @if (!ActiveBusinessNumeros.Any())
                 {
                     <div class="wa-empty-connect">
                         <p class="wa-content-lead">Conectá tu WhatsApp para atender conversaciones desde AlfaCore.</p>
@@ -1263,15 +1263,18 @@
                     </div>
                 }
 
-                @foreach (var numero in _numeros)
+                @foreach (var numero in ActiveBusinessNumeros)
                 {
                     <div class="wa-number-card">
                         <div class="wa-number-card__header">
                             <div>
-                                <strong class="wa-number-card__name">@(string.IsNullOrWhiteSpace(numero.Nombre) ? "Número sin nombre" : numero.Nombre)</strong>
-                                <span class="wa-number-card__phone">@(string.IsNullOrWhiteSpace(numero.WebPhoneNumber) ? numero.PhoneNumberId : numero.WebPhoneNumber)</span>
+                                <strong class="wa-number-card__name">@GetNumeroDisplayName(numero)</strong>
+                                @{ var subPhone = string.IsNullOrWhiteSpace(numero.WebPhoneNumber) ? numero.PhoneNumberId : numero.WebPhoneNumber; }
+                                @if (!string.Equals(subPhone, GetNumeroDisplayName(numero), StringComparison.Ordinal))
+                                {
+                                    <span class="wa-number-card__phone">@subPhone</span>
+                                }
                             </div>
-                            <AlfaCheckbox Value="@numero.Activo" ValueChanged="@(v => numero.Activo = v ?? false)">Activo</AlfaCheckbox>
                         </div>
 
                         <div class="wa-number-card__status">
@@ -1324,7 +1327,7 @@
                         @if (numero.IsWebSessionReady)
                         {
                             <div class="wa-number-card__actions">
-                                <AlfaButton Variant="AlfaButtonVariant.Danger" Size="AlfaSize.Sm" Icon="bi bi-x-circle" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Desvincular</AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Danger" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Cerrar sesión</AlfaButton>
                             </div>
                         }
                         else if (HasPairingRegenerateError(numero))
@@ -1367,9 +1370,9 @@
                                     // grabado) pero no está conectado ahora -- sin este botón no hay forma
                                     // de soltarlo: ResolveWhatsAppDeliveryProviderForNumero() sigue
                                     // ruteando cada envío por Web (y fallando) aunque la base tenga Meta
-                                    // Cloud API como proveedor predeterminado, y "Desvincular" solo
+                                    // Cloud API como proveedor predeterminado, y "Cerrar sesión" solo
                                     // aparecía cuando el estado era Connected.
-                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-circle" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Quitar WhatsApp Web</AlfaButton>
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Cerrar sesión</AlfaButton>
                                 }
                             </div>
                         }
@@ -1412,6 +1415,9 @@
                                     <AlfaInput Label="Número para sesión Web" @bind-Value="numero.WebPhoneNumber" Placeholder="Ej: +54 11 1234-5678" />
                                 </div>
                                 <AlfaCheckbox Value="@_includeTextPairingCode" ValueChanged="@(v => _includeTextPairingCode = v ?? false)">Generar también código de texto al conectar</AlfaCheckbox>
+                                <div class="actions">
+                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="@(() => SaveNumeroAsync(numero))">Guardar opciones</AlfaButton>
+                                </div>
                             </div>
                         </details>
 
@@ -1419,7 +1425,7 @@
                         {
                             <details class="wa-settings-section">
                                 <summary class="wa-settings-section__summary">
-                                    <span class="wa-settings-section__title">Soporte / runtime</span>
+                                    <span class="wa-settings-section__title">Soporte y diagnóstico</span>
                                     <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
                                 </summary>
                                 <div class="wa-settings-section__body">
@@ -1434,14 +1440,10 @@
                                 </div>
                             </details>
                         }
-
-                        <div class="actions">
-                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="@(() => SaveNumeroAsync(numero))">Guardar número</AlfaButton>
-                        </div>
                     </div>
                 }
 
-                @if (_numeros.Count > 0)
+                @if (ActiveBusinessNumeros.Any())
                 {
                     @if (_connectMethodPromptForIdNumero == 0)
                     {
@@ -1466,9 +1468,7 @@
                         </div>
                     }
                 }
-            </section>
 
-            <aside class="wa-help">
                 <details class="wa-settings-section">
                     <summary class="wa-settings-section__summary">
                         <i class="bi bi-question-circle wa-settings-section__icon" aria-hidden="true"></i>
@@ -1482,18 +1482,18 @@
                             <li>Escaneá el código QR que aparece en pantalla.</li>
                             <li>Un usuario normal solo ve, en el inbox, las conversaciones de los números donde está marcado como usuario.</li>
                             <li>Un administrador de conversaciones ve y puede responder por cualquier número, sin restricción.</li>
-                            <li>Desactivar un número (sin borrarlo) deja de mostrarlo para asignar usuarios nuevos, pero no toca las conversaciones que ya tiene.</li>
+                            <li>"Cerrar sesión" deja de mostrar el número en esta lista, pero no borra las conversaciones que ya tiene.</li>
                         </ol>
                     </div>
                 </details>
-            </aside>
+            </section>
     </div>
 
     <AlfaConfirmDialog Open="_stopSessionOpen"
-                        Title="Desvincular WhatsApp"
+                        Title="Cerrar sesión de WhatsApp"
                         Message="@GetStopSessionMessage()"
-                        SecondaryMessage="Vas a tener que volver a escanear un código para reconectarlo."
-                        ConfirmLabel="Desvincular"
+                        SecondaryMessage="Las conversaciones anteriores se conservarán."
+                        ConfirmLabel="Cerrar sesión"
                         CancelLabel="Cancelar"
                         Loading="_stopSessionBusy"
                         OnConfirm="ConfirmStopWhatsAppWebSessionAsync"
@@ -1647,6 +1647,15 @@
     private IReadOnlyList<ConversacionClasificacionOptionDto> _clasificaciones = [];
     private IReadOnlyList<UsuarioSistemaDto> _usuariosSistema = [];
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> _numeros = [];
+
+    /// <summary>
+    /// La pestaña WhatsApp Business sólo lista cuentas activas -- "Cerrar sesión" pone Activo=false
+    /// (ver ClearWhatsAppWebPairingAsync) sin tocar la fila ni el historial. No es un filtro SQL: se
+    /// reutiliza GetWhatsAppNumeroAsync/GetWhatsAppNumeroByInstanceNameAsync (envío, recepción,
+    /// resolución de conversaciones históricas) tal cual, sin excluir nada -- esto es solo qué se
+    /// muestra en esta lista puntual.
+    /// </summary>
+    private IEnumerable<ConversacionWhatsAppNumeroDto> ActiveBusinessNumeros => _numeros.Where(n => n.Activo);
     private ConversacionWhatsAppNumeroDto _nuevoNumero = new() { Activo = true };
     private HashSet<string> _administradores = new(StringComparer.OrdinalIgnoreCase);
     private string _anyDeskPath = string.Empty;
@@ -1869,10 +1878,60 @@
         if (!onNumerosView)
         {
             StopPolling();
+            _ = CleanupAbandonedPairingsAsync();
             return;
         }
 
         ResumePollingIfPairingActive();
+    }
+
+    /// <summary>
+    /// No alcanza con cortar el polling de UI al salir de la vista: un pairing que nunca llegó a
+    /// conectarse deja el worker Node corriendo indefinidamente esperando un QR que nadie va a
+    /// escanear. Se detiene realmente esa sesión (sin tocar auth de cuentas ya vinculadas -- sólo
+    /// entra acá si !IsWebSessionReady) y se archiva la fila (Activo=false) para que no quede
+    /// pegada en la lista Business. Silencioso a propósito: no es una acción que el usuario disparó
+    /// mirando esta pantalla, así que no le mostramos feedback por algo que pasó en background.
+    /// </summary>
+    private async Task CleanupAbandonedPairingsAsync()
+    {
+        var pendingIds = _pairingFlowActiveIds
+            .Where(id =>
+            {
+                var pendingNumero = _numeros.FirstOrDefault(x => x.IdNumero == id);
+                return pendingNumero is not null && !pendingNumero.IsWebSessionReady;
+            })
+            .ToList();
+
+        if (pendingIds.Count == 0)
+            return;
+
+        foreach (var idNumero in pendingIds)
+        {
+            _pairingFlowActiveIds.Remove(idNumero);
+
+            var result = await UiOps.RunAsync(
+                () => WhatsAppWebSessionSvc.StopSessionAsync(idNumero),
+                "No se pudo limpiar un pairing abandonado de WhatsApp Web.");
+
+            if (!result.Success || result.Value is null)
+                continue;
+
+            var numero = result.Value;
+            if (numero.Activo)
+            {
+                numero.Activo = false;
+                var archived = await UiOps.RunAsync(
+                    () => ConfigSvc.SaveWhatsAppNumeroAsync(numero),
+                    "No se pudo archivar un número abandonado.");
+                if (!archived.Success)
+                    continue;
+            }
+
+            ReplaceNumero(numero);
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ResumePollingIfPairingActive()
@@ -2762,8 +2821,21 @@
         {
             ReplaceNumero(result.Value);
             _feedback = AppUiMessage.Success(
-                "Sesión detenida",
-                $"Se detuvo la sesión Web de '{result.Value.Nombre}' y se limpiaron los artefactos temporales de emparejamiento.");
+                "Sesión cerrada",
+                $"'{GetNumeroDisplayName(result.Value)}' ya no está conectado. Las conversaciones anteriores se conservan.");
+
+            // "Cerrar sesión" saca la cuenta de la lista Business (ActiveBusinessNumeros) sin borrar
+            // la fila ni su historial -- mismo campo Activo que ya existía en el modelo, ahora
+            // manejado por el sistema en vez de expuesto como checkbox manual del cliente.
+            if (result.Value.Activo)
+            {
+                result.Value.Activo = false;
+                var archiveResult = await UiOps.RunAsync(
+                    () => ConfigSvc.SaveWhatsAppNumeroAsync(result.Value),
+                    "La sesión se cerró, pero no se pudo actualizar la lista de números.");
+                if (archiveResult.Success)
+                    ReplaceNumero(result.Value);
+            }
         }
         else
         {
@@ -2806,8 +2878,8 @@
 
     private string GetStopSessionMessage()
         => _stopSessionTarget is null
-            ? "¿Desvincular este WhatsApp?"
-            : $"¿Desvincular \"{_stopSessionTarget.Nombre}\"? Va a dejar de recibir y enviar mensajes hasta que lo conectes de nuevo.";
+            ? "Esta cuenta dejará de estar conectada a AlfaCore."
+            : $"\"{GetNumeroDisplayName(_stopSessionTarget)}\" dejará de estar conectado a AlfaCore.";
 
     private async Task SaveInstagramAsync()
     {
@@ -3175,23 +3247,51 @@
     /// es un error real, aunque WebLastError tenga texto — sólo se muestra "Error" cuando el
     /// worker ya no está reintentando (WebSessionStatus == Disconnected).
     /// </summary>
-    private static AlfaTagTone GetNumeroEstadoTone(ConversacionWhatsAppNumeroDto numero)
+    /// <summary>
+    /// WebSessionStatus=PENDING_QR persiste en base tal cual lo dejó el último poll -- si el usuario
+    /// canceló, navegó fuera o recargó sin que StopPolling llegara a correr un último refresh, ese
+    /// PENDING_QR puede quedar viejo. Sólo es un "Esperando escaneo" real si además hay un pairing
+    /// activo de ESTA sesión de UI (_pairingFlowActiveIds); si no, es un pairing abandonado y se
+    /// trata visualmente como Desconectado -- nunca queda pegado en la card fuera del flujo activo.
+    /// </summary>
+    private bool IsStalePendingQr(ConversacionWhatsAppNumeroDto numero)
+        => numero.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.PendingQr
+           && !IsPairingFlowActive(numero.IdNumero);
+
+    private AlfaTagTone GetNumeroEstadoTone(ConversacionWhatsAppNumeroDto numero)
         => numero.WebSessionStatus switch
         {
             ConversacionWhatsAppWebSessionStatuses.Connected => AlfaTagTone.Success,
-            ConversacionWhatsAppWebSessionStatuses.PendingQr => AlfaTagTone.Warning,
+            ConversacionWhatsAppWebSessionStatuses.PendingQr when !IsStalePendingQr(numero) => AlfaTagTone.Warning,
             _ when !string.IsNullOrWhiteSpace(numero.WebLastError) => AlfaTagTone.Danger,
             _ => AlfaTagTone.Neutral
         };
 
-    private static string GetNumeroEstadoLabel(ConversacionWhatsAppNumeroDto numero)
+    private string GetNumeroEstadoLabel(ConversacionWhatsAppNumeroDto numero)
         => numero.WebSessionStatus switch
         {
             ConversacionWhatsAppWebSessionStatuses.Connected => "Conectado",
-            ConversacionWhatsAppWebSessionStatuses.PendingQr => "Esperando escaneo",
+            ConversacionWhatsAppWebSessionStatuses.PendingQr when !IsStalePendingQr(numero) => "Esperando escaneo",
             _ when !string.IsNullOrWhiteSpace(numero.WebLastError) => "Error",
             _ => "Desconectado"
         };
+
+    /// <summary>
+    /// IniciarNuevoWhatsAppBusinessAsync nombra los números nuevos "WhatsApp Business {N}" como
+    /// placeholder hasta que el cliente los renombre a mano. Si nunca lo hicieron pero ya tenemos el
+    /// teléfono real (WebPhoneNumber, llega de WhatsApp al conectar), mostrar ese teléfono en vez del
+    /// nombre genérico -- nunca se inventa un nombre, sólo se prioriza un dato real ya disponible.
+    /// </summary>
+    private static bool IsGenericNumeroName(string? nombre)
+        => System.Text.RegularExpressions.Regex.IsMatch((nombre ?? string.Empty).Trim(), @"^WhatsApp Business \d+$");
+
+    private static string GetNumeroDisplayName(ConversacionWhatsAppNumeroDto numero)
+    {
+        if (!IsGenericNumeroName(numero.Nombre))
+            return string.IsNullOrWhiteSpace(numero.Nombre) ? "Número sin nombre" : numero.Nombre;
+
+        return !string.IsNullOrWhiteSpace(numero.WebPhoneNumber) ? numero.WebPhoneNumber : numero.Nombre;
+    }
 
     private static string FormatPairingCodeForDisplay(string? code)
     {

@@ -121,13 +121,17 @@
     gap: var(--alfa-space-8, 8px);
 }
 
+/* Antes era un grid de 2 columnas con la ayuda como sidebar fijo (280-340px) -- con la ayuda
+   colapsada por defecto, esa columna quedaba prácticamente vacía en toda su altura (el grid la
+   estira aunque su contenido real sea un solo <summary>). Ahora la ayuda vive como último item
+   dentro de .wa-panel (ver Razor), así que .wa-layout es una sola columna cómoda, sin espacio
+   muerto reservado. */
 .wa-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+    display: flex;
+    flex-direction: column;
     gap: var(--alfa-space-16, 16px);
-    align-items: start;
     width: 100%;
-    max-width: 1280px;
+    max-width: 760px;
 }
 
 .wa-panel {
@@ -142,8 +146,6 @@
     flex-direction: column;
     gap: var(--alfa-space-8, 8px);
     min-width: 0;
-    position: sticky;
-    top: 0;
 }
 
 .wa-fields {
