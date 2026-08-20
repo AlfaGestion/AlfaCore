@@ -1228,6 +1228,14 @@
     <div class="wa-layout">
             <section class="wa-panel">
 
+                @if (PairingBusy)
+                {
+                    <div class="wa-pairing wa-pairing--updating" role="status" aria-live="polite">
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span class="wa-field-note">Conectando WhatsApp Web... puede tardar hasta 20 segundos. No cierres ni recargues esta página, ni vuelvas a tocar "Conectar" mientras tanto.</span>
+                    </div>
+                }
+
                 @if (_numeros.Count == 0)
                 {
                     <div class="wa-empty-connect">

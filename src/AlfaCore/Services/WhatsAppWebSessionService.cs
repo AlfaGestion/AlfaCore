@@ -1,4 +1,5 @@
 using AlfaCore.Models;
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
@@ -20,62 +21,94 @@ public sealed class WhatsAppWebSessionService(
     private const string ResultsDirName = "results";
     private const string InboxDirName = "inbox";
 
+    /// <summary>
+    /// Evita que dos clicks en "Conectar WhatsApp" para el mismo número (doble click, F5 durante la
+    /// espera de 20s, o dos pestañas del navegador) disparen dos procesos Node concurrentes -- cada
+    /// intento que no llegaba a persistirse a tiempo generaba un WebInstanceName nuevo y dejaba el
+    /// proceso Node anterior corriendo de fondo sin que nada lo mate (huérfano). Clave compuesta por
+    /// BaseId porque IdNumero no es único entre bases distintas (una sola instancia de AlfaCore
+    /// atiende varias bases).
+    /// </summary>
+    private static readonly ConcurrentDictionary<(int BaseId, int IdNumero), byte> StartInProgress = new();
+
     public async Task<ConversacionWhatsAppNumeroDto> StartSessionAsync(int idNumero, bool includeTextCode, CancellationToken ct = default)
     {
-        var numero = await GetNumeroAsync(idNumero, ct);
-        EnsureWorkerFilesExist();
-
-        if (string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase)
-            && includeTextCode
-            && string.IsNullOrWhiteSpace(numero.WebPhoneNumber))
+        var baseId = sessionService.GetActiveSession()?.BaseId ?? 0;
+        var guardKey = (baseId, idNumero);
+        if (!StartInProgress.TryAdd(guardKey, 0))
         {
-            throw new InvalidOperationException("Para iniciar por número tenés que cargar primero el teléfono de la sesión Web.");
+            throw new InvalidOperationException(
+                "Ya hay una conexión de WhatsApp Web en curso para este número. Esperá a que termine antes de volver a intentarlo.");
         }
-
-        if (string.IsNullOrWhiteSpace(numero.WebInstanceName))
-            numero.WebInstanceName = $"waweb-{Guid.NewGuid():N}"[..14];
-
-        var sessionDir = EnsureSessionDirectory(numero.WebInstanceName);
-        var statusFile = Path.Combine(sessionDir, StatusFileName);
-        StopProcessIfRunning(statusFile);
-        TryDeleteFile(statusFile);
-        PrepareSessionDirectory(sessionDir, clearAuth: true);
-
-        var args = BuildStartArguments(sessionDir, numero.WebSessionMode, numero.WebPhoneNumber, includeTextCode, numero.WebInstanceName);
-        var startInfo = new ProcessStartInfo
-        {
-            FileName = "node",
-            Arguments = args,
-            WorkingDirectory = GetWorkerDirectory(),
-            UseShellExecute = true,
-            CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden
-        };
 
         try
         {
-            Process.Start(startInfo);
+            var numero = await GetNumeroAsync(idNumero, ct);
+            EnsureWorkerFilesExist();
+
+            if (string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase)
+                && includeTextCode
+                && string.IsNullOrWhiteSpace(numero.WebPhoneNumber))
+            {
+                throw new InvalidOperationException("Para iniciar por número tenés que cargar primero el teléfono de la sesión Web.");
+            }
+
+            if (string.IsNullOrWhiteSpace(numero.WebInstanceName))
+                numero.WebInstanceName = $"waweb-{Guid.NewGuid():N}"[..14];
+
+            var sessionDir = EnsureSessionDirectory(numero.WebInstanceName);
+            var statusFile = Path.Combine(sessionDir, StatusFileName);
+            StopProcessIfRunning(statusFile);
+            TryDeleteFile(statusFile);
+            PrepareSessionDirectory(sessionDir, clearAuth: true);
+
+            // Persistimos el WebInstanceName ANTES de arrancar el proceso: si este intento se cae por
+            // timeout (ver WaitForStatusAndPersistAsync) sin haber escrito status.json, el próximo
+            // intento reencuentra este mismo WebInstanceName en vez de generar uno nuevo -- así
+            // StopProcessIfRunning() de la próxima corrida puede matar el proceso viejo en vez de
+            // dejarlo huérfano corriendo indefinidamente.
+            await configService.SaveWhatsAppNumeroWebSessionAsync(numero, ct);
+
+            var args = BuildStartArguments(sessionDir, numero.WebSessionMode, numero.WebPhoneNumber, includeTextCode, numero.WebInstanceName);
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "node",
+                Arguments = args,
+                WorkingDirectory = GetWorkerDirectory(),
+                UseShellExecute = true,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden
+            };
+
+            try
+            {
+                Process.Start(startInfo);
+            }
+            catch (System.ComponentModel.Win32Exception ex)
+            {
+                throw new InvalidOperationException(
+                    "No se pudo iniciar el proceso de WhatsApp Web: no se encontró \"node\" en este servidor. " +
+                    "Instalá Node.js y ejecutá \"npm install\" en Node/WhatsAppWebWorker antes de conectar un número. " +
+                    $"Detalle técnico: {ex.Message}");
+            }
+
+            var updated = await WaitForStatusAndPersistAsync(numero, statusFile, requireInteractiveArtifacts: true, ct);
+
+            await appEvents.LogAuditAsync(
+                "Conversaciones",
+                "StartWhatsAppWebSession",
+                "CONV_WHATSAPP_NUMEROS",
+                idNumero.ToString(CultureInfo.InvariantCulture),
+                "Sesión de WhatsApp Web iniciada.",
+                new { idNumero, updated.WebInstanceName, updated.WebSessionMode, includeTextCode, updated.WebRuntimeState },
+                ct);
+
+            return updated;
         }
-        catch (System.ComponentModel.Win32Exception ex)
+        finally
         {
-            throw new InvalidOperationException(
-                "No se pudo iniciar el proceso de WhatsApp Web: no se encontró \"node\" en este servidor. " +
-                "Instalá Node.js y ejecutá \"npm install\" en Node/WhatsAppWebWorker antes de conectar un número. " +
-                $"Detalle técnico: {ex.Message}");
+            StartInProgress.TryRemove(guardKey, out _);
         }
-
-        var updated = await WaitForStatusAndPersistAsync(numero, statusFile, requireInteractiveArtifacts: true, ct);
-
-        await appEvents.LogAuditAsync(
-            "Conversaciones",
-            "StartWhatsAppWebSession",
-            "CONV_WHATSAPP_NUMEROS",
-            idNumero.ToString(CultureInfo.InvariantCulture),
-            "Sesión de WhatsApp Web iniciada.",
-            new { idNumero, updated.WebInstanceName, updated.WebSessionMode, includeTextCode, updated.WebRuntimeState },
-            ct);
-
-        return updated;
     }
 
     public async Task<ConversacionWhatsAppNumeroDto> RefreshSessionAsync(int idNumero, CancellationToken ct = default)
