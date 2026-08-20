@@ -3,7 +3,7 @@ REM Sube al FTP de AlfaNet las imagenes de una carpeta local que esten
 REM nombradas por codigo de articulo (ej: 526.jpg), a la carpeta
 REM Clientes/IDCLIENTE/IDBASE/imagenes. Tambien sube la subcarpeta
 REM "thumbs4" (miniaturas, mismo nombre de archivo que el original) a
-REM Clientes/IDCLIENTE/IDBASE/thumbs4. Ignora cualquier archivo cuyo
+REM Clientes/IDCLIENTE/IDBASE/imagenes/thumbs4. Ignora cualquier archivo cuyo
 REM nombre empiece con "TMP_" (fotos temporales sin relacionar a un
 REM articulo).
 REM
@@ -69,7 +69,7 @@ call :SubirCarpeta "%CARPETA_ORIGEN%" "%FTP_CARPETA_BASE%/imagenes" "originales"
 echo.
 
 if exist "%CARPETA_THUMBS%\*" (
-    call :SubirCarpeta "%CARPETA_THUMBS%" "%FTP_CARPETA_BASE%/thumbs4" "miniaturas (thumbs4)"
+    call :SubirCarpeta "%CARPETA_THUMBS%" "%FTP_CARPETA_BASE%/imagenes/thumbs4" "miniaturas (thumbs4)"
 ) else (
     echo No se encontro la carpeta de miniaturas: %CARPETA_THUMBS%
     echo Se omite la subida de thumbs4.

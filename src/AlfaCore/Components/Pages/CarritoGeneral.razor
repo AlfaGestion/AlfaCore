@@ -97,7 +97,7 @@
                 <div class="col-12 col-lg-6 col-xxl-4">
                     <div class="field">
                         <label>Lista de artículos</label>
-                        <select @bind="_idListaArticulos" @bind:after="CloseLookupArticulosAsync">
+                        <select @key="_listaArticulosSelectToken" value="@_idListaArticulos" @onchange="e => OnListaArticulosChangedAsync((string?)e.Value)">
                             <option value="">Seleccionar...</option>
                             @foreach (var lista in _listasPrecio)
                             {
@@ -267,6 +267,7 @@
     private bool _activo = true;
     private string _origenArticulos = CarritoComprasArticuloOrigenKeys.Maestro;
     private string _idListaArticulos = string.Empty;
+    private int _listaArticulosSelectToken;
     private string _origenPrecios = CarritoComprasPrecioOrigenKeys.SegunCliente;
     private string _idListaPrecios = string.Empty;
     private int? _clasePrecio;
@@ -369,14 +370,85 @@
         }
     }
 
-    private Task SelectOrigenArticulosAsync(string origen)
+    private async Task SelectOrigenArticulosAsync(string origen)
     {
+        if (string.Equals(origen, _origenArticulos, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (_articulosSeleccionados.Count > 0)
+        {
+            var etiquetaActual = DescribirOrigenArticulos(_origenArticulos, _idListaArticulos);
+            var etiquetaNueva = string.Equals(origen, CarritoComprasArticuloOrigenKeys.Lista, StringComparison.OrdinalIgnoreCase)
+                ? "una lista de precios"
+                : "el maestro de artículos";
+
+            var confirm = await DialogSvc.ConfirmAsync(
+                "Cambiar origen de artículos",
+                $"El carrito actualmente usa {etiquetaActual}. Si cambiás a {etiquetaNueva}, se reemplazarán los artículos actuales por los del nuevo origen.\n\n¿Querés continuar?",
+                "Cambiar origen",
+                "Cancelar");
+
+            if (!confirm)
+                return;
+
+            _articulosSeleccionados.Clear();
+        }
+
         _origenArticulos = origen;
         if (!string.Equals(origen, CarritoComprasArticuloOrigenKeys.Lista, StringComparison.OrdinalIgnoreCase))
             _idListaArticulos = string.Empty;
 
+        _listaArticulosSelectToken++;
         _showLookupModal = false;
-        return Task.CompletedTask;
+    }
+
+    private async Task OnListaArticulosChangedAsync(string? nuevaListaRaw)
+    {
+        var nuevaLista = (nuevaListaRaw ?? string.Empty).Trim();
+        if (string.Equals(nuevaLista, _idListaArticulos, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (_articulosSeleccionados.Count > 0 && !string.IsNullOrWhiteSpace(_idListaArticulos))
+        {
+            var nombreActual = GetNombreLista(_idListaArticulos);
+            var nombreNueva = string.IsNullOrWhiteSpace(nuevaLista) ? "(sin seleccionar)" : GetNombreLista(nuevaLista);
+
+            var confirm = await DialogSvc.ConfirmAsync(
+                "Cambiar lista de artículos",
+                $"El carrito actualmente usa la lista {nombreActual}. Si cambiás a {nombreNueva}, se reemplazarán los artículos actuales por los de la nueva lista.\n\n¿Querés continuar?",
+                "Cambiar lista",
+                "Cancelar");
+
+            if (!confirm)
+            {
+                // El <select> nativo ya quedó visualmente en la opción elegida por el usuario;
+                // como _idListaArticulos no cambió, forzamos un remount con @key para que vuelva
+                // a mostrar el valor real (un re-render normal no alcanza: Blazor no reescribe el
+                // atributo value si el binding no cambió).
+                _listaArticulosSelectToken++;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            _articulosSeleccionados.Clear();
+        }
+
+        _idListaArticulos = nuevaLista;
+        _showLookupModal = false;
+    }
+
+    private string DescribirOrigenArticulos(string origen, string idLista)
+    {
+        if (string.Equals(origen, CarritoComprasArticuloOrigenKeys.Lista, StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(idLista) ? "una lista de precios" : $"la lista {GetNombreLista(idLista)}";
+
+        return "el maestro de artículos";
+    }
+
+    private string GetNombreLista(string idLista)
+    {
+        var lista = _listasPrecio.FirstOrDefault(x => string.Equals(x.IdLista, idLista, StringComparison.OrdinalIgnoreCase));
+        return lista is null ? idLista : $"{lista.Nombre} ({lista.IdLista})";
     }
 
     private async Task SelectOrigenPreciosAsync(string origen)

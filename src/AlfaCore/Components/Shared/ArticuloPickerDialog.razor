@@ -90,6 +90,7 @@
                                 <th>Descripción</th>
                                 <th>Marca</th>
                                 <th>Rubro</th>
+                                <th>Familia</th>
                                 <th class="text-end">Precio</th>
                             </tr>
                         </thead>
@@ -122,6 +123,7 @@
                                     </td>
                                     <td>@Display(item.Marca)</td>
                                     <td>@Display(item.Rubro)</td>
+                                    <td>@Display(item.Familia)</td>
                                     <td class="text-end">@Money(item.Precio)</td>
                                 </tr>
                             }
@@ -129,8 +131,11 @@
                     </table>
                 </div>
             }
-
-            <footer class="alfa-data-view-footer articulo-picker__footer">
+        }
+    </ChildContent>
+    <Footer>
+        <div class="articulo-picker__dialog-footer">
+            <div class="articulo-picker__dialog-footer-row articulo-picker__dialog-footer-row--meta">
                 <span class="alfa-data-view-footer__summary">@GetFooterText()</span>
                 <div class="alfa-data-view-footer__controls">
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-chevron-left"
@@ -139,19 +144,19 @@
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-chevron-right"
                                 Disabled="@(_loading || _pageNumber >= _totalPages)" OnClick="() => CambiarPaginaAsync(_pageNumber + 1)" />
                 </div>
-            </footer>
-        }
-    </ChildContent>
-    <Footer>
-        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_loading" OnClick="RequestCloseAsync">
-            Cancelar
-        </AlfaButton>
-        @if (string.IsNullOrWhiteSpace(BloqueoMensaje))
-        {
-            <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_loading || _seleccionados.Count == 0)" OnClick="AgregarSeleccionadosAsync">
-                Agregar seleccionados (@_seleccionados.Count)
-            </AlfaButton>
-        }
+            </div>
+            <div class="articulo-picker__dialog-footer-row articulo-picker__dialog-footer-row--actions">
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_loading" OnClick="RequestCloseAsync">
+                    Cancelar
+                </AlfaButton>
+                @if (string.IsNullOrWhiteSpace(BloqueoMensaje))
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_loading || _seleccionados.Count == 0)" OnClick="AgregarSeleccionadosAsync">
+                        Agregar seleccionados (@_seleccionados.Count)
+                    </AlfaButton>
+                }
+            </div>
+        </div>
     </Footer>
 </AlfaDialog>
 
