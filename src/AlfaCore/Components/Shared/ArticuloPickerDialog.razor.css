@@ -1,0 +1,193 @@
+/* Picker de artículos (Editar Catálogo / Editar Carrito). AlfaDesign oficial: reutiliza AlfaDialog
+   como shell (backdrop, header, footer, foco, Escape) y los tokens --alfa-* estándar — esta
+   pantalla es administrativa interna, no la variante navy del Portal Cliente. */
+
+::deep .articulo-picker.alfa-dialog {
+    width: min(1360px, 97vw);
+    max-height: min(880px, calc(100dvh - 32px));
+}
+
+.articulo-picker__filters {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(130px, 1fr)) minmax(110px, auto);
+    gap: var(--alfa-space-12);
+    align-items: end;
+    margin-bottom: var(--alfa-space-16);
+}
+
+/* AlfaInput/AlfaSelect/AlfaButton son componentes hijos: Class="..." termina en su propio
+   elemento raíz, con su propio scope de aislamiento — hace falta ::deep para alcanzarlo. */
+.articulo-picker__filters ::deep .articulo-picker__filter-submit {
+    height: var(--alfa-control-md);
+}
+
+/* Tabla HTML nativa en vez de CSS Grid: el navegador reserva sola el gutter del scrollbar
+   vertical y no se solapa con la última columna, y las columnas se ajustan a su contenido
+   en vez de depender de tracks en px fijos que se rompían en anchos angostos. */
+.articulo-picker__table-wrap {
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    overflow: auto;
+    max-height: 480px;
+}
+
+.articulo-picker__table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.articulo-picker__table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--alfa-bg-table-header);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+    font-weight: 700;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+    text-align: left;
+    padding: 8px var(--alfa-space-12);
+    white-space: nowrap;
+}
+
+.articulo-picker__table th.articulo-picker__col-check,
+.articulo-picker__table td.articulo-picker__col-check {
+    width: 32px;
+}
+
+.articulo-picker__table th.articulo-picker__col-thumb,
+.articulo-picker__table td.articulo-picker__col-thumb {
+    width: 44px;
+}
+
+.articulo-picker__table th:nth-child(3),
+.articulo-picker__table td:nth-child(3) {
+    width: 90px;
+}
+
+.articulo-picker__table th:nth-child(5),
+.articulo-picker__table td:nth-child(5) {
+    width: 140px;
+}
+
+.articulo-picker__table th:nth-child(6),
+.articulo-picker__table td:nth-child(6) {
+    width: 140px;
+}
+
+.articulo-picker__table th:nth-child(7),
+.articulo-picker__table td:nth-child(7) {
+    width: 100px;
+}
+
+.articulo-picker__table td {
+    padding: 8px var(--alfa-space-12);
+    vertical-align: middle;
+    overflow-wrap: anywhere;
+}
+
+.articulo-picker__row {
+    border-top: 1px solid var(--alfa-border-subtle);
+    cursor: pointer;
+    transition: background-color 120ms ease;
+}
+
+.articulo-picker__row:nth-child(even) {
+    background: var(--alfa-bg-row-alt);
+}
+
+.articulo-picker__row:hover {
+    background: var(--alfa-bg-row-hover);
+}
+
+.articulo-picker__col-check,
+.articulo-picker__col-thumb {
+    text-align: center;
+}
+
+.articulo-picker__col-check ::deep .alfa-checkbox {
+    margin: 0 auto;
+}
+
+.articulo-picker__thumb {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    object-fit: contain;
+    background: var(--alfa-bg-surface-raised);
+    border: 1px solid var(--alfa-border-subtle);
+}
+
+.articulo-picker__thumb--fallback {
+    display: grid;
+    place-items: center;
+    font-size: 10px;
+    font-weight: 800;
+    color: var(--alfa-text-secondary);
+    letter-spacing: .05em;
+}
+
+.articulo-picker__desc {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.articulo-picker__presentation {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+}
+
+.articulo-picker__loading-state,
+.articulo-picker__empty-panel {
+    padding: var(--alfa-space-24);
+    display: grid;
+    place-items: center;
+}
+
+.articulo-picker__footer {
+    margin-top: var(--alfa-space-12);
+}
+
+.articulo-picker__page-text {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    white-space: nowrap;
+}
+
+@media (max-width: 860px) {
+    .articulo-picker__filters {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .articulo-picker__filters ::deep .articulo-picker__filter--texto {
+        grid-column: 1 / -1;
+    }
+
+    .articulo-picker__filters ::deep .articulo-picker__filter-submit {
+        grid-column: 1 / -1;
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 640px) {
+    .articulo-picker__filters {
+        grid-template-columns: 1fr;
+    }
+
+    /* En mobile ocultamos Código/Marca/Rubro y dejamos Descripción + Precio: la tabla
+       ya no depende de tracks fijos, así que basta con esconder columnas por posición. */
+    .articulo-picker__table th:nth-child(3),
+    .articulo-picker__table td:nth-child(3),
+    .articulo-picker__table th:nth-child(5),
+    .articulo-picker__table td:nth-child(5),
+    .articulo-picker__table th:nth-child(6),
+    .articulo-picker__table td:nth-child(6) {
+        display: none;
+    }
+}

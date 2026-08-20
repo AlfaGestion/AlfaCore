@@ -1,0 +1,430 @@
+@using AlfaCore.Models
+@using AlfaCore.Components.Shared.AlfaDesign
+@inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+
+@* Picker de artículos compartido por Editar Catálogo y Editar Carrito general: una sola
+   implementación (búsqueda paginada real, filtros, selección multi-página, alta masiva) en vez
+   de mantener dos copias casi idénticas. *@
+
+<AlfaDialog Open="@Open"
+            Title="@Titulo"
+            Description="@Subtitulo"
+            Size="AlfaDialogSize.Lg"
+            Loading="@_loading"
+            ErrorMessage="@_feedback?.Message"
+            Class="articulo-picker"
+            OnClose="RequestCloseAsync">
+    <ChildContent>
+        @if (!string.IsNullOrWhiteSpace(BloqueoMensaje))
+        {
+            <div class="articulo-picker__empty-panel">
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData" Title="@BloqueoMensaje" />
+            </div>
+        }
+        else
+        {
+            <div class="articulo-picker__filters">
+                <AlfaInput Label="Buscar"
+                           Type="search"
+                           Value="@_texto"
+                           ValueChanged="v => _texto = v ?? string.Empty"
+                           Placeholder="Código, descripción, marca o rubro"
+                           Disabled="@_loading"
+                           Class="articulo-picker__filter articulo-picker__filter--texto" />
+                <AlfaSelect Label="Rubro"
+                            Value="@_idRubro"
+                            ValueChanged="SetRubroAsync"
+                            Options="@_rubroOptions"
+                            Placeholder="Todos"
+                            Disabled="@_loading"
+                            Class="articulo-picker__filter" />
+                <AlfaSelect Label="Familia"
+                            Value="@_idFamilia"
+                            ValueChanged="SetFamiliaAsync"
+                            Options="@_familiaOptions"
+                            Placeholder="Todas"
+                            Disabled="@_loading"
+                            Class="articulo-picker__filter" />
+                <AlfaSelect Label="Marca"
+                            Value="@_idTipo"
+                            ValueChanged="SetMarcaAsync"
+                            Options="@_marcaOptions"
+                            Placeholder="Todas"
+                            Disabled="@_loading"
+                            Class="articulo-picker__filter" />
+                <AlfaButton Variant="AlfaButtonVariant.Primary"
+                            Icon="bi bi-search"
+                            Loading="@_loading"
+                            Class="articulo-picker__filter-submit"
+                            OnClick="() => BuscarAsync(resetPage: true)">
+                    Buscar
+                </AlfaButton>
+            </div>
+
+            @if (_loading && _resultados.Count == 0)
+            {
+                <div class="articulo-picker__loading-state">
+                    <p class="text-muted">Consultando artículos...</p>
+                </div>
+            }
+            else if (_resultados.Count == 0)
+            {
+                <div class="articulo-picker__empty-panel">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="No encontramos artículos con los filtros actuales." />
+                </div>
+            }
+            else
+            {
+                <div class="articulo-picker__table-wrap">
+                    <table class="articulo-picker__table">
+                        <thead>
+                            <tr>
+                                <th class="articulo-picker__col-check">
+                                    <AlfaCheckbox Value="@HeaderCheckboxState"
+                                                  ValueChanged="_ => ToggleSeleccionarPagina()"
+                                                  Disabled="@(_loading || _resultados.Count == 0)" />
+                                </th>
+                                <th class="articulo-picker__col-thumb"></th>
+                                <th>Código</th>
+                                <th>Descripción</th>
+                                <th>Marca</th>
+                                <th>Rubro</th>
+                                <th class="text-end">Precio</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in _resultados)
+                            {
+                                <tr class="articulo-picker__row" @onclick="() => ToggleSeleccion(item.IdArticulo)">
+                                    <td class="articulo-picker__col-check" @onclick:stopPropagation="true">
+                                        <AlfaCheckbox Value="@_seleccionados.Contains(item.IdArticulo)"
+                                                      ValueChanged="_ => ToggleSeleccion(item.IdArticulo)" />
+                                    </td>
+                                    <td class="articulo-picker__col-thumb">
+                                        @if (ShouldShowImage(item.IdArticulo))
+                                        {
+                                            <img class="articulo-picker__thumb" src="@ImageUrlResolver!(item.IdArticulo)" alt="@item.DescripcionArticulo" loading="lazy"
+                                                 @onerror="() => HandleImageError(item.IdArticulo)" />
+                                        }
+                                        else
+                                        {
+                                            <div class="articulo-picker__thumb articulo-picker__thumb--fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                        }
+                                    </td>
+                                    <td><strong>@item.IdArticulo</strong></td>
+                                    <td class="articulo-picker__desc">
+                                        @item.DescripcionArticulo
+                                        @if (!string.IsNullOrWhiteSpace(item.Presentacion))
+                                        {
+                                            <span class="articulo-picker__presentation">@item.Presentacion</span>
+                                        }
+                                    </td>
+                                    <td>@Display(item.Marca)</td>
+                                    <td>@Display(item.Rubro)</td>
+                                    <td class="text-end">@Money(item.Precio)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <footer class="alfa-data-view-footer articulo-picker__footer">
+                <span class="alfa-data-view-footer__summary">@GetFooterText()</span>
+                <div class="alfa-data-view-footer__controls">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-chevron-left"
+                                Disabled="@(_loading || _pageNumber <= 1)" OnClick="() => CambiarPaginaAsync(_pageNumber - 1)" />
+                    <span class="articulo-picker__page-text">Página @_pageNumber de @Math.Max(_totalPages, 1)</span>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-chevron-right"
+                                Disabled="@(_loading || _pageNumber >= _totalPages)" OnClick="() => CambiarPaginaAsync(_pageNumber + 1)" />
+                </div>
+            </footer>
+        }
+    </ChildContent>
+    <Footer>
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_loading" OnClick="RequestCloseAsync">
+            Cancelar
+        </AlfaButton>
+        @if (string.IsNullOrWhiteSpace(BloqueoMensaje))
+        {
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_loading || _seleccionados.Count == 0)" OnClick="AgregarSeleccionadosAsync">
+                Agregar seleccionados (@_seleccionados.Count)
+            </AlfaButton>
+        }
+    </Footer>
+</AlfaDialog>
+
+@code {
+    private const int PageSize = 50;
+
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string Titulo { get; set; } = "Consultar artículos";
+    [Parameter] public string? Subtitulo { get; set; }
+    [Parameter] public string? BloqueoMensaje { get; set; }
+    [Parameter] public string Origen { get; set; } = string.Empty;
+    [Parameter] public string? IdLista { get; set; }
+    [Parameter] public string? IdWeb { get; set; }
+    [Parameter] public IReadOnlyCollection<string> ExcludedIds { get; set; } = [];
+    [Parameter] public Func<string, string?>? ImageUrlResolver { get; set; }
+    [Parameter] public EventCallback<IReadOnlyList<CatalogosArticuloBusquedaDto>> OnAgregarSeleccionados { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool _wasOpen;
+    private bool _optionsLoaded;
+    private bool _loading;
+    private string _texto = string.Empty;
+    private string _idRubro = string.Empty;
+    private string _idFamilia = string.Empty;
+    private string _idTipo = string.Empty;
+    private int _pageNumber = 1;
+    private int _totalPages;
+    private int _total;
+    private AppUiMessage? _feedback;
+
+    private readonly List<CatalogosArticuloBusquedaDto> _resultados = [];
+    private readonly HashSet<string> _seleccionados = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CatalogosArticuloBusquedaDto> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
+
+    private IReadOnlyList<AlfaSelectOption> _rubroOptions = [];
+    private IReadOnlyList<AlfaSelectOption> _familiaOptions = [];
+    private IReadOnlyList<AlfaSelectOption> _marcaOptions = [];
+
+    private bool? HeaderCheckboxState
+    {
+        get
+        {
+            if (_resultados.Count == 0)
+                return false;
+
+            var seleccionadosEnPagina = _resultados.Count(r => _seleccionados.Contains(r.IdArticulo));
+            if (seleccionadosEnPagina == 0)
+                return false;
+
+            return seleccionadosEnPagina == _resultados.Count ? true : null;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !_wasOpen)
+        {
+            _wasOpen = true;
+            ResetSession();
+
+            if (!_optionsLoaded)
+            {
+                _optionsLoaded = true;
+                await CargarOpcionesAsync();
+            }
+
+            if (string.IsNullOrWhiteSpace(BloqueoMensaje))
+                await BuscarAsync(resetPage: true);
+        }
+        else if (!Open)
+        {
+            _wasOpen = false;
+        }
+    }
+
+    private void ResetSession()
+    {
+        _texto = string.Empty;
+        _idRubro = string.Empty;
+        _idFamilia = string.Empty;
+        _idTipo = string.Empty;
+        _pageNumber = 1;
+        _totalPages = 0;
+        _total = 0;
+        _feedback = null;
+        _resultados.Clear();
+        _seleccionados.Clear();
+        _cache.Clear();
+        _imageFallbacks.Clear();
+    }
+
+    private async Task CargarOpcionesAsync()
+    {
+        var rubros = await UiOps.RunAsync(() => CatalogosSvc.GetRubrosArticuloAsync(), "No se pudieron cargar los rubros.");
+        _rubroOptions = rubros.Success && rubros.Value is not null
+            ? rubros.Value.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()
+            : [];
+
+        var familias = await UiOps.RunAsync(() => CatalogosSvc.GetFamiliasArticuloAsync(), "No se pudieron cargar las familias.");
+        _familiaOptions = familias.Success && familias.Value is not null
+            ? familias.Value.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()
+            : [];
+
+        var marcas = await UiOps.RunAsync(() => CatalogosSvc.GetMarcasArticuloAsync(), "No se pudieron cargar las marcas.");
+        _marcaOptions = marcas.Success && marcas.Value is not null
+            ? marcas.Value.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()
+            : [];
+    }
+
+    private Task SetRubroAsync(string? value)
+    {
+        _idRubro = value ?? string.Empty;
+        return BuscarAsync(resetPage: true);
+    }
+
+    private Task SetFamiliaAsync(string? value)
+    {
+        _idFamilia = value ?? string.Empty;
+        return BuscarAsync(resetPage: true);
+    }
+
+    private Task SetMarcaAsync(string? value)
+    {
+        _idTipo = value ?? string.Empty;
+        return BuscarAsync(resetPage: true);
+    }
+
+    private async Task BuscarAsync(bool resetPage, IReadOnlyCollection<string>? extraExclude = null)
+    {
+        _feedback = null;
+        if (resetPage)
+            _pageNumber = 1;
+
+        _loading = true;
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        try
+        {
+            var excluded = extraExclude is { Count: > 0 }
+                ? ExcludedIds.Concat(extraExclude).Distinct(StringComparer.OrdinalIgnoreCase).ToList()
+                : ExcludedIds;
+
+            var result = await UiOps.RunAsync(() => CatalogosSvc.SearchArticulosAsync(new CatalogosArticuloBusquedaFiltersDto
+            {
+                Texto = _texto,
+                IdLista = IdLista ?? string.Empty,
+                Origen = Origen,
+                IdRubro = _idRubro,
+                IdFamilia = _idFamilia,
+                IdTipo = _idTipo,
+                PageNumber = _pageNumber,
+                PageSize = PageSize,
+                IdWeb = IdWeb,
+                ExcludedIds = excluded
+            }), "No se pudieron cargar los artículos.");
+
+            if (!result.Success || result.Value is null)
+            {
+                _feedback = result.Feedback;
+                return;
+            }
+
+            _totalPages = result.Value.TotalPages;
+            _total = result.Value.Total;
+
+            // Si tras agregar/filtrar la página quedó fuera de rango, navega a la última válida
+            // en vez de mostrar una página vacía.
+            if (result.Value.Items.Count == 0 && _total > 0 && _pageNumber > _totalPages)
+            {
+                _pageNumber = Math.Max(1, _totalPages);
+                await BuscarAsync(resetPage: false, extraExclude);
+                return;
+            }
+
+            _pageNumber = result.Value.PageNumber;
+            _resultados.Clear();
+            _resultados.AddRange(result.Value.Items);
+            foreach (var item in result.Value.Items)
+                _cache[item.IdArticulo] = item;
+        }
+        finally
+        {
+            _loading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private Task CambiarPaginaAsync(int page)
+    {
+        if (page < 1 || page > _totalPages || _loading)
+            return Task.CompletedTask;
+
+        _pageNumber = page;
+        return BuscarAsync(resetPage: false);
+    }
+
+    private void ToggleSeleccion(string idArticulo)
+    {
+        if (_seleccionados.Contains(idArticulo))
+            _seleccionados.Remove(idArticulo);
+        else
+            _seleccionados.Add(idArticulo);
+    }
+
+    private void ToggleSeleccionarPagina()
+    {
+        var todasSeleccionadas = _resultados.Count > 0 && _resultados.All(r => _seleccionados.Contains(r.IdArticulo));
+
+        foreach (var item in _resultados)
+        {
+            if (todasSeleccionadas)
+                _seleccionados.Remove(item.IdArticulo);
+            else
+                _seleccionados.Add(item.IdArticulo);
+        }
+    }
+
+    private async Task AgregarSeleccionadosAsync()
+    {
+        var items = _seleccionados
+            .Select(id => _cache.TryGetValue(id, out var value) ? value : null)
+            .Where(item => item is not null)
+            .Select(item => item!)
+            .ToList();
+
+        if (items.Count == 0)
+            return;
+
+        await OnAgregarSeleccionados.InvokeAsync(items);
+
+        var justAddedIds = items.Select(i => i.IdArticulo).ToList();
+        _seleccionados.Clear();
+        await BuscarAsync(resetPage: false, justAddedIds);
+    }
+
+    private Task RequestCloseAsync()
+        => _loading ? Task.CompletedTask : OnClose.InvokeAsync();
+
+    private bool ShouldShowImage(string idArticulo)
+        => !_imageFallbacks.Contains(idArticulo) && !string.IsNullOrWhiteSpace(ImageUrlResolver?.Invoke(idArticulo));
+
+    private void HandleImageError(string idArticulo)
+    {
+        if (!string.IsNullOrWhiteSpace(idArticulo))
+            _imageFallbacks.Add(idArticulo);
+    }
+
+    private string GetFooterText()
+    {
+        var baseText = $"{_total} disponible{(_total == 1 ? string.Empty : "s")} · Página {_pageNumber} de {Math.Max(_totalPages, 1)}";
+        return _seleccionados.Count > 0
+            ? $"{baseText} · {_seleccionados.Count} seleccionado{(_seleccionados.Count == 1 ? string.Empty : "s")}"
+            : baseText;
+    }
+
+    private static string Display(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
+
+    private static string Money(decimal value)
+        => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static string ProductInitials(string descripcion)
+    {
+        if (string.IsNullOrWhiteSpace(descripcion))
+            return "AR";
+
+        var parts = descripcion
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(x => char.ToUpperInvariant(x[0]));
+
+        return string.Concat(parts);
+    }
+}
