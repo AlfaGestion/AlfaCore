@@ -280,7 +280,7 @@ async function processOutbox() {
           throw new Error(`Tipo de comando no soportado: ${command?.type || ""}`);
         }
 
-        const jid = toUserJid(command.phone);
+        const jid = await resolveUserJid(command.phone);
         const content = { text: String(command.text || "") };
         const options = {};
         const replyToMessageId = String(command.replyToMessageId || "").trim();
@@ -292,7 +292,8 @@ async function processOutbox() {
         await writeCommandResult({
           id: commandId,
           state: "ENVIADO",
-          externalMessageId: sent?.key?.id || ""
+          externalMessageId: sent?.key?.id || "",
+          destinationJid: jid
         });
       } catch (error) {
         await writeCommandResult({
@@ -492,6 +493,17 @@ function toUserJid(value) {
   }
 
   return `${digits}@s.whatsapp.net`;
+}
+
+async function resolveUserJid(value) {
+  const jid = toUserJid(value);
+  const matches = await sock.onWhatsApp(jid);
+  const match = Array.isArray(matches) ? matches.find((item) => item?.exists) : null;
+  if (!match?.exists) {
+    throw new Error(`El numero de destino no tiene WhatsApp o no se pudo resolver: ${jid}`);
+  }
+
+  return String(match.jid || jid);
 }
 
 async function safeUnlink(filePath) {
