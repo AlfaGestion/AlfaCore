@@ -3440,8 +3440,14 @@ public sealed class ConversacionesService(
                 || remoteJid.EndsWith("@newsletter", StringComparison.OrdinalIgnoreCase))
                 return true;
 
-            return doc.RootElement.TryGetProperty("message", out var messageElement)
-                && messageElement.TryGetProperty("protocolMessage", out _);
+            // Sin objeto "message" no hay contenido real que mostrar -- caso confirmado:
+            // messageStubType 2 ("Message absent from node", el cifrado nunca llegó). Un worker
+            // viejo (sin el filtro de worker.mjs) puede seguir escribiendo estos al inbox hasta
+            // que la sesión se reconecte; esta es la red de seguridad para esos casos.
+            if (!doc.RootElement.TryGetProperty("message", out var messageElement))
+                return true;
+
+            return messageElement.TryGetProperty("protocolMessage", out _);
         }
         catch (JsonException)
         {

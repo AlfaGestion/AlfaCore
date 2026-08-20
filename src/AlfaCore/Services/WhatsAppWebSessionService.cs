@@ -20,6 +20,7 @@ public sealed class WhatsAppWebSessionService(
     private const string OutboxDirName = "outbox";
     private const string ResultsDirName = "results";
     private const string InboxDirName = "inbox";
+    private static readonly TimeSpan WorkerHeartbeatTolerance = TimeSpan.FromSeconds(60);
 
     /// <summary>
     /// Evita que dos clicks en "Conectar WhatsApp" para el mismo número (doble click, F5 durante la
@@ -179,6 +180,8 @@ public sealed class WhatsAppWebSessionService(
         Directory.CreateDirectory(outboxDir);
         Directory.CreateDirectory(resultsDir);
 
+        await EnsureWorkerRunningForSendAsync(numero, sessionDir, ct);
+
         var commandId = Guid.NewGuid().ToString("N");
         var commandPath = Path.Combine(outboxDir, $"{commandId}.json");
         var resultPath = Path.Combine(resultsDir, $"{commandId}.json");
@@ -220,6 +223,92 @@ public sealed class WhatsAppWebSessionService(
         throw new InvalidOperationException("WhatsApp Web no respondió a tiempo al comando de envío.");
     }
 
+    private async Task EnsureWorkerRunningForSendAsync(ConversacionWhatsAppNumeroDto numero, string sessionDir, CancellationToken ct)
+    {
+        var statusFile = Path.Combine(sessionDir, StatusFileName);
+        var status = await ReadWorkerStatusAsync(statusFile, ct);
+        if (IsWorkerHealthy(status))
+            return;
+
+        if (IsWorkerProcessAlive(status))
+        {
+            MarkNumeroDisconnected(numero, status, "La sesión de WhatsApp Web no está respondiendo.");
+            await configService.SaveWhatsAppNumeroWebSessionAsync(numero, ct);
+            throw new InvalidOperationException("La sesión de WhatsApp Web no está respondiendo. Reiniciá el número desde Configuración de WhatsApp.");
+        }
+
+        var authDir = Path.Combine(sessionDir, AuthDirName);
+        if (!Directory.Exists(authDir) || !Directory.EnumerateFiles(authDir, "*.json").Any())
+        {
+            MarkNumeroDisconnected(numero, status, "La sesión de WhatsApp Web no está activa y no conserva credenciales para reconectar automáticamente.");
+            await configService.SaveWhatsAppNumeroWebSessionAsync(numero, ct);
+            throw new InvalidOperationException("La sesión de WhatsApp Web no está activa. Volvé a conectar el número desde Configuración de WhatsApp.");
+        }
+
+        TryDeleteFile(statusFile);
+        StartWorkerProcess(sessionDir, numero.WebSessionMode, numero.WebPhoneNumber, includeTextCode: false, numero.WebInstanceName);
+
+        var updated = await WaitForStatusAndPersistAsync(numero, statusFile, requireInteractiveArtifacts: false, ct);
+        if (!updated.IsWebSessionReady)
+            throw new InvalidOperationException("WhatsApp Web no quedó conectado después de reiniciar la sesión. Revisá el estado del número en Configuración de WhatsApp.");
+    }
+
+    private static async Task<WhatsAppWebWorkerStatus?> ReadWorkerStatusAsync(string statusFile, CancellationToken ct)
+    {
+        if (!File.Exists(statusFile))
+            return null;
+
+        var json = await File.ReadAllTextAsync(statusFile, ct);
+        return JsonSerializer.Deserialize<WhatsAppWebWorkerStatus>(json, JsonOptions);
+    }
+
+    private static bool IsWorkerHealthy(WhatsAppWebWorkerStatus? status)
+    {
+        if (status is null
+            || !string.Equals(status.State, "CONNECTED", StringComparison.OrdinalIgnoreCase)
+            || status.ProcessId is not > 0
+            || status.LastUpdatedAtUtc is null
+            || DateTime.UtcNow - status.LastUpdatedAtUtc.Value.ToUniversalTime() > WorkerHeartbeatTolerance)
+        {
+            return false;
+        }
+
+        try
+        {
+            using var process = Process.GetProcessById(status.ProcessId.Value);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsWorkerProcessAlive(WhatsAppWebWorkerStatus? status)
+    {
+        if (status?.ProcessId is not > 0)
+            return false;
+
+        try
+        {
+            using var process = Process.GetProcessById(status.ProcessId.Value);
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void MarkNumeroDisconnected(ConversacionWhatsAppNumeroDto numero, WhatsAppWebWorkerStatus? status, string error)
+    {
+        numero.WebSessionStatus = ConversacionWhatsAppWebSessionStatuses.Disconnected;
+        numero.WebRuntimeState = string.IsNullOrWhiteSpace(status?.State) ? "DISCONNECTED" : status.State;
+        numero.WebLastError = error;
+        numero.WebWorkerProcessId = null;
+        numero.WebRuntimeUpdatedAtUtc = DateTime.UtcNow;
+    }
+
     private async Task<ConversacionWhatsAppNumeroDto> WaitForStatusAndPersistAsync(
         ConversacionWhatsAppNumeroDto numero,
         string statusFile,
@@ -234,7 +323,7 @@ public sealed class WhatsAppWebSessionService(
             {
                 var updated = await LoadStatusAndPersistAsync(numero, statusFile, ct);
                 var hasInteractiveArtifacts = updated.HasWebPairingQr || updated.HasWebPairingCode || updated.IsWebSessionReady;
-                if (!requireInteractiveArtifacts || hasInteractiveArtifacts)
+                if (requireInteractiveArtifacts ? hasInteractiveArtifacts : updated.IsWebSessionReady)
                     return updated;
 
                 if (string.Equals(updated.WebRuntimeState, "DISCONNECTED", StringComparison.OrdinalIgnoreCase)
@@ -380,6 +469,33 @@ public sealed class WhatsAppWebSessionService(
         var workerScript = Path.Combine(workerDirectory, WorkerScriptName);
         if (!File.Exists(workerScript))
             throw new InvalidOperationException($"No existe el worker de WhatsApp Web en {workerScript}.");
+    }
+
+    private void StartWorkerProcess(string sessionDir, string mode, string phone, bool includeTextCode, string instanceName)
+    {
+        EnsureWorkerFilesExist();
+        var args = BuildStartArguments(sessionDir, mode, phone, includeTextCode, instanceName);
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "node",
+            Arguments = args,
+            WorkingDirectory = GetWorkerDirectory(),
+            UseShellExecute = true,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden
+        };
+
+        try
+        {
+            Process.Start(startInfo);
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            throw new InvalidOperationException(
+                "No se pudo iniciar el proceso de WhatsApp Web: no se encontró \"node\" en este servidor. " +
+                "Instalá Node.js y ejecutá \"npm install\" en Node/WhatsAppWebWorker antes de conectar un número. " +
+                $"Detalle técnico: {ex.Message}");
+        }
     }
 
     private static string BuildStartArguments(string sessionDir, string mode, string phone, bool includeTextCode, string instanceName)

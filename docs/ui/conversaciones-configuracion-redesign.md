@@ -835,6 +835,75 @@ Sin commit todavía. C2 sigue sin cierre final hasta validar también Status (pe
 
 ---
 
+## C2.6A — Pulido final: layout de Conversaciones + WhatsApp Business simplificado
+
+Cinco problemas reales detectados en validación visual, sobre una base ya funcional (QR, envío/recepción, ACKs). No se rediseñó la arquitectura (Settings Navigation, App Top Bar, Context Toolbar, tabs principales intactos).
+
+### 1. Espacio vacío en Conversaciones (causa raíz confirmada, no `height:100vh` a ciegas)
+
+`app.css` tiene ~27000 líneas con reglas repetidas para las mismas clases en distintos `@media`. Se usó un agente Explore para trazar la cadena completa `.conversations-layout` → `.conversations-chat-workspace` → `.conversations-chat` → `.conversations-thread-shell` (flex:1) antes de tocar nada.
+
+**Causa real**: `.conversations-page--odoo .conversations-chat-workspace` (`app.css` ~26966) es `display:grid` con `grid-template-columns` pero **sin `grid-template-rows`** — la fila implícita queda `auto` (se ajusta al contenido) en vez de estirarse al `height:100%` que el propio workspace sí tiene. Con pocos mensajes, `.conversations-chat` mide solo su contenido (header + hilo corto + composer) y el resto del alto queda vacío, mostrando el fondo oscuro de `.conversations-layout` por debajo del composer/nota interna.
+
+**Fix**: una línea, `grid-template-rows: minmax(0, 1fr) !important;` agregada a esa regla. Verificado que `.conversations-chat-workspace` es exclusiva de `Conversaciones.razor` (no la usa ninguna otra página) antes de tocar el archivo compartido.
+
+### 2. Texto faltante en burbujas (dos causas distintas, no una)
+
+Diagnosticado con SQL de solo lectura contra la base real (autorización ya vigente de fases anteriores), siguiendo el flujo pedido: DB → payload → parser.
+
+- **Mensaje entrante sin texto (real)**: el `PayloadJson` de Baileys no tenía objeto `message` en absoluto — solo `"messageStubType":2, "messageStubParameters":["Message absent from node"]`. Es WhatsApp reportando que el contenido cifrado nunca llegó (típico de `addressingMode:"lid"`). No había nada que extraer: no era CSS ni un bug de parsing de un campo equivocado. **Fix**: `worker.mjs` (`normalizeIncomingMessage`) descarta cualquier entry sin `entry.message` — mismo punto donde ya se filtraba Status/protocolMessage. Guard defensivo espejo en `ConversacionesService.IsWhatsAppWebNonConversationalEvent` para sesiones ya conectadas con worker viejo.
+- **Mensaje saliente "."**: el DB tiene literalmente un punto — la UI lo renderiza correctamente. **No es un bug**, es un mensaje real de un carácter.
+
+### 3-5. WhatsApp Business — modelo simplificado
+
+**Removido de la UI de cliente** (el campo/columna sigue existiendo en DB, sin tocar schema):
+- Checkbox "Activo" del header de la card.
+- Botón global "Guardar número" — reemplazado por "Guardar opciones" contextual dentro de "Opciones avanzadas" (mismo `SaveNumeroAsync`, sin cambios de backend).
+- "Desvincular"/"Quitar WhatsApp Web" → unificados como **"Cerrar sesión"** (mismo ícono, mismo handler `RequestStopWhatsAppWebSession`).
+- "Soporte / runtime" → **"Soporte y diagnóstico"** (mismo `<details>` colapsado por defecto, sin cambios de contenido).
+- Ayuda lateral (`<aside class="wa-help">`, columna fija de 280-340px) → movida a ser el último `<details>` dentro de `.wa-panel`. `.wa-layout` pasó de grid de 2 columnas a una sola columna (`max-width:760px`) — elimina el espacio muerto reservado permanentemente para una ayuda colapsada (confirmado en captura: rectángulo vacío a la derecha de la lista).
+- Nombres genéricos: si `Nombre` matchea el patrón `"WhatsApp Business {N}"` (placeholder de `IniciarNuevoWhatsAppBusinessAsync`) y ya hay `WebPhoneNumber` real, se muestra el teléfono en vez del nombre genérico (`GetNumeroDisplayName`). No se inventa ningún nombre; si no hay teléfono real tampoco, se mantiene el placeholder.
+
+**"Esperando escaneo" obsoleto (bug real, confirmado)**: `GetNumeroEstadoTone`/`GetNumeroEstadoLabel` leían `WebSessionStatus` directo de la DB, sin relación con si había un pairing activo en la sesión de UI actual — un `PENDING_QR` viejo (de un pairing abandonado, sin que el último poll llegara a refrescarlo) quedaba mostrando "Esperando escaneo" para siempre. **Fix**: nuevo `IsStalePendingQr(numero)` — si el estado es `PENDING_QR` pero el número no está en `_pairingFlowActiveIds` (pairing de esta sesión), se trata visualmente como Desconectado.
+
+### "Cerrar sesión" — semántica real, auditada antes de reusar
+
+`ClearWhatsAppWebPairingAsync` → `WhatsAppWebSessionSvc.StopSessionAsync` ya (desde un cambio de otra sesión, ya committeado en `main`) detiene el worker, limpia campos de pairing/runtime y **vacía `WebInstanceName`** — esto último es lo que evita que `ResolveWhatsAppDeliveryProviderForNumero` siga ruteando por Web hacia una sesión que ya no existe. No se tocó ese método.
+
+**Agregado en C2.6A**: tras un cierre exitoso, se pone `numero.Activo = false` y se persiste (reusando `SaveWhatsAppNumeroAsync`, sin migración). La lista Business (`ActiveBusinessNumeros`) filtra por `Activo` **solo en esa pantalla** — `GetWhatsAppNumeroAsync`/`GetWhatsAppNumeroByInstanceNameAsync` (envío, recepción, resolución de conversaciones históricas) **no se tocaron**, siguen viendo todas las filas sin excepción. No hay DELETE: la fila, sus conversaciones, mensajes y usuarios asociados quedan intactos — solo deja de listarse como cuenta operativa activa. Mismo mecanismo (sin feedback visible, silencioso) se dispara al abandonar un pairing nunca conectado navegando fuera de la vista (`CleanupAbandonedPairingsAsync`, nuevo) — evita que un worker de pairing abandonado quede corriendo indefinidamente y que la fila provisional quede pegada en la lista.
+
+**Diálogo de confirmación**: texto reescrito sin mencionar auth/worker/Baileys/JID — "Cerrar sesión de WhatsApp" / "\"{nombre}\" dejará de estar conectado a AlfaCore." / "Las conversaciones anteriores se conservarán."
+
+### Hallazgo colateral durante la validación (no causado por estos cambios)
+
+Al inspeccionar la base de prueba "Alberto conv" antes del fix: los números "WhatsApp Business 1" y "WhatsApp Business 2" ya tenían `Activo=0` en la base **desde antes** de este cambio (probablemente desactivados manualmente con el checkbox viejo, ya removido). Con el filtro nuevo, **van a dejar de aparecer en la lista Business** apenas se recargue la pantalla — sus filas, auth y conversaciones no se tocaron, pero visualmente desaparecen. Reportado para que no sea una sorpresa, no revertido.
+
+También se observó que "WhatsApp Business 3" tiene el estado persistido en DB como `CONNECTED`, pero su `status.json` real en disco muestra `RECONNECTING` con `"Error: Connection Failure"` (actualizado hoy) — parece un problema de conectividad transitorio que el propio `worker.mjs` reintenta solo (`scheduleReconnect`), no algo causado por estos cambios. Queda como observación, no se intervino.
+
+### Preservado, sin tocar
+
+QR lifecycle (C2.4), routing multicuenta (C2.5), filtro `status@broadcast`/`protocolMessage` (C2.5, extendido acá solo con el caso de `message` ausente), ACKs SENT/DELIVERED/READ (C2.5B), `AppContext.BaseDirectory` en las tres funciones (C2.4a/C2.5A), distribución del worker. `fromMe`/sincronización cross-device: **no tocado**, queda para la fase siguiente tal como se pidió explícitamente.
+
+### Archivos modificados en C2.6A
+
+`src/AlfaCore/wwwroot/app.css` (una regla, `grid-template-rows`), `src/AlfaCore/Node/WhatsAppWebWorker/worker.mjs` (filtro de stub sin `message`), `src/AlfaCore/Services/ConversacionesService.cs` (guard defensivo espejo), `src/AlfaCore/Components/Pages/ConversacionesConfiguracion.razor` y `.razor.css` (todo el modelo Business), este documento.
+
+### Schema
+
+**Sin migraciones.** `Activo` ya existía en `CONV_WHATSAPP_NUMEROS` y ya se leía/escribía — se cambió quién lo controla (sistema en vez de checkbox manual) y se agregó un filtro de lectura acotado a una sola pantalla.
+
+### Validación técnica ejecutada
+
+`dotnet build AlfaCore.sln --configuration Release` → 0 errores (mismos 3 warnings preexistentes). `check_catalogo.py` → 68 rutinas, 0 errores. `git diff --check` → limpio.
+
+### ⚠️ Sin validación visual/funcional en vivo — no tengo navegador en este entorno
+
+Todo lo de esta fase fue verificado por lectura de código + diagnóstico con evidencia (agente Explore para CSS, SQL de solo lectura para el mensaje sin texto) + build limpio — **no por captura de pantalla ni click real**, según las limitaciones ya documentadas en fases anteriores. Quedan pendientes las 46 validaciones visuales y los tests §47-51 del pedido original (cancel pairing, navegar fuera, QR vencido, cerrar sesión real, F5) — a cargo del usuario.
+
+Sin commit todavía.
+
+---
+
 ## 1. Base de partida
 
 - Rama: `main`

@@ -430,6 +430,15 @@ function normalizeIncomingMessage(entry) {
     return null;
   }
 
+  // Baileys entrega "stubs" (sin objeto message real) para eventos que no tienen contenido
+  // recuperable -- el caso confirmado en producción es messageStubType 2
+  // ("Message absent from node": el cifrado nunca llegó, típico de LID/multi-dispositivo).
+  // Sin esto, el mensaje se creaba igual con Texto vacío: aparecía nombre y hora en la burbuja
+  // pero ningún texto, porque no hay nada real que extraer.
+  if (!entry?.message) {
+    return null;
+  }
+
   // Con "addressingMode":"lid", remoteJid es un identificador de privacidad de WhatsApp, no el
   // teléfono real. Baileys expone el JID clásico (con el teléfono real) en remoteJidAlt cuando
   // el mensaje llegó direccionado por LID; si no existe, remoteJid ya es el JID con el teléfono.
