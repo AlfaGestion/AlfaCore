@@ -199,6 +199,7 @@ public sealed class ConversacionInboxItemDto
     public int MensajesNoLeidosUsuario { get; set; }
     public bool VentanaWhatsAppActiva { get; set; }
     public DateTime? FechaHoraVencimientoVentanaWhatsApp { get; set; }
+    public bool EsWhatsAppQr { get; set; }
     public bool Archivada { get; set; }
     public bool Bloqueada { get; set; }
     public bool FijadaPorUsuario { get; set; }
@@ -253,6 +254,7 @@ public sealed class ConversacionDetalleDto
     public DateTime? FechaHoraUltimoMensajeCliente { get; set; }
     public bool VentanaWhatsAppActiva { get; set; }
     public DateTime? FechaHoraVencimientoVentanaWhatsApp { get; set; }
+    public bool EsWhatsAppQr { get; set; }
     public DateTime? FechaHoraCierre { get; set; }
     /// <summary>Ver dbo.CONV_WHATSAPP_NUMEROS — null si la conversación no tiene un número propio fijado.</summary>
     public int? IdNumeroWhatsApp { get; set; }
@@ -404,8 +406,17 @@ public sealed class ConversacionSendMessageRequest
     public long IdConversacion { get; set; }
     public string Texto { get; set; } = string.Empty;
     public string MessageType { get; set; } = "TEXT";
+    public int? IdNumeroWhatsApp { get; set; }
     public string? WhatsAppReplyToMessageId { get; set; }
     public string? IdTecnicoAutor { get; set; }
+    public string? UsuarioAccion { get; set; }
+    public string? SistemaAccion { get; set; }
+}
+
+public sealed class ConversacionWhatsAppNumeroRequest
+{
+    public long IdConversacion { get; set; }
+    public int IdNumeroWhatsApp { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
 }

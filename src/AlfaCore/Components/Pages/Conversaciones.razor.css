@@ -952,6 +952,12 @@
     color: #a5f3fc !important;
 }
 
+.conversations-page--odoo .conversation-badge--whatsapp-qr {
+    background: rgba(13, 148, 136, .28) !important;
+    border-color: rgba(45, 212, 191, .42) !important;
+    color: #99f6e4 !important;
+}
+
 .conversations-page--odoo .conversations-chat {
     min-width: 0 !important;
     overflow: hidden !important;
@@ -1592,6 +1598,39 @@
 
 .conversations-page--odoo .conversations-composer .field {
     min-width: 0 !important;
+}
+
+.conversations-page--odoo .conversations-send-account {
+    grid-column: 1 / -1;
+    display: flex;
+    align-items: center;
+    gap: .45rem;
+    min-width: 0;
+    color: #9fb3ca;
+    font-size: .74rem;
+}
+
+.conversations-page--odoo .conversations-send-account i {
+    color: #34d399;
+}
+
+.conversations-page--odoo .conversations-send-account label {
+    margin: 0;
+    color: #b8c7d9;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.conversations-page--odoo .conversations-send-account select {
+    min-width: 180px;
+    max-width: min(420px, 100%);
+    height: 30px;
+    border: 1px solid rgba(56, 189, 248, .26);
+    border-radius: 6px;
+    background: rgba(7, 20, 34, .92);
+    color: #dcecff;
+    font-size: .76rem;
+    font-weight: 700;
 }
 
 .conversations-page--odoo .conversations-composer textarea {

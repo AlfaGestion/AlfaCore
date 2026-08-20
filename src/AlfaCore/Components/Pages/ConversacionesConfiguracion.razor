@@ -1674,6 +1674,8 @@
     private bool _includeTextPairingCode = true;
     private bool HasWebhookToken => !string.IsNullOrWhiteSpace(_webhookToken);
     private bool PairingBusy { get; set; }
+    private bool _autoStartWhatsAppQrOnboarding;
+    private bool _autoStartWhatsAppQrAttempted;
     private ConversacionWhatsAppNumeroDto? _stopSessionTarget;
     private bool _stopSessionOpen;
     private bool _stopSessionBusy;
@@ -1746,10 +1748,52 @@
 
     protected override async Task OnInitializedAsync()
     {
+        ApplyStartupQuery();
         _suggestedBaseUrl = GetCurrentBaseUrl();
         UpdatePageHeader();
         await LoadWebhookTokenAsync();
         await LoadAsync();
+        await TryAutoStartWhatsAppQrOnboardingAsync();
+    }
+
+    private void ApplyStartupQuery()
+    {
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
+        _autoStartWhatsAppQrOnboarding =
+            string.Equals(query.TryGetValue("onboarding", out var onboarding) ? onboarding.ToString() : string.Empty, "whatsapp-qr", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(query.TryGetValue("auto", out var auto) ? auto.ToString() : string.Empty, "1", StringComparison.OrdinalIgnoreCase);
+
+        if (_autoStartWhatsAppQrOnboarding)
+        {
+            _activePrimaryTab = "canales";
+            _activeChannelTab = "whatsapp";
+            _activeWhatsAppSection = "numeros";
+        }
+    }
+
+    private async Task TryAutoStartWhatsAppQrOnboardingAsync()
+    {
+        if (!_autoStartWhatsAppQrOnboarding || _autoStartWhatsAppQrAttempted)
+            return;
+
+        _autoStartWhatsAppQrAttempted = true;
+        if (_numeros.Any(n => n.Activo && n.IsWebSessionReady))
+            return;
+
+        var pending = ActiveBusinessNumeros
+            .Where(n => !n.IsWebSessionReady)
+            .OrderByDescending(n => n.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.PendingQr)
+            .ThenBy(n => n.IdNumero)
+            .FirstOrDefault();
+
+        if (pending is not null)
+        {
+            await ConectarWhatsAppBusinessAsync(pending, ConversacionWhatsAppWebSessionModes.Qr, null);
+            return;
+        }
+
+        await IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.Qr, null);
     }
 
     public void Dispose()

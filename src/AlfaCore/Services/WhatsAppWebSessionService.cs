@@ -175,21 +175,21 @@ public sealed class WhatsAppWebSessionService(
             throw new InvalidOperationException("No hay una instancia de WhatsApp Web configurada para este número.");
 
         var sessionDir = EnsureSessionDirectory(numero.WebInstanceName);
+        sessionDir = await EnsureWorkerRunningForSendAsync(numero, sessionDir, ct);
         var outboxDir = Path.Combine(sessionDir, OutboxDirName);
         var resultsDir = Path.Combine(sessionDir, ResultsDirName);
         Directory.CreateDirectory(outboxDir);
         Directory.CreateDirectory(resultsDir);
 
-        await EnsureWorkerRunningForSendAsync(numero, sessionDir, ct);
-
         var commandId = Guid.NewGuid().ToString("N");
         var commandPath = Path.Combine(outboxDir, $"{commandId}.json");
         var resultPath = Path.Combine(resultsDir, $"{commandId}.json");
+        var destinationPhone = NormalizeWhatsAppWebDestinationPhone(phone, numero.WebPhoneNumber);
         var payload = new
         {
             id = commandId,
             type = "send_text",
-            phone = phone.Trim(),
+            phone = destinationPhone,
             text = text,
             replyToMessageId = replyToMessageId ?? string.Empty,
             createdAtUtc = DateTime.UtcNow.ToString("O", CultureInfo.InvariantCulture)
@@ -223,12 +223,12 @@ public sealed class WhatsAppWebSessionService(
         throw new InvalidOperationException("WhatsApp Web no respondió a tiempo al comando de envío.");
     }
 
-    private async Task EnsureWorkerRunningForSendAsync(ConversacionWhatsAppNumeroDto numero, string sessionDir, CancellationToken ct)
+    private async Task<string> EnsureWorkerRunningForSendAsync(ConversacionWhatsAppNumeroDto numero, string sessionDir, CancellationToken ct)
     {
         var statusFile = Path.Combine(sessionDir, StatusFileName);
         var status = await ReadWorkerStatusAsync(statusFile, ct);
         if (IsWorkerHealthy(status))
-            return;
+            return sessionDir;
 
         if (IsWorkerProcessAlive(status))
         {
@@ -240,9 +240,17 @@ public sealed class WhatsAppWebSessionService(
         var authDir = Path.Combine(sessionDir, AuthDirName);
         if (!Directory.Exists(authDir) || !Directory.EnumerateFiles(authDir, "*.json").Any())
         {
-            MarkNumeroDisconnected(numero, status, "La sesión de WhatsApp Web no está activa y no conserva credenciales para reconectar automáticamente.");
-            await configService.SaveWhatsAppNumeroWebSessionAsync(numero, ct);
-            throw new InvalidOperationException("La sesión de WhatsApp Web no está activa. Volvé a conectar el número desde Configuración de WhatsApp.");
+            var recoveredSessionDir = await TryRecoverSessionDirectoryAsync(numero, sessionDir, ct);
+            if (string.IsNullOrWhiteSpace(recoveredSessionDir))
+            {
+                MarkNumeroDisconnected(numero, status, "La sesión de WhatsApp Web no está activa y no conserva credenciales para reconectar automáticamente.");
+                await configService.SaveWhatsAppNumeroWebSessionAsync(numero, ct);
+                throw new InvalidOperationException("La sesión de WhatsApp Web no está activa. Volvé a conectar el número desde Configuración de WhatsApp.");
+            }
+
+            sessionDir = recoveredSessionDir;
+            statusFile = Path.Combine(sessionDir, StatusFileName);
+            status = await ReadWorkerStatusAsync(statusFile, ct);
         }
 
         TryDeleteFile(statusFile);
@@ -251,6 +259,8 @@ public sealed class WhatsAppWebSessionService(
         var updated = await WaitForStatusAndPersistAsync(numero, statusFile, requireInteractiveArtifacts: false, ct);
         if (!updated.IsWebSessionReady)
             throw new InvalidOperationException("WhatsApp Web no quedó conectado después de reiniciar la sesión. Revisá el estado del número en Configuración de WhatsApp.");
+
+        return sessionDir;
     }
 
     private static async Task<WhatsAppWebWorkerStatus?> ReadWorkerStatusAsync(string statusFile, CancellationToken ct)
@@ -298,6 +308,80 @@ public sealed class WhatsAppWebSessionService(
         {
             return false;
         }
+    }
+
+    private async Task<string?> TryRecoverSessionDirectoryAsync(ConversacionWhatsAppNumeroDto numero, string currentSessionDir, CancellationToken ct)
+    {
+        var root = Directory.GetParent(currentSessionDir)?.FullName;
+        if (string.IsNullOrWhiteSpace(root) || !Directory.Exists(root))
+            return null;
+
+        var targetPhone = OnlyDigits(numero.WebPhoneNumber);
+        var candidates = new List<(string Path, WhatsAppWebWorkerStatus? Status, DateTime LastWriteUtc)>();
+        foreach (var dir in Directory.EnumerateDirectories(root))
+        {
+            if (string.Equals(Path.GetFullPath(dir), Path.GetFullPath(currentSessionDir), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var authDir = Path.Combine(dir, AuthDirName);
+            if (!Directory.Exists(authDir) || !Directory.EnumerateFiles(authDir, "*.json").Any())
+                continue;
+
+            var statusFile = Path.Combine(dir, StatusFileName);
+            var status = await ReadWorkerStatusAsync(statusFile, ct);
+            if (!string.IsNullOrWhiteSpace(targetPhone)
+                && !string.Equals(OnlyDigits(status?.PhoneNumber), targetPhone, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var lastWriteUtc = File.Exists(statusFile)
+                ? File.GetLastWriteTimeUtc(statusFile)
+                : Directory.GetLastWriteTimeUtc(dir);
+            candidates.Add((dir, status, lastWriteUtc));
+        }
+
+        var recovered = candidates
+            .OrderByDescending(x => string.Equals(x.Status?.State, "CONNECTED", StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(x => x.LastWriteUtc)
+            .FirstOrDefault();
+
+        if (string.IsNullOrWhiteSpace(recovered.Path))
+            return null;
+
+        numero.WebInstanceName = Path.GetFileName(recovered.Path);
+        ApplyStatus(numero, recovered.Status ?? new WhatsAppWebWorkerStatus
+        {
+            State = ConversacionWhatsAppWebSessionStatuses.Connected,
+            SessionId = numero.WebInstanceName,
+            PhoneNumber = numero.WebPhoneNumber,
+            LastUpdatedAtUtc = DateTime.UtcNow
+        });
+        numero.WebWorkerProcessId = null;
+        await configService.SaveWhatsAppNumeroWebSessionAsync(numero, ct);
+        return recovered.Path;
+    }
+
+    private static string OnlyDigits(string? value)
+        => new((value ?? string.Empty).Where(char.IsDigit).ToArray());
+
+    private static string NormalizeWhatsAppWebDestinationPhone(string phone, string? senderPhone)
+    {
+        var digits = OnlyDigits(phone);
+        if (string.IsNullOrWhiteSpace(digits))
+            return string.Empty;
+
+        if (digits.StartsWith("00", StringComparison.Ordinal))
+            digits = digits[2..];
+
+        if (digits.StartsWith("549", StringComparison.Ordinal) || digits.StartsWith("54", StringComparison.Ordinal))
+            return digits;
+
+        var senderDigits = OnlyDigits(senderPhone);
+        if (senderDigits.StartsWith("549", StringComparison.Ordinal) && digits.Length == 10)
+            return $"549{digits}";
+
+        return digits;
     }
 
     private static void MarkNumeroDisconnected(ConversacionWhatsAppNumeroDto numero, WhatsAppWebWorkerStatus? status, string error)

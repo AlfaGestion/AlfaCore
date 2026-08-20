@@ -20,6 +20,7 @@ public interface IConversacionesService
     Task SetTypingAsync(ConversacionTypingRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendMessageAsync(ConversacionSendMessageRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendReactionAsync(ConversacionReaccionRequest request, CancellationToken ct = default);
+    Task SetConversationWhatsAppNumeroAsync(ConversacionWhatsAppNumeroRequest request, CancellationToken ct = default);
     /// <summary>
     /// Marca interna de seguimiento por mensaje (ej. "PENDIENTE"/"COMPLETADA") — nunca se envía
     /// al cliente por ningún canal, es solo para el agente. Pasar <c>null</c>/vacío quita la marca.

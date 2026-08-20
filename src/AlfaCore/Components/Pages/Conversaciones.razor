@@ -1,5 +1,6 @@
 @page "/conversaciones"
 @page "/{idweb}/{idbase:int}/conversaciones"
+@using System.Globalization
 @using System.IO
 @using System.Net
 @using System.Text.Json
@@ -913,6 +914,12 @@
                                             <span class="conversation-badge conversation-badge--mercadolibre-buyer">@GetMercadoLibreBuyerLabel(item)</span>
                                         }
                                     }
+                                    @if (IsWhatsAppQr(item))
+                                    {
+                                        <span class="conversation-badge conversation-badge--whatsapp-qr" title="WhatsApp Business conectado por QR">
+                                            <i class="bi bi-qr-code"></i> QR
+                                        </span>
+                                    }
                                 </div>
                                 <p class="conversation-row__summary">
                                     @if (IsLastInboxMessageOutgoing(item))
@@ -1165,7 +1172,16 @@
                             <div class="conversations-chat__chips">
                             @if (_selectedConversation.Canal == "WHATSAPP")
                             {
-                                <span class="conversation-badge">@GetWhatsAppWindowLabel(_selectedConversation)</span>
+                                @if (IsWhatsAppQr(_selectedConversation))
+                                {
+                                    <span class="conversation-badge conversation-badge--whatsapp-qr" title="WhatsApp Business conectado por QR">
+                                        <i class="bi bi-qr-code"></i> WhatsApp QR
+                                    </span>
+                                }
+                                @if (!IsWhatsAppQr(_selectedConversation))
+                                {
+                                    <span class="conversation-badge">@GetWhatsAppWindowLabel(_selectedConversation)</span>
+                                }
                             }
                             @if (!string.IsNullOrWhiteSpace(_selectedConversation.TecnicoNombre))
                             {
@@ -1925,6 +1941,25 @@
                         @if (!IsWhatsAppWindowExpired)
                         {
                             <InputFile id="conv-file-drop-input" OnChange="HandleFileSelectedAsync" class="conversations-drop-input" multiple accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.zip,.rar" />
+                            @if (ShouldShowWhatsAppSendNumeroSelector)
+                            {
+                                <div class="conversations-send-account">
+                                    <i class="bi bi-whatsapp" aria-hidden="true"></i>
+                                    <label for="conv-whatsapp-send-number">Enviar desde</label>
+                                    <select id="conv-whatsapp-send-number"
+                                            value="@CurrentWhatsAppSendNumeroId?.ToString(CultureInfo.InvariantCulture)"
+                                            @onchange="OnWhatsAppSendNumeroChangedAsync"
+                                            disabled="@_busyAction"
+                                            title="Cuenta de WhatsApp usada para enviar mensajes">
+                                        @foreach (var numero in AvailableWhatsAppSendNumeros)
+                                        {
+                                            <option value="@numero.IdNumero.ToString(CultureInfo.InvariantCulture)">
+                                                @GetWhatsAppSendNumeroLabel(numero)
+                                            </option>
+                                        }
+                                    </select>
+                                </div>
+                            }
                             <div class="field conversations-composer__reply">
                                 <label for="conv-message">
                                     @GetReplyLabel()
@@ -3701,6 +3736,9 @@
     private bool IsWhatsAppConversation
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP";
+    private bool IsSelectedWhatsAppQrConversation
+        => _selectedConversation is not null
+           && IsWhatsAppQr(_selectedConversation);
     private bool IsProviderPendingConversation
         => _selectedConversation is not null
            && false;
@@ -3714,6 +3752,7 @@
     private bool IsWhatsAppWindowExpired
         => _selectedConversation is not null
            && _selectedConversation.Canal == "WHATSAPP"
+           && !IsSelectedWhatsAppQrConversation
            && !_selectedConversation.VentanaWhatsAppActiva;
     private bool IsSelectedConversationClosed
         => _selectedConversation is not null
@@ -3775,6 +3814,7 @@
     // filtra nada -- fail-open, mismo criterio que el resto de estos flags.
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> _whatsappNumeros = [];
     private bool _esAdministradorConversaciones;
+    private bool _redirectingToWhatsAppOnboarding;
 
     protected override async Task OnInitializedAsync()
     {
@@ -3785,6 +3825,9 @@
         _alfaKnowledgeModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("ALFAKNOWLEDGE");
         _crmModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("CRM");
         await LoadWhatsAppNumerosAndAdminStatusAsync();
+        if (TryRedirectToWhatsAppQrOnboarding())
+            return;
+
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
         {
@@ -3795,6 +3838,32 @@
 
         StartPolling();
         StartTypingPolling();
+    }
+
+    private bool TryRedirectToWhatsAppQrOnboarding()
+    {
+        if (_redirectingToWhatsAppOnboarding)
+            return true;
+
+        var uri = Nav.ToAbsoluteUri(Nav.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        if (query.ContainsKey("id")
+            || query.ContainsKey("onboarding")
+            || _whatsappNumeros.Any(n => n.Activo && n.IsWebSessionReady))
+        {
+            return false;
+        }
+
+        _redirectingToWhatsAppOnboarding = true;
+        var target = QueryHelpers.AddQueryString(
+            $"{uri.AbsolutePath.TrimEnd('/')}/configuracion",
+            new Dictionary<string, string?>
+            {
+                ["onboarding"] = "whatsapp-qr",
+                ["auto"] = "1"
+            });
+        Nav.NavigateTo(target, replace: true);
+        return true;
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -4182,6 +4251,99 @@
         return filtrados.Count > 0 ? filtrados : _technicians;
     }
 
+    private IReadOnlyList<ConversacionWhatsAppNumeroDto> AvailableWhatsAppSendNumeros
+        => _whatsappNumeros
+            .Where(CanUseWhatsAppNumeroForSend)
+            .OrderByDescending(n => _selectedConversation?.IdNumeroWhatsApp == n.IdNumero)
+            .ThenByDescending(n => n.IsWebSessionReady)
+            .ThenByDescending(n => n.Activo)
+            .ThenByDescending(n => n.WebRuntimeUpdatedAtUtc ?? DateTime.MinValue)
+            .ThenBy(n => n.Nombre)
+            .ToList();
+
+    private bool ShouldShowWhatsAppSendNumeroSelector
+        => IsWhatsAppConversation && AvailableWhatsAppSendNumeros.Count > 0;
+
+    private int? CurrentWhatsAppSendNumeroId
+        => _selectedConversation?.Canal == "WHATSAPP"
+            ? (_selectedConversation.IdNumeroWhatsApp ?? AvailableWhatsAppSendNumeros.FirstOrDefault()?.IdNumero)
+            : null;
+
+    private bool CanUseWhatsAppNumeroForSend(ConversacionWhatsAppNumeroDto numero)
+    {
+        if (!numero.Activo)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(numero.PhoneNumberId) && !numero.IsWebSessionReady)
+            return false;
+
+        if (_esAdministradorConversaciones || numero.Usuarios.Count == 0)
+            return true;
+
+        return numero.Usuarios.Contains(CurrentUserNameForAudit, StringComparer.OrdinalIgnoreCase);
+    }
+
+    private static bool IsWhatsAppWebNumero(ConversacionWhatsAppNumeroDto? numero)
+        => numero is not null && !string.IsNullOrWhiteSpace(numero.WebInstanceName);
+
+    private static string GetWhatsAppSendNumeroLabel(ConversacionWhatsAppNumeroDto numero)
+    {
+        var nombre = FirstNonEmpty(numero.Nombre, numero.WebDisplayName, numero.WebPhoneNumber, numero.PhoneNumberId, $"Cuenta {numero.IdNumero}");
+        if (numero.IsWebSessionReady)
+            return $"{nombre} · QR conectado";
+        if (!string.IsNullOrWhiteSpace(numero.WebInstanceName))
+            return $"{nombre} · QR desconectado";
+
+        return $"{nombre} · API";
+    }
+
+    private async Task OnWhatsAppSendNumeroChangedAsync(ChangeEventArgs args)
+    {
+        if (_selectedConversation is null
+            || !int.TryParse(Convert.ToString(args.Value, CultureInfo.InvariantCulture), out var idNumero)
+            || idNumero <= 0
+            || _selectedConversation.IdNumeroWhatsApp == idNumero)
+        {
+            return;
+        }
+
+        _busyAction = true;
+        _actionMessage = null;
+        _actionError = null;
+
+        try
+        {
+            await ConversacionesSvc.SetConversationWhatsAppNumeroAsync(new ConversacionWhatsAppNumeroRequest
+            {
+                IdConversacion = _selectedConversation.IdConversacion,
+                IdNumeroWhatsApp = idNumero,
+                UsuarioAccion = CurrentUserNameForAudit,
+                SistemaAccion = CurrentUserSystemForAudit
+            });
+
+            var numero = _whatsappNumeros.FirstOrDefault(x => x.IdNumero == idNumero);
+            _selectedConversation.IdNumeroWhatsApp = idNumero;
+            _selectedConversation.EsWhatsAppQr = IsWhatsAppWebNumero(numero);
+            if (_selectedConversation.EsWhatsAppQr)
+            {
+                _selectedConversation.VentanaWhatsAppActiva = true;
+                _selectedConversation.FechaHoraVencimientoVentanaWhatsApp = null;
+            }
+
+            StoreConversationCache(_selectedConversation.IdConversacion);
+            await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+        }
+        catch (Exception ex)
+        {
+            _actionError = ex.Message;
+            await LoadConversationAsync(_selectedConversation.IdConversacion, showLoading: false, clearActionState: false);
+        }
+        finally
+        {
+            _busyAction = false;
+        }
+    }
+
     private bool EsColaEspera => string.Equals(_filters.Orden, ConversacionesInboxOrden.ColaEspera, StringComparison.OrdinalIgnoreCase);
 
     private async Task ToggleColaEsperaAsync()
@@ -4242,6 +4404,14 @@
         "INTERNO" => "Chat interno",
         _ => canal ?? string.Empty
     };
+
+    private static bool IsWhatsAppQr(ConversacionInboxItemDto item)
+        => string.Equals(item.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase)
+           && item.EsWhatsAppQr;
+
+    private static bool IsWhatsAppQr(ConversacionDetalleDto item)
+        => string.Equals(item.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase)
+           && item.EsWhatsAppQr;
 
     private async Task RecargarAsync()
     {
@@ -6584,6 +6754,12 @@
         var shouldKeepAtBottom = scrollBeforeRefresh.NearBottom;
         var previousLastMessageId = GetLastMessageId();
 
+        if (IsWhatsAppInScope)
+        {
+            await ConversacionesSvc.ProcessWhatsAppWebInboxAsync();
+            await ConversacionesSvc.ProcessWhatsAppWebAcksAsync();
+        }
+
         var newMessagesDetected = await RefreshInboxAsync(showLoading: false, allowSelectionChange: false, trackNewMessages: true);
 
         if (selectedId.HasValue && _selectedConversationId == selectedId)
@@ -7120,6 +7296,7 @@
                     IdConversacion = _selectedConversation.IdConversacion,
                     Texto = textToSend,
                     MessageType = "TEXT",
+                    IdNumeroWhatsApp = CurrentWhatsAppSendNumeroId,
                     WhatsAppReplyToMessageId = quotedMessageId,
                     IdTecnicoAutor = CurrentMessageTechnicianId,
                     UsuarioAccion = CurrentUserNameForAudit,
@@ -9676,6 +9853,7 @@
                     MensajesNoLeidosUsuario = ordered.Sum(x => x.MensajesNoLeidosUsuario),
                     VentanaWhatsAppActiva = latest.VentanaWhatsAppActiva,
                     FechaHoraVencimientoVentanaWhatsApp = latest.FechaHoraVencimientoVentanaWhatsApp,
+                    EsWhatsAppQr = latest.EsWhatsAppQr,
                     Archivada = ordered.All(x => x.Archivada),
                     Bloqueada = ordered.Any(x => x.Bloqueada),
                     FijadaPorUsuario = ordered.Any(x => x.FijadaPorUsuario),
