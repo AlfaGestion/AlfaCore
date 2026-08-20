@@ -130,7 +130,7 @@ if exist ".\src\AlfaCore\obj\Release\net8.0\apphost.exe" (
   echo Posible causa: el archivo src\AlfaCore\obj\Release\net8.0\apphost.exe esta bloqueado.
   echo Cierra Visual Studio, procesos dotnet o antivirus que lo esten usando y reintenta.
 )
-
+pause
 exit /b 1
 endlocal
 pause

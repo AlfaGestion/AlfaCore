@@ -2091,6 +2091,7 @@ public sealed class InterfacesCatalogosService(
         public string Presentacion { get; set; } = string.Empty;
         public string Marca { get; set; } = string.Empty;
         public string Rubro { get; set; } = string.Empty;
+        public string Familia { get; set; } = string.Empty;
         public string ListaPrecio { get; set; } = string.Empty;
         public string NombreListaPrecio { get; set; } = string.Empty;
         public decimal Precio { get; set; }
