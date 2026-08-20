@@ -28,13 +28,13 @@
                 <div class="catalogo-publico-hero__copy">
                     <p class="catalogo-publico-hero__eyebrow">@GetBrandingName()</p>
                     <h2 class="catalogo-publico-hero__title">@GetCatalogHeaderTitle()</h2>
+                    @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderCatalogName()))
+                    {
+                        <p class="catalogo-publico-hero__catalog-name">@GetCatalogHeaderCatalogName()</p>
+                    }
                     @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderSubtitle()))
                     {
                         <p class="catalogo-publico-hero__text">@GetCatalogHeaderSubtitle()</p>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(_catalogo?.Observaciones))
-                    {
-                        <p class="catalogo-publico-hero__description">@_catalogo.Observaciones.Trim()</p>
                     }
                 </div>
             </div>
@@ -610,8 +610,14 @@
     }
 
     private string GetCatalogHeaderTitle()
-        => _catalogo?.Nombre?.Trim()
+        => _catalogo?.Observaciones?.Trim()
+           ?? _catalogo?.Nombre?.Trim()
            ?? "Catálogo público";
+
+    private string GetCatalogHeaderCatalogName()
+        => string.IsNullOrWhiteSpace(_catalogo?.Nombre)
+            ? string.Empty
+            : _catalogo!.Nombre.Trim();
 
     private string GetCatalogHeaderSubtitle()
     {

@@ -45,7 +45,17 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
         // servicio de imágenes por eso: se sigue sirviendo (sin cachear en App_Data) en vez de fallar.
         var cacheDirRespaldo = Path.Combine(Path.GetTempPath(), "alfacore-imagenes-articulos", relativoCache);
 
-        foreach (var dirCandidatoCache in new[] { cacheDir, cacheDirRespaldo })
+        var cacheDirsCandidatos = thumbnail
+            ? new[]
+            {
+                cacheDir,
+                cacheDirRespaldo,
+                Path.Combine(environment.ContentRootPath, "App_Data", "cache", "imagenes-articulos", baseSegment is null ? Path.Combine(cliente, "imagenes") : Path.Combine(cliente, baseSegment, "imagenes")),
+                Path.Combine(Path.GetTempPath(), "alfacore-imagenes-articulos", baseSegment is null ? Path.Combine(cliente, "imagenes") : Path.Combine(cliente, baseSegment, "imagenes"))
+            }
+            : new[] { cacheDir, cacheDirRespaldo };
+
+        foreach (var dirCandidatoCache in cacheDirsCandidatos)
         {
             foreach (var ext in ExtensionesSoportadas)
             {
@@ -59,11 +69,17 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
         if (MissCache.TryGetValue(missKey, out var missedAt) && DateTime.UtcNow - missedAt < CacheMissTtl)
             return null;
 
-        // Las miniaturas suelen vivir en una carpeta "thumbs4" hermana de "imagenes", pero algunas
-        // cuentas la subieron anidada dentro de "imagenes" (carga manual por FTP). Se prueban ambas
-        // ubicaciones para no perder miniaturas ya subidas así, sin tener que mover nada en el FTP.
+        // Las miniaturas ahora se publican en "imagenes/thumbs4". Se deja como respaldo la ruta
+        // vieja "thumbs4" para instalaciones que todavía no migraron completamente, y por último
+        // se cae al original de "imagenes" para no dejar artículos sin foto cuando el thumb no
+        // existe o todavía no fue generado.
         var remoteDirsCandidatos = thumbnail
-            ? new[] { remoteDir, baseSegment is null ? $"{cliente}/imagenes/thumbs4" : $"{cliente}/{baseSegment}/imagenes/thumbs4" }
+            ? new[]
+            {
+                baseSegment is null ? $"{cliente}/imagenes/thumbs4" : $"{cliente}/{baseSegment}/imagenes/thumbs4",
+                remoteDir,
+                baseSegment is null ? $"{cliente}/imagenes" : $"{cliente}/{baseSegment}/imagenes"
+            }
             : new[] { remoteDir };
 
         foreach (var dirCandidato in remoteDirsCandidatos)

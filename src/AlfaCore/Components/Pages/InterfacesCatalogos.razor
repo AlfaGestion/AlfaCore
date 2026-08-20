@@ -377,7 +377,7 @@
                         <div class="col-12 col-lg-6 col-xxl-4">
                             <div class="field">
                                 <label>Lista de precios</label>
-                                <select @bind="_idLista" @bind:after="OnListaPrecioChangedAsync">
+                                <select @key="_listaSelectToken" value="@_idLista" @onchange="e => OnListaPrecioChangedAsync((string?)e.Value)">
                                     <option value="">Seleccionar...</option>
                                     @foreach (var lista in _listasPrecio)
                                     {
@@ -663,6 +663,7 @@
     private string _nombre = string.Empty;
     private string _descripcion = string.Empty;
     private string _idLista = string.Empty;
+    private int _listaSelectToken;
     private string _articuloOrigen = CatalogosArticuloOrigenKeys.ListaPrecio;
     private DateTime? _vigenciaDesde = DateTime.Today;
     private DateTime? _vigenciaHasta = DateTime.Today.AddMonths(1);
@@ -1164,6 +1165,7 @@
         _descripcion = string.Empty;
         _idLista = _listasPrecio.FirstOrDefault()?.IdLista ?? string.Empty;
         _articuloOrigen = CatalogosArticuloOrigenKeys.ListaPrecio;
+        _listaSelectToken++;
         _vigenciaDesde = DateTime.Today;
         _vigenciaHasta = DateTime.Today.AddMonths(1);
         _articulosSeleccionados.Clear();
@@ -1606,13 +1608,57 @@
         return buttons;
     }
 
-    // Cambiar de lista mientras el picker está abierto invalidaría su búsqueda ya en curso
-    // (Origen/IdLista solo se releen cuando el picker vuelve a abrirse); más simple y predecible
-    // cerrarlo y que el usuario lo reabra ya con la lista nueva.
-    private Task OnListaPrecioChangedAsync()
+    // Un catálogo no puede mezclar artículos de dos listas (ni Maestro + Lista a la vez): si ya
+    // hay artículos cargados, cambiar la lista pide confirmación y reemplaza el contenido en vez
+    // de agregarse encima. Cambiar de lista mientras el picker está abierto también invalidaría
+    // su búsqueda ya en curso (Origen/IdLista solo se releen al reabrirlo), así que de paso se cierra.
+    private async Task OnListaPrecioChangedAsync(string? nuevaListaRaw)
     {
+        var nuevaLista = (nuevaListaRaw ?? string.Empty).Trim();
+        if (string.Equals(nuevaLista, _idLista, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (_articulosSeleccionados.Count > 0 && !string.IsNullOrWhiteSpace(_idLista))
+        {
+            var nombreActual = GetNombreLista(_idLista);
+            var nombreNueva = string.IsNullOrWhiteSpace(nuevaLista) ? "(sin seleccionar)" : GetNombreLista(nuevaLista);
+
+            var confirm = await DialogSvc.ConfirmAsync(
+                "Cambiar lista de artículos",
+                $"Este catálogo actualmente utiliza la lista {nombreActual}. Si cambiás a {nombreNueva}, los artículos actuales serán reemplazados por los de la nueva lista.\n\n¿Querés continuar?",
+                "Cambiar lista",
+                "Cancelar");
+
+            if (!confirm)
+            {
+                // El <select> nativo ya quedó visualmente en la opción elegida por el usuario;
+                // como _idLista no cambió, forzamos un remount con @key para que vuelva a
+                // mostrar el valor real (un re-render normal no reescribe su value).
+                _listaSelectToken++;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+
+            _articulosSeleccionados.Clear();
+            _articulosQuitarSeleccionados.Clear();
+        }
+
+        _idLista = nuevaLista;
         _showLookupModal = false;
-        return Task.CompletedTask;
+    }
+
+    private string DescribirOrigenArticulos(string origen, string idLista)
+    {
+        if (string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase))
+            return string.IsNullOrWhiteSpace(idLista) ? "una lista de precios" : $"la lista {GetNombreLista(idLista)}";
+
+        return "el maestro de artículos";
+    }
+
+    private string GetNombreLista(string idLista)
+    {
+        var lista = _listasPrecio.FirstOrDefault(x => string.Equals(x.IdLista, idLista, StringComparison.OrdinalIgnoreCase));
+        return lista is null ? idLista : $"{lista.Nombre} ({lista.IdLista})";
     }
 
     private async Task AgregarArticuloAsync(CatalogosArticuloBusquedaDto item)
@@ -1663,14 +1709,37 @@
     private void CloseLookupArticulos()
         => _showLookupModal = false;
 
-    private Task SelectArticuloSourceAsync(string origen)
+    private async Task SelectArticuloSourceAsync(string origen)
     {
+        if (string.Equals(origen, _articuloOrigen, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        if (_articulosSeleccionados.Count > 0)
+        {
+            var etiquetaActual = DescribirOrigenArticulos(_articuloOrigen, _idLista);
+            var etiquetaNueva = string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase)
+                ? "una lista de precios"
+                : "el maestro de artículos";
+
+            var confirm = await DialogSvc.ConfirmAsync(
+                "Cambiar origen de artículos",
+                $"Este catálogo actualmente usa {etiquetaActual}. Si cambiás a {etiquetaNueva}, los artículos actuales serán reemplazados por los del nuevo origen.\n\n¿Querés continuar?",
+                "Cambiar origen",
+                "Cancelar");
+
+            if (!confirm)
+                return;
+
+            _articulosSeleccionados.Clear();
+            _articulosQuitarSeleccionados.Clear();
+        }
+
         _articuloOrigen = origen;
         if (!string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase))
             _idLista = string.Empty;
 
+        _listaSelectToken++;
         _showLookupModal = false;
-        return Task.CompletedTask;
     }
 
     private async Task ImportarListaCompletaAsync()
@@ -1805,6 +1874,11 @@
     private string GetNombreListaActual()
         => _listasPrecio.FirstOrDefault(x => string.Equals(x.IdLista, _idLista, StringComparison.OrdinalIgnoreCase))?.Nombre
            ?? _idLista;
+
+    // Variante de GetNombreListaActual() para una lista arbitraria (no necesariamente la
+    // seleccionada ahora) — la usa el confirm de cambio de origen/lista para nombrar "antes" y
+    // "después". Incluye el código entre paréntesis (formato distinto a GetNombreListaActual,
+    // que ya se usa en otros mensajes existentes y no convenía tocar).
 
     private static string GetArticuloRowClass(string idArticulo)
         => string.IsNullOrWhiteSpace(idArticulo) ? string.Empty : string.Empty;
@@ -2042,6 +2116,10 @@
         _nombre = detail.Nombre;
         _descripcion = detail.Observaciones;
         _idLista = detail.IdLista;
+        _articuloOrigen = string.IsNullOrWhiteSpace(detail.IdLista)
+            ? CatalogosArticuloOrigenKeys.Maestro
+            : CatalogosArticuloOrigenKeys.ListaPrecio;
+        _listaSelectToken++;
         _vigenciaDesde = detail.VigenciaDesde;
         _vigenciaHasta = detail.VigenciaHasta;
         _habilitarCarrito = detail.HabilitarCarrito;

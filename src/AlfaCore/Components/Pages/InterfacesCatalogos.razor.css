@@ -308,6 +308,43 @@
     color: rgba(226, 232, 240, 0.72);
 }
 
+.usuarios-table {
+    min-width: 100%;
+}
+
+.usuarios-table thead th:last-child,
+.usuarios-table tbody td:last-child {
+    position: sticky;
+    right: 0;
+    min-width: 124px;
+    white-space: nowrap;
+    text-align: right;
+    background: rgba(7, 13, 26, 0.98);
+    box-shadow: -12px 0 18px rgba(0, 0, 0, 0.16);
+    z-index: 2;
+}
+
+.usuarios-table thead th:last-child {
+    z-index: 3;
+}
+
+.usuarios-table tbody td:last-child .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .35rem;
+    white-space: nowrap;
+    min-width: 92px;
+}
+
+.usuarios-table tbody tr:hover td:last-child {
+    background: rgba(7, 13, 26, 0.98);
+}
+
+.usuarios-table tbody tr.is-selected td:last-child {
+    background: rgba(7, 13, 26, 0.98);
+}
+
 .catalogos-modal-backdrop {
     position: fixed;
     inset: 0;

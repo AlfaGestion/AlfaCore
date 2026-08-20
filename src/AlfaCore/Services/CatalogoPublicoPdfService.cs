@@ -184,7 +184,7 @@ public sealed class CatalogoPublicoPdfService(
         container.Border(1).BorderColor(Colors.Grey.Lighten3).Padding(7).Column(col =>
         {
             col.Spacing(4);
-            col.Item().Height(96).Element(e => ComposeImagenCelda(e, item, imageMap, 96));
+            col.Item().Height(112).Element(e => ComposeImagenCelda(e, item, imageMap, 112));
             col.Item().Text(item.DescripcionArticulo).FontSize(8).Bold();
             col.Item().Text($"Cód. {item.IdArticulo}").FontSize(7).FontColor(Colors.Grey.Medium);
             col.Item().Element(e => ComposePrecioCelda(e, item, alignRight: false, tamanioBase: 13f));
@@ -197,14 +197,14 @@ public sealed class CatalogoPublicoPdfService(
         {
             table.ColumnsDefinition(columns =>
             {
-                columns.ConstantColumn(46);
+                columns.ConstantColumn(54);
                 columns.RelativeColumn(4);
                 columns.RelativeColumn(2);
             });
 
             foreach (var item in articulos)
             {
-                table.Cell().Element(CeldaBase).Element(e => ComposeImagenCelda(e, item, imageMap, 40));
+                table.Cell().Element(CeldaBase).Element(e => ComposeImagenCelda(e, item, imageMap, 48));
                 table.Cell().Element(CeldaBase).Element(e => ComposeDescripcionCelda(e, item));
                 table.Cell().Element(CeldaBase).Element(e => ComposePrecioCelda(e, item, alignRight: true));
             }
@@ -349,7 +349,8 @@ public sealed class CatalogoPublicoPdfService(
             await throttle.WaitAsync(ct);
             try
             {
-                var imagen = await imagenSvc.ObtenerImagenAsync(ftpCodigoCta, idBase, item.IdArticulo, thumbnail: false, ct);
+                var imagen = await imagenSvc.ObtenerImagenAsync(ftpCodigoCta, idBase, item.IdArticulo, thumbnail: false, ct)
+                             ?? await imagenSvc.ObtenerImagenAsync(ftpCodigoCta, idBase, item.IdArticulo, thumbnail: true, ct);
                 if (imagen is null || !File.Exists(imagen.RutaCompleta))
                     return (item.IdArticulo, Bytes: (byte[]?)null);
 

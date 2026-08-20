@@ -2,17 +2,42 @@
    como shell (backdrop, header, footer, foco, Escape) y los tokens --alfa-* estándar — esta
    pantalla es administrativa interna, no la variante navy del Portal Cliente. */
 
-::deep .articulo-picker.alfa-dialog {
-    width: min(1360px, 97vw);
-    max-height: min(880px, calc(100dvh - 32px));
+/* AlfaDialogSize solo define Sm/Md/Lg (tope 780px) — no existe una variante Wide/Xl en
+   AlfaDesign hoy, así que el ancho se resuelve acá con una clase scoped propia del picker
+   (.articulo-picker), tal como corresponde cuando el componente no tiene el tamaño necesario.
+   width Y max-width fijados explícitamente porque este selector debe ganarle
+   siempre a .alfa-dialog--lg — es un caso puntual y no colisiona con ningún otro alfa-dialog.
+   Desktop: ~78% del ancho disponible, con tope para monitores grandes. El margen visual lo da
+   .alfa-dialog__backdrop (padding fijo del propio AlfaDialog, sin tocar) que centra y separa
+   el modal de los bordes del viewport en todos los tamaños. */
+::deep .articulo-picker.alfa-dialog,
+::deep .articulo-picker.alfa-dialog.alfa-dialog--lg {
+    width: min(78vw, 1250px);
+    max-width: min(78vw, 1250px);
+    max-height: min(90vh, calc(100dvh - 24px));
+}
+
+/* El modal no debe scrollear como bloque: header y footer (Cancelar/Agregar) del AlfaDialog ya
+   quedan fijos por fuera de .alfa-dialog__body; acá además convertimos el body en una columna
+   flex propia (filtros / listado / paginación) donde SOLO el listado (.articulo-picker__table-wrap,
+   flex:1) puede scrollear — el body deja de tener su overflow:auto por defecto para no generar un
+   segundo scroll "de marco" apilado sobre el del listado. */
+::deep .articulo-picker .alfa-dialog__body {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-16);
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
 }
 
 .articulo-picker__filters {
     display: grid;
-    grid-template-columns: minmax(220px, 1.6fr) repeat(3, minmax(130px, 1fr)) minmax(110px, auto);
+    grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(120px, 1fr)) auto;
     gap: var(--alfa-space-12);
     align-items: end;
-    margin-bottom: var(--alfa-space-16);
+    flex: 0 0 auto;
+    min-width: 0;
 }
 
 /* AlfaInput/AlfaSelect/AlfaButton son componentes hijos: Class="..." termina en su propio
@@ -23,12 +48,15 @@
 
 /* Tabla HTML nativa en vez de CSS Grid: el navegador reserva sola el gutter del scrollbar
    vertical y no se solapa con la última columna, y las columnas se ajustan a su contenido
-   en vez de depender de tracks en px fijos que se rompían en anchos angostos. */
+   en vez de depender de tracks en px fijos que se rompían en anchos angostos. Es el único
+   elemento del body con overflow propio — flex:1 lo hace crecer/achicarse para que filtros y
+   paginación (flex:0) siempre queden visibles sin scrollear el modal completo. */
 .articulo-picker__table-wrap {
+    flex: 1 1 auto;
+    min-height: 0;
     border: 1px solid var(--alfa-border-default);
     border-radius: var(--alfa-radius-md);
     overflow: auto;
-    max-height: 480px;
 }
 
 .articulo-picker__table {
@@ -52,40 +80,66 @@
     white-space: nowrap;
 }
 
+/* Anchos ajustados: checkbox/código/marca/rubro/precio son cortos y no necesitan espacio propio
+   más allá de su contenido — toda la ganancia va a la columna Descripción (4ta, sin width fijo,
+   se lleva el resto del ancho disponible en table-layout:fixed). */
 .articulo-picker__table th.articulo-picker__col-check,
 .articulo-picker__table td.articulo-picker__col-check {
-    width: 32px;
+    width: 28px;
 }
 
 .articulo-picker__table th.articulo-picker__col-thumb,
 .articulo-picker__table td.articulo-picker__col-thumb {
-    width: 44px;
+    width: 40px;
 }
 
 .articulo-picker__table th:nth-child(3),
 .articulo-picker__table td:nth-child(3) {
-    width: 90px;
+    width: 76px;
+}
+
+.articulo-picker__table th:nth-child(4),
+.articulo-picker__table td:nth-child(4) {
+    width: auto;
 }
 
 .articulo-picker__table th:nth-child(5),
 .articulo-picker__table td:nth-child(5) {
-    width: 140px;
+    width: 130px;
 }
 
 .articulo-picker__table th:nth-child(6),
 .articulo-picker__table td:nth-child(6) {
-    width: 140px;
+    width: 130px;
 }
 
 .articulo-picker__table th:nth-child(7),
 .articulo-picker__table td:nth-child(7) {
+    width: 130px;
+}
+
+.articulo-picker__table th:nth-child(8),
+.articulo-picker__table td:nth-child(8) {
     width: 100px;
 }
 
 .articulo-picker__table td {
     padding: 8px var(--alfa-space-12);
     vertical-align: middle;
-    overflow-wrap: anywhere;
+}
+
+/* Código/Marca/Rubro/Familia/Precio son etiquetas cortas: una línea con ellipsis en vez de
+   forzar scroll horizontal o desparramar alto de fila cuando un valor es más largo de lo
+   esperado. */
+.articulo-picker__table td:nth-child(3),
+.articulo-picker__table td:nth-child(5),
+.articulo-picker__table td:nth-child(6),
+.articulo-picker__table td:nth-child(7),
+.articulo-picker__table td:nth-child(8) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .articulo-picker__row {
@@ -144,13 +198,44 @@
 
 .articulo-picker__loading-state,
 .articulo-picker__empty-panel {
+    flex: 1 1 auto;
+    min-height: 0;
     padding: var(--alfa-space-24);
     display: grid;
     place-items: center;
+    align-content: center;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
 }
 
 .articulo-picker__footer {
-    margin-top: var(--alfa-space-12);
+    flex: 0 0 auto;
+}
+
+.articulo-picker__dialog-footer {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-8);
+    width: 100%;
+    min-width: 0;
+}
+
+.articulo-picker__dialog-footer-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    width: 100%;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+.articulo-picker__dialog-footer-row--actions {
+    justify-content: flex-end;
+}
+
+.articulo-picker__dialog-footer-row--meta {
+    align-items: center;
 }
 
 .articulo-picker__page-text {
@@ -160,6 +245,13 @@
 }
 
 @media (max-width: 860px) {
+    /* Tablet: ~92% del ancho disponible en vez del tope pensado para desktop. */
+    ::deep .articulo-picker.alfa-dialog,
+    ::deep .articulo-picker.alfa-dialog.alfa-dialog--lg {
+        width: 92vw;
+        max-width: 92vw;
+    }
+
     .articulo-picker__filters {
         grid-template-columns: 1fr 1fr;
     }
@@ -176,18 +268,41 @@
 }
 
 @media (max-width: 640px) {
+    /* Mobile: ~97% del viewport, sin llegar a pegarse al borde (AlfaDialog ya reduce el padding
+       del backdrop a 8px en este breakpoint, que es el margen mínimo que queda). */
+    ::deep .articulo-picker.alfa-dialog,
+    ::deep .articulo-picker.alfa-dialog.alfa-dialog--lg {
+        width: 97vw;
+        max-width: 97vw;
+    }
+
     .articulo-picker__filters {
         grid-template-columns: 1fr;
     }
 
-    /* En mobile ocultamos Código/Marca/Rubro y dejamos Descripción + Precio: la tabla
+    /* En mobile ocultamos Código/Marca/Rubro/Familia y dejamos Descripción + Precio: la tabla
        ya no depende de tracks fijos, así que basta con esconder columnas por posición. */
     .articulo-picker__table th:nth-child(3),
     .articulo-picker__table td:nth-child(3),
     .articulo-picker__table th:nth-child(5),
     .articulo-picker__table td:nth-child(5),
     .articulo-picker__table th:nth-child(6),
-    .articulo-picker__table td:nth-child(6) {
+    .articulo-picker__table td:nth-child(6),
+    .articulo-picker__table th:nth-child(7),
+    .articulo-picker__table td:nth-child(7) {
         display: none;
+    }
+
+    /* En pantallas muy chicas priorizamos usabilidad sobre la regla "solo el listado scrollea":
+       si no entra todo, que scrollee el modal completo en vez de forzar un listado diminuto. */
+    ::deep .articulo-picker .alfa-dialog__body {
+        overflow-y: auto;
+    }
+
+    .articulo-picker__table-wrap {
+        flex: 0 0 auto;
+        min-height: 0;
+        max-height: 46vh;
+        overflow-x: auto;
     }
 }

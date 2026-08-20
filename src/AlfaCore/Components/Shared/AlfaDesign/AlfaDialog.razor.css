@@ -75,6 +75,7 @@
 }
 
 .alfa-dialog__body {
+    flex: 1 1 auto;
     min-height: 0;
     overflow: auto;
     padding: var(--alfa-space-16) 20px;
