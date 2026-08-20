@@ -362,7 +362,7 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
         var builder = new StringBuilder(trimmed.Length);
         foreach (var ch in trimmed)
         {
-            if (char.IsLetterOrDigit(ch) || ch is '-' or '_')
+            if (char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.')
                 builder.Append(ch);
         }
 
