@@ -7171,7 +7171,7 @@ public sealed class ConversacionesService(
         // Herramientas (precio/saldo/pedidos): la cuenta se resuelve una sola vez acá, server-side,
         // y viaja cerrada en el lambda ejecutor -- el modelo nunca puede elegir ni cambiar la cuenta.
         var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, ct).ConfigureAwait(false);
-        var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada);
+        var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
         Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
             ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
                 asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)

@@ -37,10 +37,37 @@ public sealed class ConversacionAsistenteHerramientasService(
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
+    // Palabras que indican que el mensaje puede necesitar alguna herramienta. Filtro deliberadamente
+    // amplio (mejor un falso positivo que uno negativo) -- el objetivo NO es adivinar la intención con
+    // precisión, es evitar mandarle la lista de 5 herramientas a OpenAI en TODOS los mensajes. Con
+    // gpt-4o-mini se comprobó en producción que ofrecer tool-calling en cada respuesta lo vuelve
+    // sobre-cauteloso incluso para un simple "hola" (deriva a un humano en vez de saludar), aunque el
+    // prompt le aclare que las herramientas son opcionales -- es una limitación real del modelo
+    // combinando function-calling con el JSON forzado, no un tema de instrucciones. Reducir cuándo se
+    // ofrecen las herramientas restaura el comportamiento normal para la charla común.
+    private static readonly string[] PalabrasClaveHerramientas =
+    [
+        "precio", "precios", "cuesta", "cuesto", "cuánto sale", "cuanto sale", "vale", "valen", "cotiz",
+        "saldo", "deuda", "debo", "cuenta corriente", "cta cte", "cta.cte", "cuánto debo", "cuanto debo",
+        "pendiente de pago", "factura pendiente", "cobranza", "cobranzas",
+        "pedido", "pedidos", "nota de pedido", "np-",
+        "portal", "autogestión", "autogestion", "acceso online", "ver mi cuenta", "cuenta online"
+    ];
+
+    private static bool MensajeNecesitaHerramientas(string mensajeCliente)
+    {
+        var texto = (mensajeCliente ?? string.Empty).ToLowerInvariant();
+        return texto.Length > 0 && PalabrasClaveHerramientas.Any(texto.Contains);
+    }
+
     public IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto> ObtenerHerramientasDisponibles(
         ConversacionAutomatizacionesConfigDto config,
-        ConversacionCuentaVinculadaDto? cuenta)
+        ConversacionCuentaVinculadaDto? cuenta,
+        string mensajeCliente)
     {
+        if (!MensajeNecesitaHerramientas(mensajeCliente))
+            return [];
+
         var herramientas = new List<ConversacionAsistenteHerramientaDefinicionDto>();
         const string sinParametros = "{\"type\":\"object\",\"properties\":{},\"required\":[]}";
 
