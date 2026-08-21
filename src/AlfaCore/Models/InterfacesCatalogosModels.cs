@@ -24,6 +24,7 @@ public sealed class CatalogosArticuloBusquedaFiltersDto
     public string? IdRubro { get; set; }
     public string? IdFamilia { get; set; }
     public string? IdTipo { get; set; }
+    public string? IdProveedor { get; set; }
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
     public string? IdWeb { get; set; }
@@ -37,6 +38,8 @@ public sealed class CatalogosArticuloBusquedaDto
 {
     public string IdArticulo { get; set; } = string.Empty;
     public string DescripcionArticulo { get; set; } = string.Empty;
+    public string CodigoBarra { get; set; } = string.Empty;
+    public string RutaImagen { get; set; } = string.Empty;
     public string Presentacion { get; set; } = string.Empty;
     public string Marca { get; set; } = string.Empty;
     public string Rubro { get; set; } = string.Empty;
@@ -59,6 +62,8 @@ public sealed class CatalogosArticuloCatalogoDto
 {
     public string IdArticulo { get; set; } = string.Empty;
     public string DescripcionArticulo { get; set; } = string.Empty;
+    public string CodigoBarra { get; set; } = string.Empty;
+    public string RutaImagen { get; set; } = string.Empty;
     public string Presentacion { get; set; } = string.Empty;
     public string Marca { get; set; } = string.Empty;
     public string Rubro { get; set; } = string.Empty;
@@ -115,6 +120,8 @@ public sealed class CatalogosCatalogoItemDto
     public string Observaciones { get; set; } = string.Empty;
     public string IdArticulo { get; set; } = string.Empty;
     public string DescripcionArticulo { get; set; } = string.Empty;
+    public string CodigoBarra { get; set; } = string.Empty;
+    public string RutaImagen { get; set; } = string.Empty;
     public string Presentacion { get; set; } = string.Empty;
     public string Marca { get; set; } = string.Empty;
     public decimal? Precio { get; set; }

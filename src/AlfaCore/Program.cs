@@ -164,6 +164,7 @@ public class Program
         builder.Services.AddScoped<IInterfacesService, InterfacesService>();
         builder.Services.AddScoped<IInterfacesConfigService, InterfacesConfigService>();
         builder.Services.AddScoped<IInterfacesCatalogosService, InterfacesCatalogosService>();
+        builder.Services.AddScoped<IBaseMaestraImagenService, BaseMaestraImagenService>();
         builder.Services.AddScoped<IPedidosEmailService, PedidosEmailService>();
         builder.Services.AddSingleton<IArticuloImagenFtpService, ArticuloImagenFtpService>();
         builder.Services.AddScoped<ICatalogoPublicoPdfService, CatalogoPublicoPdfService>();
@@ -641,6 +642,40 @@ public class Program
 
             return Results.File(image.RutaCompleta, image.MimeType, image.NombreArchivo);
         });
+
+        app.MapGet("/api/base-maestra/imagen-preview", async (
+            string src,
+            string? idCliente,
+            int? idBase,
+            IBaseMaestraImagenService baseMaestraImagenSvc,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            var preview = await baseMaestraImagenSvc.ObtenerPreviewAsync(src, idCliente, idBase, ct);
+            if (preview is null || !File.Exists(preview.RutaCompleta))
+                return Results.NotFound();
+
+            httpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+            httpContext.Response.Headers.Pragma = "no-cache";
+            return Results.File(preview.RutaCompleta, preview.MimeType);
+        }).AllowAnonymous();
+
+        app.MapGet("/api/base-maestra/imagen-preview/{codigo}", async (
+            string codigo,
+            string? idCliente,
+            int? idBase,
+            IBaseMaestraImagenService baseMaestraImagenSvc,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            var preview = await baseMaestraImagenSvc.ObtenerPreviewDesdeCodigoAsync(codigo, idCliente, idBase, ct);
+            if (preview is null || !File.Exists(preview.RutaCompleta))
+                return Results.NotFound();
+
+            httpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+            httpContext.Response.Headers.Pragma = "no-cache";
+            return Results.File(preview.RutaCompleta, preview.MimeType);
+        }).AllowAnonymous();
 
         app.MapGet("/api/comprobantes/{tc}/{idComprobante}", async (
             string tc,

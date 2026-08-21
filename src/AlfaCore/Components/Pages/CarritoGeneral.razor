@@ -112,6 +112,9 @@
             <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Disabled="@_loading" OnClick="AbrirLookupArticulosAsync">
                 Consultar artículos
             </AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-images" Disabled="@(_loading || !_articulosSeleccionados.Any())" OnClick="AbrirBaseMaestraImagenesAsync">
+                Obtener imágenes
+            </AlfaButton>
             @if (PuedeImportarListaCompleta())
             {
                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-cloud-arrow-down" Loading="@_importandoListaCompleta" Disabled="@(_loading || _importandoListaCompleta)" OnClick="ImportarListaCompletaAsync">
@@ -252,6 +255,15 @@
                       OnAgregarSeleccionados="AgregarDesdeLookupAsync"
                       OnClose="CloseLookupArticulosAsync" />
 
+<BaseMaestraImagenesDialog Open="@_showBaseMaestraImagenesModal"
+                           Titulo="Imágenes encontradas"
+                           Subtitulo="Se consultan los artículos del carrito actual en la Base Maestra oficial."
+                           Articulos="@BuildBaseMaestraImagenesOrigen()"
+                           IdClienteFtp="@_ftpCodigoCta"
+                           IdBase="@idbase"
+                           OnAsignadas="OnBaseMaestraImagenesAsignadasAsync"
+                           OnClose="CloseBaseMaestraImagenesAsync" />
+
 @code {
     [Parameter] public int? IdCarrito { get; set; }
 
@@ -262,6 +274,8 @@
     private bool _loading;
     private bool _importandoListaCompleta;
     private bool _showLookupModal;
+    private bool _showBaseMaestraImagenesModal;
+    private int _articuloImageVersion;
     private string _nombre = string.Empty;
     private string _descripcion = string.Empty;
     private bool _activo = true;
@@ -515,6 +529,8 @@
         {
             IdArticulo = item.IdArticulo,
             DescripcionArticulo = item.DescripcionArticulo,
+            CodigoBarra = item.CodigoBarra,
+            RutaImagen = item.RutaImagen,
             Presentacion = item.Presentacion,
             Marca = item.Marca,
             Rubro = item.Rubro
@@ -558,12 +574,47 @@
         => !_articuloImageFallbacks.Contains(idArticulo) && !string.IsNullOrWhiteSpace(GetArticuloImageUrl(idArticulo));
 
     private string GetArticuloImageUrl(string idArticulo)
-        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_ftpCodigoCta, idArticulo, idbase, thumbnail: true);
+        => AddImageVersion(AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_ftpCodigoCta, idArticulo, idbase, thumbnail: true));
 
     private void HandleArticuloImageError(string idArticulo)
     {
         if (!string.IsNullOrWhiteSpace(idArticulo))
             _articuloImageFallbacks.Add(idArticulo);
+    }
+
+    private string AddImageVersion(string? url)
+        => string.IsNullOrWhiteSpace(url) ? string.Empty : $"{url}{(url.Contains('?') ? "&" : "?")}v={_articuloImageVersion}";
+
+    private IReadOnlyList<BaseMaestraImagenOrigenDto> BuildBaseMaestraImagenesOrigen()
+        => _articulosSeleccionados.Select(item => new BaseMaestraImagenOrigenDto
+        {
+            IdArticulo = item.IdArticulo,
+            DescripcionArticulo = item.DescripcionArticulo,
+            CodigoBarra = item.CodigoBarra,
+            RutaImagen = item.RutaImagen,
+            TieneImagenActual = !string.IsNullOrWhiteSpace(GetArticuloImageUrl(item.IdArticulo))
+        }).ToList();
+
+    private Task AbrirBaseMaestraImagenesAsync()
+    {
+        _showBaseMaestraImagenesModal = true;
+        return Task.CompletedTask;
+    }
+
+    private Task CloseBaseMaestraImagenesAsync()
+    {
+        _showBaseMaestraImagenesModal = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnBaseMaestraImagenesAsignadasAsync(BaseMaestraImagenResultadoDto resultado)
+    {
+        _articuloImageVersion++;
+        _articuloImageFallbacks.Clear();
+        _feedbackTitle = "Imágenes actualizadas";
+        _feedback = $"{resultado.Asignadas} imagen(es) fueron asignadas al carrito.";
+        _feedbackIsError = resultado.ConError > 0;
+        await InvokeAsync(StateHasChanged);
     }
 
     private static string ProductInitials(string descripcion)

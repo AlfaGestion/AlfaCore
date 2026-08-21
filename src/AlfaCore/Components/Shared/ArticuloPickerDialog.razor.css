@@ -33,7 +33,7 @@
 
 .articulo-picker__filters {
     display: grid;
-    grid-template-columns: minmax(260px, 2fr) repeat(3, minmax(120px, 1fr)) auto;
+    grid-template-columns: minmax(260px, 2fr) repeat(4, minmax(120px, 1fr)) auto;
     gap: var(--alfa-space-12);
     align-items: end;
     flex: 0 0 auto;
@@ -236,6 +236,10 @@
 
 .articulo-picker__dialog-footer-row--meta {
     align-items: center;
+}
+
+.articulo-picker__dialog-footer-row--selection {
+    justify-content: flex-start;
 }
 
 .articulo-picker__page-text {

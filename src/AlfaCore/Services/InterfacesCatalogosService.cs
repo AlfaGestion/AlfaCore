@@ -103,6 +103,7 @@ public sealed class InterfacesCatalogosService(
             var idRubro = (filters.IdRubro ?? string.Empty).Trim();
             var idFamilia = (filters.IdFamilia ?? string.Empty).Trim();
             var idTipo = (filters.IdTipo ?? string.Empty).Trim();
+            var idProveedor = (filters.IdProveedor ?? string.Empty).Trim();
             var origen = (filters.Origen ?? string.Empty).Trim();
             var usarLista = string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase);
             var clasePrecio = ParseClasePrecio(await GetPublicClasePrecioAsync(filters.IdWeb, token));
@@ -145,6 +146,15 @@ public sealed class InterfacesCatalogosService(
                 SELECT
                     a.IDARTICULO AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, ''))), ''),
+                        N''
+                    ) AS CodigoBarra,
+                    ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
                     ISNULL(LTRIM(RTRIM(a.Presentacion)), '') AS Presentacion,
                     ISNULL(LTRIM(RTRIM(t.Descripcion)), '') AS Marca,
                     ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
@@ -174,6 +184,7 @@ public sealed class InterfacesCatalogosService(
                   AND (@IdRubro = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDRUBRO, '')))) = UPPER(@IdRubro))
                   AND (@IdFamilia = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IdFamilia, '')))) = UPPER(@IdFamilia))
                   AND (@IdTipo = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDTIPO, '')))) = UPPER(@IdTipo))
+                  AND (@IdProveedor = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, '')))) = UPPER(@IdProveedor))
                   AND (
                         @TextoLike = ''
                         OR UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @TextoLike
@@ -190,6 +201,15 @@ public sealed class InterfacesCatalogosService(
                 SELECT
                     a.IDARTICULO AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, ''))), ''),
+                        N''
+                    ) AS CodigoBarra,
+                    ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
                     ISNULL(LTRIM(RTRIM(a.Presentacion)), '') AS Presentacion,
                     ISNULL(LTRIM(RTRIM(t.Descripcion)), '') AS Marca,
                     ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
@@ -210,6 +230,7 @@ public sealed class InterfacesCatalogosService(
                   AND (@IdRubro = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDRUBRO, '')))) = UPPER(@IdRubro))
                   AND (@IdFamilia = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IdFamilia, '')))) = UPPER(@IdFamilia))
                   AND (@IdTipo = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDTIPO, '')))) = UPPER(@IdTipo))
+                  AND (@IdProveedor = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, '')))) = UPPER(@IdProveedor))
                   AND (
                         @TextoLike = ''
                         OR UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @TextoLike
@@ -225,7 +246,7 @@ public sealed class InterfacesCatalogosService(
 
             var rows = (await cn.QueryAsync<CatalogosArticuloBusquedaPageRowDto>(new CommandDefinition(
                 sql,
-                new { IdLista = idLista, IdRubro = idRubro, IdFamilia = idFamilia, IdTipo = idTipo, TextoLike = textoLike, ExcludedIds = excludedIds, Skip = skip, PageSize = pageSize },
+                new { IdLista = idLista, IdRubro = idRubro, IdFamilia = idFamilia, IdTipo = idTipo, IdProveedor = idProveedor, TextoLike = textoLike, ExcludedIds = excludedIds, Skip = skip, PageSize = pageSize },
                 cancellationToken: token))).ToList();
 
             var total = rows.FirstOrDefault()?.TotalRows ?? 0;
@@ -233,6 +254,8 @@ public sealed class InterfacesCatalogosService(
             {
                 IdArticulo = row.IdArticulo,
                 DescripcionArticulo = row.DescripcionArticulo,
+                CodigoBarra = row.CodigoBarra,
+                RutaImagen = row.RutaImagen,
                 Presentacion = row.Presentacion,
                 Marca = row.Marca,
                 Rubro = row.Rubro,
@@ -317,6 +340,248 @@ public sealed class InterfacesCatalogosService(
 
             return (IReadOnlyList<CatalogosClasificacionOpcionDto>)rows.ToList();
         }, "No se pudieron cargar las marcas.", ct);
+
+    // Fuente oficial de proveedores confirmada en docs/DATABASE_TABLES_SUMMARY.md: Vt_Proveedores
+    // (no consultar el plan de cuentas base). El combo se limita a los proveedores que efectivamente
+    // tienen artículos vía V_MA_ARTICULOS.CUENTAPROVEEDOR, igual que Rubro/Familia/Marca.
+    public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetProveedoresArticuloAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetProveedoresArticulo", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await SqlObjectExistsAsync(cn, "V_MA_ARTICULOS", token) || !await SqlObjectExistsAsync(cn, "Vt_Proveedores", token))
+                return (IReadOnlyList<CatalogosClasificacionOpcionDto>)Array.Empty<CatalogosClasificacionOpcionDto>();
+
+            var rows = await cn.QueryAsync<CatalogosClasificacionOpcionDto>(new CommandDefinition(
+                """
+                SELECT DISTINCT
+                    LTRIM(RTRIM(v.CODIGO)) AS Codigo,
+                    ISNULL(NULLIF(LTRIM(RTRIM(v.RAZON_SOCIAL)), ''), LTRIM(RTRIM(v.CODIGO))) AS Descripcion
+                FROM dbo.V_MA_ARTICULOS a
+                INNER JOIN dbo.Vt_Proveedores v
+                    ON LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) = LTRIM(RTRIM(v.CODIGO))
+                WHERE ISNULL(a.Suspendido, 0) <> 1
+                  AND ISNULL(a.SuspendidoV, 0) <> 1
+                  AND LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) <> ''
+                ORDER BY Descripcion, Codigo;
+                """,
+                cancellationToken: token));
+
+            return (IReadOnlyList<CatalogosClasificacionOpcionDto>)rows.ToList();
+        }, "No se pudieron cargar los proveedores.", ct);
+
+    // Variante sin paginar de SearchArticulosAsync: mismo WHERE/joins, reutilizada tanto por
+    // "Importar todo" (Catálogo, sin filtros de clasificación) como por "Seleccionar todos los
+    // resultados" (ArticuloPickerDialog, con los filtros activos del modal). Devuelve como máximo
+    // MaxArticulosBatch filas para no cargar un resultado descontrolado en memoria; CountArticulosAllAsync
+    // permite avisar antes si el conjunto excede ese límite.
+    private const int MaxArticulosBatch = 20000;
+
+    public Task<int> CountArticulosAllAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "CountArticulosAll", async token =>
+        {
+            filters ??= new CatalogosArticuloBusquedaFiltersDto();
+            var (whereSql, usarLista, parameters) = BuildArticulosWhere(filters);
+            if (whereSql is null)
+                return 0;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await SqlObjectExistsAsync(cn, "V_MA_ARTICULOS", token))
+                return 0;
+
+            if (usarLista && !await SqlObjectExistsAsync(cn, "V_MA_Precios", token))
+                return 0;
+
+            const string rubroTipoJoins = """
+                LEFT JOIN dbo.V_TA_Rubros r ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
+                LEFT JOIN dbo.V_TA_TipoArticulo t ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
+                """;
+            var from = usarLista
+                ? $"FROM dbo.V_MA_Precios p INNER JOIN dbo.V_MA_ARTICULOS a ON a.IDARTICULO = p.IdArticulo {rubroTipoJoins}"
+                : $"FROM dbo.V_MA_ARTICULOS a {rubroTipoJoins}";
+
+            var sql = $"SELECT COUNT(1) {from} WHERE {whereSql}";
+            return await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, ToDynamicParameters(parameters), cancellationToken: token));
+        }, "No se pudo contar los artículos.", ct);
+
+    public Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> SearchArticulosAllAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SearchArticulosAll", async token =>
+        {
+            filters ??= new CatalogosArticuloBusquedaFiltersDto();
+            var (whereSql, usarLista, parameters) = BuildArticulosWhere(filters);
+            if (whereSql is null)
+                return Array.Empty<CatalogosArticuloBusquedaDto>();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            if (!await SqlObjectExistsAsync(cn, "V_MA_ARTICULOS", token))
+                return Array.Empty<CatalogosArticuloBusquedaDto>();
+
+            if (usarLista && !await SqlObjectExistsAsync(cn, "V_MA_Precios", token))
+                return Array.Empty<CatalogosArticuloBusquedaDto>();
+
+            var clasePrecio = ParseClasePrecio(await GetPublicClasePrecioAsync(filters.IdWeb, token));
+            var ofertaClase = usarLista ? await GetOfertaClasePrecioAsync(cn, token) : 0;
+            var tieneFamilias = await SqlObjectExistsAsync(cn, "V_TA_FAMILIAS", token);
+            var familiaJoin = tieneFamilias
+                ? "LEFT JOIN dbo.V_TA_FAMILIAS f ON LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))) = LTRIM(RTRIM(f.IdFamilia))"
+                : string.Empty;
+            var familiaSelect = tieneFamilias ? "ISNULL(LTRIM(RTRIM(f.Descripcion)), '')" : "''";
+
+            var sql = usarLista
+                ? $"""
+                SELECT TOP (@MaxRows)
+                    a.IDARTICULO AS IdArticulo,
+                    ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
+                    ISNULL(LTRIM(RTRIM(a.Presentacion)), '') AS Presentacion,
+                    ISNULL(LTRIM(RTRIM(t.Descripcion)), '') AS Marca,
+                    ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
+                    {familiaSelect} AS Familia,
+                    ISNULL(LTRIM(RTRIM(p.IdLista)), '') AS ListaPrecio,
+                    N'' AS NombreListaPrecio,
+                    ISNULL(p.Precio{clasePrecio}, 0) AS Precio,
+                    CASE
+                        WHEN p.FhOfertaDesde IS NOT NULL
+                         AND GETDATE() >= p.FhOfertaDesde
+                         AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN p.Precio{ofertaClase}
+                        ELSE NULL
+                    END AS PrecioOferta
+                FROM dbo.V_MA_Precios p
+                INNER JOIN dbo.V_MA_ARTICULOS a
+                    ON a.IDARTICULO = p.IdArticulo
+                LEFT JOIN dbo.V_TA_Rubros r
+                    ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
+                LEFT JOIN dbo.V_TA_TipoArticulo t
+                    ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
+                {familiaJoin}
+                WHERE {whereSql}
+                ORDER BY a.DESCRIPCION, a.IDARTICULO;
+                """
+                : $"""
+                SELECT TOP (@MaxRows)
+                    a.IDARTICULO AS IdArticulo,
+                    ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
+                    ISNULL(LTRIM(RTRIM(a.Presentacion)), '') AS Presentacion,
+                    ISNULL(LTRIM(RTRIM(t.Descripcion)), '') AS Marca,
+                    ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
+                    {familiaSelect} AS Familia,
+                    N'' AS ListaPrecio,
+                    N'' AS NombreListaPrecio,
+                    ISNULL(a.Precio{clasePrecio}, 0) AS Precio,
+                    CAST(NULL AS decimal(18, 4)) AS PrecioOferta
+                FROM dbo.V_MA_ARTICULOS a
+                LEFT JOIN dbo.V_TA_Rubros r
+                    ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
+                LEFT JOIN dbo.V_TA_TipoArticulo t
+                    ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
+                {familiaJoin}
+                WHERE {whereSql}
+                ORDER BY a.DESCRIPCION, a.IDARTICULO;
+                """;
+
+            var dapperParams = ToDynamicParameters(parameters);
+            dapperParams.Add("MaxRows", MaxArticulosBatch);
+
+            var items = await cn.QueryAsync<CatalogosArticuloBusquedaDto>(new CommandDefinition(sql, dapperParams, cancellationToken: token));
+            return (IReadOnlyList<CatalogosArticuloBusquedaDto>)items.ToList();
+        }, "No se pudieron obtener los artículos.", ct);
+
+    // Arma el WHERE compartido por CountArticulosAllAsync/SearchArticulosAllAsync (mismas reglas que
+    // SearchArticulosAsync: suspendido, rubro/familia/marca/proveedor, texto y exclusión de ya agregados).
+    // Devuelve whereSql = null cuando el origen es lista y no hay IdLista (no hay nada para traer).
+    private static (string? WhereSql, bool UsarLista, Dictionary<string, object> Parameters) BuildArticulosWhere(CatalogosArticuloBusquedaFiltersDto filters)
+    {
+        var idLista = (filters.IdLista ?? string.Empty).Trim();
+        var idRubro = (filters.IdRubro ?? string.Empty).Trim();
+        var idFamilia = (filters.IdFamilia ?? string.Empty).Trim();
+        var idTipo = (filters.IdTipo ?? string.Empty).Trim();
+        var idProveedor = (filters.IdProveedor ?? string.Empty).Trim();
+        var textoLike = LikeContains(filters.Texto);
+        var origen = (filters.Origen ?? string.Empty).Trim();
+        var usarLista = string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase);
+
+        if (usarLista && string.IsNullOrWhiteSpace(idLista))
+            return (null, usarLista, []);
+
+        var excludedIds = (filters.ExcludedIds ?? [])
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Select(id => id.Trim().ToUpperInvariant())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var exclusionFilter = excludedIds.Count > 0
+            ? "AND UPPER(LTRIM(RTRIM(a.IDARTICULO))) NOT IN @ExcludedIds"
+            : string.Empty;
+
+        var parameters = new Dictionary<string, object>
+        {
+            ["IdRubro"] = idRubro,
+            ["IdFamilia"] = idFamilia,
+            ["IdTipo"] = idTipo,
+            ["IdProveedor"] = idProveedor,
+            ["TextoLike"] = textoLike,
+            ["ExcludedIds"] = excludedIds
+        };
+
+        var whereSql = usarLista
+            ? $"""
+              UPPER(LTRIM(RTRIM(ISNULL(p.IdLista, '')))) = UPPER(LTRIM(RTRIM(@IdLista)))
+                AND UPPER(LTRIM(RTRIM(ISNULL(p.TipoLista, 'V')))) = 'V'
+                AND ISNULL(a.Suspendido, 0) <> 1
+                AND ISNULL(a.SuspendidoV, 0) <> 1
+                AND (@IdRubro = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDRUBRO, '')))) = UPPER(@IdRubro))
+                AND (@IdFamilia = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IdFamilia, '')))) = UPPER(@IdFamilia))
+                AND (@IdTipo = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDTIPO, '')))) = UPPER(@IdTipo))
+                AND (@IdProveedor = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, '')))) = UPPER(@IdProveedor))
+                AND (
+                      @TextoLike = ''
+                      OR UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @TextoLike
+                      OR UPPER(LTRIM(RTRIM(ISNULL(a.DESCRIPCION, '')))) LIKE @TextoLike
+                      OR UPPER(LTRIM(RTRIM(ISNULL(a.Presentacion, '')))) LIKE @TextoLike
+                      OR UPPER(LTRIM(RTRIM(ISNULL(t.Descripcion, '')))) LIKE @TextoLike
+                      OR UPPER(LTRIM(RTRIM(ISNULL(r.Descripcion, '')))) LIKE @TextoLike
+                    )
+                {exclusionFilter}
+              """
+            : $"""
+              ISNULL(a.Suspendido, 0) <> 1
+                AND ISNULL(a.SuspendidoV, 0) <> 1
+                AND (@IdRubro = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDRUBRO, '')))) = UPPER(@IdRubro))
+                AND (@IdFamilia = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IdFamilia, '')))) = UPPER(@IdFamilia))
+                AND (@IdTipo = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.IDTIPO, '')))) = UPPER(@IdTipo))
+                AND (@IdProveedor = '' OR UPPER(LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, '')))) = UPPER(@IdProveedor))
+                AND (
+                      @TextoLike = ''
+                      OR UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @TextoLike
+                      OR UPPER(LTRIM(RTRIM(ISNULL(a.DESCRIPCION, '')))) LIKE @TextoLike
+                      OR UPPER(LTRIM(RTRIM(ISNULL(a.Presentacion, '')))) LIKE @TextoLike
+                      OR UPPER(LTRIM(RTRIM(ISNULL(t.Descripcion, '')))) LIKE @TextoLike
+                      OR UPPER(LTRIM(RTRIM(ISNULL(r.Descripcion, '')))) LIKE @TextoLike
+                    )
+                {exclusionFilter}
+              """;
+
+        if (usarLista)
+            parameters["IdLista"] = idLista;
+
+        return (whereSql, usarLista, parameters);
+    }
+
+    // DynamicParameters no tiene un constructor propio a partir de un Dictionary<string, object>
+    // que garantice el mismo comportamiento de expansión de listas ("NOT IN @ExcludedIds") que ya
+    // usan los métodos con objetos anónimos: se arma explícitamente con Add() por entrada.
+    private static DynamicParameters ToDynamicParameters(Dictionary<string, object> source)
+    {
+        var parameters = new DynamicParameters();
+        foreach (var (key, value) in source)
+            parameters.Add(key, value);
+
+        return parameters;
+    }
 
     public Task<int> CountArticulosDesdeListaAsync(string idLista, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "CountArticulosDesdeLista", async token =>
@@ -556,9 +821,10 @@ public sealed class InterfacesCatalogosService(
             if (string.IsNullOrWhiteSpace(request.Nombre))
                 throw new InvalidOperationException("Ingresá el nombre del catálogo.");
 
-            if (string.IsNullOrWhiteSpace(request.IdLista))
-                throw new InvalidOperationException("Seleccioná una lista de precios.");
-
+            // IdLista es solo metadata descriptiva en V_MV_INSERT (nvarchar(4), sin FK): un catálogo
+            // con origen Maestro de artículos la deja vacía a propósito (así es como GetCatalogoAsync
+            // ya infiere el origen al reabrir para editar). No exigirla acá, o "Maestro" nunca podría
+            // publicarse.
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
@@ -1669,12 +1935,23 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(LTRIM(RTRIM(c.Observaciones)), '') AS Observaciones,
                     ISNULL(LTRIM(RTRIM(c.IDARTICULO)), '') AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(c.DescripcionArticulo)), '') AS DescripcionArticulo,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, ''))), ''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, ''))), ''),
+                        N''
+                    ) AS CodigoBarra,
+                    ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
                     ISNULL(LTRIM(RTRIM(c.Presentacion)), '') AS Presentacion,
                     ISNULL(LTRIM(RTRIM(c.Marca)), '') AS Marca,
                     c.Precio,
                     c.PrecioOferta,
                     ISNULL(LTRIM(RTRIM(c.RUBRO)), '') AS Rubro
                 FROM dbo.V_MV_INSERT c
+                LEFT JOIN dbo.V_MA_ARTICULOS a
+                    ON UPPER(LTRIM(RTRIM(a.IDARTICULO))) = UPPER(LTRIM(RTRIM(c.IDARTICULO)))
                 {where}
                 ORDER BY c.IDARTICULO;
                 """;
@@ -2091,6 +2368,8 @@ public sealed class InterfacesCatalogosService(
     {
         public string IdArticulo { get; set; } = string.Empty;
         public string DescripcionArticulo { get; set; } = string.Empty;
+        public string CodigoBarra { get; set; } = string.Empty;
+        public string RutaImagen { get; set; } = string.Empty;
         public string Presentacion { get; set; } = string.Empty;
         public string Marca { get; set; } = string.Empty;
         public string Rubro { get; set; } = string.Empty;

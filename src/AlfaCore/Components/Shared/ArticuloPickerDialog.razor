@@ -53,6 +53,13 @@
                             Placeholder="Todas"
                             Disabled="@_loading"
                             Class="articulo-picker__filter" />
+                <AlfaSelect Label="Proveedor"
+                            Value="@_idProveedor"
+                            ValueChanged="SetProveedorAsync"
+                            Options="@_proveedorOptions"
+                            Placeholder="Todos"
+                            Disabled="@_loading"
+                            Class="articulo-picker__filter" />
                 <AlfaButton Variant="AlfaButtonVariant.Primary"
                             Icon="bi bi-search"
                             Loading="@_loading"
@@ -99,7 +106,7 @@
                             {
                                 <tr class="articulo-picker__row" @onclick="() => ToggleSeleccion(item.IdArticulo)">
                                     <td class="articulo-picker__col-check" @onclick:stopPropagation="true">
-                                        <AlfaCheckbox Value="@_seleccionados.Contains(item.IdArticulo)"
+                                        <AlfaCheckbox Value="@EstaSeleccionado(item.IdArticulo)"
                                                       ValueChanged="_ => ToggleSeleccion(item.IdArticulo)" />
                                     </td>
                                     <td class="articulo-picker__col-thumb">
@@ -145,14 +152,28 @@
                                 Disabled="@(_loading || _pageNumber >= _totalPages)" OnClick="() => CambiarPaginaAsync(_pageNumber + 1)" />
                 </div>
             </div>
+            @if (string.IsNullOrWhiteSpace(BloqueoMensaje))
+            {
+                <div class="articulo-picker__dialog-footer-row articulo-picker__dialog-footer-row--selection">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_loading || _resultados.Count == 0)" OnClick="SeleccionarPaginaAsync">
+                        Seleccionar página
+                    </AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_loading || _total == 0)" OnClick="SeleccionarTodosAsync">
+                        Seleccionar todos los resultados
+                    </AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_loading || SeleccionadosCount == 0)" OnClick="LimpiarSeleccionAsync">
+                        Limpiar selección
+                    </AlfaButton>
+                </div>
+            }
             <div class="articulo-picker__dialog-footer-row articulo-picker__dialog-footer-row--actions">
                 <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@_loading" OnClick="RequestCloseAsync">
                     Cancelar
                 </AlfaButton>
                 @if (string.IsNullOrWhiteSpace(BloqueoMensaje))
                 {
-                    <AlfaButton Variant="AlfaButtonVariant.Primary" Disabled="@(_loading || _seleccionados.Count == 0)" OnClick="AgregarSeleccionadosAsync">
-                        Agregar seleccionados (@_seleccionados.Count)
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Loading="@_agregandoSeleccionados" Disabled="@(_loading || _agregandoSeleccionados || SeleccionadosCount == 0)" OnClick="AgregarSeleccionadosAsync">
+                        Agregar seleccionados (@SeleccionadosCount)
                     </AlfaButton>
                 }
             </div>
@@ -178,10 +199,12 @@
     private bool _wasOpen;
     private bool _optionsLoaded;
     private bool _loading;
+    private bool _agregandoSeleccionados;
     private string _texto = string.Empty;
     private string _idRubro = string.Empty;
     private string _idFamilia = string.Empty;
     private string _idTipo = string.Empty;
+    private string _idProveedor = string.Empty;
     private int _pageNumber = 1;
     private int _totalPages;
     private int _total;
@@ -192,9 +215,24 @@
     private readonly Dictionary<string, CatalogosArticuloBusquedaDto> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
 
+    // "Seleccionar todos los resultados": modo de selección global por filtros en vez de por IDs
+    // materializados en el cliente (evita cargar miles de objetos completos solo para marcar
+    // checkboxes). Mientras está activo, todo lo que matchea los filtros actuales cuenta como
+    // seleccionado salvo lo que el usuario haya destildado a mano (_exclusionesGlobales).
+    private bool _seleccionGlobalActiva;
+    private readonly HashSet<string> _exclusionesGlobales = new(StringComparer.OrdinalIgnoreCase);
+
     private IReadOnlyList<AlfaSelectOption> _rubroOptions = [];
     private IReadOnlyList<AlfaSelectOption> _familiaOptions = [];
     private IReadOnlyList<AlfaSelectOption> _marcaOptions = [];
+    private IReadOnlyList<AlfaSelectOption> _proveedorOptions = [];
+
+    private int SeleccionadosCount => _seleccionGlobalActiva
+        ? Math.Max(0, _total - _exclusionesGlobales.Count)
+        : _seleccionados.Count;
+
+    private bool EstaSeleccionado(string idArticulo)
+        => _seleccionGlobalActiva ? !_exclusionesGlobales.Contains(idArticulo) : _seleccionados.Contains(idArticulo);
 
     private bool? HeaderCheckboxState
     {
@@ -203,7 +241,7 @@
             if (_resultados.Count == 0)
                 return false;
 
-            var seleccionadosEnPagina = _resultados.Count(r => _seleccionados.Contains(r.IdArticulo));
+            var seleccionadosEnPagina = _resultados.Count(r => EstaSeleccionado(r.IdArticulo));
             if (seleccionadosEnPagina == 0)
                 return false;
 
@@ -239,12 +277,15 @@
         _idRubro = string.Empty;
         _idFamilia = string.Empty;
         _idTipo = string.Empty;
+        _idProveedor = string.Empty;
         _pageNumber = 1;
         _totalPages = 0;
         _total = 0;
         _feedback = null;
         _resultados.Clear();
         _seleccionados.Clear();
+        _seleccionGlobalActiva = false;
+        _exclusionesGlobales.Clear();
         _cache.Clear();
         _imageFallbacks.Clear();
     }
@@ -264,6 +305,11 @@
         var marcas = await UiOps.RunAsync(() => CatalogosSvc.GetMarcasArticuloAsync(), "No se pudieron cargar las marcas.");
         _marcaOptions = marcas.Success && marcas.Value is not null
             ? marcas.Value.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()
+            : [];
+
+        var proveedores = await UiOps.RunAsync(() => CatalogosSvc.GetProveedoresArticuloAsync(), "No se pudieron cargar los proveedores.");
+        _proveedorOptions = proveedores.Success && proveedores.Value is not null
+            ? proveedores.Value.Select(x => new AlfaSelectOption(x.Codigo, x.Descripcion)).ToList()
             : [];
     }
 
@@ -285,11 +331,23 @@
         return BuscarAsync(resetPage: true);
     }
 
+    private Task SetProveedorAsync(string? value)
+    {
+        _idProveedor = value ?? string.Empty;
+        return BuscarAsync(resetPage: true);
+    }
+
     private async Task BuscarAsync(bool resetPage, IReadOnlyCollection<string>? extraExclude = null)
     {
         _feedback = null;
         if (resetPage)
+        {
             _pageNumber = 1;
+            // Cambiar cualquier filtro después de "Seleccionar todos" no debe arrastrar la selección
+            // global a un conjunto distinto sin avisar: se limpia y el usuario vuelve a elegir.
+            _seleccionGlobalActiva = false;
+            _exclusionesGlobales.Clear();
+        }
 
         _loading = true;
         await InvokeAsync(StateHasChanged);
@@ -309,6 +367,7 @@
                 IdRubro = _idRubro,
                 IdFamilia = _idFamilia,
                 IdTipo = _idTipo,
+                IdProveedor = _idProveedor,
                 PageNumber = _pageNumber,
                 PageSize = PageSize,
                 IdWeb = IdWeb,
@@ -357,6 +416,13 @@
 
     private void ToggleSeleccion(string idArticulo)
     {
+        if (_seleccionGlobalActiva)
+        {
+            if (!_exclusionesGlobales.Remove(idArticulo))
+                _exclusionesGlobales.Add(idArticulo);
+            return;
+        }
+
         if (_seleccionados.Contains(idArticulo))
             _seleccionados.Remove(idArticulo);
         else
@@ -365,24 +431,112 @@
 
     private void ToggleSeleccionarPagina()
     {
-        var todasSeleccionadas = _resultados.Count > 0 && _resultados.All(r => _seleccionados.Contains(r.IdArticulo));
+        var todasSeleccionadas = _resultados.Count > 0 && _resultados.All(r => EstaSeleccionado(r.IdArticulo));
 
         foreach (var item in _resultados)
         {
-            if (todasSeleccionadas)
+            if (_seleccionGlobalActiva)
+            {
+                if (todasSeleccionadas)
+                    _exclusionesGlobales.Add(item.IdArticulo);
+                else
+                    _exclusionesGlobales.Remove(item.IdArticulo);
+            }
+            else if (todasSeleccionadas)
+            {
                 _seleccionados.Remove(item.IdArticulo);
+            }
+            else
+            {
+                _seleccionados.Add(item.IdArticulo);
+            }
+        }
+    }
+
+    // "Seleccionar página": agrega los artículos visibles de la página actual a lo ya seleccionado
+    // (no reemplaza selección de otras páginas — el picker ya soporta selección multi-página).
+    private Task SeleccionarPaginaAsync()
+    {
+        foreach (var item in _resultados)
+        {
+            if (_seleccionGlobalActiva)
+                _exclusionesGlobales.Remove(item.IdArticulo);
             else
                 _seleccionados.Add(item.IdArticulo);
         }
+
+        return Task.CompletedTask;
+    }
+
+    // "Seleccionar todos los resultados": activa el modo global (cuenta = _total, ya calculado por
+    // el último BuscarAsync con los filtros vigentes) sin traer ni cachear los objetos completos.
+    private Task SeleccionarTodosAsync()
+    {
+        _seleccionGlobalActiva = true;
+        _exclusionesGlobales.Clear();
+        _seleccionados.Clear();
+        return Task.CompletedTask;
+    }
+
+    private Task LimpiarSeleccionAsync()
+    {
+        _seleccionGlobalActiva = false;
+        _exclusionesGlobales.Clear();
+        _seleccionados.Clear();
+        return Task.CompletedTask;
     }
 
     private async Task AgregarSeleccionadosAsync()
     {
-        var items = _seleccionados
-            .Select(id => _cache.TryGetValue(id, out var value) ? value : null)
-            .Where(item => item is not null)
-            .Select(item => item!)
-            .ToList();
+        List<CatalogosArticuloBusquedaDto> items;
+
+        if (_seleccionGlobalActiva)
+        {
+            // Selección global: se resuelve en un único llamado batch al backend (mismos filtros
+            // activos + exclusión de ya-agregados + destildados a mano), no artículo por artículo.
+            var excluidos = ExcludedIds
+                .Concat(_exclusionesGlobales)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            _agregandoSeleccionados = true;
+            await InvokeAsync(StateHasChanged);
+            try
+            {
+                var result = await UiOps.RunAsync(() => CatalogosSvc.SearchArticulosAllAsync(new CatalogosArticuloBusquedaFiltersDto
+                {
+                    Texto = _texto,
+                    IdLista = IdLista ?? string.Empty,
+                    Origen = Origen,
+                    IdRubro = _idRubro,
+                    IdFamilia = _idFamilia,
+                    IdTipo = _idTipo,
+                    IdProveedor = _idProveedor,
+                    IdWeb = IdWeb,
+                    ExcludedIds = excluidos
+                }), "No se pudieron obtener los artículos seleccionados.");
+
+                if (!result.Success || result.Value is null)
+                {
+                    _feedback = result.Feedback;
+                    return;
+                }
+
+                items = result.Value.ToList();
+            }
+            finally
+            {
+                _agregandoSeleccionados = false;
+            }
+        }
+        else
+        {
+            items = _seleccionados
+                .Select(id => _cache.TryGetValue(id, out var value) ? value : null)
+                .Where(item => item is not null)
+                .Select(item => item!)
+                .ToList();
+        }
 
         if (items.Count == 0)
             return;
@@ -390,6 +544,8 @@
         await OnAgregarSeleccionados.InvokeAsync(items);
 
         var justAddedIds = items.Select(i => i.IdArticulo).ToList();
+        _seleccionGlobalActiva = false;
+        _exclusionesGlobales.Clear();
         _seleccionados.Clear();
         await BuscarAsync(resetPage: false, justAddedIds);
     }
@@ -409,8 +565,9 @@
     private string GetFooterText()
     {
         var baseText = $"{_total} disponible{(_total == 1 ? string.Empty : "s")} · Página {_pageNumber} de {Math.Max(_totalPages, 1)}";
-        return _seleccionados.Count > 0
-            ? $"{baseText} · {_seleccionados.Count} seleccionado{(_seleccionados.Count == 1 ? string.Empty : "s")}"
+        var seleccionados = SeleccionadosCount;
+        return seleccionados > 0
+            ? $"{baseText} · {seleccionados} seleccionado{(seleccionados == 1 ? string.Empty : "s")}"
             : baseText;
     }
 
