@@ -247,6 +247,8 @@ public class Program
         builder.Services.AddScoped<IAlfaKnowledgeSuggestionService, AlfaKnowledgeSuggestionService>();
         builder.Services.AddScoped<IConversacionAnalisisService, ConversacionAnalisisService>();
         builder.Services.AddScoped<IConversacionAsistenteService, ConversacionAsistenteService>();
+        builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
+        builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
         builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
         builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();

@@ -22,6 +22,7 @@ public sealed class ConversacionesService(
     INotificacionesPushService notificacionesPushService,
     ICentralAdminService centralAdminService,
     IConversacionAsistenteService asistenteService,
+    IConversacionAsistenteHerramientasService asistenteHerramientasService,
     IAlfaKnowledgeSuggestionService alfaKnowledgeService,
     IWebHostEnvironment environment) : IConversacionesService
 {
@@ -2244,8 +2245,6 @@ public sealed class ConversacionesService(
                 }
 
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
-                if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
-                    whatsAppConfig.PhoneNumberId = conversation.PhoneNumberId;
 
                 // El proveedor global (Meta vs Web) es sólo un default de base: la conversación ya
                 // sabe de qué número entró (IdNumeroWhatsApp). Si ese número específico tiene una
@@ -2258,6 +2257,19 @@ public sealed class ConversacionesService(
                     ? await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsAppParaEnvio.Value, token)
                     : null;
                 numeroWeb = await ResolveWhatsAppWebNumeroForSendAsync(conversation.IdConversacion, numeroWeb, token);
+
+                // PhoneNumberId a usar para el envío por API: preferí el del número elegido en
+                // "Enviar desde" (numeroWeb, la selección explícita del técnico); si ese número no
+                // tiene uno propio cargado, caé al de la conversación (con qué PhoneNumberId entró
+                // originalmente); si tampoco hay, quedate con el default global de whatsAppConfig.
+                // Antes solo miraba conversation.PhoneNumberId, ignorando la selección manual del
+                // combo para números API -- si ese campo de la conversación estaba vacío (ej. una
+                // conversación sin ese dato cargado), el mensaje se mandaba silenciosamente con lo
+                // que hubiera en la config global, sin respetar el número elegido.
+                var phoneNumberIdParaEnvio = FirstNonEmpty(numeroWeb?.PhoneNumberId, conversation.PhoneNumberId);
+                if (!string.IsNullOrWhiteSpace(phoneNumberIdParaEnvio))
+                    whatsAppConfig.PhoneNumberId = phoneNumberIdParaEnvio;
+
                 whatsAppDeliveryProvider = ResolveWhatsAppDeliveryProviderForNumero(whatsAppConfig, numeroWeb);
 
                 var isWhatsAppWebDelivery = string.Equals(whatsAppDeliveryProvider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase);
@@ -2265,9 +2277,19 @@ public sealed class ConversacionesService(
                 if (!windowActive)
                     throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
 
-                initialState = isWhatsAppWebDelivery
-                    ? "PENDIENTE"
-                    : whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
+                // Si no hay sesión Web activa NI configuración de API válida para el número resuelto,
+                // antes esto quedaba en silencio: el mensaje se guardaba como "PENDIENTE_CONFIG" y el
+                // método devolvía éxito igual (el técnico veía "Mensaje enviado correctamente" aunque
+                // WhatsApp nunca lo recibiera). Ahora se corta acá con un error visible.
+                if (!isWhatsAppWebDelivery && whatsAppConfig?.IsConfiguredForSend != true)
+                {
+                    throw new InvalidOperationException(
+                        "No se pudo enviar: el número de WhatsApp elegido no tiene una sesión Web conectada ni un Phone Number ID/Access Token de API configurados.");
+                }
+
+                // Llegado acá, isWhatsAppWebDelivery es true o whatsAppConfig.IsConfiguredForSend es
+                // true (si no, ya se tiró la excepción de arriba) -- siempre hay un camino de envío.
+                initialState = "PENDIENTE";
             }
             else if (isInstagram)
             {
@@ -7117,11 +7139,15 @@ public sealed class ConversacionesService(
         if (!await IsSendWindowActiveAsync(idConversacion, canalBot, ct).ConfigureAwait(false))
             return;
 
-        var (botCount, lastSistema) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
+        var (botCount, yaRespondioEsteMensaje) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
         if (botCount >= Math.Max(1, config.BotMaxRespuestas))
             return;
-        // No encimar sobre otra automática (bienvenida, fuera de horario, auto-cierre, etc.).
-        if (IsAutomaticSystem(lastSistema))
+        // No encimar sobre otra automática que ya haya respondido al último mensaje entrante
+        // (bienvenida, fuera de horario, auto-cierre, u otra corrida del propio bot). Se compara por
+        // IdMensaje (no por "el último saliente fue automático alguna vez"): si no, después de la
+        // primera respuesta automática de la conversación -- incluida la del propio bot -- esta
+        // condición quedaba true para siempre y el bot no volvía a responder nunca más.
+        if (yaRespondioEsteMensaje)
             return;
 
         var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
@@ -7163,9 +7189,19 @@ public sealed class ConversacionesService(
 
         var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
 
+        // Herramientas (precio/saldo/pedidos): la cuenta se resuelve una sola vez acá, server-side,
+        // y viaja cerrada en el lambda ejecutor -- el modelo nunca puede elegir ni cambiar la cuenta.
+        var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, ct).ConfigureAwait(false);
+        var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
+        Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
+            ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
+                asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
+            : null;
+
         var result = await asistenteService.ResponderAsync(
             config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-            texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, ct).ConfigureAwait(false);
+            texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente,
+            herramientas, ejecutarHerramientaAsync, ct).ConfigureAwait(false);
 
         // Nunca dejamos al cliente sin respuesta. El asistente decide el tipo:
         //   RESUELVE -> resolvió; ACLARA -> repregunta para poder resolver (esperamos su respuesta);
@@ -7927,12 +7963,20 @@ public sealed class ConversacionesService(
         }
     }
 
-    private async Task<(int Count, string LastSistema)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
+    /// <summary>
+    /// Cuenta de respuestas del bot (para el tope <c>BotMaxRespuestas</c>) y si el último mensaje
+    /// entrante YA tiene una respuesta automática posterior (bienvenida/fuera de horario/auto-cierre/
+    /// bot) -- comparado por <c>IdMensaje</c>, no por "el último saliente alguna vez fue automático":
+    /// eso evita que, tras la primera respuesta automática de toda la conversación, quede bloqueado
+    /// para siempre (ver comentario en el llamador).
+    /// </summary>
+    private async Task<(int Count, bool YaRespondioUltimoEntrante)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
     {
         const string sql = """
             SELECT
                 (SELECT COUNT(1) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') = N'BOT'),
-                ISNULL((SELECT TOP (1) ISNULL(SistemaAutor, '') FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' ORDER BY FechaHora DESC, IdMensaje DESC), '');
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'), 0),
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') IN (N'AUTOMATIZACION', N'BIENVENIDA', N'BOT', N'AUTOCIERRE_AVISO', N'AUTOCIERRE', N'REGLA')), 0);
             """;
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
@@ -7940,8 +7984,13 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@Id", idConversacion);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         if (await rd.ReadAsync(ct))
-            return (rd.IsDBNull(0) ? 0 : rd.GetInt32(0), GetString(rd, 1));
-        return (0, string.Empty);
+        {
+            var count = rd.IsDBNull(0) ? 0 : rd.GetInt32(0);
+            var ultimoEntranteId = rd.IsDBNull(1) ? 0L : rd.GetInt64(1);
+            var ultimoAutomaticoId = rd.IsDBNull(2) ? 0L : rd.GetInt64(2);
+            return (count, ultimoAutomaticoId > ultimoEntranteId);
+        }
+        return (0, false);
     }
 
     private async Task<IReadOnlyList<ConversacionMensajeDto>> GetRecentMessagesForBotAsync(long idConversacion, CancellationToken ct)
@@ -10282,6 +10331,83 @@ public sealed class ConversacionesService(
         return result is null || result is DBNull
             ? string.Empty
             : Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Resuelve la cuenta comercial (Cliente o Proveedor) vinculada a una conversación, para el
+    /// asistente de IA -- ver conversaciones_agente_ia_plan.md. Primero el camino rápido ya existente
+    /// (CONV_CONVERSACIONES.ClienteCodigo, específico de Cliente); si no hay, generaliza el vínculo
+    /// Contacto -> Cuenta comercial (dbo.MA_CONTACTOS_CUENTAS) probando VT_CLIENTES y, si no matchea,
+    /// VT_PROVEEDORES. Sin match en ningún lado, devuelve null -- el asistente no debe ofrecer
+    /// herramientas sensibles (saldo/pedidos) sin una cuenta identificada.
+    /// </summary>
+    private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync(long idConversacion, CancellationToken ct)
+    {
+        string clienteCodigo;
+        int? idContacto;
+
+        await using (var cn = new SqlConnection(ConnectionString))
+        {
+            await cn.OpenAsync(ct);
+            const string sqlConversacion = """
+                SELECT TOP (1) ISNULL(LTRIM(RTRIM(ClienteCodigo)), N''), IdContacto
+                FROM dbo.CONV_CONVERSACIONES
+                WHERE IdConversacion = @IdConversacion;
+                """;
+            await using var cmd = new SqlCommand(sqlConversacion, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (!await rd.ReadAsync(ct))
+                return null;
+
+            clienteCodigo = GetString(rd, 0);
+            idContacto = rd.IsDBNull(1) ? null : rd.GetInt32(1);
+        }
+
+        if (!string.IsNullOrWhiteSpace(clienteCodigo))
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            const string sqlCliente = """
+                SELECT TOP (1) ISNULL(LTRIM(RTRIM(RAZON_SOCIAL)), N'')
+                FROM dbo.VT_CLIENTES
+                WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
+                """;
+            await using var cmd = new SqlCommand(sqlCliente, cn);
+            cmd.Parameters.AddWithValue("@Codigo", clienteCodigo);
+            var razonSocial = await cmd.ExecuteScalarAsync(ct) as string ?? string.Empty;
+            return new ConversacionCuentaVinculadaDto(clienteCodigo, CuentaComercialTipo.Cliente, razonSocial);
+        }
+
+        if (idContacto is null)
+            return null;
+
+        await using (var cn = new SqlConnection(ConnectionString))
+        {
+            await cn.OpenAsync(ct);
+            const string sqlContacto = """
+                SELECT TOP (1)
+                    LTRIM(RTRIM(mcc.Cuenta)),
+                    CASE WHEN cli.CODIGO IS NOT NULL THEN 1 ELSE 2 END AS TipoOrdinal,
+                    ISNULL(LTRIM(RTRIM(ISNULL(cli.RAZON_SOCIAL, prv.RAZON_SOCIAL))), N'')
+                FROM dbo.MA_CONTACTOS_CUENTAS mcc
+                LEFT JOIN dbo.VT_CLIENTES cli ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(mcc.Cuenta)))
+                LEFT JOIN dbo.VT_PROVEEDORES prv ON UPPER(LTRIM(RTRIM(prv.CODIGO))) = UPPER(LTRIM(RTRIM(mcc.Cuenta))) AND cli.CODIGO IS NULL
+                WHERE mcc.IdContacto = @IdContacto
+                  AND (cli.CODIGO IS NOT NULL OR prv.CODIGO IS NOT NULL)
+                ORDER BY TipoOrdinal;
+                """;
+            await using var cmd = new SqlCommand(sqlContacto, cn);
+            cmd.Parameters.AddWithValue("@IdContacto", idContacto.Value);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (!await rd.ReadAsync(ct))
+                return null;
+
+            var codigo = rd.GetString(0);
+            var tipo = rd.GetInt32(1) == 1 ? CuentaComercialTipo.Cliente : CuentaComercialTipo.Proveedor;
+            var razonSocial = GetString(rd, 2);
+            return new ConversacionCuentaVinculadaDto(codigo, tipo, razonSocial);
+        }
     }
 
     private async Task<ConversationStateSummary> GetConversationStateAsync(long idConversacion, CancellationToken ct)

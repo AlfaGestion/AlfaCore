@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/conversaciones/configuracion"
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IConversacionesService ConvSvc
+@inject AlfaCore.Services.IConversacionAsistenteService AsistenteSvc
 @inject AlfaCore.Services.IWhatsAppWebSessionService WhatsAppWebSessionSvc
 @inject AlfaCore.Services.IAnyDeskLocalSettingsService AnyDeskSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
@@ -803,6 +804,13 @@
                         <div class="conv-config-fields__full">
                             <p class="panel-card__subtitle">Un asistente estilo «proyecto de GPT»: definís su comportamiento y le pegás la información del negocio, y responde solo las consultas entrantes (todos los canales). Apagado por defecto. Requiere la API key de OpenAI configurada en el servidor. Los archivos (base de conocimiento) llegan en una fase siguiente.</p>
                         </div>
+                        <div class="conv-config-fields__full">
+                            <strong class="@GetStatusClass(AsistenteSvc.IsConfigured)">OpenAI en el servidor: @GetStatusLabel(AsistenteSvc.IsConfigured)</strong>
+                            @if (!AsistenteSvc.IsConfigured)
+                            {
+                                <p class="panel-card__subtitle">No se encontró la variable de entorno <code>OPENAI_API_KEY</code> en este servidor: aunque actives el asistente y tildes todo lo de abajo, no va a responder nada hasta que se configure ahí (no es algo que se pueda cargar desde esta pantalla).</p>
+                            }
+                        </div>
                         <div class="field conv-config-fields__full">
                             <label class="conv-config-checkbox">
                                 <input type="checkbox" @bind="_automatizacionesConfig.BotActivo" />
@@ -832,6 +840,61 @@
                                 <input type="checkbox" @bind="_automatizacionesConfig.AsistenteUsaKnowledge" />
                                 <span>Usar AlfaKnowledge como fuente: además del comportamiento y la información pegada, busca en los documentos/instructivos subidos a tu base de conocimiento</span>
                             </label>
+                        </div>
+                        <div class="conv-config-fields__full">
+                            <p class="panel-card__subtitle">Qué datos reales puede consultar y responder (además del texto de arriba). Cada uno se ofrece solo si la conversación está vinculada a la cuenta correspondiente (Cliente o Proveedor, según Contactos).</p>
+                        </div>
+                        <div class="conv-config-fields__full conv-config-tools-list">
+                            <div class="conv-config-tool-row">
+                                <div class="conv-config-tool-row__icon"><i class="bi bi-tag" aria-hidden="true"></i></div>
+                                <div class="conv-config-tool-row__text">
+                                    <span class="conv-config-tool-row__title">Precios</span>
+                                    <span class="conv-config-tool-row__desc">Puede buscar y responder el precio real de un artículo (respeta la lista de precios del cliente si está identificado).</span>
+                                </div>
+                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPrecios" />
+                                </label>
+                            </div>
+                            <div class="conv-config-tool-row">
+                                <div class="conv-config-tool-row__icon"><i class="bi bi-wallet2" aria-hidden="true"></i></div>
+                                <div class="conv-config-tool-row__text">
+                                    <span class="conv-config-tool-row__title">Saldo de Cliente</span>
+                                    <span class="conv-config-tool-row__desc">Puede responder el saldo de cuenta corriente (total, detalle o link al portal, según lo que pida) cuando la conversación está vinculada a un Cliente.</span>
+                                </div>
+                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaSaldoCliente" />
+                                </label>
+                            </div>
+                            <div class="conv-config-tool-row">
+                                <div class="conv-config-tool-row__icon"><i class="bi bi-truck" aria-hidden="true"></i></div>
+                                <div class="conv-config-tool-row__text">
+                                    <span class="conv-config-tool-row__title">Saldo de Proveedor</span>
+                                    <span class="conv-config-tool-row__desc">Igual que el anterior, cuando la conversación está vinculada a un Proveedor.</span>
+                                </div>
+                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaSaldoProveedor" />
+                                </label>
+                            </div>
+                            <div class="conv-config-tool-row">
+                                <div class="conv-config-tool-row__icon"><i class="bi bi-clipboard-check" aria-hidden="true"></i></div>
+                                <div class="conv-config-tool-row__text">
+                                    <span class="conv-config-tool-row__title">Pedidos</span>
+                                    <span class="conv-config-tool-row__desc">Puede responder el estado de una Nota de Pedido (Pendiente, Aprobado, Finalizado o Anulado) de un Cliente identificado.</span>
+                                </div>
+                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPedidos" />
+                                </label>
+                            </div>
+                            <div class="conv-config-tool-row">
+                                <div class="conv-config-tool-row__icon"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></div>
+                                <div class="conv-config-tool-row__text">
+                                    <span class="conv-config-tool-row__title">Portal de autogestión</span>
+                                    <span class="conv-config-tool-row__desc">Puede ofrecer el link para ver la cuenta corriente online (hoy disponible para Cliente; Proveedor está en camino).</span>
+                                </div>
+                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPortalLink" />
+                                </label>
+                            </div>
                         </div>
                         <div class="field conv-config-fields__full">
                             <label class="conv-config-checkbox">

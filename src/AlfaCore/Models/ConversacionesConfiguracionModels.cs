@@ -324,6 +324,20 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>Usar AlfaKnowledge (documentos/archivos) como fuente adicional para responder.</summary>
     public bool AsistenteUsaKnowledge { get; set; } = true;
 
+    // Herramientas del asistente (tool-calling): qué datos reales puede consultar en vivo, además
+    // del texto pegado. Cada una se ofrece al modelo solo si está activa Y aplica al tipo de cuenta
+    // (Cliente/Proveedor) vinculada a la conversación -- ver ConversacionAsistenteHerramientasService.
+    /// <summary>Puede consultar precio real de artículos (lista de precios del cliente si hay uno vinculado).</summary>
+    public bool AsistenteHerramientaPrecios { get; set; }
+    /// <summary>Puede consultar saldo de cuenta corriente (total/detalle) cuando la conversación está vinculada a un Cliente.</summary>
+    public bool AsistenteHerramientaSaldoCliente { get; set; }
+    /// <summary>Puede consultar saldo de cuenta corriente (total/detalle) cuando la conversación está vinculada a un Proveedor.</summary>
+    public bool AsistenteHerramientaSaldoProveedor { get; set; }
+    /// <summary>Puede consultar estado de Notas de Pedido (TC='NP') del cliente vinculado.</summary>
+    public bool AsistenteHerramientaPedidos { get; set; }
+    /// <summary>Puede ofrecer el link al portal de autogestión (hoy solo existe para Cliente).</summary>
+    public bool AsistenteHerramientaPortalLink { get; set; }
+
     /// <summary>
     /// Tono/persona que usa la IA al redactar el resumen mensual por cliente (Informes). Solo define
     /// el estilo: el formato (viñetas, tope de palabras, no inventar, sin saludo/firma) queda fijo en

@@ -3813,6 +3813,7 @@
     // todavía sin la migración de multi-número), quedan vacíos y GetAssignableTechnicians() no
     // filtra nada -- fail-open, mismo criterio que el resto de estos flags.
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> _whatsappNumeros = [];
+    private ConversacionWhatsAppConfigDto _whatsAppConfig = new();
     private bool _esAdministradorConversaciones;
     private bool _redirectingToWhatsAppOnboarding;
 
@@ -3849,6 +3850,7 @@
         var query = QueryHelpers.ParseQuery(uri.Query);
         if (query.ContainsKey("id")
             || query.ContainsKey("onboarding")
+            || _whatsAppConfig.IsConfiguredForSend
             || _whatsappNumeros.Any(n => n.Activo && n.IsWebSessionReady))
         {
             return false;
@@ -4221,6 +4223,7 @@
         try
         {
             _whatsappNumeros = await ConfigSvc.GetWhatsAppNumerosAsync();
+            _whatsAppConfig = await ConfigSvc.GetWhatsAppConfigAsync();
             var administradores = await ConfigSvc.GetConversacionAdministradoresAsync();
             _esAdministradorConversaciones = administradores.Contains(CurrentUserNameForAudit, StringComparer.OrdinalIgnoreCase);
         }

@@ -730,6 +730,11 @@ public sealed class ConversacionesConfigService(
                 AsistenteFueraHorario = ReadValue(values, "CONV_ASISTENTE_FUERA_HORARIO", string.Empty) == "1",
                 AsistenteUrgenciaPalabras = ReadValue(values, "CONV_ASISTENTE_URGENCIA_PALABRAS", string.Empty, DefaultUrgenciaPalabras),
                 AsistenteUsaKnowledge = ReadValue(values, "CONV_ASISTENTE_USA_KNOWLEDGE", string.Empty, "1") != "0",
+                AsistenteHerramientaPrecios = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PRECIOS", string.Empty) == "1",
+                AsistenteHerramientaSaldoCliente = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE", string.Empty) == "1",
+                AsistenteHerramientaSaldoProveedor = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", string.Empty) == "1",
+                AsistenteHerramientaPedidos = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", string.Empty) == "1",
+                AsistenteHerramientaPortalLink = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", string.Empty) == "1",
                 InformeInstrucciones = ReadValue(values, "CONV_INFORME_INSTRUCCIONES", string.Empty, ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
@@ -776,6 +781,11 @@ public sealed class ConversacionesConfigService(
                 ("CONV_ASISTENTE_FUERA_HORARIO", config.AsistenteFueraHorario ? "1" : "0"),
                 ("CONV_ASISTENTE_URGENCIA_PALABRAS", (config.AsistenteUrgenciaPalabras ?? string.Empty).Trim()),
                 ("CONV_ASISTENTE_USA_KNOWLEDGE", config.AsistenteUsaKnowledge ? "1" : "0"),
+                ("CONV_ASISTENTE_HERRAMIENTA_PRECIOS", config.AsistenteHerramientaPrecios ? "1" : "0"),
+                ("CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE", config.AsistenteHerramientaSaldoCliente ? "1" : "0"),
+                ("CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", config.AsistenteHerramientaSaldoProveedor ? "1" : "0"),
+                ("CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", config.AsistenteHerramientaPedidos ? "1" : "0"),
+                ("CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", config.AsistenteHerramientaPortalLink ? "1" : "0"),
                 ("CONV_INFORME_INSTRUCCIONES", (config.InformeInstrucciones ?? string.Empty).Trim())
             };
 
@@ -1728,6 +1738,11 @@ public sealed class ConversacionesConfigService(
                 'CONV_ASISTENTE_FUERA_HORARIO',
                 'CONV_ASISTENTE_URGENCIA_PALABRAS',
                 'CONV_ASISTENTE_USA_KNOWLEDGE',
+                'CONV_ASISTENTE_HERRAMIENTA_PRECIOS',
+                'CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE',
+                'CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR',
+                'CONV_ASISTENTE_HERRAMIENTA_PEDIDOS',
+                'CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK',
                 'CONV_INFORME_INSTRUCCIONES'
             )
             """;
