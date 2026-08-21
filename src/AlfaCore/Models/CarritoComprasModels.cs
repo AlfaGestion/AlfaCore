@@ -58,6 +58,8 @@ public sealed class CarritoComprasGeneralArticuloDto
 {
     public string IdArticulo { get; set; } = string.Empty;
     public string DescripcionArticulo { get; set; } = string.Empty;
+    public string CodigoBarra { get; set; } = string.Empty;
+    public string RutaImagen { get; set; } = string.Empty;
     public string Presentacion { get; set; } = string.Empty;
     public string Marca { get; set; } = string.Empty;
     public string Rubro { get; set; } = string.Empty;

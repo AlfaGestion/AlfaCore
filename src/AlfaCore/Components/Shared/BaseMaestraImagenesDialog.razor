@@ -1,0 +1,466 @@
+@using AlfaCore.Models
+@using AlfaCore.Components.Shared.AlfaDesign
+@inject AlfaCore.Services.IBaseMaestraImagenService BaseMaestraImagenSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+
+<AlfaDialog Open="@Open"
+            Title="@Titulo"
+            Eyebrow="Base Maestra"
+            Description="@Subtitulo"
+            Size="AlfaDialogSize.Lg"
+            Loading="@(_cargando || _asignando)"
+            ErrorMessage="@_error"
+            Class="base-maestra-imagenes-dialog"
+            OnClose="RequestCloseAsync">
+    <ChildContent>
+        @if (!Open)
+        {
+        }
+        else if (_cargando && _articulos.Count == 0)
+        {
+            <div class="base-maestra-imagenes__loading">
+                <div class="base-maestra-imagenes__loading-card">
+                    <div class="spinner-border" role="status" aria-hidden="true"></div>
+                    <div>
+                        <strong>Buscando imágenes en Base Maestra...</strong>
+                        <p>@_progresoTexto</p>
+                    </div>
+                </div>
+            </div>
+        }
+        else if (_articulos.Count == 0)
+        {
+            <div class="base-maestra-imagenes__empty">
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                                Title="@GetEmptyTitle()"
+                                Message="@GetEmptyMessage()" />
+                <div class="base-maestra-imagenes__empty-actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrow-clockwise" Disabled="@(_cargando || _asignando)" OnClick="ReintentarAsync">
+                        Reintentar
+                    </AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eye" Disabled="@(_cargando || _asignando)" OnClick="ToggleIncluirExistentesAsync">
+                        @(_incluirExistentes ? "Ocultar existentes" : "Mostrar existentes")
+                    </AlfaButton>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="base-maestra-imagenes__toolbar">
+                <div class="base-maestra-imagenes__progress">
+                    <strong>@_progresoTexto</strong>
+                    <span>@GetSelectionText()</span>
+                </div>
+                <div class="base-maestra-imagenes__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrow-clockwise" Disabled="@(_cargando || _asignando)" OnClick="ReintentarAsync">
+                        Reintentar
+                    </AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eye" Disabled="@(_cargando || _asignando)" OnClick="ToggleIncluirExistentesAsync">
+                        @(_incluirExistentes ? "Ocultar existentes" : "Mostrar existentes")
+                    </AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-check2-square" Disabled="@(_cargando || _asignando || _articulos.Count == 0)" OnClick="SeleccionarTodasAsync">
+                        Seleccionar todas
+                    </AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-square" Disabled="@(_cargando || _asignando || _articulos.Count == 0)" OnClick="QuitarSeleccionAsync">
+                        Quitar selección
+                    </AlfaButton>
+                </div>
+            </div>
+
+            @if (_feedbackMessage is not null)
+            {
+                <div class="base-maestra-imagenes__feedback">
+                    <AlfaNotification Message="@_feedbackMessage" OnDismiss="ClearFeedbackAsync" />
+                </div>
+            }
+
+            <div class="base-maestra-imagenes__list">
+                @foreach (var item in _articulos)
+                {
+                    <article class="base-maestra-imagenes__row @(item.Seleccionado ? "is-selected" : string.Empty) @(item.PuedeSeleccionarse ? string.Empty : "is-disabled")">
+                        <div class="base-maestra-imagenes__check">
+                            @if (item.PuedeSeleccionarse)
+                            {
+                                <AlfaCheckbox Value="@item.Seleccionado" ValueChanged="_ => ToggleSeleccionAsync(item)" />
+                            }
+                            else
+                            {
+                                <AlfaTag Tone="AlfaTagTone.Neutral">—</AlfaTag>
+                            }
+                        </div>
+
+                        <div class="base-maestra-imagenes__thumb">
+                            @if (ShouldShowImage(item))
+                            {
+                                <img src="@item.PreviewUrl"
+                                     alt="@item.DescripcionArticulo"
+                                     loading="lazy"
+                                     @onerror="@EventCallback.Factory.Create(this, () => HandlePreviewError(item))" />
+                            }
+                            else
+                            {
+                                <div class="base-maestra-imagenes__thumb-fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                            }
+                        </div>
+
+                        <div class="base-maestra-imagenes__content">
+                            <div class="base-maestra-imagenes__code">
+                                <strong>@item.IdArticulo</strong>
+                                @if (!string.IsNullOrWhiteSpace(item.CodigoBarra))
+                                {
+                                    <AlfaTag Tone="AlfaTagTone.Accent">EAN @item.CodigoBarra</AlfaTag>
+                                }
+                            </div>
+                            <div class="base-maestra-imagenes__desc">@item.DescripcionArticulo</div>
+                            <div class="base-maestra-imagenes__meta">
+                                @if (!string.IsNullOrWhiteSpace(item.Fuente))
+                                {
+                                    <AlfaTag Tone="AlfaTagTone.Accent">@item.Fuente</AlfaTag>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(item.Confianza))
+                                {
+                                    <AlfaTag Tone="@GetConfidenceTone(item.Confianza)">@item.Confianza</AlfaTag>
+                                }
+                                @if (item.TieneImagenActual)
+                                {
+                                    <AlfaTag Tone="AlfaTagTone.Warning">Ya tiene imagen</AlfaTag>
+                                }
+                                <AlfaTag Tone="@GetStatusTone(item.Estado)">@item.Estado</AlfaTag>
+                            </div>
+                            <div class="base-maestra-imagenes__row-actions">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                            Size="AlfaSize.Sm"
+                                            Icon="@(item.Seleccionado ? "bi bi-check2" : "bi bi-plus-square")"
+                                            Disabled="@(_cargando || _asignando || !item.PuedeSeleccionarse)"
+                                            OnClick="() => ToggleSeleccionAsync(item)">
+                                    @(item.Seleccionado ? "Quitar" : "Seleccionar")
+                                </AlfaButton>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(item.Error))
+                            {
+                                <small class="base-maestra-imagenes__error">@item.Error</small>
+                            }
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+    </ChildContent>
+    <Footer>
+        <div class="base-maestra-imagenes__footer">
+            <div class="base-maestra-imagenes__footer-meta">
+                <span>@GetSelectionText()</span>
+                @if (_resultadoAsignacion is not null)
+                {
+                    <span>@BuildSummaryText(_resultadoAsignacion)</span>
+                }
+            </div>
+            <div class="base-maestra-imagenes__footer-actions">
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@(_cargando || _asignando)" OnClick="RequestCloseAsync">
+                    Cancelar
+                </AlfaButton>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Loading="@_asignando" Disabled="@(_cargando || _asignando || SeleccionadasCount == 0)" OnClick="AsignarAsync">
+                    Asignar fotos (@SeleccionadasCount)
+                </AlfaButton>
+            </div>
+        </div>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    [Parameter] public bool Open { get; set; }
+    [Parameter] public string Titulo { get; set; } = "Imágenes encontradas";
+    [Parameter] public string? Subtitulo { get; set; }
+    [Parameter] public IReadOnlyList<BaseMaestraImagenOrigenDto> Articulos { get; set; } = [];
+    [Parameter] public string? IdClienteFtp { get; set; }
+    [Parameter] public int? IdBase { get; set; }
+    [Parameter] public EventCallback<BaseMaestraImagenResultadoDto> OnAsignadas { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private bool _wasOpen;
+    private bool _cargando;
+    private bool _asignando;
+    private bool _incluirExistentes;
+    private string _error = string.Empty;
+    private AppUiMessage? _feedbackMessage;
+    private string _progresoTexto = string.Empty;
+    private readonly List<BaseMaestraImagenArticuloDto> _articulos = [];
+    private BaseMaestraImagenResultadoDto? _resultadoAsignacion;
+    private readonly HashSet<string> _previewFallbacks = new(StringComparer.OrdinalIgnoreCase);
+
+    private int SeleccionadasCount => _articulos.Count(a => a.Seleccionado);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Open && !_wasOpen)
+        {
+            _wasOpen = true;
+            _incluirExistentes = false;
+            await CargarAsync(forceRefresh: false);
+        }
+        else if (!Open)
+        {
+            _wasOpen = false;
+        }
+    }
+
+    private async Task CargarAsync(bool forceRefresh)
+    {
+        _error = string.Empty;
+        _feedbackMessage = null;
+        _resultadoAsignacion = null;
+        _previewFallbacks.Clear();
+        _articulos.Clear();
+        _cargando = true;
+        _progresoTexto = "0 de 0";
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var fuentes = (Articulos ?? [])
+                .Where(a => !string.IsNullOrWhiteSpace(a.IdArticulo))
+                .Where(a => _incluirExistentes || !a.TieneImagenActual)
+                .ToList();
+            if (fuentes.Count == 0)
+                return;
+
+            _progresoTexto = $"Consultando 0 de {fuentes.Count} artículos...";
+            await InvokeAsync(StateHasChanged);
+
+            var resultados = new List<BaseMaestraImagenArticuloDto>(fuentes.Count);
+            var gate = new SemaphoreSlim(6, 6);
+            var tasks = fuentes.Select(async fuente =>
+            {
+                await gate.WaitAsync();
+                try
+                {
+                    var item = await BaseMaestraImagenSvc.ConsultarArticuloAsync(fuente, IdClienteFtp, IdBase, CancellationToken.None, forceRefresh);
+                    lock (resultados)
+                    {
+                        resultados.Add(item);
+                        _progresoTexto = $"Consultando {resultados.Count} de {fuentes.Count} artículos...";
+                    }
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (Exception ex)
+                {
+                    lock (resultados)
+                    {
+                        resultados.Add(new BaseMaestraImagenArticuloDto
+                        {
+                            IdArticulo = fuente.IdArticulo,
+                            DescripcionArticulo = fuente.DescripcionArticulo,
+                            CodigoBarra = fuente.CodigoBarra,
+                            RutaImagen = fuente.RutaImagen,
+                            Estado = "Error al consultar",
+                            Error = ex.Message,
+                            PuedeSeleccionarse = false
+                        });
+                        _progresoTexto = $"Consultando {resultados.Count} de {fuentes.Count} artículos...";
+                    }
+                    await InvokeAsync(StateHasChanged);
+                }
+                finally
+                {
+                    gate.Release();
+                }
+            });
+
+            await Task.WhenAll(tasks);
+            _articulos.AddRange(resultados.OrderBy(a => fuentes.FindIndex(f => string.Equals(f.IdArticulo, a.IdArticulo, StringComparison.OrdinalIgnoreCase))));
+            if (_incluirExistentes)
+            {
+                foreach (var item in _articulos.Where(a => a.TieneImagenActual))
+                    item.PuedeSeleccionarse = true;
+            }
+            _progresoTexto = $"{_articulos.Count(a => a.ImagenEncontrada)} imágenes encontradas de {_articulos.Count} artículos";
+            SeleccionarTodasAsync();
+        }
+        finally
+        {
+            _cargando = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private Task ReintentarAsync()
+        => _cargando || _asignando ? Task.CompletedTask : CargarAsync(forceRefresh: true);
+
+    private async Task ToggleIncluirExistentesAsync()
+    {
+        if (_cargando || _asignando)
+            return;
+
+        _incluirExistentes = !_incluirExistentes;
+        await CargarAsync(forceRefresh: false);
+    }
+
+    private Task RequestCloseAsync()
+        => _cargando || _asignando ? Task.CompletedTask : OnClose.InvokeAsync();
+
+    private void SeleccionarTodasAsync()
+    {
+        foreach (var item in _articulos)
+            item.Seleccionado = item.PuedeSeleccionarse
+                                && item.ImagenEncontrada
+                                && string.Equals(item.Confianza, "Alta", StringComparison.OrdinalIgnoreCase)
+                                && (!item.TieneImagenActual || item.PermiteReemplazo);
+
+        _feedbackMessage = null;
+        _resultadoAsignacion = null;
+    }
+
+    private void QuitarSeleccionAsync()
+    {
+        foreach (var item in _articulos)
+            item.Seleccionado = false;
+
+        _feedbackMessage = null;
+        _resultadoAsignacion = null;
+    }
+
+    private Task ToggleSeleccionAsync(BaseMaestraImagenArticuloDto item)
+    {
+        if (!item.PuedeSeleccionarse)
+            return Task.CompletedTask;
+
+        item.Seleccionado = !item.Seleccionado;
+        if (item.Seleccionado && item.TieneImagenActual)
+            item.PermiteReemplazo = true;
+        _resultadoAsignacion = null;
+        return Task.CompletedTask;
+    }
+
+    private bool ShouldShowImage(BaseMaestraImagenArticuloDto item)
+        => !_previewFallbacks.Contains(item.IdArticulo) && !string.IsNullOrWhiteSpace(item.PreviewUrl);
+
+    private void HandlePreviewError(BaseMaestraImagenArticuloDto item)
+    {
+        if (!string.IsNullOrWhiteSpace(item.IdArticulo))
+        {
+            _previewFallbacks.Add(item.IdArticulo);
+            if (string.IsNullOrWhiteSpace(item.Error))
+                item.Error = "Error al descargar";
+        }
+    }
+
+    private async Task AsignarAsync()
+    {
+        var seleccionadas = _articulos.Where(x => x.Seleccionado).ToList();
+        if (seleccionadas.Count == 0)
+            return;
+
+        _asignando = true;
+        _feedbackMessage = null;
+        _resultadoAsignacion = null;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var total = seleccionadas.Count;
+            _progresoTexto = $"Asignando imagen 0 de {total}...";
+            await InvokeAsync(StateHasChanged);
+
+            var resultado = await UiOps.RunAsync(() => BaseMaestraImagenSvc.AsignarImagenesAsync(
+                seleccionadas,
+                IdClienteFtp,
+                IdBase,
+                progressReporter: (_, _, texto) =>
+                {
+                    _progresoTexto = texto;
+                    _ = InvokeAsync(StateHasChanged);
+                }),
+                "No se pudieron asignar las imágenes.");
+            if (!resultado.Success || resultado.Value is null)
+            {
+                _feedbackMessage = resultado.Feedback ?? new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Error,
+                    Title = "No se pudieron asignar las imágenes.",
+                    Message = "Revisá el estado de Base Maestra e intentá nuevamente."
+                };
+                return;
+            }
+
+            _resultadoAsignacion = resultado.Value;
+            _feedbackMessage = new AppUiMessage
+            {
+                Severity = resultado.Value.ConError > 0 ? AppUiFeedbackSeverity.Warning : AppUiFeedbackSeverity.Success,
+                Title = "Asignación completada",
+                Message = BuildSummaryText(resultado.Value)
+            };
+            await OnAsignadas.InvokeAsync(resultado.Value);
+            QuitarSeleccionAsync();
+            await OnClose.InvokeAsync();
+        }
+        finally
+        {
+            _asignando = false;
+            _progresoTexto = _incluirExistentes
+                ? $"{_articulos.Count(a => a.ImagenEncontrada)} imágenes encontradas de {_articulos.Count} artículos"
+                : $"{_articulos.Count} artículos sin imagen";
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string GetEmptyTitle()
+        => _incluirExistentes
+            ? "No encontramos imágenes para estos artículos."
+            : "No hay artículos sin imagen para consultar.";
+
+    private string GetEmptyMessage()
+        => _incluirExistentes
+            ? "Revisá si los códigos están informados en Base Maestra o si ya tienen imagen oficial cargada."
+            : "Todos los artículos cargados ya tienen imagen. Podés usar \"Mostrar existentes\" para revisar otros artículos y reintentar la búsqueda.";
+
+    private string GetSelectionText()
+        => $"{SeleccionadasCount} imagen{(SeleccionadasCount == 1 ? string.Empty : "es")} seleccionada{(SeleccionadasCount == 1 ? string.Empty : "s")}";
+
+    private static AlfaTagTone GetStatusTone(string estado)
+        => estado switch
+        {
+            "Imagen encontrada" => AlfaTagTone.Success,
+            "Ya tiene imagen" => AlfaTagTone.Warning,
+            "Sin imagen en Base Maestra" => AlfaTagTone.Neutral,
+            "Sin imagen encontrada" => AlfaTagTone.Neutral,
+            "Sin código de barras" => AlfaTagTone.Neutral,
+            "Error al consultar" => AlfaTagTone.Danger,
+            "Error al descargar" => AlfaTagTone.Danger,
+            "Revisar" => AlfaTagTone.Warning,
+            _ => AlfaTagTone.Neutral
+        };
+
+    private static AlfaTagTone GetConfidenceTone(string confianza)
+        => confianza.Trim().ToLowerInvariant() switch
+        {
+            "alta" => AlfaTagTone.Success,
+            "media" => AlfaTagTone.Warning,
+            "revisar" => AlfaTagTone.Warning,
+            _ => AlfaTagTone.Neutral
+        };
+
+    private static string ProductInitials(string descripcion)
+    {
+        if (string.IsNullOrWhiteSpace(descripcion))
+            return "IM";
+
+        var parts = descripcion
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(x => char.ToUpperInvariant(x[0]));
+
+        return string.Concat(parts);
+    }
+
+    private static string BuildSummaryText(BaseMaestraImagenResultadoDto resultado)
+        => $"{resultado.Asignadas} imágenes asignadas"
+           + (resultado.OmitidasPorExistir > 0 ? $" · {resultado.OmitidasPorExistir} ya existentes omitidas" : string.Empty)
+           + (resultado.SinImagen > 0 ? $" · {resultado.SinImagen} sin imagen" : string.Empty)
+           + (resultado.ConError > 0 ? $" · {resultado.ConError} con error" : string.Empty);
+
+    private Task ClearFeedbackAsync()
+    {
+        _feedbackMessage = null;
+        return Task.CompletedTask;
+    }
+}

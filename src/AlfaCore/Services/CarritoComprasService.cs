@@ -170,6 +170,15 @@ public sealed class CarritoComprasService(
                 SELECT
                     d.IdArticulo,
                     ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), N'') AS DescripcionArticulo,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, N''))), N''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, N''))), N''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, N''))), N''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, N''))), N''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, N''))), N''),
+                        N''
+                    ) AS CodigoBarra,
+                    ISNULL(LTRIM(RTRIM(a.RutaImagen)), N'') AS RutaImagen,
                     ISNULL(LTRIM(RTRIM(a.Presentacion)), N'') AS Presentacion,
                     ISNULL(LTRIM(RTRIM(t.Descripcion)), N'') AS Marca,
                     ISNULL(LTRIM(RTRIM(r.Descripcion)), N'') AS Rubro
@@ -473,6 +482,8 @@ public sealed class CarritoComprasService(
                     {
                         IdArticulo = group.Key,
                         DescripcionArticulo = Truncate(first.DescripcionArticulo, 100),
+                        CodigoBarra = Truncate(first.CodigoBarra, 100),
+                        RutaImagen = Truncate(first.RutaImagen, 100),
                         Presentacion = Truncate(first.Presentacion, 100),
                         Marca = Truncate(first.Marca, 100),
                         Rubro = Truncate(first.Rubro, 100)
@@ -833,6 +844,15 @@ public sealed class CarritoComprasService(
                     d.Orden,
                     d.IdArticulo AS IdArticulo,
                     COALESCE(NULLIF(LTRIM(RTRIM(a.DESCRIPCION)), N''), NULLIF(LTRIM(RTRIM(d.DescripcionArticulo)), N''), N'') AS DescripcionArticulo,
+                    COALESCE(
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, N''))), N''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, N''))), N''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, N''))), N''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, N''))), N''),
+                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, N''))), N''),
+                        N''
+                    ) AS CodigoBarra,
+                    ISNULL(LTRIM(RTRIM(a.RutaImagen)), N'') AS RutaImagen,
                     COALESCE(NULLIF(LTRIM(RTRIM(a.Presentacion)), N''), NULLIF(LTRIM(RTRIM(d.Presentacion)), N''), N'') AS Presentacion,
                     COALESCE(NULLIF(LTRIM(RTRIM(t.Descripcion)), N''), NULLIF(LTRIM(RTRIM(d.Marca)), N''), N'') AS Marca,
                     COALESCE(NULLIF(LTRIM(RTRIM(r.Descripcion)), N''), NULLIF(LTRIM(RTRIM(d.Rubro)), N''), N'') AS Rubro,
@@ -892,15 +912,17 @@ public sealed class CarritoComprasService(
             new { IdCarrito = general.IdCarrito, IdLista = idLista, Ids = itemIds },
             cancellationToken: ct));
 
-        return rows.Select(row => new CatalogosCatalogoItemDto
-        {
-            IdInsert = 0,
-            IdArticulo = row.IdArticulo,
-            DescripcionArticulo = row.DescripcionArticulo,
-            Presentacion = row.Presentacion,
-            Marca = row.Marca,
-            Rubro = row.Rubro,
-            Precio = row.Precio,
+            return rows.Select(row => new CatalogosCatalogoItemDto
+            {
+                IdInsert = 0,
+                IdArticulo = row.IdArticulo,
+                DescripcionArticulo = row.DescripcionArticulo,
+                CodigoBarra = row.CodigoBarra,
+                RutaImagen = row.RutaImagen,
+                Presentacion = row.Presentacion,
+                Marca = row.Marca,
+                Rubro = row.Rubro,
+                Precio = row.Precio,
             PrecioOferta = row.PrecioOferta,
             OfertaHasta = row.OfertaHasta
         }).ToList();
@@ -1377,6 +1399,8 @@ public sealed class CarritoComprasService(
         public int Orden { get; set; }
         public string IdArticulo { get; set; } = string.Empty;
         public string DescripcionArticulo { get; set; } = string.Empty;
+        public string CodigoBarra { get; set; } = string.Empty;
+        public string RutaImagen { get; set; } = string.Empty;
         public string Presentacion { get; set; } = string.Empty;
         public string Marca { get; set; } = string.Empty;
         public string Rubro { get; set; } = string.Empty;

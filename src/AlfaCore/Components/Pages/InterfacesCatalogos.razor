@@ -393,10 +393,13 @@
                     <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Disabled="@(_loading || IsLookupBusy)" OnClick="AbrirLookupArticulosAsync">
                         Consultar artículos
                     </AlfaButton>
-                    @if (PuedeImportarListaCompleta())
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-images" Disabled="@(_loading || !_articulosSeleccionados.Any())" OnClick="AbrirBaseMaestraImagenesAsync">
+                        Obtener imágenes
+                    </AlfaButton>
+                    @if (PuedeImportarTodo())
                     {
-                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-cloud-arrow-down" Loading="@_importandoListaCompleta" Disabled="@(_loading || IsLookupBusy)" OnClick="ImportarListaCompletaAsync">
-                            @( _importandoListaCompleta ? "Importando..." : "Importar lista completa" )
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-cloud-arrow-down" Loading="@_importandoListaCompleta" Disabled="@(_loading || IsLookupBusy)" OnClick="ImportarTodoAsync">
+                            @( _importandoListaCompleta ? "Importando..." : "Importar todo" )
                         </AlfaButton>
                     }
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-dash-circle" Disabled="@(!_articulosQuitarSeleccionados.Any() || IsLookupBusy)" OnClick="QuitarSeleccionadosAsync">
@@ -638,6 +641,15 @@
                       OnAgregarSeleccionados="AgregarDesdeLookupAsync"
                       OnClose="CloseLookupArticulos" />
 
+<BaseMaestraImagenesDialog Open="@_showBaseMaestraImagenesModal"
+                           Titulo="Imágenes encontradas"
+                           Subtitulo="Se consultan los artículos del catálogo actual en la Base Maestra oficial."
+                           Articulos="@BuildBaseMaestraImagenesOrigen()"
+                           IdClienteFtp="@_puntoVentaSettings.FtpCodigoCta"
+                           IdBase="@idbase"
+                           OnAsignadas="OnBaseMaestraImagenesAsignadasAsync"
+                           OnClose="CloseBaseMaestraImagenesAsync" />
+
 @code {
     private const string SectionCatalogos = "catalogo";
     private const string SectionNuevo = "nuevo";
@@ -668,6 +680,8 @@
     private DateTime? _vigenciaDesde = DateTime.Today;
     private DateTime? _vigenciaHasta = DateTime.Today.AddMonths(1);
     private bool _showLookupModal;
+    private bool _showBaseMaestraImagenesModal;
+    private int _articuloImageVersion;
     private string _catalogosTexto = string.Empty;
     private DateTime? _catalogosFechaFiltro = DateTime.Today;
     private int _catalogosPageNumber = 1;
@@ -1670,6 +1684,8 @@
         {
             IdArticulo = item.IdArticulo,
             DescripcionArticulo = item.DescripcionArticulo,
+            CodigoBarra = item.CodigoBarra,
+            RutaImagen = item.RutaImagen,
             Presentacion = item.Presentacion,
             Marca = item.Marca,
             Rubro = item.Rubro,
@@ -1742,10 +1758,18 @@
         _showLookupModal = false;
     }
 
-    private async Task ImportarListaCompletaAsync()
+    // "Importar todo" trae el origen completo (sin filtros de rubro/familia/marca: esos no existen
+    // en esta pantalla) excluyendo lo que ya está en el catálogo, en una sola operación de backend
+    // (CountArticulosAllAsync/SearchArticulosAllAsync, compartidas con "Seleccionar todos los
+    // resultados" del picker). No pagina ni hace un alta por artículo: agrega el lote completo al
+    // arreglo en memoria del catálogo, igual que ya hacía "Importar lista completa".
+    private async Task ImportarTodoAsync()
     {
-        if (!PuedeImportarListaCompleta())
+        if (!PuedeImportarTodo())
             return;
+
+        var esLista = string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase);
+        var origenTexto = esLista ? $"la lista \"{GetNombreListaActual()}\"" : "el maestro de artículos";
 
         _importandoListaCompleta = true;
         try
@@ -1753,49 +1777,65 @@
             await InvokeAsync(StateHasChanged);
             await Task.Yield();
 
-            var total = await UiOps.RunAsync(() => CatalogosSvc.CountArticulosDesdeListaAsync(_idLista, _disposeCts.Token), "No se pudo contar la lista de precios.");
-            if (!total.Success)
+            var filtros = new CatalogosArticuloBusquedaFiltersDto
             {
-                _feedback = total.Feedback;
+                Origen = _articuloOrigen,
+                IdLista = _idLista,
+                IdWeb = idweb,
+                ExcludedIds = _articulosSeleccionados.Select(x => x.IdArticulo).ToList()
+            };
+
+            var conteo = await UiOps.RunAsync(() => CatalogosSvc.CountArticulosAllAsync(filtros, _disposeCts.Token), "No se pudo contar los artículos a importar.");
+            if (!conteo.Success)
+            {
+                _feedback = conteo.Feedback;
+                return;
+            }
+
+            if (conteo.Value == 0)
+            {
+                _feedback = new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Info,
+                    Title = "Nada para importar",
+                    Message = $"No hay artículos nuevos disponibles en {origenTexto}."
+                };
                 return;
             }
 
             var confirmado = await DialogSvc.ConfirmAsync(
-                "Importar lista completa",
-                $"Se agregarán {total.Value} artículos de la lista \"{GetNombreListaActual()}\". ¿Desea continuar?",
+                "Importar todo",
+                $"Se agregarán {conteo.Value} artículo(s) de {origenTexto} al catálogo. ¿Querés continuar?",
                 "Importar",
                 "Cancelar");
 
             if (!confirmado)
                 return;
 
-            var result = await UiOps.RunAsync(() => CatalogosSvc.GetArticulosDesdeListaAsync(_idLista, idweb, _disposeCts.Token), "No se pudo importar la lista completa.");
+            var result = await UiOps.RunAsync(() => CatalogosSvc.SearchArticulosAllAsync(filtros, _disposeCts.Token), "No se pudo importar los artículos.");
             if (!result.Success || result.Value is null)
             {
                 _feedback = result.Feedback;
                 return;
             }
 
-            var agregados = 0;
             foreach (var item in result.Value)
             {
-                if (_articulosSeleccionados.Any(x => string.Equals(x.IdArticulo, item.IdArticulo, StringComparison.OrdinalIgnoreCase)))
-                    continue;
-
                 _articulosSeleccionados.Add(new CatalogosArticuloCatalogoDto
                 {
                     IdArticulo = item.IdArticulo,
                     DescripcionArticulo = item.DescripcionArticulo,
+                    CodigoBarra = item.CodigoBarra,
+                    RutaImagen = item.RutaImagen,
                     Presentacion = item.Presentacion,
                     Marca = item.Marca,
                     Rubro = item.Rubro,
                     Precio = item.Precio,
                     PrecioOferta = item.PrecioOferta
                 });
-                agregados++;
             }
 
-            _feedback = AppUiMessage.Success("Lista importada", $"Se agregaron {agregados} artículos nuevos desde \"{GetNombreListaActual()}\".");
+            _feedback = AppUiMessage.Success("Importación completa", $"Se agregaron {result.Value.Count} artículo(s) nuevos desde {origenTexto}.");
         }
         finally
         {
@@ -1865,9 +1905,12 @@
         await Task.CompletedTask;
     }
 
-    private bool PuedeImportarListaCompleta()
+    // "Importar todo" está disponible con los dos orígenes: con Lista de precios requiere una lista
+    // elegida (igual que antes); con Maestro de artículos no depende de ninguna selección previa.
+    private bool PuedeImportarTodo()
         => string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase)
-           && !string.IsNullOrWhiteSpace(_idLista);
+           ? !string.IsNullOrWhiteSpace(_idLista)
+           : string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase);
 
     private bool IsLookupBusy => _importandoListaCompleta;
 
@@ -1887,7 +1930,7 @@
         => _articulosSeleccionados.Any(x => string.Equals(x.IdArticulo, idArticulo, StringComparison.OrdinalIgnoreCase));
 
     private string GetArticuloImageUrl(string idArticulo)
-        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, idArticulo);
+        => AddImageVersion(AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, idArticulo));
 
     private bool ShouldShowArticuloImage(string idArticulo)
         => !_articuloImageFallbacks.Contains(idArticulo) && !string.IsNullOrWhiteSpace(GetArticuloImageUrl(idArticulo));
@@ -1896,6 +1939,39 @@
     {
         if (!string.IsNullOrWhiteSpace(idArticulo))
             _articuloImageFallbacks.Add(idArticulo);
+    }
+
+    private string AddImageVersion(string? url)
+        => string.IsNullOrWhiteSpace(url) ? string.Empty : $"{url}{(url.Contains('?') ? "&" : "?")}v={_articuloImageVersion}";
+
+    private IReadOnlyList<BaseMaestraImagenOrigenDto> BuildBaseMaestraImagenesOrigen()
+        => _articulosSeleccionados.Select(item => new BaseMaestraImagenOrigenDto
+        {
+            IdArticulo = item.IdArticulo,
+            DescripcionArticulo = item.DescripcionArticulo,
+            CodigoBarra = item.CodigoBarra,
+            RutaImagen = item.RutaImagen,
+            TieneImagenActual = !string.IsNullOrWhiteSpace(GetArticuloImageUrl(item.IdArticulo))
+        }).ToList();
+
+    private Task AbrirBaseMaestraImagenesAsync()
+    {
+        _showBaseMaestraImagenesModal = true;
+        return Task.CompletedTask;
+    }
+
+    private Task CloseBaseMaestraImagenesAsync()
+    {
+        _showBaseMaestraImagenesModal = false;
+        return Task.CompletedTask;
+    }
+
+    private async Task OnBaseMaestraImagenesAsignadasAsync(BaseMaestraImagenResultadoDto resultado)
+    {
+        _articuloImageVersion++;
+        _articuloImageFallbacks.Clear();
+        _feedback = AppUiMessage.Success("Imágenes actualizadas", $"{resultado.Asignadas} imagen(es) fueron asignadas al catálogo.");
+        await InvokeAsync(StateHasChanged);
     }
 
     private static string ProductInitials(string descripcion)
@@ -2128,6 +2204,8 @@
         {
             IdArticulo = x.IdArticulo,
             DescripcionArticulo = x.DescripcionArticulo,
+            CodigoBarra = x.CodigoBarra,
+            RutaImagen = x.RutaImagen,
             Presentacion = x.Presentacion,
             Marca = x.Marca,
             Rubro = x.Rubro,

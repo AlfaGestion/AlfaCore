@@ -36,76 +36,73 @@ public sealed class ArticuloImagenFtpService(IHostEnvironment environment, ILogg
             return null;
 
         var baseSegment = idBase is > 0 ? idBase.Value.ToString() : null;
-        var carpeta = thumbnail ? "thumbs4" : "imagenes";
-        var remoteDir = baseSegment is null ? $"{cliente}/{carpeta}" : $"{cliente}/{baseSegment}/{carpeta}";
-        var relativoCache = baseSegment is null ? Path.Combine(cliente, carpeta) : Path.Combine(cliente, baseSegment, carpeta);
-        var cacheDir = Path.Combine(environment.ContentRootPath, "App_Data", "cache", "imagenes-articulos", relativoCache);
-        // Algunas instalaciones (ej. sitios IIS) no le dan permiso de escritura al identity del
-        // sitio sobre App_Data/cache. Se usa una carpeta temporal como respaldo para no romper el
-        // servicio de imágenes por eso: se sigue sirviendo (sin cachear en App_Data) en vez de fallar.
-        var cacheDirRespaldo = Path.Combine(Path.GetTempPath(), "alfacore-imagenes-articulos", relativoCache);
+        var rootCliente = baseSegment is null ? cliente : $"{cliente}/{baseSegment}";
+        var carpetasCandidatas = thumbnail
+            ? new[] { "thumbs4", "imagenes" }
+            : new[] { "imagenes", "thumbs4" };
 
-        var cacheDirsCandidatos = thumbnail
-            ? new[]
-            {
-                cacheDir,
-                cacheDirRespaldo,
-                Path.Combine(environment.ContentRootPath, "App_Data", "cache", "imagenes-articulos", baseSegment is null ? Path.Combine(cliente, "imagenes") : Path.Combine(cliente, baseSegment, "imagenes")),
-                Path.Combine(Path.GetTempPath(), "alfacore-imagenes-articulos", baseSegment is null ? Path.Combine(cliente, "imagenes") : Path.Combine(cliente, baseSegment, "imagenes"))
-            }
-            : new[] { cacheDir, cacheDirRespaldo };
-
-        foreach (var dirCandidatoCache in cacheDirsCandidatos)
+        foreach (var carpeta in carpetasCandidatas)
         {
-            foreach (var ext in ExtensionesSoportadas)
+            var remoteDir = baseSegment is null ? $"{cliente}/{carpeta}" : $"{cliente}/{baseSegment}/{carpeta}";
+            var relativoCache = baseSegment is null ? Path.Combine(cliente, carpeta) : Path.Combine(cliente, baseSegment, carpeta);
+            var cacheDir = Path.Combine(environment.ContentRootPath, "App_Data", "cache", "imagenes-articulos", relativoCache);
+            // Algunas instalaciones (ej. sitios IIS) no le dan permiso de escritura al identity del
+            // sitio sobre App_Data/cache. Se usa una carpeta temporal como respaldo para no romper el
+            // servicio de imágenes por eso: se sigue sirviendo (sin cachear en App_Data) en vez de fallar.
+            var cacheDirRespaldo = Path.Combine(Path.GetTempPath(), "alfacore-imagenes-articulos", relativoCache);
+
+            foreach (var dirCandidatoCache in new[] { cacheDir, cacheDirRespaldo })
             {
-                var cachedPath = Path.Combine(dirCandidatoCache, articulo + ext);
-                if (File.Exists(cachedPath))
-                    return new ArticuloImagenArchivoDto { RutaCompleta = cachedPath, MimeType = MimeTypeFor(ext) };
+                foreach (var ext in ExtensionesSoportadas)
+                {
+                    var cachedPath = Path.Combine(dirCandidatoCache, articulo + ext);
+                    if (File.Exists(cachedPath))
+                        return new ArticuloImagenArchivoDto { RutaCompleta = cachedPath, MimeType = MimeTypeFor(ext) };
+                }
+            }
+
+            var missKey = $"{remoteDir}/{articulo}";
+            if (MissCache.TryGetValue(missKey, out var missedAt) && DateTime.UtcNow - missedAt < CacheMissTtl)
+                continue;
+
+            var remoteDirsCandidatos = thumbnail
+                ? new[]
+                {
+                    baseSegment is null ? $"{cliente}/imagenes/thumbs4" : $"{cliente}/{baseSegment}/imagenes/thumbs4",
+                    remoteDir,
+                    baseSegment is null ? $"{cliente}/imagenes" : $"{cliente}/{baseSegment}/imagenes"
+                }
+                : new[]
+                {
+                    remoteDir,
+                    baseSegment is null ? $"{cliente}/thumbs4" : $"{cliente}/{baseSegment}/thumbs4"
+                };
+
+            foreach (var dirCandidato in remoteDirsCandidatos)
+            {
+                // Listar la carpeta una vez (y compartir esa lista entre todos los artículos que piden
+                // imagen de esa misma carpeta) evita tener que probar cada extensión con una descarga
+                // FTP completa por artículo — con catálogos grandes eso era muy lento, sobre todo para
+                // los artículos que no tienen imagen (antes probaban las 6 extensiones igual, una por una).
+                var listado = await GetDirectoryListingAsync(dirCandidato, ct);
+                var extensionesAProbar = listado is not null
+                    ? ExtensionesSoportadas.Where(ext => listado.Contains(articulo + ext))
+                    : ExtensionesSoportadas;
+
+                foreach (var ext in extensionesAProbar)
+                {
+                    var bytes = await TryDownloadAsync(dirCandidato, articulo + ext, ct);
+                    if (bytes is null)
+                        continue;
+
+                    var destino = await GuardarEnCacheAsync(cacheDir, cacheDirRespaldo, articulo + ext, bytes, ct);
+                    MissCache.TryRemove(missKey, out _);
+                    return new ArticuloImagenArchivoDto { RutaCompleta = destino, MimeType = MimeTypeFor(ext) };
+                }
             }
         }
 
-        var missKey = $"{remoteDir}/{articulo}";
-        if (MissCache.TryGetValue(missKey, out var missedAt) && DateTime.UtcNow - missedAt < CacheMissTtl)
-            return null;
-
-        // Las miniaturas ahora se publican en "imagenes/thumbs4". Se deja como respaldo la ruta
-        // vieja "thumbs4" para instalaciones que todavía no migraron completamente, y por último
-        // se cae al original de "imagenes" para no dejar artículos sin foto cuando el thumb no
-        // existe o todavía no fue generado.
-        var remoteDirsCandidatos = thumbnail
-            ? new[]
-            {
-                baseSegment is null ? $"{cliente}/imagenes/thumbs4" : $"{cliente}/{baseSegment}/imagenes/thumbs4",
-                remoteDir,
-                baseSegment is null ? $"{cliente}/imagenes" : $"{cliente}/{baseSegment}/imagenes"
-            }
-            : new[] { remoteDir };
-
-        foreach (var dirCandidato in remoteDirsCandidatos)
-        {
-            // Listar la carpeta una vez (y compartir esa lista entre todos los artículos que piden
-            // imagen de esa misma carpeta) evita tener que probar cada extensión con una descarga
-            // FTP completa por artículo — con catálogos grandes eso era muy lento, sobre todo para
-            // los artículos que no tienen imagen (antes probaban las 6 extensiones igual, una por una).
-            var listado = await GetDirectoryListingAsync(dirCandidato, ct);
-            var extensionesAProbar = listado is not null
-                ? ExtensionesSoportadas.Where(ext => listado.Contains(articulo + ext))
-                : ExtensionesSoportadas;
-
-            foreach (var ext in extensionesAProbar)
-            {
-                var bytes = await TryDownloadAsync(dirCandidato, articulo + ext, ct);
-                if (bytes is null)
-                    continue;
-
-                var destino = await GuardarEnCacheAsync(cacheDir, cacheDirRespaldo, articulo + ext, bytes, ct);
-                MissCache.TryRemove(missKey, out _);
-                return new ArticuloImagenArchivoDto { RutaCompleta = destino, MimeType = MimeTypeFor(ext) };
-            }
-        }
-
-        MissCache[missKey] = DateTime.UtcNow;
+        MissCache[$"{rootCliente}/imagenes/{articulo}"] = DateTime.UtcNow;
         return null;
     }
 

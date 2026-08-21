@@ -797,6 +797,12 @@ public sealed class PuntoVentaService(
             var verificadorRutaImagenes = await TryReadConfigValueAsync(cn, "VERIFICADOR_RUTAIMAGENES", token);
             var path = ResolveArticleImagePath(codigo, rutaImagen, verificadorRutaImagenes);
             if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            {
+                var rutaImagenes = await TryReadConfigValueAsync(cn, "RUTAIMAGENES", token);
+                path = ResolveArticleImagePathFromBase(codigo, rutaImagenes);
+            }
+
+            if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
                 return null;
 
             return new PuntoVentaArticleImageDto
@@ -1597,6 +1603,31 @@ public sealed class PuntoVentaService(
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => x.Trim())
             .FirstOrDefault(File.Exists);
+    }
+
+    private string? ResolveArticleImagePathFromBase(string idArticulo, string rutaImagenes)
+    {
+        var normalizedBase = NormalizeBasePath(rutaImagenes);
+        if (string.IsNullOrWhiteSpace(normalizedBase))
+            return null;
+
+        var candidates = new[]
+        {
+            Path.Combine(normalizedBase, "thumbs4", $"{idArticulo}.jpg"),
+            Path.Combine(normalizedBase, "thumbs4", $"{idArticulo}.jpeg"),
+            Path.Combine(normalizedBase, "thumbs4", $"{idArticulo}.png"),
+            Path.Combine(normalizedBase, "thumbs4", $"{idArticulo}.webp"),
+            Path.Combine(normalizedBase, "thumbs4", $"{idArticulo}.gif"),
+            Path.Combine(normalizedBase, "thumbs4", $"{idArticulo}.bmp"),
+            Path.Combine(normalizedBase, $"{idArticulo}.jpg"),
+            Path.Combine(normalizedBase, $"{idArticulo}.jpeg"),
+            Path.Combine(normalizedBase, $"{idArticulo}.png"),
+            Path.Combine(normalizedBase, $"{idArticulo}.webp"),
+            Path.Combine(normalizedBase, $"{idArticulo}.gif"),
+            Path.Combine(normalizedBase, $"{idArticulo}.bmp")
+        };
+
+        return candidates.FirstOrDefault(File.Exists);
     }
 
     private static string NormalizeRelativePath(string path)

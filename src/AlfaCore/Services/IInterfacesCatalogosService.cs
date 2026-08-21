@@ -8,10 +8,16 @@ public interface IInterfacesCatalogosService
     Task<IReadOnlyList<CatalogosListaPrecioDto>> GetListasPrecioAsync(CancellationToken ct = default);
     Task<PagedResult<CatalogosArticuloBusquedaDto>> SearchArticulosAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default);
 
-    // Opciones reales para los combos de clasificación del picker de artículos (Rubro/Familia/Marca).
+    // Opciones reales para los combos de clasificación del picker de artículos (Rubro/Familia/Marca/Proveedor).
     Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetRubrosArticuloAsync(CancellationToken ct = default);
     Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetFamiliasArticuloAsync(CancellationToken ct = default);
     Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetMarcasArticuloAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetProveedoresArticuloAsync(CancellationToken ct = default);
+
+    // Variantes sin paginar de SearchArticulosAsync (mismos filtros/exclusiones), usadas por
+    // "Importar todo" (Catálogo) y "Seleccionar todos los resultados" (ArticuloPickerDialog).
+    Task<int> CountArticulosAllAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default);
+    Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> SearchArticulosAllAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default);
 
     Task<int> CountArticulosDesdeListaAsync(string idLista, CancellationToken ct = default);
     Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> GetArticulosDesdeListaAsync(string idLista, string? idWeb = null, CancellationToken ct = default);
