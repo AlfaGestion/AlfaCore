@@ -1738,6 +1738,11 @@ public sealed class ConversacionesConfigService(
                 'CONV_ASISTENTE_FUERA_HORARIO',
                 'CONV_ASISTENTE_URGENCIA_PALABRAS',
                 'CONV_ASISTENTE_USA_KNOWLEDGE',
+                'CONV_ASISTENTE_HERRAMIENTA_PRECIOS',
+                'CONV_ASISTENTE_HERRAMIENTA_SALDO_CLIENTE',
+                'CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR',
+                'CONV_ASISTENTE_HERRAMIENTA_PEDIDOS',
+                'CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK',
                 'CONV_INFORME_INSTRUCCIONES'
             )
             """;

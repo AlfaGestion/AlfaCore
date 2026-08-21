@@ -9231,6 +9231,113 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     margin: 0;
 }
 
+/* Check custom (reemplaza el checkbox nativo del navegador): tamaño y look consistentes entre
+   navegadores/zoom, y colores tomados de --color-primary/--color-secondary/--input-*, que ya
+   cambian solos entre tema claro y oscuro (ver :root / html[data-theme="light"] arriba). */
+.conv-config-checkbox input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1.2rem;
+    height: 1.2rem;
+    flex: 0 0 auto;
+    margin: 0;
+    border-radius: 6px;
+    border: 1.5px solid var(--input-border);
+    background: var(--input-bg);
+    cursor: pointer;
+    display: inline-grid;
+    place-content: center;
+    transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+
+.conv-config-checkbox input[type="checkbox"]::before {
+    content: "";
+    width: .68rem;
+    height: .68rem;
+    clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 45% 68%);
+    background: #ffffff;
+    transform: scale(0);
+    transition: transform .12s ease;
+}
+
+.conv-config-checkbox input[type="checkbox"]:checked {
+    border-color: transparent;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+}
+
+.conv-config-checkbox input[type="checkbox"]:checked::before {
+    transform: scale(1);
+}
+
+.conv-config-checkbox input[type="checkbox"]:hover {
+    border-color: var(--color-primary);
+}
+
+.conv-config-checkbox input[type="checkbox"]:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+}
+
+/* Filas "qué puede consultar" del Asistente: toggle con ícono + título + descripción en vez de un
+   checkbox suelto al lado de un párrafo largo. */
+.conv-config-tools-list {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+
+.conv-config-tool-row {
+    display: flex;
+    align-items: center;
+    gap: .85rem;
+    padding: .7rem .9rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-2);
+    transition: border-color .15s ease, background .15s ease;
+}
+
+.conv-config-tool-row:has(input:checked) {
+    border-color: color-mix(in srgb, var(--color-primary) 45%, transparent);
+    background: var(--hover-bg);
+}
+
+.conv-config-tool-row__icon {
+    flex: 0 0 auto;
+    width: 2.2rem;
+    height: 2.2rem;
+    display: grid;
+    place-content: center;
+    border-radius: 999px;
+    background: linear-gradient(135deg, var(--color-primary), var(--color-secondary));
+    color: #ffffff;
+    font-size: 1rem;
+}
+
+.conv-config-tool-row__text {
+    display: flex;
+    flex-direction: column;
+    gap: .1rem;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.conv-config-tool-row__title {
+    font-weight: 600;
+    color: var(--text-main);
+}
+
+.conv-config-tool-row__desc {
+    font-size: .82rem;
+    color: var(--text-muted);
+    line-height: 1.35;
+}
+
+.conv-config-tool-row__toggle {
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
 .conv-config-dias,
 .conv-config-checklist {
     display: flex !important;
