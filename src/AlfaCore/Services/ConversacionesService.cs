@@ -7118,11 +7118,15 @@ public sealed class ConversacionesService(
         if (!await IsSendWindowActiveAsync(idConversacion, canalBot, ct).ConfigureAwait(false))
             return;
 
-        var (botCount, lastSistema) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
+        var (botCount, yaRespondioEsteMensaje) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
         if (botCount >= Math.Max(1, config.BotMaxRespuestas))
             return;
-        // No encimar sobre otra automática (bienvenida, fuera de horario, auto-cierre, etc.).
-        if (IsAutomaticSystem(lastSistema))
+        // No encimar sobre otra automática que ya haya respondido al último mensaje entrante
+        // (bienvenida, fuera de horario, auto-cierre, u otra corrida del propio bot). Se compara por
+        // IdMensaje (no por "el último saliente fue automático alguna vez"): si no, después de la
+        // primera respuesta automática de la conversación -- incluida la del propio bot -- esta
+        // condición quedaba true para siempre y el bot no volvía a responder nunca más.
+        if (yaRespondioEsteMensaje)
             return;
 
         var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
@@ -7938,12 +7942,20 @@ public sealed class ConversacionesService(
         }
     }
 
-    private async Task<(int Count, string LastSistema)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
+    /// <summary>
+    /// Cuenta de respuestas del bot (para el tope <c>BotMaxRespuestas</c>) y si el último mensaje
+    /// entrante YA tiene una respuesta automática posterior (bienvenida/fuera de horario/auto-cierre/
+    /// bot) -- comparado por <c>IdMensaje</c>, no por "el último saliente alguna vez fue automático":
+    /// eso evita que, tras la primera respuesta automática de toda la conversación, quede bloqueado
+    /// para siempre (ver comentario en el llamador).
+    /// </summary>
+    private async Task<(int Count, bool YaRespondioUltimoEntrante)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
     {
         const string sql = """
             SELECT
                 (SELECT COUNT(1) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') = N'BOT'),
-                ISNULL((SELECT TOP (1) ISNULL(SistemaAutor, '') FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' ORDER BY FechaHora DESC, IdMensaje DESC), '');
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'), 0),
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') IN (N'AUTOMATIZACION', N'BIENVENIDA', N'BOT', N'AUTOCIERRE_AVISO', N'AUTOCIERRE', N'REGLA')), 0);
             """;
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
@@ -7951,8 +7963,13 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@Id", idConversacion);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         if (await rd.ReadAsync(ct))
-            return (rd.IsDBNull(0) ? 0 : rd.GetInt32(0), GetString(rd, 1));
-        return (0, string.Empty);
+        {
+            var count = rd.IsDBNull(0) ? 0 : rd.GetInt32(0);
+            var ultimoEntranteId = rd.IsDBNull(1) ? 0L : rd.GetInt64(1);
+            var ultimoAutomaticoId = rd.IsDBNull(2) ? 0L : rd.GetInt64(2);
+            return (count, ultimoAutomaticoId > ultimoEntranteId);
+        }
+        return (0, false);
     }
 
     private async Task<IReadOnlyList<ConversacionMensajeDto>> GetRecentMessagesForBotAsync(long idConversacion, CancellationToken ct)
