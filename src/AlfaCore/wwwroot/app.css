@@ -5875,6 +5875,47 @@ html[data-theme="light"] .menu__search-result:hover {
     grid-row: 3;
 }
 
+/* "Enviar desde" (selector de número de WhatsApp): sin estilo propio quedaba como un div sin
+   comprimir, ocupando toda una fila arriba del todo. Se lo compacta y se lo ubica a la derecha,
+   a la altura de "notas" (misma fila que el campo de nota, columna de acciones), arriba del botón
+   de esa fila -- no se superponen porque el grid alinea "end" por default y este queda "start". */
+.conversations-composer--support > .conversations-send-account {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    grid-column: 2;
+    grid-row: 3;
+    align-self: start;
+    justify-self: end;
+    max-width: 200px;
+    padding: .2rem .55rem;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: .72rem;
+    line-height: 1.2;
+}
+
+.conversations-composer--support > .conversations-send-account i {
+    color: var(--color-primary);
+    font-size: .8rem;
+    flex: 0 0 auto;
+}
+
+.conversations-composer--support > .conversations-send-account label {
+    white-space: nowrap;
+    flex: 0 0 auto;
+}
+
+.conversations-composer--support > .conversations-send-account select {
+    min-height: 24px;
+    max-width: 120px;
+    padding: .05rem .3rem;
+    border-radius: 6px;
+    font-size: .72rem;
+}
+
 .conversations-pending-list {
     display: flex;
     align-items: center;

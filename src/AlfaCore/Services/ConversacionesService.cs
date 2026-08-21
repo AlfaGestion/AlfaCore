@@ -2245,8 +2245,6 @@ public sealed class ConversacionesService(
                 }
 
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
-                if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
-                    whatsAppConfig.PhoneNumberId = conversation.PhoneNumberId;
 
                 // El proveedor global (Meta vs Web) es sólo un default de base: la conversación ya
                 // sabe de qué número entró (IdNumeroWhatsApp). Si ese número específico tiene una
@@ -2259,6 +2257,19 @@ public sealed class ConversacionesService(
                     ? await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsAppParaEnvio.Value, token)
                     : null;
                 numeroWeb = await ResolveWhatsAppWebNumeroForSendAsync(conversation.IdConversacion, numeroWeb, token);
+
+                // PhoneNumberId a usar para el envío por API: preferí el del número elegido en
+                // "Enviar desde" (numeroWeb, la selección explícita del técnico); si ese número no
+                // tiene uno propio cargado, caé al de la conversación (con qué PhoneNumberId entró
+                // originalmente); si tampoco hay, quedate con el default global de whatsAppConfig.
+                // Antes solo miraba conversation.PhoneNumberId, ignorando la selección manual del
+                // combo para números API -- si ese campo de la conversación estaba vacío (ej. una
+                // conversación sin ese dato cargado), el mensaje se mandaba silenciosamente con lo
+                // que hubiera en la config global, sin respetar el número elegido.
+                var phoneNumberIdParaEnvio = FirstNonEmpty(numeroWeb?.PhoneNumberId, conversation.PhoneNumberId);
+                if (!string.IsNullOrWhiteSpace(phoneNumberIdParaEnvio))
+                    whatsAppConfig.PhoneNumberId = phoneNumberIdParaEnvio;
+
                 whatsAppDeliveryProvider = ResolveWhatsAppDeliveryProviderForNumero(whatsAppConfig, numeroWeb);
 
                 var isWhatsAppWebDelivery = string.Equals(whatsAppDeliveryProvider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase);
@@ -2266,9 +2277,19 @@ public sealed class ConversacionesService(
                 if (!windowActive)
                     throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
 
-                initialState = isWhatsAppWebDelivery
-                    ? "PENDIENTE"
-                    : whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
+                // Si no hay sesión Web activa NI configuración de API válida para el número resuelto,
+                // antes esto quedaba en silencio: el mensaje se guardaba como "PENDIENTE_CONFIG" y el
+                // método devolvía éxito igual (el técnico veía "Mensaje enviado correctamente" aunque
+                // WhatsApp nunca lo recibiera). Ahora se corta acá con un error visible.
+                if (!isWhatsAppWebDelivery && whatsAppConfig?.IsConfiguredForSend != true)
+                {
+                    throw new InvalidOperationException(
+                        "No se pudo enviar: el número de WhatsApp elegido no tiene una sesión Web conectada ni un Phone Number ID/Access Token de API configurados.");
+                }
+
+                // Llegado acá, isWhatsAppWebDelivery es true o whatsAppConfig.IsConfiguredForSend es
+                // true (si no, ya se tiró la excepción de arriba) -- siempre hay un camino de envío.
+                initialState = "PENDIENTE";
             }
             else if (isInstagram)
             {
