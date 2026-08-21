@@ -37,15 +37,29 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, haySaldoEntreHerramientas);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
+        string? ultimaRespuestaAutomatica = null;
         foreach (var m in historial
                      .Where(x => (x.Direction == "ENTRANTE" || x.Direction == "SALIENTE") && !string.IsNullOrWhiteSpace(x.Texto))
                      .OrderBy(x => x.FechaHora)
                      .TakeLast(30))
         {
+            var texto = m.Texto.Trim();
+            if (m.Direction == "SALIENTE")
+            {
+                // Colapsa una misma respuesta automática repetida (ej. varias contenciones DERIVA
+                // seguidas) a una sola aparición en el contexto: si el modelo ve su propia respuesta
+                // repetida varias veces, tiende a "seguir el patrón" en vez de razonar de nuevo cada
+                // mensaje nuevo del cliente. Se compara contra la última SALIENTE distinta agregada,
+                // no contra el mensaje anterior a secas (puede haber ENTRANTE del cliente en el medio).
+                if (string.Equals(texto, ultimaRespuestaAutomatica, StringComparison.Ordinal))
+                    continue;
+                ultimaRespuestaAutomatica = texto;
+            }
+
             messages.Add(new
             {
                 role = m.Direction == "ENTRANTE" ? "user" : "assistant",
-                content = m.Texto.Trim()
+                content = texto
             });
         }
         messages.Add(new { role = "user", content = mensajeCliente.Trim() });
