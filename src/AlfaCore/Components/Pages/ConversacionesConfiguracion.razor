@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/conversaciones/configuracion"
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IConversacionesService ConvSvc
+@inject AlfaCore.Services.IConversacionAsistenteService AsistenteSvc
 @inject AlfaCore.Services.IWhatsAppWebSessionService WhatsAppWebSessionSvc
 @inject AlfaCore.Services.IAnyDeskLocalSettingsService AnyDeskSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
@@ -802,6 +803,13 @@
                     <div class="conv-config-collapsible__body conv-config-fields conv-bot-config">
                         <div class="conv-config-fields__full">
                             <p class="panel-card__subtitle">Un asistente estilo «proyecto de GPT»: definís su comportamiento y le pegás la información del negocio, y responde solo las consultas entrantes (todos los canales). Apagado por defecto. Requiere la API key de OpenAI configurada en el servidor. Los archivos (base de conocimiento) llegan en una fase siguiente.</p>
+                        </div>
+                        <div class="conv-config-fields__full">
+                            <strong class="@GetStatusClass(AsistenteSvc.IsConfigured)">OpenAI en el servidor: @GetStatusLabel(AsistenteSvc.IsConfigured)</strong>
+                            @if (!AsistenteSvc.IsConfigured)
+                            {
+                                <p class="panel-card__subtitle">No se encontró la variable de entorno <code>OPENAI_API_KEY</code> en este servidor: aunque actives el asistente y tildes todo lo de abajo, no va a responder nada hasta que se configure ahí (no es algo que se pueda cargar desde esta pantalla).</p>
+                            }
                         </div>
                         <div class="field conv-config-fields__full">
                             <label class="conv-config-checkbox">
