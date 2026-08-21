@@ -5,7 +5,7 @@ using AlfaCore.Models;
 
 namespace AlfaCore.Services;
 
-public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFactory) : IConversacionAsistenteService
+public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFactory, IAppEventService appEvents) : IConversacionAsistenteService
 {
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY"));
 
@@ -91,10 +91,24 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
                 using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
                 using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
-                if (!response.IsSuccessStatusCode)
-                    return null;
-
                 var body = await response.Content.ReadAsStringAsync(ct);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    // Diagnóstico temporal (ver conversaciones_agente_ia_plan.md): el asistente venía
+                    // derivando siempre, sin poder confirmar si el modelo respondía mal o si la llamada
+                    // a OpenAI directamente fallaba (ej. nombre de modelo inválido). Antes esto se
+                    // perdía en silencio (return null). Se loguea acá, no se elimina hasta confirmar
+                    // la causa real con datos.
+                    await appEvents.LogErrorAsync(
+                        "Conversaciones", "AsistenteOpenAiError",
+                        new InvalidOperationException($"OpenAI respondió {(int)response.StatusCode}"),
+                        "El asistente de Conversaciones no pudo obtener respuesta de OpenAI.",
+                        new { model, ronda, herramientas = tools is null ? 0 : herramientas!.Count, statusCode = (int)response.StatusCode, body = Truncar(body, 1500) },
+                        AppEventSeverity.Warning, ct);
+                    return null;
+                }
+
                 using var document = JsonDocument.Parse(body);
                 var choice = document.RootElement.GetProperty("choices")[0];
                 var message = choice.GetProperty("message");
@@ -107,7 +121,26 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
                 if (!string.Equals(finishReason, "tool_calls", StringComparison.Ordinal) || toolCalls is null || ejecutarHerramientaAsync is null || ronda == MaxRondasHerramientas)
                 {
                     var texto = message.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
-                    return ParseRespuesta(texto);
+                    var respuestaParseada = ParseRespuesta(texto);
+
+                    // Mismo diagnóstico temporal: acá vemos qué modelo respondió realmente (confirma si
+                    // OPENAI_MODEL se está tomando), si había herramientas ofrecidas, y el JSON crudo que
+                    // mandó el modelo -- sin esto solo veíamos el resultado final ya parseado.
+                    await appEvents.LogAuditAsync(
+                        "Conversaciones", "AsistenteOpenAiRespuesta", "CONV_ASISTENTE", model,
+                        "Diagnóstico de respuesta del asistente.",
+                        new
+                        {
+                            model,
+                            ronda,
+                            herramientasOfrecidas = tools is null ? 0 : herramientas!.Count,
+                            finishReason,
+                            tipoParseado = respuestaParseada?.Tipo,
+                            textoCrudo = Truncar(texto, 800)
+                        },
+                        ct);
+
+                    return respuestaParseada;
                 }
 
                 // El modelo pidió usar una o más herramientas: se ejecutan en C# (nunca del lado del
@@ -291,6 +324,12 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         if (t is "RESUELVE" or "ACLARA" or "DERIVA")
             return t;
         return puedeResponder ? "RESUELVE" : "DERIVA";
+    }
+
+    private static string Truncar(string? texto, int maxLength)
+    {
+        var t = texto ?? string.Empty;
+        return t.Length <= maxLength ? t : t[..maxLength] + "…";
     }
 
     private static ConversacionAsistenteRespuesta? ParseRespuesta(string? json)
