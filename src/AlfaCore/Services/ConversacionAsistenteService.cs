@@ -9,6 +9,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 {
     public bool IsConfigured => !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY"));
 
+    private const int MaxRondasHerramientas = 2;
+
     public async Task<ConversacionAsistenteRespuesta?> ResponderAsync(
         string comportamiento,
         string informacion,
@@ -19,6 +21,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         bool esUrgente = false,
         string? conocimientoBase = null,
         string? contextoCliente = null,
+        IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto>? herramientas = null,
+        Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = null,
         CancellationToken ct = default)
     {
         var apiKey = Environment.GetEnvironmentVariable("OPENAI_API_KEY");
@@ -29,7 +33,8 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         if (string.IsNullOrWhiteSpace(model))
             model = "gpt-4o-mini";
 
-        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente);
+        var haySaldoEntreHerramientas = herramientas?.Any(h => h.Nombre.StartsWith("consultar_saldo", StringComparison.Ordinal)) ?? false;
+        var systemPrompt = BuildSystemPrompt(comportamiento, informacion, politica, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, haySaldoEntreHerramientas);
 
         var messages = new List<object> { new { role = "system", content = systemPrompt } };
         foreach (var m in historial
@@ -45,29 +50,81 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         }
         messages.Add(new { role = "user", content = mensajeCliente.Trim() });
 
-        var payload = new
-        {
-            model,
-            temperature = 0.3,
-            response_format = new { type = "json_object" },
-            messages
-        };
+        object? tools = herramientas is { Count: > 0 }
+            ? herramientas.Select(h => new
+            {
+                type = "function",
+                function = new
+                {
+                    name = h.Nombre,
+                    description = h.Descripcion,
+                    parameters = JsonSerializer.Deserialize<JsonElement>(h.ParametrosJsonSchema)
+                }
+            }).ToArray()
+            : null;
 
         try
         {
             var client = httpClientFactory.CreateClient();
-            client.Timeout = TimeSpan.FromSeconds(25);
+            client.Timeout = TimeSpan.FromSeconds(40);
             client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
-            using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
-            if (!response.IsSuccessStatusCode)
-                return null;
+            for (var ronda = 0; ronda <= MaxRondasHerramientas; ronda++)
+            {
+                var payload = tools is null
+                    ? new { model, temperature = 0.3, response_format = new { type = "json_object" }, messages }
+                    : (object)new { model, temperature = 0.3, response_format = new { type = "json_object" }, messages, tools };
 
-            var body = await response.Content.ReadAsStringAsync(ct);
-            using var document = JsonDocument.Parse(body);
-            var texto = document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString();
-            return ParseRespuesta(texto);
+                using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
+                using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                var body = await response.Content.ReadAsStringAsync(ct);
+                using var document = JsonDocument.Parse(body);
+                var choice = document.RootElement.GetProperty("choices")[0];
+                var message = choice.GetProperty("message");
+                var finishReason = choice.TryGetProperty("finish_reason", out var fr) ? fr.GetString() : null;
+
+                var toolCalls = message.TryGetProperty("tool_calls", out var tc) && tc.ValueKind == JsonValueKind.Array
+                    ? tc
+                    : (JsonElement?)null;
+
+                if (!string.Equals(finishReason, "tool_calls", StringComparison.Ordinal) || toolCalls is null || ejecutarHerramientaAsync is null || ronda == MaxRondasHerramientas)
+                {
+                    var texto = message.TryGetProperty("content", out var c) && c.ValueKind == JsonValueKind.String ? c.GetString() : null;
+                    return ParseRespuesta(texto);
+                }
+
+                // El modelo pidió usar una o más herramientas: se ejecutan en C# (nunca del lado del
+                // modelo) y se le devuelve el resultado para que redacte la respuesta final.
+                messages.Add(message.Clone());
+                foreach (var call in toolCalls.Value.EnumerateArray())
+                {
+                    var callId = call.GetProperty("id").GetString() ?? string.Empty;
+                    var function = call.GetProperty("function");
+                    var nombreHerramienta = function.GetProperty("name").GetString() ?? string.Empty;
+                    var argumentos = function.TryGetProperty("arguments", out var argsEl) ? argsEl.GetString() ?? "{}" : "{}";
+
+                    string resultado;
+                    try
+                    {
+                        resultado = await ejecutarHerramientaAsync(nombreHerramienta, argumentos, ct);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        resultado = "No se pudo obtener el dato en este momento.";
+                    }
+
+                    messages.Add(new { role = "tool", tool_call_id = callId, content = resultado });
+                }
+            }
+
+            return null;
         }
         catch (OperationCanceledException)
         {
@@ -126,7 +183,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
     }
 
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
-        bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? contextoCliente)
+        bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? contextoCliente, bool haySaldoEntreHerramientas = false)
     {
         var sb = new StringBuilder();
         var comp = (comportamiento ?? string.Empty).Trim();
@@ -162,6 +219,13 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("REGLAS:");
         sb.AppendLine("- Respondé en español rioplatense, breve y directo, sin inventar datos del negocio (precios, stock, plazos) que no estén en la información.");
         sb.AppendLine("- No prometas nada que no puedas sostener con la información dada.");
+        sb.AppendLine("- Si tenés herramientas disponibles para consultar datos reales (precio, saldo, pedidos), usalas en vez de inventar o suponer un valor. Nunca redactes un monto, precio o estado sin haber llamado a la herramienta correspondiente primero.");
+
+        if (haySaldoEntreHerramientas)
+        {
+            sb.AppendLine();
+            sb.AppendLine("SALDO / CUENTA CORRIENTE: si detectás una consulta de saldo o deuda y todavía no dijo qué necesita, preguntá en una sola línea si quiere el total, el detalle de los comprobantes, o el link para verlo en el portal online — no asumas cuál quiere. Si ya lo especificó (o lo pide después de que preguntaste), resolvé directo con la herramienta correspondiente sin volver a preguntar.");
+        }
 
         switch (NormalizePolitica(politica))
         {

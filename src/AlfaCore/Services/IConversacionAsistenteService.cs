@@ -21,6 +21,8 @@ public interface IConversacionAsistenteService
         bool esUrgente = false,
         string? conocimientoBase = null,
         string? contextoCliente = null,
+        IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto>? herramientas = null,
+        Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = null,
         CancellationToken ct = default);
 
     /// <summary>

@@ -22,6 +22,7 @@ public sealed class ConversacionesService(
     INotificacionesPushService notificacionesPushService,
     ICentralAdminService centralAdminService,
     IConversacionAsistenteService asistenteService,
+    IConversacionAsistenteHerramientasService asistenteHerramientasService,
     IAlfaKnowledgeSuggestionService alfaKnowledgeService,
     IWebHostEnvironment environment) : IConversacionesService
 {
@@ -7163,9 +7164,19 @@ public sealed class ConversacionesService(
 
         var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
 
+        // Herramientas (precio/saldo/pedidos): la cuenta se resuelve una sola vez acá, server-side,
+        // y viaja cerrada en el lambda ejecutor -- el modelo nunca puede elegir ni cambiar la cuenta.
+        var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, ct).ConfigureAwait(false);
+        var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada);
+        Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
+            ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
+                asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
+            : null;
+
         var result = await asistenteService.ResponderAsync(
             config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-            texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente, ct).ConfigureAwait(false);
+            texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente,
+            herramientas, ejecutarHerramientaAsync, ct).ConfigureAwait(false);
 
         // Nunca dejamos al cliente sin respuesta. El asistente decide el tipo:
         //   RESUELVE -> resolvió; ACLARA -> repregunta para poder resolver (esperamos su respuesta);
@@ -10282,6 +10293,83 @@ public sealed class ConversacionesService(
         return result is null || result is DBNull
             ? string.Empty
             : Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Resuelve la cuenta comercial (Cliente o Proveedor) vinculada a una conversación, para el
+    /// asistente de IA -- ver conversaciones_agente_ia_plan.md. Primero el camino rápido ya existente
+    /// (CONV_CONVERSACIONES.ClienteCodigo, específico de Cliente); si no hay, generaliza el vínculo
+    /// Contacto -> Cuenta comercial (dbo.MA_CONTACTOS_CUENTAS) probando VT_CLIENTES y, si no matchea,
+    /// VT_PROVEEDORES. Sin match en ningún lado, devuelve null -- el asistente no debe ofrecer
+    /// herramientas sensibles (saldo/pedidos) sin una cuenta identificada.
+    /// </summary>
+    private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync(long idConversacion, CancellationToken ct)
+    {
+        string clienteCodigo;
+        int? idContacto;
+
+        await using (var cn = new SqlConnection(ConnectionString))
+        {
+            await cn.OpenAsync(ct);
+            const string sqlConversacion = """
+                SELECT TOP (1) ISNULL(LTRIM(RTRIM(ClienteCodigo)), N''), IdContacto
+                FROM dbo.CONV_CONVERSACIONES
+                WHERE IdConversacion = @IdConversacion;
+                """;
+            await using var cmd = new SqlCommand(sqlConversacion, cn);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (!await rd.ReadAsync(ct))
+                return null;
+
+            clienteCodigo = GetString(rd, 0);
+            idContacto = rd.IsDBNull(1) ? null : rd.GetInt32(1);
+        }
+
+        if (!string.IsNullOrWhiteSpace(clienteCodigo))
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            const string sqlCliente = """
+                SELECT TOP (1) ISNULL(LTRIM(RTRIM(RAZON_SOCIAL)), N'')
+                FROM dbo.VT_CLIENTES
+                WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
+                """;
+            await using var cmd = new SqlCommand(sqlCliente, cn);
+            cmd.Parameters.AddWithValue("@Codigo", clienteCodigo);
+            var razonSocial = await cmd.ExecuteScalarAsync(ct) as string ?? string.Empty;
+            return new ConversacionCuentaVinculadaDto(clienteCodigo, CuentaComercialTipo.Cliente, razonSocial);
+        }
+
+        if (idContacto is null)
+            return null;
+
+        await using (var cn = new SqlConnection(ConnectionString))
+        {
+            await cn.OpenAsync(ct);
+            const string sqlContacto = """
+                SELECT TOP (1)
+                    LTRIM(RTRIM(mcc.Cuenta)),
+                    CASE WHEN cli.CODIGO IS NOT NULL THEN 1 ELSE 2 END AS TipoOrdinal,
+                    ISNULL(LTRIM(RTRIM(ISNULL(cli.RAZON_SOCIAL, prv.RAZON_SOCIAL))), N'')
+                FROM dbo.MA_CONTACTOS_CUENTAS mcc
+                LEFT JOIN dbo.VT_CLIENTES cli ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(mcc.Cuenta)))
+                LEFT JOIN dbo.VT_PROVEEDORES prv ON UPPER(LTRIM(RTRIM(prv.CODIGO))) = UPPER(LTRIM(RTRIM(mcc.Cuenta))) AND cli.CODIGO IS NULL
+                WHERE mcc.IdContacto = @IdContacto
+                  AND (cli.CODIGO IS NOT NULL OR prv.CODIGO IS NOT NULL)
+                ORDER BY TipoOrdinal;
+                """;
+            await using var cmd = new SqlCommand(sqlContacto, cn);
+            cmd.Parameters.AddWithValue("@IdContacto", idContacto.Value);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            if (!await rd.ReadAsync(ct))
+                return null;
+
+            var codigo = rd.GetString(0);
+            var tipo = rd.GetInt32(1) == 1 ? CuentaComercialTipo.Cliente : CuentaComercialTipo.Proveedor;
+            var razonSocial = GetString(rd, 2);
+            return new ConversacionCuentaVinculadaDto(codigo, tipo, razonSocial);
+        }
     }
 
     private async Task<ConversationStateSummary> GetConversationStateAsync(long idConversacion, CancellationToken ct)

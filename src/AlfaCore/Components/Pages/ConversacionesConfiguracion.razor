@@ -833,6 +833,39 @@
                                 <span>Usar AlfaKnowledge como fuente: además del comportamiento y la información pegada, busca en los documentos/instructivos subidos a tu base de conocimiento</span>
                             </label>
                         </div>
+                        <div class="conv-config-fields__full">
+                            <p class="panel-card__subtitle">Qué datos reales puede consultar y responder (además del texto de arriba). Cada uno se ofrece solo si la conversación está vinculada a la cuenta correspondiente (Cliente o Proveedor, según Contactos).</p>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPrecios" />
+                                <span>Precios: puede buscar y responder el precio real de un artículo (respeta la lista de precios del cliente si está identificado)</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaSaldoCliente" />
+                                <span>Saldo de Cliente: puede responder el saldo de cuenta corriente (total, detalle o link al portal, según lo que pida) cuando la conversación está vinculada a un Cliente</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaSaldoProveedor" />
+                                <span>Saldo de Proveedor: igual que el anterior, cuando la conversación está vinculada a un Proveedor</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPedidos" />
+                                <span>Pedidos: puede responder el estado de una Nota de Pedido (Pendiente, Aprobado, Finalizado o Anulado) de un Cliente identificado</span>
+                            </label>
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label class="conv-config-checkbox">
+                                <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPortalLink" />
+                                <span>Portal de autogestión: puede ofrecer el link para ver la cuenta corriente online (hoy disponible para Cliente; Proveedor está en camino)</span>
+                            </label>
+                        </div>
                         <div class="field conv-config-fields__full">
                             <label class="conv-config-checkbox">
                                 <input type="checkbox" @bind="_automatizacionesConfig.AsistenteFueraHorario" />
