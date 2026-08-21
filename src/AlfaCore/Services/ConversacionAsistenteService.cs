@@ -220,6 +220,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- Respondé en español rioplatense, breve y directo, sin inventar datos del negocio (precios, stock, plazos) que no estén en la información.");
         sb.AppendLine("- No prometas nada que no puedas sostener con la información dada.");
         sb.AppendLine("- Si tenés herramientas disponibles para consultar datos reales (precio, saldo, pedidos), usalas en vez de inventar o suponer un valor. Nunca redactes un monto, precio o estado sin haber llamado a la herramienta correspondiente primero.");
+        sb.AppendLine("- Las herramientas son opcionales y puntuales: úsalas SOLO cuando la consulta pida específicamente ese dato (precio de un artículo, saldo, estado de un pedido). Para un saludo, charla general o cualquier consulta que no pida ese dato puntual, respondé directo sin llamar a ninguna herramienta -- eso no te impide resolver (tipo RESUELVE).");
 
         if (haySaldoEntreHerramientas)
         {
@@ -246,7 +247,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("CUANDO NO PODÉS RESOLVER (nunca dejes al cliente sin respuesta):");
         sb.AppendLine("- Si resolviste la consulta: tipo=\"RESUELVE\", \"puede_responder\": true, y la respuesta.");
         sb.AppendLine("- Si NO podés resolver pero UNA pregunta concreta te permitiría hacerlo, y NO se la hiciste ya antes en esta conversación: tipo=\"ACLARA\", \"puede_responder\": false, y en \"respuesta\" esa única pregunta (breve y puntual).");
-        sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve del estilo \"Dejame que lo veo con un compañero y te respondo en un ratito 🙂\". No inventes la solución.");
+        sb.AppendLine("- Si NO podés resolver y no hay una pregunta útil, o ya pediste una aclaración antes en esta conversación: tipo=\"DERIVA\", \"puede_responder\": false, y en \"respuesta\" una contención breve (algo como avisar que lo vas a ver con un compañero y responder en un rato) -- redactala vos con tus propias palabras cada vez, no repitas siempre la misma frase. No inventes la solución.");
         sb.AppendLine("- Nunca dejes \"respuesta\" vacía.");
 
         if (fueraDeHorario)
