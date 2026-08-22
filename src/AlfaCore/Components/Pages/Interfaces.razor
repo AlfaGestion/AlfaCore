@@ -358,6 +358,21 @@
                                                 case InterfacesViewColumnKeys.Tipo:
                                                     @item.TipoDocumentoDescripcion
                                                     break;
+                                                case InterfacesViewColumnKeys.TipoComprobanteIa:
+                                                    @(IsCompraDocument(item) ? GetDisplayValue(item.TipoComprobanteDetectado) : "—")
+                                                    break;
+                                                case InterfacesViewColumnKeys.PuntoVentaIa:
+                                                    @(IsCompraDocument(item) ? GetDisplayValue(item.PuntoVentaDetectado) : "—")
+                                                    break;
+                                                case InterfacesViewColumnKeys.NumeroIa:
+                                                    @(IsCompraDocument(item) ? GetDisplayValue(item.NumeroDetectado) : "—")
+                                                    break;
+                                                case InterfacesViewColumnKeys.LetraIa:
+                                                    @(IsCompraDocument(item) ? GetDisplayValue(item.LetraDetectada) : "—")
+                                                    break;
+                                                case InterfacesViewColumnKeys.CuentaProveedorIa:
+                                                    @(IsCompraDocument(item) ? GetDisplayValue(item.CuentaProveedorDetectada) : "—")
+                                                    break;
                                                 case InterfacesViewColumnKeys.Proveedor:
                                                     @(IsCompraDocument(item) ? GetDisplayValue(item.ProveedorNombre) : "—")
                                                     break;
@@ -366,6 +381,19 @@
                                                     break;
                                                 case InterfacesViewColumnKeys.Estado:
                                                     <span class="interfaces-status-pill @GetStateCssClass(item.EstadoCodigo, item.EstadoDescripcion)">@item.EstadoDescripcion</span>
+                                                    break;
+                                                case InterfacesViewColumnKeys.AprobacionCompras:
+                                                    @if (item.FechaAprobacionCompras.HasValue)
+                                                    {
+                                                        <span class="interfaces-status-pill interfaces-status-pill--success" title="Aprobado en el módulo de Compras">
+                                                            Aprobado @item.FechaAprobacionCompras.Value.ToString("dd/MM/yyyy HH:mm")
+                                                            @(string.IsNullOrWhiteSpace(item.UsuarioAprobacionCompras) ? "" : $"· {item.UsuarioAprobacionCompras}")
+                                                        </span>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span>—</span>
+                                                    }
                                                     break;
                                                 case InterfacesViewColumnKeys.Usuario:
                                                     @(string.IsNullOrWhiteSpace(item.UsuarioAlta) ? "—" : item.UsuarioAlta)

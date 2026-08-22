@@ -114,6 +114,20 @@ public sealed class InterfacesInboxItemDto
     public string TipoDocumentoDescripcion { get; set; } = string.Empty;
     public string ProveedorNombre { get; set; } = string.Empty;
     public decimal? ImporteTotal { get; set; }
+
+    // Detectados por la lectura IA (dbo.IA_Compras_CAB), no por el documento en sí.
+    public string TipoComprobanteDetectado { get; set; } = string.Empty;
+    public string PuntoVentaDetectado { get; set; } = string.Empty;
+    public string NumeroDetectado { get; set; } = string.Empty;
+    public string LetraDetectada { get; set; } = string.Empty;
+    public string CuentaProveedorDetectada { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Se completa cuando dbo.IA_Compras_CAB.Estado = 'APROBADO' — lo pone el módulo de compras
+    /// (V_mv_Cpra.frm, AgregarActualizacionPendienteIA) al grabar el comprobante ahí, no AlfaCore.
+    /// </summary>
+    public DateTime? FechaAprobacionCompras { get; set; }
+    public string UsuarioAprobacionCompras { get; set; } = string.Empty;
 }
 
 public sealed class InterfacesViewSettingsDto
@@ -135,9 +149,15 @@ public static class InterfacesViewColumnKeys
     public const string Numero = "numero";
     public const string Fecha = "fecha";
     public const string Tipo = "tipo";
+    public const string TipoComprobanteIa = "tipocomprobanteia";
+    public const string PuntoVentaIa = "puntoventaia";
+    public const string NumeroIa = "numeroia";
+    public const string LetraIa = "letraia";
+    public const string CuentaProveedorIa = "cuentaproveedoria";
     public const string Proveedor = "proveedor";
     public const string Importe = "importe";
     public const string Estado = "estado";
+    public const string AprobacionCompras = "aprobacioncompras";
     public const string Usuario = "usuario";
     public const string Observacion = "observacion";
     public const string Adjuntos = "adjuntos";
