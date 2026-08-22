@@ -1930,7 +1930,7 @@
         => _articulosSeleccionados.Any(x => string.Equals(x.IdArticulo, idArticulo, StringComparison.OrdinalIgnoreCase));
 
     private string GetArticuloImageUrl(string idArticulo)
-        => AddImageVersion(AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, idArticulo));
+        => AddImageVersion(AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, idArticulo, idbase, thumbnail: true));
 
     private bool ShouldShowArticuloImage(string idArticulo)
         => !_articuloImageFallbacks.Contains(idArticulo) && !string.IsNullOrWhiteSpace(GetArticuloImageUrl(idArticulo));

@@ -24,6 +24,7 @@ public sealed class InterfacesService(
     private const string ConfigGroup = "INTERFACES";
     private const string ViewConfigPrefix = "USUVIEW-INTERFACES-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+    private static readonly TimeSpan ReaderProcessTimeout = TimeSpan.FromMinutes(3);
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -142,7 +143,14 @@ public sealed class InterfacesService(
                     ISNULL(t.Codigo, ''),
                     ISNULL(t.Descripcion, ''),
                     ISNULL(ia.Proveedor_Nombre, ''),
-                    ia.Total
+                    ia.Total,
+                    ISNULL(ia.TipoComprobante, ''),
+                    ISNULL(ia.PuntoVenta, ''),
+                    ISNULL(ia.Numero, ''),
+                    ISNULL(ia.Letra, ''),
+                    ISNULL(ia.Cuenta_Contable, ''),
+                    CASE WHEN ia.Estado = 'APROBADO' THEN ia.FechaHora_Modificacion ELSE NULL END,
+                    CASE WHEN ia.Estado = 'APROBADO' THEN ISNULL(ia.Usuario_Proceso, '') ELSE '' END
                 FROM dbo.INT_COMPROBANTE_RECIBIDO c
                 INNER JOIN dbo.INT_ESTADO e
                     ON e.IdEstado = c.IdEstado
@@ -153,7 +161,14 @@ public sealed class InterfacesService(
                     SELECT TOP (1)
                         cab.Estado,
                         cab.Proveedor_Nombre,
-                        cab.Total
+                        cab.Total,
+                        cab.TipoComprobante,
+                        cab.PuntoVenta,
+                        cab.Numero,
+                        cab.Letra,
+                        cab.Cuenta_Contable,
+                        cab.FechaHora_Modificacion,
+                        cab.Usuario_Proceso
                     FROM dbo.IA_Compras_CAB cab
                     WHERE cab.IdComprobanteRecibido = c.IdComprobanteRecibido
                     ORDER BY cab.FechaHora_Proceso DESC, cab.ID DESC
@@ -227,7 +242,14 @@ public sealed class InterfacesService(
                     TipoDocumentoCodigo = GetString(rd, 11),
                     TipoDocumentoDescripcion = GetString(rd, 12),
                     ProveedorNombre = GetString(rd, 13),
-                    ImporteTotal = GetNullableDecimal(rd, 14)
+                    ImporteTotal = GetNullableDecimal(rd, 14),
+                    TipoComprobanteDetectado = GetString(rd, 15),
+                    PuntoVentaDetectado = GetString(rd, 16),
+                    NumeroDetectado = GetString(rd, 17),
+                    LetraDetectada = GetString(rd, 18),
+                    CuentaProveedorDetectada = GetString(rd, 19),
+                    FechaAprobacionCompras = rd.IsDBNull(20) ? null : rd.GetDateTime(20),
+                    UsuarioAprobacionCompras = GetString(rd, 21)
                 });
             }
 
@@ -2220,12 +2242,18 @@ public sealed class InterfacesService(
                 new() { Key = InterfacesViewColumnKeys.Numero, Label = "Número", Visible = true, Order = 0 },
                 new() { Key = InterfacesViewColumnKeys.Fecha, Label = "Fecha", Visible = true, Order = 1 },
                 new() { Key = InterfacesViewColumnKeys.Tipo, Label = "Tipo", Visible = true, Order = 2 },
-                new() { Key = InterfacesViewColumnKeys.Proveedor, Label = "Proveedor", Visible = true, Order = 3 },
-                new() { Key = InterfacesViewColumnKeys.Importe, Label = "Importe", Visible = true, Order = 4 },
-                new() { Key = InterfacesViewColumnKeys.Estado, Label = "Estado", Visible = true, Order = 5 },
-                new() { Key = InterfacesViewColumnKeys.Usuario, Label = "Usuario", Visible = true, Order = 6 },
-                new() { Key = InterfacesViewColumnKeys.Observacion, Label = "Observación", Visible = true, Order = 7 },
-                new() { Key = InterfacesViewColumnKeys.Adjuntos, Label = "Adjuntos", Visible = true, Order = 8 }
+                new() { Key = InterfacesViewColumnKeys.TipoComprobanteIa, Label = "Tipo cpte. (IA)", Visible = true, Order = 3 },
+                new() { Key = InterfacesViewColumnKeys.PuntoVentaIa, Label = "PV", Visible = true, Order = 4 },
+                new() { Key = InterfacesViewColumnKeys.NumeroIa, Label = "N° cpte.", Visible = true, Order = 5 },
+                new() { Key = InterfacesViewColumnKeys.LetraIa, Label = "Letra", Visible = true, Order = 6 },
+                new() { Key = InterfacesViewColumnKeys.CuentaProveedorIa, Label = "Cód. proveedor", Visible = true, Order = 7 },
+                new() { Key = InterfacesViewColumnKeys.Proveedor, Label = "Proveedor", Visible = true, Order = 8 },
+                new() { Key = InterfacesViewColumnKeys.Importe, Label = "Importe", Visible = true, Order = 9 },
+                new() { Key = InterfacesViewColumnKeys.Estado, Label = "Estado", Visible = true, Order = 10 },
+                new() { Key = InterfacesViewColumnKeys.AprobacionCompras, Label = "Aprobación compras", Visible = true, Order = 11 },
+                new() { Key = InterfacesViewColumnKeys.Usuario, Label = "Usuario", Visible = true, Order = 12 },
+                new() { Key = InterfacesViewColumnKeys.Observacion, Label = "Observación", Visible = true, Order = 13 },
+                new() { Key = InterfacesViewColumnKeys.Adjuntos, Label = "Adjuntos", Visible = true, Order = 14 }
             ]
         };
 
@@ -3549,6 +3577,13 @@ public sealed class InterfacesService(
         var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
+        // Sin este limite, un proceso Python colgado (ej. esperando una respuesta de red que nunca
+        // llega) deja trabado para siempre este await — y como el worker automatico
+        // (InterfacesCompraIaWorkerHostedService) procesa TODAS las bases en un unico loop secuencial,
+        // un solo documento colgado en cualquier base congela el procesamiento automatico de todas las
+        // demas, sin loguear ningun error (no esta fallando, esta esperando indefinidamente).
+        var readerDeadline = DateTime.UtcNow.Add(ReaderProcessTimeout);
+
         while (!process.HasExited)
         {
             await Task.Delay(1000, ct);
@@ -3563,6 +3598,19 @@ public sealed class InterfacesService(
                 }
 
                 throw new OperationCanceledException("El procesamiento fue cancelado por solicitud del usuario.");
+            }
+
+            if (DateTime.UtcNow > readerDeadline)
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                }
+
+                throw new TimeoutException($"El lector automático de facturas no respondió en {ReaderProcessTimeout.TotalMinutes:0} minutos y se canceló.");
             }
         }
 
@@ -3894,6 +3942,12 @@ public sealed class InterfacesService(
                 candidates.Add($"{letra} {ptoDigits}-{numeroDigits.TrimStart('0')}");
                 candidates.Add($"{ptoDigits}{numeroDigits}{letra}");
             }
+
+            // Formato real de C_MV_CPTE.IDCOMPROBANTE (13 caracteres, ancho fijo, confirmado
+            // contra V_mv_Cpra.frm): Sucursal a 4 dígitos + Numero a 8 dígitos + Letra, con ceros
+            // a la izquierda. Las variantes de arriba son best-effort para datos irregulares;
+            // esta es la que realmente coincide con lo que graba el sistema.
+            candidates.Add($"{ptoDigits.PadLeft(4, '0')}{numeroDigits.PadLeft(8, '0')}{letra}");
         }
         candidates.RemoveWhere(static x => string.IsNullOrWhiteSpace(x));
         if (candidates.Count == 0)
@@ -3904,6 +3958,11 @@ public sealed class InterfacesService(
         foreach (var _ in candidates)
             paramNames.Add($"@id{idx++}");
 
+        // Se chequea contra C_MV_CPTE (no MV_ASIENTOS): un asiento puede existir solo por
+        // importación ARCA/AFIP para el libro de IVA, sin que la factura se haya procesado
+        // realmente (stock, etc.) — C_MV_CPTE es la cabecera real del comprobante de compras.
+        // Las filas cargadas por ese importador quedan con USUARIO = 'IMPORTACION' y no cuentan
+        // como "ya cargada": esa factura todavía tiene que procesarse por este circuito.
         var sqlCompras = $"""
             SELECT TOP (1)
                 ISNULL(TC, ''),
@@ -3911,6 +3970,7 @@ public sealed class InterfacesService(
                 ISNULL(IDCOMPROBANTE, '')
             FROM dbo.C_MV_CPTE WITH (NOLOCK)
             WHERE ISNULL(ANULADA, 0) = 0
+              AND UPPER(LTRIM(RTRIM(ISNULL(USUARIO, '')))) <> N'IMPORTACION'
               AND LTRIM(RTRIM(ISNULL(IDCOMPROBANTE, ''))) IN ({string.Join(", ", paramNames)})
             """;
         if (!string.IsNullOrWhiteSpace(cuenta))

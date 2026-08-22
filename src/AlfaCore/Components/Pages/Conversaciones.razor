@@ -19,6 +19,7 @@
 @inject AlfaCore.Services.IAlfaKnowledgeSuggestionService AlfaKnowledgeSvc
 @inject AlfaCore.Services.IConversacionAnalisisService AnalisisSvc
 @inject AlfaCore.Services.INotificacionesPushService PushSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IAsyncDisposable
@@ -819,8 +820,22 @@
                 }
                 else if (_inbox.Count == 0)
                 {
-                    <div class="conversations-empty">
-                        No hay conversaciones para los filtros seleccionados.
+                    <div class="conversations-empty conversations-empty--onboarding">
+                        <i class="bi @GetWhatsAppEmptyStateIcon()"></i>
+                        <strong>@GetWhatsAppEmptyStateTitle()</strong>
+                        <span>@GetWhatsAppEmptyStateMessage()</span>
+                        @if (ShouldShowConnectWhatsAppCta)
+                        {
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="GoToWhatsAppConfiguration">
+                                <i class="bi bi-whatsapp"></i> Conectar WhatsApp
+                            </button>
+                        }
+                        else if (ShouldShowStartConversationCta)
+                        {
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="FocusInboxSearchAsync">
+                                <i class="bi bi-plus-circle-fill"></i> Empezar una conversación
+                            </button>
+                        }
                     </div>
                 }
                 else
@@ -3815,7 +3830,6 @@
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> _whatsappNumeros = [];
     private ConversacionWhatsAppConfigDto _whatsAppConfig = new();
     private bool _esAdministradorConversaciones;
-    private bool _redirectingToWhatsAppOnboarding;
 
     protected override async Task OnInitializedAsync()
     {
@@ -3826,8 +3840,6 @@
         _alfaKnowledgeModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("ALFAKNOWLEDGE");
         _crmModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("CRM");
         await LoadWhatsAppNumerosAndAdminStatusAsync();
-        if (TryRedirectToWhatsAppQrOnboarding())
-            return;
 
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
         if (_loadError is null)
@@ -3839,33 +3851,6 @@
 
         StartPolling();
         StartTypingPolling();
-    }
-
-    private bool TryRedirectToWhatsAppQrOnboarding()
-    {
-        if (_redirectingToWhatsAppOnboarding)
-            return true;
-
-        var uri = Nav.ToAbsoluteUri(Nav.Uri);
-        var query = QueryHelpers.ParseQuery(uri.Query);
-        if (query.ContainsKey("id")
-            || query.ContainsKey("onboarding")
-            || _whatsAppConfig.IsConfiguredForSend
-            || _whatsappNumeros.Any(n => n.Activo && n.IsWebSessionReady))
-        {
-            return false;
-        }
-
-        _redirectingToWhatsAppOnboarding = true;
-        var target = QueryHelpers.AddQueryString(
-            $"{uri.AbsolutePath.TrimEnd('/')}/configuracion",
-            new Dictionary<string, string?>
-            {
-                ["onboarding"] = "whatsapp-qr",
-                ["auto"] = "1"
-            });
-        Nav.NavigateTo(target, replace: true);
-        return true;
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
@@ -4264,6 +4249,32 @@
             .ThenBy(n => n.Nombre)
             .ToList();
 
+    private bool HasStructuredWhatsAppNumeros
+        => UsableWhatsAppNumeros.Any();
+
+    private bool HasAnyWhatsAppChannel
+        => HasStructuredWhatsAppNumeros || _whatsAppConfig.IsConfiguredForSend;
+
+    private bool HasAccessibleWhatsAppChannel
+        => HasStructuredWhatsAppNumeros
+            ? UsableWhatsAppNumeros.Any(CanAccessWhatsAppNumero)
+            : _whatsAppConfig.IsConfiguredForSend;
+
+    private bool ShouldUseWhatsAppEmptyState
+        => _canalActivo == "WHATSAPP" || (_canalActivo == "SOCIAL" && !HasAnyNonWhatsAppInboxItems);
+
+    private bool ShouldShowConnectWhatsAppCta
+        => ShouldUseWhatsAppEmptyState && !HasAnyWhatsAppChannel;
+
+    private bool ShouldShowStartConversationCta
+        => ShouldUseWhatsAppEmptyState && HasAccessibleWhatsAppChannel;
+
+    private bool HasAnyNonWhatsAppInboxItems
+        => _inbox.Any(x => !string.Equals(x.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<ConversacionWhatsAppNumeroDto> UsableWhatsAppNumeros
+        => _whatsappNumeros.Where(n => n.Activo && (IsMetaCloudApiNumero(n) || n.IsWebSessionReady));
+
     private bool ShouldShowWhatsAppSendNumeroSelector
         => IsWhatsAppConversation && AvailableWhatsAppSendNumeros.Count > 0;
 
@@ -4286,8 +4297,79 @@
         return numero.Usuarios.Contains(CurrentUserNameForAudit, StringComparer.OrdinalIgnoreCase);
     }
 
+    private bool CanAccessWhatsAppNumero(ConversacionWhatsAppNumeroDto numero)
+        => _esAdministradorConversaciones
+           || numero.Usuarios.Contains(CurrentUserNameForAudit, StringComparer.OrdinalIgnoreCase);
+
     private static bool IsWhatsAppWebNumero(ConversacionWhatsAppNumeroDto? numero)
         => numero is not null && !string.IsNullOrWhiteSpace(numero.WebInstanceName);
+
+    private static bool IsMetaCloudApiNumero(ConversacionWhatsAppNumeroDto numero)
+        => !string.IsNullOrWhiteSpace(numero.PhoneNumberId)
+           && !numero.PhoneNumberId.Trim().StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase)
+           && string.IsNullOrWhiteSpace(numero.WebInstanceName);
+
+    private string GetWhatsAppEmptyStateTitle()
+    {
+        if (!ShouldUseWhatsAppEmptyState)
+            return "Sin conversaciones";
+
+        if (!HasAnyWhatsAppChannel)
+            return "Conectá WhatsApp para empezar";
+
+        if (!HasAccessibleWhatsAppChannel)
+            return "No tenés acceso a ningún canal de WhatsApp.";
+
+        return "Todo listo para empezar";
+    }
+
+    private string GetWhatsAppEmptyStateMessage()
+    {
+        if (!ShouldUseWhatsAppEmptyState)
+            return "No hay conversaciones para los filtros seleccionados.";
+
+        if (!HasAnyWhatsAppChannel)
+            return "Conectá un canal para recibir y administrar tus conversaciones desde AlfaCore.";
+
+        if (!HasAccessibleWhatsAppChannel)
+            return "Pedile a un administrador que te asigne un número.";
+
+        return "Todavía no hay conversaciones en este canal.";
+    }
+
+    private string GetWhatsAppEmptyStateIcon()
+    {
+        if (!ShouldUseWhatsAppEmptyState)
+            return "bi-inbox";
+
+        if (!HasAnyWhatsAppChannel)
+            return "bi-whatsapp";
+
+        if (!HasAccessibleWhatsAppChannel)
+            return "bi-shield-lock";
+
+        return "bi-chat-dots";
+    }
+
+    private void GoToWhatsAppConfiguration()
+    {
+        var target = QueryHelpers.AddQueryString(
+            RouteContext.BuildRoute("/conversaciones/configuracion"),
+            new Dictionary<string, string?>
+            {
+                ["seccion"] = "canales",
+                ["canal"] = "whatsapp"
+            });
+        Nav.NavigateTo(target);
+    }
+
+    private async Task FocusInboxSearchAsync()
+    {
+        if (_canalActivo != "WHATSAPP")
+            await ChangeCanalAsync("WHATSAPP");
+
+        await JS.InvokeVoidAsync("eval", "document.getElementById('conv-inbox-search')?.focus()");
+    }
 
     private static string GetWhatsAppSendNumeroLabel(ConversacionWhatsAppNumeroDto numero)
     {
