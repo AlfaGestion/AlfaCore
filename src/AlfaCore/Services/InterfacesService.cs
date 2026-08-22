@@ -24,6 +24,7 @@ public sealed class InterfacesService(
     private const string ConfigGroup = "INTERFACES";
     private const string ViewConfigPrefix = "USUVIEW-INTERFACES-";
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = false };
+    private static readonly TimeSpan ReaderProcessTimeout = TimeSpan.FromMinutes(3);
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -3549,6 +3550,13 @@ public sealed class InterfacesService(
         var stdoutTask = process.StandardOutput.ReadToEndAsync(ct);
         var stderrTask = process.StandardError.ReadToEndAsync(ct);
 
+        // Sin este limite, un proceso Python colgado (ej. esperando una respuesta de red que nunca
+        // llega) deja trabado para siempre este await — y como el worker automatico
+        // (InterfacesCompraIaWorkerHostedService) procesa TODAS las bases en un unico loop secuencial,
+        // un solo documento colgado en cualquier base congela el procesamiento automatico de todas las
+        // demas, sin loguear ningun error (no esta fallando, esta esperando indefinidamente).
+        var readerDeadline = DateTime.UtcNow.Add(ReaderProcessTimeout);
+
         while (!process.HasExited)
         {
             await Task.Delay(1000, ct);
@@ -3563,6 +3571,19 @@ public sealed class InterfacesService(
                 }
 
                 throw new OperationCanceledException("El procesamiento fue cancelado por solicitud del usuario.");
+            }
+
+            if (DateTime.UtcNow > readerDeadline)
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch
+                {
+                }
+
+                throw new TimeoutException($"El lector automático de facturas no respondió en {ReaderProcessTimeout.TotalMinutes:0} minutos y se canceló.");
             }
         }
 
