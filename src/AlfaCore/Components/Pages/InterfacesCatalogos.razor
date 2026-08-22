@@ -644,7 +644,7 @@
 <BaseMaestraImagenesDialog Open="@_showBaseMaestraImagenesModal"
                            Titulo="Imágenes encontradas"
                            Subtitulo="Se consultan los artículos del catálogo actual en la Base Maestra oficial."
-                           Articulos="@BuildBaseMaestraImagenesOrigen()"
+                           Articulos="@_baseMaestraImagenesOrigen"
                            IdClienteFtp="@_puntoVentaSettings.FtpCodigoCta"
                            IdBase="@idbase"
                            OnAsignadas="OnBaseMaestraImagenesAsignadasAsync"
@@ -663,6 +663,7 @@
     private readonly HashSet<string> _articulosQuitarSeleccionados = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _articuloImageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private readonly List<CatalogosViewColumnDto> _viewSettingsDraft = [];
+    private IReadOnlyList<BaseMaestraImagenOrigenDto> _baseMaestraImagenesOrigen = [];
 
     private CatalogosViewSettingsDto _viewSettings = BuildDefaultViewSettings();
     private PagedResult<CatalogosCatalogoResumenDto>? _catalogosPage;
@@ -1944,20 +1945,10 @@
     private string AddImageVersion(string? url)
         => string.IsNullOrWhiteSpace(url) ? string.Empty : $"{url}{(url.Contains('?') ? "&" : "?")}v={_articuloImageVersion}";
 
-    private IReadOnlyList<BaseMaestraImagenOrigenDto> BuildBaseMaestraImagenesOrigen()
-        => _articulosSeleccionados.Select(item => new BaseMaestraImagenOrigenDto
-        {
-            IdArticulo = item.IdArticulo,
-            DescripcionArticulo = item.DescripcionArticulo,
-            CodigoBarra = item.CodigoBarra,
-            RutaImagen = item.RutaImagen,
-            TieneImagenActual = !string.IsNullOrWhiteSpace(GetArticuloImageUrl(item.IdArticulo))
-        }).ToList();
-
-    private Task AbrirBaseMaestraImagenesAsync()
+    private async Task AbrirBaseMaestraImagenesAsync()
     {
+        _baseMaestraImagenesOrigen = await BuildBaseMaestraImagenesOrigenAsync();
         _showBaseMaestraImagenesModal = true;
-        return Task.CompletedTask;
     }
 
     private Task CloseBaseMaestraImagenesAsync()
@@ -1972,6 +1963,42 @@
         _articuloImageFallbacks.Clear();
         _feedback = AppUiMessage.Success("Imágenes actualizadas", $"{resultado.Asignadas} imagen(es) fueron asignadas al catálogo.");
         await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task<IReadOnlyList<BaseMaestraImagenOrigenDto>> BuildBaseMaestraImagenesOrigenAsync()
+    {
+        var articulos = _articulosSeleccionados.Where(item => !string.IsNullOrWhiteSpace(item.IdArticulo)).ToList();
+        if (articulos.Count == 0)
+            return [];
+
+        var resultados = new List<BaseMaestraImagenOrigenDto>(articulos.Count);
+        var gate = new SemaphoreSlim(8, 8);
+        var tasks = articulos.Select(async item =>
+        {
+            await gate.WaitAsync();
+            try
+            {
+                var existe = await PuntoVentaSvc.GetArticleImageForServeAsync(item.IdArticulo, _disposeCts.Token) is { RutaCompleta: { Length: > 0 } ruta } && File.Exists(ruta);
+                lock (resultados)
+                {
+                    resultados.Add(new BaseMaestraImagenOrigenDto
+                    {
+                        IdArticulo = item.IdArticulo,
+                        DescripcionArticulo = item.DescripcionArticulo,
+                        CodigoBarra = item.CodigoBarra,
+                        RutaImagen = item.RutaImagen,
+                        TieneImagenActual = existe
+                    });
+                }
+            }
+            finally
+            {
+                gate.Release();
+            }
+        });
+
+        await Task.WhenAll(tasks);
+        return resultados.OrderBy(x => articulos.FindIndex(i => string.Equals(i.IdArticulo, x.IdArticulo, StringComparison.OrdinalIgnoreCase))).ToList();
     }
 
     private static string ProductInitials(string descripcion)
