@@ -30,24 +30,26 @@ public sealed class Vb6BridgeService(
         if (string.IsNullOrWhiteSpace(normalizedModule))
             throw new InvalidOperationException("Ingresá el módulo a abrir.");
 
-        var sqlSession = BuildSqlSession(request);
-        await ValidateSqlConnectionAsync(sqlSession, ct);
-        var user = await ValidateAppUserAsync(sqlSession.ConnectionString, request.UsuarioSistema, request.PasswordSistema, ct);
-
         string? idCliente = null;
         string? idWeb = null;
         string? razonSocial = null;
         var superAdmin = false;
         var idBase = 0;
+        SqlSessionData sqlSession;
 
         if (appMode.IsSaaSMode)
         {
-            // No se puede resolver el cliente comparando sqlSession.Servidor contra bases.dbserver:
+            // No se puede resolver el cliente comparando request.Servidor contra bases.dbserver:
             // el VB6 conoce el servidor SQL por su nombre/IP en la LAN del cliente, mientras que en
             // ALFA_CENTRAL suele estar la IP de WireGuard con la que el servidor SaaS llega a esa
             // misma base — y dbname/dbuser solos pueden repetirse entre clientes con instalaciones
             // legacy que comparten nombres genéricos. Por eso el VB6 tiene que decir explícitamente
             // qué fila de bases es (Cfg("ALFACORE_IDBASE"), configurado una vez por equipo).
+            //
+            // IMPORTANTE: en modo SaaS no hay que intentar abrir una SqlConnection contra
+            // request.Servidor en ningún momento (ni acá ni más abajo) — ese nombre/IP solo es
+            // alcanzable desde la LAN del cliente, no desde el servidor SaaS, y el intento revienta
+            // con un SqlException crudo (500) antes de llegar siquiera a pedir el ALFACORE_IDBASE.
             if (!int.TryParse(request.IdBaseCentral, out idBase) || idBase <= 0)
             {
                 throw new Vb6IdBaseCentralRequeridoException(
@@ -63,13 +65,13 @@ public sealed class Vb6BridgeService(
             // sí tienen que coincidir con lo que mandó el VB6 — las tres juntas son una forma barata
             // de detectar un ALFACORE_IDBASE mal cargado (ej. copiado de otro cliente), incluso en el
             // caso límite de dos clientes con el mismo nombre de base/usuario en instalaciones legacy.
-            if (!string.Equals(baseCentral.DbName.Trim(), sqlSession.BaseDatos, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(baseCentral.DbUser.Trim(), sqlSession.Usuario, StringComparison.OrdinalIgnoreCase)
-                || !string.Equals(baseCentral.DbPassword.Trim(), sqlSession.Password.Trim(), StringComparison.Ordinal))
+            if (!string.Equals(baseCentral.DbName.Trim(), request.BaseDatos.Trim(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(baseCentral.DbUser.Trim(), request.UsuarioSql.Trim(), StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(baseCentral.DbPassword.Trim(), request.PasswordSql.Trim(), StringComparison.Ordinal))
             {
                 throw new InvalidOperationException(
                     $"Cfg(\"ALFACORE_IDBASE\")={idBase} no corresponde a la base local " +
-                    $"({sqlSession.BaseDatos} / {sqlSession.Usuario}). Revisar la configuración de este equipo " +
+                    $"({request.BaseDatos.Trim()} / {request.UsuarioSql.Trim()}). Revisar la configuración de este equipo " +
                     "o consultar al administrador del sistema.");
             }
 
@@ -81,7 +83,18 @@ public sealed class Vb6BridgeService(
             idWeb = cliente.IdWeb;
             razonSocial = cliente.RazonSocial;
             superAdmin = cliente.SuperAdmin;
+
+            // Recién acá se arma la conexión real, con el DbServer que ALFA_CENTRAL ya tiene resuelto
+            // (alcanzable desde el servidor SaaS) en vez del que mandó el VB6.
+            sqlSession = BuildSqlSession(baseCentral.DbServer, request.BaseDatos, request.UsuarioSql, request.PasswordSql);
         }
+        else
+        {
+            sqlSession = BuildSqlSession(request.Servidor, request.BaseDatos, request.UsuarioSql, request.PasswordSql);
+        }
+
+        await ValidateSqlConnectionAsync(sqlSession, ct);
+        var user = await ValidateAppUserAsync(sqlSession.ConnectionString, request.UsuarioSistema, request.PasswordSistema, ct);
 
         return ticketStore.Create(new Vb6BridgeTicketRecord
         {
@@ -263,19 +276,19 @@ public sealed class Vb6BridgeService(
         };
     }
 
-    private static SqlSessionData BuildSqlSession(Vb6AuthTicketRequest request)
+    private static SqlSessionData BuildSqlSession(string servidor, string baseDatos, string usuarioSql, string passwordSql)
     {
         var builder = new SqlConnectionStringBuilder
         {
-            DataSource = request.Servidor.Trim(),
-            InitialCatalog = request.BaseDatos.Trim(),
-            UserID = request.UsuarioSql.Trim(),
-            Password = request.PasswordSql,
+            DataSource = servidor.Trim(),
+            InitialCatalog = baseDatos.Trim(),
+            UserID = usuarioSql.Trim(),
+            Password = passwordSql,
             TrustServerCertificate = true,
             ApplicationName = "AlfaCore"
         };
 
-        return new SqlSessionData(request.Servidor.Trim(), request.BaseDatos.Trim(), request.UsuarioSql.Trim(), request.PasswordSql, builder.ConnectionString);
+        return new SqlSessionData(servidor.Trim(), baseDatos.Trim(), usuarioSql.Trim(), passwordSql, builder.ConnectionString);
     }
 
     private static string NormalizeModule(string? module)
