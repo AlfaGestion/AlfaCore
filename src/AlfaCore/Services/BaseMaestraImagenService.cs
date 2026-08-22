@@ -32,12 +32,23 @@ public sealed partial class BaseMaestraImagenService(
     private const string LegacyProductInfoUrl = "http://149.50.128.177:5712/api/v1";
     private const string LegacyProductInfoApiKey = "NTphbGJlcnRvZmF2aW9hbnR1bmV6QGdtYWlsLmNvbTpNSUlEWkRDQ0FreWdBd0lCQWdJSVBMdG1YZjRCOGtVd0RRWUpLb1pJaHZjTkFRRUZCUUF3UmpFb01DWUdBMVVFQXd3ZlFVWkpVQ0JRY205a2RXTmphVzl1SUVOdmJY";
 
+    private static readonly CommerceSearchSource[] CommerceSearchSources =
+    [
+        new("Jumbo", "https://www.jumbo.com.ar", 3),
+        new("Carrefour", "https://www.carrefour.com.ar", 3),
+        new("ChangoMás", "https://www.changomas.com.ar", 3),
+        new("Disco", "https://www.disco.com.ar", 3),
+        new("Vea", "https://www.vea.com.ar", 3)
+    ];
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNameCaseInsensitive = true
     };
 
     private readonly ConcurrentDictionary<string, Task<BaseMaestraProductInfoDto?>> _productInfoCache = new(StringComparer.OrdinalIgnoreCase);
+
+    private sealed record CommerceSearchSource(string Name, string BaseUrl, int Weight);
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -83,28 +94,37 @@ public sealed partial class BaseMaestraImagenService(
 
             var idArticulo = (articulo.IdArticulo ?? string.Empty).Trim();
             var codigoBarra = (articulo.CodigoBarra ?? string.Empty).Trim();
+            var descripcionArticulo = (articulo.DescripcionArticulo ?? string.Empty).Trim();
+            var codigoConsulta = codigoBarra;
             var hasCurrentImage = await HasCurrentImageAsync(idArticulo, idClienteFtp, idBase, token);
+
+            logger.LogInformation(
+                "[ImageSearch] Etapa=Entrada Articulo={Articulo} EAN={EAN} Descripcion={Descripcion} Marca={Marca} Presentacion={Presentacion} Consulta={Consulta} Fuente=BaseMaestra",
+                idArticulo,
+                codigoBarra,
+                descripcionArticulo,
+                string.Empty,
+                string.Empty,
+                string.IsNullOrWhiteSpace(codigoConsulta) ? "(vacío)" : codigoConsulta);
 
             var result = new BaseMaestraImagenArticuloDto
             {
                 IdArticulo = idArticulo,
-                DescripcionArticulo = (articulo.DescripcionArticulo ?? string.Empty).Trim(),
+                DescripcionArticulo = descripcionArticulo,
                 CodigoBarra = codigoBarra,
                 RutaImagen = (articulo.RutaImagen ?? string.Empty).Trim(),
-                CodigoConsulta = codigoBarra,
+                CodigoConsulta = codigoConsulta,
                 TieneImagenActual = hasCurrentImage,
                 PuedeSeleccionarse = !hasCurrentImage
             };
 
+            var info = string.IsNullOrWhiteSpace(codigoBarra)
+                ? null
+                : await TryGetProductInfoAsync(codigoBarra, token, forceRefresh);
             if (string.IsNullOrWhiteSpace(codigoBarra))
-            {
-                result.Estado = "Sin código de barras";
-                result.PuedeSeleccionarse = false;
-                return result;
-            }
+                result.Estado = "Consultando por descripción";
 
-            var info = await TryGetProductInfoAsync(codigoBarra, token, forceRefresh);
-            var candidate = await ResolveBestCandidateAsync(idArticulo, codigoBarra, articulo.DescripcionArticulo ?? string.Empty, info, token);
+            var candidate = await ResolveBestCandidateAsync(idArticulo, codigoBarra, descripcionArticulo, info, token);
 
             if (candidate is null)
             {
@@ -162,6 +182,65 @@ public sealed partial class BaseMaestraImagenService(
                 return null;
 
             var mimeType = DetectMimeType(bytes, "image/jpeg");
+            var ext = MimeTypeToExtension(mimeType);
+            var cachedFile = Path.ChangeExtension(cachedBase, ext);
+            await File.WriteAllBytesAsync(cachedFile, bytes, token);
+            return new ArticuloImagenArchivoDto { RutaCompleta = cachedFile, MimeType = mimeType };
+        }, FriendlyLookupMessage, ct);
+
+    /// <summary>
+    /// Busca la mejor imagen disponible para un articulo (Base Maestra, y si no hay, el mismo
+    /// fallback de busqueda en Google que ya usa ResolveBestCandidateAsync para el dialogo
+    /// interactivo) y la deja cacheada en disco lista para servir. A diferencia de
+    /// ConsultarArticuloAsync, NO exige codigo de barras: si falta, busca directo por
+    /// descripcion. Pensado para clientes externos (ej. VB6) que solo quieren "dame una
+    /// imagen para este articulo", sin la vuelta completa de armar un BaseMaestraImagenOrigenDto
+    /// ni pasar por el flujo de seleccion/asignacion de la pantalla.
+    /// </summary>
+    public Task<ArticuloImagenArchivoDto?> BuscarImagenCatalogoAsync(string idArticulo, string codigoBarra, string descripcionArticulo, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "BuscarImagenCatalogo", async token =>
+        {
+            var articulo = (idArticulo ?? string.Empty).Trim();
+            var ean = (codigoBarra ?? string.Empty).Trim();
+            var descripcion = (descripcionArticulo ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(ean) && string.IsNullOrWhiteSpace(descripcion))
+                return null;
+
+            var cacheRoot = await GetPreviewCacheRootAsync(token);
+            Directory.CreateDirectory(cacheRoot);
+            var cacheKeySource = BuildCatalogCacheKey(ean, descripcion);
+            var cachedBase = Path.Combine(cacheRoot, "catalogo_" + SafeFileSegment(cacheKeySource) + ".jpg");
+            var cachedExisting = FindCachedPreviewFile(cachedBase);
+            if (cachedExisting is not null)
+            {
+                logger.LogInformation(
+                    "[ImageSearch] Etapa=Cache Articulo={Articulo} EAN={EAN} Descripcion={Descripcion} CacheHit=True CacheKey={CacheKey} Archivo={Archivo}",
+                    articulo,
+                    ean,
+                    descripcion,
+                    cacheKeySource,
+                    cachedExisting);
+                return new ArticuloImagenArchivoDto { RutaCompleta = cachedExisting, MimeType = InferMimeTypeFromPath(cachedExisting) };
+            }
+
+            logger.LogInformation(
+                "[ImageSearch] Etapa=Entrada Articulo={Articulo} EAN={EAN} Descripcion={Descripcion} Consulta={Consulta} Fuente=Catalogo CacheHit=False CacheKey={CacheKey}",
+                articulo,
+                ean,
+                descripcion,
+                string.IsNullOrWhiteSpace(ean) ? descripcion : ean,
+                cacheKeySource);
+
+            var info = string.IsNullOrWhiteSpace(ean) ? null : await TryGetProductInfoAsync(ean, token);
+            var candidate = await ResolveBestCandidateAsync(articulo, ean, descripcion, info, token);
+            if (candidate is null || string.IsNullOrWhiteSpace(candidate.ImageUrl))
+                return null;
+
+            var bytes = await DownloadImageAsync(candidate.ImageUrl, token);
+            if (bytes is null || bytes.Length == 0)
+                return null;
+
+            var mimeType = DetectMimeType(bytes, candidate.ImageUrl);
             var ext = MimeTypeToExtension(mimeType);
             var cachedFile = Path.ChangeExtension(cachedBase, ext);
             await File.WriteAllBytesAsync(cachedFile, bytes, token);
@@ -321,8 +400,15 @@ public sealed partial class BaseMaestraImagenService(
             if (string.IsNullOrWhiteSpace(key))
                 return null;
 
+            var cacheHit = _productInfoCache.ContainsKey(key);
             if (forceRefresh)
                 _productInfoCache.TryRemove(key, out _);
+
+            logger.LogInformation(
+                "[ImageSearch] Etapa=BaseMaestraCache Codigo={Codigo} CacheHit={CacheHit} ForceRefresh={ForceRefresh}",
+                key,
+                cacheHit && !forceRefresh,
+                forceRefresh);
 
             var task = _productInfoCache.GetOrAdd(key, _ => GetProductInfoAsync(key, ct));
             return await task;
@@ -341,12 +427,24 @@ public sealed partial class BaseMaestraImagenService(
             throw new InvalidOperationException("Falta la configuración WS_PRODUCTINFO_URL / WS_PRODUCTINFO_API_KEY en la base activa.");
 
         var endpoint = $"{url.TrimEnd('/')}/ProductInfo/{Uri.EscapeDataString(codigo)}?ApiKey={Uri.EscapeDataString(apiKey)}";
+        logger.LogInformation(
+            "[ImageSearch] Etapa=BaseMaestraHttp Codigo={Codigo} Endpoint={Endpoint}",
+            codigo,
+            endpoint);
+
         using var client = httpClientFactory.CreateClient(nameof(BaseMaestraImagenService));
         using var response = await client.GetAsync(endpoint, ct);
+        var json = await response.Content.ReadAsStringAsync(ct);
+        logger.LogInformation(
+            "[ImageSearch] Etapa=BaseMaestraHttp Codigo={Codigo} HttpStatus={HttpStatus} ContentType={ContentType} BodyLength={BodyLength}",
+            codigo,
+            (int)response.StatusCode,
+            response.Content.Headers.ContentType?.MediaType ?? string.Empty,
+            json.Length);
+
         if (!response.IsSuccessStatusCode)
             return null;
 
-        var json = await response.Content.ReadAsStringAsync(ct);
         if (string.IsNullOrWhiteSpace(json))
             return null;
 
@@ -354,9 +452,12 @@ public sealed partial class BaseMaestraImagenService(
         {
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("data", out var data))
+            {
+                logger.LogInformation("[ImageSearch] Etapa=BaseMaestraParse Codigo={Codigo} DataPresent=False", codigo);
                 return null;
+            }
 
-            return new BaseMaestraProductInfoDto
+            var info = new BaseMaestraProductInfoDto
             {
                 Description = ReadString(data, "description"),
                 ImageLinkToDownload = ReadString(data, "imageLinkToDownload"),
@@ -365,6 +466,17 @@ public sealed partial class BaseMaestraImagenService(
                 DescriptionUnitOfMeasurement = ReadString(data, "descriptionUnitOfMeasurement"),
                 Prices = ReadPriceList(data)
             };
+
+            logger.LogInformation(
+                "[ImageSearch] Etapa=BaseMaestraParse Codigo={Codigo} ImageLinkToDownload={ImageLinkToDownload} ImageName={ImageName} Marca={Marca} Presentacion={Presentacion} Prices={PricesCount}",
+                codigo,
+                string.IsNullOrWhiteSpace(info.ImageLinkToDownload) ? "(vacío)" : info.ImageLinkToDownload,
+                string.IsNullOrWhiteSpace(info.ImageName) ? "(vacío)" : info.ImageName,
+                string.IsNullOrWhiteSpace(info.DescriptionBrand) ? "(vacío)" : info.DescriptionBrand,
+                string.IsNullOrWhiteSpace(info.DescriptionUnitOfMeasurement) ? "(vacío)" : info.DescriptionUnitOfMeasurement,
+                info.Prices.Count);
+
+            return info;
         }
         catch (JsonException ex)
         {
@@ -380,12 +492,26 @@ public sealed partial class BaseMaestraImagenService(
             throw new InvalidOperationException("Falta la configuración WS_PRODUCTINFO_URL / WS_PRODUCTINFO_API_KEY en la base activa.");
 
         var endpoint = $"{url.TrimEnd('/')}/ProductImage/{Uri.EscapeDataString(codigo)}?ApiKey={Uri.EscapeDataString(apiKey)}&format=JPG";
+        logger.LogInformation(
+            "[ImageSearch] Etapa=BaseMaestraImage Codigo={Codigo} Endpoint={Endpoint}",
+            codigo,
+            endpoint);
+
         using var client = httpClientFactory.CreateClient(nameof(BaseMaestraImagenService));
         using var response = await client.GetAsync(endpoint, ct);
+        var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+        logger.LogInformation(
+            "[ImageSearch] Etapa=BaseMaestraImage Codigo={Codigo} HttpStatus={HttpStatus} ContentType={ContentType} ContentLength={ContentLength} Bytes={Bytes}",
+            codigo,
+            (int)response.StatusCode,
+            response.Content.Headers.ContentType?.MediaType ?? string.Empty,
+            response.Content.Headers.ContentLength?.ToString() ?? string.Empty,
+            bytes.Length);
+
         if (!response.IsSuccessStatusCode)
             return null;
 
-        return await response.Content.ReadAsByteArrayAsync(ct);
+        return bytes;
     }
 
     private async Task<byte[]?> DownloadImageAsync(string imageUrl, CancellationToken ct)
@@ -396,10 +522,18 @@ public sealed partial class BaseMaestraImagenService(
 
         using var client = CreateHttpClient();
         using var response = await client.GetAsync(sourceUrl, ct);
+        var bytes = await response.Content.ReadAsByteArrayAsync(ct);
+        logger.LogInformation(
+            "[ImageSearch] Etapa=ImageDownload Url={Url} HttpStatus={HttpStatus} ContentType={ContentType} ContentLength={ContentLength} Bytes={Bytes}",
+            sourceUrl,
+            (int)response.StatusCode,
+            response.Content.Headers.ContentType?.MediaType ?? string.Empty,
+            response.Content.Headers.ContentLength?.ToString() ?? string.Empty,
+            bytes.Length);
+
         if (!response.IsSuccessStatusCode)
             return null;
 
-        var bytes = await response.Content.ReadAsByteArrayAsync(ct);
         if (bytes.Length == 0)
             return null;
 
@@ -441,6 +575,7 @@ public sealed partial class BaseMaestraImagenService(
                     ImageName = SafeImageName(info.ImageName, codigoBarra, baseImageUrl),
                     MimeType = GuessMimeType(baseImageUrl, "image/jpeg"),
                     Extension = MimeTypeToExtension(GuessMimeType(baseImageUrl, "image/jpeg")),
+                    RankingScore = 10000,
                     Seleccionada = true
                 };
             }
@@ -449,25 +584,50 @@ public sealed partial class BaseMaestraImagenService(
         var commerceCandidates = new List<ImageCandidateDto>();
         if (info?.Prices is { Count: > 0 })
         {
+            logger.LogInformation(
+                "[ImageSearch] Etapa=PricesDto Articulo={Articulo} EAN={EAN} PricesCount={PricesCount}",
+                idArticulo,
+                codigoBarra,
+                info.Prices.Count);
+
             foreach (var price in info.Prices)
             {
                 if (string.IsNullOrWhiteSpace(price.UrlProduct))
                     continue;
 
+                logger.LogInformation(
+                    "[ImageSearch] Etapa=PricesDtoItem Articulo={Articulo} Fuente={Fuente} Url={Url} Disponible={Disponible} Cantidad={Cantidad} Precio={Precio}",
+                    idArticulo,
+                    string.IsNullOrWhiteSpace(price.Commerce) ? "(vacío)" : price.Commerce,
+                    price.UrlProduct,
+                    price.IsAvailable,
+                    price.AvailableQuantity,
+                    price.CurrentPrice);
+
                 var sourceName = NormalizeCommerceSource(price.Commerce, price.UrlProduct);
-                var pageCandidate = await InspectPageForImageAsync(price.UrlProduct, sourceName, codigoBarra, descripcionArticulo, info, ct);
+                var pageCandidate = await InspectPageForImageAsync(idArticulo, price.UrlProduct, sourceName, codigoBarra, descripcionArticulo, info, ct);
                 if (pageCandidate is not null)
                     commerceCandidates.Add(pageCandidate);
             }
+        }
+        else
+        {
+            logger.LogInformation(
+                "[ImageSearch] Etapa=PricesDto Articulo={Articulo} EAN={EAN} PricesCount=0",
+                idArticulo,
+                codigoBarra);
         }
 
         var bestCommerce = PickBestCandidate(commerceCandidates);
         if (bestCommerce is not null)
             return bestCommerce;
 
-        var googleCandidates = await SearchGoogleCandidatesAsync(codigoBarra, descripcionArticulo, info, ct);
-        var bestGoogle = PickBestCandidate(googleCandidates);
-        return bestGoogle;
+        var directCommerceCandidates = await SearchCommerceCandidatesAsync(idArticulo, codigoBarra, descripcionArticulo, info, ct);
+        var bestDirectCommerce = PickBestCandidate(directCommerceCandidates);
+        if (bestDirectCommerce is not null)
+            return bestDirectCommerce;
+
+        return null;
     }
 
     private void ApplyCandidate(BaseMaestraImagenArticuloDto result, ImageCandidateDto candidate, bool hasCurrentImage, string? idClienteFtp, int? idBase)
@@ -500,7 +660,7 @@ public sealed partial class BaseMaestraImagenService(
             .FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.ImageUrl));
     }
 
-    private async Task<ImageCandidateDto?> InspectPageForImageAsync(string pageUrl, string sourceName, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
+    private async Task<ImageCandidateDto?> InspectPageForImageAsync(string idArticulo, string pageUrl, string sourceName, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
     {
         var normalizedPageUrl = NormalizeUrl(pageUrl);
         if (string.IsNullOrWhiteSpace(normalizedPageUrl))
@@ -511,6 +671,16 @@ public sealed partial class BaseMaestraImagenService(
             return null;
 
         var imageUrl = ExtractBestImageUrl(html, normalizedPageUrl);
+        logger.LogInformation(
+            "[ImageSearch] Etapa=ParserPagina Articulo={Articulo} Fuente={Fuente} UrlPagina={UrlPagina} HtmlLength={HtmlLength} OgImage={OgImage} JsonLd={JsonLd} ImageUrl={ImageUrl}",
+            idArticulo,
+            sourceName,
+            normalizedPageUrl,
+            html.Length,
+            html.Contains("og:image", StringComparison.OrdinalIgnoreCase),
+            html.Contains("application/ld+json", StringComparison.OrdinalIgnoreCase),
+            string.IsNullOrWhiteSpace(imageUrl) ? "(vacío)" : imageUrl);
+
         if (string.IsNullOrWhiteSpace(imageUrl))
             return null;
 
@@ -519,6 +689,14 @@ public sealed partial class BaseMaestraImagenService(
 
         var exactEan = ContainsExactEan(html, codigoBarra);
         var confidence = AssessConfidence(exactEan, descripcionArticulo, info);
+        logger.LogInformation(
+            "[ImageSearch] Articulo={Articulo} Fuente={Fuente} UrlPagina={UrlPagina} UrlImagen={UrlImagen} Score={Score} Decision=Accepted",
+            idArticulo,
+            sourceName,
+            normalizedPageUrl,
+            imageUrl,
+            confidence);
+
         return new ImageCandidateDto
         {
             Fuente = sourceName,
@@ -532,30 +710,68 @@ public sealed partial class BaseMaestraImagenService(
         };
     }
 
-    private async Task<List<ImageCandidateDto>> SearchGoogleCandidatesAsync(string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
+    private async Task<List<ImageCandidateDto>> SearchGoogleCandidatesAsync(string idArticulo, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
     {
-        var barcodeCandidates = await SearchGoogleAsync(BuildGoogleBarcodeQuery(codigoBarra), "Google", codigoBarra, descripcionArticulo, info, ct);
+        var barcodeQuery = BuildGoogleBarcodeQuery(codigoBarra);
+        logger.LogInformation(
+            "[ImageSearch] Etapa=GoogleCandidates Articulo={Articulo} Tipo=Barcode Query={Query}",
+            idArticulo,
+            barcodeQuery);
+
+        var barcodeCandidates = await SearchGoogleAsync(idArticulo, barcodeQuery, "Google", codigoBarra, descripcionArticulo, info, ct);
         if (barcodeCandidates.Count > 0)
             return barcodeCandidates;
 
-        return await SearchGoogleAsync(BuildGoogleDescriptionQuery(codigoBarra, descripcionArticulo, info), "Google", codigoBarra, descripcionArticulo, info, ct);
+        var descriptionQuery = BuildGoogleDescriptionQuery(codigoBarra, descripcionArticulo, info);
+        logger.LogInformation(
+            "[ImageSearch] Etapa=GoogleCandidates Articulo={Articulo} Tipo=Descripcion Query={Query}",
+            idArticulo,
+            descriptionQuery);
+
+        return await SearchGoogleAsync(idArticulo, descriptionQuery, "Google", codigoBarra, descripcionArticulo, info, ct);
     }
 
-    private async Task<List<ImageCandidateDto>> SearchGoogleAsync(string query, string sourceName, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
+    private async Task<List<ImageCandidateDto>> SearchGoogleAsync(string idArticulo, string query, string sourceName, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(query))
             return [];
 
         var searchUrl = $"https://www.google.com/search?hl=es&num=8&q={Uri.EscapeDataString(query)}";
+        logger.LogInformation(
+            "[ImageSearch] Etapa=GoogleHttp Articulo={Articulo} Source={Source} Query={Query} SearchUrl={SearchUrl}",
+            idArticulo,
+            sourceName,
+            query,
+            searchUrl);
+
         var html = await DownloadTextAsync(searchUrl, ct);
         if (string.IsNullOrWhiteSpace(html))
             return [];
 
-        var resultUrls = ExtractGoogleResultUrls(html).Take(5).ToList();
+        await PersistGoogleDiagnosticHtmlAsync(idArticulo, query, html, ct);
+
+        var googleBlock = DetectGoogleBlock(html, out var blockReason);
+        var resultUrls = googleBlock ? [] : ExtractGoogleResultUrls(html).Take(5).ToList();
+        logger.LogInformation(
+            "[ImageSearch] Etapa=GoogleParse Articulo={Articulo} Source={Source} Query={Query} HtmlLength={HtmlLength} UrlPatternMatches={UrlPatternMatches} OgImage={OgImage} JsonLd={JsonLd} GoogleBlocked={GoogleBlocked} GoogleBlockReason={GoogleBlockReason} ResultUrls={ResultUrls}",
+            idArticulo,
+            sourceName,
+            query,
+            html.Length,
+            GoogleResultUrlRegex().Matches(html).Count,
+            html.Contains("og:image", StringComparison.OrdinalIgnoreCase),
+            html.Contains("application/ld+json", StringComparison.OrdinalIgnoreCase),
+            googleBlock,
+            blockReason,
+            resultUrls.Count);
+
+        if (googleBlock)
+            return [];
+
         var candidates = new List<ImageCandidateDto>();
         foreach (var url in resultUrls)
         {
-            var candidate = await InspectPageForImageAsync(url, sourceName, codigoBarra, descripcionArticulo, info, ct);
+            var candidate = await InspectPageForImageAsync(idArticulo, url, sourceName, codigoBarra, descripcionArticulo, info, ct);
             if (candidate is not null)
                 candidates.Add(candidate);
         }
@@ -563,33 +779,855 @@ public sealed partial class BaseMaestraImagenService(
         return candidates;
     }
 
+    private async Task<List<ImageCandidateDto>> SearchCommerceCandidatesAsync(string idArticulo, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
+    {
+        var candidates = new List<ImageCandidateDto>();
+
+        foreach (var source in CommerceSearchSources)
+        {
+            var candidate = await SearchCommerceSourceAsync(source, idArticulo, codigoBarra, descripcionArticulo, info, ct);
+            if (candidate is not null)
+                candidates.Add(candidate);
+        }
+
+        return candidates;
+    }
+
+    private async Task<ImageCandidateDto?> SearchCommerceSourceAsync(CommerceSearchSource source, string idArticulo, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(source.BaseUrl))
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(codigoBarra))
+        {
+            var exactEanCandidate = await SearchCommerceExactProductAsync(source, idArticulo, codigoBarra, descripcionArticulo, info, ct);
+            if (exactEanCandidate is not null)
+                return exactEanCandidate;
+        }
+
+        var queries = await BuildCommerceSearchQueriesAsync(source, codigoBarra, descripcionArticulo, info, ct);
+        var scoredCandidates = new List<(ImageCandidateDto Candidate, int Score)>();
+
+        foreach (var query in queries)
+        {
+            var searchUrl = $"{source.BaseUrl.TrimEnd('/')}/api/intelligent-search/v1/product-search/ft/{Uri.EscapeDataString(query)}?locale=es-AR";
+            logger.LogInformation(
+                "[ImageSearch] Etapa=CommerceSearchHttp Articulo={Articulo} Fuente={Fuente} Query={Query} SearchUrl={SearchUrl}",
+                idArticulo,
+                source.Name,
+                query,
+                searchUrl);
+
+            var json = await DownloadTextAsync(searchUrl, ct);
+            if (string.IsNullOrWhiteSpace(json))
+                continue;
+
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty("products", out var products) || products.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                logger.LogInformation(
+                    "[ImageSearch] Etapa=CommerceParse Articulo={Articulo} Fuente={Fuente} Query={Query} Resultados={Resultados}",
+                    idArticulo,
+                    source.Name,
+                    query,
+                    products.GetArrayLength());
+
+                foreach (var product in products.EnumerateArray())
+                {
+            var candidate = await BuildCommerceCandidateAsync(source, idArticulo, codigoBarra, descripcionArticulo, info, query, product, ct);
+            if (candidate is null)
+                continue;
+
+            var score = ScoreCommerceCandidate(candidate, codigoBarra, descripcionArticulo, info, product);
+            candidate.RankingScore = score;
+            scoredCandidates.Add((candidate, score));
+        }
+            }
+            catch (JsonException ex)
+            {
+                logger.LogWarning(ex, "[ImageSearch] Etapa=CommerceParseError Articulo={Articulo} Fuente={Fuente} Query={Query}", idArticulo, source.Name, query);
+            }
+        }
+
+        if (scoredCandidates.Count == 0)
+            return null;
+
+        return scoredCandidates
+            .OrderByDescending(item => item.Score)
+            .ThenByDescending(item => SourceWeight(item.Candidate.Fuente))
+            .Select(item => item.Candidate)
+            .FirstOrDefault();
+    }
+
+    private async Task<ImageCandidateDto?> SearchCommerceExactProductAsync(CommerceSearchSource source, string idArticulo, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
+    {
+        var endpoint = $"{source.BaseUrl.TrimEnd('/')}/api/intelligent-search/v1/products?sc=1&field=ean&value={Uri.EscapeDataString(codigoBarra)}&locale=es-AR";
+        logger.LogInformation(
+            "[ImageSearch] Etapa=CommerceExactHttp Articulo={Articulo} Fuente={Fuente} EAN={EAN} Url={Url}",
+            idArticulo,
+            source.Name,
+            codigoBarra,
+            endpoint);
+
+        var json = await DownloadTextAsync(endpoint, ct);
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            var candidate = await BuildCommerceProductCandidateAsync(source, idArticulo, codigoBarra, descripcionArticulo, info, codigoBarra, doc.RootElement, ct, exactEan: true);
+            if (candidate is null)
+                return null;
+
+            logger.LogInformation(
+                "[ImageSearch] Etapa=CommerceExactMatch Articulo={Articulo} Fuente={Fuente} EAN={EAN} Decision=Accepted",
+                idArticulo,
+                source.Name,
+                codigoBarra);
+
+            return candidate;
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "[ImageSearch] Etapa=CommerceExactParseError Articulo={Articulo} Fuente={Fuente} EAN={EAN}", idArticulo, source.Name, codigoBarra);
+            return null;
+        }
+    }
+
+    private async Task<List<string>> BuildCommerceSearchQueriesAsync(CommerceSearchSource source, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, CancellationToken ct)
+    {
+        var queries = new List<string>();
+        var targetPresentation = ExtractPresentationInfo(descripcionArticulo);
+        var normalized = NormalizeSearchText(BuildCommerceSearchText(codigoBarra, descripcionArticulo, info));
+        if (!string.IsNullOrWhiteSpace(normalized))
+            queries.Add(normalized);
+
+        var corrected = await TryGetCommerceCorrectionAsync(source, normalized, ct);
+        if (!string.IsNullOrWhiteSpace(corrected) && !ContainsStringIgnoreCase(queries, corrected))
+            queries.Add(corrected);
+
+        var brandTokens = GetChangedTokens(normalized, corrected);
+        if (brandTokens.Count > 0)
+        {
+            var brandQuery = string.Join(" ", brandTokens);
+            if (!string.IsNullOrWhiteSpace(brandQuery) && !ContainsStringIgnoreCase(queries, brandQuery))
+                queries.Add(brandQuery);
+
+            var presentationToken = BuildPresentationQueryToken(targetPresentation);
+            if (!string.IsNullOrWhiteSpace(presentationToken))
+            {
+                var brandedPresentationQuery = $"{brandQuery} {presentationToken}".Trim();
+                if (!string.IsNullOrWhiteSpace(brandedPresentationQuery) && !ContainsStringIgnoreCase(queries, brandedPresentationQuery))
+                    queries.Add(brandedPresentationQuery);
+            }
+        }
+
+        var simplified = NormalizeSearchText(RemoveQuantityTokens(corrected ?? normalized));
+        if (!string.IsNullOrWhiteSpace(simplified) && !ContainsStringIgnoreCase(queries, simplified))
+            queries.Add(simplified);
+
+        return queries;
+    }
+
+    private static string BuildCommerceSearchText(string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(descripcionArticulo))
+            parts.Add(descripcionArticulo.Trim());
+        if (!string.IsNullOrWhiteSpace(info?.DescriptionBrand))
+            parts.Add(info.DescriptionBrand.Trim());
+        if (!string.IsNullOrWhiteSpace(info?.DescriptionUnitOfMeasurement))
+            parts.Add(info.DescriptionUnitOfMeasurement.Trim());
+        if (!string.IsNullOrWhiteSpace(codigoBarra))
+            parts.Add(codigoBarra.Trim());
+
+        return string.Join(' ', parts);
+    }
+
+    private async Task<string?> TryGetCommerceCorrectionAsync(CommerceSearchSource source, string query, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+            return null;
+
+        var endpoint = $"{source.BaseUrl.TrimEnd('/')}/api/intelligent-search/v1/correction-search?locale=es-AR&query={Uri.EscapeDataString(query)}";
+        logger.LogInformation(
+            "[ImageSearch] Etapa=CommerceCorrectionHttp Fuente={Fuente} Query={Query} Url={Url}",
+            source.Name,
+            query,
+            endpoint);
+
+        var json = await DownloadTextAsync(endpoint, ct);
+        if (string.IsNullOrWhiteSpace(json))
+            return null;
+
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (!doc.RootElement.TryGetProperty("correction", out var correction))
+                return null;
+
+            var text = ReadString(correction, "text");
+            var misspelled = correction.TryGetProperty("misspelled", out var misspelledProp) && misspelledProp.GetBoolean();
+            logger.LogInformation(
+                "[ImageSearch] Etapa=CommerceCorrection Fuente={Fuente} Query={Query} Misspelled={Misspelled} Correction={Correction}",
+                source.Name,
+                query,
+                misspelled,
+                text);
+
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            var normalizedOriginal = NormalizeSearchText(query);
+            var normalizedCorrection = NormalizeSearchText(text);
+            return string.Equals(normalizedOriginal, normalizedCorrection, StringComparison.OrdinalIgnoreCase)
+                ? null
+                : normalizedCorrection;
+        }
+        catch (JsonException ex)
+        {
+            logger.LogWarning(ex, "[ImageSearch] Etapa=CommerceCorrectionParseError Fuente={Fuente} Query={Query}", source.Name, query);
+            return null;
+        }
+    }
+
+    private static List<string> GetChangedTokens(string original, string? corrected)
+    {
+        if (string.IsNullOrWhiteSpace(original) || string.IsNullOrWhiteSpace(corrected))
+            return [];
+
+        var originalTokens = TokenizeSearchText(original).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var result = new List<string>();
+        foreach (var token in TokenizeSearchText(corrected))
+        {
+            if (originalTokens.Contains(token))
+                continue;
+
+            if (!ContainsStringIgnoreCase(result, token))
+                result.Add(token);
+        }
+
+        return result;
+    }
+
+    private async Task<ImageCandidateDto?> BuildCommerceProductCandidateAsync(CommerceSearchSource source, string idArticulo, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, string query, JsonElement product, CancellationToken ct, bool exactEan = false)
+        => await BuildCommerceCandidateAsync(source, idArticulo, codigoBarra, descripcionArticulo, info, query, product, ct, exactEan);
+
+    private async Task<ImageCandidateDto?> BuildCommerceCandidateAsync(CommerceSearchSource source, string idArticulo, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, string query, JsonElement product, CancellationToken ct, bool exactEan = false)
+    {
+        var productName = ReadString(product, "productName");
+        var brand = ReadString(product, "brand");
+        var link = NormalizeUrl(ReadString(product, "link"), source.BaseUrl);
+        var metaDescription = ReadString(product, "metaTagDescription");
+        var targetPresentation = ExtractPresentationInfo(descripcionArticulo);
+        var candidatePresentation = ExtractPresentationInfo($"{productName} {metaDescription}");
+
+        if (!product.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
+            return null;
+
+        var firstItem = items.EnumerateArray().FirstOrDefault();
+        if (firstItem.ValueKind == JsonValueKind.Undefined || firstItem.ValueKind == JsonValueKind.Null)
+            return null;
+
+        var itemEan = ReadString(firstItem, "ean");
+        var images = firstItem.TryGetProperty("images", out var imagesElement) && imagesElement.ValueKind == JsonValueKind.Array
+            ? imagesElement.EnumerateArray().ToList()
+            : [];
+
+        if (images.Count == 0)
+            return null;
+
+        var imageUrl = string.Empty;
+        foreach (var image in images)
+        {
+            var candidateImage = ReadString(image, "imageUrl");
+            if (string.IsNullOrWhiteSpace(candidateImage))
+                continue;
+
+            imageUrl = NormalizeUrl(candidateImage, source.BaseUrl);
+            if (!string.IsNullOrWhiteSpace(imageUrl))
+                break;
+        }
+
+        if (string.IsNullOrWhiteSpace(imageUrl))
+            return null;
+
+        var confidence = AssessCommerceConfidence(
+            exactEan,
+            codigoBarra,
+            descripcionArticulo,
+            info,
+            query,
+            productName,
+            brand,
+            metaDescription,
+            itemEan,
+            targetPresentation,
+            candidatePresentation,
+            out var reason);
+
+        logger.LogInformation(
+            "[ImageSearch] Etapa=CommerceCandidate Articulo={Articulo} Fuente={Fuente} Query={Query} CandidateTitle={CandidateTitle} CandidateUrl={CandidateUrl} ImageUrl={ImageUrl} TargetPresentation={TargetPresentation} CandidatePresentation={CandidatePresentation} PresentationScore={PresentationScore} Confidence={Confidence} Reason={Reason}",
+            idArticulo,
+            source.Name,
+            query,
+            string.IsNullOrWhiteSpace(productName) ? metaDescription : productName,
+            link,
+            imageUrl,
+            FormatPresentation(targetPresentation),
+            FormatPresentation(candidatePresentation),
+            ScorePresentationMatch(targetPresentation, candidatePresentation, out _),
+            confidence,
+            reason);
+
+        if (string.Equals(confidence, "Rechazado", StringComparison.OrdinalIgnoreCase))
+        {
+            await PersistImageSearchTraceAsync(idArticulo, codigoBarra, descripcionArticulo, source.Name, query, productName, link, imageUrl, confidence, reason, "Rejected", ct);
+            return null;
+        }
+
+        if (!await IsValidImageUrlAsync(imageUrl, ct))
+        {
+            await PersistImageSearchTraceAsync(idArticulo, codigoBarra, descripcionArticulo, source.Name, query, productName, link, imageUrl, confidence, "ImageUrl invalid", "Rejected", ct);
+            return null;
+        }
+
+        await PersistImageSearchTraceAsync(idArticulo, codigoBarra, descripcionArticulo, source.Name, query, productName, link, imageUrl, confidence, reason, string.Equals(confidence, "Alta", StringComparison.OrdinalIgnoreCase) ? "Accepted" : "Review", ct);
+
+        return new ImageCandidateDto
+        {
+            Fuente = source.Name,
+            Confianza = confidence,
+            ImageUrl = imageUrl,
+            ImageName = SafeImageName(string.IsNullOrWhiteSpace(productName) ? metaDescription : productName, codigoBarra, imageUrl),
+            MimeType = GuessMimeType(imageUrl, string.Empty),
+            Extension = MimeTypeToExtension(GuessMimeType(imageUrl, string.Empty)),
+            PageUrl = link,
+            RankingScore = ScorePresentationMatch(targetPresentation, candidatePresentation, out _) + ConfidenceWeight(confidence) * 100 + SourceWeight(source.Name) * 10,
+            Seleccionada = string.Equals(confidence, "Alta", StringComparison.OrdinalIgnoreCase)
+        };
+    }
+
+    private static int ScoreCommerceCandidate(ImageCandidateDto candidate, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, JsonElement product)
+    {
+        var productName = NormalizeSearchText(ReadString(product, "productName"));
+        var brand = NormalizeSearchText(ReadString(product, "brand"));
+        var metaDescription = NormalizeSearchText(ReadString(product, "metaTagDescription"));
+        var productText = $"{productName} {brand} {metaDescription}";
+        var targetPresentation = ExtractPresentationInfo(descripcionArticulo);
+        var candidatePresentation = ExtractPresentationInfo($"{ReadString(product, "productName")} {ReadString(product, "metaTagDescription")}");
+
+        var score = 0;
+        foreach (var token in TokenizeSearchText(descripcionArticulo))
+        {
+            if (productText.Contains(token, StringComparison.OrdinalIgnoreCase))
+                score += 10;
+        }
+
+        if (!string.IsNullOrWhiteSpace(info?.DescriptionBrand))
+        {
+            var brandToken = NormalizeSearchText(info.DescriptionBrand);
+            if (!string.IsNullOrWhiteSpace(brandToken) && productText.Contains(brandToken, StringComparison.OrdinalIgnoreCase))
+                score += 20;
+        }
+
+        score += ScorePresentationMatch(targetPresentation, candidatePresentation, out var presentationReason);
+        if (string.Equals(presentationReason, "rechazar", StringComparison.OrdinalIgnoreCase))
+            score -= 1000;
+
+        if (productText.Contains("sin alcohol", StringComparison.OrdinalIgnoreCase) || productText.Contains("cero", StringComparison.OrdinalIgnoreCase))
+            score -= 35;
+
+        if (!string.IsNullOrWhiteSpace(codigoBarra) && ReadString(firstItem(product), "ean").Equals(codigoBarra, StringComparison.OrdinalIgnoreCase))
+            score += 250;
+
+        if (string.Equals(candidate.Confianza, "Alta", StringComparison.OrdinalIgnoreCase))
+            score += 100;
+
+        return score;
+    }
+
+    private static string AssessCommerceConfidence(bool exactEan, string codigoBarra, string descripcionArticulo, BaseMaestraProductInfoDto? info, string query, string productName, string brand, string metaDescription, string itemEan, PresentationInfo? targetPresentation, PresentationInfo? candidatePresentation, out string reason)
+    {
+        if (exactEan || (!string.IsNullOrWhiteSpace(codigoBarra) && itemEan.Equals(codigoBarra, StringComparison.OrdinalIgnoreCase)))
+        {
+            reason = "EAN exacto";
+            return "Alta";
+        }
+
+        var productText = NormalizeSearchText($"{productName} {brand} {metaDescription}");
+        var queryTokens = TokenizeSearchText(query).ToList();
+        var matches = queryTokens.Count(token => productText.Contains(token, StringComparison.OrdinalIgnoreCase));
+        var brandMatch = !string.IsNullOrWhiteSpace(info?.DescriptionBrand)
+            ? productText.Contains(NormalizeSearchText(info.DescriptionBrand), StringComparison.OrdinalIgnoreCase)
+            : false;
+
+        var presentationScore = ScorePresentationMatch(targetPresentation, candidatePresentation, out var presentationReason);
+        var hasAlcoholPenalty = productText.Contains("sin alcohol", StringComparison.OrdinalIgnoreCase) || productText.Contains("cero", StringComparison.OrdinalIgnoreCase);
+        var targetSuggestsAlcohol = NormalizeSearchText(descripcionArticulo).Contains("cero", StringComparison.OrdinalIgnoreCase)
+                                    || NormalizeSearchText(descripcionArticulo).Contains("sin alcohol", StringComparison.OrdinalIgnoreCase);
+
+        if (string.Equals(presentationReason, "rechazar", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = presentationReason;
+            return "Rechazado";
+        }
+
+        if (hasAlcoholPenalty && !targetSuggestsAlcohol)
+        {
+            reason = "variante sin alcohol no coincide";
+            return "Rechazado";
+        }
+
+        if (presentationScore >= 170 && (matches > 0 || brandMatch))
+        {
+            reason = $"presentacion muy cercana ({FormatPresentation(candidatePresentation)})";
+            return "Media";
+        }
+
+        if (presentationScore >= 120 && (matches > 0 || brandMatch))
+        {
+            reason = $"presentacion cercana ({FormatPresentation(candidatePresentation)})";
+            return "Revisar";
+        }
+
+        if (presentationScore >= 60 && (matches >= 2 || brandMatch))
+        {
+            reason = "marca o descripcion coinciden";
+            return "Media";
+        }
+
+        if (presentationScore >= 40 && matches == 1)
+        {
+            reason = "coincidencia parcial";
+            return "Revisar";
+        }
+
+        reason = string.IsNullOrWhiteSpace(presentationReason) ? "sin coincidencia suficiente" : presentationReason;
+        return "Rechazado";
+    }
+
+    private static JsonElement firstItem(JsonElement product)
+    {
+        if (!product.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array || items.GetArrayLength() == 0)
+            return default;
+
+        return items.EnumerateArray().FirstOrDefault();
+    }
+
+    private static bool ContainsStringIgnoreCase(IEnumerable<string> values, string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        foreach (var item in values)
+        {
+            if (string.Equals(item, value, StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static bool ShouldPersistImageTrace(string idArticulo)
+        => string.Equals(idArticulo, "3052", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(idArticulo, "3080", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(idArticulo, "7805670512573", StringComparison.OrdinalIgnoreCase);
+
+    private async Task PersistImageSearchTraceAsync(string idArticulo, string codigoBarra, string descripcionArticulo, string fuente, string query, string candidateTitle, string candidateUrl, string imageUrl, string confidence, string reason, string decision, CancellationToken ct)
+    {
+        if (!ShouldPersistImageTrace(idArticulo))
+            return;
+
+        try
+        {
+            var root = Path.Combine(AppContext.BaseDirectory, "App_Data", "diagnostics");
+            Directory.CreateDirectory(root);
+
+            var entry = new
+            {
+                Timestamp = DateTimeOffset.Now,
+                IdArticulo = idArticulo,
+                CodigoBarra = codigoBarra,
+                DescripcionArticulo = descripcionArticulo,
+                Fuente = fuente,
+                Query = query,
+                CandidateTitle = candidateTitle,
+                CandidateUrl = candidateUrl,
+                ImageUrl = imageUrl,
+                Confidence = confidence,
+                Reason = reason,
+                Decision = decision
+            };
+
+            var json = JsonSerializer.Serialize(entry, JsonOptions);
+            var filePath = Path.Combine(root, "image-search-trace.jsonl");
+            await File.AppendAllTextAsync(filePath, json + Environment.NewLine, Encoding.UTF8, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[ImageSearch] Etapa=TracePersistError Articulo={Articulo}", idArticulo);
+        }
+    }
+
+    private static int ScorePresentationMatch(PresentationInfo? target, PresentationInfo? candidate, out string reason)
+    {
+        reason = string.Empty;
+
+        if (target is null || candidate is null)
+            return 0;
+
+        if (target.PackageCount is not null)
+        {
+            if (candidate.PackageCount is null)
+            {
+                reason = "rechazar";
+                return 0;
+            }
+
+            var packDiff = Math.Abs(target.PackageCount.Value - candidate.PackageCount.Value);
+            if (packDiff == 0)
+            {
+                reason = "pack exacto";
+                return 220;
+            }
+
+            if (packDiff <= 1)
+            {
+                reason = $"pack cercano ({packDiff})";
+                return 120;
+            }
+
+            reason = "rechazar";
+            return 0;
+        }
+
+        if (target.MeasureValue is null || candidate.MeasureValue is null)
+            return 0;
+
+        var diff = Math.Abs(target.MeasureValue.Value - candidate.MeasureValue.Value);
+        if (diff == 0)
+        {
+            reason = "presentacion exacta";
+            return 220;
+        }
+
+        if (diff <= 5)
+        {
+            reason = $"presentacion casi exacta ({diff})";
+            return 190;
+        }
+
+        if (diff <= 15)
+        {
+            reason = $"presentacion muy cercana ({diff})";
+            return 160;
+        }
+
+        if (diff <= 25)
+        {
+            reason = $"presentacion cercana ({diff})";
+            return 120;
+        }
+
+        if (diff <= 60)
+        {
+            reason = $"presentacion aceptable ({diff})";
+            return 80;
+        }
+
+        reason = "rechazar";
+        return 0;
+    }
+
+    private static string FormatPresentation(PresentationInfo? presentation)
+    {
+        if (presentation is null)
+            return "(vacío)";
+
+        if (presentation.PackageCount is not null)
+            return $"x{presentation.PackageCount}";
+
+        if (presentation.MeasureValue is not null)
+            return $"{presentation.MeasureValue.Value}ml";
+
+        return "(vacío)";
+    }
+
+    private static string? BuildPresentationQueryToken(PresentationInfo? presentation)
+    {
+        if (presentation is null)
+            return null;
+
+        if (presentation.PackageCount is not null)
+            return $"x{presentation.PackageCount.Value}";
+
+        if (presentation.MeasureValue is not null)
+            return presentation.MeasureValue.Value.ToString(CultureInfo.InvariantCulture);
+
+        return null;
+    }
+
+    private static PresentationInfo? ExtractPresentationInfo(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var text = NormalizeSearchText(value);
+        var packageMatch = Regex.Match(text, @"(?:^|\s)(?:x\s*)?(?<count>\d{1,3})\s*(?:u|un|unidad(?:es)?|uni|uds?)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (packageMatch.Success && int.TryParse(packageMatch.Groups["count"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var count) && count > 0)
+            return new PresentationInfo(null, count);
+
+        var measureMatch = Regex.Match(text, @"(?<value>\d+(?:[.,]\d+)?)\s*(?<unit>ml|cc|cl|lt|lts|l|gr|g|kg)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!measureMatch.Success)
+            return null;
+
+        if (!decimal.TryParse(measureMatch.Groups["value"].Value.Replace(',', '.'), NumberStyles.Number, CultureInfo.InvariantCulture, out var numeric))
+            return null;
+
+        var unit = measureMatch.Groups["unit"].Value.ToLowerInvariant();
+        var measureValue = unit switch
+        {
+            "l" or "lt" or "lts" => (int)Math.Round(numeric * 1000m),
+            "cl" => (int)Math.Round(numeric * 10m),
+            "kg" => (int)Math.Round(numeric * 1000m),
+            _ => (int)Math.Round(numeric)
+        };
+
+        return new PresentationInfo(measureValue, null);
+    }
+
+    private sealed record PresentationInfo(int? MeasureValue, int? PackageCount);
+
+    private static int? ExtractPresentationSize(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return ExtractPresentationInfo(value)?.MeasureValue;
+    }
+
+    private static string RemoveQuantityTokens(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var text = value;
+        text = Regex.Replace(text, @"\b\d+(?:[.,]\d+)?\s*(?:ml|cc|cl|lt|lts?|l)\b", " ", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        text = Regex.Replace(text, @"\b\d+\b", " ", RegexOptions.CultureInvariant);
+        text = Regex.Replace(text, @"\s+", " ", RegexOptions.CultureInvariant).Trim();
+        return text;
+    }
+
     private static IEnumerable<string> ExtractGoogleResultUrls(string html)
     {
         if (string.IsNullOrWhiteSpace(html))
             yield break;
 
-        var matches = GoogleResultUrlRegex().Matches(html);
+        var matches = GoogleHrefRegex().Matches(html);
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (Match match in matches)
         {
-            var raw = match.Groups["url"].Value;
+            var raw = match.Groups["href"].Success ? match.Groups["href"].Value : match.Groups["href2"].Value;
             if (string.IsNullOrWhiteSpace(raw))
                 continue;
 
-            var decoded = Uri.UnescapeDataString(raw);
-            if (decoded.StartsWith("http", StringComparison.OrdinalIgnoreCase) && seen.Add(decoded))
-                yield return decoded;
+            var decoded = WebUtility.HtmlDecode(raw.Trim());
+            if (string.IsNullOrWhiteSpace(decoded))
+                continue;
+
+            var candidateUrl = NormalizeGoogleResultUrl(decoded);
+            if (string.IsNullOrWhiteSpace(candidateUrl))
+                continue;
+
+            if (seen.Add(candidateUrl))
+                yield return candidateUrl;
         }
+    }
+
+    private static string NormalizeGoogleResultUrl(string href)
+    {
+        if (string.IsNullOrWhiteSpace(href))
+            return string.Empty;
+
+        if (href.StartsWith("/url?", StringComparison.OrdinalIgnoreCase))
+        {
+            var parsed = ParseGoogleRedirectUrl(href);
+            if (!string.IsNullOrWhiteSpace(parsed))
+                return parsed;
+        }
+
+        if (href.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+        {
+            if (IsGoogleHost(href))
+                return string.Empty;
+
+            return href;
+        }
+
+        if (href.StartsWith("/imgres?", StringComparison.OrdinalIgnoreCase))
+            return ParseGoogleRedirectUrl(href);
+
+        return string.Empty;
+    }
+
+    private static string ParseGoogleRedirectUrl(string href)
+    {
+        if (string.IsNullOrWhiteSpace(href))
+            return string.Empty;
+
+        try
+        {
+            var baseUri = new Uri("https://www.google.com");
+            var uri = new Uri(baseUri, href);
+            var target = GetGoogleQueryValue(uri.Query, "url")
+                         ?? GetGoogleQueryValue(uri.Query, "q")
+                         ?? GetGoogleQueryValue(uri.Query, "imgurl")
+                         ?? string.Empty;
+            target = WebUtility.HtmlDecode(target.Trim());
+            if (string.IsNullOrWhiteSpace(target))
+                return string.Empty;
+
+            if (target.StartsWith("http", StringComparison.OrdinalIgnoreCase) && !IsGoogleHost(target))
+                return target;
+        }
+        catch
+        {
+        }
+
+        return string.Empty;
+    }
+
+    private static string? GetGoogleQueryValue(string query, string key)
+    {
+        if (string.IsNullOrWhiteSpace(query) || string.IsNullOrWhiteSpace(key))
+            return null;
+
+        var trimmed = query.TrimStart('?');
+        foreach (var part in trimmed.Split('&', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var index = part.IndexOf('=');
+            if (index <= 0)
+                continue;
+
+            var partKey = part[..index];
+            if (!string.Equals(partKey, key, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var value = part[(index + 1)..];
+            return Uri.UnescapeDataString(value.Replace("+", " "));
+        }
+
+        return null;
+    }
+
+    private static bool IsGoogleHost(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            return false;
+
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            return false;
+
+        var host = uri.Host;
+        return host.EndsWith("google.com", StringComparison.OrdinalIgnoreCase)
+               || host.EndsWith("googleusercontent.com", StringComparison.OrdinalIgnoreCase)
+               || host.EndsWith("gstatic.com", StringComparison.OrdinalIgnoreCase)
+               || host.EndsWith("support.google.com", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool DetectGoogleBlock(string html, out string reason)
+    {
+        reason = string.Empty;
+        if (string.IsNullOrWhiteSpace(html))
+            return false;
+
+        if (html.Contains("/httpservice/retry/enablejs", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "EnableJs";
+            return true;
+        }
+
+        if (html.Contains("Habilita JavaScript para usar la búsqueda", StringComparison.OrdinalIgnoreCase)
+            || html.Contains("Enable JavaScript to use search", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "EnableJs";
+            return true;
+        }
+
+        if (html.Contains("consent.google.com", StringComparison.OrdinalIgnoreCase)
+            || html.Contains("consent", StringComparison.OrdinalIgnoreCase) && html.Contains("google", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "Consent";
+            return true;
+        }
+
+        if (html.Contains("captcha", StringComparison.OrdinalIgnoreCase)
+            || html.Contains("unusual traffic", StringComparison.OrdinalIgnoreCase)
+            || html.Contains("robots", StringComparison.OrdinalIgnoreCase))
+        {
+            reason = "CaptchaOrBot";
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task PersistGoogleDiagnosticHtmlAsync(string idArticulo, string query, string html, CancellationToken ct)
+    {
+        if (!string.Equals(NormalizeSearchText(query), NormalizeSearchText("Cerveza Heinecken 750 cc"), StringComparison.OrdinalIgnoreCase))
+            return;
+
+        try
+        {
+            var root = Path.Combine(AppContext.BaseDirectory, "App_Data", "diagnostics");
+            Directory.CreateDirectory(root);
+
+            var fileName = $"google_{SanitizeFileName(idArticulo)}_{DateTime.UtcNow:yyyyMMddHHmmss}.html";
+            var filePath = Path.Combine(root, fileName);
+            await File.WriteAllTextAsync(filePath, html, Encoding.UTF8, ct);
+            logger.LogInformation(
+                "[ImageSearch] Etapa=GoogleHtmlDiagnostic Articulo={Articulo} Query={Query} FilePath={FilePath} HtmlLength={HtmlLength}",
+                idArticulo,
+                query,
+                filePath,
+                html.Length);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[ImageSearch] Etapa=GoogleHtmlDiagnosticError Articulo={Articulo} Query={Query}", idArticulo, query);
+        }
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        var safe = value ?? string.Empty;
+        foreach (var c in Path.GetInvalidFileNameChars())
+            safe = safe.Replace(c, '_');
+
+        return string.IsNullOrWhiteSpace(safe) ? "articulo" : safe;
     }
 
     private async Task<string> DownloadTextAsync(string url, CancellationToken ct)
     {
         using var client = CreateHttpClient();
         using var response = await client.GetAsync(url, ct);
+        var text = await response.Content.ReadAsStringAsync(ct);
+        logger.LogInformation(
+            "[ImageSearch] Etapa=HttpText Url={Url} HttpStatus={HttpStatus} ContentType={ContentType} BodyLength={BodyLength}",
+            url,
+            (int)response.StatusCode,
+            response.Content.Headers.ContentType?.MediaType ?? string.Empty,
+            text.Length);
+
         if (!response.IsSuccessStatusCode)
             return string.Empty;
 
-        return await response.Content.ReadAsStringAsync(ct);
+        return text;
     }
 
     private async Task<bool> IsValidImageUrlAsync(string url, CancellationToken ct)
@@ -759,6 +1797,23 @@ public sealed partial class BaseMaestraImagenService(
         text = Regex.Replace(text, @"\p{Mn}+", string.Empty);
         text = Regex.Replace(text, @"\s+", " ").Trim().ToLowerInvariant();
         return text;
+    }
+
+    private static string BuildCatalogCacheKey(string codigoBarra, string descripcionArticulo)
+    {
+        var parts = new List<string>();
+        if (!string.IsNullOrWhiteSpace(codigoBarra))
+        {
+            parts.Add("ean");
+            parts.Add(codigoBarra.Trim());
+        }
+        else if (!string.IsNullOrWhiteSpace(descripcionArticulo))
+        {
+            parts.Add("desc");
+            parts.Add(descripcionArticulo.Trim());
+        }
+
+        return string.Join('_', parts);
     }
 
     private static IEnumerable<string> TokenizeSearchText(string value)
@@ -956,6 +2011,9 @@ public sealed partial class BaseMaestraImagenService(
         "con", "para", "por", "del", "las", "los", "una", "uno", "que", "y", "de", "el", "la", "al", "en", "lt", "ml", "gr", "kg", "pack", "paq", "unidad", "u"
     };
 
+    [GeneratedRegex(@"""href"":\s*""(?<href>[^""]+)""|href=(['""])(?<href2>[^'""]+)\1", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    private static partial Regex GoogleHrefRegex();
+
     [GeneratedRegex(@"(?:/url\?q=|/url\?url=)(?<url>[^&""'<>]+)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex GoogleResultUrlRegex();
 
@@ -988,6 +2046,13 @@ public sealed partial class BaseMaestraImagenService(
 
         if (string.IsNullOrWhiteSpace(url) || string.IsNullOrWhiteSpace(apiKey))
             throw new InvalidOperationException("Falta la configuración WS_PRODUCTINFO_URL / WS_PRODUCTINFO_API_KEY en la base activa.");
+
+        logger.LogInformation(
+            "[ImageSearch] Etapa=Config WS_PRODUCTINFO_URL_Configured={UrlConfigured} WS_PRODUCTINFO_API_KEY_Configured={ApiKeyConfigured} CacheDir={CacheDir} CacheTable={HasConfigTable}",
+            !string.IsNullOrWhiteSpace(url),
+            !string.IsNullOrWhiteSpace(apiKey),
+            cacheDirectory,
+            hasConfigTable);
 
         return (url, apiKey);
     }
@@ -1038,10 +2103,16 @@ public sealed partial class BaseMaestraImagenService(
             cachePath = DefaultCacheDirectory;
 
         var trimmed = cachePath.Trim();
-        if (Path.IsPathRooted(trimmed))
-            return trimmed;
+        var resolved = Path.IsPathRooted(trimmed)
+            ? trimmed
+            : Path.Combine(environment.ContentRootPath, trimmed.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
 
-        return Path.Combine(environment.ContentRootPath, trimmed.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+        logger.LogInformation(
+            "[ImageSearch] Etapa=CacheRoot CachePath={CachePath} ResolvedPath={ResolvedPath}",
+            cachePath,
+            resolved);
+
+        return resolved;
     }
 
     private static string BuildPreviewFileName(string codigoConsulta, string imageName)
@@ -1363,6 +2434,7 @@ public sealed partial class BaseMaestraImagenService(
         public string MimeType { get; init; } = string.Empty;
         public string Extension { get; init; } = string.Empty;
         public string PageUrl { get; init; } = string.Empty;
+        public int RankingScore { get; set; }
         public bool Seleccionada { get; init; }
     }
 }

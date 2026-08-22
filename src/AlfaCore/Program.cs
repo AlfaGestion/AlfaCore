@@ -677,6 +677,27 @@ public class Program
             return Results.File(preview.RutaCompleta, preview.MimeType);
         }).AllowAnonymous();
 
+        // Buscador de imagen "todo en uno" para clientes externos (ej. VB6, FrmCatalogoImagenes):
+        // igual que imagen-preview/{codigo}, pero sin exigir codigo de barras (busca por
+        // descripcion si no hay EAN) y con el fallback de busqueda en Google, no solo Base
+        // Maestra. Devuelve directamente los bytes de la imagen (404 si no encontro nada).
+        app.MapGet("/api/base-maestra/buscar-imagen-catalogo", async (
+            string? idArticulo,
+            string? ean,
+            string? descripcion,
+            IBaseMaestraImagenService baseMaestraImagenSvc,
+            HttpContext httpContext,
+            CancellationToken ct) =>
+        {
+            var resultado = await baseMaestraImagenSvc.BuscarImagenCatalogoAsync(idArticulo ?? "", ean ?? "", descripcion ?? "", ct);
+            if (resultado is null || !File.Exists(resultado.RutaCompleta))
+                return Results.NotFound();
+
+            httpContext.Response.Headers.CacheControl = "no-store, no-cache, must-revalidate, max-age=0";
+            httpContext.Response.Headers.Pragma = "no-cache";
+            return Results.File(resultado.RutaCompleta, resultado.MimeType);
+        }).AllowAnonymous();
+
         app.MapGet("/api/comprobantes/{tc}/{idComprobante}", async (
             string tc,
             string idComprobante,
