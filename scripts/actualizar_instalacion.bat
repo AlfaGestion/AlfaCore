@@ -6,8 +6,6 @@ cd /d "%~dp0.."
 set "SOURCE_DIR=.\publish\AlfaCoreLAN"
 set "DEFAULT_DEST_1=\\10.8.0.32\c\Program Files\Alfa Gestion\AlfaCore"
 set "DEFAULT_DEST_2=\\10.8.0.53\c\inetpub\wwwroot\AlfaCore"
-set "DEFAULT_DEST_3=\\10.8.0.40\C\Alfa Gestion\AlfaCore"
-set "DEFAULT_DEST_4=\\10.8.0.20\AlfaCore\"
 for %%I in ("%SOURCE_DIR%") do set "SOURCE_DIR_FULL=%%~fI"
 set "ROOT_COPY_EXIT=0"
 set "UPDATES_COPY_EXIT=0"
@@ -30,8 +28,6 @@ echo Si no informas destino, el script lo pide por pantalla.
 echo Destinos sugeridos:
 echo   1^) %DEFAULT_DEST_1% ^(SERVER-ALFAWEB^)
 echo   2^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL^)
-echo   3^) %DEFAULT_DEST_3% ^(SERVER-FERNANDO^)
-echo   4^) %DEFAULT_DEST_4% ^(AGSERVER^)
 echo.
 echo Este script:
 echo   - toma el publish de .\publish\AlfaCoreLAN
@@ -90,21 +86,15 @@ if defined DEST_DIR_FULL goto :got_destination
 echo Destinos sugeridos:
 echo   1^) %DEFAULT_DEST_1% ^(SERVER-ALFAWEB^)
 echo   2^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL^)
-echo   3^) %DEFAULT_DEST_3% ^(SERVER-FERNANDO^)
-echo   4^) %DEFAULT_DEST_4% ^(AGSERVER^)
-echo   5^) Otra ruta
+echo   3^) Otra ruta
 echo.
-set /p "DEST_OPTION=Elige destino [1/2/3/4/5]: "
+set /p "DEST_OPTION=Elige destino [1/2/3]: "
 set "DEST_OPTION=%DEST_OPTION:"=%"
 
 if /i "%DEST_OPTION%"=="1" (
   set "DEST_DIR_FULL=%DEFAULT_DEST_1%"
 ) else if /i "%DEST_OPTION%"=="2" (
   set "DEST_DIR_FULL=%DEFAULT_DEST_2%"
-) else if /i "%DEST_OPTION%"=="3" (
-  set "DEST_DIR_FULL=%DEFAULT_DEST_3%"
-) else if /i "%DEST_OPTION%"=="4" (
-  set "DEST_DIR_FULL=%DEFAULT_DEST_4%"
 ) else (
   set /p "DEST_DIR_FULL=Destino de instalacion: "
   set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
