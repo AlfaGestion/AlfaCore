@@ -177,6 +177,85 @@
                     </div>
                 </details>
 
+                <details class="wa-settings-section" open>
+                    <summary class="wa-settings-section__summary">
+                        <i class="bi bi-cloud-check wa-settings-section__icon" aria-hidden="true"></i>
+                        <span class="wa-settings-section__title">Números Meta Cloud API</span>
+                        <span class="wa-settings-section__hint">@WhatsAppApiNumeros.Count()</span>
+                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                    </summary>
+                    <div class="wa-settings-section__body">
+                        @if (!WhatsAppApiNumeros.Any())
+                        {
+                            <p class="wa-field-note">Todavía no hay números Meta Cloud API cargados para esta base.</p>
+                        }
+                        @foreach (var numero in WhatsAppApiNumeros)
+                        {
+                            <div class="wa-number-card">
+                                <div class="wa-number-card__header">
+                                    <div>
+                                        <strong class="wa-number-card__name">@GetNumeroDisplayName(numero)</strong>
+                                        <span class="wa-number-card__phone">@numero.PhoneNumberId</span>
+                                    </div>
+                                </div>
+                                <div class="wa-number-card__status">
+                                    <AlfaTag Tone="AlfaTagTone.Success">Meta Cloud API</AlfaTag>
+                                    @if (numero.Usuarios.Count == 0)
+                                    {
+                                        <AlfaTag Tone="AlfaTagTone.Warning">Sin usuarios asignados</AlfaTag>
+                                    }
+                                    else
+                                    {
+                                        <AlfaTag Tone="AlfaTagTone.Neutral">@numero.Usuarios.Count usuario(s)</AlfaTag>
+                                    }
+                                </div>
+
+                                <details class="wa-settings-section" open="@(!numero.Usuarios.Any())">
+                                    <summary class="wa-settings-section__summary">
+                                        <span class="wa-settings-section__title">Usuarios con acceso</span>
+                                        <span class="wa-settings-section__hint">@numero.Usuarios.Count</span>
+                                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                                    </summary>
+                                    <div class="wa-settings-section__body">
+                                        <div class="wa-user-grid">
+                                            @foreach (var usuario in _usuariosSistema)
+                                            {
+                                                <AlfaCheckbox Value="@numero.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
+                                                              ValueChanged="@(v => ToggleNumeroUsuario(numero, usuario.Nombre, v ?? false))">
+                                                    @usuario.Nombre
+                                                </AlfaCheckbox>
+                                            }
+                                            @if (_usuariosSistema.Count == 0)
+                                            {
+                                                <span class="wa-field-note">No hay usuarios activos en este sistema.</span>
+                                            }
+                                        </div>
+                                        <div class="actions">
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="@(() => SaveNumeroAsync(numero))">Guardar usuarios</AlfaButton>
+                                        </div>
+                                    </div>
+                                </details>
+
+                                <details class="wa-settings-section">
+                                    <summary class="wa-settings-section__summary">
+                                        <span class="wa-settings-section__title">Datos del número</span>
+                                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
+                                    </summary>
+                                    <div class="wa-settings-section__body">
+                                        <div class="wa-fields">
+                                            <AlfaInput Label="Nombre" @bind-Value="numero.Nombre" Placeholder="Ej: Ventas Norte" />
+                                            <AlfaInput Label="Phone Number ID" @bind-Value="numero.PhoneNumberId" Placeholder="Ej: 109876543210" />
+                                        </div>
+                                        <div class="actions">
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="@(() => SaveNumeroAsync(numero))">Guardar número</AlfaButton>
+                                        </div>
+                                    </div>
+                                </details>
+                            </div>
+                        }
+                    </div>
+                </details>
+
                 <details class="wa-settings-section">
                     <summary class="wa-settings-section__summary">
                         <i class="bi bi-plus-circle wa-settings-section__icon" aria-hidden="true"></i>
@@ -1718,7 +1797,9 @@
     /// resolución de conversaciones históricas) tal cual, sin excluir nada -- esto es solo qué se
     /// muestra en esta lista puntual.
     /// </summary>
-    private IEnumerable<ConversacionWhatsAppNumeroDto> ActiveBusinessNumeros => _numeros.Where(n => n.Activo);
+    // Criterio UI vigente: Business = Web/QR; API = Meta Cloud API por Phone Number ID.
+    private IEnumerable<ConversacionWhatsAppNumeroDto> ActiveBusinessNumeros => _numeros.Where(n => n.Activo && IsWhatsAppWebManagedNumero(n));
+    private IEnumerable<ConversacionWhatsAppNumeroDto> WhatsAppApiNumeros => _numeros.Where(n => n.Activo && !IsWhatsAppWebManagedNumero(n));
     private ConversacionWhatsAppNumeroDto _nuevoNumero = new() { Activo = true };
     private HashSet<string> _administradores = new(StringComparer.OrdinalIgnoreCase);
     private string _anyDeskPath = string.Empty;
@@ -1737,8 +1818,6 @@
     private bool _includeTextPairingCode = true;
     private bool HasWebhookToken => !string.IsNullOrWhiteSpace(_webhookToken);
     private bool PairingBusy { get; set; }
-    private bool _autoStartWhatsAppQrOnboarding;
-    private bool _autoStartWhatsAppQrAttempted;
     private ConversacionWhatsAppNumeroDto? _stopSessionTarget;
     private bool _stopSessionOpen;
     private bool _stopSessionBusy;
@@ -1816,47 +1895,24 @@
         UpdatePageHeader();
         await LoadWebhookTokenAsync();
         await LoadAsync();
-        await TryAutoStartWhatsAppQrOnboardingAsync();
     }
 
     private void ApplyStartupQuery()
     {
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
-        _autoStartWhatsAppQrOnboarding =
-            string.Equals(query.TryGetValue("onboarding", out var onboarding) ? onboarding.ToString() : string.Empty, "whatsapp-qr", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(query.TryGetValue("auto", out var auto) ? auto.ToString() : string.Empty, "1", StringComparison.OrdinalIgnoreCase);
+        var seccion = query.TryGetValue("seccion", out var seccionRaw) ? seccionRaw.ToString() : string.Empty;
+        var canal = query.TryGetValue("canal", out var canalRaw) ? canalRaw.ToString() : string.Empty;
+        var legacyWhatsAppQrOnboarding =
+            string.Equals(query.TryGetValue("onboarding", out var onboarding) ? onboarding.ToString() : string.Empty, "whatsapp-qr", StringComparison.OrdinalIgnoreCase);
 
-        if (_autoStartWhatsAppQrOnboarding)
+        if (string.Equals(seccion, "canales", StringComparison.OrdinalIgnoreCase) || legacyWhatsAppQrOnboarding)
         {
             _activePrimaryTab = "canales";
-            _activeChannelTab = "whatsapp";
-            _activeWhatsAppSection = "numeros";
+            _activeChannelTab = string.Equals(canal, "whatsapp", StringComparison.OrdinalIgnoreCase) ? "whatsapp" : _activeChannelTab;
+            if (_activeChannelTab == "whatsapp")
+                _activeWhatsAppSection = "numeros";
         }
-    }
-
-    private async Task TryAutoStartWhatsAppQrOnboardingAsync()
-    {
-        if (!_autoStartWhatsAppQrOnboarding || _autoStartWhatsAppQrAttempted)
-            return;
-
-        _autoStartWhatsAppQrAttempted = true;
-        if (_numeros.Any(n => n.Activo && n.IsWebSessionReady))
-            return;
-
-        var pending = ActiveBusinessNumeros
-            .Where(n => !n.IsWebSessionReady)
-            .OrderByDescending(n => n.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.PendingQr)
-            .ThenBy(n => n.IdNumero)
-            .FirstOrDefault();
-
-        if (pending is not null)
-        {
-            await ConectarWhatsAppBusinessAsync(pending, ConversacionWhatsAppWebSessionModes.Qr, null);
-            return;
-        }
-
-        await IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.Qr, null);
     }
 
     public void Dispose()
@@ -3345,6 +3401,31 @@
             actualizados.Add(numero);
 
         _numeros = actualizados;
+    }
+
+    private static bool IsWhatsAppWebManagedNumero(ConversacionWhatsAppNumeroDto numero)
+    {
+        if ((numero.PhoneNumberId ?? string.Empty).Trim().StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (numero.WebWorkerProcessId.HasValue
+            || numero.WebPairingGeneratedAtUtc.HasValue
+            || numero.WebPairingExpiresAtUtc.HasValue
+            || numero.WebRuntimeUpdatedAtUtc.HasValue)
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(numero.WebPhoneNumber)
+            || !string.IsNullOrWhiteSpace(numero.WebDisplayName)
+            || !string.IsNullOrWhiteSpace(numero.WebInstanceName)
+            || !string.IsNullOrWhiteSpace(numero.WebPairingToken)
+            || !string.IsNullOrWhiteSpace(numero.WebPairingCode)
+            || !string.IsNullOrWhiteSpace(numero.WebPairingQrPayload)
+            || !string.IsNullOrWhiteSpace(numero.WebRuntimeState)
+            || !string.IsNullOrWhiteSpace(numero.WebLastError))
+            return true;
+
+        return string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.PendingQr, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>

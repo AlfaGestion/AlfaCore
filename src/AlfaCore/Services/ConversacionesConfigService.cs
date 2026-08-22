@@ -1331,9 +1331,12 @@ public sealed class ConversacionesConfigService(
             await cn.OpenAsync(token);
             var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", token);
             var hasWebColumns = HasAnyWhatsAppWebColumns(numeroColumns);
+            var saveWebFields = hasWebColumns && IsWhatsAppWebManagedNumero(numero);
+            var webColumnsForSave = saveWebFields ? numeroColumns : [];
             await using var tx = await cn.BeginTransactionAsync(token);
 
             int idNumero;
+            var adoptExistingByPhoneNumberId = false;
             if (numero.IdNumero > 0)
             {
                 var sqlUpdate = $"""
@@ -1341,60 +1344,102 @@ public sealed class ConversacionesConfigService(
                     SET
                         PhoneNumberId = @PhoneNumberId,
                         Nombre = @Nombre,
-                        Activo = @Activo{BuildWhatsAppNumeroWebUpdateAssignments(numeroColumns)},
+                        Activo = @Activo{BuildWhatsAppNumeroWebUpdateAssignments(webColumnsForSave)},
                         FechaHora_Modificacion = GETDATE()
                     WHERE IdNumero = @IdNumero;
                     """;
                 await using var cmd = new SqlCommand(sqlUpdate, cn, (SqlTransaction)tx);
-                FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre, includeWebFields: hasWebColumns);
+                FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre, includeWebFields: saveWebFields);
                 cmd.Parameters.AddWithValue("@IdNumero", numero.IdNumero);
                 await cmd.ExecuteNonQueryAsync(token);
                 idNumero = numero.IdNumero;
             }
             else
             {
-                var sqlInsert = $"""
-                    INSERT INTO dbo.CONV_WHATSAPP_NUMEROS
-                    (
-                        PhoneNumberId,
-                        Nombre,
-                        Activo{BuildWhatsAppNumeroWebInsertColumns(numeroColumns)}
-                    )
-                    OUTPUT INSERTED.IdNumero
-                    VALUES
-                    (
-                        @PhoneNumberId,
-                        @Nombre,
-                        @Activo{BuildWhatsAppNumeroWebInsertValues(numeroColumns)}
-                    );
+                const string sqlExisting = """
+                    SELECT TOP (1) IdNumero
+                    FROM dbo.CONV_WHATSAPP_NUMEROS WITH (UPDLOCK, HOLDLOCK)
+                    WHERE PhoneNumberId = @PhoneNumberId;
                     """;
-                await using var cmd = new SqlCommand(sqlInsert, cn, (SqlTransaction)tx);
-                FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre, includeWebFields: hasWebColumns);
-                idNumero = (int)(await cmd.ExecuteScalarAsync(token))!;
+                await using (var cmd = new SqlCommand(sqlExisting, cn, (SqlTransaction)tx))
+                {
+                    cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
+                    var existing = await cmd.ExecuteScalarAsync(token);
+                    idNumero = existing is null or DBNull
+                        ? 0
+                        : Convert.ToInt32(existing, CultureInfo.InvariantCulture);
+                }
+
+                if (idNumero > 0)
+                {
+                    adoptExistingByPhoneNumberId = true;
+                    const string sqlUpdateExisting = """
+                        UPDATE dbo.CONV_WHATSAPP_NUMEROS
+                        SET
+                            Nombre = @Nombre,
+                            Activo = @Activo,
+                            FechaHora_Modificacion = GETDATE()
+                        WHERE IdNumero = @IdNumero;
+                        """;
+                    await using var cmd = new SqlCommand(sqlUpdateExisting, cn, (SqlTransaction)tx);
+                    FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre, includeWebFields: false);
+                    cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+                    await cmd.ExecuteNonQueryAsync(token);
+                }
+                else
+                {
+                    var sqlInsert = $"""
+                        INSERT INTO dbo.CONV_WHATSAPP_NUMEROS
+                        (
+                            PhoneNumberId,
+                            Nombre,
+                            Activo{BuildWhatsAppNumeroWebInsertColumns(webColumnsForSave)}
+                        )
+                        OUTPUT INSERTED.IdNumero
+                        VALUES
+                        (
+                            @PhoneNumberId,
+                            @Nombre,
+                            @Activo{BuildWhatsAppNumeroWebInsertValues(webColumnsForSave)}
+                        );
+                        """;
+                    await using var cmd = new SqlCommand(sqlInsert, cn, (SqlTransaction)tx);
+                    FillWhatsAppNumeroParameters(cmd, numero, phoneNumberId, nombre, includeWebFields: saveWebFields);
+                    idNumero = (int)(await cmd.ExecuteScalarAsync(token))!;
+                }
             }
 
-            const string sqlDeleteUsuarios = """
-                DELETE FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS
-                WHERE IdNumero = @IdNumero AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
-                """;
-            await using (var cmd = new SqlCommand(sqlDeleteUsuarios, cn, (SqlTransaction)tx))
+            var usuarios = (numero.Usuarios ?? [])
+                .Select(u => (u ?? string.Empty).Trim())
+                .Where(u => u.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var updateUsuarios = !adoptExistingByPhoneNumberId || usuarios.Count > 0;
+            if (updateUsuarios)
             {
-                cmd.Parameters.AddWithValue("@IdNumero", idNumero);
-                cmd.Parameters.AddWithValue("@Sistema", sistema);
-                await cmd.ExecuteNonQueryAsync(token);
-            }
-
-            foreach (var usuario in (numero.Usuarios ?? []).Select(u => (u ?? string.Empty).Trim()).Where(u => u.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase))
-            {
-                const string sqlInsertUsuario = """
-                    INSERT INTO dbo.CONV_WHATSAPP_NUMERO_USUARIOS (IdNumero, Usuario, Sistema)
-                    VALUES (@IdNumero, @Usuario, @Sistema);
+                const string sqlDeleteUsuarios = """
+                    DELETE FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS
+                    WHERE IdNumero = @IdNumero AND UPPER(LTRIM(RTRIM(Sistema))) = @Sistema;
                     """;
-                await using var cmd = new SqlCommand(sqlInsertUsuario, cn, (SqlTransaction)tx);
-                cmd.Parameters.AddWithValue("@IdNumero", idNumero);
-                cmd.Parameters.AddWithValue("@Usuario", usuario);
-                cmd.Parameters.AddWithValue("@Sistema", sistema);
-                await cmd.ExecuteNonQueryAsync(token);
+                await using (var cmd = new SqlCommand(sqlDeleteUsuarios, cn, (SqlTransaction)tx))
+                {
+                    cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+                    cmd.Parameters.AddWithValue("@Sistema", sistema);
+                    await cmd.ExecuteNonQueryAsync(token);
+                }
+
+                foreach (var usuario in usuarios)
+                {
+                    const string sqlInsertUsuario = """
+                        INSERT INTO dbo.CONV_WHATSAPP_NUMERO_USUARIOS (IdNumero, Usuario, Sistema)
+                        VALUES (@IdNumero, @Usuario, @Sistema);
+                        """;
+                    await using var cmd = new SqlCommand(sqlInsertUsuario, cn, (SqlTransaction)tx);
+                    cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+                    cmd.Parameters.AddWithValue("@Usuario", usuario);
+                    cmd.Parameters.AddWithValue("@Sistema", sistema);
+                    await cmd.ExecuteNonQueryAsync(token);
+                }
             }
 
             await tx.CommitAsync(token);
@@ -1405,7 +1450,7 @@ public sealed class ConversacionesConfigService(
                 "CONV_WHATSAPP_NUMEROS",
                 phoneNumberId,
                 $"Número de WhatsApp '{nombre}' guardado.",
-                new { idNumero, phoneNumberId, nombre, numero.Activo, numero.Usuarios },
+                new { idNumero, phoneNumberId, nombre, numero.Activo, Usuarios = usuarios, Adoptado = adoptExistingByPhoneNumberId },
                 token);
 
             return true;
@@ -2179,6 +2224,31 @@ public sealed class ConversacionesConfigService(
 
     private static bool HasAnyWhatsAppWebColumns(HashSet<string> columns)
         => HasColumn(columns, "WebSessionMode");
+
+    private static bool IsWhatsAppWebManagedNumero(ConversacionWhatsAppNumeroDto numero)
+    {
+        if ((numero.PhoneNumberId ?? string.Empty).Trim().StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        if (numero.WebWorkerProcessId.HasValue
+            || numero.WebPairingGeneratedAtUtc.HasValue
+            || numero.WebPairingExpiresAtUtc.HasValue
+            || numero.WebRuntimeUpdatedAtUtc.HasValue)
+            return true;
+
+        if (!string.IsNullOrWhiteSpace(numero.WebPhoneNumber)
+            || !string.IsNullOrWhiteSpace(numero.WebDisplayName)
+            || !string.IsNullOrWhiteSpace(numero.WebInstanceName)
+            || !string.IsNullOrWhiteSpace(numero.WebPairingToken)
+            || !string.IsNullOrWhiteSpace(numero.WebPairingCode)
+            || !string.IsNullOrWhiteSpace(numero.WebPairingQrPayload)
+            || !string.IsNullOrWhiteSpace(numero.WebRuntimeState)
+            || !string.IsNullOrWhiteSpace(numero.WebLastError))
+            return true;
+
+        return string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.PendingQr, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string SelectStringColumn(HashSet<string> columns, string columnName)
         => HasColumn(columns, columnName) ? $"ISNULL({columnName}, '')" : "N''";

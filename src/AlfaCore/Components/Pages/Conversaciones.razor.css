@@ -606,6 +606,42 @@
     overflow-x: hidden !important;
 }
 
+.conversations-page--odoo .conversations-empty--onboarding {
+    min-height: 230px !important;
+    padding: 2rem 1.2rem !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: .7rem !important;
+    text-align: center !important;
+    color: #b7d6e8 !important;
+}
+
+.conversations-page--odoo .conversations-empty--onboarding > i {
+    width: 44px !important;
+    height: 44px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    border: 1px solid rgba(56, 189, 248, .28) !important;
+    border-radius: 999px !important;
+    background: rgba(14, 165, 233, .12) !important;
+    color: #55d6ff !important;
+    font-size: 1.2rem !important;
+}
+
+.conversations-page--odoo .conversations-empty--onboarding strong {
+    color: #eef8ff !important;
+    font-size: .98rem !important;
+}
+
+.conversations-page--odoo .conversations-empty--onboarding span {
+    max-width: 270px !important;
+    font-size: .84rem !important;
+    line-height: 1.4 !important;
+}
+
 .conversations-page--odoo .conversations-inbox-tools {
     display: block !important;
     flex: 0 0 auto !important;
