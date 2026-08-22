@@ -6950,7 +6950,7 @@ public sealed class ConversacionesService(
             if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)
                 return;
 
-            if (await HasPendingAutoReplyAsync(idConversacion, ct).ConfigureAwait(false))
+            if (await HasSentOutOfHoursNoticeAsync(idConversacion, ct).ConfigureAwait(false))
                 return;
 
             await SendMessageAsync(new ConversacionSendMessageRequest
@@ -8050,13 +8050,20 @@ public sealed class ConversacionesService(
             : horaActual < desde && horaActual > hasta;
     }
 
-    private async Task<bool> HasPendingAutoReplyAsync(long idConversacion, CancellationToken ct)
+    /// <summary>
+    /// Si ya se mandó el aviso fijo de "fuera de horario" (SistemaAutor='AUTOMATIZACION') alguna vez
+    /// en esta conversación, no se repite. Antes se miraba solo el ÚLTIMO mensaje saliente (¿fue
+    /// automático?), que se reseteaba apenas se mandaba cualquier otra cosa encima (otra automática,
+    /// una respuesta del bot) -- dejando avisar de nuevo en el próximo mensaje del cliente aunque ya
+    /// se hubiera avisado antes. Este chequeo es "una vez y listo" para toda la conversación, que es
+    /// el comportamiento pedido para este aviso.
+    /// </summary>
+    private async Task<bool> HasSentOutOfHoursNoticeAsync(long idConversacion, CancellationToken ct)
     {
         const string sql = """
-            SELECT TOP (1) ISNULL(SistemaAutor, '')
+            SELECT TOP (1) 1
             FROM dbo.CONV_MENSAJES
-            WHERE IdConversacion = @IdConversacion AND Direction = N'SALIENTE'
-            ORDER BY FechaHora DESC, IdMensaje DESC;
+            WHERE IdConversacion = @IdConversacion AND Direction = N'SALIENTE' AND SistemaAutor = N'AUTOMATIZACION';
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
@@ -8064,17 +8071,8 @@ public sealed class ConversacionesService(
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
         var result = await cmd.ExecuteScalarAsync(ct);
-        // Ya respondimos automáticamente (bienvenida / fuera de horario / bot / auto-cierre): no encimar.
-        return result is string sistemaAutor && IsAutomaticSystem(sistemaAutor);
+        return result is not null;
     }
-
-    private static readonly HashSet<string> AutomaticSystems = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "AUTOMATIZACION", "BIENVENIDA", "BOT", "AUTOCIERRE_AVISO", "AUTOCIERRE", "REGLA"
-    };
-
-    private static bool IsAutomaticSystem(string? sistema)
-        => !string.IsNullOrWhiteSpace(sistema) && AutomaticSystems.Contains(sistema.Trim());
 
     // Motor de reglas / palabras clave. Corre en cada mensaje entrante (todos los canales), antes de
     // bienvenida/bot. Evalúa las reglas activas por Orden; la primera que coincide aplica sus acciones
