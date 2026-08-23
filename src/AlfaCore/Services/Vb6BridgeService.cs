@@ -75,6 +75,14 @@ public sealed class Vb6BridgeService(
                     "o consultar al administrador del sistema.");
             }
 
+            // Blindaje adicional: aunque dbname/dbuser/dbpassword coincidan, el IdBase cacheado
+            // tiene que pertenecer al mismo cliente que la licencia de este equipo. Cubre tanto un
+            // IdBase mal cargado a mano como uno que llegó pegado a un backup restaurado en otro
+            // equipo. Si LicenciaPrincipal todavía no está configurada o no se reconoce, no bloquea
+            // (compatibilidad con instalaciones que todavía no la tienen cargada) — pero si SÍ se
+            // reconoce y pertenece a otro cliente, ahí sí corta.
+            await ValidateLicenciaPertenceAlClienteAsync(request.LicenciaPrincipal, baseCentral.IdCliente, ct);
+
             var cliente = await centralClientesService.GetByIdClienteAsync(baseCentral.IdCliente, ct);
             if (cliente is null || string.IsNullOrWhiteSpace(cliente.IdWeb))
                 throw new InvalidOperationException($"El cliente '{baseCentral.IdCliente}' no tiene IdWeb configurado en ALFA_CENTRAL.");
@@ -115,6 +123,118 @@ public sealed class Vb6BridgeService(
             SuperAdmin = superAdmin,
             IdBase = idBase
         });
+    }
+
+    /// <summary>
+    /// Misma prueba de identidad que usa <see cref="CreateTicketAsync"/> en modo SaaS (líneas
+    /// "IdBase -> bases -> comparar DbName/DbUser/DbPassword -> Clientes -> IdWeb"), extraída
+    /// para endpoints de integración livianos que no necesitan abrir una sesión completa. No
+    /// modifica ni es llamada por CreateTicketAsync -se deja ese flujo intacto- para no arriesgar
+    /// una regresión en el login real; sólo reutiliza los mismos servicios (centralBasesService,
+    /// centralClientesService), no SQL nueva.
+    /// </summary>
+    public async Task<Vb6InstallationDto?> ValidateInstallationAsync(int idBase, string dbName, string dbUser, string dbPassword, CancellationToken ct = default)
+    {
+        if (!appMode.IsSaaSMode)
+            return null;
+
+        if (idBase <= 0
+            || string.IsNullOrWhiteSpace(dbName)
+            || string.IsNullOrWhiteSpace(dbUser)
+            || string.IsNullOrWhiteSpace(dbPassword))
+            return null;
+
+        var baseCentral = await centralBasesService.GetByIdAsync(idBase, ct);
+        if (baseCentral is null)
+            return null;
+
+        if (!string.Equals(baseCentral.DbName.Trim(), dbName.Trim(), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(baseCentral.DbUser.Trim(), dbUser.Trim(), StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(baseCentral.DbPassword.Trim(), dbPassword.Trim(), StringComparison.Ordinal))
+            return null;
+
+        var cliente = await centralClientesService.GetByIdClienteAsync(baseCentral.IdCliente, ct);
+        if (cliente is null || string.IsNullOrWhiteSpace(cliente.IdWeb))
+            return null;
+
+        return new Vb6InstallationDto
+        {
+            IdBase = idBase,
+            IdCliente = cliente.IdCliente,
+            IdWeb = cliente.IdWeb
+        };
+    }
+
+    /// <summary>
+    /// Resuelve el IdBase a partir de LicenciaPrincipal + las credenciales SQL reales del equipo,
+    /// buscando entre todas las bases del cliente dueño de esa licencia. No requiere IdBase de
+    /// entrada — es justamente lo que reemplaza tener que tipearlo/adivinarlo. Se llama una sola
+    /// vez por equipo (ModAlfaCore.bas cachea el resultado en Cfg("ALFACORE_IDBASE")).
+    /// </summary>
+    public async Task<int> ResolverIdBaseAsync(Vb6ResolverIdBaseRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!appMode.IsSaaSMode)
+            throw new InvalidOperationException("Este equipo no está en modo SaaS; no hace falta resolver un IdBase.");
+
+        var licencia = (request.LicenciaPrincipal ?? string.Empty).Trim();
+        if (licencia.Length == 0)
+        {
+            throw new Vb6IdBaseCentralRequeridoException(
+                "Falta configurar la licencia de este equipo (CfgNW(\"LICENCIAPRINCIPAL\")). " +
+                "AlfaCore SaaS no puede identificar el cliente sin ese dato.");
+        }
+
+        var clienteDeLicencia = await centralClientesService.GetByLicenciaPrincipalAsync(licencia, ct)
+            ?? throw new InvalidOperationException($"La licencia '{licencia}' no está registrada en ALFA_CENTRAL.");
+
+        var basesDelCliente = await centralBasesService.GetByClienteAsync(clienteDeLicencia.IdCliente, false, ct);
+        var candidatas = basesDelCliente
+            .Where(b =>
+                string.Equals(b.DbName.Trim(), request.BaseDatos.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(b.DbUser.Trim(), request.UsuarioSql.Trim(), StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(b.DbPassword.Trim(), request.PasswordSql.Trim(), StringComparison.Ordinal))
+            .ToList();
+
+        if (candidatas.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"No se encontró ninguna base en ALFA_CENTRAL para la licencia '{licencia}' con las credenciales " +
+                $"SQL de este equipo ({request.BaseDatos.Trim()} / {request.UsuarioSql.Trim()}).");
+        }
+
+        if (candidatas.Count > 1)
+        {
+            var lista = string.Join('\n', candidatas.Select(b => $"{b.IdBase}|{b.Nombre}"));
+            throw new Vb6MultiplesBasesException(lista);
+        }
+
+        return candidatas[0].IdBase;
+    }
+
+    /// <summary>
+    /// Ver comentario en el llamador (CreateTicketAsync): cruza el IdCliente dueño del IdBase
+    /// contra el IdCliente resuelto desde LicenciaPrincipal. Deliberadamente NO bloquea cuando la
+    /// licencia está vacía o no se reconoce — solo corta cuando SÍ se reconoce y pertenece a un
+    /// cliente distinto, que es la señal inequívoca de un IdBase mal cargado.
+    /// </summary>
+    private async Task ValidateLicenciaPertenceAlClienteAsync(string? licenciaPrincipal, string idClienteEsperado, CancellationToken ct)
+    {
+        var licencia = (licenciaPrincipal ?? string.Empty).Trim();
+        if (licencia.Length == 0)
+            return;
+
+        var clienteDeLicencia = await centralClientesService.GetByLicenciaPrincipalAsync(licencia, ct);
+        if (clienteDeLicencia is null)
+            return;
+
+        if (!string.Equals(clienteDeLicencia.IdCliente, idClienteEsperado, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException(
+                "La licencia de este equipo no corresponde al cliente dueño de esa base en ALFA_CENTRAL. " +
+                "Revisar Cfg(\"ALFACORE_IDBASE\") o consultar al administrador del sistema.");
+        }
     }
 
     public async Task<Vb6ConsumeTicketResult> ConsumeTicketAsync(string ticket, CancellationToken ct = default)

@@ -20,6 +20,27 @@ public sealed class Vb6AuthTicketRequest
     /// configura una sola vez quien da de alta el equipo, vía Cfg("ALFACORE_IDBASE").
     /// </summary>
     public string? IdBaseCentral { get; init; }
+
+    /// <summary>
+    /// Cfg NW("LICENCIAPRINCIPAL") del equipo — el mismo número de serie que ya usa el sistema de
+    /// licencias (sp_ActivaLicencia). En modo SaaS se usa para: (a) resolver el IdBase automáticamente
+    /// cuando todavía no está cargado (ver <see cref="Vb6ResolverIdBaseRequest"/>), y (b) blindar el
+    /// IdBase ya cacheado — si alguien lo cambió a mano o vino de un backup restaurado en otro equipo,
+    /// que apunte a una base de un cliente distinto se detecta cruzando contra esta licencia.
+    /// </summary>
+    public string? LicenciaPrincipal { get; init; }
+}
+
+/// <summary>
+/// Pedido para resolver a qué fila de ALFA_CENTRAL.dbo.bases corresponde este equipo, sin que
+/// nadie tenga que tipear ni adivinar un IdBase. Ver <see cref="Vb6BridgeService.ResolverIdBaseAsync"/>.
+/// </summary>
+public sealed class Vb6ResolverIdBaseRequest
+{
+    public string LicenciaPrincipal { get; init; } = string.Empty;
+    public string BaseDatos { get; init; } = string.Empty;
+    public string UsuarioSql { get; init; } = string.Empty;
+    public string PasswordSql { get; init; } = string.Empty;
 }
 
 public sealed class Vb6ConsumeTicketResult
@@ -27,6 +48,19 @@ public sealed class Vb6ConsumeTicketResult
     public string SqlSessionId { get; init; } = string.Empty;
     public string UserToken { get; init; } = string.Empty;
     public string RedirectUrl { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Identidad de una instalación VB6 ya validada contra ALFA_CENTRAL — ver
+/// <see cref="Vb6BridgeService.ValidateInstallationAsync"/>. IdWeb siempre viene resuelto acá
+/// (nunca del request del VB6): es lo que permite que un endpoint de integración confíe en el
+/// IdWeb sin tener que recibirlo, validarlo y potencialmente equivocarse.
+/// </summary>
+public sealed class Vb6InstallationDto
+{
+    public int IdBase { get; init; }
+    public string IdCliente { get; init; } = string.Empty;
+    public string IdWeb { get; init; } = string.Empty;
 }
 
 public sealed record Vb6BridgeTicketRecord

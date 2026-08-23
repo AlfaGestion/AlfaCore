@@ -741,7 +741,8 @@ public class Program
                 PasswordSistema = form["passwordSistema"].ToString(),
                 Modulo = form["modulo"].ToString(),
                 NombreSesion = string.IsNullOrWhiteSpace(form["nombreSesion"]) ? null : form["nombreSesion"].ToString(),
-                IdBaseCentral = string.IsNullOrWhiteSpace(form["idBaseCentral"]) ? null : form["idBaseCentral"].ToString()
+                IdBaseCentral = string.IsNullOrWhiteSpace(form["idBaseCentral"]) ? null : form["idBaseCentral"].ToString(),
+                LicenciaPrincipal = string.IsNullOrWhiteSpace(form["licenciaPrincipal"]) ? null : form["licenciaPrincipal"].ToString()
             };
 
             try
@@ -754,6 +755,49 @@ public class Program
                 // 428 (Precondition Required) es un código propio para esta situación puntual, para
                 // que ModAlfaCore.bas la distinga de cualquier otro error 400 sin tener que parsear
                 // el texto del mensaje, y le ofrezca al usuario cargar el dato con un InputBox.
+                return Results.Text(ex.Message, "text/plain; charset=utf-8", statusCode: 428);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+            catch (Exception ex)
+            {
+                return Results.Problem(ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        app.MapPost("/api/vb6/resolver-idbase", async (
+            HttpRequest request,
+            IVb6BridgeService vb6BridgeSvc,
+            CancellationToken ct) =>
+        {
+            if (!request.HasFormContentType)
+                return Results.BadRequest("Se esperaba application/x-www-form-urlencoded.");
+
+            var form = await request.ReadFormAsync(ct);
+            var resolverRequest = new Vb6ResolverIdBaseRequest
+            {
+                LicenciaPrincipal = form["licenciaPrincipal"].ToString(),
+                BaseDatos = form["baseDatos"].ToString(),
+                UsuarioSql = form["usuarioSql"].ToString(),
+                PasswordSql = form["passwordSql"].ToString()
+            };
+
+            try
+            {
+                var idBase = await vb6BridgeSvc.ResolverIdBaseAsync(resolverRequest, ct);
+                return Results.Text(idBase.ToString(), "text/plain; charset=utf-8");
+            }
+            catch (Vb6MultiplesBasesException ex)
+            {
+                // 300 (Multiple Choices): el body trae "IdBase|Nombre" por línea, una por cada base
+                // candidata, para que ModAlfaCore.bas ofrezca un selector en vez de que alguien
+                // tenga que adivinar un número.
+                return Results.Text(ex.Message, "text/plain; charset=utf-8", statusCode: 300);
+            }
+            catch (Vb6IdBaseCentralRequeridoException ex)
+            {
                 return Results.Text(ex.Message, "text/plain; charset=utf-8", statusCode: 428);
             }
             catch (InvalidOperationException ex)
