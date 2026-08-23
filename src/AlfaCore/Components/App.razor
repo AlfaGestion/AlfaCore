@@ -25,7 +25,7 @@
     <script src="https://www.google.com/recaptcha/api.js?render=explicit" async defer></script>
     <script>
         (function () {
-            var t = localStorage.getItem('dashboard.theme') || 'light';
+            var t = localStorage.getItem('dashboard.theme') || 'dark';
             document.documentElement.setAttribute('data-theme', t);
         })();
         (function () {
@@ -58,7 +58,7 @@
                 document.dispatchEvent(new CustomEvent('dashboard-theme-changed', { detail: theme }));
             },
             get: function () {
-                return document.documentElement.getAttribute('data-theme') || 'light';
+                return document.documentElement.getAttribute('data-theme') || 'dark';
             },
             watch: function (dotnetRef) {
                 if (window.__alfaCoreDashboardThemeHandler) {
@@ -67,7 +67,7 @@
 
                 window.__alfaCoreDashboardThemeHandler = function () {
                     if (!dotnetRef) return;
-                    var currentTheme = document.documentElement.getAttribute('data-theme') || 'light';
+                    var currentTheme = document.documentElement.getAttribute('data-theme') || 'dark';
                     dotnetRef.invokeMethodAsync('OnDashboardThemeChanged', currentTheme);
                 };
 
