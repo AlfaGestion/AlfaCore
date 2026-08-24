@@ -200,6 +200,14 @@
                                 </div>
                                 <div class="wa-number-card__status">
                                     <AlfaTag Tone="AlfaTagTone.Success">Meta Cloud API</AlfaTag>
+                                    @if (IsConfiguredGlobalApiNumero(numero))
+                                    {
+                                        <AlfaTag Tone="AlfaTagTone.Neutral">API global</AlfaTag>
+                                    }
+                                    @if (!numero.Activo)
+                                    {
+                                        <AlfaTag Tone="AlfaTagTone.Warning">Inactivo visible por historial/asignación</AlfaTag>
+                                    }
                                     @if (numero.Usuarios.Count == 0)
                                     {
                                         <AlfaTag Tone="AlfaTagTone.Warning">Sin usuarios asignados</AlfaTag>
@@ -1792,14 +1800,19 @@
 
     /// <summary>
     /// La pestaña WhatsApp Business sólo lista cuentas activas -- "Cerrar sesión" pone Activo=false
-    /// (ver ClearWhatsAppWebPairingAsync) sin tocar la fila ni el historial. No es un filtro SQL: se
-    /// reutiliza GetWhatsAppNumeroAsync/GetWhatsAppNumeroByInstanceNameAsync (envío, recepción,
-    /// resolución de conversaciones históricas) tal cual, sin excluir nada -- esto es solo qué se
-    /// muestra en esta lista puntual.
+    /// (ver ClearWhatsAppWebPairingAsync) sin tocar la fila ni el historial. En Meta Cloud API, en
+    /// cambio, también mostramos números inactivos si todavía tienen usuarios asignados o coinciden
+    /// con la API global: pueden tener conversaciones históricas o recibir webhooks reales.
     /// </summary>
     // Criterio UI vigente: Business = Web/QR; API = Meta Cloud API por Phone Number ID.
     private IEnumerable<ConversacionWhatsAppNumeroDto> ActiveBusinessNumeros => _numeros.Where(n => n.Activo && IsWhatsAppWebManagedNumero(n));
-    private IEnumerable<ConversacionWhatsAppNumeroDto> WhatsAppApiNumeros => _numeros.Where(n => n.Activo && !IsWhatsAppWebManagedNumero(n));
+    private IEnumerable<ConversacionWhatsAppNumeroDto> WhatsAppApiNumeros
+        => _numeros
+            .Where(n => !IsWhatsAppWebManagedNumero(n) && ShouldShowApiNumero(n))
+            .OrderByDescending(n => IsConfiguredGlobalApiNumero(n))
+            .ThenByDescending(n => n.Activo)
+            .ThenByDescending(n => n.Usuarios.Count)
+            .ThenBy(n => n.Nombre);
     private ConversacionWhatsAppNumeroDto _nuevoNumero = new() { Activo = true };
     private HashSet<string> _administradores = new(StringComparer.OrdinalIgnoreCase);
     private string _anyDeskPath = string.Empty;
@@ -3405,7 +3418,15 @@
 
     private static bool IsWhatsAppWebManagedNumero(ConversacionWhatsAppNumeroDto numero)
     {
-        if ((numero.PhoneNumberId ?? string.Empty).Trim().StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase))
+        var phoneNumberId = (numero.PhoneNumberId ?? string.Empty).Trim();
+        if (phoneNumberId.Length > 0
+            && !phoneNumberId.StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(numero.WebInstanceName))
+        {
+            return false;
+        }
+
+        if (phoneNumberId.StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase))
             return true;
 
         if (numero.WebWorkerProcessId.HasValue
@@ -3427,6 +3448,16 @@
         return string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.PendingQr, StringComparison.OrdinalIgnoreCase)
             || string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase);
     }
+
+    private bool ShouldShowApiNumero(ConversacionWhatsAppNumeroDto numero)
+        => numero.Activo
+           || numero.Usuarios.Count > 0
+           || IsConfiguredGlobalApiNumero(numero);
+
+    private bool IsConfiguredGlobalApiNumero(ConversacionWhatsAppNumeroDto numero)
+        => !string.IsNullOrWhiteSpace(numero.PhoneNumberId)
+           && !string.IsNullOrWhiteSpace(_config.PhoneNumberId)
+           && string.Equals(numero.PhoneNumberId.Trim(), _config.PhoneNumberId.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// El estado de sesión manda sobre el último error: Baileys reporta "Stream Errored (restart

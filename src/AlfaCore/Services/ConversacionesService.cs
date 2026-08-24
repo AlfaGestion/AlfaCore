@@ -891,9 +891,9 @@ public sealed class ConversacionesService(
                         p.FechaHora_Grabacion
                     FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO p
                     WHERE p.IdConversacion = c.IdConversacion
-                      AND p.Usuario = @UsuarioActual
+                      AND p.Usuario = @UsuarioActual COLLATE Latin1_General_CI_AI
                     ORDER BY
-                        CASE WHEN p.Sistema = @SistemaActual THEN 0 ELSE 1 END,
+                        CASE WHEN p.Sistema = @SistemaActual COLLATE Latin1_General_CI_AI THEN 0 ELSE 1 END,
                         p.FechaHora_Grabacion DESC
                 ) pin
                 LEFT JOIN dbo.VT_CLIENTES cli
@@ -956,9 +956,9 @@ public sealed class ConversacionesService(
                         r.IdUltimoMensajeLeido
                     FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
                     WHERE r.IdConversacion = c.IdConversacion
-                      AND r.Usuario = @UsuarioActual
+                      AND r.Usuario = @UsuarioActual COLLATE Latin1_General_CI_AI
                     ORDER BY
-                        CASE WHEN r.Sistema = @SistemaActual THEN 0 ELSE 1 END,
+                        CASE WHEN r.Sistema = @SistemaActual COLLATE Latin1_General_CI_AI THEN 0 ELSE 1 END,
                         r.FechaHora_Modificacion DESC
                 ) lectura
                 OUTER APPLY (
@@ -1047,13 +1047,25 @@ public sealed class ConversacionesService(
                         c.IdNumeroWhatsApp IS NULL
                         OR EXISTS (
                             SELECT 1 FROM dbo.CONV_ADMINISTRADORES admConv
-                            WHERE admConv.Usuario = @UsuarioActual AND admConv.Sistema = @SistemaActual
+                            WHERE admConv.Usuario = @UsuarioActual COLLATE Latin1_General_CI_AI
+                              AND admConv.Sistema = @SistemaActual COLLATE Latin1_General_CI_AI
+                        )
+                        OR NOT EXISTS (
+                            SELECT 1 FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS numUsuAny
+                            WHERE numUsuAny.IdNumero = c.IdNumeroWhatsApp
                         )
                         OR EXISTS (
                             SELECT 1 FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS numUsu
                             WHERE numUsu.IdNumero = c.IdNumeroWhatsApp
-                              AND numUsu.Usuario = @UsuarioActual
-                              AND numUsu.Sistema = @SistemaActual
+                              AND numUsu.Usuario = @UsuarioActual COLLATE Latin1_General_CI_AI
+                              AND numUsu.Sistema = @SistemaActual COLLATE Latin1_General_CI_AI
+                        )
+                    )
+                    AND (
+                        @IdNumeroWhatsApp IS NULL
+                        OR (
+                            c.Canal = N'WHATSAPP'
+                            AND c.IdNumeroWhatsApp = @IdNumeroWhatsApp
                         )
                     )
                     AND (
@@ -1072,7 +1084,7 @@ public sealed class ConversacionesService(
                     AND (
                         @ClienteCodigo IS NULL
                         OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo
-                        OR contactoCuenta.Cuenta = @ClienteCodigo
+                        OR contactoCuenta.Cuenta = @ClienteCodigo COLLATE Latin1_General_CI_AI
                     )
                     AND (
                         @Search IS NULL
@@ -1102,11 +1114,11 @@ public sealed class ConversacionesService(
                             )
                         )
                     )
-                    AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual)
+                    AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual COLLATE Latin1_General_CI_AI)
                     AND (
                         @Modo = 'todas'
                         OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = ''))
-                        OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual)
+                        OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual COLLATE Latin1_General_CI_AI)
                         OR (@Modo = 'pendientes' AND ISNULL(e.EsCerrado, 0) = 0)
                         OR (@Modo = 'cerradas' AND ISNULL(e.EsCerrado, 0) = 1)
                     )
@@ -1244,6 +1256,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
             cmd.Parameters.AddWithValue("@UsuarioActual", usuarioActual);
             cmd.Parameters.AddWithValue("@SistemaActual", sistemaActual);
+            cmd.Parameters.AddWithValue("@IdNumeroWhatsApp", filters.IdNumeroWhatsApp.HasValue ? filters.IdNumeroWhatsApp.Value : DBNull.Value);
             cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
             cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
             cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
@@ -2232,17 +2245,12 @@ public sealed class ConversacionesService(
             }
             else if (isWhatsApp)
             {
-                var idNumeroWhatsAppParaEnvio = conversation.IdNumeroWhatsApp;
-                if (request.IdNumeroWhatsApp.HasValue && request.IdNumeroWhatsApp.Value > 0)
-                {
-                    await SetConversationWhatsAppNumeroCoreAsync(
-                        conversation.IdConversacion,
-                        request.IdNumeroWhatsApp.Value,
-                        request.UsuarioAccion,
-                        request.SistemaAccion,
-                        token);
-                    idNumeroWhatsAppParaEnvio = request.IdNumeroWhatsApp.Value;
-                }
+                var usarApiMetaPredeterminada = request.UsarApiMetaPredeterminada;
+                var idNumeroWhatsAppParaEnvio = usarApiMetaPredeterminada
+                    ? null
+                    : request.IdNumeroWhatsApp is > 0
+                        ? request.IdNumeroWhatsApp
+                        : conversation.IdNumeroWhatsApp;
 
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
 
@@ -2266,7 +2274,9 @@ public sealed class ConversacionesService(
                 // combo para números API -- si ese campo de la conversación estaba vacío (ej. una
                 // conversación sin ese dato cargado), el mensaje se mandaba silenciosamente con lo
                 // que hubiera en la config global, sin respetar el número elegido.
-                var phoneNumberIdParaEnvio = FirstNonEmpty(numeroWeb?.PhoneNumberId, conversation.PhoneNumberId);
+                var phoneNumberIdParaEnvio = usarApiMetaPredeterminada
+                    ? string.Empty
+                    : FirstNonEmpty(numeroWeb?.PhoneNumberId, conversation.PhoneNumberId);
                 if (!string.IsNullOrWhiteSpace(phoneNumberIdParaEnvio))
                     whatsAppConfig.PhoneNumberId = phoneNumberIdParaEnvio;
 
@@ -9813,6 +9823,11 @@ public sealed class ConversacionesService(
                 IdNumeroWhatsApp
             FROM dbo.CONV_CONVERSACIONES
             WHERE Canal = N'WHATSAPP'
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.CONV_MENSAJES msg
+                    WHERE msg.IdConversacion = CONV_CONVERSACIONES.IdConversacion
+                  )
             ORDER BY IdConversacion ASC
             """;
 
@@ -9874,6 +9889,11 @@ public sealed class ConversacionesService(
             FROM dbo.CONV_CONVERSACIONES
             WHERE Canal = N'WHATSAPP'
               AND IdConversacion <> @CanonicalId
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.CONV_MENSAJES msg
+                    WHERE msg.IdConversacion = CONV_CONVERSACIONES.IdConversacion
+                  )
               AND (
                     (@IdNumeroWhatsApp IS NULL AND IdNumeroWhatsApp IS NULL)
                     OR IdNumeroWhatsApp = @IdNumeroWhatsApp

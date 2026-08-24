@@ -6,6 +6,7 @@ using QRCoder;
 using System.Globalization;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace AlfaCore.Services;
@@ -1563,6 +1564,82 @@ public sealed class ConversacionesConfigService(
         }, "No se pudieron guardar los administradores de conversaciones.", ct);
     }
 
+    public Task<ConversacionesInboxPreferenceDto> GetInboxPreferenceAsync(string userName, string? sistema, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetInboxPreference", async token =>
+        {
+            var key = BuildInboxPreferenceKey(userName, sistema);
+            if (string.IsNullOrWhiteSpace(key))
+                return new ConversacionesInboxPreferenceDto();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+
+            var sql = $"""
+                SELECT TOP (1)
+                    ISNULL(VALOR, N''),
+                    ISNULL({detailColumn}, N'')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Clave", key);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            if (!await rd.ReadAsync(token))
+                return new ConversacionesInboxPreferenceDto();
+
+            var json = ResolveStoredValue(GetString(rd, 0), GetString(rd, 1));
+            if (string.IsNullOrWhiteSpace(json))
+                return new ConversacionesInboxPreferenceDto();
+
+            try
+            {
+                return NormalizeInboxPreference(JsonSerializer.Deserialize<ConversacionesInboxPreferenceDto>(json));
+            }
+            catch
+            {
+                return new ConversacionesInboxPreferenceDto();
+            }
+        }, "No se pudo cargar la preferencia de bandeja de conversaciones.", ct);
+
+    public Task SaveInboxPreferenceAsync(string userName, string? sistema, ConversacionesInboxPreferenceDto preference, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SaveInboxPreference", async token =>
+        {
+            var key = BuildInboxPreferenceKey(userName, sistema);
+            if (string.IsNullOrWhiteSpace(key))
+                return true;
+
+            var normalized = NormalizeInboxPreference(preference);
+            var json = JsonSerializer.Serialize(normalized);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+
+            var sql = $"""
+                UPDATE dbo.TA_CONFIGURACION
+                SET VALOR = N'',
+                    {detailColumn} = @ValorAux,
+                    GRUPO = @Grupo,
+                    FechaHora_Modificacion = GETDATE()
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+
+                IF @@ROWCOUNT = 0
+                BEGIN
+                    INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO, FechaHora_Grabacion, FechaHora_Modificacion)
+                    VALUES (@Clave, N'', @ValorAux, @Grupo, GETDATE(), GETDATE());
+                END;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Clave", key);
+            cmd.Parameters.AddWithValue("@ValorAux", json);
+            cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+            await cmd.ExecuteNonQueryAsync(token);
+            return true;
+        }, "No se pudo guardar la preferencia de bandeja de conversaciones.", ct);
+
     public Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "TestAlfaKnowledgeConnection", async token =>
         {
@@ -1928,6 +2005,40 @@ public sealed class ConversacionesConfigService(
             ConversacionWhatsAppWebSessionStatuses.Connected => ConversacionWhatsAppWebSessionStatuses.Connected,
             _ => ConversacionWhatsAppWebSessionStatuses.Disconnected
         };
+
+    private static ConversacionesInboxPreferenceDto NormalizeInboxPreference(ConversacionesInboxPreferenceDto? preference)
+    {
+        var canal = (preference?.Canal ?? string.Empty).Trim().ToUpperInvariant();
+        canal = canal switch
+        {
+            "WHATSAPP" => "WHATSAPP",
+            "INSTAGRAM" => "INSTAGRAM",
+            "FACEBOOK" => "FACEBOOK",
+            "MERCADOLIBRE" => "MERCADOLIBRE",
+            "INTERNO" => "INTERNO",
+            _ => "SOCIAL"
+        };
+
+        return new ConversacionesInboxPreferenceDto
+        {
+            Canal = canal,
+            IdNumeroWhatsApp = canal == "WHATSAPP" && preference?.IdNumeroWhatsApp is > 0
+                ? preference.IdNumeroWhatsApp
+                : null
+        };
+    }
+
+    private static string BuildInboxPreferenceKey(string userName, string? sistema)
+    {
+        var normalizedUser = (userName ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedUser))
+            return string.Empty;
+
+        var normalizedSystem = (sistema ?? string.Empty).Trim().ToUpperInvariant();
+        var hashInput = $"{normalizedSystem}|{normalizedUser}";
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(hashInput)));
+        return $"USUPREF-CONV-INBOX-{hash[..24]}";
+    }
 
     private static ConversacionInstagramConfigDto Normalize(ConversacionInstagramConfigDto config)
     {

@@ -22,6 +22,7 @@ public sealed class ConversacionesInboxFilters
     /// <summary>Canal exacto (WHATSAPP/INSTAGRAM/FACEBOOK/MERCADOLIBRE/INTERNO), o "SOCIAL" como valor
     /// especial que trae WhatsApp+Instagram+Facebook combinados (ver GetInboxAsync).</summary>
     public string? Canal { get; set; }
+    public int? IdNumeroWhatsApp { get; set; }
     public string? UsuarioActual { get; set; }
     public string? SistemaActual { get; set; }
     public DateTime? Desde { get; set; }
@@ -407,10 +408,17 @@ public sealed class ConversacionSendMessageRequest
     public string Texto { get; set; } = string.Empty;
     public string MessageType { get; set; } = "TEXT";
     public int? IdNumeroWhatsApp { get; set; }
+    public bool UsarApiMetaPredeterminada { get; set; }
     public string? WhatsAppReplyToMessageId { get; set; }
     public string? IdTecnicoAutor { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
+}
+
+public sealed class ConversacionesInboxPreferenceDto
+{
+    public string Canal { get; set; } = "SOCIAL";
+    public int? IdNumeroWhatsApp { get; set; }
 }
 
 public sealed class ConversacionWhatsAppNumeroRequest
