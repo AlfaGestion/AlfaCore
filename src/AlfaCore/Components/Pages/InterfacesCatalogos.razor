@@ -29,6 +29,8 @@
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
+@inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
@@ -2061,7 +2063,7 @@
         }
 
         _editingIdInsert = result.Value.IdInsert;
-        SetCatalogUrls(result.Value.IdInsert);
+        await SetCatalogUrlsAsync(result.Value.IdInsert, _nombre);
         _feedback = AppUiMessage.Success("Catálogo publicado", result.Value.Mensaje);
         UpdatePageHeader();
         await BuscarCatalogosAsync();
@@ -2162,6 +2164,45 @@
             _catalogosPage.Total,
             _catalogosPage.PageNumber,
             _catalogosPage.PageSize);
+
+        await ResolveGridPublicUrlsAsync();
+    }
+
+    private readonly Dictionary<int, string> _catalogUrls = new();
+
+    /// <summary>
+    /// Resuelve (o genera) en un solo lote el link público seguro por token de cada catálogo de la
+    /// página actual — mismo ALFA_PUBLIC_LINK y mismo servicio que usa el panel de detalle
+    /// (SetCatalogUrlsAsync). Los botones "Abrir"/"Copiar enlace" de la grilla leen de acá.
+    /// </summary>
+    private async Task ResolveGridPublicUrlsAsync()
+    {
+        _catalogUrls.Clear();
+
+        if (_catalogosPage is null || _catalogosPage.Items.Count == 0)
+            return;
+
+        var ownerIdWeb = GetPublicLinkOwnerIdWeb();
+        var ownerIdBase = SessionSvc.GetActiveSession()?.BaseId ?? idbase;
+
+        if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(ownerIdWeb) || ownerIdBase is not > 0)
+            return;
+
+        var referencias = _catalogosPage.Items
+            .Select(i => (IdReferencia: i.IdInsert, Nombre: (string?)i.Nombre))
+            .ToArray();
+
+        try
+        {
+            var links = await PublicLinkSvc.GetOrCreateManyAsync(ownerIdWeb, ownerIdBase.Value, PublicLinkTipos.Catalogo, referencias, _disposeCts.Token);
+            foreach (var (idInsert, link) in links)
+                _catalogUrls[idInsert] = Nav.ToAbsoluteUri($"/{Uri.EscapeDataString(ownerIdWeb)}/catalogo/{link.RouteSegment}").ToString();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "InterfacesCatalogos: no se pudieron generar los links públicos seguros de la grilla en lote; los botones usan el esquema anterior.");
+            _catalogUrls.Clear();
+        }
     }
 
     private async Task<T> TraceTaskAsync<T>(int traceId, string origin, string step, Func<Task<T>> factory)
@@ -2239,10 +2280,9 @@
             Precio = x.Precio ?? 0m,
             PrecioOferta = x.PrecioOferta
         }));
-        SetCatalogUrls(detail.IdInsert);
+        await SetCatalogUrlsAsync(detail.IdInsert, detail.Nombre);
         _feedback = AppUiMessage.Success("Catálogo cargado", $"Se abrió el catálogo #{detail.IdInsert} para editarlo.");
         UpdatePageHeader();
-        await Task.CompletedTask;
     }
 
     private async Task FinalizarCatalogoAsync(int idInsert)
@@ -2439,7 +2479,9 @@
             : "Catálogo predeterminado";
 
     private string GetPublicUrl(int idInsert)
-        => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(Nav, BuildCatalogRelativeUrl(idInsert));
+        => _catalogUrls.TryGetValue(idInsert, out var url)
+            ? url
+            : AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(Nav, BuildCatalogRelativeUrl(idInsert));
 
     private string GetCarritoUrl(int idInsert)
         => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
@@ -2452,10 +2494,44 @@
                 AppUserSession.CurrentUser?.IdWeb,
                 SessionSvc.GetActiveSession()?.BaseId));
 
-    private void SetCatalogUrls(int idInsert)
+    private string? GetPublicLinkOwnerIdWeb()
+        => AppUserSession.CurrentUser?.IdWeb is { Length: > 0 } fromUser ? fromUser : idweb;
+
+    /// <summary>
+    /// Panel "Enlaces del catálogo": genera (o reutiliza) el link público seguro por token para
+    /// este catálogo y su carrito. Reemplaza los links legacy /{idweb}/{idbase}/catalogo|carrito/
+    /// {idInsert} — el token nunca revela IdBase. Si por algún motivo no hay IdWeb/IdBase
+    /// resueltos (ej. legacy on-prem sin ALFA_CENTRAL), cae al esquema anterior para no romper el
+    /// botón de compartir.
+    /// </summary>
+    private async Task SetCatalogUrlsAsync(int idInsert, string? nombreCatalogo)
     {
-        _urlPublica = GetPublicUrl(idInsert);
-        _urlCarrito = GetCarritoUrl(idInsert);
+        var ownerIdWeb = GetPublicLinkOwnerIdWeb();
+        var ownerIdBase = SessionSvc.GetActiveSession()?.BaseId ?? idbase;
+
+        if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(ownerIdWeb) || ownerIdBase is not > 0)
+        {
+            _urlPublica = GetPublicUrl(idInsert);
+            _urlCarrito = GetCarritoUrl(idInsert);
+            return;
+        }
+
+        try
+        {
+            var catalogoLink = await PublicLinkSvc.GetOrCreateAsync(
+                ownerIdWeb, ownerIdBase.Value, PublicLinkTipos.Catalogo, idInsert, nombreCatalogo, _disposeCts.Token);
+            var carritoLink = await PublicLinkSvc.GetOrCreateAsync(
+                ownerIdWeb, ownerIdBase.Value, PublicLinkTipos.Carrito, idInsert, nombreCatalogo, _disposeCts.Token);
+
+            _urlPublica = Nav.ToAbsoluteUri($"/{Uri.EscapeDataString(ownerIdWeb)}/catalogo/{catalogoLink.RouteSegment}").ToString();
+            _urlCarrito = Nav.ToAbsoluteUri($"/{Uri.EscapeDataString(ownerIdWeb)}/carrito/{carritoLink.RouteSegment}").ToString();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "InterfacesCatalogos: no se pudo generar el link público seguro para el catálogo #{IdInsert}; se usa el esquema anterior.", idInsert);
+            _urlPublica = GetPublicUrl(idInsert);
+            _urlCarrito = GetCarritoUrl(idInsert);
+        }
     }
 
     private string BuildCatalogRelativeUrl(int idInsert)

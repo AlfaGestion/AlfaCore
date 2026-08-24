@@ -1,13 +1,16 @@
 @page "/catalogo/{IdInsert:int}"
 @page "/{idweb}/{idbase:int}/catalogo/{IdInsert:int}"
+@page "/{idweb}/catalogo/{PublicToken}"
 @layout AlfaCore.Components.Layout.PublicLayout
 @inherits SaaSRoutePageBase
 @using AlfaCore.Models
 @using AlfaCore.Components.Shared.AlfaDesign
 @inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
+@inject AlfaCore.Services.ICarritoComprasService CarritoComprasSvc
 @inject AlfaCore.Services.ICatalogosClienteSessionService CatalogoClienteSession
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ISessionService SessionSvc
@@ -18,7 +21,13 @@
 <PageTitle>Catálogo público | AlfaCore</PageTitle>
 
 <section class="@(Embedded ? "catalogo-publico-page catalogo-publico-page--embedded" : "page-grid catalogo-publico-page")">
-    @if (!Embedded)
+    @if (_redirecting)
+    {
+        <div class="catalogo-publico-loading-state">
+            <p class="text-muted">Redirigiendo al enlace seguro...</p>
+        </div>
+    }
+    else if (!Embedded)
     {
         <section class="catalogo-publico-hero panel-card catalogo-publico-hero--sticky">
             <div class="catalogo-publico-hero__brand">
@@ -289,11 +298,16 @@
 
     [Parameter] public int IdInsert { get; set; }
     [Parameter] public bool Embedded { get; set; }
+    [Parameter] public string? PublicToken { get; set; }
+
+    /// <summary>Segmento "slug-token" resuelto cuando se entró por /{idweb}/catalogo/{PublicToken}; null en la ruta legacy por idbase/IdInsert.</summary>
+    private string? _publicLinkRouteSegment;
 
     private CatalogosCatalogoDetalleDto? _catalogo;
     private CatalogosPublicIdentityDto _branding = new();
     private AppUiMessage? _catalogFeedback;
     private bool _loading = true;
+    private bool _redirecting;
     private bool _sessionBusy;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private bool _restoreAttempted;
@@ -323,6 +337,8 @@
     {
         CatalogoClienteSession.StateChanged += OnClientSessionStateChanged;
         await EnsureRouteSessionAsync();
+        if (_redirecting)
+            return;
         await LoadImageSettingsAsync();
         await LoadPublicIdentityAsync();
         await RefreshCatalogAsync();
@@ -331,6 +347,8 @@
     protected override async Task OnParametersSetAsync()
     {
         await EnsureRouteSessionAsync();
+        if (_redirecting)
+            return;
         await LoadPublicIdentityAsync();
         await EnsureCatalogStateAsync();
     }
@@ -394,7 +412,7 @@
     private bool IsAuthenticatedForCurrentCatalog
         => CatalogoClienteSession.CurrentClient is { } client
            && string.Equals(client.IdWeb, NormalizeRouteSegment(idweb), StringComparison.OrdinalIgnoreCase)
-           && client.IdBase == (idbase ?? 0);
+           && client.IdBase == (GetEffectiveIdBase() ?? 0);
 
     private async Task EnsureCatalogStateAsync()
     {
@@ -419,14 +437,40 @@
 
     private async Task EnsureRouteSessionAsync()
     {
+        _redirecting = false;
+
+        if (!string.IsNullOrWhiteSpace(PublicToken))
+        {
+            await EnsurePublicTokenSessionAsync();
+            return;
+        }
+
+        if (idbase is > 0 && !string.IsNullOrWhiteSpace(idweb))
+        {
+            await RedirectLegacyPublicRouteAsync();
+            return;
+        }
+
+        var activeSessionBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+        if (idbase is not > 0 && activeSessionBaseId <= 0)
+        {
+            _routeSessionError = true;
+            _catalogFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Enlace no disponible",
+                Message = "Este enlace no está disponible."
+            };
+            return;
+        }
+
         if (idbase is > 0)
         {
             _effectiveIdBase = idbase;
         }
         else
         {
-            var sessionBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
-            _effectiveIdBase = sessionBaseId > 0 ? sessionBaseId : null;
+            _effectiveIdBase = activeSessionBaseId > 0 ? activeSessionBaseId : null;
         }
 
         if (!AppMode.IsSaaSMode || !idbase.HasValue)
@@ -471,6 +515,170 @@
         _routeSessionError = false;
     }
 
+    /// <summary>
+    /// Las URLs públicas legacy /{idweb}/{idbase}/catalogo/{id} no deben renderizar el recurso
+    /// directamente. Se resuelven o crean en ALFA_PUBLIC_LINK y se redirige al token seguro.
+    /// </summary>
+    private async Task RedirectLegacyPublicRouteAsync()
+    {
+        if (string.IsNullOrWhiteSpace(idweb) || idbase is not > 0)
+        {
+            _routeSessionError = true;
+            _catalogFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Enlace no disponible",
+                Message = "Este enlace no está disponible."
+            };
+            return;
+        }
+
+        try
+        {
+            var routeBase = await CentralBasesSvc.GetByIdAsync(idbase.Value);
+            if (routeBase is null)
+            {
+                _routeSessionError = true;
+                _catalogFeedback = new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Warning,
+                    Title = "Base no disponible",
+                    Message = "No se pudo resolver la base asociada a este catálogo."
+                };
+                return;
+            }
+
+            SessionSvc.SetWebhookOverride(new SessionDto
+            {
+                Id = Guid.Parse($"00000000-0000-0000-0000-{idbase.Value:000000000000}"),
+                BaseId = routeBase.IdBase,
+                Nombre = routeBase.Nombre,
+                Servidor = routeBase.DbServer,
+                BaseDatos = routeBase.DbName,
+                Usuario = routeBase.DbUser,
+                Password = routeBase.DbPassword,
+                TrustServerCertificate = true,
+                Activa = true
+            });
+
+            try
+            {
+                await Js.InvokeVoidAsync("alfaCoreSqlSession.setActive", Guid.Parse($"00000000-0000-0000-0000-{idbase.Value:000000000000}").ToString());
+            }
+            catch
+            {
+                // El override en memoria ya quedó activo; el storage solo acompaña la navegación.
+            }
+
+            var catalogoPublicado = IdInsert <= 0
+                ? await CatalogosSvc.GetCatalogoAsync(0)
+                : await CatalogosSvc.GetCatalogoPublicoAsync(IdInsert);
+            if (catalogoPublicado is null)
+            {
+                _routeSessionError = true;
+                _catalogFeedback = new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Warning,
+                    Title = "Catálogo no disponible",
+                    Message = "Este catálogo no está disponible para acceso público."
+                };
+                return;
+            }
+
+            var catalogoIdInsert = catalogoPublicado.IdInsert;
+
+            var existing = await PublicLinkSvc.TryGetExistingAsync(idweb, idbase.Value, PublicLinkTipos.Catalogo, catalogoIdInsert);
+            if (existing is not null)
+            {
+                _publicLinkRouteSegment = existing.RouteSegment;
+                _redirecting = true;
+                Nav.NavigateTo($"/{Uri.EscapeDataString(idweb)}/catalogo/{existing.RouteSegment}", replace: true);
+                return;
+            }
+
+            var link = await PublicLinkSvc.GetOrCreateAsync(idweb, idbase.Value, PublicLinkTipos.Catalogo, catalogoIdInsert, null);
+            _publicLinkRouteSegment = link.RouteSegment;
+            _redirecting = true;
+            Nav.NavigateTo($"/{Uri.EscapeDataString(idweb)}/catalogo/{link.RouteSegment}", replace: true);
+        }
+        catch
+        {
+            _routeSessionError = true;
+            _catalogFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Enlace no disponible",
+                Message = "No se pudo resolver el enlace seguro de este catálogo."
+            };
+        }
+    }
+
+    /// <summary>
+    /// /{idweb}/catalogo/{PublicToken}: el token (nunca el slug) es la única fuente de verdad para
+    /// resolver IdBase + IdInsert. Se valida contra ALFA_CENTRAL antes de tocar cualquier base de
+    /// cliente; si el token no existe, no es de tipo CATALOGO, no coincide con este idweb, está
+    /// inactivo o venció, se responde igual que "catálogo no disponible" — sin distinguir el
+    /// motivo, para no confirmar que la base existe.
+    /// </summary>
+    private async Task EnsurePublicTokenSessionAsync()
+    {
+        var link = await PublicLinkSvc.ResolveAsync(idweb ?? string.Empty, PublicLinkTipos.Catalogo, PublicToken ?? string.Empty);
+        if (link is null)
+        {
+            _routeSessionError = true;
+            _effectiveIdBase = null;
+            _catalogFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Enlace no disponible",
+                Message = "Este enlace no es válido o ya no está disponible."
+            };
+            return;
+        }
+
+        var routeBase = await CentralBasesSvc.GetByIdAsync(link.IdBase);
+        if (routeBase is null)
+        {
+            _routeSessionError = true;
+            _effectiveIdBase = null;
+            _catalogFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Enlace no disponible",
+                Message = "Este enlace no es válido o ya no está disponible."
+            };
+            return;
+        }
+
+        _effectiveIdBase = link.IdBase;
+        _publicLinkRouteSegment = link.RouteSegment;
+        IdInsert = link.IdReferencia;
+
+        SessionSvc.SetWebhookOverride(new SessionDto
+        {
+            Id = Guid.Parse($"00000000-0000-0000-0000-{link.IdBase:000000000000}"),
+            BaseId = routeBase.IdBase,
+            Nombre = routeBase.Nombre,
+            Servidor = routeBase.DbServer,
+            BaseDatos = routeBase.DbName,
+            Usuario = routeBase.DbUser,
+            Password = routeBase.DbPassword,
+            TrustServerCertificate = true,
+            Activa = true
+        });
+
+        try
+        {
+            await Js.InvokeVoidAsync("alfaCoreSqlSession.setActive", Guid.Parse($"00000000-0000-0000-0000-{link.IdBase:000000000000}").ToString());
+        }
+        catch
+        {
+            // El override en memoria ya quedó activo; el storage solo acompaña la navegación.
+        }
+
+        _routeSessionError = false;
+    }
+
     private async Task RefreshCatalogAsync()
     {
         _loading = true;
@@ -484,7 +692,9 @@
 
         _catalogFeedback = null;
 
-        var result = await UiOps.RunAsync(() => CatalogosSvc.GetCatalogoPublicoAsync(IdInsert), "No se pudo cargar el catálogo público.");
+        var result = await UiOps.RunAsync(
+            () => IdInsert <= 0 ? CatalogosSvc.GetCatalogoAsync(0) : CatalogosSvc.GetCatalogoPublicoAsync(IdInsert),
+            "No se pudo cargar el catálogo público.");
         if (result.Success)
         {
             _catalogo = result.Value;
@@ -685,6 +895,12 @@
 
     private string GetPdfExportUrl()
     {
+        if (!string.IsNullOrWhiteSpace(_publicLinkRouteSegment) && !string.IsNullOrWhiteSpace(idweb))
+        {
+            var publicRelative = $"/api/catalogos/public/{Uri.EscapeDataString(idweb)}/{Uri.EscapeDataString(_publicLinkRouteSegment)}/pdf";
+            return $"{publicRelative}?vista={Uri.EscapeDataString(_viewMode == CatalogoViewMode.Cuadricula ? "cuadricula" : "lista")}";
+        }
+
         var query = new List<string>();
         if (!string.IsNullOrWhiteSpace(idweb))
             query.Add($"idweb={Uri.EscapeDataString(idweb)}");
@@ -701,13 +917,21 @@
     }
 
     private string BuildCatalogRelativeUrl()
-        => AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCatalogUrl(
+    {
+        // Si se entró por el link seguro (token), los links propios de la página (logo, PDF,
+        // "volver al catálogo") tienen que seguir apuntando al token — nunca reconstruir la URL
+        // legacy con idbase, que es justamente lo que este esquema evita exponer.
+        if (!string.IsNullOrWhiteSpace(_publicLinkRouteSegment) && !string.IsNullOrWhiteSpace(idweb))
+            return $"/{Uri.EscapeDataString(idweb)}/catalogo/{_publicLinkRouteSegment}";
+
+        return AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCatalogUrl(
             IdInsert,
             idweb,
             idbase,
             Nav.Uri,
             CatalogoClienteSession.CurrentClient?.IdWeb,
             SessionSvc.GetActiveSession()?.BaseId);
+    }
 
     private string VigenciaTexto()
     {

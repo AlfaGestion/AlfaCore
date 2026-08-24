@@ -7,7 +7,7 @@ public interface ILegacyBaseUserSessionService
 {
     string? CurrentToken { get; }
     Task<AppUserSessionInfo> LoginAsync(string userName, string password, CancellationToken ct = default);
-    Task<AppUserSessionInfo> LoginAsync(string userName, string password, string connectionString, CancellationToken ct = default);
+    Task<AppUserSessionInfo> LoginAsync(string userName, string password, string connectionString, Guid? sessionId = null, CancellationToken ct = default);
     Task<AppUserSessionInfo?> ResolveByCentralLoginAsync(string loginCentral, CancellationToken ct = default);
     Task<IReadOnlyList<UsuarioSistemaDto>> GetLoginUsersAsync(CancellationToken ct = default);
 }
@@ -24,9 +24,9 @@ public sealed class LegacyBaseUserSessionService(
     public string? CurrentToken => _sessionToken;
 
     public async Task<AppUserSessionInfo> LoginAsync(string userName, string password, CancellationToken ct = default)
-        => await LoginAsync(userName, password, GetActiveConnectionString(), ct);
+        => await LoginAsync(userName, password, GetActiveConnectionString(), sessionService.GetActiveSession()?.Id, ct);
 
-    public async Task<AppUserSessionInfo> LoginAsync(string userName, string password, string connectionString, CancellationToken ct = default)
+    public async Task<AppUserSessionInfo> LoginAsync(string userName, string password, string connectionString, Guid? sessionId = null, CancellationToken ct = default)
     {
         try
         {
@@ -69,7 +69,8 @@ public sealed class LegacyBaseUserSessionService(
                 CentralLogin = row.Nombre,
                 SystemCode = row.Sistema,
                 LoginAt = DateTime.Now,
-                RequiresInternalLogin = false
+                RequiresInternalLogin = false,
+                AuthorizedSessionId = sessionId
             };
 
             _sessionToken = sessionStore.Store(_currentUser);
@@ -149,7 +150,8 @@ public sealed class LegacyBaseUserSessionService(
                 CentralLogin = loginCentral.Trim(),
                 SystemCode = row.Sistema,
                 LoginAt = DateTime.Now,
-                RequiresInternalLogin = false
+                RequiresInternalLogin = false,
+                AuthorizedSessionId = sessionService.GetActiveSession()?.Id
             };
         }
         catch (Exception ex)

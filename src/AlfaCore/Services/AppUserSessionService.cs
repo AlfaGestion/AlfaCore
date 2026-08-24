@@ -66,7 +66,8 @@ public sealed class AppUserSessionService(
             RazonSocial = baseInfo?.RazonSocial ?? internalUser.RazonSocial,
             IdWeb = baseInfo?.IdWeb ?? internalUser.IdWeb,
             SuperAdmin = baseInfo?.SuperAdmin ?? internalUser.SuperAdmin,
-            RequiresInternalLogin = false
+            RequiresInternalLogin = false,
+            AuthorizedSessionId = internalUser.AuthorizedSessionId
         };
 
         if (_sessionToken is not null)
@@ -75,6 +76,42 @@ public sealed class AppUserSessionService(
             _sessionToken = sessionStore.Store(_currentUser);
 
         SyncAuditActor();
+        StateChanged?.Invoke();
+    }
+
+    public bool IsAuthorizedForSession(Guid? activeSessionId)
+        => _currentUser is { RequiresInternalLogin: false }
+           && activeSessionId is not null
+           && _currentUser.AuthorizedSessionId == activeSessionId;
+
+    public void EnsureAuthorizedForSession(Guid? activeSessionId)
+    {
+        if (_currentUser is null || _currentUser.RequiresInternalLogin)
+            return;
+
+        if (activeSessionId is not null && _currentUser.AuthorizedSessionId == activeSessionId)
+            return;
+
+        _currentUser = new AppUserSessionInfo
+        {
+            UserName = _currentUser.UserName,
+            Email = _currentUser.Email,
+            CentralLogin = _currentUser.CentralLogin,
+            SystemCode = _currentUser.SystemCode,
+            LoginAt = _currentUser.LoginAt,
+            SqlSessionId = _currentUser.SqlSessionId,
+            SqlSessionName = _currentUser.SqlSessionName,
+            IdCliente = _currentUser.IdCliente,
+            RazonSocial = _currentUser.RazonSocial,
+            IdWeb = _currentUser.IdWeb,
+            SuperAdmin = _currentUser.SuperAdmin,
+            RequiresInternalLogin = true,
+            AuthorizedSessionId = null
+        };
+
+        if (_sessionToken is not null)
+            sessionStore.Upsert(_sessionToken, _currentUser);
+
         StateChanged?.Invoke();
     }
 
@@ -121,7 +158,8 @@ public sealed class AppUserSessionService(
             RazonSocial = _currentUser.RazonSocial,
             IdWeb = _currentUser.IdWeb,
             SuperAdmin = _currentUser.SuperAdmin,
-            RequiresInternalLogin = _currentUser.RequiresInternalLogin
+            RequiresInternalLogin = _currentUser.RequiresInternalLogin,
+            AuthorizedSessionId = _currentUser.AuthorizedSessionId
         };
 
         if (IsSameUser(_currentUser, syncedUser))
@@ -148,7 +186,8 @@ public sealed class AppUserSessionService(
            && string.Equals(left.RazonSocial, right.RazonSocial, StringComparison.Ordinal)
            && string.Equals(left.IdWeb, right.IdWeb, StringComparison.Ordinal)
            && left.SuperAdmin == right.SuperAdmin
-           && left.RequiresInternalLogin == right.RequiresInternalLogin;
+           && left.RequiresInternalLogin == right.RequiresInternalLogin
+           && left.AuthorizedSessionId == right.AuthorizedSessionId;
 
     public string GetCurrentUserName(string fallback = "")
         => _currentUser?.UserName ?? fallback;

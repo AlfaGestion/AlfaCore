@@ -128,6 +128,7 @@ public class Program
         builder.Services.AddScoped<IPasswordVerifier, PlainTextPasswordVerifier>();
         builder.Services.AddScoped<ICentralClientesService, CentralClientesService>();
         builder.Services.AddScoped<ICentralBasesService, CentralBasesService>();
+        builder.Services.AddScoped<ICentralPublicLinkService, CentralPublicLinkService>();
         builder.Services.AddScoped<ICentralBackupControlService, CentralBackupControlService>();
         builder.Services.AddScoped<ICentralUsersService, CentralUsersService>();
         builder.Services.AddScoped<ICentralAdminService, CentralAdminService>();
@@ -458,6 +459,9 @@ public class Program
             return Results.File(imagen.RutaCompleta, imagen.MimeType);
         }).AllowAnonymous();
 
+        // Endpoint legacy: se mantiene por compatibilidad, pero redirige al link público seguro
+        // de ALFA_PUBLIC_LINK. Así no se sirve el PDF directamente con IdBase/IdInsert
+        // predecibles; si no se puede resolver el link seguro, se responde 404.
         app.MapGet("/api/catalogos/{idInsert:int}/pdf", async (
             int idInsert,
             string? idweb,
@@ -467,42 +471,81 @@ public class Program
             IPuntoVentaService puntoVentaSvc,
             ICatalogoPublicoPdfService pdfSvc,
             ICentralBasesService centralBasesSvc,
+            ICentralPublicLinkService publicLinkSvc,
             ISessionService sessionSvc,
             HttpContext httpContext,
             CancellationToken ct) =>
         {
             var resolvedBaseId = idbase ?? ResolveSqlSessionBaseId(httpContext.Request.Cookies["AlfaCore.SqlSessionId"]);
-            if (resolvedBaseId is > 0)
-            {
-                var routeBase = await centralBasesSvc.GetByIdAsync(resolvedBaseId.Value, ct);
-                if (routeBase is not null)
-                {
-                    sessionSvc.SetWebhookOverride(new SessionDto
-                    {
-                        Id = Guid.Parse($"00000000-0000-0000-0000-{routeBase.IdBase:000000000000}"),
-                        BaseId = routeBase.IdBase,
-                        Nombre = routeBase.Nombre,
-                        Servidor = routeBase.DbServer,
-                        BaseDatos = routeBase.DbName,
-                        Usuario = routeBase.DbUser,
-                        Password = routeBase.DbPassword,
-                        TrustServerCertificate = true,
-                        Activa = true
-                    });
-                }
-            }
-
-            var catalogo = await catalogosSvc.GetCatalogoPublicoAsync(idInsert, ct);
-            if (catalogo is null)
+            if (resolvedBaseId is not > 0)
                 return Results.NotFound();
 
-            var branding = await catalogosSvc.GetPublicIdentityAsync(idweb, ct);
-            var settings = await puntoVentaSvc.GetSettingsAsync(ct);
+            var routeBase = await centralBasesSvc.GetByIdAsync(resolvedBaseId.Value, ct);
+            if (routeBase is null)
+                return Results.NotFound();
 
-            var esCuadricula = string.Equals(vista, "cuadricula", StringComparison.OrdinalIgnoreCase);
-            var pdfBytes = await pdfSvc.GenerarPdfAsync(catalogo, branding, idweb, settings.FtpCodigoCta, resolvedBaseId, esCuadricula, ct);
+            sessionSvc.SetWebhookOverride(new SessionDto
+            {
+                Id = Guid.Parse($"00000000-0000-0000-0000-{routeBase.IdBase:000000000000}"),
+                BaseId = routeBase.IdBase,
+                Nombre = routeBase.Nombre,
+                Servidor = routeBase.DbServer,
+                BaseDatos = routeBase.DbName,
+                Usuario = routeBase.DbUser,
+                Password = routeBase.DbPassword,
+                TrustServerCertificate = true,
+                Activa = true
+            });
 
-            return Results.File(pdfBytes, "application/pdf", $"catalogo-{idInsert}.pdf");
+            if (string.IsNullOrWhiteSpace(idweb))
+                return await GenerarPdfCatalogoAsync(idInsert, idweb, vista, resolvedBaseId, catalogosSvc, puntoVentaSvc, pdfSvc, ct);
+
+            var link = await publicLinkSvc.GetOrCreateAsync(idweb, routeBase.IdBase, PublicLinkTipos.Catalogo, idInsert, null, ct);
+            var target = $"/api/catalogos/public/{Uri.EscapeDataString(idweb)}/{Uri.EscapeDataString(link.RouteSegment)}/pdf";
+            if (!string.IsNullOrWhiteSpace(vista))
+                target += $"?vista={Uri.EscapeDataString(vista)}";
+
+            return Results.Redirect(target);
+        }).AllowAnonymous();
+
+        // Ruta segura: el token (ALFA_PUBLIC_LINK, Tipo=CATALOGO) es la única fuente de verdad para
+        // resolver IdBase/IdReferencia — nunca se acepta idbase del browser. Mismo esquema de
+        // resolución que /{idweb}/catalogo/{token} (CatalogoPublico.razor). Cualquier token
+        // inválido, de otro tipo, de otro idweb, inactivo o vencido responde 404 sin distinguir motivo.
+        app.MapGet("/api/catalogos/public/{idweb}/{token}/pdf", async (
+            string idweb,
+            string token,
+            string? vista,
+            IInterfacesCatalogosService catalogosSvc,
+            IPuntoVentaService puntoVentaSvc,
+            ICatalogoPublicoPdfService pdfSvc,
+            ICentralBasesService centralBasesSvc,
+            ICentralPublicLinkService publicLinkSvc,
+            ISessionService sessionSvc,
+            CancellationToken ct) =>
+        {
+            var link = await publicLinkSvc.ResolveAsync(idweb, PublicLinkTipos.Catalogo, token, ct);
+            if (link is null)
+                return Results.NotFound();
+
+            var routeBase = await centralBasesSvc.GetByIdAsync(link.IdBase, ct);
+            if (routeBase is null)
+                return Results.NotFound();
+
+            sessionSvc.SetWebhookOverride(new SessionDto
+            {
+                Id = Guid.Parse($"00000000-0000-0000-0000-{routeBase.IdBase:000000000000}"),
+                BaseId = routeBase.IdBase,
+                Nombre = routeBase.Nombre,
+                Servidor = routeBase.DbServer,
+                BaseDatos = routeBase.DbName,
+                Usuario = routeBase.DbUser,
+                Password = routeBase.DbPassword,
+                TrustServerCertificate = true,
+                Activa = true
+            });
+
+            return await GenerarPdfCatalogoAsync(link.IdReferencia, idweb, vista, link.IdBase, catalogosSvc, puntoVentaSvc, pdfSvc, ct);
         }).AllowAnonymous();
 
         async Task<(bool Ok, string CodigoCliente, string NombreCliente, string NombreEmpresa, byte[]? LogoBytes, IResult? Error)> ResolvePortalClienteExportContextAsync(
@@ -677,6 +720,39 @@ public class Program
             return Results.File(preview.RutaCompleta, preview.MimeType);
         }).AllowAnonymous();
 
+        app.MapGet("/api/base-maestra/diagnostico-imagen", async (
+            string idArticulo,
+            string? ean,
+            string? descripcion,
+            string? idCliente,
+            int? idBase,
+            bool forceRefresh,
+            IBaseMaestraImagenService baseMaestraImagenSvc,
+            IPuntoVentaService puntoVentaSvc,
+            CancellationToken ct) =>
+        {
+            var origen = new BaseMaestraImagenOrigenDto
+            {
+                IdArticulo = idArticulo ?? string.Empty,
+                CodigoBarra = ean ?? string.Empty,
+                DescripcionArticulo = descripcion ?? string.Empty
+            };
+
+            var resultado = await baseMaestraImagenSvc.ConsultarArticuloAsync(origen, idCliente, idBase, ct, forceRefresh);
+            var imagenActual = await puntoVentaSvc.GetArticleImageForServeAsync(origen.IdArticulo, ct);
+            return Results.Json(new
+            {
+                resultado,
+                imagenActual = new
+                {
+                    existe = imagenActual is not null,
+                    rutaCompleta = imagenActual?.RutaCompleta ?? string.Empty,
+                    nombreArchivo = imagenActual?.NombreArchivo ?? string.Empty,
+                    mimeType = imagenActual?.MimeType ?? string.Empty
+                }
+            });
+        }).AllowAnonymous();
+
         // Buscador de imagen "todo en uno" para clientes externos (ej. VB6, FrmCatalogoImagenes):
         // igual que imagen-preview/{codigo}, pero sin exigir codigo de barras (busca por
         // descripcion si no hay EAN) y con el fallback de busqueda en Google, no solo Base
@@ -720,6 +796,162 @@ public class Program
             var file = await comprobanteViewerSvc.GetDocumentoArchivoAsync(tc, idComprobante, idComplemento ?? 0, documento, ct);
             if (file is null) return Results.NotFound();
             return Results.File(file.RutaCompleta, file.MimeType, file.NombreArchivo);
+        });
+
+        static string BuildAbsolutePublicUrl(HttpRequest request, IConfiguration config, string relativeUrl)
+        {
+            var configuredBaseUrl = (config["ServidorWeb:UrlBasePublica"] ?? string.Empty).Trim();
+            var forcedBaseUrl = "https://alfacentral.ddns.net";
+            var baseUrl = !string.IsNullOrWhiteSpace(configuredBaseUrl)
+                ? configuredBaseUrl.TrimEnd('/')
+                : forcedBaseUrl;
+
+            if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var baseUri))
+                baseUri = new Uri(forcedBaseUrl);
+
+            if (!string.Equals(baseUri.Host, "alfacentral.ddns.net", StringComparison.OrdinalIgnoreCase))
+                baseUri = new Uri(forcedBaseUrl);
+
+            return new Uri(baseUri, relativeUrl.TrimStart('/')).ToString();
+        }
+
+        async Task<bool> TryActivateVb6InstallationAsync(
+            int idBase,
+            string idWeb,
+            string databaseName,
+            ICentralBasesService basesService,
+            ICentralClientesService clientesService,
+            ISessionService sessionService,
+            CancellationToken ct)
+        {
+            var baseInfo = await basesService.GetByIdAsync(idBase, ct);
+            if (baseInfo is null)
+            {
+                app.Logger.LogWarning("PublicLinks auth: ApiKeyValid=SI IdBaseFound=NO IdWebMatch=NO DbNameMatch=NO IdBase={IdBase} IdWeb={IdWeb} DbName={DbName}", idBase, idWeb, databaseName);
+                return false;
+            }
+
+            var cliente = await clientesService.GetByIdClienteAsync(baseInfo.IdCliente, ct);
+            if (cliente is null || string.IsNullOrWhiteSpace(cliente.IdWeb))
+            {
+                app.Logger.LogWarning("PublicLinks auth: ApiKeyValid=SI IdBaseFound=SI IdWebMatch=NO DbNameMatch=NO IdBase={IdBase} IdWeb={IdWeb} DbName={DbName} BaseDbName={BaseDbName}", idBase, idWeb, databaseName, baseInfo.DbName);
+                return false;
+            }
+
+            if (!string.Equals(cliente.IdWeb.Trim(), idWeb.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                app.Logger.LogWarning("PublicLinks auth: ApiKeyValid=SI IdBaseFound=SI IdWebMatch=NO DbNameMatch=NO IdBase={IdBase} IdWeb={IdWeb} ExpectedIdWeb={ExpectedIdWeb} DbName={DbName} BaseDbName={BaseDbName}", idBase, idWeb, cliente.IdWeb, databaseName, baseInfo.DbName);
+                return false;
+            }
+
+            if (!string.Equals(baseInfo.DbName.Trim(), databaseName.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                app.Logger.LogWarning("PublicLinks auth: ApiKeyValid=SI IdBaseFound=SI IdWebMatch=SI DbNameMatch=NO IdBase={IdBase} IdWeb={IdWeb} DbName={DbName} ExpectedDbName={ExpectedDbName}", idBase, idWeb, databaseName, baseInfo.DbName);
+                return false;
+            }
+
+            app.Logger.LogInformation("PublicLinks auth: ApiKeyValid=SI IdBaseFound=SI IdWebMatch=SI DbNameMatch=SI IdBase={IdBase} IdWeb={IdWeb} DbName={DbName}", idBase, idWeb, databaseName);
+            sessionService.SetWebhookOverride(new SessionDto
+            {
+                BaseId = baseInfo.IdBase,
+                Nombre = baseInfo.Nombre,
+                Servidor = baseInfo.DbServer,
+                BaseDatos = baseInfo.DbName,
+                Usuario = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            });
+
+            return true;
+        }
+
+        app.MapGet("/api/public-links/catalogo/{idweb}/{idbase:int}/{idcatalogo:int}", async (
+            HttpRequest request,
+            string idweb,
+            int idbase,
+            int idcatalogo,
+            IConfiguration config,
+            ICentralBasesService basesSvc,
+            ICentralClientesService clientesSvc,
+            ISessionService sessionSvc,
+            IInterfacesCatalogosService catalogosSvc,
+            ICentralPublicLinkService publicLinkSvc,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString();
+            if (!string.Equals(apiKeyRecibida, apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            var databaseName = request.Headers["X-Alfa-Database"].ToString();
+            if (string.IsNullOrWhiteSpace(databaseName))
+                return Results.Json(new { ok = false, message = "No autorizado" }, statusCode: StatusCodes.Status403Forbidden);
+
+            if (!await TryActivateVb6InstallationAsync(idbase, idweb, databaseName, basesSvc, clientesSvc, sessionSvc, ct))
+                return Results.Json(new { ok = false, message = "No autorizado" }, statusCode: StatusCodes.Status403Forbidden);
+
+            var catalogo = idcatalogo > 0
+                ? await catalogosSvc.GetCatalogoPublicoAsync(idcatalogo, ct)
+                : await catalogosSvc.GetCatalogoAsync(0, ct);
+            if (catalogo is null)
+                return Results.Json(new { ok = false, message = "Recurso no disponible" }, statusCode: StatusCodes.Status404NotFound);
+
+            var effectiveIdInsert = catalogo.IdInsert;
+            var link = await publicLinkSvc.TryGetExistingAsync(idweb, idbase, PublicLinkTipos.Catalogo, effectiveIdInsert, ct)
+                ?? await publicLinkSvc.GetOrCreateAsync(idweb, idbase, PublicLinkTipos.Catalogo, effectiveIdInsert, catalogo.Nombre, ct);
+
+            var url = BuildAbsolutePublicUrl(
+                request,
+                config,
+                $"/{Uri.EscapeDataString(idweb.Trim())}/catalogo/{link.RouteSegment}");
+
+            return Results.Json(new { ok = true, url });
+        });
+
+        app.MapGet("/api/public-links/carrito/{idweb}/{idbase:int}/{idreferencia:int}", async (
+            HttpRequest request,
+            string idweb,
+            int idbase,
+            int idreferencia,
+            IConfiguration config,
+            ICentralBasesService basesSvc,
+            ICentralClientesService clientesSvc,
+            ISessionService sessionSvc,
+            ICarritoComprasService carritoSvc,
+            ICentralPublicLinkService publicLinkSvc,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = config["BackupStatus:ApiKey"] ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+                return Results.Problem("El servidor no tiene configurada BackupStatus:ApiKey.", statusCode: StatusCodes.Status500InternalServerError);
+
+            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString();
+            if (!string.Equals(apiKeyRecibida, apiKeyConfigurada, StringComparison.Ordinal))
+                return Results.Unauthorized();
+
+            var databaseName = request.Headers["X-Alfa-Database"].ToString();
+            if (string.IsNullOrWhiteSpace(databaseName))
+                return Results.Json(new { ok = false, message = "No autorizado" }, statusCode: StatusCodes.Status403Forbidden);
+
+            if (!await TryActivateVb6InstallationAsync(idbase, idweb, databaseName, basesSvc, clientesSvc, sessionSvc, ct))
+                return Results.Json(new { ok = false, message = "No autorizado" }, statusCode: StatusCodes.Status403Forbidden);
+
+            var carrito = await carritoSvc.GetPublicCartAsync(idreferencia, idweb, null, ct);
+            if (carrito is null || !carrito.HabilitarCarrito)
+                return Results.Json(new { ok = false, message = "Recurso no disponible" }, statusCode: StatusCodes.Status404NotFound);
+
+            var link = await publicLinkSvc.TryGetExistingAsync(idweb, idbase, PublicLinkTipos.Carrito, idreferencia, ct)
+                ?? await publicLinkSvc.GetOrCreateAsync(idweb, idbase, PublicLinkTipos.Carrito, idreferencia, carrito.Nombre, ct);
+
+            var url = BuildAbsolutePublicUrl(
+                request,
+                config,
+                $"/{Uri.EscapeDataString(idweb.Trim())}/carrito/{link.RouteSegment}");
+
+            return Results.Json(new { ok = true, url });
         });
 
         app.MapPost("/api/vb6/auth-ticket", async (
@@ -2319,6 +2551,35 @@ public class Program
             .Replace("'", "\\'", StringComparison.Ordinal)
             .Replace("\r", string.Empty, StringComparison.Ordinal)
             .Replace("\n", string.Empty, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Genera el PDF de un catálogo público ya con la conexión activada (por el legacy endpoint
+    /// con idbase en querystring, o por la ruta segura con token de ALFA_PUBLIC_LINK) — cuerpo
+    /// compartido entre ambos endpoints de /api/catalogos/.../pdf para no duplicar la lógica de
+    /// armado del PDF.
+    /// </summary>
+    private static async Task<IResult> GenerarPdfCatalogoAsync(
+        int idInsert,
+        string? idweb,
+        string? vista,
+        int? resolvedBaseId,
+        IInterfacesCatalogosService catalogosSvc,
+        IPuntoVentaService puntoVentaSvc,
+        ICatalogoPublicoPdfService pdfSvc,
+        CancellationToken ct)
+    {
+        var catalogo = await catalogosSvc.GetCatalogoPublicoAsync(idInsert, ct);
+        if (catalogo is null)
+            return Results.NotFound();
+
+        var branding = await catalogosSvc.GetPublicIdentityAsync(idweb, ct);
+        var settings = await puntoVentaSvc.GetSettingsAsync(ct);
+
+        var esCuadricula = string.Equals(vista, "cuadricula", StringComparison.OrdinalIgnoreCase);
+        var pdfBytes = await pdfSvc.GenerarPdfAsync(catalogo, branding, idweb, settings.FtpCodigoCta, resolvedBaseId, esCuadricula, ct);
+
+        return Results.File(pdfBytes, "application/pdf", $"catalogo-{idInsert}.pdf");
+    }
 
     /// <summary>
     /// Resuelve a qué base pertenece un token de webhook y, si existe, fuerza esa base como

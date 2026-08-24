@@ -1068,6 +1068,24 @@ public sealed class InterfacesCatalogosService(
         return int.TryParse(raw.Trim(), out var idInsert) && idInsert > 0 ? idInsert : 0;
     }
 
+    private async Task<int> GetCatalogoGeneralFallbackIdInternalAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                c.IDINSERT
+            FROM dbo.V_MV_INSERT c
+            GROUP BY c.IDINSERT
+            HAVING
+                MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 0
+                AND (MIN(c.VigenciaDesde) IS NULL OR CONVERT(date, MIN(c.VigenciaDesde)) <= CONVERT(date, GETDATE()))
+                AND (MAX(c.VigenciaHasta) IS NULL OR CONVERT(date, MAX(c.VigenciaHasta)) >= CONVERT(date, GETDATE()))
+            ORDER BY MAX(c.FECHACARGA) DESC, c.IDINSERT DESC;
+            """;
+
+        var idInsert = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(sql, cancellationToken: ct));
+        return idInsert.GetValueOrDefault();
+    }
+
     public Task<CatalogosClienteSessionInfo> LoginClienteAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct = default)
         => ExecuteCatalogoClienteLoginAsync(request, ct);
 
@@ -1892,18 +1910,7 @@ public sealed class InterfacesCatalogosService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            // IdInsert = 0 es un alias fijo para "el catálogo predeterminado" (configurado desde
-            // Interfaces > Catálogos), así /catalogo/0 y /carrito/0 siempre resuelven al mismo
-            // catálogo sin necesidad de conocer su IDINSERT real.
-            if (idInsert <= 0)
-            {
-                idInsert = await GetCatalogoPredeterminadoIdInternalAsync(cn, token);
-                if (idInsert <= 0)
-                    return null;
-            }
-
             const string where = "WHERE c.IDINSERT = @IdInsert";
-
             var sql = $"""
                 SELECT
                     c.IDINSERT AS IdInsert,
@@ -1956,22 +1963,43 @@ public sealed class InterfacesCatalogosService(
                 ORDER BY c.IDARTICULO;
                 """;
 
-            using var multi = await cn.QueryMultipleAsync(new CommandDefinition(sql, new { IdInsert = idInsert }, cancellationToken: token));
-            var header = await multi.ReadSingleOrDefaultAsync<CatalogosCatalogoDetalleDto>();
-            if (header is null)
-                return null;
+            var predeterminadoId = await GetCatalogoPredeterminadoIdInternalAsync(cn, token);
+            var candidateIds = new List<int>();
+            if (idInsert > 0)
+            {
+                candidateIds.Add(idInsert);
+            }
+            else
+            {
+                if (predeterminadoId > 0)
+                    candidateIds.Add(predeterminadoId);
 
-            if (soloPublico && !IsCatalogoPublicoVigente(header))
-                return null;
+                var fallbackId = await GetCatalogoGeneralFallbackIdInternalAsync(cn, token);
+                if (fallbackId > 0 && !candidateIds.Contains(fallbackId))
+                    candidateIds.Add(fallbackId);
+            }
 
-            var items = (await multi.ReadAsync<CatalogosCatalogoItemDto>()).ToList();
-            header.Articulos = items;
+            foreach (var candidateId in candidateIds)
+            {
+                using var multi = await cn.QueryMultipleAsync(new CommandDefinition(sql, new { IdInsert = candidateId }, cancellationToken: token));
+                var header = await multi.ReadSingleOrDefaultAsync<CatalogosCatalogoDetalleDto>();
+                if (header is null)
+                    continue;
 
-            await EnrichOfertaHastaAsync(items, header.IdLista, token);
-            header.HabilitarCarrito = await GetCarritoHabilitadoAsync(idInsert, token);
-            header.Predeterminado = idInsert == await GetCatalogoPredeterminadoIdInternalAsync(cn, token);
+                if (soloPublico && !IsCatalogoPublicoVigente(header))
+                    continue;
 
-            return header;
+                var items = (await multi.ReadAsync<CatalogosCatalogoItemDto>()).ToList();
+                header.Articulos = items;
+
+                await EnrichOfertaHastaAsync(items, header.IdLista, token);
+                header.HabilitarCarrito = await GetCarritoHabilitadoAsync(candidateId, token);
+                header.Predeterminado = candidateId == predeterminadoId;
+
+                return header;
+            }
+
+            return null;
         }, soloPublico ? "No se pudo cargar el catálogo público." : "No se pudo cargar el catálogo.", ct);
 
     private async Task<bool> GetCarritoHabilitadoAsync(int idInsert, CancellationToken ct)

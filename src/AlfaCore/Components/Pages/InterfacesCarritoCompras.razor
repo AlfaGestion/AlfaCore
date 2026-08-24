@@ -5,11 +5,16 @@
 @inherits SaaSRoutePageBase
 @using AlfaCore.Models
 @inject AlfaCore.Services.ICarritoComprasService CarritoComprasSvc
+@inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
+@inject AlfaCore.Services.IAppModeService AppMode
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUiDialogService DialogSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@inject ILogger<InterfacesCarritoCompras> Logger
 
 <PageTitle>Carrito de compras | Alfa Gestión</PageTitle>
 
@@ -238,7 +243,7 @@
                 ? result.Value
                 : new PagedResult<CarritoComprasResumenDto>();
 
-            AjustarUrlsCatalogo();
+            await AjustarUrlsCatalogoAsync();
         }
         finally
         {
@@ -256,6 +261,7 @@
         {
             var result = await UiOps.RunAsync(() => CarritoComprasSvc.GetGeneralAsync(0), "No se pudo cargar el carrito general.");
             _general = result.Success ? result.Value : null;
+            await ResolveGeneralPublicUrlAsync();
         }
         finally
         {
@@ -264,22 +270,72 @@
         }
     }
 
-    private void AjustarUrlsCatalogo()
+    private string? GetPublicLinkOwnerIdWeb()
+        => AppUserSession.CurrentUser?.IdWeb is { Length: > 0 } fromUser ? fromUser : idweb;
+
+    /// <summary>
+    /// Genera (o reutiliza) el link público seguro por token de carrito para cada catálogo de la
+    /// grilla, en una sola consulta en lote — evita un round-trip por fila. Si no hay
+    /// IdWeb/IdBase resueltos (ej. legacy on-prem), cae al esquema anterior fila por fila.
+    /// </summary>
+    private async Task AjustarUrlsCatalogoAsync()
     {
-        if (_page is null)
+        if (_page is null || _page.Items.Count == 0)
             return;
 
-        foreach (var item in _page.Items)
+        var referencias = _page.Items
+            .Where(i => i.IdCatalogo is > 0)
+            .Select(i => (IdReferencia: i.IdCatalogo!.Value, Nombre: (string?)i.Nombre))
+            .ToArray();
+
+        if (referencias.Length == 0)
+            return;
+
+        var ownerIdWeb = GetPublicLinkOwnerIdWeb();
+        var ownerIdBase = SessionSvc.GetActiveSession()?.BaseId ?? idbase;
+
+        if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(ownerIdWeb) || ownerIdBase is not > 0)
         {
-            if (item.IdCatalogo is { } idCatalogo && idCatalogo > 0)
+            foreach (var item in _page.Items)
             {
-                item.UrlCarrito = BuildCatalogoCarritoUrl(idCatalogo);
-                item.UrlEdicion = BuildCatalogoCarritoUrl(idCatalogo);
+                if (item.IdCatalogo is { } idCatalogoLegacy && idCatalogoLegacy > 0)
+                {
+                    item.UrlCarrito = BuildCatalogoCarritoUrlLegacy(idCatalogoLegacy);
+                    item.UrlEdicion = item.UrlCarrito;
+                }
+            }
+            return;
+        }
+
+        try
+        {
+            var links = await PublicLinkSvc.GetOrCreateManyAsync(ownerIdWeb, ownerIdBase.Value, PublicLinkTipos.Carrito, referencias);
+            foreach (var item in _page.Items)
+            {
+                if (item.IdCatalogo is not { } idCatalogo || idCatalogo <= 0)
+                    continue;
+
+                item.UrlCarrito = links.TryGetValue(idCatalogo, out var link)
+                    ? Nav.ToAbsoluteUri($"/{Uri.EscapeDataString(ownerIdWeb)}/carrito/{link.RouteSegment}").ToString()
+                    : BuildCatalogoCarritoUrlLegacy(idCatalogo);
+                item.UrlEdicion = item.UrlCarrito;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "InterfacesCarritoCompras: no se pudieron generar los links públicos seguros en lote; se usa el esquema anterior.");
+            foreach (var item in _page.Items)
+            {
+                if (item.IdCatalogo is { } idCatalogoFallback && idCatalogoFallback > 0)
+                {
+                    item.UrlCarrito = BuildCatalogoCarritoUrlLegacy(idCatalogoFallback);
+                    item.UrlEdicion = item.UrlCarrito;
+                }
             }
         }
     }
 
-    private string BuildCatalogoCarritoUrl(int idCatalogo)
+    private string BuildCatalogoCarritoUrlLegacy(int idCatalogo)
         => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
             Nav,
             AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCarritoUrl(
@@ -288,7 +344,35 @@
                 idbase,
                 Nav.Uri));
 
+    private string _urlGeneral = string.Empty;
+
     private string GetGeneralPublicUrl()
+        => !string.IsNullOrWhiteSpace(_urlGeneral) ? _urlGeneral : GetGeneralPublicUrlLegacy();
+
+    private async Task ResolveGeneralPublicUrlAsync()
+    {
+        var ownerIdWeb = GetPublicLinkOwnerIdWeb();
+        var ownerIdBase = SessionSvc.GetActiveSession()?.BaseId ?? idbase;
+
+        if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(ownerIdWeb) || ownerIdBase is not > 0)
+        {
+            _urlGeneral = string.Empty;
+            return;
+        }
+
+        try
+        {
+            var link = await PublicLinkSvc.GetOrCreateAsync(ownerIdWeb, ownerIdBase.Value, PublicLinkTipos.Carrito, 0, "carrito-general");
+            _urlGeneral = Nav.ToAbsoluteUri($"/{Uri.EscapeDataString(ownerIdWeb)}/carrito/{link.RouteSegment}").ToString();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "InterfacesCarritoCompras: no se pudo generar el link público seguro del carrito general; se usa el esquema anterior.");
+            _urlGeneral = string.Empty;
+        }
+    }
+
+    private string GetGeneralPublicUrlLegacy()
         => AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
             Nav,
             AlfaCore.Services.CatalogosUrlHelper.BuildRelativeCarritoGeneralUrl(

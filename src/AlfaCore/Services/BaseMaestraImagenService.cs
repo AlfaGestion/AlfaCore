@@ -130,10 +130,12 @@ public sealed partial class BaseMaestraImagenService(
             {
                 result.Estado = "Sin imagen encontrada";
                 result.PuedeSeleccionarse = false;
+                await PersistFinalImageResultTraceAsync(result, null, "CandidateFound=false", token);
                 return result;
             }
 
             ApplyCandidate(result, candidate, hasCurrentImage, idClienteFtp, idBase);
+            await PersistFinalImageResultTraceAsync(result, candidate, "CandidateFound=true", token);
             return result;
         }, FriendlyLookupMessage, ct);
 
@@ -1271,6 +1273,49 @@ public sealed partial class BaseMaestraImagenService(
         catch (Exception ex)
         {
             logger.LogWarning(ex, "[ImageSearch] Etapa=TracePersistError Articulo={Articulo}", idArticulo);
+        }
+    }
+
+    private async Task PersistFinalImageResultTraceAsync(BaseMaestraImagenArticuloDto result, ImageCandidateDto? candidate, string candidateFound, CancellationToken ct)
+    {
+        if (!ShouldPersistImageTrace(result.IdArticulo))
+            return;
+
+        try
+        {
+            var root = Path.Combine(AppContext.BaseDirectory, "App_Data", "diagnostics");
+            Directory.CreateDirectory(root);
+
+            var entry = new
+            {
+                Timestamp = DateTimeOffset.Now,
+                IdArticulo = result.IdArticulo,
+                CandidateFound = candidateFound,
+                Source = result.Fuente,
+                SourceUrl = candidate?.PageUrl ?? string.Empty,
+                ImageUrl = result.ImageUrl,
+                PreviewUrl = result.PreviewUrl,
+                LocalCachePath = result.PreviewUrl,
+                FileExists = !string.IsNullOrWhiteSpace(result.PreviewUrl),
+                FileLength = 0,
+                Confidence = result.Confianza,
+                RankingScore = candidate?.RankingScore ?? 0,
+                SelectedCandidate = result.Seleccionado,
+                ImagenDisponible = result.ImagenEncontrada,
+                TieneImagenActual = result.TieneImagenActual,
+                Estado = result.Estado,
+                Error = result.Error ?? string.Empty,
+                PuedeSeleccionarse = result.PuedeSeleccionarse,
+                Seleccionado = result.Seleccionado
+            };
+
+            var json = JsonSerializer.Serialize(entry, JsonOptions);
+            var filePath = Path.Combine(root, "image-search-final-result.jsonl");
+            await File.AppendAllTextAsync(filePath, json + Environment.NewLine, Encoding.UTF8, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "[ImageSearch] Etapa=FinalTracePersistError Articulo={Articulo}", result.IdArticulo);
         }
     }
 

@@ -39,11 +39,16 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
     }
 
     /// <summary>
-    /// Fuerza la base activa de este scope a la indicada, sin pasar por
-    /// <see cref="IAppUserSessionService.CurrentUser"/>. Uso exclusivo de requests que no tienen
-    /// sesión de usuario (ej. webhooks de WhatsApp/Instagram/Facebook/MercadoLibre), donde el
-    /// tenant se resuelve por otro medio (un token en la URL) antes de tocar cualquier tabla.
-    /// Tiene prioridad sobre la resolución normal mientras dure este scope.
+    /// Fuerza la base activa de este scope a la indicada, sin pasar por la lista de bases
+    /// centrales (IdCliente) de <see cref="IAppUserSessionService.CurrentUser"/>. Pensado
+    /// originalmente para requests sin sesión de usuario (ej. webhooks de
+    /// WhatsApp/Instagram/Facebook/MercadoLibre), donde el tenant se resuelve por otro medio (un
+    /// token en la URL) antes de tocar cualquier tabla. También lo usa el login directo por ruta
+    /// (/{idweb}/{idbase} sin sesión central previa, ver MainLayout.LoginAsync) para activar la
+    /// conexión de la base recién validada — en ese caso SÓLO se llama después de validar
+    /// usuario/contraseña contra esa base (nunca como autorización en sí misma). Tiene prioridad
+    /// sobre la resolución normal mientras dure este scope, hasta <see cref="ClearWebhookOverride"/>
+    /// o un logout (ver <see cref="OnUserStateChanged"/>).
     /// </summary>
     public void SetWebhookOverride(SessionDto session)
     {
@@ -53,6 +58,18 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         {
             _webhookOverride = session;
         }
+
+        SessionChanged?.Invoke();
+    }
+
+    public void ClearWebhookOverride()
+    {
+        lock (_lock)
+        {
+            _webhookOverride = null;
+        }
+
+        SessionChanged?.Invoke();
     }
 
     public SessionDto? GetActiveSession()
@@ -107,6 +124,7 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         if (!_appMode.IsSaaSMode)
         {
             SwitchLegacySession(id);
+            _appUserSession.EnsureAuthorizedForSession(id);
             return;
         }
 
@@ -120,6 +138,11 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         }
 
         SessionChanged?.Invoke();
+
+        // Cambiar de base activa nunca debe heredar un login interno (TA_USUARIOS) validado
+        // contra otra base: si el usuario ya estaba autorizado pero para un id distinto, esto
+        // vuelve a exigir RequiresInternalLogin=true para la base nueva.
+        _appUserSession.EnsureAuthorizedForSession(id);
     }
 
     public Guid AddSession(string nombre, string servidor, string baseDatos, string usuario, string password)
@@ -209,7 +232,15 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         {
             _cachedSessions = Array.Empty<SessionDto>();
             if (_appUserSession.CurrentUser is null)
+            {
                 _activeSessionId = null;
+
+                // Logout (o cualquier otro camino que deje _currentUser en null) debe invalidar
+                // también la conexión activada por SetWebhookOverride para un login directo por
+                // ruta (ver MainLayout.LoginAsync): sin esto, la base activada quedaba pegada al
+                // scope después de cerrar sesión.
+                _webhookOverride = null;
+            }
             _cacheKey = null;
         }
 

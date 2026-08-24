@@ -77,7 +77,8 @@
             <div class="base-maestra-imagenes__list">
                 @foreach (var item in _articulos)
                 {
-                    <article class="base-maestra-imagenes__row @(item.Seleccionado ? "is-selected" : string.Empty) @(item.PuedeSeleccionarse ? string.Empty : "is-disabled")">
+                    <article @key="item.IdArticulo"
+                             class="base-maestra-imagenes__row @(item.Seleccionado ? "is-selected" : string.Empty) @(item.PuedeSeleccionarse ? string.Empty : "is-disabled")">
                         <div class="base-maestra-imagenes__check">
                             @if (item.PuedeSeleccionarse)
                             {
@@ -92,7 +93,8 @@
                         <div class="base-maestra-imagenes__thumb">
                             @if (ShouldShowImage(item))
                             {
-                                <img src="@item.PreviewUrl"
+                                <img @key="GetPreviewSrc(item)"
+                                     src="@GetPreviewSrc(item)"
                                      alt="@item.DescripcionArticulo"
                                      loading="lazy"
                                      @onerror="@EventCallback.Factory.Create(this, () => HandlePreviewError(item))" />
@@ -186,7 +188,9 @@
     private string _progresoTexto = string.Empty;
     private readonly List<BaseMaestraImagenArticuloDto> _articulos = [];
     private BaseMaestraImagenResultadoDto? _resultadoAsignacion;
-    private readonly HashSet<string> _previewFallbacks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _previewFallbacks = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, int> _previewRetryCounts = new(StringComparer.Ordinal);
+    private const int MaxPreviewRetries = 2;
 
     private int SeleccionadasCount => _articulos.Count(a => a.Seleccionado);
 
@@ -210,6 +214,7 @@
         _feedbackMessage = null;
         _resultadoAsignacion = null;
         _previewFallbacks.Clear();
+        _previewRetryCounts.Clear();
         _articulos.Clear();
         _cargando = true;
         _progresoTexto = "0 de 0";
@@ -331,17 +336,43 @@
         return Task.CompletedTask;
     }
 
+    // Clave por artículo + PreviewUrl: si una nueva consulta trae una PreviewUrl distinta
+    // (o la misma URL vuelve a estar disponible tras un reintento), no debe heredar el
+    // fallo de una imagen anterior de ese mismo artículo.
+    private static string PreviewKey(BaseMaestraImagenArticuloDto item)
+        => $"{item.IdArticulo}{item.PreviewUrl}";
+
     private bool ShouldShowImage(BaseMaestraImagenArticuloDto item)
-        => !_previewFallbacks.Contains(item.IdArticulo) && !string.IsNullOrWhiteSpace(item.PreviewUrl);
+        => !string.IsNullOrWhiteSpace(item.PreviewUrl) && !_previewFallbacks.Contains(PreviewKey(item));
+
+    // La descarga del preview es on-demand (BaseMaestraImagenService la cachea en el primer
+    // pedido), así que un error aislado puede ser una falla transitoria del origen externo,
+    // no que la imagen no exista. Reintentamos con un query param propio (no afecta al "src"
+    // real que ya viene embebido) antes de rendirnos y ocultar el thumbnail.
+    private string GetPreviewSrc(BaseMaestraImagenArticuloDto item)
+    {
+        var key = PreviewKey(item);
+        if (!_previewRetryCounts.TryGetValue(key, out var attempts) || attempts == 0)
+            return item.PreviewUrl;
+
+        var separator = item.PreviewUrl.Contains('?') ? '&' : '?';
+        return $"{item.PreviewUrl}{separator}_retry={attempts}";
+    }
 
     private void HandlePreviewError(BaseMaestraImagenArticuloDto item)
     {
-        if (!string.IsNullOrWhiteSpace(item.IdArticulo))
+        var key = PreviewKey(item);
+        var attempts = _previewRetryCounts.TryGetValue(key, out var current) ? current + 1 : 1;
+
+        if (attempts <= MaxPreviewRetries)
         {
-            _previewFallbacks.Add(item.IdArticulo);
-            if (string.IsNullOrWhiteSpace(item.Error))
-                item.Error = "Error al descargar";
+            _previewRetryCounts[key] = attempts;
+            return;
         }
+
+        _previewFallbacks.Add(key);
+        if (string.IsNullOrWhiteSpace(item.Error))
+            item.Error = "Error al descargar";
     }
 
     private async Task AsignarAsync()

@@ -567,8 +567,16 @@ public sealed class CentralAdminService(
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct).ConfigureAwait(false);
 
-        if (await ExistsUserAsync(cn, userName, ct).ConfigureAwait(false))
-            throw new AppUserFacingException("Ya existe un usuario con ese nombre.", "ADMIN_USER_DUPLICADO");
+        var ownerCliente = await GetUserOwnerClienteAsync(cn, userName, ct).ConfigureAwait(false);
+        if (ownerCliente is not null)
+        {
+            var ownerDescripcion = string.IsNullOrWhiteSpace(ownerCliente.RazonSocial)
+                ? ownerCliente.IdCliente
+                : $"{ownerCliente.IdCliente} - {ownerCliente.RazonSocial}";
+            throw new AppUserFacingException(
+                $"Ya existe un usuario con ese nombre, asignado al cliente {ownerDescripcion}. Editalo desde el listado si querés pasarlo a este cliente.",
+                "ADMIN_USER_DUPLICADO");
+        }
 
         const string sql = """
             INSERT INTO dbo.users ([user], password, idcliente)
@@ -1944,6 +1952,29 @@ public sealed class CentralAdminService(
         const string sql = "SELECT COUNT(1) FROM dbo.users WHERE UPPER(LTRIM(RTRIM([user]))) = UPPER(LTRIM(RTRIM(@UserName)));";
         var count = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { UserName = userName }, cancellationToken: ct)).ConfigureAwait(false);
         return count > 0;
+    }
+
+    /// <summary>
+    /// Cliente dueño de un [user] ya existente, para poder avisarle al admin a qué cliente está
+    /// asignado en vez de solo decir "ya existe" — así sabe si tiene que editarlo para pasarlo al
+    /// cliente nuevo en lugar de asumir que es un typo. RazonSocial vacía si el idcliente quedó
+    /// huérfano (sin fila en dbo.Clientes, ver incidente 2026-08-22 con altas nunca confirmadas).
+    /// </summary>
+    private static async Task<UserOwnerClienteRow?> GetUserOwnerClienteAsync(SqlConnection cn, string userName, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT u.idcliente AS IdCliente, ISNULL(c.nombre, '') AS RazonSocial
+            FROM dbo.users u
+            LEFT JOIN dbo.Clientes c ON c.idcliente = u.idcliente
+            WHERE UPPER(LTRIM(RTRIM(u.[user]))) = UPPER(LTRIM(RTRIM(@UserName)));
+            """;
+        return await cn.QuerySingleOrDefaultAsync<UserOwnerClienteRow>(new CommandDefinition(sql, new { UserName = userName }, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    private sealed class UserOwnerClienteRow
+    {
+        public string IdCliente { get; set; } = string.Empty;
+        public string RazonSocial { get; set; } = string.Empty;
     }
 
     private static async Task<string> GetUserPasswordAsync(SqlConnection cn, string userName, CancellationToken ct)

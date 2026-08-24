@@ -14,4 +14,11 @@ public sealed class AppUserSessionInfo
     public string IdWeb { get; init; } = string.Empty;
     public bool SuperAdmin { get; init; }
     public bool RequiresInternalLogin { get; init; }
+
+    /// <summary>
+    /// Id (<see cref="SessionDto.Id"/>) de la base contra la que se validó el login interno
+    /// (TA_USUARIOS) más reciente. La autorización funcional sólo es válida mientras la base
+    /// activa coincida con este valor — cambiar de base exige repetir el login interno.
+    /// </summary>
+    public Guid? AuthorizedSessionId { get; init; }
 }

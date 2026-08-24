@@ -1,5 +1,6 @@
 @page "/carrito/{IdInsert:int}"
 @page "/{idweb}/{idbase:int}/carrito/{IdInsert:int}"
+@page "/{idweb}/carrito/{PublicToken}"
 @layout AlfaCore.Components.Layout.PublicLayout
 @inherits SaaSRoutePageBase
 @using AlfaCore.Models
@@ -11,6 +12,7 @@
 @inject AlfaCore.Services.ICarritoComprasService CarritoComprasSvc
 @inject AlfaCore.Services.ICatalogosClienteSessionService CatalogoClienteSession
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPedidosEmailService PedidosEmailSvc
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
@@ -23,7 +25,15 @@
 
 <PageTitle>Toma de pedidos | AlfaCore</PageTitle>
 
-@if (!_loading && !_notFound && !_carritoDeshabilitado && !IsAuthenticated)
+@if (_redirecting)
+{
+    <section class="page-grid carrito-page">
+        <div class="carrito-page__loading-state">
+            <p class="text-muted">Redirigiendo al enlace seguro...</p>
+        </div>
+    </section>
+}
+else if (!_loading && !_notFound && !_carritoDeshabilitado && !IsAuthenticated)
 {
     <CatalogoClienteLoginPanel @ref="_loginPanel"
                                 CatalogoNombre="@_catalogo?.Nombre"
@@ -31,7 +41,7 @@
                                 BrandLogoUrl="@GetBrandingLogoUrl()"
                                 BrandName="@GetBrandingName()"
                                 IdWeb="@idweb"
-                                IdBase="@idbase"
+                                IdBase="@_effectiveIdBase"
                                 Codigo="@_clienteCodigo"
                                 CodigoChanged="v => _clienteCodigo = v"
                                 Password="@_clientePassword"
@@ -453,6 +463,7 @@ else
     private bool _loading = true;
     private bool _notFound;
     private bool _carritoDeshabilitado;
+    private bool _redirecting;
     private bool _restoreAttempted;
     private bool _cartRestoreAttempted;
 
@@ -491,15 +502,26 @@ else
     private bool IsAuthenticated
         => CatalogoClienteSession.CurrentClient is { } client
            && string.Equals(client.IdWeb, NormalizeRouteSegment(idweb), StringComparison.OrdinalIgnoreCase)
-           && client.IdBase == (idbase ?? 0);
+           && client.IdBase == (_effectiveIdBase ?? 0);
 
     [Parameter]
     public int IdInsert { get; set; }
+
+    [Parameter]
+    public string? PublicToken { get; set; }
+
+    /// <summary>Segmento "slug-token" resuelto cuando se entró por /{idweb}/carrito/{PublicToken}; null en la ruta legacy por idbase/IdInsert.</summary>
+    private string? _publicLinkRouteSegment;
+
+    /// <summary>Segmento "slug-token" del link público del CATÁLOGO asociado (Tipo=CATALOGO, mismo IdReferencia) — usado por "Volver al catálogo". Null si el carrito es general (IdInsert=0) o no se pudo resolver.</summary>
+    private string? _catalogLinkRouteSegment;
 
     protected override async Task OnInitializedAsync()
     {
         CatalogoClienteSession.StateChanged += OnClientSessionStateChanged;
         await EnsureRouteSessionAsync();
+        if (_redirecting)
+            return;
         await LoadPublicIdentityAsync();
         await LoadImageSettingsAsync();
         await RefreshCatalogoAsync();
@@ -508,6 +530,8 @@ else
     protected override async Task OnParametersSetAsync()
     {
         await EnsureRouteSessionAsync();
+        if (_redirecting)
+            return;
         await LoadPublicIdentityAsync();
         await LoadImageSettingsAsync();
         await RefreshCatalogoAsync();
@@ -541,14 +565,32 @@ else
 
     private async Task EnsureRouteSessionAsync()
     {
+        if (!string.IsNullOrWhiteSpace(PublicToken))
+        {
+            await EnsurePublicTokenSessionAsync();
+            return;
+        }
+
+        if (idbase is > 0 && !string.IsNullOrWhiteSpace(idweb))
+        {
+            await RedirectLegacyPublicRouteAsync();
+            return;
+        }
+
+        var activeSessionBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+        if (idbase is not > 0 && activeSessionBaseId <= 0)
+        {
+            _notFound = true;
+            return;
+        }
+
         if (idbase is > 0)
         {
             _effectiveIdBase = idbase;
         }
         else
         {
-            var sessionBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
-            _effectiveIdBase = sessionBaseId > 0 ? sessionBaseId : null;
+            _effectiveIdBase = activeSessionBaseId > 0 ? activeSessionBaseId : null;
         }
 
         if (!AppMode.IsSaaSMode || !idbase.HasValue)
@@ -574,6 +616,104 @@ else
             TrustServerCertificate = true,
             Activa = true
         });
+    }
+
+    /// <summary>
+    /// Las URLs públicas legacy /{idweb}/{idbase}/carrito/{id} se convierten al link tokenizado
+    /// equivalente para no exponer el carrito por IdBase/IdInsert directo.
+    /// </summary>
+    private async Task RedirectLegacyPublicRouteAsync()
+    {
+        if (string.IsNullOrWhiteSpace(idweb) || idbase is not > 0)
+        {
+            _notFound = true;
+            return;
+        }
+
+        try
+        {
+            var existing = await PublicLinkSvc.TryGetExistingAsync(idweb, idbase.Value, PublicLinkTipos.Carrito, IdInsert);
+            if (existing is not null)
+            {
+                _publicLinkRouteSegment = existing.RouteSegment;
+                _redirecting = true;
+                Nav.NavigateTo($"/{Uri.EscapeDataString(idweb)}/carrito/{existing.RouteSegment}", replace: true);
+                return;
+            }
+
+            var carritoPublicado = await CarritoComprasSvc.GetPublicCartAsync(IdInsert, idweb);
+            if (carritoPublicado is null || !carritoPublicado.HabilitarCarrito)
+            {
+                _notFound = true;
+                return;
+            }
+
+            var link = await PublicLinkSvc.GetOrCreateAsync(idweb, idbase.Value, PublicLinkTipos.Carrito, IdInsert, null);
+            _publicLinkRouteSegment = link.RouteSegment;
+            _redirecting = true;
+            Nav.NavigateTo($"/{Uri.EscapeDataString(idweb)}/carrito/{link.RouteSegment}", replace: true);
+        }
+        catch
+        {
+            _notFound = true;
+        }
+    }
+
+    /// <summary>
+    /// /{idweb}/carrito/{PublicToken}: mismo mecanismo que CatalogoPublico.EnsurePublicTokenSessionAsync
+    /// pero con Tipo=CARRITO — el token (nunca el slug) resuelve IdBase + IdInsert contra
+    /// ALFA_CENTRAL antes de activar cualquier conexión de cliente.
+    /// </summary>
+    private async Task EnsurePublicTokenSessionAsync()
+    {
+        var link = await PublicLinkSvc.ResolveAsync(idweb ?? string.Empty, PublicLinkTipos.Carrito, PublicToken ?? string.Empty);
+        if (link is null)
+        {
+            _notFound = true;
+            _effectiveIdBase = null;
+            return;
+        }
+
+        var routeBase = await CentralBasesSvc.GetByIdAsync(link.IdBase);
+        if (routeBase is null)
+        {
+            _notFound = true;
+            _effectiveIdBase = null;
+            return;
+        }
+
+        _effectiveIdBase = link.IdBase;
+        _publicLinkRouteSegment = link.RouteSegment;
+        IdInsert = link.IdReferencia;
+
+        SessionSvc.SetWebhookOverride(new SessionDto
+        {
+            Id = Guid.Parse($"00000000-0000-0000-0000-{link.IdBase:000000000000}"),
+            BaseId = routeBase.IdBase,
+            Nombre = routeBase.Nombre,
+            Servidor = routeBase.DbServer,
+            BaseDatos = routeBase.DbName,
+            Usuario = routeBase.DbUser,
+            Password = routeBase.DbPassword,
+            TrustServerCertificate = true,
+            Activa = true
+        });
+
+        // Carrito general (IdReferencia=0, ver InterfacesCarritoCompras.ResolveGeneralPublicUrlAsync)
+        // no tiene catálogo real asociado — no se intenta resolver un link de catálogo para él.
+        if (link.IdReferencia > 0 && !string.IsNullOrWhiteSpace(idweb))
+        {
+            try
+            {
+                var catalogLink = await PublicLinkSvc.GetOrCreateAsync(idweb, link.IdBase, PublicLinkTipos.Catalogo, link.IdReferencia, null);
+                _catalogLinkRouteSegment = catalogLink.RouteSegment;
+            }
+            catch
+            {
+                // "Volver al catálogo" cae al fallback (el propio carrito, ver GetPublicCatalogUrl)
+                // — no bloquea el acceso al carrito en sí.
+            }
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -650,7 +790,7 @@ else
                 CodigoCliente = _clienteCodigo,
                 Password = _clientePassword,
                 IdWeb = idweb,
-                IdBase = idbase,
+                IdBase = _effectiveIdBase,
                 IdInsert = IdInsert
             }), "No pudimos validar el acceso en este momento. Intentá nuevamente.");
 
@@ -696,8 +836,23 @@ else
 
     private string GetPublicCatalogUrl()
     {
+        // Carrito general (/carrito/0): no hay un catálogo real asociado — no se inventa una
+        // relación que no existe (ver EnsurePublicTokenSessionAsync, que tampoco intenta resolver
+        // un link de catálogo para IdReferencia=0).
         if (IdInsert <= 0)
             return "/";
+
+        // Link seguro del catálogo (Tipo=CATALOGO, mismo IdReferencia) ya resuelto/generado en
+        // EnsurePublicTokenSessionAsync: esto es lo que hace que "Volver al catálogo" abra el
+        // catálogo real y no se quede pegado en el propio carrito.
+        if (!string.IsNullOrWhiteSpace(_catalogLinkRouteSegment) && !string.IsNullOrWhiteSpace(idweb))
+            return Nav.ToAbsoluteUri($"/{Uri.EscapeDataString(idweb)}/catalogo/{_catalogLinkRouteSegment}").ToString();
+
+        // Fallback: si por algún motivo no se pudo resolver/generar el link del catálogo (ej. la
+        // consulta a ALFA_CENTRAL falló), se vuelve al propio carrito por su link seguro en vez de
+        // reconstruir la URL legacy con idbase.
+        if (!string.IsNullOrWhiteSpace(_publicLinkRouteSegment) && !string.IsNullOrWhiteSpace(idweb))
+            return Nav.ToAbsoluteUri($"/{Uri.EscapeDataString(idweb)}/carrito/{_publicLinkRouteSegment}").ToString();
 
         return AlfaCore.Services.CatalogosUrlHelper.BuildAbsoluteUrl(
             Nav,
@@ -722,8 +877,8 @@ else
             : Embedded ? "Volver al portal" : "Volver al catálogo";
 
     private string BuildPortalBackUrl()
-        => idweb is not null && idbase is not null
-            ? $"/{Uri.EscapeDataString(idweb)}/{idbase.Value}/portal-cliente"
+        => idweb is not null && _effectiveIdBase is not null
+            ? $"/{Uri.EscapeDataString(idweb)}/{_effectiveIdBase.Value}/portal-cliente"
             : "/portal-cliente";
 
     private static string NormalizeRouteSegment(string? value)
@@ -1035,7 +1190,7 @@ else
                 IdInsert = IdInsert,
                 CodigoCliente = codigoCliente,
                 IdWeb = idweb,
-                IdBase = idbase,
+                IdBase = _effectiveIdBase,
                 Lineas = lineas
             }), "No se pudo registrar el pedido");
 

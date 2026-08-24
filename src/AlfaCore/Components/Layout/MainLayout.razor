@@ -1370,6 +1370,16 @@ else
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
     private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta/mostrador", StringComparison.OrdinalIgnoreCase);
     private bool IsLoginRoute => string.Equals(GetNormalizedCurrentPath(), "login", StringComparison.OrdinalIgnoreCase);
+    /// <summary>
+    /// Chequeo de defensa en profundidad: además de <see cref="AppUserSession.RequiresInternalLogin"/>
+    /// (que sólo indica si se hizo login interno alguna vez), confirma que ese login interno se
+    /// haya validado contra la MISMA base que está activa ahora mismo. Un cambio de base sin pasar
+    /// por <see cref="ISessionService.SwitchSession"/> (que ya invalida esto) nunca debería ocurrir,
+    /// pero esta propiedad es la que se evalúa en cada render, así que cubre ese caso también.
+    /// </summary>
+    private bool IsActiveSessionAuthorized
+        => AppUserSession.IsAuthorizedForSession(SessionSvc.GetActiveSession()?.Id);
+
     private bool IsInternalSqlLoginContext
     {
         get
@@ -1380,7 +1390,7 @@ else
             if (_manualLoginOverlayOpen && SessionSvc.GetActiveSession() is not null)
                 return true;
 
-            if (AppUserSession.IsAuthenticated && !AppUserSession.RequiresInternalLogin)
+            if (AppUserSession.IsAuthenticated && IsActiveSessionAuthorized)
                 return false;
 
             if (SessionSvc.GetActiveSession() is not null)
@@ -1394,8 +1404,8 @@ else
     }
     private bool ShowLoginOverlay
         => _manualLoginOverlayOpen
-           || (!AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin))
-           || (AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin));
+           || (!AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || !IsActiveSessionAuthorized))
+           || (AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || !IsActiveSessionAuthorized));
     private bool ShouldShowConversationMobilePwaActions
         => string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase);
     private bool CanEnablePush
@@ -1684,6 +1694,23 @@ else
 
         try
         {
+            // Restaurar el token de localStorage ANTES de activar la base por ruta: en SaaS,
+            // EnsureActiveSessionFromRouteAsync depende de AppUserSession.CurrentUser ya resuelto
+            // (ConexionClienteService.RefreshSaaSCacheIfNeeded solo lista bases de un usuario
+            // autenticado). Si no se restaura acá primero, la primera visita que llega con el token
+            // recién puesto en localStorage (el ticket bridge de VB6, que no tuvo circuito Blazor
+            // previo) nunca activa la base de la URL en este render.
+            if (!AppUserSession.IsAuthenticated)
+            {
+                try
+                {
+                    var earlyToken = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
+                    if (!string.IsNullOrEmpty(earlyToken))
+                        AppUserSession.TryRestoreFromToken(earlyToken);
+                }
+                catch { }
+            }
+
             await EnsureActiveSessionFromRouteAsync();
             await EnsureInternalLoginUsersAsync();
 
@@ -1705,7 +1732,7 @@ else
 
                 try
                 {
-                    var isInternalLoginPrompt = IsInternalSqlLoginContext || (AppMode.IsSaaSMode && AppUserSession.RequiresInternalLogin && !IsLoginRoute);
+                    var isInternalLoginPrompt = IsInternalSqlLoginContext || (AppMode.IsSaaSMode && !IsActiveSessionAuthorized && !IsLoginRoute);
                     if (!isInternalLoginPrompt)
                     {
                         _loginRememberCredentials = string.Equals(
@@ -1715,8 +1742,10 @@ else
 
                         if (_loginRememberCredentials)
                         {
+                            // Sólo se recuerda el usuario: la contraseña nunca se persiste en el
+                            // cliente (localStorage no es HttpOnly y queda accesible desde JS/XSS).
                             _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
-                            _loginPassword = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_password") ?? string.Empty;
+                            await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
                         }
                     }
                     else
@@ -1732,7 +1761,14 @@ else
             if (AppMode.IsSaaSMode && !AppUserSession.IsAuthenticated)
             {
                 var normalizedPath = GetNormalizedCurrentPath();
-                var allowSaasLanding = await CanShowSaaSClientLandingAsync(normalizedPath);
+
+                // /{idweb}/{idbase} (y sus sub-rutas) ya identifican una base concreta: eso no es
+                // "sin sesión utilizable", es un acceso directo por base que debe resolverse con el
+                // login interno de esa base (IsInternalSqlLoginContext/AppLoginOverlay), nunca con
+                // el login central de cuenta AlfaNet. Antes este guard sólo reconocía el landing de
+                // /{idweb} solo (1 segmento) y mandaba cualquier /{idweb}/{idbase} a /login central.
+                var allowSaasLanding = await CanShowSaaSClientLandingAsync(normalizedPath)
+                    || await CanShowBaseLoginRouteAsync();
                 Logger.LogInformation(
                     "MainLayout: auth guard. Path={Path}, AllowLanding={AllowLanding}, HasAuth={HasAuth}, ActiveSession={ActiveSession}, SaaS={SaaS}",
                     normalizedPath,
@@ -1797,6 +1833,21 @@ else
 
         if (routeSession is null)
         {
+            // No está en la lista de bases centrales del usuario (o no hay usuario central: es el
+            // caso del login directo por ruta, ver MainLayout.LoginAsync). Si la conexión activa
+            // de este circuito es de OTRA base (por ejemplo, se activó con SetWebhookOverride para
+            // /ALFANET/84 y ahora la URL pide /ALFANET/85), esa conexión no es válida para la
+            // ruta actual: se limpia para que vuelva a pedirse el login interno de la base nueva.
+            var activeNow = SessionSvc.GetActiveSession();
+            if (activeNow is not null && activeNow.BaseId != routeBaseId)
+            {
+                Logger.LogInformation(
+                    "MainLayout: la conexión activa (BaseId={ActiveBaseId}) no coincide con la ruta (BaseId={RouteBaseId}); se limpia el override para exigir login interno de la base nueva.",
+                    activeNow.BaseId,
+                    routeBaseId);
+                SessionSvc.ClearWebhookOverride();
+            }
+
             var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
             _routeSessionLabel = routeBase is null
                 ? $"Base #{routeBaseId}"
@@ -1806,7 +1857,16 @@ else
 
         QueuePendingUpdatesCheckIfNeeded(routeSession);
 
-        if (SessionSvc.GetActiveSession() is null)
+        // La URL sólo identifica la base pedida; nunca se confía en ella como autorización.
+        // Si la base activa de este circuito no coincide con la de la ruta (sin sesión previa,
+        // o el usuario editó manualmente el idbase de la URL), se activa la base pedida —
+        // SwitchSession ya valida que pertenezca al cliente autenticado — y SwitchSession invalida
+        // el login interno vigente si no era el mismo (ver ConexionClienteService.SwitchSession /
+        // AppUserSessionService.EnsureAuthorizedForSession), por lo que el overlay de login interno
+        // vuelve a pedirse para la base nueva.
+        var activeSession = SessionSvc.GetActiveSession();
+        var switchedFromDifferentBase = activeSession is not null && activeSession.Id != routeSession.Id;
+        if (activeSession is null || switchedFromDifferentBase)
         {
             SessionSvc.SwitchSession(routeSession.Id);
 
@@ -1820,7 +1880,8 @@ else
             }
 
             Logger.LogInformation(
-                "MainLayout: base activada desde la URL (sin sesión previa). Path={Path}, IdWeb={IdWeb}, IdBase={IdBase}, Nombre={Nombre}",
+                "MainLayout: base activada desde la URL ({Motivo}). Path={Path}, IdWeb={IdWeb}, IdBase={IdBase}, Nombre={Nombre}",
+                switchedFromDifferentBase ? "cambio de base por URL" : "sin sesión previa",
                 GetNormalizedCurrentPath(),
                 GetRouteIdWeb() ?? "(sin ruta)",
                 routeSession.BaseId,
@@ -2522,7 +2583,7 @@ else
                         selectedSession.BaseDatos,
                         selectedSession.Usuario);
 
-                    var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, loginCts.Token);
+                    var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, selectedSession.Id, loginCts.Token);
                     var completedTask = await Task.WhenAny(loginTask, Task.Delay(TimeSpan.FromSeconds(20), loginCts.Token));
                     if (!ReferenceEquals(completedTask, loginTask))
                     {
@@ -2570,7 +2631,11 @@ else
                         routeBase.DbName,
                         routeBase.DbUser);
 
-                    var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, loginCts.Token);
+                    // Id determinístico (mismo algoritmo que usa la sesión SaaS "normal" para esta
+                    // base) — así, si más adelante este circuito sí hace login central, el Id de
+                    // sesión de esta base coincide con el que ya quedó autorizado acá.
+                    var routeSessionId = SessionDto.BuildGuidFromBaseId(routeBaseId);
+                    var loginTask = LegacyBaseUserSession.LoginAsync(_loginUserName, _loginPassword, builder.ConnectionString, routeSessionId, loginCts.Token);
                     var completedTask = await Task.WhenAny(loginTask, Task.Delay(TimeSpan.FromSeconds(20), loginCts.Token));
                     if (!ReferenceEquals(completedTask, loginTask))
                     {
@@ -2583,6 +2648,33 @@ else
                     Logger.LogInformation("LoginAsync: adoptando usuario interno...");
                     AppUserSession.AdoptInternalUser(session);
                     Logger.LogInformation("LoginAsync: usuario interno adoptado. RequiresInternalLogin={RequiresInternalLogin}, Authenticated={Authenticated}", AppUserSession.RequiresInternalLogin, AppUserSession.IsAuthenticated);
+
+                    // BUG: hasta acá el login validaba bien las credenciales contra TA_USUARIOS de
+                    // la base 84, pero nunca activaba una conexión en ConexionClienteService (esta
+                    // rama sólo corre cuando SessionSvc.GetActiveSession() ya era null, es decir,
+                    // sin sesión central previa). Sin conexión activa, IsActiveSessionAuthorized
+                    // seguía viendo GetActiveSession()=null y ShowLoginOverlay nunca se apagaba: el
+                    // usuario quedaba "pegado" en el login pese a validar bien.
+                    // SetWebhookOverride ya existía para fijar la base activa del scope sin pasar
+                    // por la lista de bases centrales (IdCliente) — acá se reutiliza EXACTAMENTE
+                    // para eso, y sólo después de validar el usuario/contraseña contra la base 84.
+                    SessionSvc.SetWebhookOverride(new SessionDto
+                    {
+                        Id = routeSessionId,
+                        BaseId = routeBaseId,
+                        Nombre = routeBase.Nombre,
+                        Servidor = routeBase.DbServer,
+                        BaseDatos = routeBase.DbName,
+                        Usuario = routeBase.DbUser,
+                        Password = routeBase.DbPassword,
+                        TrustServerCertificate = true,
+                        Activa = true
+                    });
+                    Logger.LogInformation(
+                        "LoginAsync: conexión activada para login directo por ruta. IdBase={IdBase}, SessionId={SessionId}, ActiveSessionAfter={ActiveSessionAfter}",
+                        routeBaseId,
+                        routeSessionId,
+                        SessionSvc.GetActiveSession()?.BaseId);
                 }
             }
             else if (AppMode.IsSaaSMode)
@@ -2620,11 +2712,12 @@ else
                 _loginUserName = session.UserName;
                 if (_loginRememberCredentials)
                 {
+                    _loginPassword = string.Empty;
                     try
                     {
                         await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
                         await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName);
-                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword);
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
                     }
                     catch { }
                 }
@@ -3399,7 +3492,7 @@ else
         {
             await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
             await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName ?? string.Empty);
-            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_password", _loginPassword ?? string.Empty);
+            await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
         }
         catch { }
     }
@@ -3431,7 +3524,7 @@ else
     /// </summary>
     private void EnsureLoginDraftPrimedForInternalContext()
     {
-        if (IsInternalSqlLoginContext && AppUserSession.RequiresInternalLogin)
+        if (IsInternalSqlLoginContext && !IsActiveSessionAuthorized)
         {
             if (_internalLoginDraftPrimed)
                 return;
@@ -3640,6 +3733,33 @@ else
 
         return segments.Length == 2
             && int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+    }
+
+    /// <summary>
+    /// True cuando la ruta actual es /{idweb}/{idbase}[...resto] y ese idbase existe en la tabla
+    /// central de bases. No valida NINGUNA autorización todavía (para eso está el login interno
+    /// por base, ver IsInternalSqlLoginContext) — sólo evita que el guard de arriba trate un
+    /// acceso directo por base conocida como "sin sesión utilizable" y lo mande al login central.
+    /// </summary>
+    private async Task<bool> CanShowBaseLoginRouteAsync()
+    {
+        if (!AppMode.IsSaaSMode || !TryGetRouteBaseId(out var routeBaseId))
+            return false;
+
+        try
+        {
+            var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
+            Logger.LogInformation(
+                "MainLayout: base-login route lookup. IdBase={IdBase}, Found={Found}",
+                routeBaseId,
+                routeBase is not null);
+            return routeBase is not null;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "MainLayout: no se pudo validar la base #{IdBase} para el login directo por ruta.", routeBaseId);
+            return false;
+        }
     }
 
     private async Task<bool> CanShowSaaSClientLandingAsync(string path)

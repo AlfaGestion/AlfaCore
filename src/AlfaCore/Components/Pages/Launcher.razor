@@ -141,6 +141,14 @@ else
     private bool _disposed;
     private int _loadVersion;
 
+    /// <summary>
+    /// Igual que en MainLayout: no alcanza con "ya hizo login interno alguna vez"
+    /// (AppUserSession.RequiresInternalLogin=false) — tiene que haberlo hecho contra la base que
+    /// está activa ahora mismo, para que un cambio de idbase no herede una autorización ajena.
+    /// </summary>
+    private bool IsActiveSessionAuthorized
+        => AppUserSession.IsAuthorizedForSession(SessionSvc.GetActiveSession()?.Id);
+
     protected override void OnInitialized()
     {
         SessionSvc.SessionChanged += OnContextChanged;
@@ -171,7 +179,7 @@ else
                 SessionSvc.GetActiveSession()?.BaseId.ToString() ?? "(sin base)");
 
             if (string.IsNullOrWhiteSpace(normalizedPath)
-                && (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin))
+                && (!AppUserSession.IsAuthenticated || !IsActiveSessionAuthorized))
             {
                 var returnUrl = "/";
                 Logger.LogInformation("Launcher: root without usable session, redirecting to login. ReturnUrl={ReturnUrl}", returnUrl);
@@ -184,14 +192,14 @@ else
 
             if (!AppMode.IsSaaSMode)
             {
-                if (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin)
+                if (!AppUserSession.IsAuthenticated || !IsActiveSessionAuthorized)
                 {
                     _loading = false;
                     await InvokeAsync(StateHasChanged);
                     return;
                 }
             }
-            else if (!AppUserSession.IsAuthenticated || AppUserSession.RequiresInternalLogin)
+            else if (!AppUserSession.IsAuthenticated || !IsActiveSessionAuthorized)
             {
                 _loading = false;
                 Logger.LogInformation(
@@ -437,8 +445,7 @@ else
         await InvokeAsync(async () =>
         {
             if (!AppUserSession.IsAuthenticated
-                || AppUserSession.RequiresInternalLogin
-                || (!AppMode.IsSaaSMode && AppUserSession.RequiresInternalLogin)
+                || !IsActiveSessionAuthorized
                 || SessionSvc.GetActiveSession() is null)
             {
                 _loading = false;

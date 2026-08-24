@@ -222,6 +222,7 @@
     {
         _message = string.Empty;
         _error = string.Empty;
+        var userNameIntentado = _form.UserName;
 
         try
         {
@@ -234,11 +235,25 @@
             _message = _editing ? "Usuario actualizado." : "Usuario creado.";
             StartNew();
         }
+        catch (AlfaCore.Services.AppUserFacingException userFacing)
+        {
+            _error = userFacing.UserMessage;
+
+            // Duplicado al crear: ya vive en otro cliente. En vez de dejar al admin sin salida más
+            // que copiar el nombre a mano, lo pasamos directo a edición con el cliente nuevo ya
+            // elegido — solo tiene que confirmar la contraseña y guardar para reasignarlo.
+            if (!_editing && userFacing.ErrorCode == "ADMIN_USER_DUPLICADO")
+            {
+                var idClienteElegido = _form.IdCliente;
+                await EditAsync(userNameIntentado);
+                if (!string.IsNullOrWhiteSpace(idClienteElegido))
+                    _form.IdCliente = idClienteElegido;
+                _error = userFacing.UserMessage;
+            }
+        }
         catch (Exception ex)
         {
-            _error = ex is AlfaCore.Services.AppUserFacingException userFacing
-                ? userFacing.UserMessage
-                : ex.Message;
+            _error = ex.Message;
         }
     }
 }
