@@ -7705,6 +7705,7 @@ public sealed class ConversacionesService(
                     ) m
                     WHERE ISNULL(c.Archivada, 0) = 0
                       AND ISNULL(e.EsCerrado, 0) = 0
+                      AND UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) NOT IN (N'PENDIENTE', N'EN_GESTION')
                       AND m.Direction = N'ENTRANTE'
                       AND m.FechaHora <= DATEADD(hour, -@HorasRecordatorio, GETDATE());
                     """;
