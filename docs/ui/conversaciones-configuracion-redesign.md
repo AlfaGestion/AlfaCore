@@ -277,7 +277,7 @@ Sin cambios. Archivos tocados: `ConversacionesConfiguracion.razor`, `Conversacio
 
 ## C2.3 — WhatsApp Business Connection Flow
 
-**A diferencia de C2.1/C2.2, esta fase modificó backend** (`WhatsAppWebSessionService.cs`, `worker.mjs`), con permiso explícito del alcance de C2.3, solo en lo necesario para que la conexión QR/pairing code funcione y se auto-provisione. No se tocó Meta API, Instagram, Facebook, Mercado Libre, OAuth, webhooks, routing multibase ni automatizaciones.
+**A diferencia de C2.1/C2.2, esta fase modificó backend** (`WhatsAppWebSessionService.cs`, `worker.mjs`), con permiso explícito del alcance de C2.3, para implementar los flujos QR/pairing code y su autoprovisión. La validación funcional posterior aprobó únicamente QR; el pairing code queda pendiente según el cierre de Etapa 4. No se tocó Meta API, Instagram, Facebook, Mercado Libre, OAuth, webhooks, routing multibase ni automatizaciones.
 
 ### ⚠️ Limitación de entorno — no se pudo probar en vivo
 
@@ -898,6 +898,14 @@ El timeout de inicio se reprodujo fuera de la UI. `GetWorkerDirectory()` elegía
 Cuando el árbol fuente está presente se lo prioriza únicamente si contiene el runtime completo (`worker.mjs` y Baileys instalado), incluso si el ejecutable local de Release no declaró `ASPNETCORE_ENVIRONMENT=Development`. En un servidor publicado ese árbol no existe: se usa la salida productiva, que requiere `npm ci` en su carpeta de worker. El proceso de inicio ahora redirige stdout/stderr; si termina antes del primer estado o vence la espera, AlfaCore registra comando, working directory, PID, exit code, stdout y stderr mediante `IAppEventService`/`AUX_ERR`, mientras la UI recibe un mensaje breve con el identificador de incidente. No se aumentó el timeout ni se cambió el protocolo.
 
 La tarjeta Business incorpora **Asignar usuarios** tanto en lectura como durante la edición general. Abre un `AlfaDialog` con usuarios reales y checkboxes sobre un clon completo e independiente de `ConversacionWhatsAppNumeroDto`. Cancelar descarta el clon; Guardar reutiliza `SaveWhatsAppNumeroAsync`, recarga la lista y conserva todas las demás propiedades.
+
+### Cierre aprobado de Etapa 4 — 25/08/2026
+
+Validación manual aprobada para: generación de QR real, worker Node/Baileys, vinculación y reconexión mediante QR, actualización del estado, polling, cierre de sesión con confirmación, preservación del historial, asignación de usuarios y cleanup de altas provisionales.
+
+**Pendiente post-rediseño — WhatsApp Business: diagnosticar pairing mediante PHONE_NUMBER / código de vinculación.**
+
+La vinculación mediante número de teléfono/código no se considera funcional ni debe presentarse como validada en documentación de usuario. Cuando se retome, se debe auditar específicamente el worker con `WebSessionMode=PhoneNumber`, sin modificar el flujo QR ya aprobado.
 
 **Diálogo de confirmación**: texto reescrito sin mencionar auth/worker/Baileys/JID — "Cerrar sesión de WhatsApp" / "\"{nombre}\" dejará de estar conectado a AlfaCore." / "Las conversaciones anteriores se conservarán."
 
