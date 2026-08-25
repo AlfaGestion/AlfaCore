@@ -40,9 +40,132 @@ h1:focus {
     color: white;
 }
 
-    .blazor-error-boundary::after {
+.blazor-error-boundary::after {
         content: "An error has occurred."
     }
+
+#components-reconnect-modal {
+    display: none;
+}
+
+#components-reconnect-modal.components-reconnect-show,
+#components-reconnect-modal.components-reconnect-paused,
+#components-reconnect-modal.components-reconnect-failed,
+#components-reconnect-modal.components-reconnect-rejected {
+    display: grid;
+}
+
+.app-reconnect-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483600;
+    align-items: center;
+    justify-items: center;
+    padding: 1.25rem;
+    background: rgba(2, 6, 23, 0.64);
+    backdrop-filter: blur(10px);
+    color: #e2e8f0;
+}
+
+.app-reconnect-modal[hidden] {
+    display: none !important;
+}
+
+.app-reconnect-modal__card {
+    width: min(100%, 540px);
+    padding: 1.25rem 1.25rem 1.1rem;
+    border-radius: 24px;
+    border: 1px solid rgba(96, 165, 250, 0.26);
+    background:
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.14), transparent 30%),
+        linear-gradient(180deg, rgba(7, 18, 34, 0.98), rgba(10, 20, 35, 0.98));
+    box-shadow: 0 28px 80px rgba(2, 6, 23, 0.55);
+}
+
+.app-reconnect-modal__eyebrow {
+    margin: 0;
+    color: rgba(125, 211, 252, 0.92);
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+.app-reconnect-modal__title {
+    margin: 0.35rem 0 0;
+    color: #f8fafc;
+    font-size: 1.2rem;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+}
+
+.app-reconnect-modal__text {
+    margin: 0.4rem 0 0;
+    color: rgba(226, 232, 240, 0.8);
+    line-height: 1.5;
+}
+
+.app-reconnect-modal__status {
+    display: flex;
+    align-items: center;
+    gap: 0.65rem;
+    margin-top: 1rem;
+    padding: 0.8rem 0.9rem;
+    border-radius: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.56);
+    color: rgba(226, 232, 240, 0.88);
+}
+
+.app-reconnect-modal__pulse {
+    width: 0.8rem;
+    height: 0.8rem;
+    border-radius: 999px;
+    background: #22c55e;
+    box-shadow: 0 0 0 0.35rem rgba(34, 197, 94, 0.16);
+    animation: app-reconnect-pulse 1.4s ease-in-out infinite;
+}
+
+.app-reconnect-modal__attempts {
+    font-size: 0.92rem;
+    font-weight: 600;
+}
+
+.app-reconnect-modal__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+    margin-top: 1rem;
+}
+
+.app-reconnect-modal__hint {
+    margin: 0.85rem 0 0;
+    color: rgba(148, 163, 184, 0.9);
+    font-size: 0.85rem;
+    line-height: 1.45;
+}
+
+#components-reconnect-modal.components-reconnect-failed .app-reconnect-modal__pulse,
+#components-reconnect-modal.components-reconnect-rejected .app-reconnect-modal__pulse {
+    background: #f59e0b;
+    box-shadow: 0 0 0 0.35rem rgba(245, 158, 11, 0.16);
+}
+
+#components-reconnect-modal.components-reconnect-rejected .app-reconnect-modal__status {
+    border-color: rgba(245, 158, 11, 0.24);
+}
+
+@keyframes app-reconnect-pulse {
+    0%, 100% {
+        transform: scale(1);
+        opacity: 0.9;
+    }
+
+    50% {
+        transform: scale(0.82);
+        opacity: 0.65;
+    }
+}
 
 .darker-border-checkbox.form-check-input {
     border-color: #929292;

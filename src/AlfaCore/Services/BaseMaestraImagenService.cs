@@ -68,7 +68,7 @@ public sealed partial class BaseMaestraImagenService(
         if (idBase is > 0)
             query.Add($"idBase={idBase.Value}");
 
-        return query.Count == 0 ? url : $"{url}?{string.Join("&", query)}";
+        return query.Count == 0 ? url : $"{url}&{string.Join("&", query)}";
     }
 
     public string BuildPreviewUrlFromCodigo(string codigo, string? idClienteFtp, int? idBase)
@@ -85,6 +85,18 @@ public sealed partial class BaseMaestraImagenService(
             query.Add($"idBase={idBase.Value}");
 
         return query.Count == 0 ? url : $"{url}?{string.Join("&", query)}";
+    }
+
+    public string BuildGoogleImagesSearchUrl(string codigoBarra, string descripcionArticulo)
+    {
+        var query = (descripcionArticulo ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(query))
+            query = (codigoBarra ?? string.Empty).Trim();
+
+        if (string.IsNullOrWhiteSpace(query))
+            return string.Empty;
+
+        return $"https://www.google.com/search?hl=es&tbm=isch&q={Uri.EscapeDataString(query)}";
     }
 
     public Task<BaseMaestraImagenArticuloDto> ConsultarArticuloAsync(BaseMaestraImagenOrigenDto articulo, string? idClienteFtp, int? idBase, CancellationToken ct = default, bool forceRefresh = false)
@@ -118,9 +130,13 @@ public sealed partial class BaseMaestraImagenService(
                 PuedeSeleccionarse = !hasCurrentImage
             };
 
-            var info = string.IsNullOrWhiteSpace(codigoBarra)
-                ? null
-                : await TryGetProductInfoAsync(codigoBarra, token, forceRefresh);
+            BaseMaestraProductInfoDto? info = null;
+            if (!string.IsNullOrWhiteSpace(codigoBarra))
+                info = await TryGetProductInfoAsync(codigoBarra, token, forceRefresh);
+
+            if (info is null && !string.IsNullOrWhiteSpace(descripcionArticulo))
+                info = await TryGetProductInfoAsync(descripcionArticulo, token, forceRefresh);
+
             if (string.IsNullOrWhiteSpace(codigoBarra))
                 result.Estado = "Consultando por descripción";
 
@@ -233,7 +249,13 @@ public sealed partial class BaseMaestraImagenService(
                 string.IsNullOrWhiteSpace(ean) ? descripcion : ean,
                 cacheKeySource);
 
-            var info = string.IsNullOrWhiteSpace(ean) ? null : await TryGetProductInfoAsync(ean, token);
+            BaseMaestraProductInfoDto? info = null;
+            if (!string.IsNullOrWhiteSpace(ean))
+                info = await TryGetProductInfoAsync(ean, token);
+
+            if (info is null && !string.IsNullOrWhiteSpace(descripcion))
+                info = await TryGetProductInfoAsync(descripcion, token);
+
             var candidate = await ResolveBestCandidateAsync(articulo, ean, descripcion, info, token);
             if (candidate is null || string.IsNullOrWhiteSpace(candidate.ImageUrl))
                 return null;
@@ -297,8 +319,14 @@ public sealed partial class BaseMaestraImagenService(
                     }
 
                     byte[]? bytes;
+                    var manualMimeType = (articulo.MimeType ?? string.Empty).Trim();
                     var imageUrl = NormalizeUrl(articulo.ImageUrl);
-                    if (string.Equals(articulo.Fuente, "Base Maestra", StringComparison.OrdinalIgnoreCase))
+                    if (TryDecodeDataUrl(articulo.ImageUrl, out var manualBytes, out var pastedMimeType))
+                    {
+                        bytes = manualBytes;
+                        manualMimeType = pastedMimeType;
+                    }
+                    else if (string.Equals(articulo.Fuente, "Base Maestra", StringComparison.OrdinalIgnoreCase))
                     {
                         bytes = await DownloadProductImageAsync(articulo.CodigoConsulta, token);
                         if ((bytes is null || bytes.Length == 0) && !string.IsNullOrWhiteSpace(imageUrl))
@@ -321,7 +349,9 @@ public sealed partial class BaseMaestraImagenService(
                         continue;
                     }
 
-                    var extension = NormalizeExtensionFromUrl(imageUrl, articulo.Extension, articulo.MimeType);
+                    var extension = TryDecodeDataUrl(articulo.ImageUrl, out _, out var pastedMimeForExtension)
+                        ? NormalizeExtension(MimeTypeToExtension(string.IsNullOrWhiteSpace(pastedMimeForExtension) ? manualMimeType : pastedMimeForExtension))
+                        : NormalizeExtensionFromUrl(imageUrl, articulo.Extension, articulo.MimeType ?? string.Empty);
                     var officialFileName = BuildOfficialFileName(articulo.IdArticulo, extension);
                     var destination = Path.Combine(carpetaBase, officialFileName);
                     await File.WriteAllBytesAsync(destination, bytes, token);
@@ -390,7 +420,7 @@ public sealed partial class BaseMaestraImagenService(
         if (string.IsNullOrWhiteSpace(idClienteFtp))
             return false;
 
-        var ftp = await articuloImagenFtpService.ObtenerImagenAsync(idClienteFtp, idBase, idArticulo, thumbnail: true, ct);
+        var ftp = await articuloImagenFtpService.ObtenerImagenAsync(idClienteFtp, idBase, idArticulo, thumbnail: true, ct: ct);
         return ftp is not null && File.Exists(ftp.RutaCompleta);
     }
 
@@ -2394,6 +2424,42 @@ public sealed partial class BaseMaestraImagenService(
 
     private static object DbNullable(string value)
         => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value;
+
+    private static bool TryDecodeDataUrl(string? value, out byte[] bytes, out string mimeType)
+    {
+        bytes = [];
+        mimeType = string.Empty;
+
+        var input = (value ?? string.Empty).Trim();
+        if (!input.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var commaIndex = input.IndexOf(',');
+        if (commaIndex <= 5)
+            return false;
+
+        var meta = input[5..commaIndex];
+        var base64 = input[(commaIndex + 1)..];
+        if (!meta.Contains(";base64", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var semicolonIndex = meta.IndexOf(';');
+        mimeType = semicolonIndex > 0 ? meta[..semicolonIndex].Trim() : meta.Trim();
+        if (string.IsNullOrWhiteSpace(mimeType))
+            mimeType = "image/png";
+
+        try
+        {
+            bytes = Convert.FromBase64String(base64);
+            return bytes.Length > 0;
+        }
+        catch
+        {
+            bytes = [];
+            mimeType = string.Empty;
+            return false;
+        }
+    }
 
     private static async Task<bool> TableExistsAsync(SqlConnection cn, string tableName, CancellationToken ct)
         => await ObjectExistsAsync(cn, tableName, "U", ct);

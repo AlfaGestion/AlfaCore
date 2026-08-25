@@ -349,8 +349,8 @@ public sealed class CatalogoPublicoPdfService(
             await throttle.WaitAsync(ct);
             try
             {
-                var imagen = await imagenSvc.ObtenerImagenAsync(ftpCodigoCta, idBase, item.IdArticulo, thumbnail: false, ct)
-                             ?? await imagenSvc.ObtenerImagenAsync(ftpCodigoCta, idBase, item.IdArticulo, thumbnail: true, ct);
+                var imagen = await imagenSvc.ObtenerImagenAsync(ftpCodigoCta, idBase, item.IdArticulo, thumbnail: false, ct: ct)
+                             ?? await imagenSvc.ObtenerImagenAsync(ftpCodigoCta, idBase, item.IdArticulo, thumbnail: true, ct: ct);
                 if (imagen is null || !File.Exists(imagen.RutaCompleta))
                     return (item.IdArticulo, Bytes: (byte[]?)null);
 

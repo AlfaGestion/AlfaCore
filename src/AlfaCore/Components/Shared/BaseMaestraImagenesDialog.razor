@@ -2,6 +2,7 @@
 @using AlfaCore.Components.Shared.AlfaDesign
 @inject AlfaCore.Services.IBaseMaestraImagenService BaseMaestraImagenSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject IJSRuntime Js
 
 <AlfaDialog Open="@Open"
             Title="@Titulo"
@@ -136,6 +137,20 @@
                                             Disabled="@(_cargando || _asignando || !item.PuedeSeleccionarse)"
                                             OnClick="() => ToggleSeleccionAsync(item)">
                                     @(item.Seleccionado ? "Quitar" : "Seleccionar")
+                                </AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                            Size="AlfaSize.Sm"
+                                            Icon="bi bi-search"
+                                            Disabled="@(_cargando || _asignando)"
+                                            OnClick="() => AbrirGoogleAsync(item)">
+                                    Buscar en Google
+                                </AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                            Size="AlfaSize.Sm"
+                                            Icon="bi bi-clipboard-image"
+                                            Disabled="@(_cargando || _asignando)"
+                                            OnClick="() => PegarImagenAsync(item)">
+                                    Pegar
                                 </AlfaButton>
                             </div>
                             @if (!string.IsNullOrWhiteSpace(item.Error))
@@ -336,6 +351,65 @@
         return Task.CompletedTask;
     }
 
+    private async Task AbrirGoogleAsync(BaseMaestraImagenArticuloDto item)
+    {
+        if (_cargando || _asignando)
+            return;
+
+        var url = BaseMaestraImagenSvc.BuildGoogleImagesSearchUrl(item.CodigoBarra, item.DescripcionArticulo);
+        if (string.IsNullOrWhiteSpace(url))
+            return;
+
+        await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.openUrl", url);
+    }
+
+    private async Task PegarImagenAsync(BaseMaestraImagenArticuloDto item)
+    {
+        if (_cargando || _asignando)
+            return;
+
+        var result = await Js.InvokeAsync<ClipboardImageResult>("alfaCoreInterfacesUpload.readImageFromClipboard");
+        if (!result.Ok || string.IsNullOrWhiteSpace(result.DataUrl))
+        {
+            _feedbackMessage = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "No se pudo pegar la imagen",
+                Message = string.IsNullOrWhiteSpace(result.Message)
+                    ? "No se detectó ninguna imagen en el portapapeles."
+                    : result.Message
+            };
+            return;
+        }
+
+        ApplyManualImage(item, result);
+        _resultadoAsignacion = null;
+        _feedbackMessage = new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Success,
+            Title = "Imagen pegada",
+            Message = $"Se pegó la imagen para {item.IdArticulo}."
+        };
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static void ApplyManualImage(BaseMaestraImagenArticuloDto item, ClipboardImageResult result)
+    {
+        item.Fuente = "Pegar";
+        item.Confianza = "Alta";
+        item.ImageName = string.IsNullOrWhiteSpace(result.FileName) ? $"pegado-{item.IdArticulo}" : result.FileName;
+        item.ImageUrl = result.DataUrl;
+        item.MimeType = string.IsNullOrWhiteSpace(result.MimeType) ? "image/png" : result.MimeType;
+        item.Extension = MimeTypeToExtension(item.MimeType);
+        item.ImagenEncontrada = true;
+        item.PermiteReemplazo = true;
+        item.Seleccionado = true;
+        item.PuedeSeleccionarse = true;
+        item.Estado = "Pegada";
+        item.Error = null;
+        item.PreviewUrl = string.IsNullOrWhiteSpace(result.PreviewUrl) ? result.DataUrl : result.PreviewUrl;
+    }
+
     // Clave por artículo + PreviewUrl: si una nueva consulta trae una PreviewUrl distinta
     // (o la misma URL vuelve a estar disponible tras un reintento), no debe heredar el
     // fallo de una imagen anterior de ese mismo artículo.
@@ -351,6 +425,9 @@
     // real que ya viene embebido) antes de rendirnos y ocultar el thumbnail.
     private string GetPreviewSrc(BaseMaestraImagenArticuloDto item)
     {
+        if (item.PreviewUrl.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+            return item.PreviewUrl;
+
         var key = PreviewKey(item);
         if (!_previewRetryCounts.TryGetValue(key, out var attempts) || attempts == 0)
             return item.PreviewUrl;
@@ -451,6 +528,7 @@
         => estado switch
         {
             "Imagen encontrada" => AlfaTagTone.Success,
+            "Pegada" => AlfaTagTone.Success,
             "Ya tiene imagen" => AlfaTagTone.Warning,
             "Sin imagen en Base Maestra" => AlfaTagTone.Neutral,
             "Sin imagen encontrada" => AlfaTagTone.Neutral,
@@ -483,6 +561,17 @@
         return string.Concat(parts);
     }
 
+    private static string MimeTypeToExtension(string mimeType)
+        => mimeType.Trim().ToLowerInvariant() switch
+        {
+            "image/jpeg" or "image/jpg" => ".jpg",
+            "image/png" => ".png",
+            "image/webp" => ".webp",
+            "image/gif" => ".gif",
+            "image/bmp" => ".bmp",
+            _ => ".jpg"
+        };
+
     private static string BuildSummaryText(BaseMaestraImagenResultadoDto resultado)
         => $"{resultado.Asignadas} imágenes asignadas"
            + (resultado.OmitidasPorExistir > 0 ? $" · {resultado.OmitidasPorExistir} ya existentes omitidas" : string.Empty)
@@ -493,5 +582,15 @@
     {
         _feedbackMessage = null;
         return Task.CompletedTask;
+    }
+
+    private sealed class ClipboardImageResult
+    {
+        public bool Ok { get; set; }
+        public string Message { get; set; } = string.Empty;
+        public string MimeType { get; set; } = string.Empty;
+        public string DataUrl { get; set; } = string.Empty;
+        public string PreviewUrl { get; set; } = string.Empty;
+        public string FileName { get; set; } = string.Empty;
     }
 }

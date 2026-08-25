@@ -21,6 +21,268 @@
     font-size: 0.92rem;
 }
 
+.catalogos-toolbar-card,
+.catalogos-data-view,
+.catalogos-view-settings {
+    display: grid;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-lg, 18px);
+    background: var(--alfa-bg-surface);
+}
+
+.catalogos-toolbar-card__head,
+.catalogos-data-view__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.catalogos-toolbar-card__title-block {
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+.catalogos-toolbar-card__actions {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.catalogos-toolbar-card__filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) repeat(3, minmax(140px, 1fr)) auto auto;
+    align-items: end;
+    gap: 6px;
+}
+
+.catalogos-toolbar__field--wide {
+    min-width: 0;
+}
+
+.catalogos-toolbar-card__search-action {
+    display: flex;
+    align-items: flex-end;
+}
+
+.catalogos-toolbar-card__search-action .alfa-button {
+    min-width: 4.8rem;
+}
+
+.catalogos-toolbar-card__pager {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-height: 32px;
+    padding: 0 4px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md, 12px);
+    background: var(--alfa-bg-raised);
+}
+
+.catalogos-toolbar-card__pager-status {
+    min-width: 4rem;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    font-weight: 700;
+    text-align: center;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+}
+
+.catalogos-view-settings__actions,
+.catalogos-view-settings__move {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.catalogos-view-settings__group {
+    max-width: 280px;
+}
+
+.catalogos-data-view__header {
+    align-items: center;
+}
+
+.catalogos-data-view__table-wrap {
+    overflow: auto;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md, 12px);
+    background: var(--alfa-bg-surface-raised);
+}
+
+.catalogos-data-view__table {
+    width: 100%;
+    min-width: 880px;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.catalogos-data-view__table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 0.6rem 0.7rem;
+    border-bottom: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-raised);
+    color: var(--alfa-text-secondary);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.catalogos-data-view__table tbody td {
+    padding: 0.6rem 0.7rem;
+    border-bottom: 1px solid var(--alfa-border-default);
+    color: var(--alfa-text-primary);
+    vertical-align: middle;
+}
+
+.catalogos-data-view__table tbody tr:hover td {
+    background: var(--alfa-state-hover);
+}
+
+.catalogos-data-view__group-row td {
+    padding: 0.45rem 0.7rem;
+    background: color-mix(in srgb, var(--alfa-bg-raised) 78%, var(--alfa-accent) 22%);
+}
+
+.catalogos-data-view__group-row td .alfa-tag {
+    font-size: 11px;
+}
+
+.catalogos-data-view__id {
+    font-weight: 800;
+    color: var(--alfa-text-primary);
+}
+
+.catalogos-data-view__name {
+    display: grid;
+    gap: 0.25rem;
+}
+
+.catalogos-data-view__name strong {
+    color: var(--alfa-text-primary);
+    font-weight: 700;
+    font-size: 0.98rem;
+}
+
+.catalogos-data-view__vigencia {
+    white-space: nowrap;
+    color: var(--alfa-text-secondary);
+    font-size: 0.95rem;
+}
+
+.catalogos-data-view__actions-col {
+    width: 1%;
+    min-width: 190px;
+    white-space: nowrap;
+    text-align: right;
+}
+
+.catalogos-data-view__actions {
+    display: inline-flex;
+    justify-content: flex-end;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: nowrap;
+}
+
+.catalogos-data-view__actions .alfa-button,
+.catalogos-data-view__actions .alfa-action-menu__trigger {
+    min-height: 32px;
+}
+
+.catalogos-data-view__actions .alfa-button {
+    min-width: 0;
+}
+
+.catalogos-data-view__page-size {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    font-weight: 600;
+}
+
+.catalogos-loading {
+    min-height: 4rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--alfa-space-8, 8px);
+    color: var(--alfa-text-secondary);
+}
+
+html[data-theme="dark"] .catalogos-toolbar-card,
+html[data-theme="dark"] .catalogos-data-view,
+html[data-theme="dark"] .catalogos-view-settings {
+    background: var(--alfa-bg-surface);
+    border-color: var(--alfa-border-default);
+}
+
+html[data-theme="light"] .catalogos-toolbar-card,
+html[data-theme="light"] .catalogos-data-view,
+html[data-theme="light"] .catalogos-view-settings {
+    background: #ffffff;
+    border-color: rgba(15, 23, 42, 0.12);
+}
+
+@media (max-width: 1180px) {
+    .catalogos-toolbar-card__filters {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .catalogos-toolbar__field--wide,
+    .catalogos-toolbar-card__search-action,
+    .catalogos-toolbar-card__pager {
+        grid-column: 1 / -1;
+    }
+
+    .catalogos-toolbar-card__search-action {
+        justify-content: flex-start;
+    }
+
+    .catalogos-toolbar-card__pager {
+        justify-content: flex-start;
+        width: fit-content;
+    }
+}
+
+@media (max-width: 760px) {
+    .catalogos-toolbar-card__head,
+    .catalogos-data-view__header {
+        flex-direction: column;
+    }
+
+    .catalogos-toolbar-card__actions {
+        width: 100%;
+        justify-content: flex-start;
+    }
+
+    .catalogos-toolbar-card__filters {
+        grid-template-columns: 1fr;
+    }
+
+    .catalogos-toolbar-card__pager {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .catalogos-data-view__actions {
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+}
+
 .catalogos-config-logo {
     display: grid;
     grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);

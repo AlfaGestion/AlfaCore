@@ -291,7 +291,12 @@ public sealed class Vb6BridgeService(
             RazonSocial = record.RazonSocial ?? string.Empty,
             IdWeb = record.IdWeb ?? string.Empty,
             SuperAdmin = record.SuperAdmin,
-            RequiresInternalLogin = false
+            RequiresInternalLogin = false,
+            // Sin esto, ConexionClienteService.SwitchSession → AppUserSessionService.EnsureAuthorizedForSession
+            // ve que AuthorizedSessionId no coincide con la base recién activada por la URL (el ticket
+            // nunca lo completaba) y vuelve a exigir el login interno — anulando el sentido del ticket.
+            // El Guid tiene que calcularse igual que ConexionClienteService.Map, por eso reusa la misma función.
+            AuthorizedSessionId = ConexionClienteService.BuildGuidFromBaseId(record.IdBase)
         };
 
         var token = appUserSessionStore.Store(centralUser);

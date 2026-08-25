@@ -128,6 +128,9 @@ public sealed class CatalogosCatalogoItemDto
     public decimal? PrecioOferta { get; set; }
     public string Rubro { get; set; } = string.Empty;
     public DateTime? OfertaHasta { get; set; }
+
+    /// <summary>ModificoImagen='1'/'P' en V_MA_ARTICULOS: la imagen del artículo cambió y el caché local puede estar desactualizado (ver ArticuloImagenFtpService).</summary>
+    public bool ImagenModificada { get; set; }
 }
 
 public sealed class CatalogosCatalogoResumenDto

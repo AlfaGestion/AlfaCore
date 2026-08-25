@@ -156,6 +156,56 @@
                 return { ok: false, message, addedCount: 0 };
             }
         },
+        async readImageFromClipboard() {
+            if (!navigator.clipboard || typeof navigator.clipboard.read !== 'function') {
+                return { ok: false, message: 'Tu navegador no permite leer imágenes del portapapeles.', mimeType: '', dataUrl: '', previewUrl: '', fileName: '' };
+            }
+
+            try {
+                const clipboardItems = await navigator.clipboard.read();
+
+                for (const item of clipboardItems) {
+                    const imageType = item.types.find(type => type.startsWith('image/'));
+                    if (!imageType) continue;
+
+                    const blob = await item.getType(imageType);
+                    const bytes = new Uint8Array(await blob.arrayBuffer());
+                    let binary = '';
+                    const chunkSize = 0x8000;
+                    for (let i = 0; i < bytes.length; i += chunkSize) {
+                        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+                    }
+
+                    const base64 = btoa(binary);
+                    const previewUrl = URL.createObjectURL(blob);
+                    const extension = imageType.split('/')[1] || 'png';
+                    const fileName = `pegado-${new Date().toISOString().replace(/[:.]/g, '-')}.${extension}`;
+                    return {
+                        ok: true,
+                        message: '',
+                        mimeType: imageType,
+                        fileName,
+                        dataUrl: `data:${imageType};base64,${base64}`,
+                        previewUrl
+                    };
+                }
+
+                return { ok: false, message: 'El portapapeles no tiene una imagen para pegar.', mimeType: '', dataUrl: '', previewUrl: '', fileName: '' };
+            } catch (error) {
+                const message = error && error.message
+                    ? error.message
+                    : 'No se pudo leer el portapapeles.';
+                return { ok: false, message, mimeType: '', dataUrl: '', previewUrl: '', fileName: '' };
+            }
+        },
+        openUrl(url) {
+            if (!url) return;
+
+            const win = window.open(url, '_blank', 'noopener,noreferrer');
+            if (win) {
+                win.opener = null;
+            }
+        },
         downloadBlob(base64, mimeType, fileName) {
             if (!base64) return;
 

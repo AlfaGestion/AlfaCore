@@ -43,122 +43,146 @@
 @if (ShouldRenderCatalogosSection)
 {
 <section class="page-grid">
-    @if (_feedback is not null && _homeSelection != CatalogosHomeSelection.NuevoCatalogo)
-    {
-        <div class="panel-card">
-            <div class="editor-msg @GetFeedbackClass(_feedback)">
-                <div>
-                    <strong>@_feedback.Title</strong>
-                    <p>@_feedback.Message</p>
-                    @if (_feedback.HasSuggestion)
-                    {
-                        <small>@_feedback.Suggestion</small>
-                    }
-                    @if (_feedback.HasCode)
-                    {
-                        <small>Código: @_feedback.Code</small>
-                    }
-                </div>
-            </div>
-        </div>
-    }
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     @if (_homeSelection is null || _homeSelection == CatalogosHomeSelection.VerCatalogos)
     {
-        <ModuleListToolbar AriaLabel="Herramientas de catálogos"
-                           PagerAriaLabel="Paginación de catálogos"
-                           ActionsAriaLabel="Acciones de catálogos"
-                           ShowPager="true"
-                           CurrentPage="@(_catalogosPage?.PageNumber ?? 1)"
-                           TotalPages="@(_catalogosPage?.TotalPages ?? 1)"
-                           IsLoading="@_loading"
-                           OnPageChanged="OnCatalogosPageChangedAsync"
-                           Actions="@BuildListadoActions()">
-            <SearchContent>
-                <div class="catalogos-toolbar">
-                    <div class="field catalogos-toolbar__field catalogos-toolbar__field--wide">
-                        <label>Buscar catálogo</label>
-                        <input type="search"
-                               class="form-control"
-                               @bind="_catalogosTexto"
-                               @bind:event="oninput"
-                               @onkeydown="HandleCatalogosSearchKeyDownAsync"
-                               placeholder="Nombre, grupo, lista o id" />
-                    </div>
-                    <div class="field catalogos-toolbar__field">
-                        <label>Tipo</label>
-                        <select class="form-select" @bind="_catalogosTipoFiltro">
-                            <option value="todos">Todos</option>
-                            <option value="predeterminado">Predeterminado</option>
-                            <option value="vigencia">Con vigencia</option>
-                        </select>
-                    </div>
-                    <div class="field catalogos-toolbar__field">
-                        <label>Estado</label>
-                        <select class="form-select" @bind="_catalogosEstadoFiltro">
-                            <option value="todos">Todos</option>
-                            <option value="publicado">Publicado</option>
-                            <option value="finalizado">Finalizado</option>
-                        </select>
-                    </div>
-                    <div class="field catalogos-toolbar__field">
-                        <label>Fecha</label>
-                        <InputDate TValue="DateTime?" class="form-control" @bind-Value="_catalogosFechaFiltro" />
-                    </div>
-                    <div class="catalogos-toolbar__search-action">
-                        <button type="button" class="btn btn--primary" @onclick="() => BuscarCatalogosAsync()" disabled="@_loading">
-                            <i class="bi bi-search"></i> Buscar
-                        </button>
+        <section class="panel-card catalogos-toolbar-card">
+            <div class="catalogos-toolbar-card__head">
+                <div class="catalogos-toolbar-card__title-block">
+                    <h3 class="panel-card__title">Catálogos publicados</h3>
+                    <p class="panel-card__subtitle">@GetCatalogosSummaryText()</p>
+                </div>
+                <div class="catalogos-toolbar-card__actions">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary"
+                                Size="AlfaSize.Sm"
+                                Icon="bi bi-plus-circle"
+                                Disabled="@_loading"
+                                OnClick="() => ShowNuevoCatalogoAsync()">
+                        Nuevo catálogo
+                    </AlfaButton>
+                    <AlfaIconButton Icon="bi bi-arrow-clockwise"
+                                    Label="Recargar"
+                                    Tooltip="Recargar"
+                                    Size="AlfaSize.Sm"
+                                    Disabled="@_loading"
+                                    OnClick="() => RecargarAsync()" />
+                    <AlfaActionMenu Items="@GetCatalogosOverflowActions()"
+                                    TriggerLabel="Más acciones"
+                                    MenuLabel="Más acciones de catálogos"
+                                    Disabled="@_loading" />
+                    <div class="catalogos-toolbar-card__pager" aria-label="Paginación de catálogos">
+                        <AlfaIconButton Icon="bi bi-chevron-double-left"
+                                        Label="Primera página"
+                                        Tooltip="Primera página"
+                                        Size="AlfaSize.Sm"
+                                        Disabled="@(!CanGoToFirstCatalogosPage)"
+                                        OnClick="() => GoToFirstCatalogosPageAsync()" />
+                        <AlfaIconButton Icon="bi bi-chevron-left"
+                                        Label="Página anterior"
+                                        Tooltip="Página anterior"
+                                        Size="AlfaSize.Sm"
+                                        Disabled="@(!CanGoToPreviousCatalogosPage)"
+                                        OnClick="() => GoToPreviousCatalogosPageAsync()" />
+                        <span class="catalogos-toolbar-card__pager-status">@GetCatalogosPageIndicator()</span>
+                        <AlfaIconButton Icon="bi bi-chevron-right"
+                                        Label="Página siguiente"
+                                        Tooltip="Página siguiente"
+                                        Size="AlfaSize.Sm"
+                                        Disabled="@(!CanGoToNextCatalogosPage)"
+                                        OnClick="() => GoToNextCatalogosPageAsync()" />
+                        <AlfaIconButton Icon="bi bi-chevron-double-right"
+                                        Label="Última página"
+                                        Tooltip="Última página"
+                                        Size="AlfaSize.Sm"
+                                        Disabled="@(!CanGoToLastCatalogosPage)"
+                                        OnClick="() => GoToLastCatalogosPageAsync()" />
                     </div>
                 </div>
-            </SearchContent>
-        </ModuleListToolbar>
+            </div>
+
+            <div class="catalogos-toolbar-card__filters">
+                <AlfaInput Label="Buscar catálogo"
+                           Type="search"
+                           Value="@_catalogosTexto"
+                           ValueChanged="SetCatalogosTextoAsync"
+                           Placeholder="Nombre, grupo, lista o id"
+                           Class="catalogos-toolbar__field catalogos-toolbar__field--wide" />
+                <AlfaSelect Label="Tipo"
+                            Value="@_catalogosTipoFiltro"
+                            ValueChanged="SetCatalogosTipoFiltroAsync"
+                            Options="@GetCatalogosTipoOptions()"
+                            Class="catalogos-toolbar__field" />
+                <AlfaSelect Label="Estado"
+                            Value="@_catalogosEstadoFiltro"
+                            ValueChanged="SetCatalogosEstadoFiltroAsync"
+                            Options="@GetCatalogosEstadoOptions()"
+                            Class="catalogos-toolbar__field" />
+                <AlfaInput Label="Fecha"
+                           Type="date"
+                           Value="@CatalogosFechaFiltroTexto"
+                           ValueChanged="SetCatalogosFechaFiltroTextoAsync"
+                           Class="catalogos-toolbar__field" />
+                <div class="catalogos-toolbar-card__search-action">
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                                Size="AlfaSize.Sm"
+                                Icon="bi bi-search"
+                                Disabled="@_loading"
+                                OnClick="() => BuscarCatalogosAsync()">
+                        Buscar
+                    </AlfaButton>
+                </div>
+            </div>
+        </section>
 
         @if (_showViewSettings)
         {
-            <section class="panel-card">
+            <section class="panel-card catalogos-view-settings">
                 <div class="panel-card__header">
                     <div>
                         <h3 class="panel-card__title">Vista</h3>
                     </div>
-                    <div class="actions">
-                        <button type="button" class="btn btn--primary" @onclick="GuardarVistaAsync">
-                            <i class="bi bi-floppy"></i> Guardar vista
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="CancelarVistaAsync">
-                            <i class="bi bi-x-circle"></i> Cerrar
-                        </button>
+                    <div class="catalogos-view-settings__actions">
+                        <AlfaButton Variant="AlfaButtonVariant.Primary"
+                                    Size="AlfaSize.Sm"
+                                    Icon="bi bi-floppy"
+                                    OnClick="() => GuardarVistaAsync()">
+                            Guardar vista
+                        </AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                    Size="AlfaSize.Sm"
+                                    Icon="bi bi-x-circle"
+                                    OnClick="() => CancelarVistaAsync()">
+                            Cerrar
+                        </AlfaButton>
                     </div>
                 </div>
 
-                <div class="row g-3">
-                    <div class="col-12 col-lg-4">
-                        <div class="field">
-                            <label>Agrupar por</label>
-                            <select @bind="_draftAgruparPor">
-                                <option value="@CatalogosViewGroupKeys.None">Sin agrupar</option>
-                                <option value="@CatalogosViewGroupKeys.Tipo">Tipo</option>
-                                <option value="@CatalogosViewGroupKeys.Estado">Estado</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
+                <AlfaSelect Label="Agrupar por"
+                            Value="@_draftAgruparPor"
+                            ValueChanged="SetDraftAgruparPorAsync"
+                            Options="@GetCatalogosGroupOptions()"
+                            Class="catalogos-view-settings__group" />
 
                 <div class="usuarios-view-settings__list mt-3">
                     @foreach (var column in _viewSettingsDraft.OrderBy(c => c.Order))
                     {
                         <div class="usuarios-view-settings__item">
-                            <label class="checkbox">
-                                <input type="checkbox" checked="@column.Visible" @onchange="args => ToggleViewColumn(column.Key, args)" />
-                                <span>@column.Label</span>
-                            </label>
-                            <div class="actions">
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, -1)">
-                                    <i class="bi bi-arrow-up"></i>
-                                </button>
-                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MoveViewColumn(column.Key, 1)">
-                                    <i class="bi bi-arrow-down"></i>
-                                </button>
+                            <AlfaCheckbox Value="@column.Visible"
+                                          ValueChanged="value => SetViewColumnVisibleAsync(column.Key, value)">
+                                @column.Label
+                            </AlfaCheckbox>
+                            <div class="catalogos-view-settings__move">
+                                <AlfaIconButton Icon="bi bi-arrow-up"
+                                                Label="Subir columna"
+                                                Tooltip="Subir columna"
+                                                Size="AlfaSize.Sm"
+                                                OnClick="() => MoveViewColumn(column.Key, -1)" />
+                                <AlfaIconButton Icon="bi bi-arrow-down"
+                                                Label="Bajar columna"
+                                                Tooltip="Bajar columna"
+                                                Size="AlfaSize.Sm"
+                                                OnClick="() => MoveViewColumn(column.Key, 1)" />
                             </div>
                         </div>
                     }
@@ -166,35 +190,36 @@
             </section>
         }
 
-        <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">Catálogos publicados</h3>
-                    <p class="panel-card__subtitle">@(_catalogosPage?.Total ?? 0) registro(s) · página @(_catalogosPage?.PageNumber ?? 1) de @(_catalogosPage?.TotalPages ?? 1)</p>
-                </div>
-            </div>
-
+        <section class="panel-card catalogos-data-view">
             @if (_catalogosPage is null)
             {
-                <div class="loading">Cargando catálogos...</div>
+                <div class="catalogos-loading">
+                    <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    <span>Cargando catálogos...</span>
+                </div>
             }
             else if (_catalogosPage.Items.Count == 0)
             {
-                <div class="usuarios-empty">No hay catálogos publicados para los filtros actuales.</div>
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                Title="No hay catálogos publicados"
+                                Message="Probá con otros filtros o creá un catálogo nuevo para empezar."
+                                ActionLabel="Nuevo catálogo"
+                                ActionIcon="bi bi-plus-circle"
+                                OnAction="ShowNuevoCatalogoAsync" />
             }
             else
             {
                 var visibleColumns = GetVisibleColumns();
                 var groups = BuildGroups(_catalogosPage.Items);
-                <div class="table-responsive">
-                    <table class="data-table usuarios-table">
+                <div class="catalogos-data-view__table-wrap">
+                    <table class="catalogos-data-view__table">
                         <thead>
                             <tr>
                                 @foreach (var col in visibleColumns)
                                 {
                                     <th>@col.Label</th>
                                 }
-                                <th>Acciones</th>
+                                <th class="catalogos-data-view__actions-col">Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -202,67 +227,65 @@
                             {
                                 if (group.ShowHeader)
                                 {
-                                    <tr class="usuarios-group-row">
-                                        <td colspan="@GetColumnSpan(visibleColumns.Count)">@group.Label</td>
+                                    <tr class="catalogos-data-view__group-row">
+                                        <td colspan="@GetColumnSpan(visibleColumns.Count)">
+                                            <AlfaTag Tone="AlfaTagTone.Neutral">@group.Label</AlfaTag>
+                                        </td>
                                     </tr>
                                 }
 
                                 @foreach (var item in group.Items)
                                 {
-                                    <tr>
+                                    <tr class="catalogos-data-view__row">
                                         @foreach (var col in visibleColumns)
                                         {
                                             <td>
                                                 @switch (col.Key)
                                                 {
                                                     case CatalogosViewColumnKeys.Id:
-                                                        <strong>@item.IdInsert</strong>
+                                                        <span class="catalogos-data-view__id">@item.IdInsert</span>
                                                         break;
                                                     case CatalogosViewColumnKeys.Tipo:
-                                                        @item.Tipo
+                                                        <AlfaTag Tone="@(GetTipoTagTone(item.Tipo))">@item.Tipo</AlfaTag>
                                                         break;
                                                     case CatalogosViewColumnKeys.Nombre:
-                                                        @item.Nombre
-                                                        @if (item.Predeterminado)
-                                                        {
-                                                            <span class="badge text-bg-primary ms-1" title="Accesible vía /catalogo/0">Predeterminado</span>
-                                                        }
+                                                        <div class="catalogos-data-view__name">
+                                                            <strong>@item.Nombre</strong>
+                                                            @if (item.Predeterminado)
+                                                            {
+                                                                <AlfaTag Tone="AlfaTagTone.Accent">Predeterminado</AlfaTag>
+                                                            }
+                                                        </div>
                                                         break;
                                                     case CatalogosViewColumnKeys.Vigencia:
-                                                        @item.Vigencia
+                                                        <span class="catalogos-data-view__vigencia">@item.Vigencia</span>
                                                         break;
                                                     case CatalogosViewColumnKeys.Estado:
-                                                        @item.Estado
+                                                        <AlfaTag Tone="@(GetEstadoTagTone(item.Estado))">@item.Estado</AlfaTag>
                                                         break;
                                                 }
                                             </td>
                                         }
-                                        <td>
-                                            <div class="actions">
-                                                <a class="btn btn--ghost btn--sm" href="@GetPublicUrl(item.IdInsert)" target="_blank" rel="noopener">
-                                                    <i class="bi bi-eye"></i> Abrir
+                                        <td class="catalogos-data-view__actions-col">
+                                            <div class="catalogos-data-view__actions">
+                                                <a class="alfa-button alfa-button--ghost alfa-button--sm"
+                                                   href="@GetPublicUrl(item.IdInsert)"
+                                                   target="_blank"
+                                                   rel="noopener"
+                                                   title="Abrir en otra pestaña">
+                                                    <i class="bi bi-eye" aria-hidden="true"></i>
+                                                    <span>Abrir</span>
                                                 </a>
-                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => CopiarEnlaceAsync(item.IdInsert)">
-                                                    <i class="bi bi-clipboard"></i> Copiar enlace
-                                                </button>
-                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => EditarCatalogoAsync(item.IdInsert)">
-                                                    <i class="bi bi-pencil-square"></i> Editar
-                                                </button>
-                                                <button type="button" class="btn btn--ghost btn--sm" @onclick="() => FinalizarCatalogoAsync(item.IdInsert)" disabled="@item.Finalizado">
-                                                    <i class="bi bi-check2-circle"></i> Finalizar
-                                                </button>
-                                                @if (item.Predeterminado)
-                                                {
-                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarPredeterminadoAsync()">
-                                                        <i class="bi bi-star-fill"></i> Quitar predeterminado
-                                                    </button>
-                                                }
-                                                else
-                                                {
-                                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="() => MarcarPredeterminadoAsync(item.IdInsert)">
-                                                        <i class="bi bi-star"></i> Marcar como predeterminado
-                                                    </button>
-                                                }
+                                                <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                                                            Size="AlfaSize.Sm"
+                                                            Icon="bi bi-pencil-square"
+                                                            OnClick="() => EditarCatalogoAsync(item.IdInsert)">
+                                                    Editar
+                                                </AlfaButton>
+                                                <AlfaActionMenu Items="@BuildCatalogoRowActions(item)"
+                                                                TriggerLabel="Más acciones"
+                                                                MenuLabel="Acciones del catálogo"
+                                                                Align="AlfaActionMenuAlign.End" />
                                             </div>
                                         </td>
                                     </tr>
@@ -271,30 +294,21 @@
                         </tbody>
                     </table>
                 </div>
+
+                <footer class="alfa-data-view-footer catalogos-data-view__footer">
+                    <div class="alfa-data-view-footer__summary">
+                        @GetCatalogosSummaryText()
+                    </div>
+                    <div class="alfa-data-view-footer__controls">
+                        <span class="catalogos-data-view__page-size">@(_catalogosPage?.PageSize ?? 50) por página</span>
+                    </div>
+                </footer>
             }
         </section>
     }
     else if (_homeSelection == CatalogosHomeSelection.NuevoCatalogo)
     {
-        @if (_feedback is not null)
-        {
-            <div class="panel-card">
-                <div class="editor-msg @GetFeedbackClass(_feedback)">
-                    <div>
-                        <strong>@_feedback.Title</strong>
-                        <p>@_feedback.Message</p>
-                        @if (_feedback.HasSuggestion)
-                        {
-                            <small>@_feedback.Suggestion</small>
-                        }
-                        @if (_feedback.HasCode)
-                        {
-                            <small>Código: @_feedback.Code</small>
-                        }
-                    </div>
-                </div>
-            </div>
-        }
+        <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
         <section class="section-block">
                 <div class="section-block__head">
@@ -1109,6 +1123,165 @@
             _catalogosLoaded,
             _catalogosPage is null,
             _catalogosPage?.Total ?? 0);
+    }
+
+    private Task GoToFirstCatalogosPageAsync()
+        => OnCatalogosPageChangedAsync(1);
+
+    private Task GoToPreviousCatalogosPageAsync()
+        => OnCatalogosPageChangedAsync(Math.Max(1, (_catalogosPage?.PageNumber ?? 1) - 1));
+
+    private Task GoToNextCatalogosPageAsync()
+        => OnCatalogosPageChangedAsync(Math.Min(_catalogosPage?.TotalPages ?? 1, (_catalogosPage?.PageNumber ?? 1) + 1));
+
+    private Task GoToLastCatalogosPageAsync()
+        => OnCatalogosPageChangedAsync(Math.Max(1, _catalogosPage?.TotalPages ?? 1));
+
+    private bool CanGoToFirstCatalogosPage => !_loading && (_catalogosPage?.HasPrev ?? false);
+    private bool CanGoToPreviousCatalogosPage => CanGoToFirstCatalogosPage;
+    private bool CanGoToNextCatalogosPage => !_loading && (_catalogosPage?.HasNext ?? false);
+    private bool CanGoToLastCatalogosPage => CanGoToNextCatalogosPage;
+
+    private string GetCatalogosPageIndicator()
+        => $"{Math.Max(1, _catalogosPage?.PageNumber ?? 1)} / {Math.Max(1, _catalogosPage?.TotalPages ?? 1)}";
+
+    private string GetCatalogosSummaryText()
+    {
+        var total = _catalogosPage?.Total ?? 0;
+        var label = total == 1 ? "1 catálogo" : $"{total} catálogos";
+        return $"{label} · Página {Math.Max(1, _catalogosPage?.PageNumber ?? 1)} de {Math.Max(1, _catalogosPage?.TotalPages ?? 1)}";
+    }
+
+    private string CatalogosFechaFiltroTexto
+        => _catalogosFechaFiltro?.ToString("yyyy-MM-dd") ?? string.Empty;
+
+    private Task SetCatalogosTextoAsync(string? value)
+    {
+        _catalogosTexto = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private Task SetCatalogosTipoFiltroAsync(string? value)
+    {
+        _catalogosTipoFiltro = string.IsNullOrWhiteSpace(value) ? "todos" : value.Trim();
+        return Task.CompletedTask;
+    }
+
+    private Task SetCatalogosEstadoFiltroAsync(string? value)
+    {
+        _catalogosEstadoFiltro = string.IsNullOrWhiteSpace(value) ? "todos" : value.Trim();
+        return Task.CompletedTask;
+    }
+
+    private Task SetCatalogosFechaFiltroTextoAsync(string? value)
+    {
+        _catalogosFechaFiltro = DateTime.TryParse(value, out var parsed) ? parsed.Date : null;
+        return Task.CompletedTask;
+    }
+
+    private IReadOnlyList<AlfaSelectOption> GetCatalogosTipoOptions()
+        => [
+            new("todos", "Todos"),
+            new("predeterminado", "Predeterminado"),
+            new("vigencia", "Con vigencia")
+        ];
+
+    private IReadOnlyList<AlfaSelectOption> GetCatalogosEstadoOptions()
+        => [
+            new("todos", "Todos"),
+            new("publicado", "Publicado"),
+            new("finalizado", "Finalizado")
+        ];
+
+    private IReadOnlyList<AlfaActionMenuItem> GetCatalogosOverflowActions()
+        => [
+            new()
+            {
+                Key = "configurar-vista",
+                Label = _showViewSettings ? "Cerrar vista" : "Configurar vista",
+                Icon = "bi bi-sliders",
+                OnClick = async () =>
+                {
+                    ToggleViewSettings();
+                    await InvokeAsync(StateHasChanged);
+                }
+            },
+            new()
+            {
+                Key = "limpiar-filtros",
+                Label = "Limpiar filtros",
+                Icon = "bi bi-eraser",
+                OnClick = LimpiarFiltrosCatalogosAsync
+            }
+        ];
+
+    private IReadOnlyList<AlfaActionMenuItem> BuildCatalogoRowActions(CatalogosCatalogoResumenDto item)
+    {
+        var actions = new List<AlfaActionMenuItem>
+        {
+            new()
+            {
+                Key = $"copiar-{item.IdInsert}",
+                Label = "Copiar enlace",
+                Icon = "bi bi-clipboard",
+                OnClick = () => CopiarEnlaceAsync(item.IdInsert)
+            }
+        };
+
+        if (!item.Finalizado)
+        {
+            actions.Add(new AlfaActionMenuItem
+            {
+                Key = $"finalizar-{item.IdInsert}",
+                Label = "Finalizar",
+                Icon = "bi bi-check2-circle",
+                Danger = true,
+                SeparatorBefore = true,
+                OnClick = () => FinalizarCatalogoAsync(item.IdInsert)
+            });
+        }
+
+        actions.Add(new AlfaActionMenuItem
+        {
+            Key = item.Predeterminado ? $"quitar-predeterminado-{item.IdInsert}" : $"marcar-predeterminado-{item.IdInsert}",
+            Label = item.Predeterminado ? "Quitar predeterminado" : "Marcar como predeterminado",
+            Icon = item.Predeterminado ? "bi bi-star-fill" : "bi bi-star",
+            SeparatorBefore = true,
+            OnClick = item.Predeterminado
+                ? QuitarPredeterminadoAsync
+                : () => MarcarPredeterminadoAsync(item.IdInsert)
+        });
+
+        return actions;
+    }
+
+    private static AlfaTagTone GetTipoTagTone(string tipo)
+        => string.Equals(tipo, "Permanente", StringComparison.OrdinalIgnoreCase)
+            ? AlfaTagTone.Neutral
+            : AlfaTagTone.Accent;
+
+    private static AlfaTagTone GetEstadoTagTone(string estado)
+        => string.Equals(estado, "Publicado", StringComparison.OrdinalIgnoreCase)
+            ? AlfaTagTone.Success
+            : string.Equals(estado, "Finalizado", StringComparison.OrdinalIgnoreCase)
+                ? AlfaTagTone.Warning
+                : AlfaTagTone.Neutral;
+
+    private static string GetCatalogosGroupLabel(string grouping)
+        => grouping switch
+        {
+            CatalogosViewGroupKeys.Tipo => "tipo",
+            CatalogosViewGroupKeys.Estado => "estado",
+            _ => "sin agrupar"
+        };
+
+    private async Task LimpiarFiltrosCatalogosAsync()
+    {
+        _catalogosTexto = string.Empty;
+        _catalogosTipoFiltro = "todos";
+        _catalogosEstadoFiltro = "todos";
+        _catalogosFechaFiltro = DateTime.Today;
+        await BuscarCatalogosAsync();
     }
 
     private IReadOnlyList<PageHeaderAction> BuildListadoActions()
@@ -2287,6 +2460,15 @@
 
     private async Task FinalizarCatalogoAsync(int idInsert)
     {
+        var confirm = await DialogSvc.ConfirmAsync(
+            "Finalizar catálogo",
+            "¿Querés finalizar este catálogo? La acción lo deja marcado como finalizado y no se aplica directamente.",
+            "Finalizar",
+            "Cancelar");
+
+        if (!confirm)
+            return;
+
         var result = await UiOps.RunAsync(async () =>
         {
             await CatalogosSvc.FinalizarCatalogoAsync(idInsert, _catalogosUserName, Environment.MachineName, _disposeCts.Token);
@@ -2411,6 +2593,32 @@
         _draftAgruparPor = _viewSettings.AgruparPor;
         _viewSettingsDraft.Clear();
         _viewSettingsDraft.AddRange(CloneColumns(_viewSettings.Columnas));
+    }
+
+    private Task SetDraftAgruparPorAsync(string? value)
+    {
+        _draftAgruparPor = string.IsNullOrWhiteSpace(value) ? CatalogosViewGroupKeys.None : value.Trim();
+        return Task.CompletedTask;
+    }
+
+    private IReadOnlyList<AlfaSelectOption> GetCatalogosGroupOptions()
+        => [
+            new(CatalogosViewGroupKeys.None, "Sin agrupar"),
+            new(CatalogosViewGroupKeys.Tipo, "Tipo"),
+            new(CatalogosViewGroupKeys.Estado, "Estado")
+        ];
+
+    private Task SetViewColumnVisibleAsync(string key, bool? visible)
+    {
+        var column = _viewSettingsDraft.FirstOrDefault(c => string.Equals(c.Key, key, StringComparison.OrdinalIgnoreCase));
+        if (column is null)
+            return Task.CompletedTask;
+
+        column.Visible = visible is true;
+        if (!_viewSettingsDraft.Any(c => c.Visible))
+            column.Visible = true;
+
+        return Task.CompletedTask;
     }
 
     private void ToggleViewColumn(string key, ChangeEventArgs args)

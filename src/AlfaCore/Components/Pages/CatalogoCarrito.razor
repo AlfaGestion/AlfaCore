@@ -13,6 +13,7 @@
 @inject AlfaCore.Services.ICatalogosClienteSessionService CatalogoClienteSession
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
+@inject AlfaCore.Services.IArticuloImagenFtpService ArticuloImagenSvc
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPedidosEmailService PedidosEmailSvc
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
@@ -21,19 +22,23 @@
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@inject ILogger<CatalogoCarrito> Logger
 @implements IAsyncDisposable
 
 <PageTitle>Toma de pedidos | AlfaCore</PageTitle>
 
 @if (_redirecting)
 {
-    <section class="page-grid carrito-page">
-        <div class="carrito-page__loading-state">
-            <p class="text-muted">Redirigiendo al enlace seguro...</p>
-        </div>
-    </section>
+    <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Redirigiendo..." />
 }
-else if (!_loading && !_notFound && !_carritoDeshabilitado && !IsAuthenticated)
+else if (_loading)
+{
+    @* Antes esto se evaluaba DESPUÉS del header/hero de abajo, así que el hero (con el logo y
+       nombre del cliente todavía sin cargar) se veía un instante con branding genérico/vacío
+       antes de refrescarse con el real — el "doble encabezado" que se veía al entrar. *@
+    <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Cargando..." />
+}
+else if (!_notFound && !_carritoDeshabilitado && !IsAuthenticated)
 {
     <CatalogoClienteLoginPanel @ref="_loginPanel"
                                 CatalogoNombre="@_catalogo?.Nombre"
@@ -86,13 +91,7 @@ else
             </section>
         }
 
-        @if (_loading)
-        {
-            <div class="carrito-page__loading-state">
-                <p class="text-muted">Cargando...</p>
-            </div>
-        }
-        else if (_notFound)
+        @if (_notFound)
         {
             <div class="carrito-page__empty-panel">
                 <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
@@ -464,6 +463,7 @@ else
     private bool _notFound;
     private bool _carritoDeshabilitado;
     private bool _redirecting;
+    private bool _hasRendered;
     private bool _restoreAttempted;
     private bool _cartRestoreAttempted;
 
@@ -532,6 +532,17 @@ else
         await EnsureRouteSessionAsync();
         if (_redirecting)
             return;
+
+        // Misma instancia de componente reutilizada por la navegación in-place que dispara
+        // RedirectLegacyPublicRouteAsync: OnAfterRenderAsync(firstRender:true) ya se saltó el
+        // intento de restaurar la sesión de cliente porque _redirecting todavía era true en ese
+        // momento. Éste es el único lugar donde se reintenta una vez resuelta la ruta final.
+        if (_hasRendered && !_restoreAttempted)
+        {
+            _restoreAttempted = true;
+            await RestoreClientSessionAsync();
+        }
+
         await LoadPublicIdentityAsync();
         await LoadImageSettingsAsync();
         await RefreshCatalogoAsync();
@@ -653,8 +664,16 @@ else
             _redirecting = true;
             Nav.NavigateTo($"/{Uri.EscapeDataString(idweb)}/carrito/{link.RouteSegment}", replace: true);
         }
-        catch
+        catch (Microsoft.AspNetCore.Components.NavigationException)
         {
+            // NavigateTo durante el prerender estático dispara esto a propósito (así Blazor emite
+            // un 302 HTTP real) — atajarla acá pisaba el redirect y mostraba "no disponible" hasta
+            // recargar a mano. Ver CatalogoPublico.RedirectLegacyPublicRouteAsync para el detalle.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "CatalogoCarrito: RedirectLegacyPublicRouteAsync falló. IdWeb={IdWeb}, IdBase={IdBase}, IdInsert={IdInsert}", idweb, idbase, IdInsert);
             _notFound = true;
         }
     }
@@ -718,7 +737,12 @@ else
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender && !_restoreAttempted)
+        _hasRendered = true;
+
+        // Si hay un redirect legacy en curso, IdInsert/_effectiveIdBase todavía son los de la
+        // ruta VIEJA — no restaurar sesión ni refrescar el carrito acá; OnParametersSetAsync se
+        // encarga una vez que la navegación al link seguro resolvió la ruta final.
+        if (firstRender && !_restoreAttempted && !_redirecting)
         {
             _restoreAttempted = true;
             await RestoreClientSessionAsync();
@@ -749,8 +773,44 @@ else
         _catalogo = catalogo;
         _notFound = catalogo is null;
         _carritoDeshabilitado = catalogo is not null && !catalogo.HabilitarCarrito;
+        // Fire-and-forget: ver el comentario en CatalogoPublico.RefreshCatalogAsync — esperar acá
+        // a que bajen todas las imágenes hacía sentir muy lenta la carga del carrito.
+        _ = PrecalentarImagenesAsync();
         _loading = false;
         await InvokeAsync(StateHasChanged);
+    }
+
+    // Tope duro: si el FTP está lento/caído, mejor mostrar el carrito con imágenes sueltas
+    // resolviéndose de a poco que dejar al visitante mirando "Cargando..." sin fin.
+    private static readonly TimeSpan PrecalentamientoTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>Mismo precalentado (esperado, no en segundo plano) que CatalogoPublico.razor — ver ahí el porqué.</summary>
+    private async Task PrecalentarImagenesAsync()
+    {
+        if (_catalogo is null || _catalogo.Articulos.Count == 0)
+            return;
+
+        var ftpCodigoCta = _puntoVentaSettings.FtpCodigoCta;
+        if (string.IsNullOrWhiteSpace(ftpCodigoCta))
+            return;
+
+        var idArticulos = _catalogo.Articulos.Select(a => a.IdArticulo).ToArray();
+        var idArticulosForzados = _catalogo.Articulos
+            .Where(a => a.ImagenModificada)
+            .Select(a => a.IdArticulo)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var idBase = _effectiveIdBase;
+
+        try
+        {
+            using var cts = new CancellationTokenSource(PrecalentamientoTimeout);
+            await ArticuloImagenSvc.PrecalentarAsync(ftpCodigoCta, idBase, idArticulos, thumbnail: true, idArticulosForzados, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Se superó el tope de espera: se sigue igual, lo que faltó cachear se resuelve
+            // (más lento) cuando el browser pida esa imagen puntual.
+        }
     }
 
     private async Task RestoreClientSessionAsync()
@@ -894,6 +954,10 @@ else
             ? "/logos/Logo.png"
             : _branding.LogoUrl.Trim();
 
+    /// <summary>Logo de AlfaCore (no el del cliente, todavía no cargado) para la pantalla de carga. Esta página no tiene toggle de tema propio, así que usa el logo del tema oscuro (el default de la app).</summary>
+    private static string GetLoadingLogoUrl()
+        => AlfaCore.Components.Shared.AuthThemeAssets.GetLoginLogo(isDarkTheme: true);
+
     private string GetBrandingLogoFrameClass()
         => _branding.LogoFormato?.Trim().ToLowerInvariant() switch
         {
@@ -926,7 +990,7 @@ else
     }
 
     private string GetProductThumbUrl(CatalogosCatalogoItemDto item)
-        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), thumbnail: true);
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), thumbnail: true, forzarRecarga: item.ImagenModificada);
 
     private static string ProductInitials(string descripcion)
     {
