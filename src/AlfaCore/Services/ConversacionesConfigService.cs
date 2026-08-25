@@ -6,6 +6,7 @@ using QRCoder;
 using System.Globalization;
 using System.Net.Http;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 
 namespace AlfaCore.Services;
@@ -16,7 +17,8 @@ public sealed class ConversacionesConfigService(
     IAppEventService appEvents,
     IOptions<WhatsAppOptions> whatsAppOptions,
     IHttpClientFactory httpClientFactory,
-    IAppUserSessionService appUserSession) : IConversacionesConfigService
+    IAppUserSessionService appUserSession,
+    IConversacionesAuthorizationService conversacionesAuthorizationService) : IConversacionesConfigService
 {
     private const string ConfigGroup = "CONVERSACIONES";
     private const string DefaultUrgenciaPalabras =
@@ -146,6 +148,7 @@ public sealed class ConversacionesConfigService(
     public async Task SaveWhatsAppConfigAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(config);
+        await conversacionesAuthorizationService.EnsureCanManageAsync(ct);
 
         await ExecuteLoggedAsync("Conversaciones", "SaveWhatsAppConfig", async token =>
         {
@@ -300,6 +303,7 @@ public sealed class ConversacionesConfigService(
     public async Task SaveInstagramConfigAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(config);
+        await conversacionesAuthorizationService.EnsureCanManageAsync(ct);
 
         await ExecuteLoggedAsync("Conversaciones", "SaveInstagramConfig", async token =>
         {
@@ -402,6 +406,7 @@ public sealed class ConversacionesConfigService(
     public async Task SaveFacebookConfigAsync(ConversacionFacebookConfigDto config, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(config);
+        await conversacionesAuthorizationService.EnsureCanManageAsync(ct);
 
         await ExecuteLoggedAsync("Conversaciones", "SaveFacebookConfig", async token =>
         {
@@ -506,6 +511,7 @@ public sealed class ConversacionesConfigService(
     public async Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(config);
+        await conversacionesAuthorizationService.EnsureCanManageAsync(ct);
 
         await ExecuteLoggedAsync("Conversaciones", "SaveMercadoLibreConfig", async token =>
         {
@@ -566,6 +572,50 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo guardar la configuración de Mercado Libre.", ct);
     }
 
+    public Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+
+        return ExecuteLoggedAsync("Conversaciones", "SaveMercadoLibreTokens", async token =>
+        {
+            var items = new[]
+            {
+                (Key: "CONV_MELI_ACCESS_TOKEN", Value: config.AccessToken ?? string.Empty),
+                (Key: "CONV_MELI_REFRESH_TOKEN", Value: config.RefreshToken ?? string.Empty),
+                (Key: "CONV_MELI_SELLER_ID", Value: config.SellerId ?? string.Empty)
+            };
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+            await using var tx = await cn.BeginTransactionAsync(token);
+
+            foreach (var item in items)
+            {
+                var stored = SplitStoredValue(item.Value);
+                var sql = $"""
+                    UPDATE dbo.TA_CONFIGURACION
+                    SET VALOR = @Valor, {detailColumn} = @ValorAux, GRUPO = @Grupo
+                    WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+
+                    IF @@ROWCOUNT = 0
+                        INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO)
+                        VALUES (@Clave, @Valor, @ValorAux, @Grupo);
+                    """;
+
+                await using var cmd = new SqlCommand(sql, cn, (SqlTransaction)tx);
+                cmd.Parameters.AddWithValue("@Clave", item.Key);
+                cmd.Parameters.AddWithValue("@Valor", DbNullable(stored.Value));
+                cmd.Parameters.AddWithValue("@ValorAux", DbNullable(stored.AuxValue));
+                cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+                await cmd.ExecuteNonQueryAsync(token);
+            }
+
+            await tx.CommitAsync(token);
+            return true;
+        }, "No se pudieron actualizar las credenciales de Mercado Libre.", ct);
+    }
+
     public Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetAlfaKnowledgeConfig", async token =>
         {
@@ -595,10 +645,11 @@ public sealed class ConversacionesConfigService(
             };
         }, "No se pudo cargar la configuración de AlfaKnowledge.", ct);
 
-    public Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
+    public async Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(config);
-        return SaveAlfaKnowledgeConfigForConnectionAsync(ConnectionString, config, ct);
+        await conversacionesAuthorizationService.EnsureCanManageAsync(ct);
+        await SaveAlfaKnowledgeConfigForConnectionAsync(ConnectionString, config, ct);
     }
 
     public Task SaveAlfaKnowledgeConfigForConnectionAsync(string connectionString, ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
@@ -746,6 +797,7 @@ public sealed class ConversacionesConfigService(
 
         return ExecuteLoggedAsync("Conversaciones", "SaveAutomatizacionesConfig", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
             var dias = new List<string>();
             if (config.Lunes) dias.Add("LUN");
             if (config.Martes) dias.Add("MAR");
@@ -896,6 +948,7 @@ public sealed class ConversacionesConfigService(
 
         return ExecuteLoggedAsync("Conversaciones", "SaveRegla", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
             var tipo = NormalizeTipoCoincidencia(regla.TipoCoincidencia);
             var canal = NormalizeReglaCanal(regla.Canal);
             var prioridad = NormalizeReglaPrioridad(regla.Prioridad);
@@ -962,6 +1015,7 @@ public sealed class ConversacionesConfigService(
     public Task DeleteReglaAsync(int idRegla, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "DeleteRegla", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand("DELETE FROM dbo.CONV_REGLAS WHERE IdRegla = @IdRegla;", cn);
@@ -1084,6 +1138,7 @@ public sealed class ConversacionesConfigService(
 
         return ExecuteLoggedAsync("Conversaciones", "SavePrioridadConfig", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
             var items = new[]
             {
                 ("CLASIFICA1", (config.Clasifica1 ?? string.Empty).Trim()),
@@ -1316,6 +1371,7 @@ public sealed class ConversacionesConfigService(
 
         return ExecuteLoggedAsync("Conversaciones", "SaveWhatsAppNumero", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
             var phoneNumberId = (numero.PhoneNumberId ?? string.Empty).Trim();
             var nombre = (numero.Nombre ?? string.Empty).Trim();
             if (phoneNumberId.Length == 0)
@@ -1465,6 +1521,7 @@ public sealed class ConversacionesConfigService(
 
         return ExecuteLoggedAsync("Conversaciones", "SaveWhatsAppNumeroWebSession", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", token);
@@ -1518,6 +1575,7 @@ public sealed class ConversacionesConfigService(
 
         return ExecuteLoggedAsync("Conversaciones", "SaveConversacionAdministradores", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanManageAsync(token);
             var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
             if (sistema.Length == 0)
                 throw new InvalidOperationException("No se pudo determinar el sistema del usuario actual.");
@@ -1562,6 +1620,82 @@ public sealed class ConversacionesConfigService(
             return true;
         }, "No se pudieron guardar los administradores de conversaciones.", ct);
     }
+
+    public Task<ConversacionesInboxPreferenceDto> GetInboxPreferenceAsync(string userName, string? sistema, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetInboxPreference", async token =>
+        {
+            var key = BuildInboxPreferenceKey(userName, sistema);
+            if (string.IsNullOrWhiteSpace(key))
+                return new ConversacionesInboxPreferenceDto();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+
+            var sql = $"""
+                SELECT TOP (1)
+                    ISNULL(VALOR, N''),
+                    ISNULL({detailColumn}, N'')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Clave", key);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            if (!await rd.ReadAsync(token))
+                return new ConversacionesInboxPreferenceDto();
+
+            var json = ResolveStoredValue(GetString(rd, 0), GetString(rd, 1));
+            if (string.IsNullOrWhiteSpace(json))
+                return new ConversacionesInboxPreferenceDto();
+
+            try
+            {
+                return NormalizeInboxPreference(JsonSerializer.Deserialize<ConversacionesInboxPreferenceDto>(json));
+            }
+            catch
+            {
+                return new ConversacionesInboxPreferenceDto();
+            }
+        }, "No se pudo cargar la preferencia de bandeja de conversaciones.", ct);
+
+    public Task SaveInboxPreferenceAsync(string userName, string? sistema, ConversacionesInboxPreferenceDto preference, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SaveInboxPreference", async token =>
+        {
+            var key = BuildInboxPreferenceKey(userName, sistema);
+            if (string.IsNullOrWhiteSpace(key))
+                return true;
+
+            var normalized = NormalizeInboxPreference(preference);
+            var json = JsonSerializer.Serialize(normalized);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detailColumn = await ResolveDetailColumnAsync(cn, token);
+
+            var sql = $"""
+                UPDATE dbo.TA_CONFIGURACION
+                SET VALOR = N'',
+                    {detailColumn} = @ValorAux,
+                    GRUPO = @Grupo,
+                    FechaHora_Modificacion = GETDATE()
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+
+                IF @@ROWCOUNT = 0
+                BEGIN
+                    INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, {detailColumn}, GRUPO, FechaHora_Grabacion, FechaHora_Modificacion)
+                    VALUES (@Clave, N'', @ValorAux, @Grupo, GETDATE(), GETDATE());
+                END;
+                """;
+
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@Clave", key);
+            cmd.Parameters.AddWithValue("@ValorAux", json);
+            cmd.Parameters.AddWithValue("@Grupo", ConfigGroup);
+            await cmd.ExecuteNonQueryAsync(token);
+            return true;
+        }, "No se pudo guardar la preferencia de bandeja de conversaciones.", ct);
 
     public Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "TestAlfaKnowledgeConnection", async token =>
@@ -1928,6 +2062,40 @@ public sealed class ConversacionesConfigService(
             ConversacionWhatsAppWebSessionStatuses.Connected => ConversacionWhatsAppWebSessionStatuses.Connected,
             _ => ConversacionWhatsAppWebSessionStatuses.Disconnected
         };
+
+    private static ConversacionesInboxPreferenceDto NormalizeInboxPreference(ConversacionesInboxPreferenceDto? preference)
+    {
+        var canal = (preference?.Canal ?? string.Empty).Trim().ToUpperInvariant();
+        canal = canal switch
+        {
+            "WHATSAPP" => "WHATSAPP",
+            "INSTAGRAM" => "INSTAGRAM",
+            "FACEBOOK" => "FACEBOOK",
+            "MERCADOLIBRE" => "MERCADOLIBRE",
+            "INTERNO" => "INTERNO",
+            _ => "SOCIAL"
+        };
+
+        return new ConversacionesInboxPreferenceDto
+        {
+            Canal = canal,
+            IdNumeroWhatsApp = canal == "WHATSAPP" && preference?.IdNumeroWhatsApp is > 0
+                ? preference.IdNumeroWhatsApp
+                : null
+        };
+    }
+
+    private static string BuildInboxPreferenceKey(string userName, string? sistema)
+    {
+        var normalizedUser = (userName ?? string.Empty).Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(normalizedUser))
+            return string.Empty;
+
+        var normalizedSystem = (sistema ?? string.Empty).Trim().ToUpperInvariant();
+        var hashInput = $"{normalizedSystem}|{normalizedUser}";
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(hashInput)));
+        return $"USUPREF-CONV-INBOX-{hash[..24]}";
+    }
 
     private static ConversacionInstagramConfigDto Normalize(ConversacionInstagramConfigDto config)
     {

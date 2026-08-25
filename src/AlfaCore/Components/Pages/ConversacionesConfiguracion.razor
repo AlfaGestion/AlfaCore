@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/conversaciones/configuracion"
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IConversacionesService ConvSvc
+@inject AlfaCore.Services.IConversacionesAuthorizationService AuthorizationSvc
 @inject AlfaCore.Services.IConversacionAsistenteService AsistenteSvc
 @inject AlfaCore.Services.IWhatsAppWebSessionService WhatsAppWebSessionSvc
 @inject AlfaCore.Services.IAnyDeskLocalSettingsService AnyDeskSvc
@@ -10,14 +11,81 @@
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IPageHeaderNavigationService HeaderNavigation
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Configuración de canales | Alfa Gestión</PageTitle>
 
 <section class="page-grid settings-page">
     <AlfaNotification Message="@WhatsAppFeedback" OnDismiss="DismissWhatsAppFeedback" />
+
+    <AlfaDialog Open="@(_businessAccessDraft is not null)"
+                Title="Asignar usuarios"
+                Description="Elegí quiénes pueden ver y atender esta sesión."
+                Size="AlfaDialogSize.Md"
+                Loading="@BusinessAccessSaving"
+                OnClose="CancelBusinessAccessDialog">
+        <ChildContent>
+            @if (_businessAccessDraft is { } accessDraft)
+            {
+                <div class="wa-user-grid">
+                    @foreach (var usuario in _usuariosSistema)
+                    {
+                        <AlfaCheckbox Value="@accessDraft.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
+                                      ValueChanged="@(v => ToggleNumeroUsuario(accessDraft, usuario.Nombre, v ?? false))"
+                                      Disabled="@BusinessAccessSaving">
+                            @usuario.Nombre
+                        </AlfaCheckbox>
+                    }
+                    @if (_usuariosSistema.Count == 0)
+                    {
+                        <span class="wa-field-note">No hay usuarios activos en este sistema.</span>
+                    }
+                </div>
+            }
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                        Disabled="@BusinessAccessSaving"
+                        OnClick="@(_ => CancelBusinessAccessDialog())">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary"
+                        Icon="bi bi-floppy"
+                        Loading="@BusinessAccessSaving"
+                        OnClick="@(_ => SaveBusinessAccessAsync())">Guardar</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+
+    <AlfaDialog Open="@(_apiAccessDraft is not null)"
+                Title="Asignar usuarios"
+                Description="Elegí quiénes pueden ver y atender este número Meta Cloud API."
+                Size="AlfaDialogSize.Md"
+                Loading="@ApiAccessSaving"
+                OnClose="CancelApiAccessDialog">
+        <ChildContent>
+            @if (_apiAccessDraft is { } apiAccessDraft)
+            {
+                <div class="wa-user-grid">
+                    @foreach (var usuario in _usuariosSistema)
+                    {
+                        <AlfaCheckbox Value="@apiAccessDraft.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
+                                      ValueChanged="@(v => ToggleNumeroUsuario(apiAccessDraft, usuario.Nombre, v ?? false))"
+                                      Disabled="@ApiAccessSaving">@usuario.Nombre</AlfaCheckbox>
+                    }
+                    @if (_usuariosSistema.Count == 0)
+                    {
+                        <span class="wa-field-note">No hay usuarios activos en este sistema.</span>
+                    }
+                </div>
+            }
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@ApiAccessSaving" OnClick="@(_ => CancelApiAccessDialog())">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@ApiAccessSaving" OnClick="@(_ => SaveApiAccessAsync())">Guardar</AlfaButton>
+        </Footer>
+    </AlfaDialog>
 
     @if (_feedback is not null && _feedbackScope != "whatsapp")
     {
@@ -37,12 +105,27 @@
 
     <div class="settings-workspace">
         <nav class="settings-nav" aria-label="Secciones de Configuración">
+            <div class="settings-nav__title">Configuración</div>
             @foreach (var item in SettingsNavItems)
             {
-                <button type="button" class="@GetPrimaryTabClass(item.Key)" @onclick="() => SelectPrimaryTab(item.Key)">
-                    <i class="bi @item.Icon" aria-hidden="true"></i>
+                <button type="button" class="@GetPrimaryTabClass(item.Key)" aria-expanded="@(item.Children.Count > 0 ? IsCategoryExpanded(item.Key) : null)" @onclick="() => SelectPrimaryTab(item.Key)">
+                    @if (item.Children.Count > 0)
+                    {
+                        <i class="bi @(IsCategoryExpanded(item.Key) ? "bi-chevron-down" : "bi-chevron-right")" aria-hidden="true"></i>
+                    }
                     <span>@item.Label</span>
                 </button>
+                @if (item.Children.Count > 0 && IsCategoryExpanded(item.Key))
+                {
+                    <div class="settings-subnav">
+                        @foreach (var child in item.Children)
+                        {
+                            <button type="button" class="@GetSecondaryTabClass(item.Key, child.Key)" @onclick="() => SelectSecondaryTab(item.Key, child.Key)">
+                                <span>@child.Label</span>
+                            </button>
+                        }
+                    </div>
+                }
             }
         </nav>
 
@@ -50,270 +133,220 @@
 
     @if (_activePrimaryTab == "resumen")
     {
+    <section class="settings-summary">
     <header class="settings-section-header">
-        <h2>Resumen</h2>
-        <p>Puntos de entrada a la configuración de Conversaciones. El detalle y el estado de cada canal viven dentro de su propia sección.</p>
+        <h2>Resumen operativo</h2>
+        <p>Estado general de canales, automatizaciones e integraciones.</p>
     </header>
     <div class="settings-summary-grid">
         @foreach (var item in SettingsNavItems.Where(i => i.Key != "resumen"))
         {
             <button type="button" class="settings-summary-card" @onclick="() => SelectPrimaryTab(item.Key)">
-                <i class="bi @item.Icon" aria-hidden="true"></i>
                 <span class="settings-summary-card__label">@item.Label</span>
-                <span class="settings-summary-card__hint">@item.Hint</span>
+                <span class="settings-summary-card__status">@GetSummaryStatus(item.Key)</span>
+                <span class="settings-summary-card__hint">@GetSummaryDetail(item.Key)</span>
             </button>
         }
     </div>
+    </section>
     }
 
-    @if (_activePrimaryTab == "canales")
+    @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "general")
     {
-    <header class="settings-section-header">
-        <h2>Canales</h2>
-        <p>Elegí el canal para administrar su conexión, credenciales y webhook.</p>
-    </header>
-    <AlfaTabs Items="@_channelTabItems" ActiveKey="@_activeChannelTab" ActiveKeyChanged="@OnChannelTabChanged" AriaLabel="Canales" />
-    }
-    @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp")
-    {
-    <header class="settings-content-header">
-        <h3>WhatsApp</h3>
-    </header>
-    <AlfaTabs Items="@_whatsAppSectionTabItems" ActiveKey="@_activeWhatsAppSection" ActiveKeyChanged="@OnWhatsAppSectionChanged" AriaLabel="WhatsApp Business o WhatsApp API" />
+        <div class="wa-api-workspace">
+            <aside class="wa-api-list" aria-label="Integración y números de WhatsApp API">
+                <button type="button" class="@GetApiIntegrationRowClass()" @onclick="SelectApiIntegration">
+                    <strong>Integración Meta</strong>
+                    <span>Cuenta, credenciales y webhook</span>
+                    <span class="wa-api-list__status">@GetMetaConfigurationStatus()</span>
+                </button>
 
-    @if (_activeWhatsAppSection == "numeros")
-    {
-        <p class="wa-content-lead">Conectá los números que usás para atender conversaciones.</p>
-        <div class="wa-status-summary">
-            <span class="wa-status-chip"><i class="bi bi-telephone-fill" aria-hidden="true"></i> @GetWhatsAppNumerosSummary()</span>
-        </div>
-    }
-    else
-    {
-        <p class="wa-content-lead">Configuración avanzada para la integración oficial de WhatsApp (Meta Cloud API).</p>
-        <div class="wa-status-summary">
-            <span class="@GetWhatsAppApiStatusChipClass(_config.IsConfiguredForSend)"><i class="bi bi-circle-fill" aria-hidden="true"></i> API: @GetStatusLabel(_config.IsConfiguredForSend)</span>
-            <span class="@GetWhatsAppApiStatusChipClass(_config.IsConfiguredForVerify)"><i class="bi bi-circle-fill" aria-hidden="true"></i> Webhook: @GetStatusLabel(_config.IsConfiguredForVerify)</span>
-            <span class="@GetWhatsAppApiStatusChipClass(_config.IsReadyForMetaSetup)"><i class="bi bi-circle-fill" aria-hidden="true"></i> @GetPublicationLabel()</span>
-        </div>
-    }
+                <header class="wa-api-list__header">
+                    <h2>Números WhatsApp API</h2>
+                    <span>@WhatsAppApiNumeros.Count()</span>
+                </header>
 
-    @if (_activeWhatsAppSection == "general")
-    {
-    <div class="wa-layout">
-            <section class="wa-panel">
-                <details class="wa-settings-section" open>
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-diagram-3 wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Conexión</span>
-                        <span class="wa-settings-section__hint">Modo del canal, proveedor y datos de identificación en Meta.</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <p class="wa-field-note">@GetWhatsAppProviderSummary() La integración productiva actual sigue siendo Meta Cloud API; la sesión de WhatsApp Business queda configurada por separado para no mezclar credenciales ni webhook.</p>
-
-                        <div class="wa-fields">
-                            <AlfaSelect Label="Modo del canal" Options="@_providerModeOptions" @bind-Value="_config.ProviderMode" />
-                            <AlfaSelect Label="Proveedor predeterminado" Options="@_defaultProviderOptions" @bind-Value="_config.DefaultProvider" />
-                            <AlfaInput Label="Phone Number ID" @bind-Value="_config.PhoneNumberId" Placeholder="Ej. 123456789012345" />
-                            <AlfaInput Label="WhatsApp Business Account ID" @bind-Value="_config.BusinessAccountId" Placeholder="Ej. 109876543210987" />
-                        </div>
-                    </div>
-                </details>
-
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-key-fill wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Credenciales</span>
-                        <span class="wa-settings-section__hint">Access Token, Verify Token y App Secret de Meta.</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <p class="wa-field-note">@GetWhatsAppMetaSummary()</p>
-
-                        <div class="wa-field wa-fields__full">
-                            <label class="wa-field__label" for="wa-access-token">Access Token</label>
-                            <textarea id="wa-access-token" class="wa-textarea" rows="4" @bind="_config.AccessToken" placeholder="Pegá acá el token permanente o del sistema"></textarea>
-                        </div>
-
-                        <div class="wa-fields">
-                            <AlfaInput Label="Verify Token" @bind-Value="_config.VerifyToken" Placeholder="Texto secreto que definís vos" />
-                            <AlfaInput Label="App Secret" @bind-Value="_config.AppSecret" Placeholder="Opcional por ahora, recomendado para firma" />
-                        </div>
-                    </div>
-                </details>
-
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-hdd-network wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Webhook</span>
-                        <span class="wa-settings-section__hint">Base pública, versión de Graph API y callback a informar en Meta.</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <div class="wa-fields">
-                            <AlfaInput Label="Base pública HTTPS" @bind-Value="_config.PublicBaseUrl" Placeholder="@_suggestedBaseUrl" />
-                            <AlfaInput Label="Versión Graph API" @bind-Value="_config.ApiVersion" Placeholder="v22.0" />
-                        </div>
-
-                        <div class="wa-field wa-fields__full">
-                            <label class="wa-field__label" for="wa-webhook-path">Webhook interno</label>
-                            <input id="wa-webhook-path" class="wa-input-readonly" value="@_config.WebhookPath" readonly />
-                        </div>
-
-                        <p class="wa-field-note"><strong>Callback a informar en Meta:</strong> @GetWebhookUrlPreview()</p>
-                        <p class="wa-field-note">
-                            Routing por base:
-                            @if (HasWebhookToken)
+                @foreach (var numero in WhatsAppApiNumeros)
+                {
+                    <button type="button" class="@GetApiNumeroRowClass(numero)" @onclick="() => SelectApiNumero(numero)">
+                        <strong>@GetNumeroDisplayName(numero)</strong>
+                        <span>@numero.PhoneNumberId</span>
+                        <span class="wa-api-number-row__meta">
+                            @if (IsConfiguredGlobalApiNumero(numero))
                             {
-                                <text>configurado — los mensajes entrantes se identifican sin depender de la sesión activa.</text>
+                                <AlfaTag Tone="AlfaTagTone.Accent">Predeterminado</AlfaTag>
+                            }
+                            @if (numero.Usuarios.Count == 0)
+                            {
+                                <span class="wa-api-list__warning">Sin usuarios asignados</span>
                             }
                             else
                             {
-                                <text>sin token propio todavía — no usar este callback en producción SaaS hasta generarlo.</text>
+                                <span>@numero.Usuarios.Count usuario(s)</span>
                             }
-                        </p>
-                        <p class="wa-field-note">@GetWhatsAppWebOverviewSummary() La sesión por QR se administra por número en la pestaña "WhatsApp Business".</p>
-                    </div>
-                </details>
+                        </span>
+                    </button>
+                }
 
-                <details class="wa-settings-section" open>
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-cloud-check wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Números Meta Cloud API</span>
-                        <span class="wa-settings-section__hint">@WhatsAppApiNumeros.Count()</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        @if (!WhatsAppApiNumeros.Any())
-                        {
-                            <p class="wa-field-note">Todavía no hay números Meta Cloud API cargados para esta base.</p>
-                        }
-                        @foreach (var numero in WhatsAppApiNumeros)
-                        {
-                            <div class="wa-number-card">
-                                <div class="wa-number-card__header">
-                                    <div>
-                                        <strong class="wa-number-card__name">@GetNumeroDisplayName(numero)</strong>
-                                        <span class="wa-number-card__phone">@numero.PhoneNumberId</span>
-                                    </div>
-                                </div>
-                                <div class="wa-number-card__status">
-                                    <AlfaTag Tone="AlfaTagTone.Success">Meta Cloud API</AlfaTag>
-                                    @if (numero.Usuarios.Count == 0)
-                                    {
-                                        <AlfaTag Tone="AlfaTagTone.Warning">Sin usuarios asignados</AlfaTag>
-                                    }
-                                    else
-                                    {
-                                        <AlfaTag Tone="AlfaTagTone.Neutral">@numero.Usuarios.Count usuario(s)</AlfaTag>
-                                    }
-                                </div>
-
-                                <details class="wa-settings-section" open="@(!numero.Usuarios.Any())">
-                                    <summary class="wa-settings-section__summary">
-                                        <span class="wa-settings-section__title">Usuarios con acceso</span>
-                                        <span class="wa-settings-section__hint">@numero.Usuarios.Count</span>
-                                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                                    </summary>
-                                    <div class="wa-settings-section__body">
-                                        <div class="wa-user-grid">
-                                            @foreach (var usuario in _usuariosSistema)
-                                            {
-                                                <AlfaCheckbox Value="@numero.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
-                                                              ValueChanged="@(v => ToggleNumeroUsuario(numero, usuario.Nombre, v ?? false))">
-                                                    @usuario.Nombre
-                                                </AlfaCheckbox>
-                                            }
-                                            @if (_usuariosSistema.Count == 0)
-                                            {
-                                                <span class="wa-field-note">No hay usuarios activos en este sistema.</span>
-                                            }
-                                        </div>
-                                        <div class="actions">
-                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="@(() => SaveNumeroAsync(numero))">Guardar usuarios</AlfaButton>
-                                        </div>
-                                    </div>
-                                </details>
-
-                                <details class="wa-settings-section">
-                                    <summary class="wa-settings-section__summary">
-                                        <span class="wa-settings-section__title">Datos del número</span>
-                                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                                    </summary>
-                                    <div class="wa-settings-section__body">
-                                        <div class="wa-fields">
-                                            <AlfaInput Label="Nombre" @bind-Value="numero.Nombre" Placeholder="Ej: Ventas Norte" />
-                                            <AlfaInput Label="Phone Number ID" @bind-Value="numero.PhoneNumberId" Placeholder="Ej: 109876543210" />
-                                        </div>
-                                        <div class="actions">
-                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="@(() => SaveNumeroAsync(numero))">Guardar número</AlfaButton>
-                                        </div>
-                                    </div>
-                                </details>
-                            </div>
-                        }
-                    </div>
-                </details>
-
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-plus-circle wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Números por Phone Number ID</span>
-                        <span class="wa-settings-section__hint">Para multinúmero configurado directamente contra Meta Cloud API.</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <p class="wa-field-note">Los números conectados por QR se administran en la pestaña "WhatsApp Business". Usá esto solo si necesitás registrar un número identificado por su <code>Phone Number ID</code> técnico de Meta.</p>
-                        <div class="wa-fields">
-                            <AlfaInput Label="Nombre del número nuevo" @bind-Value="_nuevoNumero.Nombre" Placeholder="Ej: Ventas Sur" />
-                            <AlfaInput Label="Phone Number ID" @bind-Value="_nuevoNumero.PhoneNumberId" Placeholder="Ej: 109876543211" />
-                        </div>
-                        <div class="actions">
-                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" Disabled="@(Loading || Saving)" OnClick="AddNumeroAsync">Agregar número</AlfaButton>
-                        </div>
-                    </div>
-                </details>
-
-                <div class="actions">
-                    <AlfaButton Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="SaveAsync">Guardar configuración</AlfaButton>
-                </div>
-            </section>
-
-            <aside class="wa-help">
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-question-circle wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">¿Necesitás ayuda para configurar Meta Cloud API?</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <ol class="conv-config-steps">
-                            <li>Crear o usar una app tipo negocio en Meta for Developers y agregar el producto WhatsApp.</li>
-                            <li>Obtener el <code>Phone Number ID</code> del número que vas a conectar.</li>
-                            <li>Obtener el <code>WhatsApp Business Account ID</code> de la cuenta de negocio.</li>
-                            <li>Generar un <code>Access Token</code> válido para el envío de mensajes.</li>
-                            <li>Definir un <code>Verify Token</code> propio y cargar la URL pública del webhook en Meta.</li>
-                            <li>Suscribir el webhook al menos a eventos de mensajes y estados.</li>
-                            <li>Probar verificación, envío y recepción antes de pasar a producción.</li>
-                        </ol>
-                    </div>
-                </details>
-
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-info-circle wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Información técnica</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <p class="wa-field-note">Fuente: <code>TA_CONFIGURACION</code> (@DisplaySource(_config.ConfigSource)). Claves: <code>CONV_WHATSAPP_*</code>.</p>
-                        <p class="wa-field-note">Manual interno: <code>docs/conversaciones_whatsapp_conexion.md</code>.</p>
-                    </div>
-                </details>
+                @if (!WhatsAppApiNumeros.Any())
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Sin números API"
+                                    Message="Todavía no hay números Meta Cloud API cargados."
+                                    ActionLabel="Nuevo número"
+                                    ActionIcon="bi bi-plus-circle"
+                                    OnAction="@(_ => StartAddApiNumero())" />
+                }
             </aside>
-    </div>
-    }
+
+            <section class="wa-api-detail">
+                @if (IsApiIntegrationView)
+                {
+                    @if (_metaConfigDraft is { } metaDraft)
+                    {
+                        <div class="wa-api-detail__heading">
+                            <div><h2>Editar integración Meta</h2><p>Los cambios se aplican únicamente al guardar.</p></div>
+                        </div>
+                        <div class="wa-business-block">
+                            <h3>Configuración</h3>
+                            <div class="wa-fields">
+                                <AlfaSelect Label="Modo del canal" Options="@_providerModeOptions" @bind-Value="metaDraft.ProviderMode" />
+                                <AlfaSelect Label="Proveedor predeterminado" Options="@_defaultProviderOptions" @bind-Value="metaDraft.DefaultProvider" />
+                            </div>
+                        </div>
+                        <details class="wa-api-technical">
+                            <summary>Configuración avanzada</summary>
+                            <div class="wa-fields wa-api-technical__body">
+                                <AlfaInput Label="WhatsApp Business Account ID" @bind-Value="metaDraft.BusinessAccountId" />
+                                <AlfaInput Label="Versión Graph API" @bind-Value="metaDraft.ApiVersion" />
+                                <AlfaInput Label="Base pública HTTPS" @bind-Value="metaDraft.PublicBaseUrl" Placeholder="@_suggestedBaseUrl" />
+                            </div>
+                        </details>
+                        <div class="wa-business-block">
+                            <h3>Credenciales</h3>
+                            @SecretEditor("Access Token", !string.IsNullOrWhiteSpace(_config.AccessToken), _replaceAccessToken, _accessTokenReplacement, SetReplaceAccessToken, SetAccessTokenReplacement)
+                            @SecretEditor("Verify Token", !string.IsNullOrWhiteSpace(_config.VerifyToken), _replaceVerifyToken, _verifyTokenReplacement, SetReplaceVerifyToken, SetVerifyTokenReplacement)
+                            @SecretEditor("App Secret", !string.IsNullOrWhiteSpace(_config.AppSecret), _replaceAppSecret, _appSecretReplacement, SetReplaceAppSecret, SetAppSecretReplacement)
+                        </div>
+                        <div class="wa-business-block">
+                            <h3>Webhook</h3>
+                            <dl class="wa-business-definition">
+                                <div><dt>Ruta interna</dt><dd>@metaDraft.WebhookPath</dd></div>
+                                <div><dt>Routing SaaS</dt><dd>@(HasWebhookToken ? "Configurado" : "No configurado")</dd></div>
+                                <div><dt>Callback para Meta</dt><dd>@GetCallbackStatus(metaDraft)</dd></div>
+                            </dl>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="wa-api-detail__heading">
+                            <div><h2>Integración Meta</h2><p>Configuración global de WhatsApp Cloud API para esta base.</p></div>
+                            <AlfaTag Tone="AlfaTagTone.Neutral">@GetMetaConfigurationStatus()</AlfaTag>
+                        </div>
+                        <div class="wa-business-block">
+                            <h3>Configuración</h3>
+                            <dl class="wa-business-definition">
+                                <div><dt>Modo</dt><dd>@GetProviderModeLabel(_config.ProviderMode)</dd></div>
+                                <div><dt>Proveedor</dt><dd>@GetProviderLabel(_config.DefaultProvider)</dd></div>
+                                <div><dt>WABA ID</dt><dd>@DisplayApiValue(_config.BusinessAccountId)</dd></div>
+                                <div><dt>Graph API</dt><dd>@DisplayApiValue(_config.ApiVersion)</dd></div>
+                                <div><dt>Base pública HTTPS</dt><dd>@DisplayApiValue(_config.PublicBaseUrl)</dd></div>
+                            </dl>
+                        </div>
+                        <details class="wa-api-technical">
+                            <summary>Información técnica</summary>
+                            <dl class="wa-business-definition wa-api-technical__body">
+                                <div><dt>Fuente de configuración</dt><dd>@DisplaySource(_config.ConfigSource)</dd></div>
+                            </dl>
+                        </details>
+                        <div class="wa-business-block">
+                            <h3>Credenciales</h3>
+                            <dl class="wa-business-definition">
+                                <div><dt>Access Token</dt><dd>@GetSecretStatus(_config.AccessToken)</dd></div>
+                                <div><dt>Verify Token</dt><dd>@GetSecretStatus(_config.VerifyToken)</dd></div>
+                                <div><dt>App Secret</dt><dd>@GetSecretStatus(_config.AppSecret)</dd></div>
+                            </dl>
+                        </div>
+                        <div class="wa-business-block">
+                            <h3>Webhook</h3>
+                            <dl class="wa-business-definition">
+                                <div><dt>Ruta interna</dt><dd>@DisplayApiValue(_config.WebhookPath)</dd></div>
+                                <div><dt>Routing SaaS</dt><dd>@(HasWebhookToken ? "Configurado" : "No configurado")</dd></div>
+                                <div class="wa-api-callback-row">
+                                    <dt>Callback para Meta</dt>
+                                    <dd>
+                                        <strong>@GetCallbackStatus(_config)</strong>
+                                        @if (HasConfiguredCallback(_config))
+                                        {
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="CopyMetaCallbackAsync">Copiar callback</AlfaButton>
+                                        }
+                                    </dd>
+                                </div>
+                            </dl>
+                        </div>
+                    }
+                }
+                else if (_addingApiNumero)
+                {
+                    <div class="wa-api-detail__heading"><div><h2>Nuevo número</h2><p>Registrá un número existente de Meta Cloud API.</p></div></div>
+                    <div class="wa-business-block">
+                        <h3>Identificación</h3>
+                        <div class="wa-fields">
+                            <AlfaInput Label="Nombre" @bind-Value="_nuevoNumero.Nombre" Placeholder="Ej: Ventas Norte" />
+                            <div class="wa-field-with-helper">
+                                <AlfaInput Label="Phone Number ID" @bind-Value="_nuevoNumero.PhoneNumberId" Placeholder="Identificador provisto por Meta" />
+                                <span>Identificador del número provisto por Meta. No es el número de teléfono.</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (_apiNumeroDraft is { } apiDraft)
+                {
+                    <div class="wa-api-detail__heading"><div><h2>Editar @GetNumeroDisplayName(apiDraft)</h2><p>Los cambios se aplican únicamente al guardar.</p></div></div>
+                    <div class="wa-business-block">
+                        <h3>Identificación</h3>
+                        <div class="wa-fields">
+                            <AlfaInput Label="Nombre" @bind-Value="apiDraft.Nombre" />
+                            <div class="wa-field-with-helper">
+                                <AlfaInput Label="Phone Number ID" @bind-Value="apiDraft.PhoneNumberId" />
+                                <span>Identificador del número provisto por Meta. No es el número de teléfono.</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="wa-business-block">
+                        <div class="wa-business-block__header"><h3>Usuarios con acceso</h3><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="OpenApiAccessDialog">Asignar usuarios</AlfaButton></div>
+                        @ApiUsers(apiDraft)
+                    </div>
+                    <details class="wa-api-technical">
+                        <summary>Información técnica</summary>
+                        <dl class="wa-business-definition wa-api-technical__body"><div><dt>ID interno</dt><dd>@apiDraft.IdNumero</dd></div><div><dt>Proveedor</dt><dd>Meta Cloud API</dd></div></dl>
+                    </details>
+                }
+                else if (SelectedApiNumero is { } selectedNumero)
+                {
+                    <div class="wa-api-detail__heading">
+                        <div><h2>@GetNumeroDisplayName(selectedNumero)</h2><p>Detalle del número configurado en Meta Cloud API.</p></div>
+                        @if (IsConfiguredGlobalApiNumero(selectedNumero)) { <AlfaTag Tone="AlfaTagTone.Accent">Predeterminado</AlfaTag> }
+                    </div>
+                    <div class="wa-business-block">
+                        <h3>Identificación</h3>
+                        <dl class="wa-business-definition"><div><dt>Nombre</dt><dd>@GetNumeroDisplayName(selectedNumero)</dd></div><div><dt>Phone Number ID</dt><dd>@selectedNumero.PhoneNumberId</dd></div><div><dt>Proveedor</dt><dd>Meta Cloud API</dd></div></dl>
+                    </div>
+                    <div class="wa-business-block">
+                        <div class="wa-business-block__header"><h3>Usuarios con acceso</h3><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="OpenApiAccessDialog">Asignar usuarios</AlfaButton></div>
+                        @ApiUsers(selectedNumero)
+                    </div>
+                    <details class="wa-api-technical">
+                        <summary>Información técnica</summary>
+                        <dl class="wa-business-definition wa-api-technical__body"><div><dt>ID interno</dt><dd>@selectedNumero.IdNumero</dd></div></dl>
+                    </details>
+                }
+                else
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Seleccioná una opción" Message="Elegí Integración Meta o uno de los números de la lista." />
+                }
+            </section>
+        </div>
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "instagram")
@@ -1095,6 +1128,9 @@
                     <button type="button" class="btn btn--primary" @onclick="SaveAutomatizacionesAsync" disabled="@(Loading || Saving)">
                         <i class="bi bi-floppy-fill"></i> Guardar automatizaciones
                     </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CancelAutomatizacionesEdit" disabled="@(Loading || Saving || !IsAutomatizacionesDirty)">
+                        <i class="bi bi-x-circle"></i> Cancelar
+                    </button>
                 </div>
             </section>
 
@@ -1367,279 +1403,278 @@
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "numeros")
     {
-    <div class="wa-layout">
-            <section class="wa-panel">
+        <div class="wa-business-workspace">
+            <aside class="wa-business-list" aria-label="Sesiones de WhatsApp Business">
+                <header class="wa-business-list__header">
+                    <h2>Sesiones de WhatsApp Business</h2>
+                    <span>@ActiveBusinessNumeros.Count() sesión(es)</span>
+                </header>
 
-                @if (PairingBusy)
+                @foreach (var numero in ActiveBusinessNumeros)
                 {
-                    <div class="wa-pairing wa-pairing--updating" role="status" aria-live="polite">
-                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                        <span class="wa-field-note">Conectando WhatsApp Web... puede tardar hasta 20 segundos. No cierres ni recargues esta página, ni vuelvas a tocar "Conectar" mientras tanto.</span>
-                    </div>
+                    <button type="button"
+                            class="@GetBusinessNumeroRowClass(numero)"
+                            @onclick="() => SelectBusinessNumero(numero)">
+                        <strong>@GetNumeroDisplayName(numero)</strong>
+                        <span>@GetBusinessPhone(numero)</span>
+                        <span class="@GetBusinessStatusClass(numero)">@GetNumeroEstadoLabel(numero)</span>
+                    </button>
                 }
 
                 @if (!ActiveBusinessNumeros.Any())
                 {
-                    <div class="wa-empty-connect">
-                        <p class="wa-content-lead">Conectá tu WhatsApp para atender conversaciones desde AlfaCore.</p>
-                        @if (_connectMethodPromptForIdNumero == 0)
-                        {
-                            <div class="wa-connect-chooser">
-                                <p class="wa-field-note">Elegí cómo querés vincular tu cuenta.</p>
-                                <div class="wa-connect-chooser__methods">
-                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.Qr, null))">Código QR</AlfaButton>
-                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-keyboard" OnClick="@(() => ShowConnectPhoneInput(0))">Número de teléfono</AlfaButton>
-                                </div>
-                                @if (_connectPhoneChooserFor == 0)
-                                {
-                                    <AlfaInput Label="Número de teléfono (con código de país)" @bind-Value="_connectPhoneInput" Placeholder="+54 9 11 1234 5678" />
-                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-keyboard" Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.PhoneNumber, _connectPhoneInput))">Generar código</AlfaButton>
-                                }
-                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CloseConnectMethodChooser">Cancelar</AlfaButton>
-                            </div>
-                        }
-                        else
-                        {
-                            <AlfaButton Icon="bi bi-qr-code" OnClick="@(() => OpenConnectMethodChooser(0))">Conectar WhatsApp</AlfaButton>
-                        }
-                    </div>
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Sin sesiones"
+                                    Message="Todavía no conectaste ningún WhatsApp Business." />
                 }
+            </aside>
 
-                @foreach (var numero in ActiveBusinessNumeros)
+            <section class="wa-business-detail">
+                @if (_connectMethodPromptForIdNumero.HasValue)
                 {
-                    <div class="wa-number-card">
-                        <div class="wa-number-card__header">
+                    <div class="wa-business-connect" aria-label="Conectar WhatsApp Business">
+                        <div class="wa-business-detail__heading">
                             <div>
-                                <strong class="wa-number-card__name">@GetNumeroDisplayName(numero)</strong>
-                                @{ var subPhone = string.IsNullOrWhiteSpace(numero.WebPhoneNumber) ? numero.PhoneNumberId : numero.WebPhoneNumber; }
-                                @if (!string.Equals(subPhone, GetNumeroDisplayName(numero), StringComparison.Ordinal))
-                                {
-                                    <span class="wa-number-card__phone">@subPhone</span>
-                                }
+                                <h2>@(_connectMethodPromptForIdNumero == 0 ? "Conectar WhatsApp" : "Reconectar WhatsApp")</h2>
+                                <p>Elegí cómo querés vincular la cuenta.</p>
                             </div>
                         </div>
 
-                        <div class="wa-number-card__status">
-                            <AlfaTag Tone="@GetNumeroEstadoTone(numero)">@GetNumeroEstadoLabel(numero)</AlfaTag>
+                        <div class="wa-business-connect__methods">
+                            <button type="button"
+                                    class="wa-business-method"
+                                    disabled="@(Saving || PairingBusy)"
+                                    @onclick="() => StartBusinessPairingAsync(ConversacionWhatsAppWebSessionModes.Qr)">
+                                <i class="bi bi-qr-code" aria-hidden="true"></i>
+                                <strong>Código QR</strong>
+                                <span>Escanealo desde Dispositivos vinculados.</span>
+                            </button>
+                            <button type="button"
+                                    class="wa-business-method"
+                                    disabled="@(Saving || PairingBusy)"
+                                    @onclick="() => ShowConnectPhoneInput(_connectMethodPromptForIdNumero ?? 0)">
+                                <i class="bi bi-keyboard" aria-hidden="true"></i>
+                                <strong>Número de teléfono</strong>
+                                <span>Generá un código para ingresar en WhatsApp.</span>
+                            </button>
                         </div>
 
-                        @if (numero.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.Disconnected && !string.IsNullOrWhiteSpace(numero.WebLastError))
-                        {
-                            <p class="wa-number-card__error"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> @numero.WebLastError</p>
-                        }
+                        <AlfaCheckbox Value="@_includeTextPairingCode"
+                                      ValueChanged="@(v => _includeTextPairingCode = v ?? false)">
+                            Generar también un código de texto cuando se usa QR
+                        </AlfaCheckbox>
 
-                        @if (HasPairingRegenerateError(numero))
+                        @if (_connectPhoneChooserFor == _connectMethodPromptForIdNumero)
                         {
-                            <div class="wa-pairing wa-pairing--error">
-                                <div class="wa-pairing__details">
-                                    <p class="wa-field-note"><i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i> No pudimos actualizar el código QR.</p>
-                                </div>
-                            </div>
-                        }
-                        else if (string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase) && ShouldShowPairingSurface(numero) && numero.HasWebPairingCode)
-                        {
-                            <div class="wa-pairing">
-                                <div class="wa-pairing__code">@FormatPairingCodeForDisplay(numero.WebPairingCode)</div>
-                                <div class="wa-pairing__details">
-                                    <p class="wa-field-note">Ingresá este código en WhatsApp Business → Dispositivos vinculados → Vincular dispositivo → Vincular con número de teléfono.</p>
-                                    <p class="wa-field-note">Si el código vence, lo actualizamos automáticamente.</p>
-                                </div>
-                            </div>
-                        }
-                        else if (ShouldShowPairingSurface(numero) && numero.HasWebPairingQr)
-                        {
-                            <div class="wa-pairing">
-                                <div class="wa-pairing__qr">
-                                    <img src="@numero.WebPairingQrDataUrl" alt="QR de emparejamiento de WhatsApp Business" />
-                                </div>
-                                <div class="wa-pairing__details">
-                                    <p class="wa-field-note">Abrí WhatsApp Business → Dispositivos vinculados → Vincular dispositivo → escaneá este código.</p>
-                                    <p class="wa-field-note">Si el código vence, lo actualizamos automáticamente.</p>
-                                </div>
-                            </div>
-                        }
-                        else if (IsPairingRegenerating(numero))
-                        {
-                            <div class="wa-pairing wa-pairing--updating">
-                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                                <span class="wa-field-note">Actualizando código QR...</span>
+                            <div class="wa-business-connect__phone">
+                                <AlfaInput Label="Número de teléfono (con código de país)"
+                                           @bind-Value="_connectPhoneInput"
+                                           Placeholder="+54 9 11 1234 5678" />
+                                <AlfaButton Icon="bi bi-keyboard"
+                                            Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)"
+                                            Loading="@(Saving || PairingBusy)"
+                                            OnClick="@(() => StartBusinessPairingAsync(ConversacionWhatsAppWebSessionModes.PhoneNumber))">
+                                    Generar código
+                                </AlfaButton>
                             </div>
                         }
 
-                        @if (numero.IsWebSessionReady)
-                        {
-                            <div class="wa-number-card__actions">
-                                <AlfaButton Variant="AlfaButtonVariant.Danger" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Cerrar sesión</AlfaButton>
-                            </div>
-                        }
-                        else if (HasPairingRegenerateError(numero))
-                        {
-                            <div class="wa-number-card__actions">
-                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-arrow-repeat" Loading="@(Saving || PairingBusy)" OnClick="@(() => RetryWhatsAppWebPairingAsync(numero))">Reintentar</AlfaButton>
-                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-lg" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => ClearWhatsAppWebPairingAsync(numero))">Cancelar</AlfaButton>
-                            </div>
-                        }
-                        else if (IsPairingFlowVisible(numero))
-                        {
-                            <div class="wa-number-card__actions">
-                                <AlfaIconButton Icon="bi bi-arrow-repeat" Label="Actualizar código" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => RefreshWhatsAppWebSessionAsync(numero))" />
-                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-x-lg" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => ClearWhatsAppWebPairingAsync(numero))">Cancelar</AlfaButton>
-                            </div>
-                        }
-                        else if (_connectMethodPromptForIdNumero == numero.IdNumero)
-                        {
-                            <div class="wa-connect-chooser">
-                                <p class="wa-field-note">Elegí cómo querés vincular esta cuenta.</p>
-                                <div class="wa-connect-chooser__methods">
-                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" Loading="@(Saving || PairingBusy)" OnClick="@(() => ConectarWhatsAppBusinessAsync(numero, ConversacionWhatsAppWebSessionModes.Qr, null))">Código QR</AlfaButton>
-                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-keyboard" OnClick="@(() => ShowConnectPhoneInput(numero.IdNumero))">Número de teléfono</AlfaButton>
-                                </div>
-                                @if (_connectPhoneChooserFor == numero.IdNumero)
-                                {
-                                    <AlfaInput Label="Número de teléfono (con código de país)" @bind-Value="_connectPhoneInput" Placeholder="+54 9 11 1234 5678" />
-                                    <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-keyboard" Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)" Loading="@(Saving || PairingBusy)" OnClick="@(() => ConectarWhatsAppBusinessAsync(numero, ConversacionWhatsAppWebSessionModes.PhoneNumber, _connectPhoneInput))">Generar código</AlfaButton>
-                                }
-                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CloseConnectMethodChooser">Cancelar</AlfaButton>
-                            </div>
-                        }
-                        else
-                        {
-                            <div class="wa-number-card__actions">
-                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" OnClick="@(() => OpenConnectMethodChooser(numero.IdNumero))">Conectar WhatsApp</AlfaButton>
-                                @if (!string.IsNullOrWhiteSpace(numero.WebInstanceName))
-                                {
-                                    // Este número tocó WhatsApp Web alguna vez (quedó un WebInstanceName
-                                    // grabado) pero no está conectado ahora -- sin este botón no hay forma
-                                    // de soltarlo: ResolveWhatsAppDeliveryProviderForNumero() sigue
-                                    // ruteando cada envío por Web (y fallando) aunque la base tenga Meta
-                                    // Cloud API como proveedor predeterminado, y "Cerrar sesión" solo
-                                    // aparecía cuando el estado era Connected.
-                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" OnClick="@(() => RequestStopWhatsAppWebSession(numero))">Cerrar sesión</AlfaButton>
-                                }
-                            </div>
-                        }
-
-                        <details class="wa-settings-section">
-                            <summary class="wa-settings-section__summary">
-                                <span class="wa-settings-section__title">Usuarios con acceso</span>
-                                <span class="wa-settings-section__hint">@numero.Usuarios.Count</span>
-                                <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                            </summary>
-                            <div class="wa-settings-section__body">
-                                <div class="wa-user-grid">
-                                    @foreach (var usuario in _usuariosSistema)
-                                    {
-                                        <AlfaCheckbox Value="@numero.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
-                                                      ValueChanged="@(v => ToggleNumeroUsuario(numero, usuario.Nombre, v ?? false))">
-                                            @usuario.Nombre
-                                        </AlfaCheckbox>
-                                    }
-                                    @if (_usuariosSistema.Count == 0)
-                                    {
-                                        <span class="wa-field-note">No hay usuarios activos en este sistema.</span>
-                                    }
-                                </div>
-                            </div>
-                        </details>
-
-                        <details class="wa-settings-section">
-                            <summary class="wa-settings-section__summary">
-                                <span class="wa-settings-section__title">Opciones avanzadas</span>
-                                <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                            </summary>
-                            <div class="wa-settings-section__body">
-                                <div class="wa-fields">
-                                    <AlfaInput Label="Nombre" @bind-Value="numero.Nombre" Placeholder="Ej: Ventas Norte" />
-                                    <AlfaInput Label="Phone Number ID" @bind-Value="numero.PhoneNumberId" Placeholder="Ej: 109876543210" />
-                                    <AlfaInput Label="Nombre visible sesión Web" @bind-Value="numero.WebDisplayName" Placeholder="Ej: WhatsApp Sucursal Centro" />
-                                    <AlfaInput Label="Instancia sesión Web" @bind-Value="numero.WebInstanceName" Placeholder="Se genera sola si la dejás vacía" />
-                                    <AlfaSelect Label="Método de inicio" Options="@_webSessionModeOptions" @bind-Value="numero.WebSessionMode" />
-                                    <AlfaInput Label="Número para sesión Web" @bind-Value="numero.WebPhoneNumber" Placeholder="Ej: +54 11 1234-5678" />
-                                </div>
-                                <AlfaCheckbox Value="@_includeTextPairingCode" ValueChanged="@(v => _includeTextPairingCode = v ?? false)">Generar también código de texto al conectar</AlfaCheckbox>
-                                <div class="actions">
-                                    <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="@(() => SaveNumeroAsync(numero))">Guardar opciones</AlfaButton>
-                                </div>
-                            </div>
-                        </details>
-
-                        @if (!string.IsNullOrWhiteSpace(numero.WebRuntimeState) || numero.WebWorkerProcessId.HasValue)
-                        {
-                            <details class="wa-settings-section">
-                                <summary class="wa-settings-section__summary">
-                                    <span class="wa-settings-section__title">Soporte y diagnóstico</span>
-                                    <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                                </summary>
-                                <div class="wa-settings-section__body">
-                                    <p class="wa-field-note">
-                                        Estado runtime: @DisplayPairingValue(numero.WebRuntimeState)
-                                        · PID: @(numero.WebWorkerProcessId?.ToString() ?? "sin proceso")
-                                        @if (numero.WebRuntimeUpdatedAtUtc.HasValue)
-                                        {
-                                            <text> · Actualizado: @numero.WebRuntimeUpdatedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</text>
-                                        }
-                                    </p>
-                                </div>
-                            </details>
-                        }
                     </div>
                 }
-
-                @if (ActiveBusinessNumeros.Any())
+                else if (SelectedBusinessNumero is { } selectedBusiness)
                 {
-                    @if (_connectMethodPromptForIdNumero == 0)
-                    {
-                        <div class="wa-connect-chooser">
-                            <p class="wa-field-note">Elegí cómo querés vincular la nueva cuenta.</p>
-                            <div class="wa-connect-chooser__methods">
-                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-qr-code" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.Qr, null))">Código QR</AlfaButton>
-                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-keyboard" OnClick="@(() => ShowConnectPhoneInput(0))">Número de teléfono</AlfaButton>
-                            </div>
-                            @if (_connectPhoneChooserFor == 0)
-                            {
-                                <AlfaInput Label="Número de teléfono (con código de país)" @bind-Value="_connectPhoneInput" Placeholder="+54 9 11 1234 5678" />
-                                <AlfaButton Size="AlfaSize.Sm" Icon="bi bi-keyboard" Disabled="@string.IsNullOrWhiteSpace(_connectPhoneInput)" Loading="@(Saving || PairingBusy)" OnClick="@(() => IniciarNuevoWhatsAppBusinessAsync(ConversacionWhatsAppWebSessionModes.PhoneNumber, _connectPhoneInput))">Generar código</AlfaButton>
-                            }
-                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="CloseConnectMethodChooser">Cancelar</AlfaButton>
+                    <div class="wa-business-detail__heading">
+                        <div>
+                            <h2>@GetNumeroDisplayName(selectedBusiness)</h2>
+                            <span class="@GetBusinessStatusClass(selectedBusiness)">@GetBusinessConnectionLabel(selectedBusiness)</span>
+                            <p>@GetBusinessStatusDescription(selectedBusiness)</p>
                         </div>
+                    </div>
+
+                    @if (PairingBusy && IsPairingFlowActive(selectedBusiness.IdNumero))
+                    {
+                        <div class="wa-business-pairing wa-business-pairing--busy" role="status" aria-live="polite">
+                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                            <div>
+                                <strong>Preparando la sesión</strong>
+                                <p>Puede tardar unos segundos.</p>
+                            </div>
+                        </div>
+                    }
+
+                    @if (HasPairingRegenerateError(selectedBusiness))
+                    {
+                        <div class="wa-business-pairing wa-business-pairing--error">
+                            <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+                            <div>
+                                <strong>No pudimos actualizar el código.</strong>
+                                <p>Reintentá la vinculación o cancelá el proceso.</p>
+                                <div class="wa-business-inline-actions">
+                                    <AlfaButton Icon="bi bi-arrow-repeat" Loading="@(Saving || PairingBusy)" OnClick="@(() => RetryWhatsAppWebPairingAsync(selectedBusiness))">Reintentar</AlfaButton>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else if (string.Equals(selectedBusiness.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase)
+                             && ShouldShowPairingSurface(selectedBusiness)
+                             && selectedBusiness.HasWebPairingCode)
+                    {
+                        <div class="wa-business-pairing">
+                            <div class="wa-pairing__code">@FormatPairingCodeForDisplay(selectedBusiness.WebPairingCode)</div>
+                            <div>
+                                <strong>Ingresá este código en WhatsApp Business</strong>
+                                <p>Dispositivos vinculados → Vincular dispositivo → Vincular con número de teléfono.</p>
+                                <p>Si vence, AlfaCore lo actualiza automáticamente.</p>
+                                <div class="wa-business-inline-actions">
+                                    <AlfaIconButton Icon="bi bi-arrow-repeat" Label="Actualizar código" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => RefreshWhatsAppWebSessionAsync(selectedBusiness))" />
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else if (ShouldShowPairingSurface(selectedBusiness) && selectedBusiness.HasWebPairingQr)
+                    {
+                        <div class="wa-business-pairing">
+                            <div class="wa-pairing__qr">
+                                <img src="@selectedBusiness.WebPairingQrDataUrl" alt="QR para vincular WhatsApp Business" />
+                                @if (_includeTextPairingCode && selectedBusiness.HasWebPairingCode)
+                                {
+                                    <div class="wa-pairing__code">@FormatPairingCodeForDisplay(selectedBusiness.WebPairingCode)</div>
+                                }
+                            </div>
+                            <div>
+                                <strong>Escaneá el código desde WhatsApp Business</strong>
+                                <p>Dispositivos vinculados → Vincular dispositivo.</p>
+                                <p>Si vence, AlfaCore lo actualiza automáticamente.</p>
+                                <div class="wa-business-inline-actions">
+                                    <AlfaIconButton Icon="bi bi-arrow-repeat" Label="Actualizar QR" Disabled="@(Loading || Saving || PairingBusy)" OnClick="@(() => RefreshWhatsAppWebSessionAsync(selectedBusiness))" />
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    else if (IsPairingRegenerating(selectedBusiness))
+                    {
+                        <div class="wa-business-pairing wa-business-pairing--busy" role="status">
+                            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                            <div>
+                                <strong>Actualizando código</strong>
+                                <p>Esperá mientras generamos uno nuevo.</p>
+                            </div>
+                        </div>
+                    }
+
+                    @if (IsEditingBusinessNumero && _businessNumeroDraft is { } businessDraft)
+                    {
+                        <div class="wa-business-block">
+                            <h3>Identificación</h3>
+                            <div class="wa-fields">
+                                <AlfaInput Label="Nombre visible" @bind-Value="businessDraft.Nombre" Placeholder="Ej: Ventas" />
+                                <AlfaInput Label="Número" @bind-Value="businessDraft.WebPhoneNumber" Placeholder="+54 9 11 1234 5678" />
+                                <AlfaSelect Label="Método de conexión" Options="@_webSessionModeOptions" @bind-Value="businessDraft.WebSessionMode" />
+                                <AlfaInput Label="Nombre visible de la sesión" @bind-Value="businessDraft.WebDisplayName" Placeholder="Ej: WhatsApp Sucursal Centro" />
+                            </div>
+                        </div>
+
+                        <div class="wa-business-block">
+                            <div class="wa-business-block__header">
+                                <h3>Usuarios con acceso</h3>
+                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="OpenBusinessAccessDialog">Asignar usuarios</AlfaButton>
+                            </div>
+                            @if (businessDraft.Usuarios.Count > 0)
+                            {
+                                <ul class="wa-business-users">
+                                    @foreach (var usuario in businessDraft.Usuarios.OrderBy(x => x))
+                                    {
+                                        <li><i class="bi bi-person" aria-hidden="true"></i>@usuario</li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="wa-field-note">Ningún usuario asignado.</p>
+                            }
+                        </div>
+
+                        <details class="wa-business-block wa-business-advanced">
+                            <summary>Opciones avanzadas <i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+                            <div class="wa-fields">
+                                <AlfaInput Label="Identificador interno" @bind-Value="businessDraft.PhoneNumberId" />
+                                <AlfaInput Label="Instancia de sesión Web" @bind-Value="businessDraft.WebInstanceName" Placeholder="Se genera automáticamente si queda vacía" />
+                            </div>
+                        </details>
                     }
                     else
                     {
-                        <div class="actions">
-                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="@(() => OpenConnectMethodChooser(0))">Conectar otro WhatsApp</AlfaButton>
+                        <div class="wa-business-block">
+                            <h3>Identificación</h3>
+                            <dl class="wa-business-definition">
+                                <div><dt>Nombre visible</dt><dd>@GetNumeroDisplayName(selectedBusiness)</dd></div>
+                                <div><dt>Número</dt><dd>@GetBusinessPhone(selectedBusiness)</dd></div>
+                                <div><dt>Método</dt><dd>@GetBusinessMethodLabel(selectedBusiness)</dd></div>
+                                <div><dt>Estado</dt><dd>@GetNumeroEstadoLabel(selectedBusiness)</dd></div>
+                            </dl>
                         </div>
+
+                        <div class="wa-business-block">
+                            <div class="wa-business-block__header">
+                                <h3>Usuarios con acceso</h3>
+                                <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="OpenBusinessAccessDialog">Asignar usuarios</AlfaButton>
+                            </div>
+                            @if (selectedBusiness.Usuarios.Count > 0)
+                            {
+                                <ul class="wa-business-users">
+                                    @foreach (var usuario in selectedBusiness.Usuarios.OrderBy(x => x))
+                                    {
+                                        <li><i class="bi bi-person" aria-hidden="true"></i>@usuario</li>
+                                    }
+                                </ul>
+                            }
+                            else
+                            {
+                                <p class="wa-field-note">Ningún usuario asignado.</p>
+                            }
+                        </div>
+
+                        <details class="wa-business-block wa-business-advanced">
+                            <summary>Opciones avanzadas <i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+                            <dl class="wa-business-definition">
+                                <div><dt>Identificador interno</dt><dd>@DisplayPairingValue(selectedBusiness.PhoneNumberId)</dd></div>
+                                <div><dt>Instancia de sesión</dt><dd>@DisplayPairingValue(selectedBusiness.WebInstanceName)</dd></div>
+                                <div><dt>Estado runtime</dt><dd>@DisplayPairingValue(selectedBusiness.WebRuntimeState)</dd></div>
+                                @if (selectedBusiness.WebRuntimeUpdatedAtUtc.HasValue)
+                                {
+                                    <div><dt>Actualizado</dt><dd>@selectedBusiness.WebRuntimeUpdatedAtUtc.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</dd></div>
+                                }
+                            </dl>
+                        </details>
                     }
                 }
-
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-question-circle wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">¿Necesitás ayuda para conectar WhatsApp Business?</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <ol class="conv-config-steps">
-                            <li>Tocá "Conectar WhatsApp" en el número que querés vincular.</li>
-                            <li>Abrí WhatsApp Business en el teléfono → Dispositivos vinculados → Vincular dispositivo.</li>
-                            <li>Escaneá el código QR que aparece en pantalla.</li>
-                            <li>Un usuario normal solo ve, en el inbox, las conversaciones de los números donde está marcado como usuario.</li>
-                            <li>Un administrador de conversaciones ve y puede responder por cualquier número, sin restricción.</li>
-                            <li>"Cerrar sesión" deja de mostrar el número en esta lista, pero no borra las conversaciones que ya tiene.</li>
-                        </ol>
-                    </div>
-                </details>
+                else if (!ActiveBusinessNumeros.Any())
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Conectá WhatsApp para empezar"
+                                    Message="Vinculá una cuenta de WhatsApp Business para atenderla desde AlfaCore."
+                                    ActionLabel="Conectar WhatsApp"
+                                    ActionIcon="bi bi-qr-code"
+                                    OnAction="@(_ => OpenNewBusinessConnectionAsync())" />
+                }
+                else
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                                    Title="Seleccioná una sesión"
+                                    Message="Elegí un número de la lista para ver su estado y configuración." />
+                }
             </section>
-    </div>
+        </div>
 
-    <AlfaConfirmDialog Open="_stopSessionOpen"
-                        Title="Cerrar sesión de WhatsApp"
-                        Message="@GetStopSessionMessage()"
-                        SecondaryMessage="Las conversaciones anteriores se conservarán."
-                        ConfirmLabel="Cerrar sesión"
-                        CancelLabel="Cancelar"
-                        Loading="_stopSessionBusy"
-                        OnConfirm="ConfirmStopWhatsAppWebSessionAsync"
-                        OnCancel="CancelStopWhatsAppWebSession" />
+        <AlfaConfirmDialog Open="_stopSessionOpen"
+                           Title="Cerrar sesión de WhatsApp"
+                           Message="@GetStopSessionMessage()"
+                           SecondaryMessage="Se desconectará este número. Las conversaciones y el historial asociado se conservarán."
+                           ConfirmLabel="Cerrar sesión"
+                           CancelLabel="Cancelar"
+                           Loading="_stopSessionBusy"
+                           OnConfirm="ConfirmStopWhatsAppWebSessionAsync"
+                           OnCancel="CancelStopWhatsAppWebSession" />
     }
 
     @if (_activePrimaryTab == "operacion-accesos")
@@ -1673,6 +1708,9 @@
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="SaveAdministradoresAsync" disabled="@(Loading || Saving)">
                         <i class="bi bi-floppy-fill"></i> Guardar administradores
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CancelAdministradoresEdit" disabled="@(Loading || Saving || !IsAdministradoresDirty)">
+                        <i class="bi bi-x-circle"></i> Cancelar
                     </button>
                 </div>
             </section>
@@ -1772,6 +1810,14 @@
 
         </div>
     </div>
+
+    <AlfaConfirmDialog Open="@_discardChangesDialogOpen"
+                       Title="Cambios sin guardar"
+                       Message="Tenés cambios sin guardar. ¿Querés descartarlos?"
+                       ConfirmLabel="Descartar cambios"
+                       CancelLabel="Seguir editando"
+                       OnConfirm="ConfirmPendingNavigationAsync"
+                       OnCancel="KeepEditing" />
 </section>
 
 @code {
@@ -1781,31 +1827,74 @@
     private ConversacionMercadoLibreConfigDto _mercadoLibreConfig = new();
     private ConversacionAlfaKnowledgeConfigDto _alfaKnowledgeConfig = new();
     private ConversacionAutomatizacionesConfigDto _automatizacionesConfig = new();
+    private ConversacionAutomatizacionesConfigDto _automatizacionesOriginal = new();
     private IReadOnlyList<ConversacionReglaDto> _reglas = [];
     private IReadOnlyList<ConversacionTecnicoOptionDto> _tecnicos = [];
     private ConversacionReglaDto? _reglaEdicion;
+    private ConversacionReglaDto? _reglaOriginal;
     private bool _reglaEsNueva;
     private ConversacionPrioridadConfigDto _prioridadConfig = new();
     private IReadOnlyList<ConversacionClasificacionOptionDto> _clasificaciones = [];
     private IReadOnlyList<UsuarioSistemaDto> _usuariosSistema = [];
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> _numeros = [];
+    private Func<Task>? _pendingNavigation;
+    private bool _discardChangesDialogOpen;
+    private bool _navigationReady;
+    private string? _internalNavigationUri;
+
+    private enum SettingsEditorMode
+    {
+        Read,
+        Edit,
+        Create
+    }
 
     /// <summary>
-    /// La pestaña WhatsApp Business sólo lista cuentas activas -- "Cerrar sesión" pone Activo=false
-    /// (ver ClearWhatsAppWebPairingAsync) sin tocar la fila ni el historial. No es un filtro SQL: se
-    /// reutiliza GetWhatsAppNumeroAsync/GetWhatsAppNumeroByInstanceNameAsync (envío, recepción,
-    /// resolución de conversaciones históricas) tal cual, sin excluir nada -- esto es solo qué se
-    /// muestra en esta lista puntual.
+    /// La pestaña WhatsApp Business sólo lista cuentas activas administradas por Web/QR. WhatsApp API
+    /// muestra todos los números cuya clasificación real no contiene datos de sesión Web; Activo,
+    /// usuarios y predeterminado no participan de esa clasificación.
     /// </summary>
     // Criterio UI vigente: Business = Web/QR; API = Meta Cloud API por Phone Number ID.
     private IEnumerable<ConversacionWhatsAppNumeroDto> ActiveBusinessNumeros => _numeros.Where(n => n.Activo && IsWhatsAppWebManagedNumero(n));
-    private IEnumerable<ConversacionWhatsAppNumeroDto> WhatsAppApiNumeros => _numeros.Where(n => n.Activo && !IsWhatsAppWebManagedNumero(n));
+    private IEnumerable<ConversacionWhatsAppNumeroDto> WhatsAppApiNumeros
+        => _numeros
+            .Where(n => !IsWhatsAppWebManagedNumero(n))
+            .OrderByDescending(n => IsConfiguredGlobalApiNumero(n))
+            .ThenBy(n => n.Nombre);
     private ConversacionWhatsAppNumeroDto _nuevoNumero = new() { Activo = true };
+    private ConversacionWhatsAppNumeroDto? _apiNumeroDraft;
+    private ConversacionWhatsAppNumeroDto? _apiAccessDraft;
+    private bool ApiAccessSaving { get; set; }
+    private ConversacionWhatsAppConfigDto? _metaConfigDraft;
+    private string _apiWorkspaceView = "integracion";
+    private bool _replaceAccessToken;
+    private bool _replaceVerifyToken;
+    private bool _replaceAppSecret;
+    private string _accessTokenReplacement = string.Empty;
+    private string _verifyTokenReplacement = string.Empty;
+    private string _appSecretReplacement = string.Empty;
+    private ConversacionWhatsAppNumeroDto? _businessNumeroDraft;
+    private ConversacionWhatsAppNumeroDto? _businessAccessDraft;
+    private bool BusinessAccessSaving { get; set; }
+    private int? _selectedBusinessNumeroId;
+    private int? _selectedApiNumeroId;
+    private bool _addingApiNumero;
+    private ConversacionWhatsAppNumeroDto? SelectedApiNumero
+        => _selectedApiNumeroId.HasValue
+            ? WhatsAppApiNumeros.FirstOrDefault(n => n.IdNumero == _selectedApiNumeroId.Value)
+            : null;
+    private ConversacionWhatsAppNumeroDto? SelectedBusinessNumero
+        => _selectedBusinessNumeroId.HasValue
+            ? ActiveBusinessNumeros.FirstOrDefault(n => n.IdNumero == _selectedBusinessNumeroId.Value)
+            : null;
     private HashSet<string> _administradores = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _administradoresOriginal = new(StringComparer.OrdinalIgnoreCase);
     private string _anyDeskPath = string.Empty;
     private string _activePrimaryTab = "resumen";
     private string _activeChannelTab = "whatsapp";
     private string _activeWhatsAppSection = "numeros";
+    private string _activeSecondaryTab = string.Empty;
+    private readonly HashSet<string> _expandedSettingsCategories = new(StringComparer.OrdinalIgnoreCase);
     private bool Loading { get; set; }
     private bool Saving { get; set; }
     private bool AnyDeskSaving { get; set; }
@@ -1833,36 +1922,52 @@
     /// se abrió o se recargó (regla de producto: entrar a WhatsApp Business nunca genera QR solo).
     /// </summary>
     private readonly HashSet<int> _pairingFlowActiveIds = new();
+    private readonly HashSet<int> _provisionalBusinessNumeroIds = new();
     private int? _pairingRegenerateErrorForIdNumero;
     private int _pairingStaleCycles;
     private int _pairingFailureCount;
     private const int PairingStaleCycleLimit = 5;
     private const int PairingFailureLimit = 3;
 
-    private sealed record SettingsNavItem(string Key, string Label, string Icon, string Hint);
+    private sealed record SettingsSubnavItem(string Key, string Label);
+    private sealed record SettingsNavItem(string Key, string Label, IReadOnlyList<SettingsSubnavItem> Children);
 
     private static readonly IReadOnlyList<SettingsNavItem> SettingsNavItems =
     [
-        new("resumen", "Resumen", "bi-grid-1x2-fill", "Puntos de entrada a la configuración."),
-        new("canales", "Canales", "bi-broadcast", "WhatsApp, Instagram, Facebook y Mercado Libre."),
-        new("automatizacion", "Automatización", "bi-gear-wide-connected", "Horarios, bienvenida, auto-cierre, SLA y reglas."),
-        new("integraciones-ia", "Integraciones IA", "bi-stars", "AlfaKnowledge y el resto de integraciones de IA."),
-        new("operacion-accesos", "Operación y accesos", "bi-people-fill", "Prioridad de atención y administradores."),
-        new("soporte", "Soporte", "bi-life-preserver", "Herramientas técnicas y de diagnóstico.")
-    ];
-
-    private static readonly IReadOnlyList<AlfaTabItem> _channelTabItems =
-    [
-        new("whatsapp", "WhatsApp"),
-        new("instagram", "Instagram"),
-        new("facebook", "Facebook"),
-        new("mercadolibre", "Mercado Libre")
-    ];
-
-    private static readonly IReadOnlyList<AlfaTabItem> _whatsAppSectionTabItems =
-    [
-        new("numeros", "WhatsApp Business"),
-        new("general", "WhatsApp API")
+        new("resumen", "Resumen", []),
+        new("canales", "Canales",
+        [
+            new("whatsapp-business", "WhatsApp Business"),
+            new("whatsapp-api", "WhatsApp API"),
+            new("instagram", "Instagram"),
+            new("facebook", "Facebook"),
+            new("mercadolibre", "Mercado Libre")
+        ]),
+        new("automatizacion", "Automatización",
+        [
+            new("horario-bienvenida", "Horario y bienvenida"),
+            new("reglas", "Reglas"),
+            new("auto-cierre", "Auto-cierre"),
+            new("sla", "SLA")
+        ]),
+        new("integraciones-ia", "Integraciones IA",
+        [
+            new("asistente-ia", "Asistente IA"),
+            new("alfaknowledge", "AlfaKnowledge"),
+            new("informes-ia", "Informes IA")
+        ]),
+        new("operacion-accesos", "Operación y accesos",
+        [
+            new("prioridades", "Prioridades"),
+            new("accesos-numero", "Accesos por número"),
+            new("administradores", "Administradores")
+        ]),
+        new("soporte", "Soporte",
+        [
+            new("estado-webhooks", "Estado de webhooks"),
+            new("diagnostico-canales", "Diagnóstico de canales"),
+            new("anydesk", "AnyDesk")
+        ])
     ];
 
     private static readonly IReadOnlyList<AlfaSelectOption> _providerModeOptions =
@@ -1890,84 +1995,432 @@
 
     protected override async Task OnInitializedAsync()
     {
+        Nav.LocationChanged += HandleLocationChanged;
         ApplyStartupQuery();
+        if (_activePrimaryTab != "resumen")
+            _expandedSettingsCategories.Add(_activePrimaryTab);
         _suggestedBaseUrl = GetCurrentBaseUrl();
         UpdatePageHeader();
+
+        if (!await AuthorizationSvc.CanManageAsync())
+        {
+            Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones"));
+            return;
+        }
+
         await LoadWebhookTokenAsync();
         await LoadAsync();
+        _navigationReady = true;
     }
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
+        => _ = InvokeAsync(() =>
+        {
+            if (!_navigationReady)
+                return;
+
+            if (string.Equals(_internalNavigationUri, args.Location, StringComparison.Ordinal))
+            {
+                _internalNavigationUri = null;
+            }
+            else
+            {
+                ApplyStartupQuery();
+                SyncWhatsAppPollingWithNavigation();
+            }
+
+            UpdatePageHeader();
+            StateHasChanged();
+        });
 
     private void ApplyStartupQuery()
     {
         var uri = Nav.ToAbsoluteUri(Nav.Uri);
         var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query);
         var seccion = query.TryGetValue("seccion", out var seccionRaw) ? seccionRaw.ToString() : string.Empty;
+        var subseccion = query.TryGetValue("subseccion", out var subseccionRaw) ? subseccionRaw.ToString() : string.Empty;
         var canal = query.TryGetValue("canal", out var canalRaw) ? canalRaw.ToString() : string.Empty;
         var legacyWhatsAppQrOnboarding =
             string.Equals(query.TryGetValue("onboarding", out var onboarding) ? onboarding.ToString() : string.Empty, "whatsapp-qr", StringComparison.OrdinalIgnoreCase);
 
-        if (string.Equals(seccion, "canales", StringComparison.OrdinalIgnoreCase) || legacyWhatsAppQrOnboarding)
+        var category = SettingsNavItems.FirstOrDefault(item =>
+            string.Equals(item.Key, seccion, StringComparison.OrdinalIgnoreCase));
+
+        if (category is not null)
+        {
+            _activePrimaryTab = category.Key;
+            _expandedSettingsCategories.Add(category.Key);
+
+            var child = category.Children.FirstOrDefault(item =>
+                string.Equals(item.Key, subseccion, StringComparison.OrdinalIgnoreCase));
+            if (child is not null)
+                SelectSecondaryTabState(category.Key, child.Key);
+            else if (category.Children.Count > 0)
+                SelectSecondaryTabState(category.Key, category.Children[0].Key);
+
+            _activeSecondaryTab = GetActiveSecondaryTab();
+            return;
+        }
+
+        if (legacyWhatsAppQrOnboarding)
         {
             _activePrimaryTab = "canales";
             _activeChannelTab = string.Equals(canal, "whatsapp", StringComparison.OrdinalIgnoreCase) ? "whatsapp" : _activeChannelTab;
             if (_activeChannelTab == "whatsapp")
                 _activeWhatsAppSection = "numeros";
+            _activeSecondaryTab = GetActiveSecondaryTab();
+            return;
         }
+
+        _activePrimaryTab = "resumen";
+        _activeSecondaryTab = "resumen";
     }
 
     public void Dispose()
     {
+        Nav.LocationChanged -= HandleLocationChanged;
         StopPolling();
         PageHeader.Clear();
     }
 
     private void UpdatePageHeader()
     {
-        PageHeader.Set(new PageHeaderConfig
+        var onBusiness = IsWhatsAppBusinessView;
+        var editingBusiness = IsEditingBusinessNumero;
+        var editingMetaIntegration = IsWhatsAppApiView && _metaConfigDraft is not null;
+        var editingApiNumero = IsWhatsAppApiView && (_apiNumeroDraft is not null || _addingApiNumero);
+        var editingRegla = _activePrimaryTab == "automatizacion" && _reglaEdicion is not null;
+
+        IReadOnlyList<PageHeaderAction> actions;
+        if (onBusiness && IsBusinessConnectFlowActive)
         {
-            Title = "Configuración",
-            Breadcrumb = ["Conversaciones", "Configuración"],
-            State = PageHeaderState.List,
-            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-            TopNavigationItems = BuildTopNavigationItems(),
-            OnBack = () =>
-            {
-                Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones"));
-                return Task.CompletedTask;
-            },
-            Actions =
+            actions =
             [
                 new()
                 {
-                    Key = "recargar",
-                    Label = "Recargar",
-                    Icon = "bi-arrow-clockwise",
-                    Disabled = Loading,
-                    OnClick = LoadAsync
+                    Key = "cancelar-conexion-whatsapp-business",
+                    Label = "Cancelar",
+                    Icon = "bi-x-circle",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Saving || PairingBusy,
+                    OnClick = CancelBusinessConnectionAsync
                 }
-            ]
+            ];
+        }
+        else if (editingBusiness)
+        {
+            actions =
+            [
+                new()
+                {
+                    Key = "guardar-whatsapp-business",
+                    Label = Saving ? "Guardando..." : "Guardar",
+                    Icon = "bi-floppy",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Saving,
+                    Busy = Saving,
+                    OnClick = SaveBusinessNumeroDraftAsync
+                },
+                new()
+                {
+                    Key = "cancelar-whatsapp-business",
+                    Label = "Cancelar",
+                    Icon = "bi-x-circle",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Saving,
+                    OnClick = CancelBusinessNumeroEditAsync
+                }
+            ];
+        }
+        else if (editingMetaIntegration)
+        {
+            actions =
+            [
+                new()
+                {
+                    Key = "guardar-integracion-meta",
+                    Label = Saving ? "Guardando..." : "Guardar",
+                    Icon = "bi-floppy",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Saving,
+                    Busy = Saving,
+                    OnClick = SaveMetaIntegrationDraftAsync
+                },
+                new()
+                {
+                    Key = "cancelar-integracion-meta",
+                    Label = "Cancelar",
+                    Icon = "bi-x-circle",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Saving,
+                    OnClick = CancelMetaIntegrationEditAsync
+                }
+            ];
+        }
+        else if (editingApiNumero || editingRegla)
+        {
+            actions =
+            [
+                new()
+                {
+                    Key = "guardar-numero-api",
+                    Label = Saving ? "Guardando..." : "Guardar",
+                    Icon = "bi-floppy",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Saving,
+                    Busy = Saving,
+                    OnClick = editingRegla
+                        ? GuardarReglaAsync
+                        : _addingApiNumero ? AddNumeroAsync : SaveApiNumeroDraftAsync
+                },
+                new()
+                {
+                    Key = "cancelar-numero-api",
+                    Label = "Cancelar",
+                    Icon = "bi-x-circle",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Saving,
+                    OnClick = async () =>
+                    {
+                        if (editingRegla)
+                            CancelarEdicionRegla();
+                        else if (_addingApiNumero)
+                            await CancelAddApiNumeroAsync();
+                        else
+                            await CancelApiNumeroEditAsync();
+                    }
+                }
+            ];
+        }
+        else
+        {
+            var listActions = new List<PageHeaderAction>();
+            if (onBusiness)
+            {
+                var selected = SelectedBusinessNumero;
+                if (selected is not null && !IsPairingFlowVisible(selected))
+                {
+                    listActions.Add(new PageHeaderAction
+                    {
+                        Key = "editar-whatsapp-business",
+                        Label = "Editar",
+                        Icon = "bi-pencil",
+                        Style = PageHeaderActionStyle.Ghost,
+                        Priority = PageHeaderActionPriority.Essential,
+                        Disabled = Loading || Saving || PairingBusy,
+                        OnClick = StartBusinessNumeroEditAsync
+                    });
+                }
+
+                if (selected is not null && !selected.IsWebSessionReady && !IsPairingFlowVisible(selected))
+                {
+                    listActions.Add(new PageHeaderAction
+                    {
+                        Key = "reconectar-whatsapp-business",
+                        Label = "Reconectar",
+                        Icon = "bi-arrow-repeat",
+                        Style = PageHeaderActionStyle.Primary,
+                        Priority = PageHeaderActionPriority.Essential,
+                        Disabled = Loading || Saving || PairingBusy,
+                        OnClick = () => OpenBusinessConnectionAsync(selected.IdNumero)
+                    });
+                }
+
+                listActions.Add(new PageHeaderAction
+                {
+                    Key = "conectar-otro-whatsapp-business",
+                    Label = selected is null ? "Conectar WhatsApp" : "Nueva sesión",
+                    Icon = "bi-plus-circle",
+                    Style = selected is null ? PageHeaderActionStyle.Primary : PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Loading || Saving || PairingBusy,
+                    OnClick = OpenNewBusinessConnectionAsync
+                });
+
+                if (selected is not null && (selected.IsWebSessionReady || !string.IsNullOrWhiteSpace(selected.WebInstanceName)))
+                {
+                    listActions.Add(new PageHeaderAction
+                    {
+                        Key = "cerrar-sesion-whatsapp-business",
+                        Label = "Cerrar sesión",
+                        Icon = "bi-box-arrow-right",
+                        Style = PageHeaderActionStyle.Danger,
+                        Priority = PageHeaderActionPriority.Overflow,
+                        Disabled = PairingBusy || Saving,
+                        OnClick = () => RequestStopWhatsAppWebSessionAsync(selected)
+                    });
+                }
+            }
+            else
+            {
+                if (IsWhatsAppApiView)
+                {
+                    if (IsApiIntegrationView)
+                    {
+                        listActions.Add(new PageHeaderAction
+                        {
+                            Key = "editar-integracion-meta",
+                            Label = "Editar integración",
+                            Icon = "bi-pencil",
+                            Style = PageHeaderActionStyle.Primary,
+                            Priority = PageHeaderActionPriority.Essential,
+                            Disabled = Loading || Saving,
+                            OnClick = StartMetaIntegrationEditAsync
+                        });
+                    }
+                    else
+                    {
+                        if (SelectedApiNumero is not null)
+                        {
+                            listActions.Add(new PageHeaderAction
+                            {
+                                Key = "editar-numero-api",
+                                Label = "Editar",
+                                Icon = "bi-pencil",
+                                Style = PageHeaderActionStyle.Ghost,
+                                Priority = PageHeaderActionPriority.Essential,
+                                Disabled = Loading || Saving,
+                                OnClick = StartEditSelectedApiNumeroAsync
+                            });
+                        }
+
+                        listActions.Add(new PageHeaderAction
+                        {
+                            Key = "nuevo-numero-api",
+                            Label = "Nuevo número",
+                            Icon = "bi-plus-circle",
+                            Style = PageHeaderActionStyle.Primary,
+                            Priority = PageHeaderActionPriority.Essential,
+                            Disabled = Loading || Saving,
+                            OnClick = StartAddApiNumero
+                        });
+                    }
+                }
+                else
+                {
+                    listActions.Add(new PageHeaderAction
+                    {
+                        Key = "recargar",
+                        Label = "Recargar",
+                        Icon = "bi-arrow-clockwise",
+                        Style = PageHeaderActionStyle.Ghost,
+                        Disabled = Loading,
+                        OnClick = LoadAsync
+                    });
+                }
+            }
+
+            actions = listActions;
+        }
+
+        actions = [.. BuildHistoryActions(), .. actions];
+
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = GetContextToolbarTitle(),
+            State = CurrentEditorMode switch
+            {
+                SettingsEditorMode.Create => PageHeaderState.Creating,
+                SettingsEditorMode.Edit => PageHeaderState.Editing,
+                _ => PageHeaderState.List
+            },
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            RecordToolbar = IsWhatsAppBusinessView,
+            ShowHistoryNavigation = false,
+            TopNavigationItems = BuildTopNavigationItems(),
+            OnBack = HeaderNavigation.CanGoBack
+                ? () => RequestNavigationAsync(() =>
+                {
+                    HeaderNavigation.GoBack(Nav);
+                    return Task.CompletedTask;
+                })
+                : null,
+            OnForward = HeaderNavigation.CanGoForward
+                ? () => RequestNavigationAsync(() =>
+                {
+                    HeaderNavigation.GoForward(Nav);
+                    return Task.CompletedTask;
+                })
+                : null,
+            Actions = actions
         });
     }
+
+    private IReadOnlyList<PageHeaderAction> BuildHistoryActions()
+        =>
+        [
+            new()
+            {
+                Key = "historial-atras",
+                Label = "Atrás",
+                Icon = "bi-arrow-left",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = !HeaderNavigation.CanGoBack,
+                OnClick = () => RequestNavigationAsync(() =>
+                {
+                    HeaderNavigation.GoBack(Nav);
+                    return Task.CompletedTask;
+                })
+            },
+            new()
+            {
+                Key = "historial-adelante",
+                Label = "Adelante",
+                Icon = "bi-arrow-right",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = !HeaderNavigation.CanGoForward,
+                OnClick = () => RequestNavigationAsync(() =>
+                {
+                    HeaderNavigation.GoForward(Nav);
+                    return Task.CompletedTask;
+                })
+            }
+        ];
 
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
         var items = new List<PageHeaderTopNavItem>
         {
-            new() { Key = "conversaciones", Label = "Conversaciones", Url = RouteContext.BuildRoute("/conversaciones") }
+            BuildProtectedTopNavItem("conversaciones", "Conversaciones", "/conversaciones")
         };
 
         if (!IsDirectMode)
         {
-            items.Add(new() { Key = "contactos", Label = "Contactos", Url = RouteContext.BuildRoute("/contactos") });
-            items.Add(new() { Key = "clientes", Label = "Clientes", Url = RouteContext.BuildRoute("/clientes") });
+            items.Add(BuildProtectedTopNavItem("contactos", "Contactos", "/contactos"));
+            items.Add(BuildProtectedTopNavItem("clientes", "Clientes", "/clientes"));
         }
 
-        items.Add(new() { Key = "plantillas", Label = "Plantillas", Url = RouteContext.BuildRoute("/conversaciones/plantillas") });
+        items.Add(BuildProtectedTopNavItem("plantillas", "Plantillas", "/conversaciones/plantillas"));
         items.Add(new() { Key = "configuracion", Label = "Configuración", Url = RouteContext.BuildRoute("/conversaciones/configuracion"), Active = true });
-        items.Add(new() { Key = "estadisticas", Label = "Estadísticas", Url = RouteContext.BuildRoute("/conversaciones/estadisticas") });
-        items.Add(new() { Key = "informes", Label = "Informes", Url = RouteContext.BuildRoute("/conversaciones/informes") });
+        items.Add(BuildProtectedTopNavItem("estadisticas", "Estadísticas", "/conversaciones/estadisticas"));
+        items.Add(BuildProtectedTopNavItem("informes", "Informes", "/conversaciones/informes"));
 
         return items;
+    }
+
+    private PageHeaderTopNavItem BuildProtectedTopNavItem(string key, string label, string route)
+    {
+        var url = RouteContext.BuildRoute(route);
+        return new PageHeaderTopNavItem
+        {
+            Key = key,
+            Label = label,
+            Url = url,
+            OnClick = () => RequestNavigationAsync(() =>
+            {
+                Nav.NavigateTo(url);
+                return Task.CompletedTask;
+            })
+        };
     }
 
     private async Task LoadWebhookTokenAsync()
@@ -1984,12 +2437,12 @@
         }
 
         var result = await UiOps.RunAsync(
-            () => CentralBasesSvc.EnsureWebhookTokenAsync(idBase.Value),
-            "No se pudo generar el token de webhook de esta base.");
+            () => CentralBasesSvc.GetByIdAsync(idBase.Value),
+            "No se pudo consultar el token de webhook de esta base.");
 
         if (result.Success)
         {
-            _webhookToken = result.Value;
+            _webhookToken = result.Value?.WebhookToken;
         }
     }
 
@@ -2001,23 +2454,203 @@
     private string? BuildTokenizedWebhookUrl(string basePath)
         => string.IsNullOrWhiteSpace(_webhookToken) ? null : $"{basePath}/{_webhookToken}";
 
-    private void SelectPrimaryTab(string tab)
+    private Task SelectPrimaryTab(string tab)
+        => RequestNavigationAsync(() =>
+        {
+            var category = SettingsNavItems.First(item => item.Key == tab);
+            NavigateToSettingsState(category.Key, category.Children.FirstOrDefault()?.Key);
+            return Task.CompletedTask;
+        });
+
+    private void ApplyPrimaryTab(string tab)
     {
+        var wasActive = string.Equals(_activePrimaryTab, tab, StringComparison.OrdinalIgnoreCase);
         _activePrimaryTab = tab;
+        var category = SettingsNavItems.First(x => x.Key == tab);
+        if (category.Children.Count > 0)
+        {
+            if (wasActive && _expandedSettingsCategories.Contains(tab))
+                _expandedSettingsCategories.Remove(tab);
+            else
+                _expandedSettingsCategories.Add(tab);
+
+            if (!wasActive || string.IsNullOrWhiteSpace(GetActiveSecondaryTab()))
+                SelectSecondaryTabState(tab, category.Children[0].Key);
+        }
         if (tab != "canales")
             _feedbackScope = null;
 
         SyncWhatsAppPollingWithNavigation();
+        UpdatePageHeader();
+    }
+
+    private Task SelectSecondaryTab(string category, string subsection)
+        => RequestNavigationAsync(() =>
+        {
+            NavigateToSettingsState(category, subsection);
+            return Task.CompletedTask;
+        });
+
+    private void NavigateToSettingsState(string category, string? subsection)
+    {
+        if (string.IsNullOrWhiteSpace(subsection))
+            ApplyPrimaryTab(category);
+        else
+            ApplySecondaryTab(category, subsection);
+
+        var uri = Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["seccion"] = category,
+            ["subseccion"] = string.IsNullOrWhiteSpace(subsection) ? null : subsection,
+            ["canal"] = null,
+            ["onboarding"] = null
+        });
+
+        if (string.Equals(uri, Nav.Uri, StringComparison.Ordinal))
+            return;
+
+        _internalNavigationUri = uri;
+        Nav.NavigateTo(uri, forceLoad: false);
+    }
+
+    private void ApplySecondaryTab(string category, string subsection)
+    {
+        _activePrimaryTab = category;
+        _expandedSettingsCategories.Add(category);
+        SelectSecondaryTabState(category, subsection);
+        if (category != "canales")
+            _feedbackScope = null;
+
+        SyncWhatsAppPollingWithNavigation();
+        UpdatePageHeader();
+    }
+
+    private void SelectSecondaryTabState(string category, string subsection)
+    {
+        _activeSecondaryTab = subsection;
+        if (category != "canales")
+            return;
+
+        switch (subsection)
+        {
+            case "whatsapp-business":
+                _activeChannelTab = "whatsapp";
+                _activeWhatsAppSection = "numeros";
+                break;
+            case "whatsapp-api":
+                _activeChannelTab = "whatsapp";
+                _activeWhatsAppSection = "general";
+                break;
+            default:
+                _activeChannelTab = subsection;
+                break;
+        }
+    }
+
+    private SettingsEditorMode CurrentEditorMode
+        => _addingApiNumero || (_reglaEsNueva && _reglaEdicion is not null) || (IsWhatsAppBusinessView && _connectMethodPromptForIdNumero == 0)
+            ? SettingsEditorMode.Create
+            : _metaConfigDraft is not null || _apiNumeroDraft is not null || _businessNumeroDraft is not null || _reglaEdicion is not null
+                ? SettingsEditorMode.Edit
+                : SettingsEditorMode.Read;
+
+    private bool IsWhatsAppApiView
+        => _activePrimaryTab == "canales"
+           && _activeChannelTab == "whatsapp"
+           && _activeWhatsAppSection == "general";
+
+    private bool IsApiIntegrationView
+        => IsWhatsAppApiView && string.Equals(_apiWorkspaceView, "integracion", StringComparison.Ordinal);
+
+    private bool IsWhatsAppBusinessView
+        => _activePrimaryTab == "canales"
+           && _activeChannelTab == "whatsapp"
+           && _activeWhatsAppSection == "numeros";
+
+    private bool IsEditingBusinessNumero
+        => IsWhatsAppBusinessView && _businessNumeroDraft is not null;
+
+    private bool IsBusinessConnectFlowActive
+        => _connectMethodPromptForIdNumero.HasValue
+           || (SelectedBusinessNumero is { } numero && IsPairingFlowActive(numero.IdNumero));
+
+    private bool HasUnsavedChanges
+        => (_metaConfigDraft is not null && !WhatsAppConfigEquals(_metaConfigDraft, _config))
+           || HasSecretReplacementChanges
+           || (_apiNumeroDraft is not null && SelectedApiNumero is not null && !WhatsAppNumeroEquals(_apiNumeroDraft, SelectedApiNumero))
+           || (_businessNumeroDraft is not null && SelectedBusinessNumero is not null && !WhatsAppNumeroEquals(_businessNumeroDraft, SelectedBusinessNumero))
+           || (_addingApiNumero && !WhatsAppNumeroEquals(_nuevoNumero, new ConversacionWhatsAppNumeroDto { Activo = true }))
+           || (_reglaEdicion is not null && _reglaOriginal is not null && !ReglaEquals(_reglaEdicion, _reglaOriginal))
+           || IsAdministradoresDirty
+           || IsAutomatizacionesDirty;
+
+    private bool HasSecretReplacementChanges
+        => _replaceAccessToken || _replaceVerifyToken || _replaceAppSecret;
+
+    private bool IsAdministradoresDirty
+        => !_administradores.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .SequenceEqual(_administradoresOriginal.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+
+    private bool IsAutomatizacionesDirty
+        => !AutomatizacionesEquals(_automatizacionesConfig, _automatizacionesOriginal);
+
+    private async Task RequestNavigationAsync(Func<Task> navigation)
+    {
+        if (!HasUnsavedChanges)
+        {
+            DiscardCurrentEditor();
+            await navigation();
+            return;
+        }
+
+        _pendingNavigation = navigation;
+        _discardChangesDialogOpen = true;
+    }
+
+    private async Task ConfirmPendingNavigationAsync()
+    {
+        var navigation = _pendingNavigation;
+        _pendingNavigation = null;
+        _discardChangesDialogOpen = false;
+        DiscardCurrentEditor();
+        if (navigation is not null)
+            await navigation();
+    }
+
+    private void KeepEditing()
+    {
+        _pendingNavigation = null;
+        _discardChangesDialogOpen = false;
+    }
+
+    private void DiscardCurrentEditor()
+    {
+        _metaConfigDraft = null;
+        ResetSecretReplacementState();
+        _apiNumeroDraft = null;
+        _apiAccessDraft = null;
+        _businessNumeroDraft = null;
+        _addingApiNumero = false;
+        _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
+        _reglaEdicion = null;
+        _reglaOriginal = null;
+        _reglaEsNueva = false;
+        _administradores = CloneAdministradores(_administradoresOriginal);
+        _automatizacionesConfig = CloneAutomatizaciones(_automatizacionesOriginal);
+        UpdatePageHeader();
     }
 
     private void SelectChannelTab(string tab)
     {
         _activePrimaryTab = "canales";
+        _expandedSettingsCategories.Add("canales");
         _activeChannelTab = tab;
+        _activeSecondaryTab = GetActiveSecondaryTab();
         if (tab != "whatsapp")
             _feedbackScope = null;
 
         SyncWhatsAppPollingWithNavigation();
+        UpdatePageHeader();
     }
 
     private Task OnChannelTabChanged(string? tab)
@@ -2041,7 +2674,6 @@
         if (!onNumerosView)
         {
             StopPolling();
-            _ = CleanupAbandonedPairingsAsync();
             return;
         }
 
@@ -2049,53 +2681,6 @@
     }
 
     /// <summary>
-    /// No alcanza con cortar el polling de UI al salir de la vista: un pairing que nunca llegó a
-    /// conectarse deja el worker Node corriendo indefinidamente esperando un QR que nadie va a
-    /// escanear. Se detiene realmente esa sesión (sin tocar auth de cuentas ya vinculadas -- sólo
-    /// entra acá si !IsWebSessionReady) y se archiva la fila (Activo=false) para que no quede
-    /// pegada en la lista Business. Silencioso a propósito: no es una acción que el usuario disparó
-    /// mirando esta pantalla, así que no le mostramos feedback por algo que pasó en background.
-    /// </summary>
-    private async Task CleanupAbandonedPairingsAsync()
-    {
-        var pendingIds = _pairingFlowActiveIds
-            .Where(id =>
-            {
-                var pendingNumero = _numeros.FirstOrDefault(x => x.IdNumero == id);
-                return pendingNumero is not null && !pendingNumero.IsWebSessionReady;
-            })
-            .ToList();
-
-        if (pendingIds.Count == 0)
-            return;
-
-        foreach (var idNumero in pendingIds)
-        {
-            _pairingFlowActiveIds.Remove(idNumero);
-
-            var result = await UiOps.RunAsync(
-                () => WhatsAppWebSessionSvc.StopSessionAsync(idNumero),
-                "No se pudo limpiar un pairing abandonado de WhatsApp Web.");
-
-            if (!result.Success || result.Value is null)
-                continue;
-
-            var numero = result.Value;
-            if (numero.Activo)
-            {
-                numero.Activo = false;
-                var archived = await UiOps.RunAsync(
-                    () => ConfigSvc.SaveWhatsAppNumeroAsync(numero),
-                    "No se pudo archivar un número abandonado.");
-                if (!archived.Success)
-                    continue;
-            }
-
-            ReplaceNumero(numero);
-        }
-
-        await InvokeAsync(StateHasChanged);
-    }
 
     private void ResumePollingIfPairingActive()
     {
@@ -2119,7 +2704,9 @@
     private Task OnWhatsAppSectionChanged(string? section)
     {
         _activeWhatsAppSection = section ?? "numeros";
+        _activeSecondaryTab = GetActiveSecondaryTab();
         SyncWhatsAppPollingWithNavigation();
+        UpdatePageHeader();
         return Task.CompletedTask;
     }
 
@@ -2132,8 +2719,8 @@
         {
             Severity = AppUiFeedbackSeverity.Warning,
             Title = "Token de webhook requerido",
-            Message = "Seleccioná una base activa y recargá la pantalla para generar el token propio antes de guardar la configuración del canal.",
-            Suggestion = "En SaaS, Meta y Mercado Libre deben usar la URL con token para que AlfaCore identifique el cliente/base sin depender de una sesión."
+            Message = "Esta base todavía no tiene un token propio de webhook. No se generó ninguno automáticamente.",
+            Suggestion = "Solicitá su generación explícita desde el flujo de Soporte/Webhooks antes de publicar el callback SaaS."
         };
         return false;
     }
@@ -2231,7 +2818,8 @@
 
         if (automatizacionesResult.Success && automatizacionesResult.Value is not null)
         {
-            _automatizacionesConfig = automatizacionesResult.Value;
+            _automatizacionesOriginal = CloneAutomatizaciones(automatizacionesResult.Value);
+            _automatizacionesConfig = CloneAutomatizaciones(automatizacionesResult.Value);
         }
         else
         {
@@ -2285,7 +2873,8 @@
 
         if (administradoresResult.Success && administradoresResult.Value is not null)
         {
-            _administradores = new HashSet<string>(administradoresResult.Value, StringComparer.OrdinalIgnoreCase);
+            _administradoresOriginal = CloneAdministradores(administradoresResult.Value);
+            _administradores = CloneAdministradores(administradoresResult.Value);
         }
         else
         {
@@ -2327,7 +2916,14 @@
         }
     }
 
-    private void NuevaRegla()
+    private Task NuevaRegla()
+        => RequestNavigationAsync(() =>
+        {
+            ApplyNuevaRegla();
+            return Task.CompletedTask;
+        });
+
+    private void ApplyNuevaRegla()
     {
         _reglaEsNueva = true;
         _reglaEdicion = new ConversacionReglaDto
@@ -2339,32 +2935,31 @@
             SoloSinAsignar = true,
             Detener = true
         };
+        _reglaOriginal = CloneRegla(_reglaEdicion);
+        UpdatePageHeader();
     }
 
-    private void EditarRegla(ConversacionReglaDto regla)
+    private Task EditarRegla(ConversacionReglaDto regla)
+        => RequestNavigationAsync(() =>
+        {
+            ApplyEditarRegla(regla);
+            return Task.CompletedTask;
+        });
+
+    private void ApplyEditarRegla(ConversacionReglaDto regla)
     {
         _reglaEsNueva = false;
-        _reglaEdicion = new ConversacionReglaDto
-        {
-            IdRegla = regla.IdRegla,
-            Nombre = regla.Nombre,
-            Activa = regla.Activa,
-            Orden = regla.Orden,
-            TipoCoincidencia = regla.TipoCoincidencia,
-            Palabras = regla.Palabras,
-            Canal = regla.Canal,
-            SoloSinAsignar = regla.SoloSinAsignar,
-            RespuestaTexto = regla.RespuestaTexto,
-            AsignarTecnico = regla.AsignarTecnico,
-            Prioridad = regla.Prioridad,
-            Detener = regla.Detener
-        };
+        _reglaOriginal = CloneRegla(regla);
+        _reglaEdicion = CloneRegla(regla);
+        UpdatePageHeader();
     }
 
     private void CancelarEdicionRegla()
     {
         _reglaEdicion = null;
+        _reglaOriginal = null;
         _reglaEsNueva = false;
+        UpdatePageHeader();
     }
 
     private async Task GuardarReglaAsync()
@@ -2394,8 +2989,10 @@
         {
             _feedback = AppUiMessage.Success("Regla guardada", $"'{_reglaEdicion.Nombre}' quedó actualizada.");
             _reglaEdicion = null;
+            _reglaOriginal = null;
             _reglaEsNueva = false;
             await LoadReglasAsync();
+            UpdatePageHeader();
         }
         else
         {
@@ -2466,6 +3063,9 @@
         if (result.Success && result.Value is not null)
         {
             _numeros = result.Value;
+            var businessIds = ActiveBusinessNumeros.Select(n => n.IdNumero).ToHashSet();
+            if (!_selectedBusinessNumeroId.HasValue || !businessIds.Contains(_selectedBusinessNumeroId.Value))
+                _selectedBusinessNumeroId = ActiveBusinessNumeros.FirstOrDefault()?.IdNumero;
         }
         else
         {
@@ -2485,6 +3085,671 @@
             numero.Usuarios.RemoveAll(u => string.Equals(u, usuario, StringComparison.OrdinalIgnoreCase));
         }
     }
+
+    private Task SelectBusinessNumero(ConversacionWhatsAppNumeroDto numero)
+        => RequestNavigationAsync(() =>
+        {
+            _selectedBusinessNumeroId = numero.IdNumero;
+            _businessNumeroDraft = null;
+            CloseConnectMethodChooser();
+            UpdatePageHeader();
+            return Task.CompletedTask;
+        });
+
+    private async Task StartBusinessNumeroEditAsync()
+    {
+        if (SelectedBusinessNumero is not { } numero)
+            return;
+
+        _businessNumeroDraft = CloneNumero(numero);
+        CloseConnectMethodChooser();
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelBusinessNumeroEditAsync()
+    {
+        _businessNumeroDraft = null;
+        _feedback = null;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveBusinessNumeroDraftAsync()
+    {
+        if (_businessNumeroDraft is null)
+            return;
+
+        if (string.IsNullOrWhiteSpace(_businessNumeroDraft.Nombre))
+        {
+            _feedbackScope = "whatsapp";
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Falta el nombre",
+                Message = "Ingresá un nombre visible para identificar esta sesión."
+            };
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        Saving = true;
+        _feedbackScope = "whatsapp";
+        _feedback = null;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+        var draft = CloneNumero(_businessNumeroDraft);
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWhatsAppNumeroAsync(draft),
+            "No se pudo guardar la sesión de WhatsApp Business.");
+
+        if (result.Success)
+        {
+            await LoadNumerosAsync();
+            _businessNumeroDraft = null;
+            _feedback = AppUiMessage.Success("Sesión guardada", $"'{draft.Nombre}' quedó actualizada.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenBusinessAccessDialog()
+    {
+        if (SelectedBusinessNumero is { } numero)
+            _businessAccessDraft = CloneNumero(numero);
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task CancelBusinessAccessDialog()
+    {
+        _businessAccessDraft = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveBusinessAccessAsync()
+    {
+        if (_businessAccessDraft is null)
+            return;
+
+        BusinessAccessSaving = true;
+        _feedbackScope = "whatsapp";
+        _feedback = null;
+        await InvokeAsync(StateHasChanged);
+
+        var draft = CloneNumero(_businessAccessDraft);
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWhatsAppNumeroAsync(draft),
+            "No se pudieron guardar los usuarios con acceso.");
+
+        if (result.Success)
+        {
+            await LoadNumerosAsync();
+            if (_businessNumeroDraft is not null && _businessNumeroDraft.IdNumero == draft.IdNumero)
+                _businessNumeroDraft.Usuarios = [.. draft.Usuarios];
+
+            _businessAccessDraft = null;
+            _feedback = AppUiMessage.Success("Accesos guardados", "La asignación de usuarios quedó actualizada.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        BusinessAccessSaving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenNewBusinessConnectionAsync()
+        => OpenBusinessConnectionAsync(0);
+
+    private Task OpenBusinessConnectionAsync(int idNumero)
+        => RequestNavigationAsync(async () =>
+        {
+            if (idNumero > 0)
+                _selectedBusinessNumeroId = idNumero;
+            OpenConnectMethodChooser(idNumero);
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+        });
+
+    private async Task StartBusinessPairingAsync(string method)
+    {
+        var idNumero = _connectMethodPromptForIdNumero ?? 0;
+        var telefono = string.Equals(method, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase)
+            ? _connectPhoneInput
+            : null;
+
+        if (idNumero == 0)
+        {
+            await IniciarNuevoWhatsAppBusinessAsync(method, telefono);
+        }
+        else if (SelectedBusinessNumero is { } numero)
+        {
+            await ConectarWhatsAppBusinessAsync(CloneNumero(numero), method, telefono);
+        }
+
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task SelectApiNumero(ConversacionWhatsAppNumeroDto numero)
+        => RequestNavigationAsync(async () =>
+        {
+            _apiWorkspaceView = "numero";
+            _selectedApiNumeroId = numero.IdNumero;
+            _apiNumeroDraft = null;
+            _addingApiNumero = false;
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+        });
+
+    private Task SelectApiIntegration()
+        => RequestNavigationAsync(async () =>
+        {
+            _apiWorkspaceView = "integracion";
+            _apiNumeroDraft = null;
+            _addingApiNumero = false;
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+        });
+
+    private async Task StartEditSelectedApiNumeroAsync()
+    {
+        if (SelectedApiNumero is not null)
+            _apiNumeroDraft = CloneNumero(SelectedApiNumero);
+
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task StartAddApiNumero()
+        => RequestNavigationAsync(async () =>
+        {
+            ApplyStartAddApiNumero();
+            await InvokeAsync(StateHasChanged);
+        });
+
+    private void ApplyStartAddApiNumero()
+    {
+        _apiWorkspaceView = "numero";
+        _apiNumeroDraft = null;
+        _selectedApiNumeroId = null;
+        _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
+        _addingApiNumero = true;
+        UpdatePageHeader();
+    }
+
+    private async Task CancelApiNumeroEditAsync()
+    {
+        _apiNumeroDraft = null;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelAddApiNumeroAsync()
+    {
+        _addingApiNumero = false;
+        _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveApiNumeroDraftAsync()
+    {
+        if (_apiNumeroDraft is null)
+            return;
+
+        await SaveNumeroAsync(_apiNumeroDraft);
+        if (_feedback?.Severity == AppUiFeedbackSeverity.Success)
+        {
+            _apiNumeroDraft = null;
+        }
+
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartMetaIntegrationEditAsync()
+    {
+        _metaConfigDraft = CloneWhatsAppConfig(_config);
+        ResetSecretReplacementState();
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelMetaIntegrationEditAsync()
+    {
+        _metaConfigDraft = null;
+        ResetSecretReplacementState();
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveMetaIntegrationDraftAsync()
+    {
+        if (_metaConfigDraft is null)
+            return;
+
+        if (!EnsureSaaSWebhookTokenReady())
+        {
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if ((_replaceAccessToken && string.IsNullOrWhiteSpace(_accessTokenReplacement))
+            || (_replaceVerifyToken && string.IsNullOrWhiteSpace(_verifyTokenReplacement))
+            || (_replaceAppSecret && string.IsNullOrWhiteSpace(_appSecretReplacement)))
+        {
+            _feedbackScope = "whatsapp";
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Falta la nueva credencial",
+                Message = "Completá cada secreto marcado para reemplazar o cancelá su reemplazo."
+            };
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        var draft = CloneWhatsAppConfig(_metaConfigDraft);
+        if (_replaceAccessToken)
+            draft.AccessToken = _accessTokenReplacement;
+        if (_replaceVerifyToken)
+            draft.VerifyToken = _verifyTokenReplacement;
+        if (_replaceAppSecret)
+            draft.AppSecret = _appSecretReplacement;
+
+        Saving = true;
+        _feedbackScope = "whatsapp";
+        _feedback = null;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWhatsAppConfigAsync(draft),
+            "No se pudo guardar la integración Meta.");
+
+        if (result.Success)
+        {
+            draft.ConfigSource = "TA_CONFIGURACION";
+            _config = draft;
+            _metaConfigDraft = null;
+            ResetSecretReplacementState();
+            _feedback = AppUiMessage.Success("Integración guardada", "La configuración Meta quedó actualizada.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenApiAccessDialog()
+    {
+        if (SelectedApiNumero is { } numero)
+            _apiAccessDraft = CloneNumero(numero);
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task CancelApiAccessDialog()
+    {
+        _apiAccessDraft = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveApiAccessAsync()
+    {
+        if (_apiAccessDraft is null)
+            return;
+
+        ApiAccessSaving = true;
+        _feedbackScope = "whatsapp";
+        _feedback = null;
+        await InvokeAsync(StateHasChanged);
+
+        var draft = CloneNumero(_apiAccessDraft);
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWhatsAppNumeroAsync(draft),
+            "No se pudieron guardar los usuarios con acceso.");
+
+        if (result.Success)
+        {
+            await LoadNumerosAsync();
+            if (_apiNumeroDraft is not null && _apiNumeroDraft.IdNumero == draft.IdNumero)
+                _apiNumeroDraft.Usuarios = [.. draft.Usuarios];
+
+            _apiAccessDraft = null;
+            _feedback = AppUiMessage.Success("Accesos guardados", "La asignación de usuarios quedó actualizada.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        ApiAccessSaving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private static ConversacionWhatsAppNumeroDto CloneNumero(ConversacionWhatsAppNumeroDto source)
+        => new()
+        {
+            IdNumero = source.IdNumero,
+            PhoneNumberId = source.PhoneNumberId,
+            Nombre = source.Nombre,
+            Activo = source.Activo,
+            WebSessionMode = source.WebSessionMode,
+            WebPhoneNumber = source.WebPhoneNumber,
+            WebSessionStatus = source.WebSessionStatus,
+            WebDisplayName = source.WebDisplayName,
+            WebInstanceName = source.WebInstanceName,
+            WebPairingToken = source.WebPairingToken,
+            WebPairingCode = source.WebPairingCode,
+            WebPairingQrPayload = source.WebPairingQrPayload,
+            WebPairingQrDataUrl = source.WebPairingQrDataUrl,
+            WebPairingGeneratedAtUtc = source.WebPairingGeneratedAtUtc,
+            WebPairingExpiresAtUtc = source.WebPairingExpiresAtUtc,
+            WebRuntimeState = source.WebRuntimeState,
+            WebLastError = source.WebLastError,
+            WebWorkerProcessId = source.WebWorkerProcessId,
+            WebRuntimeUpdatedAtUtc = source.WebRuntimeUpdatedAtUtc,
+            Usuarios = [.. source.Usuarios]
+        };
+
+    private static ConversacionWhatsAppConfigDto CloneWhatsAppConfig(ConversacionWhatsAppConfigDto source)
+        => new()
+        {
+            ProviderMode = source.ProviderMode,
+            DefaultProvider = source.DefaultProvider,
+            VerifyToken = source.VerifyToken,
+            AccessToken = source.AccessToken,
+            PhoneNumberId = source.PhoneNumberId,
+            BusinessAccountId = source.BusinessAccountId,
+            AppSecret = source.AppSecret,
+            ApiVersion = source.ApiVersion,
+            PublicBaseUrl = source.PublicBaseUrl,
+            WebhookPath = source.WebhookPath,
+            WebSessionMode = source.WebSessionMode,
+            WebPhoneNumber = source.WebPhoneNumber,
+            WebSessionStatus = source.WebSessionStatus,
+            WebDisplayName = source.WebDisplayName,
+            WebInstanceName = source.WebInstanceName,
+            WebPairingToken = source.WebPairingToken,
+            WebPairingCode = source.WebPairingCode,
+            WebPairingQrPayload = source.WebPairingQrPayload,
+            WebPairingQrDataUrl = source.WebPairingQrDataUrl,
+            WebPairingGeneratedAtUtc = source.WebPairingGeneratedAtUtc,
+            WebPairingExpiresAtUtc = source.WebPairingExpiresAtUtc,
+            WebRuntimeState = source.WebRuntimeState,
+            WebLastError = source.WebLastError,
+            WebWorkerProcessId = source.WebWorkerProcessId,
+            WebRuntimeUpdatedAtUtc = source.WebRuntimeUpdatedAtUtc,
+            ConfigSource = source.ConfigSource
+        };
+
+    private static bool WhatsAppConfigEquals(ConversacionWhatsAppConfigDto left, ConversacionWhatsAppConfigDto right)
+        => left.ProviderMode == right.ProviderMode
+           && left.DefaultProvider == right.DefaultProvider
+           && left.VerifyToken == right.VerifyToken
+           && left.AccessToken == right.AccessToken
+           && left.PhoneNumberId == right.PhoneNumberId
+           && left.BusinessAccountId == right.BusinessAccountId
+           && left.AppSecret == right.AppSecret
+           && left.ApiVersion == right.ApiVersion
+           && left.PublicBaseUrl == right.PublicBaseUrl
+           && left.WebhookPath == right.WebhookPath
+           && left.WebSessionMode == right.WebSessionMode
+           && left.WebPhoneNumber == right.WebPhoneNumber
+           && left.WebSessionStatus == right.WebSessionStatus
+           && left.WebDisplayName == right.WebDisplayName
+           && left.WebInstanceName == right.WebInstanceName
+           && left.WebPairingToken == right.WebPairingToken
+           && left.WebPairingCode == right.WebPairingCode
+           && left.WebPairingQrPayload == right.WebPairingQrPayload
+           && left.WebPairingQrDataUrl == right.WebPairingQrDataUrl
+           && left.WebPairingGeneratedAtUtc == right.WebPairingGeneratedAtUtc
+           && left.WebPairingExpiresAtUtc == right.WebPairingExpiresAtUtc
+           && left.WebRuntimeState == right.WebRuntimeState
+           && left.WebLastError == right.WebLastError
+           && left.WebWorkerProcessId == right.WebWorkerProcessId
+           && left.WebRuntimeUpdatedAtUtc == right.WebRuntimeUpdatedAtUtc
+           && left.ConfigSource == right.ConfigSource;
+
+    private static bool WhatsAppNumeroEquals(ConversacionWhatsAppNumeroDto left, ConversacionWhatsAppNumeroDto right)
+        => left.IdNumero == right.IdNumero
+           && left.PhoneNumberId == right.PhoneNumberId
+           && left.Nombre == right.Nombre
+           && left.Activo == right.Activo
+           && left.WebSessionMode == right.WebSessionMode
+           && left.WebPhoneNumber == right.WebPhoneNumber
+           && left.WebSessionStatus == right.WebSessionStatus
+           && left.WebDisplayName == right.WebDisplayName
+           && left.WebInstanceName == right.WebInstanceName
+           && left.WebPairingToken == right.WebPairingToken
+           && left.WebPairingCode == right.WebPairingCode
+           && left.WebPairingQrPayload == right.WebPairingQrPayload
+           && left.WebPairingQrDataUrl == right.WebPairingQrDataUrl
+           && left.WebPairingGeneratedAtUtc == right.WebPairingGeneratedAtUtc
+           && left.WebPairingExpiresAtUtc == right.WebPairingExpiresAtUtc
+           && left.WebRuntimeState == right.WebRuntimeState
+           && left.WebLastError == right.WebLastError
+           && left.WebWorkerProcessId == right.WebWorkerProcessId
+           && left.WebRuntimeUpdatedAtUtc == right.WebRuntimeUpdatedAtUtc
+           && left.Usuarios.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+               .SequenceEqual(right.Usuarios.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+
+    private RenderFragment SecretEditor(
+        string label,
+        bool configured,
+        bool replaceRequested,
+        string replacement,
+        Action<bool> setReplace,
+        Action<string> setReplacement)
+        => @<div class="wa-secret-row">
+            <div class="wa-secret-row__status">
+                <span>@label</span>
+                <strong>@(configured ? "Configurado" : "No configurado")</strong>
+            </div>
+            @if (!replaceRequested)
+            {
+                <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                            Size="AlfaSize.Sm"
+                            OnClick="@(_ => { setReplace(true); return Task.CompletedTask; })">Reemplazar</AlfaButton>
+            }
+            else
+            {
+                <div class="wa-secret-row__editor">
+                    <AlfaInput Label="Nuevo valor"
+                               Type="password"
+                               Value="@replacement"
+                               ValueChanged="@(value => { setReplacement(value ?? string.Empty); return Task.CompletedTask; })"
+                               Placeholder="Ingresá el nuevo secreto" />
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                Size="AlfaSize.Sm"
+                                OnClick="@(_ => { setReplace(false); setReplacement(string.Empty); return Task.CompletedTask; })">Cancelar reemplazo</AlfaButton>
+                </div>
+            }
+        </div>;
+
+    private static RenderFragment ApiUsers(ConversacionWhatsAppNumeroDto numero)
+    {
+        const int visibleUsers = 5;
+        var users = numero.Usuarios.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+        var remaining = Math.Max(0, users.Length - visibleUsers);
+
+        return users.Length > 0
+            ? @<div class="wa-api-users-summary">
+                <strong>@users.Length usuario(s) con acceso</strong>
+                <ul class="wa-business-users">
+                    @foreach (var usuario in users.Take(visibleUsers))
+                    {
+                        <li><i class="bi bi-person" aria-hidden="true"></i>@usuario</li>
+                    }
+                    @if (remaining > 0)
+                    {
+                        <li class="wa-api-users-summary__remaining">+@remaining</li>
+                    }
+                </ul>
+            </div>
+            : @<p class="wa-field-note">Ningún usuario asignado.</p>;
+    }
+
+    private void SetReplaceAccessToken(bool value) => _replaceAccessToken = value;
+    private void SetReplaceVerifyToken(bool value) => _replaceVerifyToken = value;
+    private void SetReplaceAppSecret(bool value) => _replaceAppSecret = value;
+    private void SetAccessTokenReplacement(string value) => _accessTokenReplacement = value;
+    private void SetVerifyTokenReplacement(string value) => _verifyTokenReplacement = value;
+    private void SetAppSecretReplacement(string value) => _appSecretReplacement = value;
+
+    private void ResetSecretReplacementState()
+    {
+        _replaceAccessToken = false;
+        _replaceVerifyToken = false;
+        _replaceAppSecret = false;
+        _accessTokenReplacement = string.Empty;
+        _verifyTokenReplacement = string.Empty;
+        _appSecretReplacement = string.Empty;
+    }
+
+    private static ConversacionReglaDto CloneRegla(ConversacionReglaDto source)
+        => new()
+        {
+            IdRegla = source.IdRegla,
+            Nombre = source.Nombre,
+            Activa = source.Activa,
+            Orden = source.Orden,
+            TipoCoincidencia = source.TipoCoincidencia,
+            Palabras = source.Palabras,
+            Canal = source.Canal,
+            SoloSinAsignar = source.SoloSinAsignar,
+            RespuestaTexto = source.RespuestaTexto,
+            AsignarTecnico = source.AsignarTecnico,
+            Prioridad = source.Prioridad,
+            Detener = source.Detener,
+            Horario = source.Horario,
+            SoloPrimerContacto = source.SoloPrimerContacto
+        };
+
+    private static bool ReglaEquals(ConversacionReglaDto left, ConversacionReglaDto right)
+        => left.IdRegla == right.IdRegla
+           && left.Nombre == right.Nombre
+           && left.Activa == right.Activa
+           && left.Orden == right.Orden
+           && left.TipoCoincidencia == right.TipoCoincidencia
+           && left.Palabras == right.Palabras
+           && left.Canal == right.Canal
+           && left.SoloSinAsignar == right.SoloSinAsignar
+           && left.RespuestaTexto == right.RespuestaTexto
+           && left.AsignarTecnico == right.AsignarTecnico
+           && left.Prioridad == right.Prioridad
+           && left.Detener == right.Detener
+           && left.Horario == right.Horario
+           && left.SoloPrimerContacto == right.SoloPrimerContacto;
+
+    private static ConversacionAutomatizacionesConfigDto CloneAutomatizaciones(ConversacionAutomatizacionesConfigDto source)
+        => new()
+        {
+            Activo = source.Activo,
+            MensajeFueraHorario = source.MensajeFueraHorario,
+            Lunes = source.Lunes,
+            Martes = source.Martes,
+            Miercoles = source.Miercoles,
+            Jueves = source.Jueves,
+            Viernes = source.Viernes,
+            Sabado = source.Sabado,
+            Domingo = source.Domingo,
+            HoraDesde = source.HoraDesde,
+            HoraHasta = source.HoraHasta,
+            BienvenidaActivo = source.BienvenidaActivo,
+            BienvenidaMensaje = source.BienvenidaMensaje,
+            BotActivo = source.BotActivo,
+            BotSoloSinAsignar = source.BotSoloSinAsignar,
+            BotPalabrasEscalado = source.BotPalabrasEscalado,
+            BotMaxRespuestas = source.BotMaxRespuestas,
+            BotSoloFueraHorario = source.BotSoloFueraHorario,
+            BotEsperaMinutos = source.BotEsperaMinutos,
+            AutoCierreActivo = source.AutoCierreActivo,
+            AutoCierreHorasAviso = source.AutoCierreHorasAviso,
+            AutoCierreHorasCierre = source.AutoCierreHorasCierre,
+            AutoCierreMensajeAviso = source.AutoCierreMensajeAviso,
+            AutoCierreMensajeCierre = source.AutoCierreMensajeCierre,
+            SlaActivo = source.SlaActivo,
+            SlaHorasRecordatorio = source.SlaHorasRecordatorio,
+            SlaHorasReasignar = source.SlaHorasReasignar,
+            AsistenteComportamiento = source.AsistenteComportamiento,
+            AsistenteInformacion = source.AsistenteInformacion,
+            AsistentePolitica = source.AsistentePolitica,
+            AsistenteFueraHorario = source.AsistenteFueraHorario,
+            AsistenteUrgenciaPalabras = source.AsistenteUrgenciaPalabras,
+            AsistenteUsaKnowledge = source.AsistenteUsaKnowledge,
+            AsistenteHerramientaPrecios = source.AsistenteHerramientaPrecios,
+            AsistenteHerramientaSaldoCliente = source.AsistenteHerramientaSaldoCliente,
+            AsistenteHerramientaSaldoProveedor = source.AsistenteHerramientaSaldoProveedor,
+            AsistenteHerramientaPedidos = source.AsistenteHerramientaPedidos,
+            AsistenteHerramientaPortalLink = source.AsistenteHerramientaPortalLink,
+            InformeInstrucciones = source.InformeInstrucciones,
+            ConfigSource = source.ConfigSource
+        };
+
+    private static bool AutomatizacionesEquals(
+        ConversacionAutomatizacionesConfigDto left,
+        ConversacionAutomatizacionesConfigDto right)
+        => left.Activo == right.Activo
+           && left.MensajeFueraHorario == right.MensajeFueraHorario
+           && left.Lunes == right.Lunes
+           && left.Martes == right.Martes
+           && left.Miercoles == right.Miercoles
+           && left.Jueves == right.Jueves
+           && left.Viernes == right.Viernes
+           && left.Sabado == right.Sabado
+           && left.Domingo == right.Domingo
+           && left.HoraDesde == right.HoraDesde
+           && left.HoraHasta == right.HoraHasta
+           && left.BienvenidaActivo == right.BienvenidaActivo
+           && left.BienvenidaMensaje == right.BienvenidaMensaje
+           && left.BotActivo == right.BotActivo
+           && left.BotSoloSinAsignar == right.BotSoloSinAsignar
+           && left.BotPalabrasEscalado == right.BotPalabrasEscalado
+           && left.BotMaxRespuestas == right.BotMaxRespuestas
+           && left.BotSoloFueraHorario == right.BotSoloFueraHorario
+           && left.BotEsperaMinutos == right.BotEsperaMinutos
+           && left.AutoCierreActivo == right.AutoCierreActivo
+           && left.AutoCierreHorasAviso == right.AutoCierreHorasAviso
+           && left.AutoCierreHorasCierre == right.AutoCierreHorasCierre
+           && left.AutoCierreMensajeAviso == right.AutoCierreMensajeAviso
+           && left.AutoCierreMensajeCierre == right.AutoCierreMensajeCierre
+           && left.SlaActivo == right.SlaActivo
+           && left.SlaHorasRecordatorio == right.SlaHorasRecordatorio
+           && left.SlaHorasReasignar == right.SlaHorasReasignar
+           && left.AsistenteComportamiento == right.AsistenteComportamiento
+           && left.AsistenteInformacion == right.AsistenteInformacion
+           && left.AsistentePolitica == right.AsistentePolitica
+           && left.AsistenteFueraHorario == right.AsistenteFueraHorario
+           && left.AsistenteUrgenciaPalabras == right.AsistenteUrgenciaPalabras
+           && left.AsistenteUsaKnowledge == right.AsistenteUsaKnowledge
+           && left.AsistenteHerramientaPrecios == right.AsistenteHerramientaPrecios
+           && left.AsistenteHerramientaSaldoCliente == right.AsistenteHerramientaSaldoCliente
+           && left.AsistenteHerramientaSaldoProveedor == right.AsistenteHerramientaSaldoProveedor
+           && left.AsistenteHerramientaPedidos == right.AsistenteHerramientaPedidos
+           && left.AsistenteHerramientaPortalLink == right.AsistenteHerramientaPortalLink
+           && left.InformeInstrucciones == right.InformeInstrucciones
+           && left.ConfigSource == right.ConfigSource;
+
+    private static HashSet<string> CloneAdministradores(IEnumerable<string> source)
+        => new(source, StringComparer.OrdinalIgnoreCase);
 
     private async Task SaveNumeroAsync(ConversacionWhatsAppNumeroDto numero)
     {
@@ -2507,6 +3772,8 @@
         }
 
         Saving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task AddNumeroAsync()
@@ -2520,6 +3787,7 @@
                 Title = "Faltan datos",
                 Message = "Completá nombre y Phone Number ID antes de agregar el número."
             };
+            await InvokeAsync(StateHasChanged);
             return;
         }
 
@@ -2532,9 +3800,14 @@
 
         if (result.Success)
         {
-            _feedback = AppUiMessage.Success("Número agregado", $"'{_nuevoNumero.Nombre}' ya está disponible.");
+            var phoneNumberId = _nuevoNumero.PhoneNumberId.Trim();
+            var nombre = _nuevoNumero.Nombre;
+            _feedback = AppUiMessage.Success("Número agregado", $"'{nombre}' ya está disponible.");
             _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
+            _addingApiNumero = false;
             await LoadNumerosAsync();
+            _selectedApiNumeroId = WhatsAppApiNumeros.FirstOrDefault(numero =>
+                string.Equals(numero.PhoneNumberId.Trim(), phoneNumberId, StringComparison.OrdinalIgnoreCase))?.IdNumero;
         }
         else
         {
@@ -2542,6 +3815,8 @@
         }
 
         Saving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ToggleAdministrador(string usuario, bool isChecked)
@@ -2550,6 +3825,11 @@
             _administradores.Add(usuario);
         else
             _administradores.Remove(usuario);
+    }
+
+    private void CancelAdministradoresEdit()
+    {
+        _administradores = CloneAdministradores(_administradoresOriginal);
     }
 
     private async Task SaveAdministradoresAsync()
@@ -2564,6 +3844,9 @@
         _feedback = result.Success
             ? AppUiMessage.Success("Administradores guardados", "Los usuarios marcados ya pueden ver y responder por cualquier número.")
             : result.Feedback;
+
+        if (result.Success)
+            _administradoresOriginal = CloneAdministradores(_administradores);
 
         Saving = false;
     }
@@ -2597,7 +3880,17 @@
             ? AppUiMessage.Success("Automatizaciones guardadas", "La respuesta fuera de horario ya está activa con estos parámetros.")
             : result.Feedback;
 
+        if (result.Success)
+            _automatizacionesOriginal = CloneAutomatizaciones(_automatizacionesConfig);
+
         Saving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void CancelAutomatizacionesEdit()
+    {
+        _automatizacionesConfig = CloneAutomatizaciones(_automatizacionesOriginal);
     }
 
     private async Task SaveAsync()
@@ -2648,8 +3941,11 @@
             return;
         }
 
+        _pairingFlowActiveIds.Add(numero.IdNumero);
         PairingBusy = true;
         _feedback = null;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
 
         var result = await UiOps.RunAsync(
             () => WhatsAppWebSessionSvc.StartSessionAsync(numero.IdNumero, _includeTextPairingCode),
@@ -2658,6 +3954,9 @@
         if (result.Success && result.Value is not null)
         {
             ReplaceNumero(result.Value);
+            if (result.Value.IsWebSessionReady)
+                _provisionalBusinessNumeroIds.Remove(result.Value.IdNumero);
+
             _feedback = AppUiMessage.Success(
                 "Sesión Web iniciada",
                 $"'{result.Value.Nombre}' ya tiene disponible su QR o código temporal según el modo elegido.");
@@ -2682,6 +3981,8 @@
         }
 
         PairingBusy = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void OpenConnectMethodChooser(int idNumero)
@@ -2696,6 +3997,79 @@
         _connectMethodPromptForIdNumero = null;
         _connectPhoneChooserFor = null;
         _connectPhoneInput = string.Empty;
+        UpdatePageHeader();
+    }
+
+    private async Task CancelBusinessConnectionAsync()
+    {
+        if (SelectedBusinessNumero is { } numero && IsPairingFlowActive(numero.IdNumero))
+        {
+            await CancelWhatsAppWebPairingAsync(numero);
+            return;
+        }
+
+        CloseConnectMethodChooser();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelWhatsAppWebPairingAsync(ConversacionWhatsAppNumeroDto numero)
+    {
+        var isProvisionalNewSession = _provisionalBusinessNumeroIds.Contains(numero.IdNumero);
+        StopPolling();
+
+        PairingBusy = true;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+
+        var result = await UiOps.RunAsync(
+            () => WhatsAppWebSessionSvc.StopSessionAsync(numero.IdNumero),
+            "No se pudo cancelar la vinculación de WhatsApp Web.");
+
+        if (result.Success && result.Value is not null)
+        {
+            _pairingFlowActiveIds.Remove(numero.IdNumero);
+            if (_pairingRegenerateErrorForIdNumero == numero.IdNumero)
+                _pairingRegenerateErrorForIdNumero = null;
+
+            if (isProvisionalNewSession)
+            {
+                result.Value.Activo = false;
+                var archiveResult = await UiOps.RunAsync(
+                    () => ConfigSvc.SaveWhatsAppNumeroAsync(result.Value),
+                    "Se canceló el pairing, pero no se pudo archivar el alta provisional.");
+
+                if (archiveResult.Success)
+                {
+                    _provisionalBusinessNumeroIds.Remove(numero.IdNumero);
+                    await LoadNumerosAsync();
+                    _feedback = AppUiMessage.Success(
+                        "Alta cancelada",
+                        "Se detuvo el pairing y se archivó la nueva sesión incompleta.");
+                }
+                else
+                {
+                    await LoadNumerosAsync();
+                    _feedback = archiveResult.Feedback;
+                }
+            }
+            else
+            {
+                ReplaceNumero(result.Value);
+                _feedback = AppUiMessage.Success(
+                    "Vinculación cancelada",
+                    "Se detuvo el pairing temporal. La sesión y sus conversaciones se conservaron.");
+            }
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        _feedbackScope = "whatsapp";
+        PairingBusy = false;
+        CloseConnectMethodChooser();
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ShowConnectPhoneInput(int idNumero)
@@ -2751,6 +4125,8 @@
                 return;
 
             numero = registrado;
+            _selectedBusinessNumeroId = registrado.IdNumero;
+            _provisionalBusinessNumeroIds.Add(registrado.IdNumero);
         }
         else
         {
@@ -2885,6 +4261,9 @@
                 if (actualizado.IsWebSessionReady
                     || actualizado.WebSessionStatus == ConversacionWhatsAppWebSessionStatuses.Disconnected)
                 {
+                    if (actualizado.IsWebSessionReady)
+                        _provisionalBusinessNumeroIds.Remove(idNumero);
+
                     _pairingFlowActiveIds.Remove(idNumero);
                     _pollingCts = null;
                     await InvokeAsync(StateHasChanged);
@@ -3008,10 +4387,11 @@
         PairingBusy = false;
     }
 
-    private void RequestStopWhatsAppWebSession(ConversacionWhatsAppNumeroDto numero)
+    private async Task RequestStopWhatsAppWebSessionAsync(ConversacionWhatsAppNumeroDto numero)
     {
         _stopSessionTarget = numero;
         _stopSessionOpen = true;
+        await InvokeAsync(StateHasChanged);
     }
 
     private void DismissWhatsAppFeedback()
@@ -3305,12 +4685,34 @@
     }
 
     private string GetWebhookUrlPreview()
+        => GetWebhookUrlPreview(_config);
+
+    private string GetWebhookUrlPreview(ConversacionWhatsAppConfigDto config)
     {
-        var basePath = string.IsNullOrWhiteSpace(_config.PublicBaseUrl)
-            ? $"{_suggestedBaseUrl.TrimEnd('/')}{_config.WebhookPath}"
-            : _config.GetWebhookUrl();
+        var basePath = string.IsNullOrWhiteSpace(config.PublicBaseUrl)
+            ? $"{_suggestedBaseUrl.TrimEnd('/')}{config.WebhookPath}"
+            : config.GetWebhookUrl();
 
         return BuildTokenizedWebhookUrl(basePath) ?? basePath;
+    }
+
+    private bool HasConfiguredCallback(ConversacionWhatsAppConfigDto config)
+        => HasWebhookToken
+           && !string.IsNullOrWhiteSpace(config.PublicBaseUrl)
+           && !string.IsNullOrWhiteSpace(config.WebhookPath);
+
+    private string GetCallbackStatus(ConversacionWhatsAppConfigDto config)
+        => HasConfiguredCallback(config) ? "Configurado" : "No configurado";
+
+    private async Task CopyMetaCallbackAsync()
+    {
+        if (!HasConfiguredCallback(_config))
+            return;
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", GetWebhookUrlPreview(_config));
+        _feedbackScope = "whatsapp";
+        _feedback = AppUiMessage.Success("Callback copiado", "La URL completa se copió al portapapeles.");
+        await InvokeAsync(StateHasChanged);
     }
 
     private string GetInstagramWebhookUrlPreview()
@@ -3365,7 +4767,134 @@
     private string GetPrimaryTabClass(string tab)
         => tab == _activePrimaryTab ? "settings-nav__item is-active" : "settings-nav__item";
 
+    private bool IsCategoryExpanded(string category)
+        => _expandedSettingsCategories.Contains(category);
+
+    private string GetSecondaryTabClass(string category, string subsection)
+        => string.Equals(_activePrimaryTab, category, StringComparison.OrdinalIgnoreCase)
+           && string.Equals(GetActiveSecondaryTab(), subsection, StringComparison.OrdinalIgnoreCase)
+            ? "settings-subnav__item is-active"
+            : "settings-subnav__item";
+
+    private string GetActiveSecondaryTab()
+    {
+        if (_activePrimaryTab != "canales")
+            return _activeSecondaryTab;
+
+        if (_activeChannelTab == "whatsapp")
+            return _activeWhatsAppSection == "general" ? "whatsapp-api" : "whatsapp-business";
+
+        return _activeChannelTab;
+    }
+
+    private string GetContextToolbarTitle()
+    {
+        if (_activePrimaryTab == "resumen")
+            return "Conversaciones · Configuración";
+
+        var category = SettingsNavItems.FirstOrDefault(x => x.Key == _activePrimaryTab);
+        var subsection = category?.Children.FirstOrDefault(x => x.Key == GetActiveSecondaryTab());
+        var context = subsection?.Label ?? category?.Label ?? "Configuración";
+
+        if (IsWhatsAppApiView)
+        {
+            if (IsApiIntegrationView)
+                return _metaConfigDraft is null ? "WhatsApp API · Integración Meta" : "WhatsApp API · Editar integración Meta";
+            if (_addingApiNumero)
+                return "WhatsApp API · Nuevo número";
+            if (SelectedApiNumero is not null)
+            {
+                var prefix = _apiNumeroDraft is null ? string.Empty : "Editar ";
+                return $"WhatsApp API · {prefix}{GetNumeroDisplayName(SelectedApiNumero)}";
+            }
+
+            return "WhatsApp API · Números";
+        }
+
+        if (IsWhatsAppBusinessView && _connectMethodPromptForIdNumero == 0)
+            return "WhatsApp Business · Conectar";
+
+        if (IsWhatsAppBusinessView && _connectMethodPromptForIdNumero > 0 && SelectedBusinessNumero is not null)
+            return $"WhatsApp Business · Reconectar {GetNumeroDisplayName(SelectedBusinessNumero)}";
+
+        if (IsWhatsAppBusinessView && SelectedBusinessNumero is not null)
+        {
+            var prefix = _businessNumeroDraft is null ? string.Empty : "Editar ";
+            return $"WhatsApp Business · {prefix}{GetNumeroDisplayName(SelectedBusinessNumero)}";
+        }
+
+        return subsection is null || category is null
+            ? context
+            : $"{category.Label} · {context}";
+    }
+
+    private string GetSummaryStatus(string category)
+        => category switch
+        {
+            "canales" => $"{_numeros.Count} número(s) registrados",
+            "automatizacion" => $"{CountActiveAutomations()} automatización(es) activa(s)",
+            "integraciones-ia" => _alfaKnowledgeConfig.IsConfigured ? "AlfaKnowledge configurado" : "Integraciones pendientes",
+            "operacion-accesos" => $"{_administradores.Count} administrador(es)",
+            "soporte" => HasWebhookToken ? "Webhook SaaS configurado" : "Webhook Token no configurado",
+            _ => string.Empty
+        };
+
+    private string GetSummaryDetail(string category)
+        => category switch
+        {
+            "canales" => $"WhatsApp API: {GetStatusLabel(_config.IsReadyForMetaSetup)} · Instagram: {GetStatusLabel(_instagramConfig.IsReadyForMetaSetup)}",
+            "automatizacion" => $"{_reglas.Count} regla(s) cargada(s) · SLA: {(_automatizacionesConfig.SlaActivo ? "Activo" : "Inactivo")}",
+            "integraciones-ia" => $"Asistente: {(!string.IsNullOrWhiteSpace(_automatizacionesConfig.AsistenteComportamiento) ? "Configurado" : "Pendiente")}",
+            "operacion-accesos" => $"{_numeros.Count(x => x.Usuarios.Count > 0)} número(s) con usuarios asignados",
+            "soporte" => "Estado calculado con la configuración actualmente cargada",
+            _ => string.Empty
+        };
+
+    private int CountActiveAutomations()
+        => (_automatizacionesConfig.Activo ? 1 : 0)
+           + (_automatizacionesConfig.BienvenidaActivo ? 1 : 0)
+           + (_automatizacionesConfig.AutoCierreActivo ? 1 : 0)
+           + (_automatizacionesConfig.SlaActivo ? 1 : 0)
+           + (_automatizacionesConfig.BotActivo ? 1 : 0);
+
     private string GetStatusLabel(bool ready) => ready ? "Listo" : "Pendiente";
+
+    private string GetWhatsAppApiOverallStatus()
+        => _config.IsReadyForMetaSetup ? "Meta Cloud API configurada" : "Meta Cloud API pendiente de configuración";
+
+    private string GetApiNumeroRowClass(ConversacionWhatsAppNumeroDto numero)
+        => !IsApiIntegrationView && _selectedApiNumeroId == numero.IdNumero
+            ? "wa-api-number-row is-selected"
+            : "wa-api-number-row";
+
+    private string GetApiIntegrationRowClass()
+        => IsApiIntegrationView ? "wa-api-integration-row is-selected" : "wa-api-integration-row";
+
+    private string GetMetaConfigurationStatus()
+        => _config.IsReadyForMetaSetup ? "Configuración cargada" : "Configuración incompleta";
+
+    private static string GetSecretStatus(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "No configurado" : "Configurado";
+
+    private static string DisplayApiValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "No configurado" : value.Trim();
+
+    private static string GetProviderModeLabel(string? value)
+        => value switch
+        {
+            ConversacionWhatsAppProviderModes.MetaOnly => "Solo Meta Cloud API",
+            ConversacionWhatsAppProviderModes.WebOnly => "Solo WhatsApp Web",
+            ConversacionWhatsAppProviderModes.MetaAndWeb => "Meta Cloud API y WhatsApp Web",
+            _ => DisplayApiValue(value)
+        };
+
+    private static string GetProviderLabel(string? value)
+        => value switch
+        {
+            ConversacionWhatsAppProviders.MetaCloud => "Meta Cloud API",
+            ConversacionWhatsAppProviders.WhatsAppWeb => "WhatsApp Web",
+            _ => DisplayApiValue(value)
+        };
 
     private string GetPublicationLabel()
         => _config.IsReadyForMetaSetup ? "Lista para configurar en Meta" : "Falta completar datos";
@@ -3401,11 +4930,21 @@
             actualizados.Add(numero);
 
         _numeros = actualizados;
+        if (IsWhatsAppBusinessView)
+            UpdatePageHeader();
     }
 
     private static bool IsWhatsAppWebManagedNumero(ConversacionWhatsAppNumeroDto numero)
     {
-        if ((numero.PhoneNumberId ?? string.Empty).Trim().StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase))
+        var phoneNumberId = (numero.PhoneNumberId ?? string.Empty).Trim();
+        if (phoneNumberId.Length > 0
+            && !phoneNumberId.StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase)
+            && string.IsNullOrWhiteSpace(numero.WebInstanceName))
+        {
+            return false;
+        }
+
+        if (phoneNumberId.StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase))
             return true;
 
         if (numero.WebWorkerProcessId.HasValue
@@ -3427,6 +4966,11 @@
         return string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.PendingQr, StringComparison.OrdinalIgnoreCase)
             || string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase);
     }
+
+    private bool IsConfiguredGlobalApiNumero(ConversacionWhatsAppNumeroDto numero)
+        => !string.IsNullOrWhiteSpace(numero.PhoneNumberId)
+           && !string.IsNullOrWhiteSpace(_config.PhoneNumberId)
+           && string.Equals(numero.PhoneNumberId.Trim(), _config.PhoneNumberId.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// El estado de sesión manda sobre el último error: Baileys reporta "Stream Errored (restart
@@ -3451,6 +4995,7 @@
         {
             ConversacionWhatsAppWebSessionStatuses.Connected => AlfaTagTone.Success,
             ConversacionWhatsAppWebSessionStatuses.PendingQr when !IsStalePendingQr(numero) => AlfaTagTone.Warning,
+            _ when !string.IsNullOrWhiteSpace(numero.WebInstanceName) && string.IsNullOrWhiteSpace(numero.WebLastError) => AlfaTagTone.Warning,
             _ when !string.IsNullOrWhiteSpace(numero.WebLastError) => AlfaTagTone.Danger,
             _ => AlfaTagTone.Neutral
         };
@@ -3461,8 +5006,47 @@
             ConversacionWhatsAppWebSessionStatuses.Connected => "Conectado",
             ConversacionWhatsAppWebSessionStatuses.PendingQr when !IsStalePendingQr(numero) => "Esperando escaneo",
             _ when !string.IsNullOrWhiteSpace(numero.WebLastError) => "Error",
+            _ when !string.IsNullOrWhiteSpace(numero.WebInstanceName) => "Requiere reconexión",
             _ => "Desconectado"
         };
+
+    private string GetBusinessNumeroRowClass(ConversacionWhatsAppNumeroDto numero)
+        => $"wa-business-session{(_selectedBusinessNumeroId == numero.IdNumero ? " is-selected" : string.Empty)}";
+
+    private static string GetBusinessPhone(ConversacionWhatsAppNumeroDto numero)
+        => !string.IsNullOrWhiteSpace(numero.WebPhoneNumber)
+            ? numero.WebPhoneNumber
+            : "Número todavía no informado";
+
+    private string GetBusinessStatusClass(ConversacionWhatsAppNumeroDto numero)
+        => GetNumeroEstadoTone(numero) switch
+        {
+            AlfaTagTone.Success => "wa-business-status wa-business-status--success",
+            AlfaTagTone.Warning => "wa-business-status wa-business-status--warning",
+            AlfaTagTone.Danger => "wa-business-status wa-business-status--danger",
+            _ => "wa-business-status"
+        };
+
+    private string GetBusinessConnectionLabel(ConversacionWhatsAppNumeroDto numero)
+        => numero.IsWebSessionReady
+            ? $"Conectado por {GetBusinessMethodLabel(numero)}"
+            : GetNumeroEstadoLabel(numero);
+
+    private static string GetBusinessMethodLabel(ConversacionWhatsAppNumeroDto numero)
+        => string.Equals(numero.WebSessionMode, ConversacionWhatsAppWebSessionModes.PhoneNumber, StringComparison.OrdinalIgnoreCase)
+            ? "código de teléfono"
+            : "código QR";
+
+    private string GetBusinessStatusDescription(ConversacionWhatsAppNumeroDto numero)
+    {
+        if (numero.IsWebSessionReady)
+            return "La sesión está activa. El historial permanece asociado al número aunque cierres sesión.";
+        if (IsPairingFlowVisible(numero))
+            return "Completá la vinculación desde WhatsApp Business. Podés cancelar el pairing sin borrar conversaciones.";
+        if (!string.IsNullOrWhiteSpace(numero.WebLastError))
+            return "La sesión necesita atención. Podés intentar reconectarla sin crear nuevamente el número.";
+        return "Esta sesión está desconectada. Reconectala para volver a enviar y recibir mensajes.";
+    }
 
     /// <summary>
     /// IniciarNuevoWhatsAppBusinessAsync nombra los números nuevos "WhatsApp Business {N}" como

@@ -2,12 +2,12 @@ using AlfaCore.Models;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Globalization;
+using System.Text;
 using System.Text.Json;
 
 namespace AlfaCore.Services;
 
 public sealed class WhatsAppWebSessionService(
-    IWebHostEnvironment environment,
     ISessionService sessionService,
     IConversacionesConfigService configService,
     IAppEventService appEvents) : IWhatsAppWebSessionService
@@ -71,19 +71,32 @@ public sealed class WhatsAppWebSessionService(
             await configService.SaveWhatsAppNumeroWebSessionAsync(numero, ct);
 
             var args = BuildStartArguments(sessionDir, numero.WebSessionMode, numero.WebPhoneNumber, includeTextCode, numero.WebInstanceName);
+            var workerDirectory = GetWorkerDirectory();
+            var standardOutput = new StringBuilder();
+            var standardError = new StringBuilder();
             var startInfo = new ProcessStartInfo
             {
                 FileName = "node",
                 Arguments = args,
-                WorkingDirectory = GetWorkerDirectory(),
-                UseShellExecute = true,
+                WorkingDirectory = workerDirectory,
+                UseShellExecute = false,
                 CreateNoWindow = true,
-                WindowStyle = ProcessWindowStyle.Hidden
+                WindowStyle = ProcessWindowStyle.Hidden,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
             };
 
+            Process? process;
             try
             {
-                Process.Start(startInfo);
+                process = Process.Start(startInfo);
+                if (process is null)
+                    throw new InvalidOperationException("Node no devolvió una instancia de proceso.");
+
+                process.OutputDataReceived += (_, eventArgs) => AppendWorkerOutput(standardOutput, eventArgs.Data);
+                process.ErrorDataReceived += (_, eventArgs) => AppendWorkerOutput(standardError, eventArgs.Data);
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
             }
             catch (System.ComponentModel.Win32Exception ex)
             {
@@ -93,7 +106,46 @@ public sealed class WhatsAppWebSessionService(
                     $"Detalle técnico: {ex.Message}");
             }
 
-            var updated = await WaitForStatusAndPersistAsync(numero, statusFile, requireInteractiveArtifacts: true, ct);
+            ConversacionWhatsAppNumeroDto updated;
+            try
+            {
+                updated = await WaitForStatusAndPersistAsync(
+                    numero,
+                    statusFile,
+                    requireInteractiveArtifacts: true,
+                    process,
+                    standardOutput,
+                    standardError,
+                    ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var stdout = ReadWorkerOutput(standardOutput);
+                var stderr = ReadWorkerOutput(standardError);
+                var incidentId = await appEvents.LogErrorAsync(
+                    "Conversaciones",
+                    "StartWhatsAppWebWorker",
+                    ex,
+                    "No se pudo iniciar la sesión real de WhatsApp Web.",
+                    new
+                    {
+                        idNumero,
+                        numero.WebInstanceName,
+                        Executable = startInfo.FileName,
+                        startInfo.Arguments,
+                        startInfo.WorkingDirectory,
+                        ProcessId = process.Id,
+                        HasExited = process.HasExited,
+                        ExitCode = process.HasExited ? process.ExitCode : (int?)null,
+                        StdOut = stdout,
+                        StdErr = stderr
+                    },
+                    ct: CancellationToken.None);
+
+                throw new InvalidOperationException(
+                    $"El worker de WhatsApp Web no pudo iniciar. Revisá el incidente {incidentId} en Auditoría.",
+                    ex);
+            }
 
             await appEvents.LogAuditAsync(
                 "Conversaciones",
@@ -256,7 +308,14 @@ public sealed class WhatsAppWebSessionService(
         TryDeleteFile(statusFile);
         StartWorkerProcess(sessionDir, numero.WebSessionMode, numero.WebPhoneNumber, includeTextCode: false, numero.WebInstanceName);
 
-        var updated = await WaitForStatusAndPersistAsync(numero, statusFile, requireInteractiveArtifacts: false, ct);
+        var updated = await WaitForStatusAndPersistAsync(
+            numero,
+            statusFile,
+            requireInteractiveArtifacts: false,
+            workerProcess: null,
+            standardOutput: null,
+            standardError: null,
+            ct);
         if (!updated.IsWebSessionReady)
             throw new InvalidOperationException("WhatsApp Web no quedó conectado después de reiniciar la sesión. Revisá el estado del número en Configuración de WhatsApp.");
 
@@ -397,6 +456,9 @@ public sealed class WhatsAppWebSessionService(
         ConversacionWhatsAppNumeroDto numero,
         string statusFile,
         bool requireInteractiveArtifacts,
+        Process? workerProcess,
+        StringBuilder? standardOutput,
+        StringBuilder? standardError,
         CancellationToken ct)
     {
         var deadline = DateTime.UtcNow.AddSeconds(20);
@@ -418,6 +480,17 @@ public sealed class WhatsAppWebSessionService(
                         $"WhatsApp Web no pudo iniciar la sesión del número '{updated.Nombre}'. Estado: {updated.WebRuntimeState}. " +
                         $"{(string.IsNullOrWhiteSpace(updated.WebLastError) ? string.Empty : $"Detalle: {updated.WebLastError}")}".Trim());
                 }
+            }
+
+            if (workerProcess is not null && workerProcess.HasExited)
+            {
+                await Task.Delay(100, ct);
+                var stderr = ReadWorkerOutput(standardError);
+                var stdout = ReadWorkerOutput(standardOutput);
+                throw new InvalidOperationException(
+                    $"El proceso Node finalizó antes de publicar status.json (código {workerProcess.ExitCode}). " +
+                    $"stderr: {(string.IsNullOrWhiteSpace(stderr) ? "(vacío)" : stderr)} " +
+                    $"stdout: {(string.IsNullOrWhiteSpace(stdout) ? "(vacío)" : stdout)}");
             }
 
             await Task.Delay(500, ct);
@@ -533,18 +606,44 @@ public sealed class WhatsAppWebSessionService(
     private string GetWorkerDirectory()
     {
         var outputWorkerDir = Path.Combine(AppContext.BaseDirectory, WorkerRelativeDir);
+        // En desarrollo AlfaCore suele ejecutarse directamente desde bin\Release sin definir
+        // ASPNETCORE_ENVIRONMENT=Development. El árbol fuente sigue siendo la opción correcta si
+        // está presente y tiene el runtime completo; en un publish real esa ruta no existe y se usa
+        // normalmente el worker de salida, preparado con npm ci.
+        var projectDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+        var sourceWorkerDir = Path.Combine(projectDir, WorkerRelativeDir);
+        if (HasWorkerRuntime(sourceWorkerDir))
+            return sourceWorkerDir;
+
         if (File.Exists(Path.Combine(outputWorkerDir, WorkerScriptName)))
             return outputWorkerDir;
 
-        if (environment.IsDevelopment())
-        {
-            var projectDir = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
-            var sourceWorkerDir = Path.Combine(projectDir, WorkerRelativeDir);
-            if (File.Exists(Path.Combine(sourceWorkerDir, WorkerScriptName)))
-                return sourceWorkerDir;
-        }
-
         return outputWorkerDir;
+    }
+
+    private static bool HasWorkerRuntime(string workerDirectory)
+        => File.Exists(Path.Combine(workerDirectory, WorkerScriptName))
+           && Directory.Exists(Path.Combine(workerDirectory, "node_modules", "@whiskeysockets", "baileys"));
+
+    private static void AppendWorkerOutput(StringBuilder target, string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return;
+
+        lock (target)
+        {
+            if (target.Length < 32_000)
+                target.AppendLine(value);
+        }
+    }
+
+    private static string ReadWorkerOutput(StringBuilder? target)
+    {
+        if (target is null)
+            return string.Empty;
+
+        lock (target)
+            return target.ToString().Trim();
     }
 
     private void EnsureWorkerFilesExist()

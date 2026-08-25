@@ -52,6 +52,7 @@ public sealed class PageHeaderConfig
     public bool InlineViewButtons { get; init; }
     public bool ActionsBelowViewButtons { get; init; }
     public bool RecordToolbar { get; init; }
+    public bool CompactContextToolbar { get; init; }
     public bool AlwaysVisible { get; init; }
     public bool ShowHistoryNavigation { get; init; } = true;
     public bool ShowHomeNavigation { get; init; }

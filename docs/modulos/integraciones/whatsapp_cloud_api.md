@@ -1,5 +1,8 @@
 # Integración: WhatsApp Cloud API
 
+Manual operativo para configuración, migración y pruebas:
+`src/AlfaCore/Docs/manual_conversaciones_whatsapp_saas.md`.
+
 ## Alcance en AlfaCore
 
 WhatsApp es el canal principal externo del módulo Conversaciones. AlfaCore recibe mensajes por webhook, registra payloads en `CONV_WEBHOOK_LOG`, crea o actualiza conversaciones, permite responder mensajes de texto, enviar plantillas, enviar adjuntos y enviar reacciones cuando la configuración está completa.

@@ -21,6 +21,7 @@ public sealed class ConversacionesService(
     IWhatsAppWebSessionService whatsAppWebSessionService,
     INotificacionesPushService notificacionesPushService,
     ICentralAdminService centralAdminService,
+    IConversacionesAuthorizationService conversacionesAuthorizationService,
     IConversacionAsistenteService asistenteService,
     IConversacionAsistenteHerramientasService asistenteHerramientasService,
     IAlfaKnowledgeSuggestionService alfaKnowledgeService,
@@ -891,9 +892,9 @@ public sealed class ConversacionesService(
                         p.FechaHora_Grabacion
                     FROM dbo.CONV_CONVERSACIONES_PIN_USUARIO p
                     WHERE p.IdConversacion = c.IdConversacion
-                      AND p.Usuario = @UsuarioActual
+                      AND p.Usuario = @UsuarioActual COLLATE Latin1_General_CI_AI
                     ORDER BY
-                        CASE WHEN p.Sistema = @SistemaActual THEN 0 ELSE 1 END,
+                        CASE WHEN p.Sistema = @SistemaActual COLLATE Latin1_General_CI_AI THEN 0 ELSE 1 END,
                         p.FechaHora_Grabacion DESC
                 ) pin
                 LEFT JOIN dbo.VT_CLIENTES cli
@@ -956,9 +957,9 @@ public sealed class ConversacionesService(
                         r.IdUltimoMensajeLeido
                     FROM dbo.CONV_CONVERSACIONES_LECTURA_USUARIO r
                     WHERE r.IdConversacion = c.IdConversacion
-                      AND r.Usuario = @UsuarioActual
+                      AND r.Usuario = @UsuarioActual COLLATE Latin1_General_CI_AI
                     ORDER BY
-                        CASE WHEN r.Sistema = @SistemaActual THEN 0 ELSE 1 END,
+                        CASE WHEN r.Sistema = @SistemaActual COLLATE Latin1_General_CI_AI THEN 0 ELSE 1 END,
                         r.FechaHora_Modificacion DESC
                 ) lectura
                 OUTER APPLY (
@@ -1047,13 +1048,25 @@ public sealed class ConversacionesService(
                         c.IdNumeroWhatsApp IS NULL
                         OR EXISTS (
                             SELECT 1 FROM dbo.CONV_ADMINISTRADORES admConv
-                            WHERE admConv.Usuario = @UsuarioActual AND admConv.Sistema = @SistemaActual
+                            WHERE admConv.Usuario = @UsuarioActual COLLATE Latin1_General_CI_AI
+                              AND admConv.Sistema = @SistemaActual COLLATE Latin1_General_CI_AI
+                        )
+                        OR NOT EXISTS (
+                            SELECT 1 FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS numUsuAny
+                            WHERE numUsuAny.IdNumero = c.IdNumeroWhatsApp
                         )
                         OR EXISTS (
                             SELECT 1 FROM dbo.CONV_WHATSAPP_NUMERO_USUARIOS numUsu
                             WHERE numUsu.IdNumero = c.IdNumeroWhatsApp
-                              AND numUsu.Usuario = @UsuarioActual
-                              AND numUsu.Sistema = @SistemaActual
+                              AND numUsu.Usuario = @UsuarioActual COLLATE Latin1_General_CI_AI
+                              AND numUsu.Sistema = @SistemaActual COLLATE Latin1_General_CI_AI
+                        )
+                    )
+                    AND (
+                        @IdNumeroWhatsApp IS NULL
+                        OR (
+                            c.Canal = N'WHATSAPP'
+                            AND c.IdNumeroWhatsApp = @IdNumeroWhatsApp
                         )
                     )
                     AND (
@@ -1072,7 +1085,7 @@ public sealed class ConversacionesService(
                     AND (
                         @ClienteCodigo IS NULL
                         OR UPPER(LTRIM(RTRIM(ISNULL(c.ClienteCodigo, N'')))) = @ClienteCodigo
-                        OR contactoCuenta.Cuenta = @ClienteCodigo
+                        OR contactoCuenta.Cuenta = @ClienteCodigo COLLATE Latin1_General_CI_AI
                     )
                     AND (
                         @Search IS NULL
@@ -1102,11 +1115,11 @@ public sealed class ConversacionesService(
                             )
                         )
                     )
-                    AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual)
+                    AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual COLLATE Latin1_General_CI_AI)
                     AND (
                         @Modo = 'todas'
                         OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = ''))
-                        OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual)
+                        OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual COLLATE Latin1_General_CI_AI)
                         OR (@Modo = 'pendientes' AND ISNULL(e.EsCerrado, 0) = 0)
                         OR (@Modo = 'cerradas' AND ISNULL(e.EsCerrado, 0) = 1)
                     )
@@ -1244,6 +1257,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
             cmd.Parameters.AddWithValue("@UsuarioActual", usuarioActual);
             cmd.Parameters.AddWithValue("@SistemaActual", sistemaActual);
+            cmd.Parameters.AddWithValue("@IdNumeroWhatsApp", filters.IdNumeroWhatsApp.HasValue ? filters.IdNumeroWhatsApp.Value : DBNull.Value);
             cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
             cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
             cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
@@ -1427,6 +1441,7 @@ public sealed class ConversacionesService(
     public Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversation", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(conversationId, token);
             await ReassignStaleWhatsAppConversationsToDefaultWebAsync(conversationId, token);
 
             var sql = $"""
@@ -1672,6 +1687,7 @@ public sealed class ConversacionesService(
     public Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessages", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(conversationId, token);
             var sql = $"""
                 SELECT
                     m.IdMensaje,
@@ -1757,6 +1773,7 @@ public sealed class ConversacionesService(
         CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessagesPage", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(conversationId, token);
             await AutoCloseExpiredOpenWhatsAppConversationsAsync(conversationId, token);
 
             var pageSize = Math.Max(1, Math.Min(200, take));
@@ -2208,6 +2225,9 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "SendMessage", async token =>
         {
             ValidateOutgoingRequest(request);
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+            if (request.IdNumeroWhatsApp is > 0)
+                await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(request.IdNumeroWhatsApp.Value, token);
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
@@ -2232,17 +2252,12 @@ public sealed class ConversacionesService(
             }
             else if (isWhatsApp)
             {
-                var idNumeroWhatsAppParaEnvio = conversation.IdNumeroWhatsApp;
-                if (request.IdNumeroWhatsApp.HasValue && request.IdNumeroWhatsApp.Value > 0)
-                {
-                    await SetConversationWhatsAppNumeroCoreAsync(
-                        conversation.IdConversacion,
-                        request.IdNumeroWhatsApp.Value,
-                        request.UsuarioAccion,
-                        request.SistemaAccion,
-                        token);
-                    idNumeroWhatsAppParaEnvio = request.IdNumeroWhatsApp.Value;
-                }
+                var usarApiMetaPredeterminada = request.UsarApiMetaPredeterminada;
+                var idNumeroWhatsAppParaEnvio = usarApiMetaPredeterminada
+                    ? null
+                    : request.IdNumeroWhatsApp is > 0
+                        ? request.IdNumeroWhatsApp
+                        : conversation.IdNumeroWhatsApp;
 
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
 
@@ -2266,7 +2281,9 @@ public sealed class ConversacionesService(
                 // combo para números API -- si ese campo de la conversación estaba vacío (ej. una
                 // conversación sin ese dato cargado), el mensaje se mandaba silenciosamente con lo
                 // que hubiera en la config global, sin respetar el número elegido.
-                var phoneNumberIdParaEnvio = FirstNonEmpty(numeroWeb?.PhoneNumberId, conversation.PhoneNumberId);
+                var phoneNumberIdParaEnvio = usarApiMetaPredeterminada
+                    ? string.Empty
+                    : FirstValidMetaPhoneNumberId(numeroWeb?.PhoneNumberId, conversation.PhoneNumberId);
                 if (!string.IsNullOrWhiteSpace(phoneNumberIdParaEnvio))
                     whatsAppConfig.PhoneNumberId = phoneNumberIdParaEnvio;
 
@@ -2378,6 +2395,7 @@ public sealed class ConversacionesService(
                     whatsAppMessageId = sendResult.WhatsAppMessageId;
                     finalState = sendResult.EstadoEnvio;
                     payload = sendResult.PayloadJson;
+                    await BindConversationToMetaNumberAsync(request.IdConversacion, whatsAppConfig.PhoneNumberId, token);
                 }
                 catch (Exception ex)
                 {
@@ -2518,6 +2536,8 @@ public sealed class ConversacionesService(
             if (request.IdMensaje <= 0)
                 throw new InvalidOperationException("El mensaje a reaccionar es obligatorio.");
 
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+
             var emoji = NormalizeReactionEmoji(request.Emoji);
             if (string.IsNullOrWhiteSpace(emoji))
                 throw new InvalidOperationException("ElegÃ­ una reacciÃ³n vÃ¡lida.");
@@ -2596,6 +2616,8 @@ public sealed class ConversacionesService(
             if (request.IdNumeroWhatsApp <= 0)
                 throw new ArgumentException("La cuenta de WhatsApp indicada no es v\u00e1lida.", nameof(request));
 
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+            await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(request.IdNumeroWhatsApp, token);
             await SetConversationWhatsAppNumeroCoreAsync(
                 request.IdConversacion,
                 request.IdNumeroWhatsApp,
@@ -2880,6 +2902,8 @@ public sealed class ConversacionesService(
             if (request.IdPlantilla <= 0)
                 throw new InvalidOperationException("La plantilla es obligatoria.");
 
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             if (!string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Las plantillas solo se envÃ­an por WhatsApp.");
@@ -3016,6 +3040,7 @@ public sealed class ConversacionesService(
     public Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "AddInternalNote", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
             if (string.IsNullOrWhiteSpace(request.Texto))
@@ -3056,6 +3081,7 @@ public sealed class ConversacionesService(
     public Task<long> AddInternalEventAsync(ConversacionEventoInternoRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "AddInternalEvent", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversaci\u00f3n es obligatoria.");
             if (string.IsNullOrWhiteSpace(request.Texto))
@@ -3075,6 +3101,7 @@ public sealed class ConversacionesService(
     {
         await ExecuteLoggedAsync("Conversaciones", "AssignConversation", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
 
@@ -3170,6 +3197,7 @@ public sealed class ConversacionesService(
     {
         await ExecuteLoggedAsync("Conversaciones", "ChangeStatus", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
             if (string.IsNullOrWhiteSpace(request.CodigoEstado))
@@ -4164,7 +4192,7 @@ public sealed class ConversacionesService(
         if (root.TryGetProperty("user_id", out var userId))
             config.SellerId = ConvertJsonElementToString(userId);
 
-        await conversacionesConfigService.SaveMercadoLibreConfigAsync(config, ct);
+        await conversacionesConfigService.SaveMercadoLibreTokensAsync(config, ct);
         diagnostics.Add("Token ML renovado");
         return config;
     }
@@ -4186,6 +4214,8 @@ public sealed class ConversacionesService(
             var contact = await TryFindContactByPhoneAsync(cn, phone, token);
             var defaultWebNumero = await ResolveDefaultWhatsAppWebNumeroForManualConversationAsync(token);
             var idNumeroWhatsApp = defaultWebNumero?.IdNumero;
+            if (idNumeroWhatsApp.HasValue)
+                await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, token);
             var existing = await FindWhatsAppConversationByPhoneAsync(cn, phone, contact.IdContact, idNumeroWhatsApp, token);
             if (existing is null && idNumeroWhatsApp.HasValue)
             {
@@ -4296,6 +4326,10 @@ public sealed class ConversacionesService(
             if (request.TamanoBytes <= 0)
                 throw new InvalidOperationException("El archivo estÃ¡ vacÃ­o.");
 
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+            if (request.IdNumeroWhatsApp is > 0)
+                await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(request.IdNumeroWhatsApp.Value, token);
+
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
@@ -4315,9 +4349,23 @@ public sealed class ConversacionesService(
             else
             {
                 whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
-                if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
-                    whatsAppConfig.PhoneNumberId = conversation.PhoneNumberId;
-                var deliveryProvider = ResolveWhatsAppDeliveryProvider(whatsAppConfig);
+                var idNumeroWhatsAppParaEnvio = request.UsarApiMetaPredeterminada
+                    ? null
+                    : request.IdNumeroWhatsApp is > 0
+                        ? request.IdNumeroWhatsApp
+                        : conversation.IdNumeroWhatsApp;
+                var numero = idNumeroWhatsAppParaEnvio.HasValue
+                    ? await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsAppParaEnvio.Value, token)
+                    : null;
+                numero = await ResolveWhatsAppWebNumeroForSendAsync(conversation.IdConversacion, numero, token);
+
+                var phoneNumberIdParaEnvio = request.UsarApiMetaPredeterminada
+                    ? string.Empty
+                    : FirstValidMetaPhoneNumberId(numero?.PhoneNumberId, conversation.PhoneNumberId);
+                if (!string.IsNullOrWhiteSpace(phoneNumberIdParaEnvio))
+                    whatsAppConfig.PhoneNumberId = phoneNumberIdParaEnvio;
+
+                var deliveryProvider = ResolveWhatsAppDeliveryProviderForNumero(whatsAppConfig, numero);
                 EnsureWhatsAppProviderImplemented(deliveryProvider, "enviar adjuntos");
                 var windowActive = await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
                 if (!windowActive && !request.PermitirEnvioConVentanaVencida)
@@ -4370,6 +4418,7 @@ public sealed class ConversacionesService(
                 whatsAppMessageId = sendResult.WhatsAppMessageId;
                 finalState = sendResult.EstadoEnvio;
                 payload = sendResult.PayloadJson;
+                await BindConversationToMetaNumberAsync(request.IdConversacion, whatsAppConfig.PhoneNumberId, token);
             }
 
             var messageId = await InsertMessageAsync(new PendingMessageInsert
@@ -5747,6 +5796,13 @@ public sealed class ConversacionesService(
         var contact = await TryFindContactByPhoneAsync(cn, incoming.Phone, ct);
         var idNumeroWhatsApp = await ResolveNumeroWhatsAppIdAsync(cn, incoming.PhoneNumberId, ct);
         var existing = await FindWhatsAppConversationByPhoneAsync(cn, incoming.Phone, contact.IdContact, idNumeroWhatsApp, ct);
+        if (existing is null && idNumeroWhatsApp.HasValue)
+        {
+            existing = await FindProvisionalWhatsAppConversationByPhoneAsync(cn, incoming.Phone, contact.IdContact, ct);
+            if (existing is not null)
+                await UpdateConversationWhatsAppNumberAsync(cn, existing.IdConversacion, idNumeroWhatsApp.Value, ct);
+        }
+
         if (existing is not null)
         {
             if (contact.IdContact.HasValue)
@@ -7695,6 +7751,7 @@ public sealed class ConversacionesService(
                     ) m
                     WHERE ISNULL(c.Archivada, 0) = 0
                       AND ISNULL(e.EsCerrado, 0) = 0
+                      AND UPPER(LTRIM(RTRIM(ISNULL(c.CodigoEstado, N'')))) NOT IN (N'PENDIENTE', N'EN_GESTION')
                       AND m.Direction = N'ENTRANTE'
                       AND m.FechaHora <= DATEADD(hour, -@HorasRecordatorio, GETDATE());
                     """;
@@ -9679,6 +9736,66 @@ public sealed class ConversacionesService(
         };
     }
 
+    private static async Task<ConversationLookupResult?> FindProvisionalWhatsAppConversationByPhoneAsync(
+        SqlConnection cn,
+        string phone,
+        int? idContact,
+        CancellationToken ct)
+    {
+        var normalizedPhone = NormalizePhone(phone);
+        if (string.IsNullOrWhiteSpace(normalizedPhone))
+            return null;
+
+        var phoneTail = GetPhoneComparableTail(normalizedPhone);
+        var sql = $"""
+            SELECT TOP (1)
+                c.IdConversacion,
+                ISNULL(c.NombreVisible, ''),
+                c.IdContacto
+            FROM dbo.CONV_CONVERSACIONES c
+            INNER JOIN dbo.CONV_WHATSAPP_NUMEROS n
+                ON n.IdNumero = c.IdNumeroWhatsApp
+            WHERE c.Canal = N'WHATSAPP'
+              AND LTRIM(RTRIM(n.PhoneNumberId)) LIKE N'WEBPENDING-%'
+              AND (
+                    {SqlPhoneEquivalentPredicate("c.TelefonoWhatsApp", "@TelefonoWhatsApp", "@TelefonoWhatsAppTail")}
+                    OR (@IdContacto IS NOT NULL AND c.IdContacto = @IdContacto)
+                  )
+            ORDER BY c.FechaHoraUltimoMensaje DESC, c.IdConversacion DESC;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@TelefonoWhatsApp", normalizedPhone);
+        cmd.Parameters.AddWithValue("@TelefonoWhatsAppTail", DbNullable(phoneTail));
+        cmd.Parameters.AddWithValue("@IdContacto", idContact.HasValue ? idContact.Value : DBNull.Value);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        if (!await rd.ReadAsync(ct))
+            return null;
+
+        return new ConversationLookupResult
+        {
+            IdConversacion = rd.GetInt64(0),
+            NombreVisible = GetString(rd, 1),
+            IdContacto = rd.IsDBNull(2) ? null : rd.GetInt32(2)
+        };
+    }
+
+    private static async Task UpdateConversationWhatsAppNumberAsync(SqlConnection cn, long idConversacion, int idNumeroWhatsApp, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE dbo.CONV_CONVERSACIONES
+            SET
+                IdNumeroWhatsApp = @IdNumeroWhatsApp,
+                FechaHora_Modificacion = GETDATE()
+            WHERE IdConversacion = @IdConversacion;
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@IdNumeroWhatsApp", idNumeroWhatsApp);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
     private static async Task AssociateContactIfMissingAsync(SqlConnection cn, long idConversacion, ContactLookupResult contact, CancellationToken ct)
     {
         if (!contact.IdContact.HasValue)
@@ -9813,6 +9930,11 @@ public sealed class ConversacionesService(
                 IdNumeroWhatsApp
             FROM dbo.CONV_CONVERSACIONES
             WHERE Canal = N'WHATSAPP'
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.CONV_MENSAJES msg
+                    WHERE msg.IdConversacion = CONV_CONVERSACIONES.IdConversacion
+                  )
             ORDER BY IdConversacion ASC
             """;
 
@@ -9874,6 +9996,11 @@ public sealed class ConversacionesService(
             FROM dbo.CONV_CONVERSACIONES
             WHERE Canal = N'WHATSAPP'
               AND IdConversacion <> @CanonicalId
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM dbo.CONV_MENSAJES msg
+                    WHERE msg.IdConversacion = CONV_CONVERSACIONES.IdConversacion
+                  )
               AND (
                     (@IdNumeroWhatsApp IS NULL AND IdNumeroWhatsApp IS NULL)
                     OR IdNumeroWhatsApp = @IdNumeroWhatsApp
@@ -11761,6 +11888,38 @@ public sealed class ConversacionesService(
 
     private static string FirstNonEmpty(params string?[] values)
         => values.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim() ?? string.Empty;
+
+    private static string FirstValidMetaPhoneNumberId(params string?[] values)
+        => values.FirstOrDefault(IsValidMetaPhoneNumberId)?.Trim() ?? string.Empty;
+
+    private static bool IsValidMetaPhoneNumberId(string? value)
+        => !string.IsNullOrWhiteSpace(value)
+           && !value.Trim().StartsWith("WEBPENDING-", StringComparison.OrdinalIgnoreCase);
+
+    private async Task BindConversationToMetaNumberAsync(long idConversacion, string? phoneNumberId, CancellationToken ct)
+    {
+        if (idConversacion <= 0 || !IsValidMetaPhoneNumberId(phoneNumberId))
+            return;
+
+        const string sql = """
+            UPDATE c
+            SET
+                IdNumeroWhatsApp = n.IdNumero,
+                FechaHora_Modificacion = GETDATE()
+            FROM dbo.CONV_CONVERSACIONES c
+            INNER JOIN dbo.CONV_WHATSAPP_NUMEROS n
+                ON LTRIM(RTRIM(n.PhoneNumberId)) = @PhoneNumberId
+            WHERE c.IdConversacion = @IdConversacion
+              AND (c.IdNumeroWhatsApp IS NULL OR c.IdNumeroWhatsApp <> n.IdNumero);
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId!.Trim());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
 
     private static bool ShouldHydrateIncomingMedia(ConversacionMensajeDto message, string payloadJson)
         => !message.TieneAdjuntos

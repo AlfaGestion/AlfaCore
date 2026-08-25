@@ -15,6 +15,7 @@ public interface IConversacionesConfigService
     Task SaveFacebookConfigAsync(ConversacionFacebookConfigDto config, CancellationToken ct = default);
     Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(CancellationToken ct = default);
     Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default);
+    Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default);
     Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default);
     Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default);
     /// <summary>
@@ -51,6 +52,8 @@ public interface IConversacionesConfigService
     /// <summary>Usuarios marcados como administradores de Conversaciones (ven/responden por cualquier número).</summary>
     Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default);
     Task SaveConversacionAdministradoresAsync(IReadOnlyList<string> usuarios, CancellationToken ct = default);
+    Task<ConversacionesInboxPreferenceDto> GetInboxPreferenceAsync(string userName, string? sistema, CancellationToken ct = default);
+    Task SaveInboxPreferenceAsync(string userName, string? sistema, ConversacionesInboxPreferenceDto preference, CancellationToken ct = default);
 
     /// <summary>Reglas del motor de palabras clave (CONV_REGLAS), ordenadas por Orden.</summary>
     Task<IReadOnlyList<ConversacionReglaDto>> GetReglasAsync(CancellationToken ct = default);

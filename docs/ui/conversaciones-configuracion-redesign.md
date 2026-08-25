@@ -10,6 +10,17 @@
 
 ---
 
+## C2.7 — WhatsApp API: lectura, edición y multinúmero unificados
+
+- Se eliminaron los textos introductorios y los tres estados redundantes de la cabecera; la vista principal muestra un único estado general y conserva el desglose dentro de `Información técnica`.
+- `Números Meta Cloud API` y `Números por Phone Number ID` se unificaron en una sola sección `Números`: lista a la izquierda y detalle/edición a la derecha.
+- Seleccionar un número abre primero su resumen. `Editar` crea una copia temporal; `Cancelar` la descarta y `Guardar` solo se habilita cuando hay cambios reales.
+- El alta vive como acción `Agregar número` dentro de la misma sección y sigue usando `SaveWhatsAppNumeroAsync`.
+- El `Phone Number ID` global ya no se edita duplicado junto al registro multinúmero. Se preserva sin modificaciones en `_config` y se informa, solo lectura, como compatibilidad técnica. El número correspondiente se identifica en la lista como `Predeterminado`.
+- `WhatsApp Business Account ID`, credenciales, webhook, modo y proveedor conservan el mismo DTO y el mismo `SaveWhatsAppConfigAsync`; no se borró, migró ni inicializó ninguna clave.
+
+---
+
 ## C1 — Decisiones de implementación
 
 ### Shell
@@ -266,7 +277,7 @@ Sin cambios. Archivos tocados: `ConversacionesConfiguracion.razor`, `Conversacio
 
 ## C2.3 — WhatsApp Business Connection Flow
 
-**A diferencia de C2.1/C2.2, esta fase modificó backend** (`WhatsAppWebSessionService.cs`, `worker.mjs`), con permiso explícito del alcance de C2.3, solo en lo necesario para que la conexión QR/pairing code funcione y se auto-provisione. No se tocó Meta API, Instagram, Facebook, Mercado Libre, OAuth, webhooks, routing multibase ni automatizaciones.
+**A diferencia de C2.1/C2.2, esta fase modificó backend** (`WhatsAppWebSessionService.cs`, `worker.mjs`), con permiso explícito del alcance de C2.3, para implementar los flujos QR/pairing code y su autoprovisión. La validación funcional posterior aprobó únicamente QR; el pairing code queda pendiente según el cierre de Etapa 4. No se tocó Meta API, Instagram, Facebook, Mercado Libre, OAuth, webhooks, routing multibase ni automatizaciones.
 
 ### ⚠️ Limitación de entorno — no se pudo probar en vivo
 
@@ -322,7 +333,7 @@ Antes de crear una cuenta nueva por el flujo de **teléfono** (el único caso do
 - **Número conectado:** ya no muestra "Conectar WhatsApp" (evita el borrado accidental de auth de §32); muestra solo "Desvincular" con `AlfaConfirmDialog` (renombrado de "Detener sesión" a "Desvincular", mensaje actualizado).
 - **Pairing pendiente:** "Actualizar código" (icon button) + "Cancelar" (sin confirmación — cancelar algo que nunca llegó a conectar es de bajo riesgo).
 - **Desconectado sin pairing:** "Conectar WhatsApp" → selector de método.
-- Con ≥1 número ya existente: "Conectar otro WhatsApp" (ya no "Agregar número").
+- Con ≥1 número ya existente: "Nueva sesión" (ya no "Agregar número").
 - Todos los botones de esta pantalla (Business y API) usan `AlfaButton`/`AlfaIconButton`; no queda ningún `<button class="btn ...">` dentro de WhatsApp.
 
 ### Botón "Recargar" del Context Toolbar — revisado, sin cambios
@@ -870,7 +881,31 @@ Diagnosticado con SQL de solo lectura contra la base real (autorización ya vige
 
 `ClearWhatsAppWebPairingAsync` → `WhatsAppWebSessionSvc.StopSessionAsync` ya (desde un cambio de otra sesión, ya committeado en `main`) detiene el worker, limpia campos de pairing/runtime y **vacía `WebInstanceName`** — esto último es lo que evita que `ResolveWhatsAppDeliveryProviderForNumero` siga ruteando por Web hacia una sesión que ya no existe. No se tocó ese método.
 
-**Agregado en C2.6A**: tras un cierre exitoso, se pone `numero.Activo = false` y se persiste (reusando `SaveWhatsAppNumeroAsync`, sin migración). La lista Business (`ActiveBusinessNumeros`) filtra por `Activo` **solo en esa pantalla** — `GetWhatsAppNumeroAsync`/`GetWhatsAppNumeroByInstanceNameAsync` (envío, recepción, resolución de conversaciones históricas) **no se tocaron**, siguen viendo todas las filas sin excepción. No hay DELETE: la fila, sus conversaciones, mensajes y usuarios asociados quedan intactos — solo deja de listarse como cuenta operativa activa. Mismo mecanismo (sin feedback visible, silencioso) se dispara al abandonar un pairing nunca conectado navegando fuera de la vista (`CleanupAbandonedPairingsAsync`, nuevo) — evita que un worker de pairing abandonado quede corriendo indefinidamente y que la fila provisional quede pegada en la lista.
+**Agregado en C2.6A**: tras un cierre exitoso, se pone `numero.Activo = false` y se persiste (reusando `SaveWhatsAppNumeroAsync`, sin migración). La lista Business (`ActiveBusinessNumeros`) filtra por `Activo` **solo en esa pantalla** — `GetWhatsAppNumeroAsync`/`GetWhatsAppNumeroByInstanceNameAsync` (envío, recepción, resolución de conversaciones históricas) **no se tocaron**, siguen viendo todas las filas sin excepción. No hay DELETE: la fila, sus conversaciones, mensajes y usuarios asociados quedan intactos — solo deja de listarse como cuenta operativa activa.
+
+### Etapa 4.5 — cleanup seguro de altas provisionales
+
+El componente mantiene `_provisionalBusinessNumeroIds`, un `HashSet<int>` exclusivamente en memoria. Un ID entra al conjunto solo cuando **Nueva sesión** crea su fila para obtener el `IdNumero`; una reconexión nunca entra. Si el usuario cancela explícitamente ese primer pairing, se detiene el worker y se reutiliza la operación segura existente: `Activo = false` + `SaveWhatsAppNumeroAsync`. No se usa `DELETE` ni se modifican conversaciones, mensajes, usuarios o historial. La cancelación de una reconexión conserva siempre la fila activa.
+
+El ID sale del conjunto inmediatamente cuando `StartSessionAsync` o el polling informan `IsWebSessionReady`. Desde ese momento la cuenta es una sesión real y el cleanup de alta cancelada no puede archivarla. No se ejecuta cleanup al navegar, usar Atrás/Adelante, cambiar de sección, seleccionar otra sesión ni destruir el componente.
+
+**Deuda aceptada:** cleanup persistente de altas Web nunca conectadas tras cierre abrupto. Si se cierra el navegador, se reinicia AlfaCore o se destruye el componente antes de una cancelación explícita, la marca en memoria se pierde. Resolverlo requerirá una etapa persistente específica; no se agregaron columnas, migraciones ni heurísticas sobre `WEBPENDING-*`, estado, teléfono o timestamps.
+
+### Corrección final Etapa 4 — arranque real del worker y accesos
+
+El timeout de inicio se reprodujo fuera de la UI. `GetWorkerDirectory()` elegía primero el worker copiado a `bin\Debug\net8.0\Node\WhatsAppWebWorker`, aunque esa carpeta no contiene `node_modules` por decisión del `.csproj`. Node iniciaba y terminaba inmediatamente con `ERR_MODULE_NOT_FOUND` al importar `@whiskeysockets/baileys`; como el proceso usaba `UseShellExecute=true`, stderr no se capturaba y .NET esperaba 20 segundos un `status.json` que nunca podía existir. Antes del cambio a `AppContext.BaseDirectory`, el worker histórico se ejecutaba desde `environment.ContentRootPath\Node\WhatsAppWebWorker`, donde las dependencias de desarrollo sí estaban instaladas.
+
+Cuando el árbol fuente está presente se lo prioriza únicamente si contiene el runtime completo (`worker.mjs` y Baileys instalado), incluso si el ejecutable local de Release no declaró `ASPNETCORE_ENVIRONMENT=Development`. En un servidor publicado ese árbol no existe: se usa la salida productiva, que requiere `npm ci` en su carpeta de worker. El proceso de inicio ahora redirige stdout/stderr; si termina antes del primer estado o vence la espera, AlfaCore registra comando, working directory, PID, exit code, stdout y stderr mediante `IAppEventService`/`AUX_ERR`, mientras la UI recibe un mensaje breve con el identificador de incidente. No se aumentó el timeout ni se cambió el protocolo.
+
+La tarjeta Business incorpora **Asignar usuarios** tanto en lectura como durante la edición general. Abre un `AlfaDialog` con usuarios reales y checkboxes sobre un clon completo e independiente de `ConversacionWhatsAppNumeroDto`. Cancelar descarta el clon; Guardar reutiliza `SaveWhatsAppNumeroAsync`, recarga la lista y conserva todas las demás propiedades.
+
+### Cierre aprobado de Etapa 4 — 25/08/2026
+
+Validación manual aprobada para: generación de QR real, worker Node/Baileys, vinculación y reconexión mediante QR, actualización del estado, polling, cierre de sesión con confirmación, preservación del historial, asignación de usuarios y cleanup de altas provisionales.
+
+**Pendiente post-rediseño — WhatsApp Business: diagnosticar pairing mediante PHONE_NUMBER / código de vinculación.**
+
+La vinculación mediante número de teléfono/código no se considera funcional ni debe presentarse como validada en documentación de usuario. Cuando se retome, se debe auditar específicamente el worker con `WebSessionMode=PhoneNumber`, sin modificar el flujo QR ya aprobado.
 
 **Diálogo de confirmación**: texto reescrito sin mencionar auth/worker/Baileys/JID — "Cerrar sesión de WhatsApp" / "\"{nombre}\" dejará de estar conectado a AlfaCore." / "Las conversaciones anteriores se conservarán."
 
@@ -1133,3 +1168,69 @@ Routing de webhooks, token multibase, claves `CONV_*`, fallback legacy, tablas y
 - **SEC-4** — Storage de secretos / migración a almacenamiento protegido, si se aprueba.
 
 El orden definitivo de las fases SEC se decide antes de ejecutar cada una. Esta lista es preliminar; C1 puede reorganizarla una vez definida la IA final.
+
+## Etapa 5 — WhatsApp API
+
+Alcance exclusivo: `Configuración → Canales → WhatsApp API`. No se modificó WhatsApp Business/QR ni se avanzó a Instagram.
+
+### Composición y estados
+
+Se separaron dos contextos que antes convivían dentro del mismo formulario y compartían un guardado ambiguo:
+
+- **Integración Meta global**: Read → `Editar integración` → Edit con `Guardar`/`Cancelar`.
+- **Números WhatsApp API**: lista izquierda y detalle derecho; Read → `Editar`/`Nuevo número`; Edit/Create → `Guardar`/`Cancelar`.
+
+La barra contextual reutiliza `MainPageHeader`, acciones esenciales a la izquierda, historial mediante `IPageHeaderNavigationService` y el dirty-state existente. Cada handler invocado desde el header fuerza el rerender del componente propietario. El layout usa sidebar controlado + `minmax(0, 1fr)`, sin `max-width` global; a 1024 conserva maestro/detalle y debajo de 800 apila lista y detalle.
+
+### Integración Meta y secretos
+
+`Editar integración` crea un clon completo de `ConversacionWhatsAppConfigDto`. Son editables: modo, proveedor predeterminado, WABA ID, versión Graph API y Base pública HTTPS. La ruta interna del webhook, callback calculado, routing SaaS, fuente y Phone Number ID global de compatibilidad permanecen derivados o de solo lectura.
+
+Secretos auditados: `AccessToken`, `VerifyToken` y `AppSecret`. Read/Edit normal muestran únicamente `Configurado`/`No configurado`. Cada secreto requiere la acción explícita `Reemplazar`; si no se solicita reemplazo, el clon conserva exactamente el valor original. Guardar rechaza reemplazos vacíos, un fallo conserva el borrador y Cancelar descarta borrador/reemplazos sin persistir. El guardado reutiliza `SaveWhatsAppConfigAsync`; no se agregó persistencia parcial.
+
+`LoadWebhookTokenAsync` continúa usando únicamente `CentralBasesSvc.GetByIdAsync`. No llama a `EnsureWebhookTokenAsync`, no genera tokens durante carga y presenta `No configurado` cuando falta.
+
+### Números Meta Cloud API
+
+Seleccionar un número queda en Read. Edit/Create trabajan sobre `ConversacionWhatsAppNumeroDto` completo e independiente. Campos editables: `Nombre` (identificación operativa) y `PhoneNumberId` (identificador que Meta entrega y clave funcional usada por el UPSERT existente). Solo lectura: `IdNumero` y proveedor; WABA/proveedor globales pertenecen a Integración Meta. Las propiedades Web/QR no se exponen y permanecen preservadas por el clon y el servicio.
+
+`Nuevo número` no persiste al abrir; Guardar reutiliza `SaveWhatsAppNumeroAsync` y mantiene su semántica de adopción/actualización por Phone Number ID. La clasificación sigue usando `IsWhatsAppWebManagedNumero`: API muestra exclusivamente registros no-Web y ya no filtra esa clasificación por `Activo`, usuarios ni número predeterminado.
+
+`Asignar usuarios` usa `AlfaDialog`, lista real y clon completo con colección `Usuarios` independiente. Cancelar descarta; Guardar reutiliza `SaveWhatsAppNumeroAsync`, recarga y conserva las demás propiedades.
+
+### Embedded Signup auditado
+
+No existe actualmente un flujo de WhatsApp Embedded Signup en AlfaCore: no hay botón de inicio, callback OAuth de WhatsApp, intercambio de código, consulta automática de WABA ni carga automática de Phone Number IDs. Los callbacks OAuth existentes son de Instagram y Mercado Libre. Por lo tanto, Etapa 5 no representa ni inventa onboarding paralelo; WABA/credenciales se administran en Integración Meta y los números mediante su alta explícita.
+
+### Inventario de acciones visibles
+
+| Contexto | Label | Handler | Método final | Estado |
+|---|---|---|---|---|
+| Todos | Atrás | `BuildHistoryActions` | `HeaderNavigation.GoBack` vía dirty-state | Deshabilitado si no hay historial |
+| Todos | Adelante | `BuildHistoryActions` | `HeaderNavigation.GoForward` vía dirty-state | Deshabilitado si no hay historial futuro |
+| Integración Read | Editar integración | `StartMetaIntegrationEditAsync` | Crea clon; no persiste | Deshabilitado durante carga/guardado |
+| Integración Edit | Guardar | `SaveMetaIntegrationDraftAsync` | `SaveWhatsAppConfigAsync` | Busy/deshabilitado al guardar |
+| Integración Edit | Cancelar | `CancelMetaIntegrationEditAsync` | Descarta clon; no persiste | Deshabilitado al guardar |
+| Secreto Edit | Reemplazar | setters `SetReplace*` | Habilita input local | Habilitado en Edit |
+| Secreto Edit | Cancelar reemplazo | setters `SetReplace*`/`Set*Replacement` | Limpia reemplazo local | Habilitado en Edit |
+| Número Read | Editar | `StartEditSelectedApiNumeroAsync` | Crea clon; no persiste | Requiere selección |
+| Número Read | Nuevo número | `StartAddApiNumero` | Abre Create; no persiste | Deshabilitado durante carga/guardado |
+| Número Edit | Guardar | `SaveApiNumeroDraftAsync` | `SaveWhatsAppNumeroAsync` | Busy/deshabilitado al guardar |
+| Número Edit | Cancelar | `CancelApiNumeroEditAsync` | Descarta clon; no persiste | Deshabilitado al guardar |
+| Número Create | Guardar | `AddNumeroAsync` | `SaveWhatsAppNumeroAsync` | Busy/deshabilitado al guardar |
+| Número Create | Cancelar | `CancelAddApiNumeroAsync` | Descarta alta; no persiste | Deshabilitado al guardar |
+| Accesos | Asignar usuarios | `OpenApiAccessDialog` | Crea clon; no persiste | Read/Edit del número |
+| Accesos dialog | Guardar | `SaveApiAccessAsync` | `SaveWhatsAppNumeroAsync` | Busy al guardar |
+| Accesos dialog | Cancelar | `CancelApiAccessDialog` | Descarta clon; no persiste | Deshabilitado al guardar |
+| Lista | Integración Meta | `SelectApiIntegration` | Navegación interna read-only | Protegido por dirty-state |
+| Lista | Número | `SelectApiNumero` | Selección read-only | Protegido por dirty-state |
+
+### Pendientes de validación manual
+
+Validar visualmente y por interacción real a 2048, 1440, 1024 y menos de 800 px; comprobar los quince casos funcionales definidos para Etapa 5 contra una base de prueba. La compilación valida contratos y handlers, pero no reemplaza la prueba manual de persistencia/Cancelación con datos reales.
+
+### Ajuste final de seguridad y legibilidad
+
+La vista principal no expone el callback tokenizado: muestra `Configurado`/`No configurado` y `Copiar callback` transfiere al portapapeles la URL completa ya cargada, sin generar ni reemplazar el token. La fuente de configuración y los ID internos quedaron en `Información técnica` colapsada.
+
+Modo y proveedor conservan sus selectores porque el sistema implementa alternativas reales (Meta, Business y convivencia; Meta o Business como proveedor predeterminado). WABA ID, versión Graph API y base pública se agrupan en `Configuración avanzada`. El resumen de accesos muestra hasta cinco usuarios y `+N`; el diálogo mantiene la lista completa.

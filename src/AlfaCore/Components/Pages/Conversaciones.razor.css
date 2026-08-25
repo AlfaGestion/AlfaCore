@@ -38,6 +38,29 @@
     overflow: auto;
 }
 
+.conversations-canal-suboptions {
+    display: grid;
+    gap: .12rem;
+    margin: .08rem 0 .18rem;
+    padding-left: .55rem;
+}
+
+.conversation-header-state__option.conversations-canal-suboption {
+    min-height: 1.9rem;
+    padding-left: .72rem;
+    color: rgba(203, 213, 225, .9);
+    font-size: .78rem;
+}
+
+.conversation-header-state__option.conversations-canal-suboption i {
+    opacity: .82;
+}
+
+.conversations-mobile-action--sub,
+.conversations-mobile-chip--sub {
+    font-size: .78rem;
+}
+
 .conversations-page--odoo {
     min-height: 100dvh;
     height: 100dvh;
@@ -1627,6 +1650,7 @@
 
 .conversations-page--odoo .conversations-composer {
     grid-template-columns: minmax(0, 1fr) auto !important;
+    grid-template-rows: auto auto auto !important;
     align-items: end !important;
     gap: .55rem !important;
     overflow: visible !important;
@@ -1636,37 +1660,118 @@
     min-width: 0 !important;
 }
 
-.conversations-page--odoo .conversations-send-account {
-    grid-column: 1 / -1;
-    display: flex;
-    align-items: center;
-    gap: .45rem;
-    min-width: 0;
-    color: #9fb3ca;
-    font-size: .74rem;
+.conversations-page--odoo .conversations-composer--support {
+    max-height: none !important;
+    overflow: visible !important;
 }
 
-.conversations-page--odoo .conversations-send-account i {
-    color: #34d399;
+.conversations-page--odoo .conversations-composer--support > .conversations-composer__reply {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
 }
 
-.conversations-page--odoo .conversations-send-account label {
-    margin: 0;
-    color: #b8c7d9;
-    font-weight: 700;
-    white-space: nowrap;
+.conversations-page--odoo .conversations-composer--support > .conversations-composer__actions--reply {
+    position: relative !important;
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+    align-self: end !important;
+    overflow: visible !important;
 }
 
-.conversations-page--odoo .conversations-send-account select {
-    min-width: 180px;
-    max-width: min(420px, 100%);
-    height: 30px;
-    border: 1px solid rgba(56, 189, 248, .26);
-    border-radius: 6px;
-    background: rgba(7, 20, 34, .92);
-    color: #dcecff;
-    font-size: .76rem;
-    font-weight: 700;
+.conversations-page--odoo .conversations-composer--support > .conversations-composer__note {
+    grid-column: 1 !important;
+    grid-row: 3 !important;
+}
+
+.conversations-page--odoo .conversations-composer__feedback {
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: .45rem !important;
+    min-width: 0 !important;
+    padding: .45rem .65rem !important;
+    border-radius: 6px !important;
+    font-size: .82rem !important;
+    line-height: 1.25 !important;
+}
+
+.conversations-page--odoo .conversations-composer__feedback--error {
+    border: 1px solid rgba(248, 113, 113, .45) !important;
+    background: rgba(127, 29, 29, .28) !important;
+    color: #fecaca !important;
+}
+
+.conversations-page--odoo .conversations-composer__feedback span {
+    min-width: 0 !important;
+    overflow-wrap: anywhere !important;
+}
+
+.conversations-page--odoo .conversations-composer--support > .conversations-composer__actions--note {
+    grid-column: 2 !important;
+    grid-row: 3 !important;
+    align-self: end !important;
+}
+
+.conversations-page--odoo .conversations-composer--support > .conversations-tools-panel--composer,
+.conversations-page--odoo .conversations-composer__actions--reply > .conversations-tools-panel--composer {
+    position: absolute !important;
+    right: 0 !important;
+    bottom: calc(100% + .55rem) !important;
+    left: auto !important;
+    z-index: 320 !important;
+    width: min(600px, calc(100vw - 2rem)) !important;
+    max-height: min(430px, calc(100dvh - 9rem)) !important;
+    overflow: auto !important;
+}
+
+.conversations-page--odoo .conversations-composer--support > .conversations-send-account {
+    position: relative !important;
+    z-index: 360 !important;
+    grid-column: 2 !important;
+    grid-row: 3 !important;
+    align-self: start !important;
+    justify-self: end !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: .35rem !important;
+    min-width: 0 !important;
+    max-width: min(430px, 100%) !important;
+    padding: .2rem .55rem !important;
+    border: 1px solid rgba(56, 189, 248, .22) !important;
+    border-radius: 999px !important;
+    background: rgba(7, 20, 34, .92) !important;
+    color: #9fb3ca !important;
+    font-size: .72rem !important;
+    line-height: 1.2 !important;
+}
+
+.conversations-page--odoo .conversations-composer--support > .conversations-send-account i {
+    flex: 0 0 auto !important;
+    color: #34d399 !important;
+}
+
+.conversations-page--odoo .conversations-composer--support > .conversations-send-account label {
+    margin: 0 !important;
+    color: #b8c7d9 !important;
+    font-weight: 700 !important;
+    white-space: nowrap !important;
+}
+
+.conversations-page--odoo .conversations-composer--support > .conversations-send-account select {
+    position: relative !important;
+    z-index: 361 !important;
+    min-width: 0 !important;
+    width: min(290px, 42vw) !important;
+    max-width: 290px !important;
+    height: 24px !important;
+    padding: .05rem .3rem !important;
+    border: 1px solid rgba(56, 189, 248, .26) !important;
+    border-radius: 6px !important;
+    background: rgba(7, 20, 34, .92) !important;
+    color: #dcecff !important;
+    font-size: .72rem !important;
+    font-weight: 700 !important;
 }
 
 .conversations-page--odoo .conversations-composer textarea {
