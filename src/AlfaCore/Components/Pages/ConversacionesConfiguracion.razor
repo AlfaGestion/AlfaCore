@@ -14,6 +14,7 @@
 @inject AlfaCore.Services.IPageHeaderNavigationService HeaderNavigation
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Configuración de canales | Alfa Gestión</PageTitle>
@@ -54,6 +55,35 @@
                         Icon="bi bi-floppy"
                         Loading="@BusinessAccessSaving"
                         OnClick="@(_ => SaveBusinessAccessAsync())">Guardar</AlfaButton>
+        </Footer>
+    </AlfaDialog>
+
+    <AlfaDialog Open="@(_apiAccessDraft is not null)"
+                Title="Asignar usuarios"
+                Description="Elegí quiénes pueden ver y atender este número Meta Cloud API."
+                Size="AlfaDialogSize.Md"
+                Loading="@ApiAccessSaving"
+                OnClose="CancelApiAccessDialog">
+        <ChildContent>
+            @if (_apiAccessDraft is { } apiAccessDraft)
+            {
+                <div class="wa-user-grid">
+                    @foreach (var usuario in _usuariosSistema)
+                    {
+                        <AlfaCheckbox Value="@apiAccessDraft.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
+                                      ValueChanged="@(v => ToggleNumeroUsuario(apiAccessDraft, usuario.Nombre, v ?? false))"
+                                      Disabled="@ApiAccessSaving">@usuario.Nombre</AlfaCheckbox>
+                    }
+                    @if (_usuariosSistema.Count == 0)
+                    {
+                        <span class="wa-field-note">No hay usuarios activos en este sistema.</span>
+                    }
+                </div>
+            }
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Disabled="@ApiAccessSaving" OnClick="@(_ => CancelApiAccessDialog())">Cancelar</AlfaButton>
+            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@ApiAccessSaving" OnClick="@(_ => SaveApiAccessAsync())">Guardar</AlfaButton>
         </Footer>
     </AlfaDialog>
 
@@ -121,242 +151,202 @@
     </section>
     }
 
-    @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp")
+    @if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "general")
     {
-    @if (_activeWhatsAppSection == "general")
-    {
-        <div class="wa-status-summary">
-            <span class="@GetWhatsAppApiStatusChipClass(_config.IsReadyForMetaSetup)"><i class="bi bi-circle-fill" aria-hidden="true"></i> @GetWhatsAppApiOverallStatus()</span>
-        </div>
-    }
+        <div class="wa-api-workspace">
+            <aside class="wa-api-list" aria-label="Integración y números de WhatsApp API">
+                <button type="button" class="@GetApiIntegrationRowClass()" @onclick="SelectApiIntegration">
+                    <strong>Integración Meta</strong>
+                    <span>Cuenta, credenciales y webhook</span>
+                    <span class="wa-api-list__status">@GetMetaConfigurationStatus()</span>
+                </button>
 
-    @if (_activeWhatsAppSection == "general")
-    {
-    <div class="wa-layout">
-            <section class="wa-panel">
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-diagram-3 wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Conexión</span>
-                        <span class="wa-settings-section__hint">Modo, proveedor y cuenta de Meta.</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <div class="wa-fields">
-                            <AlfaSelect Label="Modo del canal" Options="@_providerModeOptions" @bind-Value="_config.ProviderMode" />
-                            <AlfaSelect Label="Proveedor predeterminado" Options="@_defaultProviderOptions" @bind-Value="_config.DefaultProvider" />
-                            <AlfaInput Label="WhatsApp Business Account ID" @bind-Value="_config.BusinessAccountId" Placeholder="Ej. 109876543210987" />
-                        </div>
-                    </div>
-                </details>
+                <header class="wa-api-list__header">
+                    <h2>Números WhatsApp API</h2>
+                    <span>@WhatsAppApiNumeros.Count()</span>
+                </header>
 
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-key-fill wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Credenciales</span>
-                        <span class="wa-settings-section__hint">Access Token, Verify Token y App Secret de Meta.</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <p class="wa-field-note">@GetWhatsAppMetaSummary()</p>
-
-                        <div class="wa-field wa-fields__full">
-                            <label class="wa-field__label" for="wa-access-token">Access Token</label>
-                            <textarea id="wa-access-token" class="wa-textarea" rows="4" @bind="_config.AccessToken" placeholder="Pegá acá el token permanente o del sistema"></textarea>
-                        </div>
-
-                        <div class="wa-fields">
-                            <AlfaInput Label="Verify Token" @bind-Value="_config.VerifyToken" Placeholder="Texto secreto que definís vos" />
-                            <AlfaInput Label="App Secret" @bind-Value="_config.AppSecret" Placeholder="Opcional por ahora, recomendado para firma" />
-                        </div>
-                    </div>
-                </details>
-
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-hdd-network wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Webhook</span>
-                        <span class="wa-settings-section__hint">Base pública, versión de Graph API y callback a informar en Meta.</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <div class="wa-fields">
-                            <AlfaInput Label="Base pública HTTPS" @bind-Value="_config.PublicBaseUrl" Placeholder="@_suggestedBaseUrl" />
-                            <AlfaInput Label="Versión Graph API" @bind-Value="_config.ApiVersion" Placeholder="v22.0" />
-                        </div>
-
-                        <div class="wa-field wa-fields__full">
-                            <label class="wa-field__label" for="wa-webhook-path">Webhook interno</label>
-                            <input id="wa-webhook-path" class="wa-input-readonly" value="@_config.WebhookPath" readonly />
-                        </div>
-
-                        <p class="wa-field-note"><strong>Callback a informar en Meta:</strong> @GetWebhookUrlPreview()</p>
-                        <p class="wa-field-note">
-                            Routing por base:
-                            @if (HasWebhookToken)
+                @foreach (var numero in WhatsAppApiNumeros)
+                {
+                    <button type="button" class="@GetApiNumeroRowClass(numero)" @onclick="() => SelectApiNumero(numero)">
+                        <strong>@GetNumeroDisplayName(numero)</strong>
+                        <span>@numero.PhoneNumberId</span>
+                        <span class="wa-api-number-row__meta">
+                            @if (IsConfiguredGlobalApiNumero(numero))
                             {
-                                <text>configurado — los mensajes entrantes se identifican sin depender de la sesión activa.</text>
+                                <AlfaTag Tone="AlfaTagTone.Accent">Predeterminado</AlfaTag>
+                            }
+                            @if (numero.Usuarios.Count == 0)
+                            {
+                                <span class="wa-api-list__warning">Sin usuarios asignados</span>
                             }
                             else
                             {
-                                <text>sin token propio todavía — no usar este callback en producción SaaS hasta generarlo.</text>
+                                <span>@numero.Usuarios.Count usuario(s)</span>
                             }
-                        </p>
-                        <p class="wa-field-note">@GetWhatsAppWebOverviewSummary() La sesión por QR se administra por número en la pestaña "WhatsApp Business".</p>
-                    </div>
-                </details>
+                        </span>
+                    </button>
+                }
 
-                <div class="actions">
-                    <AlfaButton Icon="bi bi-floppy-fill" Disabled="@(Loading || Saving)" OnClick="SaveAsync">Guardar integración</AlfaButton>
-                </div>
-
-                <details class="wa-settings-section" open>
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-cloud-check wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Números</span>
-                        <span class="wa-settings-section__hint">@WhatsAppApiNumeros.Count()</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        @if (!WhatsAppApiNumeros.Any())
-                        {
-                            <p class="wa-field-note">Todavía no hay números Meta Cloud API cargados para esta base.</p>
-                        }
-                        <div class="wa-api-numbers-layout">
-                            <div class="wa-api-numbers-list">
-                                @foreach (var numero in WhatsAppApiNumeros)
-                                {
-                                    <button type="button" class="@GetApiNumeroRowClass(numero)" @onclick="() => SelectApiNumero(numero)">
-                                        <span>
-                                            <strong class="wa-number-card__name">@GetNumeroDisplayName(numero)</strong>
-                                            <span class="wa-number-card__phone">@numero.PhoneNumberId</span>
-                                        </span>
-                                        <span class="wa-api-number-row__meta">
-                                            @if (IsConfiguredGlobalApiNumero(numero))
-                                            {
-                                                <AlfaTag Tone="AlfaTagTone.Accent">Predeterminado</AlfaTag>
-                                            }
-                                            <span>@numero.Usuarios.Count usuario(s)</span>
-                                        </span>
-                                    </button>
-                                }
-                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plus-circle" Disabled="@(Loading || Saving)" OnClick="StartAddApiNumero">Agregar número</AlfaButton>
-                            </div>
-
-                            @if (_apiNumeroDraft is not null)
-                            {
-                                <section class="wa-api-number-editor" aria-label="Editar número de WhatsApp API">
-                                    <div class="wa-api-number-editor__header">
-                                        <div>
-                                            <strong>@GetNumeroDisplayName(_apiNumeroDraft)</strong>
-                                            <span>Edición</span>
-                                        </div>
-                                    </div>
-                                    <div class="wa-fields">
-                                        <AlfaInput Label="Nombre" @bind-Value="_apiNumeroDraft.Nombre" Placeholder="Ej: Ventas Norte" />
-                                        <AlfaInput Label="Phone Number ID" @bind-Value="_apiNumeroDraft.PhoneNumberId" Placeholder="Ej: 109876543210" />
-                                    </div>
-                                    <div class="wa-user-editor">
-                                        <strong>Usuarios con acceso</strong>
-                                        <div class="wa-user-grid">
-                                            @foreach (var usuario in _usuariosSistema)
-                                            {
-                                                <AlfaCheckbox Value="@_apiNumeroDraft.Usuarios.Contains(usuario.Nombre, StringComparer.OrdinalIgnoreCase)"
-                                                              ValueChanged="@(v => ToggleNumeroUsuario(_apiNumeroDraft, usuario.Nombre, v ?? false))">
-                                                    @usuario.Nombre
-                                                </AlfaCheckbox>
-                                            }
-                                        </div>
-                                    </div>
-                                    <div class="actions">
-                                        <span class="wa-field-note">Usá Guardar o Cancelar en la barra superior.</span>
-                                    </div>
-                                </section>
-                            }
-                            else if (_addingApiNumero)
-                            {
-                                <section class="wa-api-number-editor" aria-label="Agregar número de WhatsApp API">
-                                    <strong>Nuevo número</strong>
-                                    <div class="wa-fields">
-                                        <AlfaInput Label="Nombre" @bind-Value="_nuevoNumero.Nombre" Placeholder="Ej: Ventas Sur" />
-                                        <AlfaInput Label="Phone Number ID" @bind-Value="_nuevoNumero.PhoneNumberId" Placeholder="Ej: 109876543211" />
-                                    </div>
-                                    <div class="actions">
-                                        <span class="wa-field-note">Usá Guardar o Cancelar en la barra superior.</span>
-                                    </div>
-                                </section>
-                            }
-                            else if (SelectedApiNumero is { } selectedNumero)
-                            {
-                                <section class="wa-api-number-editor" aria-label="Detalle del número de WhatsApp API">
-                                    <div class="wa-api-number-editor__header">
-                                        <div>
-                                            <strong>@GetNumeroDisplayName(selectedNumero)</strong>
-                                            @if (IsConfiguredGlobalApiNumero(selectedNumero))
-                                            {
-                                                <AlfaTag Tone="AlfaTagTone.Accent">Predeterminado</AlfaTag>
-                                            }
-                                        </div>
-                                        <span class="wa-number-card__phone">@selectedNumero.PhoneNumberId</span>
-                                    </div>
-                                    <div class="wa-api-number-summary">
-                                        <span>Usuarios con acceso</span>
-                                        <strong>@selectedNumero.Usuarios.Count</strong>
-                                    </div>
-                                    <div class="actions">
-                                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-pencil-fill" Disabled="@(Loading || Saving)" OnClick="StartEditSelectedApiNumero">Editar</AlfaButton>
-                                    </div>
-                                </section>
-                            }
-                            else
-                            {
-                                <div class="wa-api-number-preview">
-                                    <i class="bi bi-phone" aria-hidden="true"></i>
-                                    <span>Seleccioná un número para ver y editar sus datos.</span>
-                                </div>
-                            }
-                        </div>
-                    </div>
-                </details>
-
-            </section>
-
-            <aside class="wa-help">
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-question-circle wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">¿Necesitás ayuda para configurar Meta Cloud API?</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <ol class="conv-config-steps">
-                            <li>Crear o usar una app tipo negocio en Meta for Developers y agregar el producto WhatsApp.</li>
-                            <li>Obtener el <code>Phone Number ID</code> del número que vas a conectar.</li>
-                            <li>Obtener el <code>WhatsApp Business Account ID</code> de la cuenta de negocio.</li>
-                            <li>Generar un <code>Access Token</code> válido para el envío de mensajes.</li>
-                            <li>Definir un <code>Verify Token</code> propio y cargar la URL pública del webhook en Meta.</li>
-                            <li>Suscribir el webhook al menos a eventos de mensajes y estados.</li>
-                            <li>Probar verificación, envío y recepción antes de pasar a producción.</li>
-                        </ol>
-                    </div>
-                </details>
-
-                <details class="wa-settings-section">
-                    <summary class="wa-settings-section__summary">
-                        <i class="bi bi-info-circle wa-settings-section__icon" aria-hidden="true"></i>
-                        <span class="wa-settings-section__title">Información técnica</span>
-                        <i class="bi bi-chevron-down wa-settings-section__chevron" aria-hidden="true"></i>
-                    </summary>
-                    <div class="wa-settings-section__body">
-                        <p class="wa-field-note">Fuente: <code>TA_CONFIGURACION</code> (@DisplaySource(_config.ConfigSource)). Claves: <code>CONV_WHATSAPP_*</code>.</p>
-                        <p class="wa-field-note">Phone Number ID global preservado para compatibilidad: <code>@_config.PhoneNumberId</code>.</p>
-                        <p class="wa-field-note">Envío API: @GetStatusLabel(_config.IsConfiguredForSend) · Webhook: @GetStatusLabel(_config.IsConfiguredForVerify) · Meta: @GetPublicationLabel().</p>
-                        <p class="wa-field-note">Manual interno: <code>docs/conversaciones_whatsapp_conexion.md</code>.</p>
-                    </div>
-                </details>
+                @if (!WhatsAppApiNumeros.Any())
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Sin números API"
+                                    Message="Todavía no hay números Meta Cloud API cargados."
+                                    ActionLabel="Nuevo número"
+                                    ActionIcon="bi bi-plus-circle"
+                                    OnAction="@(_ => StartAddApiNumero())" />
+                }
             </aside>
-    </div>
-    }
+
+            <section class="wa-api-detail">
+                @if (IsApiIntegrationView)
+                {
+                    @if (_metaConfigDraft is { } metaDraft)
+                    {
+                        <div class="wa-api-detail__heading">
+                            <div><h2>Editar integración Meta</h2><p>Los cambios se aplican únicamente al guardar.</p></div>
+                        </div>
+                        <div class="wa-business-block">
+                            <h3>Configuración</h3>
+                            <div class="wa-fields">
+                                <AlfaSelect Label="Modo del canal" Options="@_providerModeOptions" @bind-Value="metaDraft.ProviderMode" />
+                                <AlfaSelect Label="Proveedor predeterminado" Options="@_defaultProviderOptions" @bind-Value="metaDraft.DefaultProvider" />
+                            </div>
+                        </div>
+                        <details class="wa-api-technical">
+                            <summary>Configuración avanzada</summary>
+                            <div class="wa-fields wa-api-technical__body">
+                                <AlfaInput Label="WhatsApp Business Account ID" @bind-Value="metaDraft.BusinessAccountId" />
+                                <AlfaInput Label="Versión Graph API" @bind-Value="metaDraft.ApiVersion" />
+                                <AlfaInput Label="Base pública HTTPS" @bind-Value="metaDraft.PublicBaseUrl" Placeholder="@_suggestedBaseUrl" />
+                            </div>
+                        </details>
+                        <div class="wa-business-block">
+                            <h3>Credenciales</h3>
+                            @SecretEditor("Access Token", !string.IsNullOrWhiteSpace(_config.AccessToken), _replaceAccessToken, _accessTokenReplacement, SetReplaceAccessToken, SetAccessTokenReplacement)
+                            @SecretEditor("Verify Token", !string.IsNullOrWhiteSpace(_config.VerifyToken), _replaceVerifyToken, _verifyTokenReplacement, SetReplaceVerifyToken, SetVerifyTokenReplacement)
+                            @SecretEditor("App Secret", !string.IsNullOrWhiteSpace(_config.AppSecret), _replaceAppSecret, _appSecretReplacement, SetReplaceAppSecret, SetAppSecretReplacement)
+                        </div>
+                        <div class="wa-business-block">
+                            <h3>Webhook</h3>
+                            <dl class="wa-business-definition">
+                                <div><dt>Ruta interna</dt><dd>@metaDraft.WebhookPath</dd></div>
+                                <div><dt>Routing SaaS</dt><dd>@(HasWebhookToken ? "Configurado" : "No configurado")</dd></div>
+                                <div><dt>Callback para Meta</dt><dd>@GetCallbackStatus(metaDraft)</dd></div>
+                            </dl>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="wa-api-detail__heading">
+                            <div><h2>Integración Meta</h2><p>Configuración global de WhatsApp Cloud API para esta base.</p></div>
+                            <AlfaTag Tone="AlfaTagTone.Neutral">@GetMetaConfigurationStatus()</AlfaTag>
+                        </div>
+                        <div class="wa-business-block">
+                            <h3>Configuración</h3>
+                            <dl class="wa-business-definition">
+                                <div><dt>Modo</dt><dd>@GetProviderModeLabel(_config.ProviderMode)</dd></div>
+                                <div><dt>Proveedor</dt><dd>@GetProviderLabel(_config.DefaultProvider)</dd></div>
+                                <div><dt>WABA ID</dt><dd>@DisplayApiValue(_config.BusinessAccountId)</dd></div>
+                                <div><dt>Graph API</dt><dd>@DisplayApiValue(_config.ApiVersion)</dd></div>
+                                <div><dt>Base pública HTTPS</dt><dd>@DisplayApiValue(_config.PublicBaseUrl)</dd></div>
+                            </dl>
+                        </div>
+                        <details class="wa-api-technical">
+                            <summary>Información técnica</summary>
+                            <dl class="wa-business-definition wa-api-technical__body">
+                                <div><dt>Fuente de configuración</dt><dd>@DisplaySource(_config.ConfigSource)</dd></div>
+                            </dl>
+                        </details>
+                        <div class="wa-business-block">
+                            <h3>Credenciales</h3>
+                            <dl class="wa-business-definition">
+                                <div><dt>Access Token</dt><dd>@GetSecretStatus(_config.AccessToken)</dd></div>
+                                <div><dt>Verify Token</dt><dd>@GetSecretStatus(_config.VerifyToken)</dd></div>
+                                <div><dt>App Secret</dt><dd>@GetSecretStatus(_config.AppSecret)</dd></div>
+                            </dl>
+                        </div>
+                        <div class="wa-business-block">
+                            <h3>Webhook</h3>
+                            <dl class="wa-business-definition">
+                                <div><dt>Ruta interna</dt><dd>@DisplayApiValue(_config.WebhookPath)</dd></div>
+                                <div><dt>Routing SaaS</dt><dd>@(HasWebhookToken ? "Configurado" : "No configurado")</dd></div>
+                                <div class="wa-api-callback-row">
+                                    <dt>Callback para Meta</dt>
+                                    <dd>
+                                        <strong>@GetCallbackStatus(_config)</strong>
+                                        @if (HasConfiguredCallback(_config))
+                                        {
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="CopyMetaCallbackAsync">Copiar callback</AlfaButton>
+                                        }
+                                    </dd>
+                                </div>
+                            </dl>
+                        </div>
+                    }
+                }
+                else if (_addingApiNumero)
+                {
+                    <div class="wa-api-detail__heading"><div><h2>Nuevo número</h2><p>Registrá un número existente de Meta Cloud API.</p></div></div>
+                    <div class="wa-business-block">
+                        <h3>Identificación</h3>
+                        <div class="wa-fields">
+                            <AlfaInput Label="Nombre" @bind-Value="_nuevoNumero.Nombre" Placeholder="Ej: Ventas Norte" />
+                            <div class="wa-field-with-helper">
+                                <AlfaInput Label="Phone Number ID" @bind-Value="_nuevoNumero.PhoneNumberId" Placeholder="Identificador provisto por Meta" />
+                                <span>Identificador del número provisto por Meta. No es el número de teléfono.</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+                else if (_apiNumeroDraft is { } apiDraft)
+                {
+                    <div class="wa-api-detail__heading"><div><h2>Editar @GetNumeroDisplayName(apiDraft)</h2><p>Los cambios se aplican únicamente al guardar.</p></div></div>
+                    <div class="wa-business-block">
+                        <h3>Identificación</h3>
+                        <div class="wa-fields">
+                            <AlfaInput Label="Nombre" @bind-Value="apiDraft.Nombre" />
+                            <div class="wa-field-with-helper">
+                                <AlfaInput Label="Phone Number ID" @bind-Value="apiDraft.PhoneNumberId" />
+                                <span>Identificador del número provisto por Meta. No es el número de teléfono.</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="wa-business-block">
+                        <div class="wa-business-block__header"><h3>Usuarios con acceso</h3><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="OpenApiAccessDialog">Asignar usuarios</AlfaButton></div>
+                        @ApiUsers(apiDraft)
+                    </div>
+                    <details class="wa-api-technical">
+                        <summary>Información técnica</summary>
+                        <dl class="wa-business-definition wa-api-technical__body"><div><dt>ID interno</dt><dd>@apiDraft.IdNumero</dd></div><div><dt>Proveedor</dt><dd>Meta Cloud API</dd></div></dl>
+                    </details>
+                }
+                else if (SelectedApiNumero is { } selectedNumero)
+                {
+                    <div class="wa-api-detail__heading">
+                        <div><h2>@GetNumeroDisplayName(selectedNumero)</h2><p>Detalle del número configurado en Meta Cloud API.</p></div>
+                        @if (IsConfiguredGlobalApiNumero(selectedNumero)) { <AlfaTag Tone="AlfaTagTone.Accent">Predeterminado</AlfaTag> }
+                    </div>
+                    <div class="wa-business-block">
+                        <h3>Identificación</h3>
+                        <dl class="wa-business-definition"><div><dt>Nombre</dt><dd>@GetNumeroDisplayName(selectedNumero)</dd></div><div><dt>Phone Number ID</dt><dd>@selectedNumero.PhoneNumberId</dd></div><div><dt>Proveedor</dt><dd>Meta Cloud API</dd></div></dl>
+                    </div>
+                    <div class="wa-business-block">
+                        <div class="wa-business-block__header"><h3>Usuarios con acceso</h3><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="OpenApiAccessDialog">Asignar usuarios</AlfaButton></div>
+                        @ApiUsers(selectedNumero)
+                    </div>
+                    <details class="wa-api-technical">
+                        <summary>Información técnica</summary>
+                        <dl class="wa-business-definition wa-api-technical__body"><div><dt>ID interno</dt><dd>@selectedNumero.IdNumero</dd></div></dl>
+                    </details>
+                }
+                else
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults" Title="Seleccioná una opción" Message="Elegí Integración Meta o uno de los números de la lista." />
+                }
+            </section>
+        </div>
     }
 
     @if (_activePrimaryTab == "canales" && _activeChannelTab == "instagram")
@@ -1860,22 +1850,29 @@
     }
 
     /// <summary>
-    /// La pestaña WhatsApp Business sólo lista cuentas activas -- "Cerrar sesión" pone Activo=false
-    /// (ver ClearWhatsAppWebPairingAsync) sin tocar la fila ni el historial. En Meta Cloud API, en
-    /// cambio, también mostramos números inactivos si todavía tienen usuarios asignados o coinciden
-    /// con la API global: pueden tener conversaciones históricas o recibir webhooks reales.
+    /// La pestaña WhatsApp Business sólo lista cuentas activas administradas por Web/QR. WhatsApp API
+    /// muestra todos los números cuya clasificación real no contiene datos de sesión Web; Activo,
+    /// usuarios y predeterminado no participan de esa clasificación.
     /// </summary>
     // Criterio UI vigente: Business = Web/QR; API = Meta Cloud API por Phone Number ID.
     private IEnumerable<ConversacionWhatsAppNumeroDto> ActiveBusinessNumeros => _numeros.Where(n => n.Activo && IsWhatsAppWebManagedNumero(n));
     private IEnumerable<ConversacionWhatsAppNumeroDto> WhatsAppApiNumeros
         => _numeros
-            .Where(n => !IsWhatsAppWebManagedNumero(n) && ShouldShowApiNumero(n))
+            .Where(n => !IsWhatsAppWebManagedNumero(n))
             .OrderByDescending(n => IsConfiguredGlobalApiNumero(n))
-            .ThenByDescending(n => n.Activo)
-            .ThenByDescending(n => n.Usuarios.Count)
             .ThenBy(n => n.Nombre);
     private ConversacionWhatsAppNumeroDto _nuevoNumero = new() { Activo = true };
     private ConversacionWhatsAppNumeroDto? _apiNumeroDraft;
+    private ConversacionWhatsAppNumeroDto? _apiAccessDraft;
+    private bool ApiAccessSaving { get; set; }
+    private ConversacionWhatsAppConfigDto? _metaConfigDraft;
+    private string _apiWorkspaceView = "integracion";
+    private bool _replaceAccessToken;
+    private bool _replaceVerifyToken;
+    private bool _replaceAppSecret;
+    private string _accessTokenReplacement = string.Empty;
+    private string _verifyTokenReplacement = string.Empty;
+    private string _appSecretReplacement = string.Empty;
     private ConversacionWhatsAppNumeroDto? _businessNumeroDraft;
     private ConversacionWhatsAppNumeroDto? _businessAccessDraft;
     private bool BusinessAccessSaving { get; set; }
@@ -2090,10 +2087,8 @@
     {
         var onBusiness = IsWhatsAppBusinessView;
         var editingBusiness = IsEditingBusinessNumero;
-        var editingApiNumero = _activePrimaryTab == "canales"
-            && _activeChannelTab == "whatsapp"
-            && _activeWhatsAppSection == "general"
-            && (_apiNumeroDraft is not null || _addingApiNumero);
+        var editingMetaIntegration = IsWhatsAppApiView && _metaConfigDraft is not null;
+        var editingApiNumero = IsWhatsAppApiView && (_apiNumeroDraft is not null || _addingApiNumero);
         var editingRegla = _activePrimaryTab == "automatizacion" && _reglaEdicion is not null;
 
         IReadOnlyList<PageHeaderAction> actions;
@@ -2140,6 +2135,33 @@
                 }
             ];
         }
+        else if (editingMetaIntegration)
+        {
+            actions =
+            [
+                new()
+                {
+                    Key = "guardar-integracion-meta",
+                    Label = Saving ? "Guardando..." : "Guardar",
+                    Icon = "bi-floppy",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Saving,
+                    Busy = Saving,
+                    OnClick = SaveMetaIntegrationDraftAsync
+                },
+                new()
+                {
+                    Key = "cancelar-integracion-meta",
+                    Label = "Cancelar",
+                    Icon = "bi-x-circle",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = Saving,
+                    OnClick = CancelMetaIntegrationEditAsync
+                }
+            ];
+        }
         else if (editingApiNumero || editingRegla)
         {
             actions =
@@ -2165,15 +2187,14 @@
                     Style = PageHeaderActionStyle.Ghost,
                     Priority = PageHeaderActionPriority.Essential,
                     Disabled = Saving,
-                    OnClick = () =>
+                    OnClick = async () =>
                     {
                         if (editingRegla)
                             CancelarEdicionRegla();
                         else if (_addingApiNumero)
-                            CancelAddApiNumero();
+                            await CancelAddApiNumeroAsync();
                         else
-                            CancelApiNumeroEdit();
-                        return Task.CompletedTask;
+                            await CancelApiNumeroEditAsync();
                     }
                 }
             ];
@@ -2239,28 +2260,61 @@
             }
             else
             {
-                if (_activePrimaryTab == "canales" && _activeChannelTab == "whatsapp" && _activeWhatsAppSection == "general")
+                if (IsWhatsAppApiView)
+                {
+                    if (IsApiIntegrationView)
+                    {
+                        listActions.Add(new PageHeaderAction
+                        {
+                            Key = "editar-integracion-meta",
+                            Label = "Editar integración",
+                            Icon = "bi-pencil",
+                            Style = PageHeaderActionStyle.Primary,
+                            Priority = PageHeaderActionPriority.Essential,
+                            Disabled = Loading || Saving,
+                            OnClick = StartMetaIntegrationEditAsync
+                        });
+                    }
+                    else
+                    {
+                        if (SelectedApiNumero is not null)
+                        {
+                            listActions.Add(new PageHeaderAction
+                            {
+                                Key = "editar-numero-api",
+                                Label = "Editar",
+                                Icon = "bi-pencil",
+                                Style = PageHeaderActionStyle.Ghost,
+                                Priority = PageHeaderActionPriority.Essential,
+                                Disabled = Loading || Saving,
+                                OnClick = StartEditSelectedApiNumeroAsync
+                            });
+                        }
+
+                        listActions.Add(new PageHeaderAction
+                        {
+                            Key = "nuevo-numero-api",
+                            Label = "Nuevo número",
+                            Icon = "bi-plus-circle",
+                            Style = PageHeaderActionStyle.Primary,
+                            Priority = PageHeaderActionPriority.Essential,
+                            Disabled = Loading || Saving,
+                            OnClick = StartAddApiNumero
+                        });
+                    }
+                }
+                else
                 {
                     listActions.Add(new PageHeaderAction
                     {
-                        Key = "nuevo-numero-api",
-                        Label = "Nuevo número",
-                        Icon = "bi-plus-circle",
-                        Style = PageHeaderActionStyle.Primary,
-                        Priority = PageHeaderActionPriority.Essential,
-                        Disabled = Loading || Saving,
-                        OnClick = StartAddApiNumero
+                        Key = "recargar",
+                        Label = "Recargar",
+                        Icon = "bi-arrow-clockwise",
+                        Style = PageHeaderActionStyle.Ghost,
+                        Disabled = Loading,
+                        OnClick = LoadAsync
                     });
                 }
-                listActions.Add(new PageHeaderAction
-                {
-                    Key = "recargar",
-                    Label = "Recargar",
-                    Icon = "bi-arrow-clockwise",
-                    Style = PageHeaderActionStyle.Ghost,
-                    Disabled = Loading,
-                    OnClick = LoadAsync
-                });
             }
 
             actions = listActions;
@@ -2496,9 +2550,17 @@
     private SettingsEditorMode CurrentEditorMode
         => _addingApiNumero || (_reglaEsNueva && _reglaEdicion is not null) || (IsWhatsAppBusinessView && _connectMethodPromptForIdNumero == 0)
             ? SettingsEditorMode.Create
-            : _apiNumeroDraft is not null || _businessNumeroDraft is not null || _reglaEdicion is not null
+            : _metaConfigDraft is not null || _apiNumeroDraft is not null || _businessNumeroDraft is not null || _reglaEdicion is not null
                 ? SettingsEditorMode.Edit
                 : SettingsEditorMode.Read;
+
+    private bool IsWhatsAppApiView
+        => _activePrimaryTab == "canales"
+           && _activeChannelTab == "whatsapp"
+           && _activeWhatsAppSection == "general";
+
+    private bool IsApiIntegrationView
+        => IsWhatsAppApiView && string.Equals(_apiWorkspaceView, "integracion", StringComparison.Ordinal);
 
     private bool IsWhatsAppBusinessView
         => _activePrimaryTab == "canales"
@@ -2513,12 +2575,17 @@
            || (SelectedBusinessNumero is { } numero && IsPairingFlowActive(numero.IdNumero));
 
     private bool HasUnsavedChanges
-        => (_apiNumeroDraft is not null && SelectedApiNumero is not null && !WhatsAppNumeroEquals(_apiNumeroDraft, SelectedApiNumero))
+        => (_metaConfigDraft is not null && !WhatsAppConfigEquals(_metaConfigDraft, _config))
+           || HasSecretReplacementChanges
+           || (_apiNumeroDraft is not null && SelectedApiNumero is not null && !WhatsAppNumeroEquals(_apiNumeroDraft, SelectedApiNumero))
            || (_businessNumeroDraft is not null && SelectedBusinessNumero is not null && !WhatsAppNumeroEquals(_businessNumeroDraft, SelectedBusinessNumero))
            || (_addingApiNumero && !WhatsAppNumeroEquals(_nuevoNumero, new ConversacionWhatsAppNumeroDto { Activo = true }))
            || (_reglaEdicion is not null && _reglaOriginal is not null && !ReglaEquals(_reglaEdicion, _reglaOriginal))
            || IsAdministradoresDirty
            || IsAutomatizacionesDirty;
+
+    private bool HasSecretReplacementChanges
+        => _replaceAccessToken || _replaceVerifyToken || _replaceAppSecret;
 
     private bool IsAdministradoresDirty
         => !_administradores.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
@@ -2558,7 +2625,10 @@
 
     private void DiscardCurrentEditor()
     {
+        _metaConfigDraft = null;
+        ResetSecretReplacementState();
         _apiNumeroDraft = null;
+        _apiAccessDraft = null;
         _businessNumeroDraft = null;
         _addingApiNumero = false;
         _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
@@ -2649,8 +2719,8 @@
         {
             Severity = AppUiFeedbackSeverity.Warning,
             Title = "Token de webhook requerido",
-            Message = "Seleccioná una base activa y recargá la pantalla para generar el token propio antes de guardar la configuración del canal.",
-            Suggestion = "En SaaS, Meta y Mercado Libre deben usar la URL con token para que AlfaCore identifique el cliente/base sin depender de una sesión."
+            Message = "Esta base todavía no tiene un token propio de webhook. No se generó ninguno automáticamente.",
+            Suggestion = "Solicitá su generación explícita desde el flujo de Soporte/Webhooks antes de publicar el callback SaaS."
         };
         return false;
     }
@@ -3171,36 +3241,45 @@
     }
 
     private Task SelectApiNumero(ConversacionWhatsAppNumeroDto numero)
-        => RequestNavigationAsync(() =>
+        => RequestNavigationAsync(async () =>
         {
-            ApplySelectApiNumero(numero);
-            return Task.CompletedTask;
+            _apiWorkspaceView = "numero";
+            _selectedApiNumeroId = numero.IdNumero;
+            _apiNumeroDraft = null;
+            _addingApiNumero = false;
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
         });
 
-    private void ApplySelectApiNumero(ConversacionWhatsAppNumeroDto numero)
-    {
-        _selectedApiNumeroId = numero.IdNumero;
-        _addingApiNumero = false;
-        _apiNumeroDraft = CloneNumero(numero);
-        UpdatePageHeader();
-    }
+    private Task SelectApiIntegration()
+        => RequestNavigationAsync(async () =>
+        {
+            _apiWorkspaceView = "integracion";
+            _apiNumeroDraft = null;
+            _addingApiNumero = false;
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+        });
 
-    private void StartEditSelectedApiNumero()
+    private async Task StartEditSelectedApiNumeroAsync()
     {
         if (SelectedApiNumero is not null)
             _apiNumeroDraft = CloneNumero(SelectedApiNumero);
+
         UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private Task StartAddApiNumero()
-        => RequestNavigationAsync(() =>
+        => RequestNavigationAsync(async () =>
         {
             ApplyStartAddApiNumero();
-            return Task.CompletedTask;
+            await InvokeAsync(StateHasChanged);
         });
 
     private void ApplyStartAddApiNumero()
     {
+        _apiWorkspaceView = "numero";
         _apiNumeroDraft = null;
         _selectedApiNumeroId = null;
         _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
@@ -3208,18 +3287,19 @@
         UpdatePageHeader();
     }
 
-    private void CancelApiNumeroEdit()
+    private async Task CancelApiNumeroEditAsync()
     {
         _apiNumeroDraft = null;
-        _selectedApiNumeroId = null;
         UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
-    private void CancelAddApiNumero()
+    private async Task CancelAddApiNumeroAsync()
     {
         _addingApiNumero = false;
         _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
         UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task SaveApiNumeroDraftAsync()
@@ -3231,9 +3311,137 @@
         if (_feedback?.Severity == AppUiFeedbackSeverity.Success)
         {
             _apiNumeroDraft = null;
-            _selectedApiNumeroId = null;
-            UpdatePageHeader();
         }
+
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task StartMetaIntegrationEditAsync()
+    {
+        _metaConfigDraft = CloneWhatsAppConfig(_config);
+        ResetSecretReplacementState();
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CancelMetaIntegrationEditAsync()
+    {
+        _metaConfigDraft = null;
+        ResetSecretReplacementState();
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveMetaIntegrationDraftAsync()
+    {
+        if (_metaConfigDraft is null)
+            return;
+
+        if (!EnsureSaaSWebhookTokenReady())
+        {
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if ((_replaceAccessToken && string.IsNullOrWhiteSpace(_accessTokenReplacement))
+            || (_replaceVerifyToken && string.IsNullOrWhiteSpace(_verifyTokenReplacement))
+            || (_replaceAppSecret && string.IsNullOrWhiteSpace(_appSecretReplacement)))
+        {
+            _feedbackScope = "whatsapp";
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Falta la nueva credencial",
+                Message = "Completá cada secreto marcado para reemplazar o cancelá su reemplazo."
+            };
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        var draft = CloneWhatsAppConfig(_metaConfigDraft);
+        if (_replaceAccessToken)
+            draft.AccessToken = _accessTokenReplacement;
+        if (_replaceVerifyToken)
+            draft.VerifyToken = _verifyTokenReplacement;
+        if (_replaceAppSecret)
+            draft.AppSecret = _appSecretReplacement;
+
+        Saving = true;
+        _feedbackScope = "whatsapp";
+        _feedback = null;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWhatsAppConfigAsync(draft),
+            "No se pudo guardar la integración Meta.");
+
+        if (result.Success)
+        {
+            draft.ConfigSource = "TA_CONFIGURACION";
+            _config = draft;
+            _metaConfigDraft = null;
+            ResetSecretReplacementState();
+            _feedback = AppUiMessage.Success("Integración guardada", "La configuración Meta quedó actualizada.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        Saving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task OpenApiAccessDialog()
+    {
+        if (SelectedApiNumero is { } numero)
+            _apiAccessDraft = CloneNumero(numero);
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task CancelApiAccessDialog()
+    {
+        _apiAccessDraft = null;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SaveApiAccessAsync()
+    {
+        if (_apiAccessDraft is null)
+            return;
+
+        ApiAccessSaving = true;
+        _feedbackScope = "whatsapp";
+        _feedback = null;
+        await InvokeAsync(StateHasChanged);
+
+        var draft = CloneNumero(_apiAccessDraft);
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWhatsAppNumeroAsync(draft),
+            "No se pudieron guardar los usuarios con acceso.");
+
+        if (result.Success)
+        {
+            await LoadNumerosAsync();
+            if (_apiNumeroDraft is not null && _apiNumeroDraft.IdNumero == draft.IdNumero)
+                _apiNumeroDraft.Usuarios = [.. draft.Usuarios];
+
+            _apiAccessDraft = null;
+            _feedback = AppUiMessage.Success("Accesos guardados", "La asignación de usuarios quedó actualizada.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+
+        ApiAccessSaving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private static ConversacionWhatsAppNumeroDto CloneNumero(ConversacionWhatsAppNumeroDto source)
@@ -3261,6 +3469,65 @@
             Usuarios = [.. source.Usuarios]
         };
 
+    private static ConversacionWhatsAppConfigDto CloneWhatsAppConfig(ConversacionWhatsAppConfigDto source)
+        => new()
+        {
+            ProviderMode = source.ProviderMode,
+            DefaultProvider = source.DefaultProvider,
+            VerifyToken = source.VerifyToken,
+            AccessToken = source.AccessToken,
+            PhoneNumberId = source.PhoneNumberId,
+            BusinessAccountId = source.BusinessAccountId,
+            AppSecret = source.AppSecret,
+            ApiVersion = source.ApiVersion,
+            PublicBaseUrl = source.PublicBaseUrl,
+            WebhookPath = source.WebhookPath,
+            WebSessionMode = source.WebSessionMode,
+            WebPhoneNumber = source.WebPhoneNumber,
+            WebSessionStatus = source.WebSessionStatus,
+            WebDisplayName = source.WebDisplayName,
+            WebInstanceName = source.WebInstanceName,
+            WebPairingToken = source.WebPairingToken,
+            WebPairingCode = source.WebPairingCode,
+            WebPairingQrPayload = source.WebPairingQrPayload,
+            WebPairingQrDataUrl = source.WebPairingQrDataUrl,
+            WebPairingGeneratedAtUtc = source.WebPairingGeneratedAtUtc,
+            WebPairingExpiresAtUtc = source.WebPairingExpiresAtUtc,
+            WebRuntimeState = source.WebRuntimeState,
+            WebLastError = source.WebLastError,
+            WebWorkerProcessId = source.WebWorkerProcessId,
+            WebRuntimeUpdatedAtUtc = source.WebRuntimeUpdatedAtUtc,
+            ConfigSource = source.ConfigSource
+        };
+
+    private static bool WhatsAppConfigEquals(ConversacionWhatsAppConfigDto left, ConversacionWhatsAppConfigDto right)
+        => left.ProviderMode == right.ProviderMode
+           && left.DefaultProvider == right.DefaultProvider
+           && left.VerifyToken == right.VerifyToken
+           && left.AccessToken == right.AccessToken
+           && left.PhoneNumberId == right.PhoneNumberId
+           && left.BusinessAccountId == right.BusinessAccountId
+           && left.AppSecret == right.AppSecret
+           && left.ApiVersion == right.ApiVersion
+           && left.PublicBaseUrl == right.PublicBaseUrl
+           && left.WebhookPath == right.WebhookPath
+           && left.WebSessionMode == right.WebSessionMode
+           && left.WebPhoneNumber == right.WebPhoneNumber
+           && left.WebSessionStatus == right.WebSessionStatus
+           && left.WebDisplayName == right.WebDisplayName
+           && left.WebInstanceName == right.WebInstanceName
+           && left.WebPairingToken == right.WebPairingToken
+           && left.WebPairingCode == right.WebPairingCode
+           && left.WebPairingQrPayload == right.WebPairingQrPayload
+           && left.WebPairingQrDataUrl == right.WebPairingQrDataUrl
+           && left.WebPairingGeneratedAtUtc == right.WebPairingGeneratedAtUtc
+           && left.WebPairingExpiresAtUtc == right.WebPairingExpiresAtUtc
+           && left.WebRuntimeState == right.WebRuntimeState
+           && left.WebLastError == right.WebLastError
+           && left.WebWorkerProcessId == right.WebWorkerProcessId
+           && left.WebRuntimeUpdatedAtUtc == right.WebRuntimeUpdatedAtUtc
+           && left.ConfigSource == right.ConfigSource;
+
     private static bool WhatsAppNumeroEquals(ConversacionWhatsAppNumeroDto left, ConversacionWhatsAppNumeroDto right)
         => left.IdNumero == right.IdNumero
            && left.PhoneNumberId == right.PhoneNumberId
@@ -3283,6 +3550,79 @@
            && left.WebRuntimeUpdatedAtUtc == right.WebRuntimeUpdatedAtUtc
            && left.Usuarios.OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
                .SequenceEqual(right.Usuarios.OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+
+    private RenderFragment SecretEditor(
+        string label,
+        bool configured,
+        bool replaceRequested,
+        string replacement,
+        Action<bool> setReplace,
+        Action<string> setReplacement)
+        => @<div class="wa-secret-row">
+            <div class="wa-secret-row__status">
+                <span>@label</span>
+                <strong>@(configured ? "Configurado" : "No configurado")</strong>
+            </div>
+            @if (!replaceRequested)
+            {
+                <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                            Size="AlfaSize.Sm"
+                            OnClick="@(_ => { setReplace(true); return Task.CompletedTask; })">Reemplazar</AlfaButton>
+            }
+            else
+            {
+                <div class="wa-secret-row__editor">
+                    <AlfaInput Label="Nuevo valor"
+                               Type="password"
+                               Value="@replacement"
+                               ValueChanged="@(value => { setReplacement(value ?? string.Empty); return Task.CompletedTask; })"
+                               Placeholder="Ingresá el nuevo secreto" />
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                Size="AlfaSize.Sm"
+                                OnClick="@(_ => { setReplace(false); setReplacement(string.Empty); return Task.CompletedTask; })">Cancelar reemplazo</AlfaButton>
+                </div>
+            }
+        </div>;
+
+    private static RenderFragment ApiUsers(ConversacionWhatsAppNumeroDto numero)
+    {
+        const int visibleUsers = 5;
+        var users = numero.Usuarios.OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToArray();
+        var remaining = Math.Max(0, users.Length - visibleUsers);
+
+        return users.Length > 0
+            ? @<div class="wa-api-users-summary">
+                <strong>@users.Length usuario(s) con acceso</strong>
+                <ul class="wa-business-users">
+                    @foreach (var usuario in users.Take(visibleUsers))
+                    {
+                        <li><i class="bi bi-person" aria-hidden="true"></i>@usuario</li>
+                    }
+                    @if (remaining > 0)
+                    {
+                        <li class="wa-api-users-summary__remaining">+@remaining</li>
+                    }
+                </ul>
+            </div>
+            : @<p class="wa-field-note">Ningún usuario asignado.</p>;
+    }
+
+    private void SetReplaceAccessToken(bool value) => _replaceAccessToken = value;
+    private void SetReplaceVerifyToken(bool value) => _replaceVerifyToken = value;
+    private void SetReplaceAppSecret(bool value) => _replaceAppSecret = value;
+    private void SetAccessTokenReplacement(string value) => _accessTokenReplacement = value;
+    private void SetVerifyTokenReplacement(string value) => _verifyTokenReplacement = value;
+    private void SetAppSecretReplacement(string value) => _appSecretReplacement = value;
+
+    private void ResetSecretReplacementState()
+    {
+        _replaceAccessToken = false;
+        _replaceVerifyToken = false;
+        _replaceAppSecret = false;
+        _accessTokenReplacement = string.Empty;
+        _verifyTokenReplacement = string.Empty;
+        _appSecretReplacement = string.Empty;
+    }
 
     private static ConversacionReglaDto CloneRegla(ConversacionReglaDto source)
         => new()
@@ -3411,21 +3751,6 @@
     private static HashSet<string> CloneAdministradores(IEnumerable<string> source)
         => new(source, StringComparer.OrdinalIgnoreCase);
 
-    private sealed class SecretReplacementDraft(string persistedValue)
-    {
-        public string PersistedValue { get; } = persistedValue;
-        public bool ReplaceRequested { get; set; }
-        public string ReplacementValue { get; set; } = string.Empty;
-        public string EffectiveValue => ReplaceRequested ? ReplacementValue : PersistedValue;
-        public bool HasUnsavedChanges => ReplaceRequested && ReplacementValue != PersistedValue;
-
-        public void CancelReplacement()
-        {
-            ReplaceRequested = false;
-            ReplacementValue = string.Empty;
-        }
-    }
-
     private async Task SaveNumeroAsync(ConversacionWhatsAppNumeroDto numero)
     {
         _feedbackScope = "whatsapp";
@@ -3447,6 +3772,8 @@
         }
 
         Saving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task AddNumeroAsync()
@@ -3460,6 +3787,7 @@
                 Title = "Faltan datos",
                 Message = "Completá nombre y Phone Number ID antes de agregar el número."
             };
+            await InvokeAsync(StateHasChanged);
             return;
         }
 
@@ -3472,11 +3800,14 @@
 
         if (result.Success)
         {
-            _feedback = AppUiMessage.Success("Número agregado", $"'{_nuevoNumero.Nombre}' ya está disponible.");
+            var phoneNumberId = _nuevoNumero.PhoneNumberId.Trim();
+            var nombre = _nuevoNumero.Nombre;
+            _feedback = AppUiMessage.Success("Número agregado", $"'{nombre}' ya está disponible.");
             _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
             _addingApiNumero = false;
             await LoadNumerosAsync();
-            UpdatePageHeader();
+            _selectedApiNumeroId = WhatsAppApiNumeros.FirstOrDefault(numero =>
+                string.Equals(numero.PhoneNumberId.Trim(), phoneNumberId, StringComparison.OrdinalIgnoreCase))?.IdNumero;
         }
         else
         {
@@ -3484,6 +3815,8 @@
         }
 
         Saving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ToggleAdministrador(string usuario, bool isChecked)
@@ -3551,6 +3884,8 @@
             _automatizacionesOriginal = CloneAutomatizaciones(_automatizacionesConfig);
 
         Saving = false;
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
     }
 
     private void CancelAutomatizacionesEdit()
@@ -4350,12 +4685,34 @@
     }
 
     private string GetWebhookUrlPreview()
+        => GetWebhookUrlPreview(_config);
+
+    private string GetWebhookUrlPreview(ConversacionWhatsAppConfigDto config)
     {
-        var basePath = string.IsNullOrWhiteSpace(_config.PublicBaseUrl)
-            ? $"{_suggestedBaseUrl.TrimEnd('/')}{_config.WebhookPath}"
-            : _config.GetWebhookUrl();
+        var basePath = string.IsNullOrWhiteSpace(config.PublicBaseUrl)
+            ? $"{_suggestedBaseUrl.TrimEnd('/')}{config.WebhookPath}"
+            : config.GetWebhookUrl();
 
         return BuildTokenizedWebhookUrl(basePath) ?? basePath;
+    }
+
+    private bool HasConfiguredCallback(ConversacionWhatsAppConfigDto config)
+        => HasWebhookToken
+           && !string.IsNullOrWhiteSpace(config.PublicBaseUrl)
+           && !string.IsNullOrWhiteSpace(config.WebhookPath);
+
+    private string GetCallbackStatus(ConversacionWhatsAppConfigDto config)
+        => HasConfiguredCallback(config) ? "Configurado" : "No configurado";
+
+    private async Task CopyMetaCallbackAsync()
+    {
+        if (!HasConfiguredCallback(_config))
+            return;
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", GetWebhookUrlPreview(_config));
+        _feedbackScope = "whatsapp";
+        _feedback = AppUiMessage.Success("Callback copiado", "La URL completa se copió al portapapeles.");
+        await InvokeAsync(StateHasChanged);
     }
 
     private string GetInstagramWebhookUrlPreview()
@@ -4439,8 +4796,20 @@
         var subsection = category?.Children.FirstOrDefault(x => x.Key == GetActiveSecondaryTab());
         var context = subsection?.Label ?? category?.Label ?? "Configuración";
 
-        if (_activePrimaryTab == "canales" && GetActiveSecondaryTab() == "whatsapp-api" && SelectedApiNumero is not null)
-            return $"{context} · {GetNumeroDisplayName(SelectedApiNumero)}";
+        if (IsWhatsAppApiView)
+        {
+            if (IsApiIntegrationView)
+                return _metaConfigDraft is null ? "WhatsApp API · Integración Meta" : "WhatsApp API · Editar integración Meta";
+            if (_addingApiNumero)
+                return "WhatsApp API · Nuevo número";
+            if (SelectedApiNumero is not null)
+            {
+                var prefix = _apiNumeroDraft is null ? string.Empty : "Editar ";
+                return $"WhatsApp API · {prefix}{GetNumeroDisplayName(SelectedApiNumero)}";
+            }
+
+            return "WhatsApp API · Números";
+        }
 
         if (IsWhatsAppBusinessView && _connectMethodPromptForIdNumero == 0)
             return "WhatsApp Business · Conectar";
@@ -4494,9 +4863,38 @@
         => _config.IsReadyForMetaSetup ? "Meta Cloud API configurada" : "Meta Cloud API pendiente de configuración";
 
     private string GetApiNumeroRowClass(ConversacionWhatsAppNumeroDto numero)
-        => _selectedApiNumeroId == numero.IdNumero
+        => !IsApiIntegrationView && _selectedApiNumeroId == numero.IdNumero
             ? "wa-api-number-row is-selected"
             : "wa-api-number-row";
+
+    private string GetApiIntegrationRowClass()
+        => IsApiIntegrationView ? "wa-api-integration-row is-selected" : "wa-api-integration-row";
+
+    private string GetMetaConfigurationStatus()
+        => _config.IsReadyForMetaSetup ? "Configuración cargada" : "Configuración incompleta";
+
+    private static string GetSecretStatus(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "No configurado" : "Configurado";
+
+    private static string DisplayApiValue(string? value)
+        => string.IsNullOrWhiteSpace(value) ? "No configurado" : value.Trim();
+
+    private static string GetProviderModeLabel(string? value)
+        => value switch
+        {
+            ConversacionWhatsAppProviderModes.MetaOnly => "Solo Meta Cloud API",
+            ConversacionWhatsAppProviderModes.WebOnly => "Solo WhatsApp Web",
+            ConversacionWhatsAppProviderModes.MetaAndWeb => "Meta Cloud API y WhatsApp Web",
+            _ => DisplayApiValue(value)
+        };
+
+    private static string GetProviderLabel(string? value)
+        => value switch
+        {
+            ConversacionWhatsAppProviders.MetaCloud => "Meta Cloud API",
+            ConversacionWhatsAppProviders.WhatsAppWeb => "WhatsApp Web",
+            _ => DisplayApiValue(value)
+        };
 
     private string GetPublicationLabel()
         => _config.IsReadyForMetaSetup ? "Lista para configurar en Meta" : "Falta completar datos";
@@ -4568,11 +4966,6 @@
         return string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.PendingQr, StringComparison.OrdinalIgnoreCase)
             || string.Equals(numero.WebSessionStatus, ConversacionWhatsAppWebSessionStatuses.Connected, StringComparison.OrdinalIgnoreCase);
     }
-
-    private bool ShouldShowApiNumero(ConversacionWhatsAppNumeroDto numero)
-        => numero.Activo
-           || numero.Usuarios.Count > 0
-           || IsConfiguredGlobalApiNumero(numero);
 
     private bool IsConfiguredGlobalApiNumero(ConversacionWhatsAppNumeroDto numero)
         => !string.IsNullOrWhiteSpace(numero.PhoneNumberId)

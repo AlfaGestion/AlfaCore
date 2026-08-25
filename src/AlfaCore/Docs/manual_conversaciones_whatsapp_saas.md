@@ -171,35 +171,34 @@ Ruta habitual:
 
 ### 6.1 Canal WhatsApp
 
-1. Elegir Meta Cloud API como proveedor cuando corresponda.
-2. Cargar Base pública HTTPS.
-3. Cargar Access Token.
-4. Cargar Verify Token.
-5. Cargar WABA ID.
-6. Cargar el Phone Number ID predeterminado.
-7. Revisar la versión de Graph API.
-8. Guardar.
-9. Copiar el callback que muestra AlfaCore, confirmando que en SaaS termine con el token de base.
+1. Abrir `Configuración → Canales → WhatsApp API`.
+2. Seleccionar `Integración Meta`.
+3. Elegir `Editar integración`.
+4. Revisar proveedor, WABA ID, Base pública HTTPS y versión de Graph API.
+5. Usar `Reemplazar` únicamente para la credencial que realmente deba cambiarse.
+6. Guardar desde la barra superior.
+7. Copiar el callback que muestra AlfaCore, confirmando que en SaaS termine con el token de base.
 
 ### 6.2 Secretos
 
 - No compartir Access Token, App Secret, Verify Token ni token de base por chat.
 - No guardarlos en capturas, tickets, commits ni manuales.
 - Si un secreto fue expuesto, rotarlo en Meta o AlfaCore según corresponda.
-- El campo puede aparecer en la pantalla, pero no debe copiarse a documentación de diagnóstico.
+- AlfaCore muestra únicamente `Configurado` o `No configurado`; no muestra el valor persistido.
+- Un secreto solo se modifica después de elegir `Reemplazar` y escribir un valor nuevo.
+- Cancelar la edición o cancelar el reemplazo conserva exactamente la credencial anterior.
 
 ## 7. Alta de varios números Meta Cloud API
 
 Para cada número:
 
-1. Abrir la sección `Números Meta Cloud API`.
-2. Elegir `Agregar número`.
+1. Abrir `Configuración → Canales → WhatsApp API`.
+2. Elegir `Nuevo número`.
 3. Escribir un nombre operativo claro, por ejemplo `Soporte AlfaNet - API`.
 4. Cargar el Phone Number ID, no el teléfono visible.
-5. Marcarlo activo.
-6. Seleccionar al menos un usuario con acceso si debe ser restringido.
-7. Guardar.
-8. Enviar un mensaje real al número para que AlfaCore confirme el Phone Number ID del webhook.
+5. Guardar desde la barra superior.
+6. Seleccionar el número creado y elegir `Asignar usuarios` si debe ser restringido.
+7. Enviar un mensaje real al número para que AlfaCore confirme el Phone Number ID del webhook.
 
 Reglas:
 
@@ -207,14 +206,14 @@ Reglas:
 - el historial queda ligado al número receptor;
 - el filtro superior no cambia el número de la conversación;
 - un número sin usuarios asignados queda visible para todos;
-- un número inactivo puede seguir apareciendo si conserva historial o asignaciones;
+- la clasificación entre WhatsApp API y WhatsApp Business depende de sus datos reales de proveedor/sesión, no de usuarios, estado activo o predeterminado;
 - no reutilizar como global un Phone Number ID perteneciente a otro cliente.
 
 ## 8. Usuarios y administradores
 
 ### 8.1 Usuarios por número
 
-En cada tarjeta de número, abrir `Usuarios con acceso`, marcar los agentes y guardar.
+En el detalle de cada número, elegir `Asignar usuarios`, marcar los agentes y guardar el diálogo.
 
 Para restringir realmente un número debe tener al menos un usuario asignado. Dejarlo sin usuarios
 significa acceso abierto por compatibilidad con instalaciones anteriores.

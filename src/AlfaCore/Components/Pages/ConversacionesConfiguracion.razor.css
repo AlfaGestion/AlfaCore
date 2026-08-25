@@ -490,6 +490,42 @@
 .wa-business-pairing--error > i { color: var(--alfa-danger, #eb5759); font-size: 22px; }
 .wa-business-inline-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
 
+/* WhatsApp API: integración global + números en maestro/detalle, sin ancho máximo global. */
+.wa-api-workspace { display: grid; grid-template-columns: clamp(280px, 22vw, 340px) minmax(0, 1fr); gap: 16px; width: 100%; min-width: 0; min-height: 620px; }
+.wa-api-list, .wa-api-detail { min-width: 0; border: 1px solid var(--alfa-border-default, #333640); border-radius: 8px; background: var(--alfa-bg-surface, #16181d); }
+.wa-api-list { display: flex; flex-direction: column; gap: 10px; padding: 16px; }
+.wa-api-list__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; }
+.wa-api-list__header h2 { margin: 0; color: var(--alfa-text-primary, #f5f5f7); font-size: 15px; line-height: 1.4; font-weight: 600; }
+.wa-api-list__header span { color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; }
+.wa-api-integration-row, .wa-api-number-row { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; width: 100%; padding: 12px; border: 1px solid var(--alfa-border-default, #333640); border-radius: 8px; background: var(--alfa-bg-surface-raised, #1d2026); color: var(--alfa-text-primary, #f5f5f7); text-align: left; cursor: pointer; }
+.wa-api-integration-row:hover, .wa-api-number-row:hover { background: var(--alfa-state-hover, #22262e); }
+.wa-api-integration-row.is-selected, .wa-api-number-row.is-selected { background: var(--alfa-state-selected, #29476b); border-color: var(--alfa-accent, #4f9efa); }
+.wa-api-integration-row:focus-visible, .wa-api-number-row:focus-visible { outline: 2px solid var(--alfa-accent, #4f9efa); outline-offset: 2px; }
+.wa-api-integration-row strong, .wa-api-number-row strong { font-size: 13px; line-height: 1.4; }
+.wa-api-integration-row > span, .wa-api-number-row > span { color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.wa-api-list__status { color: var(--alfa-success, #4abf80) !important; font-weight: 600; }
+.wa-api-list__warning { color: var(--alfa-warning, #f2b840) !important; }
+.wa-api-number-row__meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wa-api-detail { display: flex; flex-direction: column; gap: 12px; padding: 20px 24px; }
+.wa-api-detail__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.wa-api-detail__heading h2 { margin: 0; color: var(--alfa-text-primary, #f5f5f7); font-size: 18px; line-height: 1.35; font-weight: 600; }
+.wa-api-detail__heading p { margin: 6px 0 0; color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; line-height: 1.5; }
+.wa-secret-row { display: grid; grid-template-columns: minmax(180px, 1fr) auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--alfa-border-subtle, #292c33); }
+.wa-secret-row:last-child { border-bottom: 0; padding-bottom: 0; }
+.wa-secret-row__status { display: flex; flex-direction: column; gap: 3px; }
+.wa-secret-row__status span { color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; }
+.wa-secret-row__status strong { color: var(--alfa-text-primary, #f5f5f7); font-size: 13px; }
+.wa-secret-row__editor { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.wa-api-technical { border: 1px solid var(--alfa-border-default, #333640); border-radius: 8px; background: var(--alfa-bg-surface-raised, #1d2026); }
+.wa-api-technical > summary { padding: 14px 16px; color: var(--alfa-text-primary, #f5f5f7); font-size: 13px; line-height: 1.4; font-weight: 600; cursor: pointer; }
+.wa-api-technical__body { margin: 0; padding: 0 16px 16px; }
+.wa-api-callback-row dd { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.wa-field-with-helper { display: flex; flex-direction: column; min-width: 0; }
+.wa-field-with-helper > span { margin-top: 5px; color: var(--alfa-text-secondary, #a6abb5); font-size: 11px; line-height: 1.45; }
+.wa-api-users-summary { display: flex; flex-direction: column; gap: 8px; }
+.wa-api-users-summary > strong { color: var(--alfa-text-secondary, #a6abb5); font-size: 12px; line-height: 1.45; font-weight: 500; }
+.wa-api-users-summary__remaining { color: var(--alfa-text-secondary, #a6abb5); font-weight: 600; }
+
 @media (max-width: 1024px) {
     .wa-layout {
         grid-template-columns: 1fr;
@@ -500,6 +536,16 @@
     .wa-api-numbers-layout {
         grid-template-columns: 1fr;
     }
+
+    .wa-api-workspace { grid-template-columns: clamp(240px, 30vw, 300px) minmax(0, 1fr); }
+}
+
+@media (max-width: 799px) {
+    .wa-api-workspace { grid-template-columns: 1fr; min-height: auto; }
+    .wa-api-list { max-height: 320px; overflow-y: auto; }
+    .wa-api-detail { padding: 16px; }
+    .wa-secret-row, .wa-secret-row__editor { grid-template-columns: 1fr; align-items: stretch; }
+    .wa-business-definition { grid-template-columns: 1fr; }
 }
 
 /* El shell AlfaDesignPilot (App Top Bar + Context Toolbar) le da a .shell__content

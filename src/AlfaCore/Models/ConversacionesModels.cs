@@ -499,6 +499,8 @@ public sealed class ConversacionWebhookResultDto
 public sealed class ConversacionUploadAdjuntoRequest
 {
     public long IdConversacion { get; set; }
+    public int? IdNumeroWhatsApp { get; set; }
+    public bool UsarApiMetaPredeterminada { get; set; }
     public string NombreArchivo { get; set; } = string.Empty;
     public string MimeType { get; set; } = string.Empty;
     public string TipoArchivo { get; set; } = string.Empty;

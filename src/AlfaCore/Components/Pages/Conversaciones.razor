@@ -4497,6 +4497,10 @@
         }
     }
 
+    private bool ShouldSendUsingDefaultMetaApi
+        => ShouldShowDefaultApiSendOption
+           && string.Equals(CurrentWhatsAppSendNumeroOptionValue, WhatsAppDefaultApiOptionValue, StringComparison.Ordinal);
+
     private bool CanUseWhatsAppNumeroForSend(ConversacionWhatsAppNumeroDto numero)
     {
         if (!IsOperationalWhatsAppNumero(numero))
@@ -7687,7 +7691,7 @@
                     Texto = textToSend,
                     MessageType = "TEXT",
                     IdNumeroWhatsApp = CurrentWhatsAppSendNumeroId,
-                    UsarApiMetaPredeterminada = _useWhatsAppDefaultApiForSend,
+                    UsarApiMetaPredeterminada = ShouldSendUsingDefaultMetaApi,
                     WhatsAppReplyToMessageId = quotedMessageId,
                     IdTecnicoAutor = CurrentMessageTechnicianId,
                     UsuarioAccion = CurrentUserNameForAudit,
@@ -10159,6 +10163,8 @@
                 await ConversacionesSvc.UploadAttachmentAsync(new ConversacionUploadAdjuntoRequest
                 {
                     IdConversacion = _selectedConversation.IdConversacion,
+                    IdNumeroWhatsApp = CurrentWhatsAppSendNumeroId,
+                    UsarApiMetaPredeterminada = ShouldSendUsingDefaultMetaApi,
                     NombreArchivo = attachmentToSend.NombreArchivo,
                     MimeType = attachmentToSend.MimeType,
                     TipoArchivo = attachmentToSend.TipoArchivo,

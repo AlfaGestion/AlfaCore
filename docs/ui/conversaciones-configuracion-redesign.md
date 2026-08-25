@@ -1168,3 +1168,69 @@ Routing de webhooks, token multibase, claves `CONV_*`, fallback legacy, tablas y
 - **SEC-4** — Storage de secretos / migración a almacenamiento protegido, si se aprueba.
 
 El orden definitivo de las fases SEC se decide antes de ejecutar cada una. Esta lista es preliminar; C1 puede reorganizarla una vez definida la IA final.
+
+## Etapa 5 — WhatsApp API
+
+Alcance exclusivo: `Configuración → Canales → WhatsApp API`. No se modificó WhatsApp Business/QR ni se avanzó a Instagram.
+
+### Composición y estados
+
+Se separaron dos contextos que antes convivían dentro del mismo formulario y compartían un guardado ambiguo:
+
+- **Integración Meta global**: Read → `Editar integración` → Edit con `Guardar`/`Cancelar`.
+- **Números WhatsApp API**: lista izquierda y detalle derecho; Read → `Editar`/`Nuevo número`; Edit/Create → `Guardar`/`Cancelar`.
+
+La barra contextual reutiliza `MainPageHeader`, acciones esenciales a la izquierda, historial mediante `IPageHeaderNavigationService` y el dirty-state existente. Cada handler invocado desde el header fuerza el rerender del componente propietario. El layout usa sidebar controlado + `minmax(0, 1fr)`, sin `max-width` global; a 1024 conserva maestro/detalle y debajo de 800 apila lista y detalle.
+
+### Integración Meta y secretos
+
+`Editar integración` crea un clon completo de `ConversacionWhatsAppConfigDto`. Son editables: modo, proveedor predeterminado, WABA ID, versión Graph API y Base pública HTTPS. La ruta interna del webhook, callback calculado, routing SaaS, fuente y Phone Number ID global de compatibilidad permanecen derivados o de solo lectura.
+
+Secretos auditados: `AccessToken`, `VerifyToken` y `AppSecret`. Read/Edit normal muestran únicamente `Configurado`/`No configurado`. Cada secreto requiere la acción explícita `Reemplazar`; si no se solicita reemplazo, el clon conserva exactamente el valor original. Guardar rechaza reemplazos vacíos, un fallo conserva el borrador y Cancelar descarta borrador/reemplazos sin persistir. El guardado reutiliza `SaveWhatsAppConfigAsync`; no se agregó persistencia parcial.
+
+`LoadWebhookTokenAsync` continúa usando únicamente `CentralBasesSvc.GetByIdAsync`. No llama a `EnsureWebhookTokenAsync`, no genera tokens durante carga y presenta `No configurado` cuando falta.
+
+### Números Meta Cloud API
+
+Seleccionar un número queda en Read. Edit/Create trabajan sobre `ConversacionWhatsAppNumeroDto` completo e independiente. Campos editables: `Nombre` (identificación operativa) y `PhoneNumberId` (identificador que Meta entrega y clave funcional usada por el UPSERT existente). Solo lectura: `IdNumero` y proveedor; WABA/proveedor globales pertenecen a Integración Meta. Las propiedades Web/QR no se exponen y permanecen preservadas por el clon y el servicio.
+
+`Nuevo número` no persiste al abrir; Guardar reutiliza `SaveWhatsAppNumeroAsync` y mantiene su semántica de adopción/actualización por Phone Number ID. La clasificación sigue usando `IsWhatsAppWebManagedNumero`: API muestra exclusivamente registros no-Web y ya no filtra esa clasificación por `Activo`, usuarios ni número predeterminado.
+
+`Asignar usuarios` usa `AlfaDialog`, lista real y clon completo con colección `Usuarios` independiente. Cancelar descarta; Guardar reutiliza `SaveWhatsAppNumeroAsync`, recarga y conserva las demás propiedades.
+
+### Embedded Signup auditado
+
+No existe actualmente un flujo de WhatsApp Embedded Signup en AlfaCore: no hay botón de inicio, callback OAuth de WhatsApp, intercambio de código, consulta automática de WABA ni carga automática de Phone Number IDs. Los callbacks OAuth existentes son de Instagram y Mercado Libre. Por lo tanto, Etapa 5 no representa ni inventa onboarding paralelo; WABA/credenciales se administran en Integración Meta y los números mediante su alta explícita.
+
+### Inventario de acciones visibles
+
+| Contexto | Label | Handler | Método final | Estado |
+|---|---|---|---|---|
+| Todos | Atrás | `BuildHistoryActions` | `HeaderNavigation.GoBack` vía dirty-state | Deshabilitado si no hay historial |
+| Todos | Adelante | `BuildHistoryActions` | `HeaderNavigation.GoForward` vía dirty-state | Deshabilitado si no hay historial futuro |
+| Integración Read | Editar integración | `StartMetaIntegrationEditAsync` | Crea clon; no persiste | Deshabilitado durante carga/guardado |
+| Integración Edit | Guardar | `SaveMetaIntegrationDraftAsync` | `SaveWhatsAppConfigAsync` | Busy/deshabilitado al guardar |
+| Integración Edit | Cancelar | `CancelMetaIntegrationEditAsync` | Descarta clon; no persiste | Deshabilitado al guardar |
+| Secreto Edit | Reemplazar | setters `SetReplace*` | Habilita input local | Habilitado en Edit |
+| Secreto Edit | Cancelar reemplazo | setters `SetReplace*`/`Set*Replacement` | Limpia reemplazo local | Habilitado en Edit |
+| Número Read | Editar | `StartEditSelectedApiNumeroAsync` | Crea clon; no persiste | Requiere selección |
+| Número Read | Nuevo número | `StartAddApiNumero` | Abre Create; no persiste | Deshabilitado durante carga/guardado |
+| Número Edit | Guardar | `SaveApiNumeroDraftAsync` | `SaveWhatsAppNumeroAsync` | Busy/deshabilitado al guardar |
+| Número Edit | Cancelar | `CancelApiNumeroEditAsync` | Descarta clon; no persiste | Deshabilitado al guardar |
+| Número Create | Guardar | `AddNumeroAsync` | `SaveWhatsAppNumeroAsync` | Busy/deshabilitado al guardar |
+| Número Create | Cancelar | `CancelAddApiNumeroAsync` | Descarta alta; no persiste | Deshabilitado al guardar |
+| Accesos | Asignar usuarios | `OpenApiAccessDialog` | Crea clon; no persiste | Read/Edit del número |
+| Accesos dialog | Guardar | `SaveApiAccessAsync` | `SaveWhatsAppNumeroAsync` | Busy al guardar |
+| Accesos dialog | Cancelar | `CancelApiAccessDialog` | Descarta clon; no persiste | Deshabilitado al guardar |
+| Lista | Integración Meta | `SelectApiIntegration` | Navegación interna read-only | Protegido por dirty-state |
+| Lista | Número | `SelectApiNumero` | Selección read-only | Protegido por dirty-state |
+
+### Pendientes de validación manual
+
+Validar visualmente y por interacción real a 2048, 1440, 1024 y menos de 800 px; comprobar los quince casos funcionales definidos para Etapa 5 contra una base de prueba. La compilación valida contratos y handlers, pero no reemplaza la prueba manual de persistencia/Cancelación con datos reales.
+
+### Ajuste final de seguridad y legibilidad
+
+La vista principal no expone el callback tokenizado: muestra `Configurado`/`No configurado` y `Copiar callback` transfiere al portapapeles la URL completa ya cargada, sin generar ni reemplazar el token. La fuente de configuración y los ID internos quedaron en `Información técnica` colapsada.
+
+Modo y proveedor conservan sus selectores porque el sistema implementa alternativas reales (Meta, Business y convivencia; Meta o Business como proveedor predeterminado). WABA ID, versión Graph API y base pública se agrupan en `Configuración avanzada`. El resumen de accesos muestra hasta cinco usuarios y `+N`; el diálogo mantiene la lista completa.
