@@ -55,10 +55,6 @@ El asistente no se abre automáticamente al entrar a una conversación.
 
 Se abre de forma manual cuando el operador hace clic en el botón de sugerencia IA. Esto evita consumir créditos o tokens cada vez que se navega entre conversaciones.
 
-Al entrar a Conversaciones, si el módulo AlfaKnowledge está habilitado, el panel del asistente
-**se abre automáticamente** a la derecha (tercera columna en escritorio). Podés cerrarlo con la
-**X**; se vuelve a abrir la próxima vez que entrás (así se usa).
-
 Dos accesos:
 
 | Ubicación | Ícono | Qué hace |

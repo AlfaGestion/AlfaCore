@@ -150,6 +150,7 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<IConversacionesAuthorizationService, ConversacionesAuthorizationService>();
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IConversacionesInformesService, ConversacionesInformesService>();
         builder.Services.AddScoped<ITablasReferenciaService, TablasReferenciaService>();
@@ -2012,7 +2013,7 @@ public class Program
             config.AccessToken = root.TryGetProperty("access_token", out var accessToken) ? accessToken.GetString() ?? string.Empty : string.Empty;
             config.RefreshToken = root.TryGetProperty("refresh_token", out var refreshToken) ? refreshToken.GetString() ?? string.Empty : string.Empty;
             config.SellerId = root.TryGetProperty("user_id", out var userId) ? userId.GetRawText().Trim('"') : config.SellerId;
-            await configService.SaveMercadoLibreConfigAsync(config, ct);
+            await configService.SaveMercadoLibreTokensAsync(config, ct);
 
             return Results.Text("Mercado Libre quedó vinculado correctamente. Ya podés volver a AlfaCore.", "text/plain; charset=utf-8");
         });

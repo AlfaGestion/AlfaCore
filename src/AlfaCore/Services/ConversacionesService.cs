@@ -21,6 +21,7 @@ public sealed class ConversacionesService(
     IWhatsAppWebSessionService whatsAppWebSessionService,
     INotificacionesPushService notificacionesPushService,
     ICentralAdminService centralAdminService,
+    IConversacionesAuthorizationService conversacionesAuthorizationService,
     IConversacionAsistenteService asistenteService,
     IConversacionAsistenteHerramientasService asistenteHerramientasService,
     IAlfaKnowledgeSuggestionService alfaKnowledgeService,
@@ -1440,6 +1441,7 @@ public sealed class ConversacionesService(
     public Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversation", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(conversationId, token);
             await ReassignStaleWhatsAppConversationsToDefaultWebAsync(conversationId, token);
 
             var sql = $"""
@@ -1685,6 +1687,7 @@ public sealed class ConversacionesService(
     public Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessages", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(conversationId, token);
             var sql = $"""
                 SELECT
                     m.IdMensaje,
@@ -1770,6 +1773,7 @@ public sealed class ConversacionesService(
         CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessagesPage", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(conversationId, token);
             await AutoCloseExpiredOpenWhatsAppConversationsAsync(conversationId, token);
 
             var pageSize = Math.Max(1, Math.Min(200, take));
@@ -2221,6 +2225,9 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "SendMessage", async token =>
         {
             ValidateOutgoingRequest(request);
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+            if (request.IdNumeroWhatsApp is > 0)
+                await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(request.IdNumeroWhatsApp.Value, token);
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
@@ -2528,6 +2535,8 @@ public sealed class ConversacionesService(
             if (request.IdMensaje <= 0)
                 throw new InvalidOperationException("El mensaje a reaccionar es obligatorio.");
 
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+
             var emoji = NormalizeReactionEmoji(request.Emoji);
             if (string.IsNullOrWhiteSpace(emoji))
                 throw new InvalidOperationException("ElegÃ­ una reacciÃ³n vÃ¡lida.");
@@ -2606,6 +2615,8 @@ public sealed class ConversacionesService(
             if (request.IdNumeroWhatsApp <= 0)
                 throw new ArgumentException("La cuenta de WhatsApp indicada no es v\u00e1lida.", nameof(request));
 
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+            await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(request.IdNumeroWhatsApp, token);
             await SetConversationWhatsAppNumeroCoreAsync(
                 request.IdConversacion,
                 request.IdNumeroWhatsApp,
@@ -2890,6 +2901,8 @@ public sealed class ConversacionesService(
             if (request.IdPlantilla <= 0)
                 throw new InvalidOperationException("La plantilla es obligatoria.");
 
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
+
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             if (!string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Las plantillas solo se envÃ­an por WhatsApp.");
@@ -3026,6 +3039,7 @@ public sealed class ConversacionesService(
     public Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "AddInternalNote", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
             if (string.IsNullOrWhiteSpace(request.Texto))
@@ -3066,6 +3080,7 @@ public sealed class ConversacionesService(
     public Task<long> AddInternalEventAsync(ConversacionEventoInternoRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "AddInternalEvent", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversaci\u00f3n es obligatoria.");
             if (string.IsNullOrWhiteSpace(request.Texto))
@@ -3085,6 +3100,7 @@ public sealed class ConversacionesService(
     {
         await ExecuteLoggedAsync("Conversaciones", "AssignConversation", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
 
@@ -3180,6 +3196,7 @@ public sealed class ConversacionesService(
     {
         await ExecuteLoggedAsync("Conversaciones", "ChangeStatus", async token =>
         {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
                 throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
             if (string.IsNullOrWhiteSpace(request.CodigoEstado))
@@ -4174,7 +4191,7 @@ public sealed class ConversacionesService(
         if (root.TryGetProperty("user_id", out var userId))
             config.SellerId = ConvertJsonElementToString(userId);
 
-        await conversacionesConfigService.SaveMercadoLibreConfigAsync(config, ct);
+        await conversacionesConfigService.SaveMercadoLibreTokensAsync(config, ct);
         diagnostics.Add("Token ML renovado");
         return config;
     }
@@ -4196,6 +4213,8 @@ public sealed class ConversacionesService(
             var contact = await TryFindContactByPhoneAsync(cn, phone, token);
             var defaultWebNumero = await ResolveDefaultWhatsAppWebNumeroForManualConversationAsync(token);
             var idNumeroWhatsApp = defaultWebNumero?.IdNumero;
+            if (idNumeroWhatsApp.HasValue)
+                await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, token);
             var existing = await FindWhatsAppConversationByPhoneAsync(cn, phone, contact.IdContact, idNumeroWhatsApp, token);
             if (existing is null && idNumeroWhatsApp.HasValue)
             {
@@ -4306,6 +4325,7 @@ public sealed class ConversacionesService(
             if (request.TamanoBytes <= 0)
                 throw new InvalidOperationException("El archivo estÃ¡ vacÃ­o.");
 
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);

@@ -350,6 +350,50 @@
     grid-area: view;
 }
 
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context {
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    grid-template-areas: "nav context actions" !important;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__nav,
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__context {
+    display: flex;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__nav {
+    grid-area: nav;
+    padding-right: var(--alfa-space-8);
+    border-right: 1px solid var(--alfa-border-default);
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__context {
+    grid-area: context;
+    min-width: 0;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__context h1 {
+    overflow: hidden;
+    margin: 0;
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-body);
+    font-weight: 600;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__breadcrumb,
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__search,
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__view,
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__pagination {
+    display: none !important;
+}
+
+.shell.shell--alfa-design .main-page-header.main-page-header--alfa-design.main-page-header--compact-context .main-page-header__actions {
+    grid-area: actions !important;
+    justify-content: flex-end;
+}
+
 .shell.shell--alfa-design.shell--collapsed .main-page-header.main-page-header--alfa-design,
 .shell.shell--alfa-design.shell--direct .main-page-header.main-page-header--alfa-design,
 .shell.shell--alfa-design.shell--top-only .main-page-header.main-page-header--alfa-design {
