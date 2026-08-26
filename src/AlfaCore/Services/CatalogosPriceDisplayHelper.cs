@@ -5,17 +5,21 @@ namespace AlfaCore.Services;
 public static class CatalogosPriceDisplayHelper
 {
     public static bool HasValidOffer(CatalogosCatalogoItemDto item)
-        => item.PrecioOferta.HasValue
-           && item.PrecioOferta.Value > 0m
-           && item.PrecioOferta.Value < item.Precio;
+    {
+        var oferta = ResolveOfferPrice(item);
+        var precio = item.Precio.GetValueOrDefault();
+        return oferta.HasValue && oferta.Value > 0m && precio > 0m && oferta.Value < precio;
+    }
 
     public static int GetOfertaPercent(CatalogosCatalogoItemDto item)
     {
-        if (!HasValidOffer(item) || item.Precio is not > 0m)
+        var oferta = ResolveOfferPrice(item);
+        var precio = item.Precio.GetValueOrDefault();
+        if (!oferta.HasValue || oferta.Value <= 0m || precio <= 0m)
             return 0;
 
-        var descuento = 1m - (item.PrecioOferta!.Value / item.Precio!.Value);
-        return (int)Math.Round(descuento * 100m, MidpointRounding.AwayFromZero);
+        var descuento = 1m - (oferta.Value / precio);
+        return (int)Math.Round((double)(descuento * 100m), 0, MidpointRounding.AwayFromZero);
     }
 
     public static string GetOfertaHastaTexto(CatalogosCatalogoItemDto item)
@@ -27,5 +31,17 @@ public static class CatalogosPriceDisplayHelper
         => value.HasValue ? value.Value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR")) : "—";
 
     public static decimal GetPrecioAplicado(CatalogosCatalogoItemDto item)
-        => HasValidOffer(item) ? item.PrecioOferta!.Value : (item.Precio ?? 0m);
+    {
+        var oferta = ResolveOfferPrice(item);
+        return oferta.HasValue && oferta.Value > 0m
+            ? oferta.Value
+            : item.Precio.GetValueOrDefault();
+    }
+
+    private static decimal? ResolveOfferPrice(CatalogosCatalogoItemDto item)
+        => item.PrecioOfertaNuevo is > 0m
+            ? item.PrecioOfertaNuevo
+            : item.PrecioOferta is > 0m
+                ? item.PrecioOferta
+                : null;
 }

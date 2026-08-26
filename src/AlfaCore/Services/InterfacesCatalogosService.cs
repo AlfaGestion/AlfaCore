@@ -42,6 +42,9 @@ public sealed class InterfacesCatalogosService(
         "image/webp",
         "image/gif"
     };
+    private readonly SemaphoreSlim _catalogosAvailabilityGate = new(1, 1);
+    private CatalogosSourceAvailability? _cachedCatalogosAvailability;
+    private string? _cachedCatalogosAvailabilityConnectionString;
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -52,7 +55,7 @@ public sealed class InterfacesCatalogosService(
         => Task.FromResult<IReadOnlyList<CatalogosModalidadOptionDto>>(
             [
                 new() { Clave = "permanente", Nombre = "Catálogo permanente", Descripcion = "Catálogo sin vencimiento, preparado para publicar más adelante." },
-                new() { Clave = "vigencia", Nombre = "Catálogo con vigencia", Descripcion = "Catálogo publicado sobre V_MV_INSERT con control de fechas y estado." }
+                new() { Clave = "vigencia", Nombre = "Catálogo con vigencia", Descripcion = "Catálogo publicado con control de fechas y estado, compatible con el modelo nuevo y el legacy temporal." }
             ]);
 
     public Task<IReadOnlyList<CatalogosListaPrecioDto>> GetListasPrecioAsync(CancellationToken ct = default)
@@ -668,11 +671,12 @@ public sealed class InterfacesCatalogosService(
             pageNumber = Math.Max(1, pageNumber);
             var skip = (pageNumber - 1) * pageSize;
             var fecha = (fechaFiltro ?? DateTime.Today).Date;
+            var availability = await GetCatalogosAvailabilityAsync(token);
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            if (!await SqlObjectExistsAsync(cn, "V_MV_INSERT", token))
+            if (!availability.HasNuevoModelo && !availability.HasLegacyModelo)
             {
                 return new PagedResult<CatalogosCatalogoResumenDto>
                 {
@@ -683,60 +687,220 @@ public sealed class InterfacesCatalogosService(
                 };
             }
 
-            var sql = """
+            var sourceSqlParts = new List<string>();
+
+            if (availability.HasNuevoModelo)
+            {
+                sourceSqlParts.Add("""
+                    SELECT
+                        0 AS SourcePriority,
+                        c.IdCatalogo AS IdInsert,
+                        c.IdCatalogo AS IdCatalogo,
+                        CASE
+                            WHEN c.FechaDesde IS NULL AND c.FechaHasta IS NULL THEN N'Permanente'
+                            ELSE N'Con vigencia'
+                        END AS Tipo,
+                        ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IdCatalogo))) AS Nombre,
+                        CASE
+                            WHEN c.FechaDesde IS NULL AND c.FechaHasta IS NULL THEN N'Sin vigencia'
+                            ELSE CONCAT(
+                                ISNULL(CONVERT(nvarchar(10), c.FechaDesde, 103), N''),
+                                CASE WHEN c.FechaDesde IS NOT NULL OR c.FechaHasta IS NOT NULL THEN N' - ' ELSE N'' END,
+                                ISNULL(CONVERT(nvarchar(10), c.FechaHasta, 103), N'')
+                            )
+                        END AS Vigencia,
+                        c.FechaDesde AS VigenciaDesde,
+                        c.FechaHasta AS VigenciaHasta,
+                        c.FechaDesde,
+                        c.FechaHasta,
+                        ISNULL(LTRIM(RTRIM(c.IdLista)), N'') AS IdLista,
+                        ISNULL(LTRIM(RTRIM(c.Nombre)), N'') AS Grupo,
+                        ISNULL(LTRIM(RTRIM(c.Nombre)), N'') AS Observaciones,
+                        COALESCE(c.FechaHoraAlta, c.FechaHoraModificacion, GETDATE()) AS FechaCarga,
+                        c.FechaHoraAlta,
+                        c.FechaHoraModificacion,
+                        c.FechaHoraFinalizado,
+                        c.FechaHoraAnulado,
+                        ISNULL(LTRIM(RTRIM(c.Usuario)), N'') AS Usuario,
+                        ISNULL(LTRIM(RTRIM(c.UsuarioModificacion)), N'') AS UsuarioModificacion,
+                        ISNULL(LTRIM(RTRIM(c.UsuarioFinalizado)), N'') AS UsuarioFinalizado,
+                        ISNULL(LTRIM(RTRIM(c.UsuarioAnulado)), N'') AS UsuarioAnulado,
+                        c.DtoGeneral,
+                        COUNT(d.IdArticulo) AS CantidadArticulos,
+                        CAST(CASE WHEN c.FechaHoraFinalizado IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Finalizado,
+                        CAST(CASE WHEN ISNULL(c.Anulado, 0) = 1 THEN 1 ELSE 0 END AS bit) AS Anulado,
+                        CAST(1 AS bit) AS UsaModeloNuevo
+                    FROM dbo.CATALOGOS c
+                    LEFT JOIN dbo.CATALOGOS_DETALLE d
+                        ON d.IdCatalogo = c.IdCatalogo
+                    GROUP BY
+                        c.IdCatalogo,
+                        c.Nombre,
+                        c.FechaDesde,
+                        c.FechaHasta,
+                        c.IdLista,
+                        c.DtoGeneral,
+                        c.Usuario,
+                        c.FechaHoraAlta,
+                        c.FechaHoraModificacion,
+                        c.FechaHoraFinalizado,
+                        c.FechaHoraAnulado,
+                        c.UsuarioModificacion,
+                        c.UsuarioFinalizado,
+                        c.UsuarioAnulado,
+                        c.Anulado
+                    """);
+            }
+
+            if (availability.HasLegacyModelo)
+            {
+                sourceSqlParts.Add("""
+                    SELECT
+                        1 AS SourcePriority,
+                        c.IDINSERT AS IdInsert,
+                        c.IDINSERT AS IdCatalogo,
+                        CASE
+                            WHEN MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL THEN N'Permanente'
+                            ELSE N'Con vigencia'
+                        END AS Tipo,
+                        MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
+                        CASE
+                            WHEN MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL THEN N'Sin vigencia'
+                            ELSE CONCAT(
+                                ISNULL(CONVERT(nvarchar(10), MIN(c.VigenciaDesde), 103), N''),
+                                CASE WHEN MIN(c.VigenciaDesde) IS NOT NULL OR MAX(c.VigenciaHasta) IS NOT NULL THEN N' - ' ELSE N'' END,
+                                ISNULL(CONVERT(nvarchar(10), MAX(c.VigenciaHasta), 103), N'')
+                            )
+                        END AS Vigencia,
+                        MIN(c.VigenciaDesde) AS VigenciaDesde,
+                        MAX(c.VigenciaHasta) AS VigenciaHasta,
+                        MIN(c.VigenciaDesde) AS FechaDesde,
+                        MAX(c.VigenciaHasta) AS FechaHasta,
+                        MAX(ISNULL(LTRIM(RTRIM(c.IDLISTA)), '')) AS IdLista,
+                        MAX(ISNULL(LTRIM(RTRIM(c.GRUPO)), '')) AS Grupo,
+                        MAX(ISNULL(LTRIM(RTRIM(c.Observaciones)), '')) AS Observaciones,
+                        MAX(c.FECHACARGA) AS FechaCarga,
+                        MAX(c.FECHACARGA) AS FechaHoraAlta,
+                        MAX(c.FECHACARGA) AS FechaHoraModificacion,
+                        CAST(NULL AS datetime) AS FechaHoraFinalizado,
+                        CAST(NULL AS datetime) AS FechaHoraAnulado,
+                        MAX(ISNULL(LTRIM(RTRIM(c.USUARIO)), '')) AS Usuario,
+                        CAST(NULL AS nvarchar(100)) AS UsuarioModificacion,
+                        CAST(NULL AS nvarchar(100)) AS UsuarioFinalizado,
+                        CAST(NULL AS nvarchar(100)) AS UsuarioAnulado,
+                        CAST(NULL AS decimal(18, 4)) AS DtoGeneral,
+                        COUNT(1) AS CantidadArticulos,
+                        CASE WHEN MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 1 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Finalizado,
+                        CAST(0 AS bit) AS Anulado,
+                        CAST(0 AS bit) AS UsaModeloNuevo
+                    FROM dbo.V_MV_INSERT c
+                    GROUP BY c.IDINSERT
+                    """);
+            }
+
+            var sourceSql = string.Join("\nUNION ALL\n", sourceSqlParts);
+            var sql = $"""
+                WITH SourceRows AS (
+                {sourceSql}
+                ),
+                Dedup AS (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (PARTITION BY IdInsert ORDER BY SourcePriority) AS rn
+                    FROM SourceRows
+                )
                 SELECT
-                    c.IdInsert,
-                    CASE
-                        WHEN MIN(c.VigenciaDesde) IS NULL
-                         AND MAX(c.VigenciaHasta) IS NULL THEN N'Permanente'
-                        ELSE N'Con vigencia'
-                    END AS Tipo,
-                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
-                    CASE
-                        WHEN MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL THEN N'Sin vigencia'
-                        ELSE CONCAT(
-                            ISNULL(CONVERT(nvarchar(10), MIN(c.VigenciaDesde), 103), N''),
-                            CASE WHEN MIN(c.VigenciaDesde) IS NOT NULL OR MAX(c.VigenciaHasta) IS NOT NULL THEN N' - ' ELSE N'' END,
-                            ISNULL(CONVERT(nvarchar(10), MAX(c.VigenciaHasta), 103), N'')
-                        )
-                    END AS Vigencia,
-                    CASE WHEN MAX(CASE WHEN ISNULL(c.FINALIZADO, 0) = 0 THEN 1 ELSE 0 END) = 1 THEN N'Publicado' ELSE N'Finalizado' END AS Estado,
-                    MIN(c.VigenciaDesde) AS VigenciaDesde,
-                    MAX(c.VigenciaHasta) AS VigenciaHasta,
-                    MAX(ISNULL(LTRIM(RTRIM(c.IDLISTA)), '')) AS IdLista,
-                    MAX(ISNULL(LTRIM(RTRIM(c.GRUPO)), '')) AS Grupo,
-                    MAX(ISNULL(LTRIM(RTRIM(c.Observaciones)), '')) AS Observaciones,
-                    MAX(c.FECHACARGA) AS FechaCarga,
-                    COUNT(1) AS CantidadArticulos,
-                    CASE WHEN MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 1 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Finalizado
-                FROM dbo.V_MV_INSERT c
-                GROUP BY c.IDINSERT
-                HAVING (
+                    IdInsert,
+                    IdCatalogo,
+                    Tipo,
+                    Nombre,
+                    Vigencia,
+                    Estado,
+                    VigenciaDesde,
+                    VigenciaHasta,
+                    FechaDesde,
+                    FechaHasta,
+                    IdLista,
+                    Grupo,
+                    Observaciones,
+                    FechaCarga,
+                    FechaHoraAlta,
+                    FechaHoraModificacion,
+                    FechaHoraFinalizado,
+                    FechaHoraAnulado,
+                    Usuario,
+                    UsuarioModificacion,
+                    UsuarioFinalizado,
+                    UsuarioAnulado,
+                    DtoGeneral,
+                    CantidadArticulos,
+                    Finalizado,
+                    Anulado,
+                    UsaModeloNuevo
+                FROM (
+                    SELECT
+                        IdInsert,
+                        IdCatalogo,
+                        Tipo,
+                        Nombre,
+                        Vigencia,
+                        CASE
+                            WHEN Anulado = 1 THEN N'Anulado'
+                            WHEN Finalizado = 1 THEN N'Finalizado'
+                            ELSE N'Publicado'
+                        END AS Estado,
+                        VigenciaDesde,
+                        VigenciaHasta,
+                        FechaDesde,
+                        FechaHasta,
+                        IdLista,
+                        Grupo,
+                        Observaciones,
+                        FechaCarga,
+                        FechaHoraAlta,
+                        FechaHoraModificacion,
+                        FechaHoraFinalizado,
+                        FechaHoraAnulado,
+                        Usuario,
+                        UsuarioModificacion,
+                        UsuarioFinalizado,
+                        UsuarioAnulado,
+                        DtoGeneral,
+                        CantidadArticulos,
+                        Finalizado,
+                        Anulado,
+                        UsaModeloNuevo,
+                        rn
+                    FROM Dedup
+                    WHERE rn = 1
+                ) x
+                WHERE
+                    (
                         @TextoLike = ''
-                        OR UPPER(LTRIM(RTRIM(MAX(ISNULL(c.GRUPO, ''))))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(MAX(ISNULL(c.Observaciones, ''))))) LIKE @TextoLike
-                        OR CONVERT(nvarchar(20), c.IDINSERT) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(MAX(ISNULL(c.IDLISTA, ''))))) LIKE @TextoLike
-                      )
-                  AND (
+                        OR UPPER(LTRIM(RTRIM(ISNULL(Nombre, '')))) LIKE @TextoLike
+                        OR UPPER(LTRIM(RTRIM(ISNULL(Observaciones, '')))) LIKE @TextoLike
+                        OR CONVERT(nvarchar(20), IdInsert) LIKE @TextoLike
+                        OR UPPER(LTRIM(RTRIM(ISNULL(IdLista, '')))) LIKE @TextoLike
+                    )
+                    AND (
                         @TipoFiltro = N'todos'
-                        OR (@TipoFiltro = N'predeterminado' AND MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL)
-                        OR (@TipoFiltro = N'vigencia' AND (MIN(c.VigenciaDesde) IS NOT NULL OR MAX(c.VigenciaHasta) IS NOT NULL))
-                      )
-                  AND (
+                        OR (@TipoFiltro = N'predeterminado' AND VigenciaDesde IS NULL AND VigenciaHasta IS NULL)
+                        OR (@TipoFiltro = N'vigencia' AND (VigenciaDesde IS NOT NULL OR VigenciaHasta IS NOT NULL))
+                    )
+                    AND (
                         @EstadoFiltro = N'todos'
-                        OR (@EstadoFiltro = N'publicado' AND MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 0)
-                        OR (@EstadoFiltro = N'finalizado' AND MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 1)
-                      )
-                  AND (
-                        @EstadoFiltro = N'finalizado'
+                        OR (@EstadoFiltro = N'publicado' AND Estado = N'Publicado')
+                        OR (@EstadoFiltro = N'finalizado' AND Estado = N'Finalizado')
+                        OR (@EstadoFiltro = N'anulado' AND Estado = N'Anulado')
+                    )
+                    AND (
+                        @EstadoFiltro IN (N'finalizado', N'anulado')
                         OR (
-                            MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 0
-                            AND (MIN(c.VigenciaDesde) IS NULL OR CONVERT(date, MIN(c.VigenciaDesde)) <= @FechaFiltro)
-                            AND (MAX(c.VigenciaHasta) IS NULL OR CONVERT(date, MAX(c.VigenciaHasta)) >= @FechaFiltro)
+                            (VigenciaDesde IS NULL OR CONVERT(date, VigenciaDesde) <= @FechaFiltro)
+                            AND (VigenciaHasta IS NULL OR CONVERT(date, VigenciaHasta) >= @FechaFiltro)
                         )
-                      )
-                ORDER BY MAX(c.FECHACARGA) DESC, c.IDINSERT DESC
+                    )
+                ORDER BY FechaCarga DESC, IdInsert DESC
                 OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
                 """;
 
@@ -752,40 +916,66 @@ public sealed class InterfacesCatalogosService(
                     item.Predeterminado = item.IdInsert == predeterminadoId;
             }
 
-            var total = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
-                """
+            var countSql = $"""
+                WITH SourceRows AS (
+                {sourceSql}
+                ),
+                Dedup AS (
+                    SELECT
+                        *,
+                        ROW_NUMBER() OVER (PARTITION BY IdInsert ORDER BY SourcePriority) AS rn
+                    FROM SourceRows
+                )
                 SELECT COUNT(1)
                 FROM (
-                    SELECT c.IDINSERT
-                    FROM dbo.V_MV_INSERT c
-                    GROUP BY c.IDINSERT
-                    HAVING (
-                            @TextoLike = ''
-                            OR UPPER(LTRIM(RTRIM(MAX(ISNULL(c.GRUPO, ''))))) LIKE @TextoLike
-                            OR UPPER(LTRIM(RTRIM(MAX(ISNULL(c.Observaciones, ''))))) LIKE @TextoLike
-                            OR CONVERT(nvarchar(20), c.IDINSERT) LIKE @TextoLike
-                            OR UPPER(LTRIM(RTRIM(MAX(ISNULL(c.IDLISTA, ''))))) LIKE @TextoLike
-                          )
-                      AND (
-                            @TipoFiltro = N'todos'
-                            OR (@TipoFiltro = N'predeterminado' AND MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL)
-                            OR (@TipoFiltro = N'vigencia' AND (MIN(c.VigenciaDesde) IS NOT NULL OR MAX(c.VigenciaHasta) IS NOT NULL))
-                          )
-                      AND (
-                            @EstadoFiltro = N'todos'
-                            OR (@EstadoFiltro = N'publicado' AND MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 0)
-                            OR (@EstadoFiltro = N'finalizado' AND MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 1)
-                          )
-                      AND (
-                            @EstadoFiltro = N'finalizado'
-                            OR (
-                                MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 0
-                                AND (MIN(c.VigenciaDesde) IS NULL OR CONVERT(date, MIN(c.VigenciaDesde)) <= @FechaFiltro)
-                                AND (MAX(c.VigenciaHasta) IS NULL OR CONVERT(date, MAX(c.VigenciaHasta)) >= @FechaFiltro)
-                            )
-                          )
-                ) x;
-                """,
+                    SELECT
+                        IdInsert,
+                        Tipo,
+                        Nombre,
+                        Vigencia,
+                        CASE
+                            WHEN Anulado = 1 THEN N'Anulado'
+                            WHEN Finalizado = 1 THEN N'Finalizado'
+                            ELSE N'Publicado'
+                        END AS Estado,
+                        VigenciaDesde,
+                        VigenciaHasta,
+                        IdLista,
+                        Observaciones,
+                        rn
+                    FROM Dedup
+                    WHERE rn = 1
+                ) x
+                WHERE
+                    (
+                        @TextoLike = ''
+                        OR UPPER(LTRIM(RTRIM(ISNULL(Nombre, '')))) LIKE @TextoLike
+                        OR UPPER(LTRIM(RTRIM(ISNULL(Observaciones, '')))) LIKE @TextoLike
+                        OR CONVERT(nvarchar(20), IdInsert) LIKE @TextoLike
+                        OR UPPER(LTRIM(RTRIM(ISNULL(IdLista, '')))) LIKE @TextoLike
+                    )
+                    AND (
+                        @TipoFiltro = N'todos'
+                        OR (@TipoFiltro = N'predeterminado' AND VigenciaDesde IS NULL AND VigenciaHasta IS NULL)
+                        OR (@TipoFiltro = N'vigencia' AND (VigenciaDesde IS NOT NULL OR VigenciaHasta IS NOT NULL))
+                    )
+                    AND (
+                        @EstadoFiltro = N'todos'
+                        OR (@EstadoFiltro = N'publicado' AND Estado = N'Publicado')
+                        OR (@EstadoFiltro = N'finalizado' AND Estado = N'Finalizado')
+                        OR (@EstadoFiltro = N'anulado' AND Estado = N'Anulado')
+                    )
+                    AND (
+                        @EstadoFiltro IN (N'finalizado', N'anulado')
+                        OR (
+                            (VigenciaDesde IS NULL OR CONVERT(date, VigenciaDesde) <= @FechaFiltro)
+                            AND (VigenciaHasta IS NULL OR CONVERT(date, VigenciaHasta) >= @FechaFiltro)
+                        )
+                    );
+                """;
+
+            var total = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                countSql,
                 new { TextoLike = normalizedText, TipoFiltro = normalizedTipo, EstadoFiltro = normalizedEstado, FechaFiltro = fecha },
                 cancellationToken: token));
 
@@ -821,15 +1011,22 @@ public sealed class InterfacesCatalogosService(
             if (string.IsNullOrWhiteSpace(request.Nombre))
                 throw new InvalidOperationException("Ingresá el nombre del catálogo.");
 
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var availability = await GetCatalogosAvailabilityAsync(token);
+            if (availability.HasNuevoModelo)
+            {
+                return await SaveCatalogoNuevoAsync(cn, request, token);
+            }
+
             // IdLista es solo metadata descriptiva en V_MV_INSERT (nvarchar(4), sin FK): un catálogo
             // con origen Maestro de artículos la deja vacía a propósito (así es como GetCatalogoAsync
             // ya infiere el origen al reabrir para editar). No exigirla acá, o "Maestro" nunca podría
             // publicarse.
-            await using var cn = new SqlConnection(ConnectionString);
-            await cn.OpenAsync(token);
 
-            if (!await SqlObjectExistsAsync(cn, "V_MV_INSERT", token))
-                throw new InvalidOperationException("La base activa no tiene V_MV_INSERT. No se puede publicar el catálogo con vigencia.");
+            if (!availability.HasLegacyModelo)
+                throw new InvalidOperationException("La base activa no tiene soporte de catálogos legacy ni del nuevo modelo.");
 
             await using var tx = await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, token);
             try
@@ -1017,16 +1214,19 @@ public sealed class InterfacesCatalogosService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            var availability = await GetCatalogosAvailabilityAsync(token);
 
             if (idInsert > 0)
             {
-                var existe = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
-                    "SELECT COUNT(1) FROM dbo.V_MV_INSERT WHERE IDINSERT = @IdInsert;",
-                    new { IdInsert = idInsert },
-                    cancellationToken: token));
+                var existeNuevo = availability.HasNuevoModelo && await CatalogoNuevoExisteAsync(cn, idInsert, token);
+                var existeLegacy = availability.HasLegacyModelo && await CatalogoLegacyExisteAsync(cn, idInsert, token);
+                var existe = existeNuevo || existeLegacy;
 
-                if (existe == 0)
+                if (!existe)
                     throw new InvalidOperationException("El catálogo indicado no existe.");
+
+                if (existeNuevo && await CatalogoNuevoEstaAnuladoAsync(cn, idInsert, token))
+                    throw new InvalidOperationException("No se puede marcar como predeterminado un catálogo anulado.");
             }
 
             var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
@@ -1066,24 +1266,6 @@ public sealed class InterfacesCatalogosService(
 
         var raw = ResolveStoredValue(row.Valor ?? string.Empty, row.ValorAux ?? string.Empty);
         return int.TryParse(raw.Trim(), out var idInsert) && idInsert > 0 ? idInsert : 0;
-    }
-
-    private async Task<int> GetCatalogoGeneralFallbackIdInternalAsync(SqlConnection cn, CancellationToken ct)
-    {
-        const string sql = """
-            SELECT TOP (1)
-                c.IDINSERT
-            FROM dbo.V_MV_INSERT c
-            GROUP BY c.IDINSERT
-            HAVING
-                MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 0
-                AND (MIN(c.VigenciaDesde) IS NULL OR CONVERT(date, MIN(c.VigenciaDesde)) <= CONVERT(date, GETDATE()))
-                AND (MAX(c.VigenciaHasta) IS NULL OR CONVERT(date, MAX(c.VigenciaHasta)) >= CONVERT(date, GETDATE()))
-            ORDER BY MAX(c.FECHACARGA) DESC, c.IDINSERT DESC;
-            """;
-
-        var idInsert = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(sql, cancellationToken: ct));
-        return idInsert.GetValueOrDefault();
     }
 
     public Task<CatalogosClienteSessionInfo> LoginClienteAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct = default)
@@ -1399,20 +1581,47 @@ public sealed class InterfacesCatalogosService(
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            var availability = await GetCatalogosAvailabilityAsync(token);
+            var usaNuevoModelo = availability.HasNuevoModelo && await CatalogoNuevoExisteAsync(cn, idInsert, token);
 
-            await cn.ExecuteAsync(new CommandDefinition(
-                """
-                UPDATE dbo.V_MV_INSERT
-                SET FINALIZADO = 1
-                WHERE IDINSERT = @IdInsert;
-                """,
-                new { IdInsert = idInsert },
-                cancellationToken: token));
+            if (usaNuevoModelo)
+            {
+                await cn.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE dbo.CATALOGOS
+                    SET
+                        FechaHoraFinalizado = COALESCE(FechaHoraFinalizado, GETDATE()),
+                        UsuarioFinalizado = CASE
+                            WHEN ISNULL(LTRIM(RTRIM(UsuarioFinalizado)), '') = '' THEN @Usuario
+                            ELSE UsuarioFinalizado
+                        END,
+                        FechaHoraModificacion = GETDATE(),
+                        UsuarioModificacion = @Usuario
+                    WHERE IdCatalogo = @IdInsert;
+                    """,
+                    new { IdInsert = idInsert, Usuario = usuario },
+                    cancellationToken: token));
+            }
+            else if (availability.HasLegacyModelo)
+            {
+                await cn.ExecuteAsync(new CommandDefinition(
+                    """
+                    UPDATE dbo.V_MV_INSERT
+                    SET FINALIZADO = 1
+                    WHERE IDINSERT = @IdInsert;
+                    """,
+                    new { IdInsert = idInsert },
+                    cancellationToken: token));
+            }
+            else
+            {
+                throw new InvalidOperationException("La base activa no tiene soporte de catálogos.");
+            }
 
             await appEvents.LogAuditAsync(
                 ModuleName,
                 "FinalizarCatalogo",
-                "V_MV_INSERT",
+                usaNuevoModelo ? "CATALOGOS" : "V_MV_INSERT",
                 idInsert.ToString(),
                 "Catálogo finalizado.",
                 new { Usuario = usuario, Pc = pc },
@@ -1909,64 +2118,10 @@ public sealed class InterfacesCatalogosService(
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-
-            const string where = "WHERE c.IDINSERT = @IdInsert";
-            var sql = $"""
-                SELECT
-                    c.IDINSERT AS IdInsert,
-                    CASE
-                        WHEN MIN(c.VigenciaDesde) IS NULL
-                         AND MAX(c.VigenciaHasta) IS NULL THEN N'Permanente'
-                        ELSE N'Con vigencia'
-                    END AS Tipo,
-                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
-                    MAX(ISNULL(LTRIM(RTRIM(c.IDLISTA)), '')) AS IdLista,
-                    MAX(ISNULL(LTRIM(RTRIM(c.GRUPO)), '')) AS Grupo,
-                    MAX(ISNULL(LTRIM(RTRIM(c.Observaciones)), '')) AS Observaciones,
-                    MIN(c.VigenciaDesde) AS VigenciaDesde,
-                    MAX(c.VigenciaHasta) AS VigenciaHasta,
-                    CASE WHEN MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 1 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Finalizado
-                FROM dbo.V_MV_INSERT c
-                {where}
-                GROUP BY c.IDINSERT;
-
-                SELECT
-                    c.IDINSERT AS IdInsert,
-                    c.FECHACARGA AS FechaCarga,
-                    c.VigenciaDesde,
-                    c.VigenciaHasta,
-                    ISNULL(LTRIM(RTRIM(c.IDLISTA)), '') AS IdLista,
-                    ISNULL(LTRIM(RTRIM(c.USUARIO)), '') AS Usuario,
-                    ISNULL(LTRIM(RTRIM(c.GRUPO)), '') AS Grupo,
-                    ISNULL(c.FINALIZADO, 0) AS Finalizado,
-                    ISNULL(LTRIM(RTRIM(c.Observaciones)), '') AS Observaciones,
-                    ISNULL(LTRIM(RTRIM(c.IDARTICULO)), '') AS IdArticulo,
-                    ISNULL(LTRIM(RTRIM(c.DescripcionArticulo)), '') AS DescripcionArticulo,
-                    COALESCE(
-                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, ''))), ''),
-                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, ''))), ''),
-                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, ''))), ''),
-                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, ''))), ''),
-                        NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, ''))), ''),
-                        N''
-                    ) AS CodigoBarra,
-                    ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
-                    ISNULL(LTRIM(RTRIM(c.Presentacion)), '') AS Presentacion,
-                    ISNULL(LTRIM(RTRIM(c.Marca)), '') AS Marca,
-                    c.Precio,
-                    c.PrecioOferta,
-                    ISNULL(LTRIM(RTRIM(c.RUBRO)), '') AS Rubro,
-                    -- Marcada por BaseMaestraImagenService (o por afuera de AlfaCore, ej. '1'/'P')
-                    -- cuando la imagen del artículo cambió; el catálogo la usa para forzar una
-                    -- redescarga salteando el caché local (ver ArticuloImagenFtpService.ObtenerImagenAsync),
-                    -- por si thumbs4 todavía no se regeneró con la imagen nueva.
-                    CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(a.ModificoImagen, '')))) IN ('1', 'P') THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ImagenModificada
-                FROM dbo.V_MV_INSERT c
-                LEFT JOIN dbo.V_MA_ARTICULOS a
-                    ON UPPER(LTRIM(RTRIM(a.IDARTICULO))) = UPPER(LTRIM(RTRIM(c.IDARTICULO)))
-                {where}
-                ORDER BY c.IDARTICULO;
-                """;
+            var availability = await GetCatalogosAvailabilityAsync(token);
+            var existeNuevo = availability.HasNuevoModelo && idInsert > 0 && await CatalogoNuevoExisteAsync(cn, idInsert, token);
+            var existeLegacy = availability.HasLegacyModelo && idInsert > 0 && await CatalogoLegacyExisteAsync(cn, idInsert, token);
+            CatalogosSourceKind? selectedSource = null;
 
             var predeterminadoId = await GetCatalogoPredeterminadoIdInternalAsync(cn, token);
             var candidateIds = new List<int>();
@@ -1986,23 +2141,75 @@ public sealed class InterfacesCatalogosService(
 
             foreach (var candidateId in candidateIds)
             {
-                using var multi = await cn.QueryMultipleAsync(new CommandDefinition(sql, new { IdInsert = candidateId }, cancellationToken: token));
-                var header = await multi.ReadSingleOrDefaultAsync<CatalogosCatalogoDetalleDto>();
+                CatalogosCatalogoDetalleDto? header = null;
+
+                if (availability.HasNuevoModelo)
+                {
+                    header = await LoadCatalogoNuevoAsync(cn, candidateId, token);
+                    if (header is not null)
+                        selectedSource = CatalogosSourceKind.Nuevo;
+                }
+
+                if (header is null && availability.HasLegacyModelo)
+                {
+                    header = await LoadCatalogoLegacyAsync(cn, candidateId, token);
+                    if (header is not null)
+                        selectedSource = CatalogosSourceKind.Legacy;
+                }
+
                 if (header is null)
                     continue;
 
                 if (soloPublico && !IsCatalogoPublicoVigente(header))
                     continue;
 
-                var items = (await multi.ReadAsync<CatalogosCatalogoItemDto>()).ToList();
-                header.Articulos = items;
-
-                await EnrichOfertaHastaAsync(items, header.IdLista, token);
                 header.HabilitarCarrito = await GetCarritoHabilitadoAsync(candidateId, token);
                 header.Predeterminado = candidateId == predeterminadoId;
 
+                await appEvents.LogAuditAsync(
+                    ModuleName,
+                    soloPublico ? "GetCatalogoPublicoTrace" : "GetCatalogoTrace",
+                    "CATALOGOS",
+                    candidateId.ToString(),
+                    "Catálogo cargado con resolución temporal de fuente.",
+                    new
+                    {
+                        RequestedId = idInsert,
+                        CatalogosTablesAvailable = availability.HasNuevoModelo,
+                        ExistsInCatalogos = existeNuevo,
+                        ExistsInLegacy = existeLegacy,
+                        SelectedSource = selectedSource?.ToString() ?? string.Empty,
+                        LoadResult = true,
+                        HeaderFound = true,
+                        DetailCount = header.Articulos.Count,
+                        header.Anulado,
+                        header.Finalizado,
+                        header.FechaDesde,
+                        header.FechaHasta,
+                        header.IdLista,
+                        header.Nombre
+                    },
+                    token);
+
                 return header;
             }
+
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                soloPublico ? "GetCatalogoPublicoTrace" : "GetCatalogoTrace",
+                "CATALOGOS",
+                idInsert.ToString(),
+                "Catálogo no cargado.",
+                new
+                {
+                    RequestedId = idInsert,
+                    CatalogosTablesAvailable = availability.HasNuevoModelo,
+                    ExistsInCatalogos = existeNuevo,
+                    ExistsInLegacy = existeLegacy,
+                    SelectedSource = selectedSource?.ToString() ?? string.Empty,
+                    LoadResult = false
+                },
+                token);
 
             return null;
         }, soloPublico ? "No se pudo cargar el catálogo público." : "No se pudo cargar el catálogo.", ct);
@@ -2080,7 +2287,10 @@ public sealed class InterfacesCatalogosService(
 
     private static bool IsCatalogoPublicoVigente(CatalogosCatalogoDetalleDto catalogo)
     {
-        if (catalogo.Finalizado)
+        if (catalogo.Anulado)
+            return false;
+
+        if (!catalogo.UsaModeloNuevo && catalogo.Finalizado)
             return false;
 
         var hoy = DateTime.Today;
@@ -2297,6 +2507,623 @@ public sealed class InterfacesCatalogosService(
             ".gif" => "image/gif",
             _ => "application/octet-stream"
         };
+    }
+
+    private enum CatalogosSourceKind
+    {
+        Nuevo = 1,
+        Legacy = 2
+    }
+
+    private sealed record CatalogosSourceAvailability(
+        bool HasCatalogos,
+        bool HasCatalogosDetalle,
+        bool HasLegacyCatalogos,
+        bool HasLegacyUneg)
+    {
+        public bool HasNuevoModelo => HasCatalogos && HasCatalogosDetalle;
+        public bool HasLegacyModelo => HasLegacyCatalogos;
+    }
+
+    private async Task<CatalogosSourceAvailability> GetCatalogosAvailabilityAsync(CancellationToken ct)
+    {
+        var connectionString = ConnectionString;
+        if (_cachedCatalogosAvailability is not null
+            && string.Equals(_cachedCatalogosAvailabilityConnectionString, connectionString, StringComparison.Ordinal))
+        {
+            return _cachedCatalogosAvailability;
+        }
+
+        await _catalogosAvailabilityGate.WaitAsync(ct);
+        try
+        {
+            if (_cachedCatalogosAvailability is not null
+                && string.Equals(_cachedCatalogosAvailabilityConnectionString, connectionString, StringComparison.Ordinal))
+            {
+                return _cachedCatalogosAvailability;
+            }
+
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(ct);
+
+            var availability = new CatalogosSourceAvailability(
+                await SqlObjectExistsAsync(cn, "CATALOGOS", ct),
+                await SqlObjectExistsAsync(cn, "CATALOGOS_DETALLE", ct),
+                await SqlObjectExistsAsync(cn, "V_MV_INSERT", ct),
+                await SqlObjectExistsAsync(cn, "V_MV_INSERT_UNEG", ct));
+
+            _cachedCatalogosAvailability = availability;
+            _cachedCatalogosAvailabilityConnectionString = connectionString;
+            return availability;
+        }
+        finally
+        {
+            _catalogosAvailabilityGate.Release();
+        }
+    }
+
+    private static string ResolveCatalogState(bool isNewModel, bool finalizado, bool anulado)
+    {
+        if (isNewModel)
+            return anulado ? "Anulado" : finalizado ? "Finalizado" : "Publicado";
+
+        return finalizado ? "Finalizado" : "Publicado";
+    }
+
+    private static string ResolveCatalogType(DateTime? fechaDesde, DateTime? fechaHasta)
+        => fechaDesde is null && fechaHasta is null ? "Permanente" : "Con vigencia";
+
+    private static string ResolveCatalogVigencia(DateTime? fechaDesde, DateTime? fechaHasta)
+    {
+        if (fechaDesde is null && fechaHasta is null)
+            return "Sin vigencia";
+
+        var desde = fechaDesde?.ToString("dd/MM/yyyy") ?? string.Empty;
+        var hasta = fechaHasta?.ToString("dd/MM/yyyy") ?? string.Empty;
+        return $"{desde}{(fechaDesde.HasValue || fechaHasta.HasValue ? " - " : string.Empty)}{hasta}".Trim();
+    }
+
+    private async Task<bool> CatalogoNuevoExisteAsync(SqlConnection cn, int idInsert, CancellationToken ct, SqlTransaction? tx = null)
+    {
+        const string sql = """
+            SELECT CASE WHEN EXISTS (
+                SELECT 1
+                FROM dbo.CATALOGOS
+                WHERE IdCatalogo = @IdInsert
+            ) THEN 1 ELSE 0 END;
+            """;
+
+        var exists = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { IdInsert = idInsert }, transaction: tx, cancellationToken: ct));
+        return exists == 1;
+    }
+
+    private async Task<bool> CatalogoLegacyExisteAsync(SqlConnection cn, int idInsert, CancellationToken ct, SqlTransaction? tx = null)
+    {
+        const string sql = """
+            SELECT CASE WHEN EXISTS (
+                SELECT 1
+                FROM dbo.V_MV_INSERT
+                WHERE IDINSERT = @IdInsert
+            ) THEN 1 ELSE 0 END;
+            """;
+
+        var exists = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { IdInsert = idInsert }, transaction: tx, cancellationToken: ct));
+        return exists == 1;
+    }
+
+    private async Task<bool> CatalogoNuevoEstaAnuladoAsync(SqlConnection cn, int idInsert, CancellationToken ct, SqlTransaction? tx = null)
+    {
+        const string sql = """
+            SELECT CASE WHEN ISNULL(Anulado, 0) = 1 THEN 1 ELSE 0 END
+            FROM dbo.CATALOGOS
+            WHERE IdCatalogo = @IdInsert;
+            """;
+
+        var value = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(sql, new { IdInsert = idInsert }, transaction: tx, cancellationToken: ct));
+        return value.GetValueOrDefault() == 1;
+    }
+
+    private async Task<int> GetCatalogoNuevoFallbackIdInternalAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                c.IdCatalogo
+            FROM dbo.CATALOGOS c
+            WHERE ISNULL(c.Anulado, 0) = 0
+              AND (c.FechaDesde IS NULL OR CONVERT(date, c.FechaDesde) <= CONVERT(date, GETDATE()))
+              AND (c.FechaHasta IS NULL OR CONVERT(date, c.FechaHasta) >= CONVERT(date, GETDATE()))
+            ORDER BY COALESCE(c.FechaHoraModificacion, c.FechaHoraAlta) DESC, c.IdCatalogo DESC;
+            """;
+
+        var idInsert = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(sql, cancellationToken: ct));
+        return idInsert.GetValueOrDefault();
+    }
+
+    private async Task<int> GetCatalogoLegacyFallbackIdInternalAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                c.IDINSERT
+            FROM dbo.V_MV_INSERT c
+            GROUP BY c.IDINSERT
+            HAVING
+                MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 0
+                AND (MIN(c.VigenciaDesde) IS NULL OR CONVERT(date, MIN(c.VigenciaDesde)) <= CONVERT(date, GETDATE()))
+                AND (MAX(c.VigenciaHasta) IS NULL OR CONVERT(date, MAX(c.VigenciaHasta)) >= CONVERT(date, GETDATE()))
+            ORDER BY MAX(c.FECHACARGA) DESC, c.IDINSERT DESC;
+            """;
+
+        var idInsert = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(sql, cancellationToken: ct));
+        return idInsert.GetValueOrDefault();
+    }
+
+    private async Task<int> GetCatalogoGeneralFallbackIdInternalAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var availability = await GetCatalogosAvailabilityAsync(ct);
+        if (availability.HasNuevoModelo)
+        {
+            var nuevo = await GetCatalogoNuevoFallbackIdInternalAsync(cn, ct);
+            if (nuevo > 0)
+                return nuevo;
+        }
+
+        if (availability.HasLegacyModelo)
+            return await GetCatalogoLegacyFallbackIdInternalAsync(cn, ct);
+
+        return 0;
+    }
+
+    private async Task<CatalogosCatalogoDetalleDto?> LoadCatalogoNuevoAsync(SqlConnection cn, int idInsert, CancellationToken ct, SqlTransaction? tx = null)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                c.IdCatalogo AS IdInsert,
+                c.IdCatalogo AS IdCatalogo,
+                CASE
+                    WHEN c.FechaDesde IS NULL AND c.FechaHasta IS NULL THEN N'Permanente'
+                    ELSE N'Con vigencia'
+                END AS Tipo,
+                ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IdCatalogo))) AS Nombre,
+                ISNULL(LTRIM(RTRIM(c.IdLista)), '') AS IdLista,
+                ISNULL(LTRIM(RTRIM(c.Nombre)), '') AS Grupo,
+                CAST(N'' AS nvarchar(250)) AS Observaciones,
+                c.FechaDesde AS FechaDesde,
+                c.FechaHasta AS FechaHasta,
+                c.FechaDesde AS VigenciaDesde,
+                c.FechaHasta AS VigenciaHasta,
+                c.FechaHoraAlta,
+                c.FechaHoraModificacion,
+                c.FechaHoraFinalizado,
+                c.FechaHoraAnulado,
+                ISNULL(LTRIM(RTRIM(c.Usuario)), '') AS Usuario,
+                ISNULL(LTRIM(RTRIM(c.UsuarioModificacion)), '') AS UsuarioModificacion,
+                ISNULL(LTRIM(RTRIM(c.UsuarioFinalizado)), '') AS UsuarioFinalizado,
+                ISNULL(LTRIM(RTRIM(c.UsuarioAnulado)), '') AS UsuarioAnulado,
+                c.DtoGeneral,
+                CAST(CASE WHEN c.FechaHoraFinalizado IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Finalizado,
+                CAST(CASE WHEN ISNULL(c.Anulado, 0) = 1 THEN 1 ELSE 0 END AS bit) AS Anulado,
+                CAST(1 AS bit) AS UsaModeloNuevo
+            FROM dbo.CATALOGOS c
+            WHERE c.IdCatalogo = @IdInsert;
+
+            SELECT
+                d.IdCatalogo AS IdInsert,
+                d.IdCatalogo AS IdCatalogo,
+                c.FechaHoraAlta AS FechaCarga,
+                c.FechaDesde,
+                c.FechaHasta,
+                c.FechaDesde AS VigenciaDesde,
+                c.FechaHasta AS VigenciaHasta,
+                ISNULL(LTRIM(RTRIM(c.IdLista)), '') AS IdLista,
+                ISNULL(LTRIM(RTRIM(c.Usuario)), '') AS Usuario,
+                ISNULL(LTRIM(RTRIM(c.UsuarioModificacion)), '') AS UsuarioModificacion,
+                ISNULL(LTRIM(RTRIM(c.UsuarioFinalizado)), '') AS UsuarioFinalizado,
+                ISNULL(LTRIM(RTRIM(c.UsuarioAnulado)), '') AS UsuarioAnulado,
+                ISNULL(LTRIM(RTRIM(c.Nombre)), '') AS Grupo,
+                c.DtoGeneral,
+                CAST(CASE WHEN c.FechaHoraFinalizado IS NOT NULL THEN 1 ELSE 0 END AS bit) AS Finalizado,
+                CAST(CASE WHEN ISNULL(c.Anulado, 0) = 1 THEN 1 ELSE 0 END AS bit) AS Anulado,
+                ISNULL(LTRIM(RTRIM(c.Nombre)), '') AS Observaciones,
+                ISNULL(LTRIM(RTRIM(d.IdArticulo)), '') AS IdArticulo,
+                ISNULL(LTRIM(RTRIM(d.IdArticulo)), '') AS CodigoArticulo,
+                ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS DescripcionArticulo,
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, ''))), ''),
+                    N''
+                ) AS CodigoBarra,
+                ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
+                ISNULL(LTRIM(RTRIM(a.Presentacion)), '') AS Presentacion,
+                ISNULL(LTRIM(RTRIM(a.Observaciones)), '') AS ObservacionesArticulo,
+                ISNULL(LTRIM(RTRIM(t.Descripcion)), '') AS Marca,
+                ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
+                d.Precio,
+                d.Dto,
+                CASE
+                    WHEN d.PrecioOfertaNuevo IS NOT NULL AND d.PrecioOfertaNuevo > 0 THEN d.PrecioOfertaNuevo
+                    ELSE NULL
+                END AS PrecioOferta,
+                d.PrecioOfertaAnterior,
+                d.PrecioOfertaNuevo,
+                CASE
+                    WHEN UPPER(LTRIM(RTRIM(ISNULL(a.ModificoImagen, '')))) IN ('1', 'P') THEN CAST(1 AS bit)
+                    ELSE CAST(0 AS bit)
+                END AS ImagenModificada
+                ,CAST(1 AS bit) AS UsaModeloNuevo
+            FROM dbo.CATALOGOS_DETALLE d
+            INNER JOIN dbo.CATALOGOS c
+                ON c.IdCatalogo = d.IdCatalogo
+            LEFT JOIN dbo.V_MA_ARTICULOS a
+                ON UPPER(LTRIM(RTRIM(a.IDARTICULO))) = UPPER(LTRIM(RTRIM(d.IdArticulo)))
+            LEFT JOIN dbo.V_TA_TipoArticulo t
+                ON UPPER(LTRIM(RTRIM(ISNULL(a.IDTIPO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(t.IdTipo, ''))))
+            LEFT JOIN dbo.V_TA_Rubros r
+                ON UPPER(LTRIM(RTRIM(ISNULL(a.IDRUBRO, '')))) = UPPER(LTRIM(RTRIM(ISNULL(r.IdRubro, ''))))
+            WHERE d.IdCatalogo = @IdInsert
+            ORDER BY d.IdArticulo;
+            """;
+
+        using var multi = await cn.QueryMultipleAsync(new CommandDefinition(sql, new { IdInsert = idInsert }, transaction: tx, cancellationToken: ct));
+        var header = await multi.ReadSingleOrDefaultAsync<CatalogosCatalogoDetalleDto>();
+        if (header is null)
+        {
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "LoadCatalogoNuevoTrace",
+                "CATALOGOS",
+                idInsert.ToString(),
+                "Cabecera no encontrada en CATALOGOS.",
+                new { IdCatalogo = idInsert, HeaderFound = false },
+                ct);
+            return null;
+        }
+
+        var items = (await multi.ReadAsync<CatalogosCatalogoItemDto>()).ToList();
+        header.Articulos = items;
+        await EnrichOfertaHastaAsync(items, header.IdLista, ct);
+        await appEvents.LogAuditAsync(
+            ModuleName,
+            "LoadCatalogoNuevoTrace",
+            "CATALOGOS",
+            idInsert.ToString(),
+            "Cabecera y detalle nuevo cargados.",
+            new
+            {
+                IdCatalogo = idInsert,
+                HeaderFound = true,
+                DetailCount = items.Count,
+                header.Anulado,
+                header.Finalizado,
+                header.FechaDesde,
+                header.FechaHasta,
+                header.IdLista,
+                header.Nombre
+            },
+            ct);
+        return header;
+    }
+
+    private async Task<CatalogosCatalogoDetalleDto?> LoadCatalogoLegacyAsync(SqlConnection cn, int idInsert, CancellationToken ct, SqlTransaction? tx = null)
+    {
+        const string sql = """
+            SELECT
+                c.IDINSERT AS IdInsert,
+                CASE
+                    WHEN MIN(c.VigenciaDesde) IS NULL
+                     AND MAX(c.VigenciaHasta) IS NULL THEN N'Permanente'
+                    ELSE N'Con vigencia'
+                END AS Tipo,
+                MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
+                MAX(ISNULL(LTRIM(RTRIM(c.IDLISTA)), '')) AS IdLista,
+                MAX(ISNULL(LTRIM(RTRIM(c.GRUPO)), '')) AS Grupo,
+                MAX(ISNULL(LTRIM(RTRIM(c.Observaciones)), '')) AS Observaciones,
+                MIN(c.VigenciaDesde) AS VigenciaDesde,
+                MAX(c.VigenciaHasta) AS VigenciaHasta,
+                CASE WHEN MAX(CAST(ISNULL(c.FINALIZADO, 0) AS int)) = 1 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS Finalizado,
+                c.IDINSERT AS IdCatalogo,
+                CAST(0 AS bit) AS UsaModeloNuevo
+            FROM dbo.V_MV_INSERT c
+            WHERE c.IDINSERT = @IdInsert
+            GROUP BY c.IDINSERT;
+
+            SELECT
+                c.IDINSERT AS IdInsert,
+                c.FECHACARGA AS FechaCarga,
+                c.VigenciaDesde,
+                c.VigenciaHasta,
+                ISNULL(LTRIM(RTRIM(c.IDLISTA)), '') AS IdLista,
+                ISNULL(LTRIM(RTRIM(c.USUARIO)), '') AS Usuario,
+                ISNULL(LTRIM(RTRIM(c.GRUPO)), '') AS Grupo,
+                ISNULL(c.FINALIZADO, 0) AS Finalizado,
+                ISNULL(LTRIM(RTRIM(c.Observaciones)), '') AS Observaciones,
+                ISNULL(LTRIM(RTRIM(c.IDARTICULO)), '') AS IdArticulo,
+                ISNULL(LTRIM(RTRIM(c.DescripcionArticulo)), '') AS DescripcionArticulo,
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA2, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA3, ''))), ''),
+                    NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA4, ''))), ''),
+                    N''
+                ) AS CodigoBarra,
+                ISNULL(LTRIM(RTRIM(a.RutaImagen)), '') AS RutaImagen,
+                ISNULL(LTRIM(RTRIM(c.Presentacion)), '') AS Presentacion,
+                ISNULL(LTRIM(RTRIM(c.Marca)), '') AS Marca,
+                c.Precio,
+                CAST(NULL AS decimal(18, 4)) AS Dto,
+                c.PrecioOferta,
+                CAST(NULL AS decimal(18, 4)) AS PrecioOfertaAnterior,
+                CAST(NULL AS decimal(18, 4)) AS PrecioOfertaNuevo,
+                ISNULL(LTRIM(RTRIM(c.RUBRO)), '') AS Rubro,
+                CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(a.ModificoImagen, '')))) IN ('1', 'P') THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ImagenModificada,
+                CAST(0 AS bit) AS UsaModeloNuevo
+            FROM dbo.V_MV_INSERT c
+            LEFT JOIN dbo.V_MA_ARTICULOS a
+                ON UPPER(LTRIM(RTRIM(a.IDARTICULO))) = UPPER(LTRIM(RTRIM(c.IDARTICULO)))
+            WHERE c.IDINSERT = @IdInsert
+            ORDER BY c.IDARTICULO;
+            """;
+
+        using var multi = await cn.QueryMultipleAsync(new CommandDefinition(sql, new { IdInsert = idInsert }, transaction: tx, cancellationToken: ct));
+        var header = await multi.ReadSingleOrDefaultAsync<CatalogosCatalogoDetalleDto>();
+        if (header is null)
+            return null;
+
+        var items = (await multi.ReadAsync<CatalogosCatalogoItemDto>()).ToList();
+        header.Articulos = items;
+        await EnrichOfertaHastaAsync(items, header.IdLista, ct);
+        return header;
+    }
+
+    private async Task<CatalogosCatalogoSaveResultDto> SaveCatalogoNuevoAsync(SqlConnection cn, CatalogosCatalogoSaveRequestDto request, CancellationToken ct)
+    {
+        var articulos = request.Articulos
+            .Where(x => !string.IsNullOrWhiteSpace(x.IdArticulo))
+            .GroupBy(x => x.IdArticulo.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+
+        if (articulos.Count == 0)
+            throw new InvalidOperationException("Seleccioná al menos un artículo antes de guardar el catálogo.");
+
+        if (string.IsNullOrWhiteSpace(request.Nombre))
+            throw new InvalidOperationException("Ingresá el nombre del catálogo.");
+
+        await using var tx = await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        try
+        {
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                EXEC sp_getapplock
+                    @Resource = @Resource,
+                    @LockMode = 'Exclusive',
+                    @LockOwner = 'Transaction',
+                    @LockTimeout = 10000;
+                """,
+                new { Resource = "ALFACORE-CATALOGOS-ID" },
+                transaction: (SqlTransaction)tx,
+                cancellationToken: ct));
+
+            var idInsert = request.IdInsert ?? await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                """
+                SELECT ISNULL(MAX(IdCatalogo), 0) + 1
+                FROM dbo.CATALOGOS WITH (UPDLOCK, HOLDLOCK);
+                """,
+                transaction: (SqlTransaction)tx,
+                cancellationToken: ct));
+
+            var existe = request.IdInsert.HasValue && await CatalogoNuevoExisteAsync(cn, idInsert, ct, (SqlTransaction)tx);
+            var fechaHoraAhora = DateTime.Now;
+            var estadoBloqueado = false;
+
+            if (existe)
+                estadoBloqueado = await CatalogoNuevoEstaAnuladoAsync(cn, idInsert, ct, (SqlTransaction)tx)
+                                 || await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                                        """
+                                        SELECT CASE WHEN FechaHoraFinalizado IS NOT NULL THEN 1 ELSE 0 END
+                                        FROM dbo.CATALOGOS
+                                        WHERE IdCatalogo = @IdInsert;
+                                        """,
+                                        new { IdInsert = idInsert },
+                                        transaction: (SqlTransaction)tx,
+                                        cancellationToken: ct)) == 1;
+
+            if (existe)
+            {
+                if (estadoBloqueado)
+                {
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        """
+                        UPDATE dbo.CATALOGOS
+                        SET
+                            Nombre = @Nombre,
+                            FechaHoraModificacion = @FechaHoraModificacion,
+                            UsuarioModificacion = @UsuarioModificacion
+                        WHERE IdCatalogo = @IdCatalogo;
+                        """,
+                        new
+                        {
+                            IdCatalogo = idInsert,
+                            request.Nombre,
+                            FechaHoraModificacion = fechaHoraAhora,
+                            UsuarioModificacion = Truncate(request.Usuario, 100)
+                        },
+                        transaction: (SqlTransaction)tx,
+                        cancellationToken: ct));
+                }
+                else
+                {
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        """
+                        UPDATE dbo.CATALOGOS
+                        SET
+                            Nombre = @Nombre,
+                            FechaDesde = @FechaDesde,
+                            FechaHasta = @FechaHasta,
+                            IdLista = @IdLista,
+                            DtoGeneral = @DtoGeneral,
+                            FechaHoraModificacion = @FechaHoraModificacion,
+                            UsuarioModificacion = @UsuarioModificacion
+                        WHERE IdCatalogo = @IdCatalogo;
+                        """,
+                        new
+                        {
+                            IdCatalogo = idInsert,
+                            request.Nombre,
+                            request.VigenciaDesde,
+                            request.VigenciaHasta,
+                            IdLista = Truncate(request.IdLista, 4),
+                            DtoGeneral = request.DtoGeneral,
+                            FechaHoraModificacion = fechaHoraAhora,
+                            UsuarioModificacion = Truncate(request.Usuario, 100)
+                        },
+                        transaction: (SqlTransaction)tx,
+                        cancellationToken: ct));
+                }
+            }
+            else
+            {
+                await cn.ExecuteAsync(new CommandDefinition(
+                    """
+                    INSERT INTO dbo.CATALOGOS
+                    (
+                        IdCatalogo,
+                        Nombre,
+                        FechaDesde,
+                        FechaHasta,
+                        IdLista,
+                        DtoGeneral,
+                        Usuario,
+                        FechaHoraAlta,
+                        FechaHoraModificacion,
+                        UsuarioModificacion,
+                        Anulado,
+                        FechaHoraAnulado,
+                        UsuarioAnulado,
+                        FechaHoraFinalizado,
+                        UsuarioFinalizado
+                    )
+                    VALUES
+                    (
+                        @IdCatalogo,
+                        @Nombre,
+                        @FechaDesde,
+                        @FechaHasta,
+                        @IdLista,
+                        @DtoGeneral,
+                        @Usuario,
+                        @FechaHoraAlta,
+                        @FechaHoraModificacion,
+                        @UsuarioModificacion,
+                        0,
+                        NULL,
+                        NULL,
+                        NULL,
+                        NULL
+                    );
+                    """,
+                    new
+                    {
+                        IdCatalogo = idInsert,
+                        request.Nombre,
+                        request.VigenciaDesde,
+                        request.VigenciaHasta,
+                        IdLista = Truncate(request.IdLista, 4),
+                        DtoGeneral = request.DtoGeneral,
+                        Usuario = Truncate(request.Usuario, 100),
+                        FechaHoraAlta = fechaHoraAhora,
+                        FechaHoraModificacion = fechaHoraAhora,
+                        UsuarioModificacion = Truncate(request.Usuario, 100)
+                    },
+                    transaction: (SqlTransaction)tx,
+                    cancellationToken: ct));
+            }
+
+            if (!estadoBloqueado)
+            {
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "DELETE FROM dbo.CATALOGOS_DETALLE WHERE IdCatalogo = @IdCatalogo;",
+                    new { IdCatalogo = idInsert },
+                    transaction: (SqlTransaction)tx,
+                    cancellationToken: ct));
+
+                const string insertSql = """
+                    INSERT INTO dbo.CATALOGOS_DETALLE
+                    (
+                        IdCatalogo,
+                        IdArticulo,
+                        Precio,
+                        Dto,
+                        PrecioOfertaAnterior,
+                        PrecioOfertaNuevo,
+                        FechaHoraModificacion,
+                        UsuarioModificacion
+                    )
+                    VALUES
+                    (
+                        @IdCatalogo,
+                        @IdArticulo,
+                        @Precio,
+                        @Dto,
+                        @PrecioOfertaAnterior,
+                        @PrecioOfertaNuevo,
+                        @FechaHoraModificacion,
+                        @UsuarioModificacion
+                    );
+                    """;
+
+                foreach (var item in articulos)
+                {
+                    await cn.ExecuteAsync(new CommandDefinition(
+                        insertSql,
+                        new
+                        {
+                            IdCatalogo = idInsert,
+                            IdArticulo = Truncate(item.IdArticulo, 25),
+                            Precio = item.Precio,
+                            Dto = item.Dto,
+                            PrecioOfertaAnterior = item.PrecioOfertaAnterior,
+                            PrecioOfertaNuevo = item.PrecioOfertaNuevo ?? item.PrecioOferta,
+                            FechaHoraModificacion = fechaHoraAhora,
+                            UsuarioModificacion = Truncate(request.Usuario, 100)
+                        },
+                        transaction: (SqlTransaction)tx,
+                        cancellationToken: ct));
+                }
+            }
+
+            await tx.CommitAsync(ct);
+            await SetCarritoHabilitadoAsync(cn, idInsert, request.HabilitarCarrito, ct);
+
+            var url = BuildPublicUrl(idInsert);
+            await appEvents.LogAuditAsync(
+                ModuleName,
+                "SaveCatalogoVigencia",
+                "CATALOGOS",
+                idInsert.ToString(),
+                estadoBloqueado ? "Catálogo actualizado sin tocar el detalle bloqueado." : "Catálogo nuevo publicado.",
+                new { request.Nombre, request.IdLista, request.VigenciaDesde, request.VigenciaHasta, Articulos = articulos.Count, Url = url },
+                ct);
+
+            return new CatalogosCatalogoSaveResultDto
+            {
+                Persistido = true,
+                Simulado = false,
+                IdInsert = idInsert,
+                UrlPublica = url,
+                Mensaje = estadoBloqueado
+                    ? "Catálogo actualizado."
+                    : "Catálogo publicado correctamente."
+            };
+        }
+        catch
+        {
+            try { await tx.RollbackAsync(ct); } catch { }
+            throw;
+        }
     }
 
     private async Task<string> ReadConfigValueAsync(SqlConnection cn, string detailColumn, string key, string fallbackKey, CancellationToken ct)

@@ -41,9 +41,10 @@ public sealed class CarritoComprasService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            var hasCatalogos = await SqlObjectExistsAsync(cn, "V_MV_INSERT", token);
+            var hasCatalogosNuevo = await TableExistsAsync(cn, "CATALOGOS", token) && await TableExistsAsync(cn, "CATALOGOS_DETALLE", token);
+            var hasCatalogosLegacy = await SqlObjectExistsAsync(cn, "V_MV_INSERT", token);
             var hasGenerales = await TableExistsAsync(cn, "ALFACORE_CARRITOS_WEB", token);
-            if (!hasCatalogos && !hasGenerales)
+            if (!hasCatalogosNuevo && !hasCatalogosLegacy && !hasGenerales)
             {
                 return new PagedResult<CarritoComprasResumenDto>
                 {
@@ -55,7 +56,7 @@ public sealed class CarritoComprasService(
             }
 
             var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
-            var sourceSql = BuildSourceSql(hasCatalogos, hasGenerales, detailColumn);
+            var sourceSql = BuildSourceSql(hasCatalogosNuevo, hasCatalogosLegacy, hasGenerales, detailColumn);
             var whereSql = """
                 (@TextoLike = N''
                  OR UPPER(LTRIM(RTRIM(ISNULL(Nombre, N'')))) LIKE @TextoLike
@@ -1073,11 +1074,50 @@ public sealed class CarritoComprasService(
             || mensaje.Contains("duplicad", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string BuildSourceSql(bool hasCatalogos, bool hasGenerales, string detailColumn)
+    private static string BuildSourceSql(bool hasCatalogosNuevo, bool hasCatalogosLegacy, bool hasGenerales, string detailColumn)
     {
         var parts = new List<string>();
 
-        if (hasCatalogos)
+        if (hasCatalogosNuevo)
+        {
+            parts.Add($"""
+                SELECT
+                    c.IdCatalogo AS IdReferencia,
+                    c.IdCatalogo AS IdCatalogo,
+                    CAST(NULL AS int) AS IdCarrito,
+                    N'catalogo' AS TipoClave,
+                    N'Catálogo' AS Tipo,
+                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), N''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IdCatalogo)))) AS Nombre,
+                    CASE
+                        WHEN MIN(c.FechaDesde) IS NULL AND MAX(c.FechaHasta) IS NULL THEN N'Sin vigencia'
+                        ELSE CONCAT(
+                            ISNULL(CONVERT(nvarchar(10), MIN(c.FechaDesde), 103), N''),
+                            CASE WHEN MIN(c.FechaDesde) IS NOT NULL OR MAX(c.FechaHasta) IS NOT NULL THEN N' - ' ELSE N'' END,
+                            ISNULL(CONVERT(nvarchar(10), MAX(c.FechaHasta), 103), N'')
+                        )
+                    END AS Vigencia,
+                    CASE
+                        WHEN MAX(CASE WHEN ISNULL(c.Anulado, 0) = 0
+                                       AND (c.FechaDesde IS NULL OR CONVERT(date, c.FechaDesde) <= CONVERT(date, GETDATE()))
+                                       AND (c.FechaHasta IS NULL OR CONVERT(date, c.FechaHasta) >= CONVERT(date, GETDATE()))
+                                      THEN 1 ELSE 0 END) = 1 THEN N'Activo'
+                        ELSE N'Inactivo'
+                    END AS Estado,
+                    COUNT(d.IdArticulo) AS CantidadArticulos,
+                    N'Catálogo' AS Precios,
+                    CAST(CASE WHEN MAX(CASE WHEN ISNULL(c.Anulado, 0) = 0
+                                              AND (c.FechaDesde IS NULL OR CONVERT(date, c.FechaDesde) <= CONVERT(date, GETDATE()))
+                                              AND (c.FechaHasta IS NULL OR CONVERT(date, c.FechaHasta) >= CONVERT(date, GETDATE()))
+                                             THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END AS bit) AS Activo,
+                    0 AS OrdenTipo
+                FROM dbo.CATALOGOS c
+                LEFT JOIN dbo.CATALOGOS_DETALLE d
+                    ON d.IdCatalogo = c.IdCatalogo
+                GROUP BY c.IdCatalogo, c.Nombre, c.FechaDesde, c.FechaHasta, c.Anulado
+                """);
+        }
+
+        if (hasCatalogosLegacy)
         {
             parts.Add($"""
                 SELECT
@@ -1096,25 +1136,14 @@ public sealed class CarritoComprasService(
                         )
                     END AS Vigencia,
                     CASE
-                        WHEN MAX(CASE WHEN ISNULL(cfg.Activo, 0) = 1 THEN 1 ELSE 0 END) = 1 THEN N'Activo'
+                        WHEN MAX(CASE WHEN ISNULL(c.FINALIZADO, 0) = 0 THEN 1 ELSE 0 END) = 1 THEN N'Activo'
                         ELSE N'Inactivo'
                     END AS Estado,
                     COUNT(1) AS CantidadArticulos,
                     N'Catálogo' AS Precios,
-                    CAST(CASE WHEN MAX(CASE WHEN ISNULL(cfg.Activo, 0) = 1 THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END AS bit) AS Activo,
+                    CAST(CASE WHEN MAX(CASE WHEN ISNULL(c.FINALIZADO, 0) = 0 THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END AS bit) AS Activo,
                     0 AS OrdenTipo
                 FROM dbo.V_MV_INSERT c
-                LEFT JOIN (
-                    SELECT
-                        UPPER(LTRIM(RTRIM(CLAVE))) AS Clave,
-                        CASE
-                            WHEN UPPER(LTRIM(RTRIM(ISNULL(VALOR, N'')))) = N'SI' THEN 1
-                            WHEN UPPER(LTRIM(RTRIM(ISNULL(CAST({detailColumn} AS nvarchar(max)), N'')))) = N'SI' THEN 1
-                            ELSE 0
-                        END AS Activo
-                    FROM dbo.TA_CONFIGURACION
-                ) cfg
-                    ON cfg.Clave = UPPER(CONCAT(N'{CarritoHabilitadoConfigKeyPrefix}-', CONVERT(nvarchar(20), c.IDINSERT)))
                 GROUP BY c.IDINSERT
                 """);
         }

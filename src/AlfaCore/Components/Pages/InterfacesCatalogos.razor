@@ -321,7 +321,7 @@
                             <div class="catalog-mode-group">
                                 @foreach (var item in _modalidades)
                                 {
-                                    <button type="button" class="@GetModeButtonClass(item.Clave)" @onclick="() => SelectModeAsync(item.Clave)">
+                                    <button type="button" class="@GetModeButtonClass(item.Clave)" @onclick="() => SelectModeAsync(item.Clave)" disabled="@IsNuevoCatalogoBloqueado">
                                         @GetModeLabel(item.Clave)
                                     </button>
                                 }
@@ -345,20 +345,20 @@
                         <div class="col-12 col-md-6 col-xl-4">
                             <div class="field">
                                 <label>Fecha desde</label>
-                                <InputDate TValue="DateTime?" @bind-Value="_vigenciaDesde" />
+                                <InputDate TValue="DateTime?" @bind-Value="_vigenciaDesde" disabled="@IsNuevoCatalogoBloqueado" />
                             </div>
                         </div>
                         <div class="col-12 col-md-6 col-xl-4">
                             <div class="field">
                                 <label>Fecha hasta</label>
-                                <InputDate TValue="DateTime?" @bind-Value="_vigenciaHasta" />
+                                <InputDate TValue="DateTime?" @bind-Value="_vigenciaHasta" disabled="@IsNuevoCatalogoBloqueado" />
                             </div>
                         </div>
                     }
                     <div class="col-12">
                         <div class="field">
                             <label class="catalogos-toggle">
-                                <input type="checkbox" class="catalogos-toggle__input" @bind="_habilitarCarrito" />
+                                <input type="checkbox" class="catalogos-toggle__input" @bind="_habilitarCarrito" disabled="@IsNuevoCatalogoBloqueado" />
                                 <span class="catalogos-toggle__track" aria-hidden="true"></span>
                                 <span class="catalogos-toggle__label">
                                     <strong>Habilitar carrito</strong>
@@ -376,12 +376,12 @@
                 </div>
                 <div class="row g-3">
                     <div class="col-12 col-lg-6">
-                        <button type="button" class="catalog-source-card @(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectArticuloSourceAsync(CatalogosArticuloOrigenKeys.ListaPrecio)">
+                        <button type="button" class="catalog-source-card @(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectArticuloSourceAsync(CatalogosArticuloOrigenKeys.ListaPrecio)" disabled="@IsNuevoCatalogoBloqueado">
                             <strong>Lista de precios</strong>
                         </button>
                     </div>
                     <div class="col-12 col-lg-6">
-                        <button type="button" class="catalog-source-card @(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectArticuloSourceAsync(CatalogosArticuloOrigenKeys.Maestro)">
+                        <button type="button" class="catalog-source-card @(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectArticuloSourceAsync(CatalogosArticuloOrigenKeys.Maestro)" disabled="@IsNuevoCatalogoBloqueado">
                             <strong>Maestro de artículos</strong>
                         </button>
                     </div>
@@ -393,7 +393,7 @@
                         <div class="col-12 col-lg-6 col-xxl-4">
                             <div class="field">
                                 <label>Lista de precios</label>
-                                <select @key="_listaSelectToken" value="@_idLista" @onchange="e => OnListaPrecioChangedAsync((string?)e.Value)">
+                                <select @key="_listaSelectToken" value="@_idLista" @onchange="e => OnListaPrecioChangedAsync((string?)e.Value)" disabled="@IsNuevoCatalogoBloqueado">
                                     <option value="">Seleccionar...</option>
                                     @foreach (var lista in _listasPrecio)
                                     {
@@ -406,22 +406,22 @@
                 }
 
                 <div class="toolbar mt-3">
-                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Disabled="@(_loading || IsLookupBusy)" OnClick="AbrirLookupArticulosAsync">
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Disabled="@(_loading || IsLookupBusy || IsNuevoCatalogoBloqueado)" OnClick="AbrirLookupArticulosAsync">
                         Consultar artículos
                     </AlfaButton>
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-images" Disabled="@(_loading || !_articulosSeleccionados.Any())" OnClick="AbrirBaseMaestraImagenesAsync">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-images" Disabled="@(_loading || !_articulosSeleccionados.Any() || IsNuevoCatalogoBloqueado)" OnClick="AbrirBaseMaestraImagenesAsync">
                         Obtener imágenes
                     </AlfaButton>
                     @if (PuedeImportarTodo())
                     {
-                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-cloud-arrow-down" Loading="@_importandoListaCompleta" Disabled="@(_loading || IsLookupBusy)" OnClick="ImportarTodoAsync">
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-cloud-arrow-down" Loading="@_importandoListaCompleta" Disabled="@(_loading || IsLookupBusy || IsNuevoCatalogoBloqueado)" OnClick="ImportarTodoAsync">
                             @( _importandoListaCompleta ? "Importando..." : "Importar todo" )
                         </AlfaButton>
                     }
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-dash-circle" Disabled="@(!_articulosQuitarSeleccionados.Any() || IsLookupBusy)" OnClick="QuitarSeleccionadosAsync">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-dash-circle" Disabled="@(!_articulosQuitarSeleccionados.Any() || IsLookupBusy || IsNuevoCatalogoBloqueado)" OnClick="QuitarSeleccionadosAsync">
                         Quitar seleccionados
                     </AlfaButton>
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-trash" Disabled="@(!_articulosSeleccionados.Any() || IsLookupBusy)" OnClick="LimpiarCatalogoAsync">
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-trash" Disabled="@(!_articulosSeleccionados.Any() || IsLookupBusy || IsNuevoCatalogoBloqueado)" OnClick="LimpiarCatalogoAsync">
                         Limpiar catálogo
                     </AlfaButton>
                 </div>
@@ -443,9 +443,9 @@
                     <div class="table-responsive">
                         <table class="data-table usuarios-table">
                             <thead>
-                                <tr>
-                                    <th style="width:44px;">
-                                        <input type="checkbox" @onchange="ToggleSeleccionTodosQuitarAsync" checked="@(_articulosQuitarSeleccionados.Count == _articulosSeleccionados.Count && _articulosSeleccionados.Count > 0)" />
+                                    <tr>
+                                        <th style="width:44px;">
+                                        <input type="checkbox" @onchange="ToggleSeleccionTodosQuitarAsync" checked="@(_articulosQuitarSeleccionados.Count == _articulosSeleccionados.Count && _articulosSeleccionados.Count > 0)" disabled="@IsNuevoCatalogoBloqueado" />
                                     </th>
                                     <th style="width:88px;">Imagen</th>
                                     <th>Código</th>
@@ -462,7 +462,7 @@
                                 {
                                     <tr class="@GetArticuloRowClass(item.IdArticulo)">
                                         <td>
-                                            <input type="checkbox" checked="@_articulosQuitarSeleccionados.Contains(item.IdArticulo)" @onchange="(ChangeEventArgs args) => ToggleQuitarSeleccionAsync(item.IdArticulo, args)" />
+                                            <input type="checkbox" checked="@_articulosQuitarSeleccionados.Contains(item.IdArticulo)" @onchange="(ChangeEventArgs args) => ToggleQuitarSeleccionAsync(item.IdArticulo, args)" disabled="@IsNuevoCatalogoBloqueado" />
                                         </td>
                                         <td>
                                             @if (ShouldShowArticuloImage(item.IdArticulo))
@@ -485,7 +485,7 @@
                                         <td>@Display(item.Rubro)</td>
                                         <td style="text-align:right;">@Money(item.Precio)</td>
                                         <td style="text-align:right;">
-                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarArticuloAsync(item.IdArticulo)">
+                                            <button type="button" class="btn btn--ghost btn--sm" @onclick="() => QuitarArticuloAsync(item.IdArticulo)" disabled="@IsNuevoCatalogoBloqueado">
                                                 <i class="bi bi-trash"></i> Quitar
                                             </button>
                                         </td>
@@ -709,6 +709,9 @@
     private string _draftAgruparPor = CatalogosViewGroupKeys.None;
     private string _currentSection = SectionCatalogos;
     private int? _editingIdInsert;
+    private bool _editingEsModeloNuevo;
+    private bool _editingFinalizado;
+    private bool _editingAnulado;
     private string _urlPublica = string.Empty;
     private string _urlCarrito = string.Empty;
     private bool _habilitarCarrito;
@@ -732,6 +735,10 @@
     private int _catalogosSearchSequence;
     private string _lastCatalogRouteKey = string.Empty;
     private readonly CancellationTokenSource _disposeCts = new();
+
+    private bool IsNuevoCatalogoBloqueado => _editingEsModeloNuevo && (_editingFinalizado || _editingAnulado);
+    private bool IsNuevoCatalogoFinalizado => _editingEsModeloNuevo && _editingFinalizado;
+    private bool IsNuevoCatalogoAnulado => _editingEsModeloNuevo && _editingAnulado;
 
     [Parameter]
     public string? Vista { get; set; }
@@ -1190,7 +1197,8 @@
         => [
             new("todos", "Todos"),
             new("publicado", "Publicado"),
-            new("finalizado", "Finalizado")
+            new("finalizado", "Finalizado"),
+            new("anulado", "Anulado")
         ];
 
     private IReadOnlyList<AlfaActionMenuItem> GetCatalogosOverflowActions()
@@ -1228,7 +1236,7 @@
             }
         };
 
-        if (!item.Finalizado)
+        if (!item.Finalizado && !item.Anulado)
         {
             actions.Add(new AlfaActionMenuItem
             {
@@ -1241,16 +1249,19 @@
             });
         }
 
-        actions.Add(new AlfaActionMenuItem
+        if (!item.Anulado)
         {
-            Key = item.Predeterminado ? $"quitar-predeterminado-{item.IdInsert}" : $"marcar-predeterminado-{item.IdInsert}",
-            Label = item.Predeterminado ? "Quitar predeterminado" : "Marcar como predeterminado",
-            Icon = item.Predeterminado ? "bi bi-star-fill" : "bi bi-star",
-            SeparatorBefore = true,
-            OnClick = item.Predeterminado
-                ? QuitarPredeterminadoAsync
-                : () => MarcarPredeterminadoAsync(item.IdInsert)
-        });
+            actions.Add(new AlfaActionMenuItem
+            {
+                Key = item.Predeterminado ? $"quitar-predeterminado-{item.IdInsert}" : $"marcar-predeterminado-{item.IdInsert}",
+                Label = item.Predeterminado ? "Quitar predeterminado" : "Marcar como predeterminado",
+                Icon = item.Predeterminado ? "bi bi-star-fill" : "bi bi-star",
+                SeparatorBefore = true,
+                OnClick = item.Predeterminado
+                    ? QuitarPredeterminadoAsync
+                    : () => MarcarPredeterminadoAsync(item.IdInsert)
+            });
+        }
 
         return actions;
     }
@@ -1265,6 +1276,8 @@
             ? AlfaTagTone.Success
             : string.Equals(estado, "Finalizado", StringComparison.OrdinalIgnoreCase)
                 ? AlfaTagTone.Warning
+                : string.Equals(estado, "Anulado", StringComparison.OrdinalIgnoreCase)
+                    ? AlfaTagTone.Danger
                 : AlfaTagTone.Neutral;
 
     private static string GetCatalogosGroupLabel(string grouping)
@@ -1365,6 +1378,9 @@
         _urlCarrito = string.Empty;
         _habilitarCarrito = false;
         _editingIdInsert = null;
+        _editingEsModeloNuevo = false;
+        _editingFinalizado = false;
+        _editingAnulado = false;
     }
 
     private async Task SelectModeAsync(string mode)
@@ -1804,6 +1820,9 @@
     // su búsqueda ya en curso (Origen/IdLista solo se releen al reabrirlo), así que de paso se cierra.
     private async Task OnListaPrecioChangedAsync(string? nuevaListaRaw)
     {
+        if (IsNuevoCatalogoBloqueado)
+            return;
+
         var nuevaLista = (nuevaListaRaw ?? string.Empty).Trim();
         if (string.Equals(nuevaLista, _idLista, StringComparison.OrdinalIgnoreCase))
             return;
@@ -1853,6 +1872,9 @@
 
     private async Task AgregarArticuloAsync(CatalogosArticuloBusquedaDto item)
     {
+        if (IsNuevoCatalogoBloqueado)
+            return;
+
         if (_articulosSeleccionados.Any(x => string.Equals(x.IdArticulo, item.IdArticulo, StringComparison.OrdinalIgnoreCase)))
             return;
 
@@ -1866,7 +1888,10 @@
             Marca = item.Marca,
             Rubro = item.Rubro,
             Precio = item.Precio,
-            PrecioOferta = item.PrecioOferta
+            Dto = item.Dto,
+            PrecioOferta = item.PrecioOferta,
+            PrecioOfertaAnterior = item.PrecioOfertaAnterior,
+            PrecioOfertaNuevo = item.PrecioOfertaNuevo
         });
 
         await InvokeAsync(StateHasChanged);
@@ -1880,6 +1905,9 @@
 
     private async Task QuitarArticuloAsync(string idArticulo)
     {
+        if (IsNuevoCatalogoBloqueado)
+            return;
+
         var existing = _articulosSeleccionados.FirstOrDefault(x => string.Equals(x.IdArticulo, idArticulo, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
@@ -1892,6 +1920,9 @@
 
     private Task AbrirLookupArticulosAsync()
     {
+        if (IsNuevoCatalogoBloqueado)
+            return Task.CompletedTask;
+
         // La validación "falta la lista" y la búsqueda en sí quedan dentro de ArticuloPickerDialog
         // (BloqueoMensaje / carga al abrir); acá solo corresponde mostrarlo.
         _showLookupModal = true;
@@ -1903,6 +1934,9 @@
 
     private async Task SelectArticuloSourceAsync(string origen)
     {
+        if (IsNuevoCatalogoBloqueado)
+            return;
+
         if (string.Equals(origen, _articuloOrigen, StringComparison.OrdinalIgnoreCase))
             return;
 
@@ -1941,7 +1975,7 @@
     // arreglo en memoria del catálogo, igual que ya hacía "Importar lista completa".
     private async Task ImportarTodoAsync()
     {
-        if (!PuedeImportarTodo())
+        if (!PuedeImportarTodo() || IsNuevoCatalogoBloqueado)
             return;
 
         var esLista = string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase);
@@ -2007,7 +2041,10 @@
                     Marca = item.Marca,
                     Rubro = item.Rubro,
                     Precio = item.Precio,
-                    PrecioOferta = item.PrecioOferta
+                    Dto = item.Dto,
+                    PrecioOferta = item.PrecioOferta,
+                    PrecioOfertaAnterior = item.PrecioOfertaAnterior,
+                    PrecioOfertaNuevo = item.PrecioOfertaNuevo
                 });
             }
 
@@ -2021,7 +2058,7 @@
 
     private async Task QuitarSeleccionadosAsync()
     {
-        if (_articulosQuitarSeleccionados.Count == 0)
+        if (_articulosQuitarSeleccionados.Count == 0 || IsNuevoCatalogoBloqueado)
             return;
 
         var confirm = await DialogSvc.ConfirmAsync(
@@ -2040,7 +2077,7 @@
 
     private async Task LimpiarCatalogoAsync()
     {
-        if (_articulosSeleccionados.Count == 0)
+        if (_articulosSeleccionados.Count == 0 || IsNuevoCatalogoBloqueado)
             return;
 
         var confirm = await DialogSvc.ConfirmAsync(
@@ -2059,6 +2096,9 @@
 
     private async Task ToggleSeleccionTodosQuitarAsync(ChangeEventArgs args)
     {
+        if (IsNuevoCatalogoBloqueado)
+            return;
+
         var seleccionar = args.Value is bool flag && flag;
         _articulosQuitarSeleccionados.Clear();
         if (seleccionar)
@@ -2072,6 +2112,9 @@
 
     private async Task ToggleQuitarSeleccionAsync(string idArticulo, ChangeEventArgs args)
     {
+        if (IsNuevoCatalogoBloqueado)
+            return;
+
         var seleccionar = args.Value is bool flag && flag;
         if (seleccionar)
             _articulosQuitarSeleccionados.Add(idArticulo);
@@ -2427,6 +2470,9 @@
         _homeSelection = CatalogosHomeSelection.NuevoCatalogo;
         var detail = result.Value;
         _editingIdInsert = detail.IdInsert;
+        _editingEsModeloNuevo = detail.UsaModeloNuevo;
+        _editingFinalizado = detail.Finalizado;
+        _editingAnulado = detail.Anulado;
         _modo = string.Equals(detail.Tipo, "Permanente", StringComparison.OrdinalIgnoreCase)
             ? CatalogosViewGroupKeys.None
             : CatalogosViewGroupKeys.Tipo;
@@ -2451,7 +2497,10 @@
             Marca = x.Marca,
             Rubro = x.Rubro,
             Precio = x.Precio ?? 0m,
-            PrecioOferta = x.PrecioOferta
+            Dto = x.Dto,
+            PrecioOferta = x.PrecioOferta,
+            PrecioOfertaAnterior = x.PrecioOfertaAnterior,
+            PrecioOfertaNuevo = x.PrecioOfertaNuevo
         }));
         await SetCatalogUrlsAsync(detail.IdInsert, detail.Nombre);
         _feedback = AppUiMessage.Success("Catálogo cargado", $"Se abrió el catálogo #{detail.IdInsert} para editarlo.");

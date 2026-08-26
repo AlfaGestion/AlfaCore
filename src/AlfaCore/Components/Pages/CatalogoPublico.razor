@@ -194,13 +194,28 @@
                                                 <div class="catalogo-articulo-media">
                                                     @if (ShouldShowImage(item))
                                                     {
-                                                        <button type="button" class="catalogo-articulo-media__trigger" @onclick="() => OpenLightbox(item)" title="Ver imagen completa">
+                                                        <button type="button"
+                                                                class="catalogo-articulo-media__trigger"
+                                                                @onclick="() => OpenLightbox(item)"
+                                                                @onmouseenter="() => PreloadLightboxImage(item)"
+                                                                @onfocus="() => PreloadLightboxImage(item)"
+                                                                @onpointerdown="() => PreloadLightboxImage(item)"
+                                                                title="Ver imagen completa">
                                                             <img class="catalogo-articulo-media__img"
                                                                  src="@GetProductThumbUrl(item)"
                                                                  alt="@item.DescripcionArticulo"
                                                                  loading="lazy"
                                                                  @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(item.IdArticulo))" />
                                                         </button>
+                                                        @if (ShouldPreloadLightbox(item))
+                                                        {
+                                                            <img class="catalogo-publico-lightbox__preload"
+                                                                 src="@GetProductImageUrl(item)"
+                                                                 alt=""
+                                                                 aria-hidden="true"
+                                                                 loading="eager"
+                                                                 decoding="async" />
+                                                        }
                                                     }
                                                     else
                                                     {
@@ -234,15 +249,30 @@
                             {
                                 <article class="catalogo-publico-grid__card">
                                     <div class="catalogo-publico-grid__media">
-                                        @if (ShouldShowImage(item))
-                                        {
-                                            <button type="button" class="catalogo-publico-grid__trigger" @onclick="() => OpenLightbox(item)" title="Ver imagen completa">
+                                            @if (ShouldShowImage(item))
+                                            {
+                                            <button type="button"
+                                                    class="catalogo-publico-grid__trigger"
+                                                    @onclick="() => OpenLightbox(item)"
+                                                    @onmouseenter="() => PreloadLightboxImage(item)"
+                                                    @onfocus="() => PreloadLightboxImage(item)"
+                                                    @onpointerdown="() => PreloadLightboxImage(item)"
+                                                    title="Ver imagen completa">
                                                 <img class="catalogo-publico-grid__img"
                                                      src="@GetProductThumbUrl(item)"
                                                      alt="@item.DescripcionArticulo"
                                                      loading="lazy"
                                                      @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(item.IdArticulo))" />
                                             </button>
+                                            @if (ShouldPreloadLightbox(item))
+                                            {
+                                                <img class="catalogo-publico-lightbox__preload"
+                                                     src="@GetProductImageUrl(item)"
+                                                     alt=""
+                                                     aria-hidden="true"
+                                                     loading="eager"
+                                                     decoding="async" />
+                                            }
                                         }
                                         else
                                         {
@@ -298,17 +328,45 @@
             }
             else
             {
-                @if (_lightboxLoading)
-                {
-                    <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Cargando imagen..." Compact="true" />
-                }
-                <img class="catalogo-publico-lightbox__img @(_lightboxLoading ? "catalogo-publico-lightbox__img--hidden" : string.Empty)"
-                     src="@GetProductImageUrl(_lightboxItem)"
-                     alt="@_lightboxItem.DescripcionArticulo"
-                     @onload="OnLightboxImageLoaded"
-                     @onerror="OnLightboxImageError" />
+                <div class="catalogo-publico-lightbox__stage">
+                    <div class="catalogo-publico-lightbox__media">
+                        @if (_lightboxLoading)
+                        {
+                            <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Cargando imagen..." Compact="true" />
+                        }
+                        <img class="catalogo-publico-lightbox__img @(_lightboxLoading ? "catalogo-publico-lightbox__img--hidden" : string.Empty)"
+                             src="@GetProductImageUrl(_lightboxItem)"
+                             alt="@_lightboxItem.DescripcionArticulo"
+                             loading="eager"
+                             fetchpriority="high"
+                             decoding="async"
+                             @onload="OnLightboxImageLoaded"
+                             @onerror="OnLightboxImageError" />
+                    </div>
+                    <aside class="catalogo-publico-lightbox__details" aria-label="Detalles del artículo">
+                        <p class="catalogo-publico-lightbox__eyebrow">Artículo</p>
+                        <h3 class="catalogo-publico-lightbox__title">@_lightboxItem.DescripcionArticulo</h3>
+                        <p class="catalogo-publico-lightbox__code">@_lightboxItem.IdArticulo</p>
+
+                        @if (!string.IsNullOrWhiteSpace(_lightboxItem.ObservacionesArticulo) || !string.IsNullOrWhiteSpace(_lightboxItem.Presentacion))
+                        {
+                            <div class="catalogo-publico-lightbox__section">
+                                <p class="catalogo-publico-lightbox__section-label">Observación</p>
+                                <p class="catalogo-publico-lightbox__observation">@Display(_lightboxItem.ObservacionesArticulo, _lightboxItem.Presentacion)</p>
+                            </div>
+                        }
+
+                        <div class="catalogo-publico-lightbox__meta">
+                            <span>@Display(_lightboxItem.Marca)</span>
+                            <span>@Display(_lightboxItem.Rubro)</span>
+                        </div>
+
+                        <div class="catalogo-publico-lightbox__price">
+                            @RenderPrecio(_lightboxItem, alignEnd: false)
+                        </div>
+                    </aside>
+                </div>
             }
-            <p class="catalogo-publico-lightbox__caption">@_lightboxItem.DescripcionArticulo</p>
         </div>
     </div>
 }
@@ -609,7 +667,7 @@
             }
 
             var catalogoPublicado = IdInsert <= 0
-                ? await CatalogosSvc.GetCatalogoAsync(0)
+                ? await CatalogosSvc.GetCatalogoPublicoAsync(0)
                 : await CatalogosSvc.GetCatalogoPublicoAsync(IdInsert);
             if (catalogoPublicado is null)
             {
@@ -741,7 +799,7 @@
         _catalogFeedback = null;
 
         var result = await UiOps.RunAsync(
-            () => IdInsert <= 0 ? CatalogosSvc.GetCatalogoAsync(0) : CatalogosSvc.GetCatalogoPublicoAsync(IdInsert),
+            () => IdInsert <= 0 ? CatalogosSvc.GetCatalogoPublicoAsync(0) : CatalogosSvc.GetCatalogoPublicoAsync(IdInsert),
             "No se pudo cargar el catálogo público.");
         if (result.Success)
         {
@@ -1054,6 +1112,9 @@
     private bool ShouldShowImage(CatalogosCatalogoItemDto item)
         => !_imageFallbacks.Contains(item.IdArticulo) && !string.IsNullOrWhiteSpace(GetProductThumbUrl(item));
 
+    private bool ShouldPreloadLightbox(CatalogosCatalogoItemDto item)
+        => string.Equals(_preloadedLightboxArticuloId, item.IdArticulo, StringComparison.OrdinalIgnoreCase);
+
     private void HandleImageError(string idArticulo)
     {
         if (!string.IsNullOrWhiteSpace(idArticulo))
@@ -1069,6 +1130,18 @@
     private CatalogosCatalogoItemDto? _lightboxItem;
     private bool _lightboxLoading;
     private bool _lightboxError;
+    private string? _preloadedLightboxArticuloId;
+
+    private void PreloadLightboxImage(CatalogosCatalogoItemDto item)
+    {
+        if (string.IsNullOrWhiteSpace(item.IdArticulo))
+            return;
+
+        if (string.Equals(_preloadedLightboxArticuloId, item.IdArticulo, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _preloadedLightboxArticuloId = item.IdArticulo;
+    }
 
     private void OpenLightbox(CatalogosCatalogoItemDto item)
     {
@@ -1076,6 +1149,7 @@
         // se pide al FTP cuando se abre el lightbox, y sin este estado se veía como un ícono de
         // imagen rota mientras tanto. Mientras carga se muestra el mismo spinner que "Cargando
         // catálogo...", en versión chica.
+        PreloadLightboxImage(item);
         _lightboxItem = item;
         _lightboxLoading = true;
         _lightboxError = false;
@@ -1086,6 +1160,7 @@
         _lightboxItem = null;
         _lightboxLoading = false;
         _lightboxError = false;
+        _preloadedLightboxArticuloId = null;
     }
 
     private void OnLightboxImageLoaded()
@@ -1112,6 +1187,17 @@
 
     private static string Display(string? value)
         => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
+
+    private static string Display(string? value, string? fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(value))
+            return value.Trim();
+
+        if (!string.IsNullOrWhiteSpace(fallback))
+            return fallback.Trim();
+
+        return "—";
+    }
 
     private static string Money(decimal? value)
         => AlfaCore.Services.CatalogosPriceDisplayHelper.Money(value);

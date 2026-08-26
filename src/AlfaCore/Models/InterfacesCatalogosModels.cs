@@ -47,7 +47,10 @@ public sealed class CatalogosArticuloBusquedaDto
     public string ListaPrecio { get; set; } = string.Empty;
     public string NombreListaPrecio { get; set; } = string.Empty;
     public decimal Precio { get; set; }
+    public decimal? Dto { get; set; }
     public decimal? PrecioOferta { get; set; }
+    public decimal? PrecioOfertaAnterior { get; set; }
+    public decimal? PrecioOfertaNuevo { get; set; }
 }
 
 // Opción simple (código/descripción) para los combos de clasificación del picker de artículos
@@ -68,7 +71,10 @@ public sealed class CatalogosArticuloCatalogoDto
     public string Marca { get; set; } = string.Empty;
     public string Rubro { get; set; } = string.Empty;
     public decimal Precio { get; set; }
+    public decimal? Dto { get; set; }
     public decimal? PrecioOferta { get; set; }
+    public decimal? PrecioOfertaAnterior { get; set; }
+    public decimal? PrecioOfertaNuevo { get; set; }
 }
 
 public sealed class CatalogosViewSettingsDto
@@ -110,22 +116,35 @@ public static class CatalogosArticuloOrigenKeys
 public sealed class CatalogosCatalogoItemDto
 {
     public int IdInsert { get; set; }
+    public int? IdCatalogo { get; set; }
     public DateTime? FechaCarga { get; set; }
+    public DateTime? FechaDesde { get; set; }
+    public DateTime? FechaHasta { get; set; }
     public DateTime? VigenciaDesde { get; set; }
     public DateTime? VigenciaHasta { get; set; }
     public string IdLista { get; set; } = string.Empty;
     public string Usuario { get; set; } = string.Empty;
+    public string UsuarioModificacion { get; set; } = string.Empty;
+    public string UsuarioFinalizado { get; set; } = string.Empty;
+    public string UsuarioAnulado { get; set; } = string.Empty;
     public string Grupo { get; set; } = string.Empty;
+    public decimal? DtoGeneral { get; set; }
     public bool Finalizado { get; set; }
+    public bool Anulado { get; set; }
+    public bool UsaModeloNuevo { get; set; }
     public string Observaciones { get; set; } = string.Empty;
     public string IdArticulo { get; set; } = string.Empty;
     public string DescripcionArticulo { get; set; } = string.Empty;
     public string CodigoBarra { get; set; } = string.Empty;
     public string RutaImagen { get; set; } = string.Empty;
     public string Presentacion { get; set; } = string.Empty;
+    public string ObservacionesArticulo { get; set; } = string.Empty;
     public string Marca { get; set; } = string.Empty;
     public decimal? Precio { get; set; }
+    public decimal? Dto { get; set; }
     public decimal? PrecioOferta { get; set; }
+    public decimal? PrecioOfertaAnterior { get; set; }
+    public decimal? PrecioOfertaNuevo { get; set; }
     public string Rubro { get; set; } = string.Empty;
     public DateTime? OfertaHasta { get; set; }
 
@@ -136,32 +155,60 @@ public sealed class CatalogosCatalogoItemDto
 public sealed class CatalogosCatalogoResumenDto
 {
     public int IdInsert { get; set; }
+    public int? IdCatalogo { get; set; }
     public string Tipo { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public string Vigencia { get; set; } = string.Empty;
     public string Estado { get; set; } = string.Empty;
+    public DateTime? FechaDesde { get; set; }
+    public DateTime? FechaHasta { get; set; }
     public DateTime? VigenciaDesde { get; set; }
     public DateTime? VigenciaHasta { get; set; }
     public string IdLista { get; set; } = string.Empty;
     public string Grupo { get; set; } = string.Empty;
     public string Observaciones { get; set; } = string.Empty;
     public DateTime? FechaCarga { get; set; }
+    public DateTime? FechaHoraAlta { get; set; }
+    public DateTime? FechaHoraModificacion { get; set; }
+    public DateTime? FechaHoraFinalizado { get; set; }
+    public DateTime? FechaHoraAnulado { get; set; }
+    public string Usuario { get; set; } = string.Empty;
+    public string UsuarioModificacion { get; set; } = string.Empty;
+    public string UsuarioFinalizado { get; set; } = string.Empty;
+    public string UsuarioAnulado { get; set; } = string.Empty;
+    public decimal? DtoGeneral { get; set; }
     public int CantidadArticulos { get; set; }
     public bool Finalizado { get; set; }
+    public bool Anulado { get; set; }
+    public bool UsaModeloNuevo { get; set; }
     public bool Predeterminado { get; set; }
 }
 
 public sealed class CatalogosCatalogoDetalleDto
 {
     public int IdInsert { get; set; }
+    public int? IdCatalogo { get; set; }
     public string Tipo { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public string IdLista { get; set; } = string.Empty;
     public string Grupo { get; set; } = string.Empty;
     public string Observaciones { get; set; } = string.Empty;
+    public DateTime? FechaDesde { get; set; }
+    public DateTime? FechaHasta { get; set; }
     public DateTime? VigenciaDesde { get; set; }
     public DateTime? VigenciaHasta { get; set; }
+    public DateTime? FechaHoraAlta { get; set; }
+    public DateTime? FechaHoraModificacion { get; set; }
+    public DateTime? FechaHoraFinalizado { get; set; }
+    public DateTime? FechaHoraAnulado { get; set; }
+    public string Usuario { get; set; } = string.Empty;
+    public string UsuarioModificacion { get; set; } = string.Empty;
+    public string UsuarioFinalizado { get; set; } = string.Empty;
+    public string UsuarioAnulado { get; set; } = string.Empty;
+    public decimal? DtoGeneral { get; set; }
     public bool Finalizado { get; set; }
+    public bool Anulado { get; set; }
+    public bool UsaModeloNuevo { get; set; }
     public bool HabilitarCarrito { get; set; }
     public bool Predeterminado { get; set; }
     public IReadOnlyList<CatalogosCatalogoItemDto> Articulos { get; set; } = [];
@@ -170,6 +217,7 @@ public sealed class CatalogosCatalogoDetalleDto
 public sealed class CatalogosCatalogoSaveRequestDto
 {
     public int? IdInsert { get; set; }
+    public decimal? DtoGeneral { get; set; }
     public string Tipo { get; set; } = CatalogosViewGroupKeys.Tipo;
     public string Nombre { get; set; } = string.Empty;
     public string Observaciones { get; set; } = string.Empty;
