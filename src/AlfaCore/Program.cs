@@ -510,15 +510,51 @@ public class Program
             string idArticulo,
             int? idbase,
             bool? thumb,
+            bool? forzar,
             IArticuloImagenFtpService imagenSvc,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            IInterfacesCatalogosService catalogosSvc,
             HttpContext httpContext,
             CancellationToken ct) =>
         {
-            var imagen = await imagenSvc.ObtenerImagenAsync(idCliente, idbase, idArticulo, thumb == true, ct);
+            // forzar=true viene de CatalogosCatalogoItemDto.ImagenModificada (V_MA_ARTICULOS.ModificoImagen):
+            // el artículo tiene una imagen nueva y no hay que confiar en lo que ya esté cacheado
+            // localmente, por si thumbs4 todavía no se regeneró con la versión nueva.
+            var imagen = await imagenSvc.ObtenerImagenAsync(idCliente, idbase, idArticulo, thumb == true, forzar == true, ct);
             if (imagen is null || !File.Exists(imagen.RutaCompleta))
                 return Results.NotFound();
 
-            httpContext.Response.Headers.CacheControl = "public, max-age=86400";
+            if (forzar == true && idbase is > 0)
+            {
+                // Se sirvió con éxito la imagen forzada: apagar la marca para que el próximo pedido
+                // de este artículo vuelva a usar el caché normal. Este endpoint es un request
+                // anónimo aparte del circuito Blazor (no hereda ninguna sesión activa), así que
+                // primero hay que activar la conexión de esta base — mismo mecanismo que el
+                // endpoint de PDF (ver TryResolveWebhookTenantAsync más abajo).
+                var routeBase = await centralBasesSvc.GetByIdAsync(idbase.Value, ct);
+                if (routeBase is not null)
+                {
+                    sessionSvc.SetWebhookOverride(new SessionDto
+                    {
+                        Id = Guid.Parse($"00000000-0000-0000-0000-{routeBase.IdBase:000000000000}"),
+                        BaseId = routeBase.IdBase,
+                        Nombre = routeBase.Nombre,
+                        Servidor = routeBase.DbServer,
+                        BaseDatos = routeBase.DbName,
+                        Usuario = routeBase.DbUser,
+                        Password = routeBase.DbPassword,
+                        TrustServerCertificate = true,
+                        Activa = true
+                    });
+
+                    await catalogosSvc.ClearImagenModificadaAsync(idArticulo, ct);
+                }
+            }
+
+            httpContext.Response.Headers.CacheControl = forzar == true
+                ? "no-store, no-cache, must-revalidate, max-age=0"
+                : "public, max-age=86400";
             return Results.File(imagen.RutaCompleta, imagen.MimeType);
         }).AllowAnonymous();
 

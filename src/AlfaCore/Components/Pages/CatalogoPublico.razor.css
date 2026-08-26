@@ -645,6 +645,18 @@
     box-shadow: 0 20px 50px rgba(2, 6, 23, 0.45);
 }
 
+.catalogo-publico-lightbox__img--hidden {
+    display: none;
+}
+
+.catalogo-publico-lightbox__error {
+    width: min(420px, 90vw);
+}
+
+.catalogo-publico-lightbox__error ::deep .alfa-empty-state {
+    width: 100%;
+}
+
 .catalogo-publico-lightbox__caption {
     margin: 0;
     color: #fff;

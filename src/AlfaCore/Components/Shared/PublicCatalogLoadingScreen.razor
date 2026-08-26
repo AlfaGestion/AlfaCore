@@ -1,0 +1,17 @@
+<div class="public-catalog-loading @(Compact ? "public-catalog-loading--compact" : string.Empty)" role="status" aria-live="polite">
+    <div class="public-catalog-loading__panel">
+        <img class="public-catalog-loading__logo" src="@LogoUrl" alt="AlfaCore" />
+        <div class="public-catalog-loading__bar" aria-hidden="true">
+            <span class="public-catalog-loading__bar-fill"></span>
+        </div>
+        <p class="public-catalog-loading__text">@Text</p>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string LogoUrl { get; set; } = "/logos/LogoGrandeAzul.png";
+    [Parameter] public string Text { get; set; } = "Cargando...";
+
+    /// <summary>Versión reducida (logo y alturas más chicas) para usar dentro de un panel/modal en vez de a pantalla completa.</summary>
+    [Parameter] public bool Compact { get; set; }
+}

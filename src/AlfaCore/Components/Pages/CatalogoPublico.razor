@@ -11,79 +11,79 @@
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
+@inject AlfaCore.Services.IArticuloImagenFtpService ArticuloImagenSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@inject ILogger<CatalogoPublico> Logger
 @implements IAsyncDisposable
 
 <PageTitle>Catálogo público | AlfaCore</PageTitle>
 
 <section class="@(Embedded ? "catalogo-publico-page catalogo-publico-page--embedded" : "page-grid catalogo-publico-page")">
-    @if (_redirecting)
+    @if (_redirecting || _loading)
     {
-        <div class="catalogo-publico-loading-state">
-            <p class="text-muted">Redirigiendo al enlace seguro...</p>
-        </div>
-    }
-    else if (!Embedded)
-    {
-        <section class="catalogo-publico-hero panel-card catalogo-publico-hero--sticky">
-            <div class="catalogo-publico-hero__brand">
-                <a class="catalogo-publico-hero__logo @GetBrandingLogoFrameClass()" href="@GetPublicCatalogUrl()" title="Catálogo público" aria-label="Catálogo público">
-                    <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
-                </a>
-                <div class="catalogo-publico-hero__copy">
-                    <p class="catalogo-publico-hero__eyebrow">@GetBrandingName()</p>
-                    <h2 class="catalogo-publico-hero__title">@GetCatalogHeaderTitle()</h2>
-                    @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderCatalogName()))
-                    {
-                        <p class="catalogo-publico-hero__catalog-name">@GetCatalogHeaderCatalogName()</p>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderSubtitle()))
-                    {
-                        <p class="catalogo-publico-hero__text">@GetCatalogHeaderSubtitle()</p>
-                    }
-                </div>
-            </div>
-
-            <div class="catalogo-publico-hero__actions">
-                <AlfaIconButton Icon="@(_isDark ? "bi bi-sun" : "bi bi-moon")"
-                                Label="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")"
-                                Size="AlfaSize.Sm"
-                                OnClick="ToggleThemeAsync" />
-                @if (IsAuthenticatedForCurrentCatalog)
-                {
-                    <AlfaTag Tone="AlfaTagTone.Neutral">Cliente: @GetCurrentClientLabel()</AlfaTag>
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" Disabled="@_sessionBusy" OnClick="LogoutClienteAsync">
-                        Cerrar sesión
-                    </AlfaButton>
-                }
-            </div>
-        </section>
-    }
-
-    @if (_loading)
-    {
-        <div class="catalogo-publico-loading-state">
-            <p class="text-muted">Cargando catálogo...</p>
-        </div>
-    }
-    else if (_catalogo is null)
-    {
-        <div class="catalogo-publico-empty-panel">
-            <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
-                            Title="Catálogo no disponible"
-                            Message="El catálogo no está disponible, fue finalizado o todavía no cumple la vigencia requerida." />
-        </div>
-        @if (_catalogFeedback is not null)
-        {
-            <AlfaNotification Message="@_catalogFeedback" OnDismiss="() => _catalogFeedback = null" />
-        }
+        @* Un único estado de carga, sin encabezado: mientras se resuelve el link seguro o se
+           consulta la base no hay branding real todavía (GetBrandingName()/GetBrandingLogoUrl()
+           siguen en sus valores por defecto) — mostrarlo acá era lo que se veía como "dos
+           encabezados", uno genérico seguido del real del cliente apenas terminaba de cargar. *@
+        <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="@(_redirecting ? "Redirigiendo..." : "Cargando catálogo...")" />
     }
     else
     {
+        @if (!Embedded)
+        {
+            <section class="catalogo-publico-hero panel-card catalogo-publico-hero--sticky">
+                <div class="catalogo-publico-hero__brand">
+                    <a class="catalogo-publico-hero__logo @GetBrandingLogoFrameClass()" href="@GetPublicCatalogUrl()" title="Catálogo público" aria-label="Catálogo público">
+                        <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
+                    </a>
+                    <div class="catalogo-publico-hero__copy">
+                        <p class="catalogo-publico-hero__eyebrow">@GetBrandingName()</p>
+                        <h2 class="catalogo-publico-hero__title">@GetCatalogHeaderTitle()</h2>
+                        @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderCatalogName()))
+                        {
+                            <p class="catalogo-publico-hero__catalog-name">@GetCatalogHeaderCatalogName()</p>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderSubtitle()))
+                        {
+                            <p class="catalogo-publico-hero__text">@GetCatalogHeaderSubtitle()</p>
+                        }
+                    </div>
+                </div>
+
+                <div class="catalogo-publico-hero__actions">
+                    <AlfaIconButton Icon="@(_isDark ? "bi bi-sun" : "bi bi-moon")"
+                                    Label="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")"
+                                    Size="AlfaSize.Sm"
+                                    OnClick="ToggleThemeAsync" />
+                    @if (IsAuthenticatedForCurrentCatalog)
+                    {
+                        <AlfaTag Tone="AlfaTagTone.Neutral">Cliente: @GetCurrentClientLabel()</AlfaTag>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" Disabled="@_sessionBusy" OnClick="LogoutClienteAsync">
+                            Cerrar sesión
+                        </AlfaButton>
+                    }
+                </div>
+            </section>
+        }
+
+        @if (_catalogo is null)
+        {
+            <div class="catalogo-publico-empty-panel">
+                <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                Title="Catálogo no disponible"
+                                Message="El catálogo no está disponible, fue finalizado o todavía no cumple la vigencia requerida." />
+            </div>
+            @if (_catalogFeedback is not null)
+            {
+                <AlfaNotification Message="@_catalogFeedback" OnDismiss="() => _catalogFeedback = null" />
+            }
+        }
+        else
+        {
         <section class="panel-card">
             <div class="catalogo-publico-list__header">
                 <div>
@@ -277,6 +277,7 @@
                 }
             }
         </section>
+        }
     }
 </section>
 
@@ -287,7 +288,26 @@
             <i class="bi bi-x-lg"></i>
         </button>
         <div class="catalogo-publico-lightbox__content" @onclick:stopPropagation="true">
-            <img class="catalogo-publico-lightbox__img" src="@GetProductImageUrl(_lightboxItem)" alt="@_lightboxItem.DescripcionArticulo" />
+            @if (_lightboxError)
+            {
+                <div class="catalogo-publico-lightbox__error">
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.Error"
+                                    Title="No se pudo cargar la imagen"
+                                    Message="Cerrá y probá de nuevo en un momento." />
+                </div>
+            }
+            else
+            {
+                @if (_lightboxLoading)
+                {
+                    <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Cargando imagen..." Compact="true" />
+                }
+                <img class="catalogo-publico-lightbox__img @(_lightboxLoading ? "catalogo-publico-lightbox__img--hidden" : string.Empty)"
+                     src="@GetProductImageUrl(_lightboxItem)"
+                     alt="@_lightboxItem.DescripcionArticulo"
+                     @onload="OnLightboxImageLoaded"
+                     @onerror="OnLightboxImageError" />
+            }
             <p class="catalogo-publico-lightbox__caption">@_lightboxItem.DescripcionArticulo</p>
         </div>
     </div>
@@ -308,6 +328,7 @@
     private AppUiMessage? _catalogFeedback;
     private bool _loading = true;
     private bool _redirecting;
+    private bool _hasRendered;
     private bool _sessionBusy;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private bool _restoreAttempted;
@@ -349,12 +370,26 @@
         await EnsureRouteSessionAsync();
         if (_redirecting)
             return;
+
+        // Blazor reutiliza esta MISMA instancia de componente para la navegación in-place que
+        // dispara RedirectLegacyPublicRouteAsync (misma ruta de componente, sólo cambian los
+        // parámetros) — OnAfterRenderAsync(firstRender:true) ya se disparó y se saltó el intento de
+        // restaurar la sesión de cliente porque en ese momento _redirecting todavía era true. Este
+        // es el único lugar donde se vuelve a intentar una vez que la ruta ya quedó resuelta.
+        if (_hasRendered && !_restoreAttempted)
+        {
+            _restoreAttempted = true;
+            await RestoreClientSessionAsync();
+        }
+
         await LoadPublicIdentityAsync();
         await EnsureCatalogStateAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        _hasRendered = true;
+
         if (firstRender)
         {
             if (!_viewModeRestored)
@@ -364,7 +399,10 @@
                 await InvokeAsync(StateHasChanged);
             }
 
-            if (!_restoreAttempted)
+            // Si hay un redirect legacy en curso, IdInsert/_effectiveIdBase todavía son los de la
+            // ruta VIEJA — no intentar restaurar/cargar nada acá; OnParametersSetAsync se encarga
+            // una vez que la navegación al link seguro haya resuelto la ruta final (ver arriba).
+            if (!_restoreAttempted && !_redirecting)
             {
                 _restoreAttempted = true;
                 await RestoreClientSessionAsync();
@@ -601,8 +639,18 @@
             _redirecting = true;
             Nav.NavigateTo($"/{Uri.EscapeDataString(idweb)}/catalogo/{link.RouteSegment}", replace: true);
         }
-        catch
+        catch (Microsoft.AspNetCore.Components.NavigationException)
         {
+            // NavigateTo durante el prerender estático dispara esto a propósito — es cómo Blazor
+            // convierte la navegación en un 302 HTTP real antes de que se termine de renderizar la
+            // página. Atajarla acá la convertía en "Enlace no disponible" y pisaba el redirect real
+            // (por eso hacía falta recargar a mano: recién en la segunda carga, ya interactiva, el
+            // NavigateTo no vuelve a lanzar esta excepción).
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "CatalogoPublico: RedirectLegacyPublicRouteAsync falló. IdWeb={IdWeb}, IdBase={IdBase}, IdInsert={IdInsert}", idweb, idbase, IdInsert);
             _routeSessionError = true;
             _catalogFeedback = new AppUiMessage
             {
@@ -698,6 +746,12 @@
         if (result.Success)
         {
             _catalogo = result.Value;
+            // Fire-and-forget: esperar acá a que bajen las ~50-200 imágenes del catálogo antes de
+            // mostrar nada (como se hizo en un intento anterior) hacía que la carga se sintiera
+            // muy lenta — mejor mostrar el catálogo ya mismo (nombre, precios, filtros) y dejar que
+            // las imágenes se sigan bajando en paralelo mientras tanto; con catálogos ya visitados
+            // (caché tibia) igual aparecen casi al instante.
+            _ = PrecalentarImagenesAsync();
         }
         else
         {
@@ -705,6 +759,46 @@
             _catalogFeedback = result.Feedback;
         }
         _loading = false;
+    }
+
+    // Tope duro: si el FTP está lento/caído, mejor mostrar el catálogo con imágenes sueltas
+    // resolviéndose de a poco que dejar al visitante mirando "Cargando catálogo..." sin fin.
+    private static readonly TimeSpan PrecalentamientoTimeout = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Descarga/cachea los thumbnails de todos los artículos ANTES de terminar de cargar el
+    /// catálogo (se espera acá, con el spinner de "Cargando catálogo..." puesto), en vez de
+    /// dejar que cada &lt;img&gt; del browser gatille su propio viaje al FTP recién cuando ya se
+    /// está pintando la página — eso era lo que obligaba a recargar 1-2 veces para ver las
+    /// imágenes la primera vez que alguien abría un catálogo. ObtenerImagenAsync resuelve al
+    /// toque los que ya estén cacheados, así que sólo paga este costo el primer visitante.
+    /// </summary>
+    private async Task PrecalentarImagenesAsync()
+    {
+        if (_catalogo is null || _catalogo.Articulos.Count == 0)
+            return;
+
+        var ftpCodigoCta = _puntoVentaSettings.FtpCodigoCta;
+        if (string.IsNullOrWhiteSpace(ftpCodigoCta))
+            return;
+
+        var idArticulos = _catalogo.Articulos.Select(a => a.IdArticulo).ToArray();
+        var idArticulosForzados = _catalogo.Articulos
+            .Where(a => a.ImagenModificada)
+            .Select(a => a.IdArticulo)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var idBase = GetEffectiveIdBase();
+
+        try
+        {
+            using var cts = new CancellationTokenSource(PrecalentamientoTimeout);
+            await ArticuloImagenSvc.PrecalentarAsync(ftpCodigoCta, idBase, idArticulos, thumbnail: true, idArticulosForzados, cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Se superó el tope de espera: se sigue igual, lo que faltó cachear se resuelve
+            // (más lento) cuando el browser pida esa imagen puntual.
+        }
     }
 
     private async Task LoadPublicIdentityAsync()
@@ -733,6 +827,13 @@
 
     private async Task RestoreClientSessionAsync()
     {
+        // Mientras hay un redirect de ruta legacy en curso (ver RedirectLegacyPublicRouteAsync),
+        // IdInsert/_effectiveIdBase todavía corresponden a la ruta VIEJA (ej. /catalogo/0) — cargar
+        // el catálogo acá mostraba "no disponible/no vigente" de más, antes de que termine de
+        // navegar al link seguro real.
+        if (_redirecting)
+            return;
+
         try
         {
             var token = await Js.InvokeAsync<string?>("localStorage.getItem", ClientTokenStorageKey);
@@ -852,6 +953,10 @@
             ? "/logos/Logo.png"
             : _branding.LogoUrl.Trim();
 
+    /// <summary>Logo de AlfaCore (no el del cliente, todavía no cargado) para la pantalla de carga.</summary>
+    private string GetLoadingLogoUrl()
+        => AlfaCore.Components.Shared.AuthThemeAssets.GetLoginLogo(_isDark);
+
     private string GetBrandingLogoFrameClass()
         => _branding.LogoFormato?.Trim().ToLowerInvariant() switch
         {
@@ -956,18 +1061,41 @@
     }
 
     private string GetProductThumbUrl(CatalogosCatalogoItemDto item)
-        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), thumbnail: true);
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), thumbnail: true, forzarRecarga: item.ImagenModificada);
 
     private string GetProductImageUrl(CatalogosCatalogoItemDto item)
-        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase());
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), forzarRecarga: item.ImagenModificada);
 
     private CatalogosCatalogoItemDto? _lightboxItem;
+    private bool _lightboxLoading;
+    private bool _lightboxError;
 
     private void OpenLightbox(CatalogosCatalogoItemDto item)
-        => _lightboxItem = item;
+    {
+        // La imagen completa (thumbnail:false) no se precalienta como los thumbs del grid — recién
+        // se pide al FTP cuando se abre el lightbox, y sin este estado se veía como un ícono de
+        // imagen rota mientras tanto. Mientras carga se muestra el mismo spinner que "Cargando
+        // catálogo...", en versión chica.
+        _lightboxItem = item;
+        _lightboxLoading = true;
+        _lightboxError = false;
+    }
 
     private void CloseLightbox()
-        => _lightboxItem = null;
+    {
+        _lightboxItem = null;
+        _lightboxLoading = false;
+        _lightboxError = false;
+    }
+
+    private void OnLightboxImageLoaded()
+        => _lightboxLoading = false;
+
+    private void OnLightboxImageError()
+    {
+        _lightboxLoading = false;
+        _lightboxError = true;
+    }
 
     private static string ProductInitials(string descripcion)
     {

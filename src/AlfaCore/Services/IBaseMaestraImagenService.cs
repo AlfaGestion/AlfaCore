@@ -16,4 +16,5 @@ public interface IBaseMaestraImagenService
         CancellationToken ct = default);
     string BuildPreviewUrl(string imageUrl, string? idClienteFtp, int? idBase);
     string BuildPreviewUrlFromCodigo(string codigo, string? idClienteFtp, int? idBase);
+    string BuildGoogleImagesSearchUrl(string codigoBarra, string descripcionArticulo);
 }

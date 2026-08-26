@@ -1,7 +1,11 @@
 @echo off
 setlocal EnableExtensions EnableDelayedExpansion
 
-cd /d "%~dp0.."
+rem OJO: "shift" mas abajo (parseo de argumentos) corrompe %~dp0 una vez que se
+rem consumen todos los argumentos (bug conocido de cmd.exe) - por eso se guarda
+rem ANTES de tocar shift, y de aca en mas se usa SCRIPT_DIR en vez de %~dp0.
+set "SCRIPT_DIR=%~dp0"
+cd /d "%SCRIPT_DIR%.."
 
 set "SOURCE_DIR=.\publish\AlfaCoreLAN"
 set "DEFAULT_DEST_1=\\10.8.0.32\c\Program Files\Alfa Gestion\AlfaCore"
@@ -73,7 +77,7 @@ if "%SKIP_PUBLISH%"=="1" (
 ) else (
   echo.
   echo Paso 1/4: publicando release...
-  call "%~dp0publicar_release.bat"
+  call "%SCRIPT_DIR%publicar_release.bat"
   if errorlevel 1 (
     echo.
     echo ===============================================

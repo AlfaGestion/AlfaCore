@@ -2,7 +2,7 @@ namespace AlfaCore.Services;
 
 public static class ArticuloImagenUrlHelper
 {
-    public static string BuildPublicImageUrl(string? ftpCodigoCta, string? idArticulo, int? idBase = null, bool thumbnail = false)
+    public static string BuildPublicImageUrl(string? ftpCodigoCta, string? idArticulo, int? idBase = null, bool thumbnail = false, bool forzarRecarga = false)
     {
         var cta = (ftpCodigoCta ?? string.Empty).Trim();
         var codigo = (idArticulo ?? string.Empty).Trim();
@@ -16,6 +16,8 @@ public static class ArticuloImagenUrlHelper
             query.Add($"idbase={idBase.Value}");
         if (thumbnail)
             query.Add("thumb=true");
+        if (forzarRecarga)
+            query.Add("forzar=true");
 
         return query.Count > 0 ? $"{url}?{string.Join("&", query)}" : url;
     }

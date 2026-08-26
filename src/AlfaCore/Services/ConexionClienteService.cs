@@ -372,7 +372,7 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         };
     }
 
-    private static Guid BuildGuidFromBaseId(int baseId)
+    internal static Guid BuildGuidFromBaseId(int baseId)
     {
         Span<byte> bytes = stackalloc byte[16];
         BitConverter.GetBytes(baseId).CopyTo(bytes);

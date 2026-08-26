@@ -1955,7 +1955,12 @@ public sealed class InterfacesCatalogosService(
                     ISNULL(LTRIM(RTRIM(c.Marca)), '') AS Marca,
                     c.Precio,
                     c.PrecioOferta,
-                    ISNULL(LTRIM(RTRIM(c.RUBRO)), '') AS Rubro
+                    ISNULL(LTRIM(RTRIM(c.RUBRO)), '') AS Rubro,
+                    -- Marcada por BaseMaestraImagenService (o por afuera de AlfaCore, ej. '1'/'P')
+                    -- cuando la imagen del artículo cambió; el catálogo la usa para forzar una
+                    -- redescarga salteando el caché local (ver ArticuloImagenFtpService.ObtenerImagenAsync),
+                    -- por si thumbs4 todavía no se regeneró con la imagen nueva.
+                    CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(a.ModificoImagen, '')))) IN ('1', 'P') THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ImagenModificada
                 FROM dbo.V_MV_INSERT c
                 LEFT JOIN dbo.V_MA_ARTICULOS a
                     ON UPPER(LTRIM(RTRIM(a.IDARTICULO))) = UPPER(LTRIM(RTRIM(c.IDARTICULO)))
@@ -2523,6 +2528,37 @@ public sealed class InterfacesCatalogosService(
                 ct);
 
             throw new AppUserFacingException("No pudimos validar el acceso en este momento. Intentá nuevamente.", incidentId, ex);
+        }
+    }
+
+    public async Task ClearImagenModificadaAsync(string idArticulo, CancellationToken ct = default)
+    {
+        var articuloId = (idArticulo ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(articuloId))
+            return;
+
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+
+            if (!await SqlObjectExistsAsync(cn, "V_MA_ARTICULOS", ct))
+                return;
+
+            const string sql = """
+                UPDATE dbo.V_MA_ARTICULOS
+                SET ModificoImagen = ''
+                WHERE LTRIM(RTRIM(IDARTICULO)) = @IdArticulo
+                  AND UPPER(LTRIM(RTRIM(ISNULL(ModificoImagen, '')))) IN ('1', 'P');
+                """;
+
+            await cn.ExecuteAsync(new CommandDefinition(sql, new { IdArticulo = articuloId }, cancellationToken: ct));
+        }
+        catch (Exception ex)
+        {
+            // No debe romper la respuesta de la imagen: en el peor caso, el próximo pedido va a
+            // seguir forzando la redescarga (más lento para ese artículo, pero no incorrecto).
+            await appEvents.LogErrorAsync(ModuleName, "ClearImagenModificada", ex, "No se pudo apagar ModificoImagen.", new { IdArticulo = articuloId }, AppEventSeverity.Warning, ct);
         }
     }
 

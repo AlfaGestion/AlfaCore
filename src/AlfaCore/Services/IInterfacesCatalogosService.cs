@@ -43,4 +43,13 @@ public interface IInterfacesCatalogosService
     Task SavePublicClasePrecioAsync(string userName, string? idWeb, string clasePrecio, CancellationToken ct = default);
     Task<CatalogosViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default);
     Task SaveViewSettingsAsync(string userName, CatalogosViewSettingsDto settings, CancellationToken ct = default);
+
+    /// <summary>
+    /// Apaga V_MA_ARTICULOS.ModificoImagen (vuelve a '' / no modificada) después de que el catálogo
+    /// ya sirvió con éxito la imagen nueva de ese artículo (ver /api/catalogos/imagen-articulo y
+    /// CatalogosCatalogoItemDto.ImagenModificada). Silenciosa ante cualquier error — no bloquea la
+    /// respuesta de la imagen si esto falla, sólo significa que se va a seguir forzando la
+    /// redescarga en el próximo pedido.
+    /// </summary>
+    Task ClearImagenModificadaAsync(string idArticulo, CancellationToken ct = default);
 }
