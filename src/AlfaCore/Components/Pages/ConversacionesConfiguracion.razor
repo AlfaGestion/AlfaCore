@@ -13,9 +13,18 @@
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IPageHeaderNavigationService HeaderNavigation
 @inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.IWhatsAppEmbeddedSignupOrchestrator EmbeddedSignup
+@inject AlfaCore.Services.IWhatsAppEmbeddedSignupErrorLogger EmbeddedSignupErrorLogger
+@inject AlfaCore.Services.IAppEventService AppEvents
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
+@inject AlfaCore.Services.ITenantIdentityReadiness TenantIdentityReadiness
+@inject Microsoft.Extensions.Options.IOptions<AlfaCore.Configuration.WhatsAppEmbeddedSignupOptions> EmbeddedSignupOptions
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @implements IDisposable
+@implements IAsyncDisposable
 
 <PageTitle>Configuración de canales | Alfa Gestión</PageTitle>
 
@@ -193,7 +202,7 @@
                     <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
                                     Title="Sin números API"
                                     Message="Todavía no hay números Meta Cloud API cargados."
-                                    ActionLabel="Nuevo número"
+                                    ActionLabel="Agregar por Phone Number ID"
                                     ActionIcon="bi bi-plus-circle"
                                     OnAction="@(_ => StartAddApiNumero())" />
                 }
@@ -202,6 +211,19 @@
             <section class="wa-api-detail">
                 @if (IsApiIntegrationView)
                 {
+                    @if (EmbeddedSignupOptions.Value.Enabled)
+                    {
+                        <div class="wa-business-block">
+                            <div class="wa-business-block__header">
+                                <div><h3>Alta automática</h3><p>Autorizá tu cuenta de Meta sin copiar identificadores manualmente.</p></div>
+                                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-meta" Loading="@_embeddedSignupBusy" OnClick="StartEmbeddedSignupAsync">Conectar con Meta</AlfaButton>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_embeddedSignupMessage))
+                            {
+                                <p class="wa-field-note">@_embeddedSignupMessage</p>
+                            }
+                        </div>
+                    }
                     @if (_metaConfigDraft is { } metaDraft)
                     {
                         <div class="wa-api-detail__heading">
@@ -288,15 +310,18 @@
                 }
                 else if (_addingApiNumero)
                 {
-                    <div class="wa-api-detail__heading"><div><h2>Nuevo número</h2><p>Registrá un número existente de Meta Cloud API.</p></div></div>
+                    <div class="wa-api-detail__heading"><div><h2>Agregar por Phone Number ID</h2><p>Registrá manualmente un número existente de Meta Cloud API.</p></div></div>
                     <div class="wa-business-block">
                         <h3>Identificación</h3>
                         <div class="wa-fields">
                             <AlfaInput Label="Nombre" @bind-Value="_nuevoNumero.Nombre" Placeholder="Ej: Ventas Norte" />
-                            <div class="wa-field-with-helper">
-                                <AlfaInput Label="Phone Number ID" @bind-Value="_nuevoNumero.PhoneNumberId" Placeholder="Identificador provisto por Meta" />
-                                <span>Identificador del número provisto por Meta. No es el número de teléfono.</span>
-                            </div>
+                            <AlfaInput Label="Phone Number ID"
+                                       Value="@_nuevoNumero.PhoneNumberId"
+                                       ValueChanged="@(value => UpdateApiPhoneNumberId(value, true))"
+                                       Placeholder="Identificador provisto por Meta"
+                                       Required="true"
+                                       HelpText="Identificador del número provisto por Meta. No es el número de teléfono."
+                                       ErrorText="@GetApiPhoneNumberIdError(_nuevoNumero.PhoneNumberId)" />
                         </div>
                     </div>
                 }
@@ -307,10 +332,12 @@
                         <h3>Identificación</h3>
                         <div class="wa-fields">
                             <AlfaInput Label="Nombre" @bind-Value="apiDraft.Nombre" />
-                            <div class="wa-field-with-helper">
-                                <AlfaInput Label="Phone Number ID" @bind-Value="apiDraft.PhoneNumberId" />
-                                <span>Identificador del número provisto por Meta. No es el número de teléfono.</span>
-                            </div>
+                            <AlfaInput Label="Phone Number ID"
+                                       Value="@apiDraft.PhoneNumberId"
+                                       ValueChanged="@(value => UpdateApiPhoneNumberId(value, false))"
+                                       Required="true"
+                                       HelpText="Identificador del número provisto por Meta. No es el número de teléfono."
+                                       ErrorText="@GetApiPhoneNumberIdError(apiDraft.PhoneNumberId)" />
                         </div>
                     </div>
                     <div class="wa-business-block">
@@ -1818,6 +1845,17 @@
                        CancelLabel="Seguir editando"
                        OnConfirm="ConfirmPendingNavigationAsync"
                        OnCancel="KeepEditing" />
+
+    <AlfaConfirmDialog Open="@(_apiArchiveCandidate is not null)"
+                       Title="Quitar número de AlfaCore"
+                       Message="El número dejará de aparecer entre los números activos de AlfaCore. Esta acción no elimina el número ni modifica su configuración en Meta."
+                       SecondaryMessage="La fila, las conversaciones, los mensajes, el historial y las asignaciones existentes se conservan."
+                       ConfirmLabel="Quitar de AlfaCore"
+                       LoadingLabel="Quitando..."
+                       Loading="@ApiArchiveSaving"
+                       ErrorMessage="@_apiArchiveError"
+                       OnConfirm="ConfirmArchiveApiNumeroAsync"
+                       OnCancel="CancelArchiveApiNumero" />
 </section>
 
 @code {
@@ -1851,20 +1889,24 @@
 
     /// <summary>
     /// La pestaña WhatsApp Business sólo lista cuentas activas administradas por Web/QR. WhatsApp API
-    /// muestra todos los números cuya clasificación real no contiene datos de sesión Web; Activo,
+    /// muestra los números activos cuya clasificación real no contiene datos de sesión Web;
     /// usuarios y predeterminado no participan de esa clasificación.
     /// </summary>
     // Criterio UI vigente: Business = Web/QR; API = Meta Cloud API por Phone Number ID.
     private IEnumerable<ConversacionWhatsAppNumeroDto> ActiveBusinessNumeros => _numeros.Where(n => n.Activo && IsWhatsAppWebManagedNumero(n));
     private IEnumerable<ConversacionWhatsAppNumeroDto> WhatsAppApiNumeros
         => _numeros
-            .Where(n => !IsWhatsAppWebManagedNumero(n))
+            .Where(n => n.Activo && !IsWhatsAppWebManagedNumero(n))
             .OrderByDescending(n => IsConfiguredGlobalApiNumero(n))
             .ThenBy(n => n.Nombre);
     private ConversacionWhatsAppNumeroDto _nuevoNumero = new() { Activo = true };
     private ConversacionWhatsAppNumeroDto? _apiNumeroDraft;
     private ConversacionWhatsAppNumeroDto? _apiAccessDraft;
     private bool ApiAccessSaving { get; set; }
+    private ConversacionWhatsAppNumeroDto? _apiArchiveCandidate;
+    private bool ApiArchiveSaving { get; set; }
+    private string _apiArchiveError = string.Empty;
+    private bool _apiPhoneNumberIdTouched;
     private ConversacionWhatsAppConfigDto? _metaConfigDraft;
     private string _apiWorkspaceView = "integracion";
     private bool _replaceAccessToken;
@@ -1914,6 +1956,13 @@
     private int? _connectPhoneChooserFor;
     private string _connectPhoneInput = string.Empty;
     private CancellationTokenSource? _pollingCts;
+    private readonly CancellationTokenSource _lifetimeCts = new();
+    private IJSObjectReference? _embeddedSignupModule;
+    private DotNetObjectReference<ConversacionesConfiguracion>? _embeddedSignupReference;
+    private Guid? _embeddedSignupId;
+    private bool _embeddedSignupBusy;
+    private string _embeddedSignupState = string.Empty;
+    private string _embeddedSignupMessage = string.Empty;
 
     /// <summary>
     /// Números cuyo QR/código de pairing fue iniciado explícitamente en esta sesión de UI.
@@ -1993,7 +2042,7 @@
         => Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri)
            && System.Web.HttpUtility.ParseQueryString(uri.Query)["directo"] == "1";
 
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
         Nav.LocationChanged += HandleLocationChanged;
         ApplyStartupQuery();
@@ -2001,16 +2050,49 @@
             _expandedSettingsCategories.Add(_activePrimaryTab);
         _suggestedBaseUrl = GetCurrentBaseUrl();
         UpdatePageHeader();
+        Loading = true;
+        _ = CompleteProtectedInitializationAsync();
+        return Task.CompletedTask;
+    }
 
-        if (!await AuthorizationSvc.CanManageAsync())
+    private async Task CompleteProtectedInitializationAsync()
+    {
+        try
         {
-            Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones"));
-            return;
-        }
+            await SessionInitialization.WaitUntilReadyAsync(_lifetimeCts.Token);
+            if (!AppUserSession.IsAuthenticated)
+            {
+                NavigateToLoginPreservingCurrentUrl();
+                return;
+            }
 
-        await LoadWebhookTokenAsync();
-        await LoadAsync();
-        _navigationReady = true;
+            var tenantIdentityState = await TenantIdentityReadiness.WaitForTenantIdentityReadyAsync(_lifetimeCts.Token);
+            if (tenantIdentityState == AlfaCore.Services.TenantIdentityState.Unauthenticated)
+            {
+                NavigateToLoginPreservingCurrentUrl();
+                return;
+            }
+
+            if (!await AuthorizationSvc.CanManageAsync(_lifetimeCts.Token))
+            {
+                Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones"), replace: true);
+                return;
+            }
+
+            await LoadWebhookTokenAsync();
+            await LoadAsync();
+            _navigationReady = true;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (_lifetimeCts.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void NavigateToLoginPreservingCurrentUrl()
+    {
+        var relative = "/" + Nav.ToBaseRelativePath(Nav.Uri).TrimStart('/');
+        Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(relative)}", replace: true);
     }
 
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
@@ -2078,9 +2160,120 @@
 
     public void Dispose()
     {
+        _lifetimeCts.Cancel();
         Nav.LocationChanged -= HandleLocationChanged;
         StopPolling();
         PageHeader.Clear();
+        _lifetimeCts.Dispose();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _embeddedSignupReference?.Dispose();
+        if (_embeddedSignupModule is not null)
+            await _embeddedSignupModule.DisposeAsync();
+    }
+
+    private async Task StartEmbeddedSignupAsync()
+    {
+        if (HostEnvironment.IsDevelopment())
+            await JS.InvokeVoidAsync("alfaEs2Diagnostics.capture", "click-handler-entry");
+        await AuthorizationSvc.EnsureCanManageAsync();
+        var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+        var usuario = AppUserSession.GetCurrentUserName().Trim();
+        if (idBase <= 0 || usuario.Length == 0) return;
+        _embeddedSignupBusy = true;
+        _embeddedSignupMessage = "Conectando con Meta…";
+        try
+        {
+            var start = await EmbeddedSignup.StartAsync(new(idBase, idBase.ToString(), usuario));
+            if (HostEnvironment.IsDevelopment())
+                await JS.InvokeVoidAsync("alfaEs2Diagnostics.capture", "after-start-async");
+            _embeddedSignupId = start.IdOnboarding;
+            _embeddedSignupState = start.State;
+            const string moduleVersion = "es2-config-id-fix-1";
+            var moduleUrl = HostEnvironment.IsDevelopment()
+                ? $"./js/whatsappEmbeddedSignup.js?v={moduleVersion}"
+                : "./js/whatsappEmbeddedSignup.js";
+            _embeddedSignupModule ??= await JS.InvokeAsync<IJSObjectReference>("import", moduleUrl);
+            if (HostEnvironment.IsDevelopment())
+                await JS.InvokeVoidAsync("alfaEs2Diagnostics.capture", "after-module-import");
+            _embeddedSignupReference ??= DotNetObjectReference.Create(this);
+            var options = EmbeddedSignupOptions.Value;
+            var launchOptions = new Dictionary<string, object?>
+            {
+                ["appId"] = options.AppId,
+                ["graphApiVersion"] = options.GraphApiVersion,
+                ["config_id"] = options.EmbeddedSignupConfigId,
+                ["state"] = start.State,
+                ["developmentDiagnostics"] = HostEnvironment.IsDevelopment()
+            };
+            await _embeddedSignupModule.InvokeVoidAsync("launch", launchOptions, _embeddedSignupReference);
+        }
+        catch (Exception ex)
+        {
+            await AppEvents.LogErrorAsync(
+                "ConversacionesConfiguracion",
+                "StartEmbeddedSignup",
+                ex,
+                "No se pudo iniciar la conexión con Meta.",
+                new { IdBase = idBase });
+            _embeddedSignupMessage = "No se pudo iniciar la conexión con Meta. Revisá la configuración técnica.";
+            _embeddedSignupBusy = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task CompleteEmbeddedSignupAuthorization(string code, string state, string wabaId, string phoneNumberId)
+    {
+        if (_embeddedSignupId is not Guid id || !string.Equals(state, _embeddedSignupState, StringComparison.Ordinal)) return;
+        await AuthorizationSvc.EnsureCanManageAsync();
+        var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+        var usuario = AppUserSession.GetCurrentUserName().Trim();
+        try
+        {
+            await EmbeddedSignup.HandleAuthorizationCallbackAsync(new(id, idBase, state, code, usuario, wabaId, phoneNumberId));
+            _embeddedSignupMessage = "Autorización recibida correctamente. La configuración automática continuará en la próxima etapa.";
+        }
+        catch
+        {
+            _embeddedSignupMessage = "No se pudo completar la autorización con Meta.";
+        }
+        finally { _embeddedSignupBusy = false; await InvokeAsync(StateHasChanged); }
+    }
+
+    [JSInvokable]
+    public Task EmbeddedSignupCancelled()
+    {
+        _embeddedSignupBusy = false;
+        _embeddedSignupMessage = "Conexión cancelada. Podés intentarlo nuevamente.";
+        return PersistEmbeddedSignupCancellationAsync();
+    }
+
+    private async Task PersistEmbeddedSignupCancellationAsync()
+    {
+        if (_embeddedSignupId is Guid id)
+        {
+            var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+            var usuario = AppUserSession.GetCurrentUserName().Trim();
+            try { await EmbeddedSignup.HandleCancellationAsync(id, idBase, _embeddedSignupState, usuario); } catch { }
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task EmbeddedSignupFailed(string errorCode)
+    {
+        _embeddedSignupBusy = false;
+        var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+        var safeCode = string.Equals(errorCode, "META_EMBEDDED_SIGNUP_EVENT_ERROR", StringComparison.Ordinal) ? errorCode : "META_EMBEDDED_SIGNUP_EVENT_ERROR";
+        var incident = _embeddedSignupId is Guid id && idBase > 0
+            ? await EmbeddedSignupErrorLogger.LogAsync(id, idBase, "AUTHORIZATION", safeCode, null, null, 0)
+            : string.Empty;
+        _embeddedSignupMessage = string.IsNullOrWhiteSpace(incident)
+            ? "Meta no pudo completar la autorización. Podés intentarlo nuevamente."
+            : $"Meta no pudo completar la autorización. Código: {incident}.";
+        await InvokeAsync(StateHasChanged);
     }
 
     private void UpdatePageHeader()
@@ -2173,7 +2366,7 @@
                     Icon = "bi-floppy",
                     Style = PageHeaderActionStyle.Primary,
                     Priority = PageHeaderActionPriority.Essential,
-                    Disabled = Saving,
+                    Disabled = Saving || (!editingRegla && !IsApiPhoneNumberIdValid(CurrentApiPhoneNumberId)),
                     Busy = Saving,
                     OnClick = editingRegla
                         ? GuardarReglaAsync
@@ -2289,12 +2482,22 @@
                                 Disabled = Loading || Saving,
                                 OnClick = StartEditSelectedApiNumeroAsync
                             });
+                            listActions.Add(new PageHeaderAction
+                            {
+                                Key = "quitar-numero-api",
+                                Label = "Quitar de AlfaCore",
+                                Icon = "bi-archive",
+                                Style = PageHeaderActionStyle.Danger,
+                                Priority = PageHeaderActionPriority.Overflow,
+                                Disabled = Loading || Saving,
+                                OnClick = RequestArchiveSelectedApiNumeroAsync
+                            });
                         }
 
                         listActions.Add(new PageHeaderAction
                         {
                             Key = "nuevo-numero-api",
-                            Label = "Nuevo número",
+                            Label = "Agregar por Phone Number ID",
                             Icon = "bi-plus-circle",
                             Style = PageHeaderActionStyle.Primary,
                             Priority = PageHeaderActionPriority.Essential,
@@ -3266,6 +3469,7 @@
         if (SelectedApiNumero is not null)
             _apiNumeroDraft = CloneNumero(SelectedApiNumero);
 
+        _apiPhoneNumberIdTouched = false;
         UpdatePageHeader();
         await InvokeAsync(StateHasChanged);
     }
@@ -3284,12 +3488,14 @@
         _selectedApiNumeroId = null;
         _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
         _addingApiNumero = true;
+        _apiPhoneNumberIdTouched = false;
         UpdatePageHeader();
     }
 
     private async Task CancelApiNumeroEditAsync()
     {
         _apiNumeroDraft = null;
+        _apiPhoneNumberIdTouched = false;
         UpdatePageHeader();
         await InvokeAsync(StateHasChanged);
     }
@@ -3298,6 +3504,7 @@
     {
         _addingApiNumero = false;
         _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
+        _apiPhoneNumberIdTouched = false;
         UpdatePageHeader();
         await InvokeAsync(StateHasChanged);
     }
@@ -3307,12 +3514,112 @@
         if (_apiNumeroDraft is null)
             return;
 
+        _apiPhoneNumberIdTouched = true;
+        _apiNumeroDraft.PhoneNumberId = (_apiNumeroDraft.PhoneNumberId ?? string.Empty).Trim();
+        if (!IsApiPhoneNumberIdValid(_apiNumeroDraft.PhoneNumberId))
+        {
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
         await SaveNumeroAsync(_apiNumeroDraft);
         if (_feedback?.Severity == AppUiFeedbackSeverity.Success)
         {
             _apiNumeroDraft = null;
         }
 
+        UpdatePageHeader();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string CurrentApiPhoneNumberId
+        => _addingApiNumero
+            ? _nuevoNumero.PhoneNumberId
+            : _apiNumeroDraft?.PhoneNumberId ?? string.Empty;
+
+    private static bool IsApiPhoneNumberIdValid(string? value)
+    {
+        var normalized = (value ?? string.Empty).Trim();
+        return normalized.Length > 0 && normalized.All(static character => character is >= '0' and <= '9');
+    }
+
+    private string? GetApiPhoneNumberIdError(string? value)
+    {
+        if (!_apiPhoneNumberIdTouched)
+            return null;
+
+        var normalized = (value ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+            return "El Phone Number ID es obligatorio.";
+
+        return normalized.All(static character => character is >= '0' and <= '9')
+            ? null
+            : "Ingresá únicamente dígitos, sin espacios ni símbolos.";
+    }
+
+    private Task UpdateApiPhoneNumberId(string? value, bool isNew)
+    {
+        _apiPhoneNumberIdTouched = true;
+        if (isNew)
+            _nuevoNumero.PhoneNumberId = value ?? string.Empty;
+        else if (_apiNumeroDraft is not null)
+            _apiNumeroDraft.PhoneNumberId = value ?? string.Empty;
+
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    private Task RequestArchiveSelectedApiNumeroAsync()
+    {
+        if (SelectedApiNumero is { } numero)
+        {
+            _apiArchiveCandidate = CloneNumero(numero);
+            _apiArchiveError = string.Empty;
+        }
+
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task CancelArchiveApiNumero()
+    {
+        if (ApiArchiveSaving)
+            return Task.CompletedTask;
+
+        _apiArchiveCandidate = null;
+        _apiArchiveError = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ConfirmArchiveApiNumeroAsync()
+    {
+        if (_apiArchiveCandidate is null)
+            return;
+
+        ApiArchiveSaving = true;
+        _apiArchiveError = string.Empty;
+        await InvokeAsync(StateHasChanged);
+
+        var draft = CloneNumero(_apiArchiveCandidate);
+        draft.Activo = false;
+        var result = await UiOps.RunAsync(
+            () => ConfigSvc.SaveWhatsAppNumeroAsync(draft),
+            "No se pudo quitar el número de AlfaCore.");
+
+        if (result.Success)
+        {
+            _selectedApiNumeroId = null;
+            _apiArchiveCandidate = null;
+            await LoadNumerosAsync();
+            _feedbackScope = "whatsapp";
+            _feedback = AppUiMessage.Success("Número quitado", "El número ya no aparece entre los números activos de AlfaCore.");
+        }
+        else
+        {
+            _apiArchiveError = result.Feedback?.Message ?? "No se pudo quitar el número de AlfaCore.";
+        }
+
+        ApiArchiveSaving = false;
         UpdatePageHeader();
         await InvokeAsync(StateHasChanged);
     }
@@ -3754,6 +4061,15 @@
     private async Task SaveNumeroAsync(ConversacionWhatsAppNumeroDto numero)
     {
         _feedbackScope = "whatsapp";
+        _apiPhoneNumberIdTouched = true;
+        numero.PhoneNumberId = (numero.PhoneNumberId ?? string.Empty).Trim();
+        if (!IsApiPhoneNumberIdValid(numero.PhoneNumberId))
+        {
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
         Saving = true;
         _feedback = null;
 
@@ -3779,13 +4095,22 @@
     private async Task AddNumeroAsync()
     {
         _feedbackScope = "whatsapp";
-        if (string.IsNullOrWhiteSpace(_nuevoNumero.PhoneNumberId) || string.IsNullOrWhiteSpace(_nuevoNumero.Nombre))
+        _apiPhoneNumberIdTouched = true;
+        _nuevoNumero.PhoneNumberId = (_nuevoNumero.PhoneNumberId ?? string.Empty).Trim();
+        if (!IsApiPhoneNumberIdValid(_nuevoNumero.PhoneNumberId))
+        {
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_nuevoNumero.Nombre))
         {
             _feedback = new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "Faltan datos",
-                Message = "Completá nombre y Phone Number ID antes de agregar el número."
+                Title = "Falta el nombre",
+                Message = "Completá el nombre antes de agregar el número."
             };
             await InvokeAsync(StateHasChanged);
             return;
@@ -3805,6 +4130,7 @@
             _feedback = AppUiMessage.Success("Número agregado", $"'{nombre}' ya está disponible.");
             _nuevoNumero = new ConversacionWhatsAppNumeroDto { Activo = true };
             _addingApiNumero = false;
+            _apiPhoneNumberIdTouched = false;
             await LoadNumerosAsync();
             _selectedApiNumeroId = WhatsAppApiNumeros.FirstOrDefault(numero =>
                 string.Equals(numero.PhoneNumberId.Trim(), phoneNumberId, StringComparison.OrdinalIgnoreCase))?.IdNumero;
@@ -4801,7 +5127,7 @@
             if (IsApiIntegrationView)
                 return _metaConfigDraft is null ? "WhatsApp API · Integración Meta" : "WhatsApp API · Editar integración Meta";
             if (_addingApiNumero)
-                return "WhatsApp API · Nuevo número";
+                return "WhatsApp API · Agregar por Phone Number ID";
             if (SelectedApiNumero is not null)
             {
                 var prefix = _apiNumeroDraft is null ? string.Empty : "Editar ";

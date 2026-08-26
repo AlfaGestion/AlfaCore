@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.DataProtection;
 
 namespace AlfaCore;
 
@@ -117,6 +118,14 @@ public class Program
             {
                 options.ListenLocalhost(serverOptions.Puerto);
             }
+
+            if (builder.Environment.IsDevelopment() && serverOptions.PuertoHttpsDesarrollo is > 0)
+            {
+                options.ListenLocalhost(serverOptions.PuertoHttpsDesarrollo.Value, listenOptions =>
+                {
+                    listenOptions.UseHttps();
+                });
+            }
         });
 
         // Add services to the container.
@@ -124,6 +133,8 @@ public class Program
             .AddInteractiveServerComponents();
         builder.Services.AddScoped<ISessionService, SessionService>();
         builder.Services.AddSingleton<IAppModeService, AppModeService>();
+        builder.Services.AddScoped<IAppSessionInitialization, AppSessionInitialization>();
+        builder.Services.AddScoped<ITenantIdentityReadiness, TenantIdentityReadiness>();
         builder.Services.AddScoped<IRouteContextService, RouteContextService>();
         builder.Services.AddScoped<IPasswordVerifier, PlainTextPasswordVerifier>();
         builder.Services.AddScoped<ICentralClientesService, CentralClientesService>();
@@ -152,6 +163,15 @@ public class Program
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
         builder.Services.AddScoped<IConversacionesAuthorizationService, ConversacionesAuthorizationService>();
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
+        builder.Services.AddScoped<IWhatsAppEmbeddedSignupStore, WhatsAppEmbeddedSignupStore>();
+        builder.Services.AddScoped<IWhatsAppAssetOwnershipStore, WhatsAppAssetOwnershipStore>();
+        builder.Services.AddScoped<IWhatsAppEmbeddedSignupOrchestrator, WhatsAppEmbeddedSignupOrchestrator>();
+        builder.Services.AddScoped<IMetaOAuthClient, MetaOAuthClient>();
+        builder.Services.AddSingleton<IWhatsAppEmbeddedSignupStateProtector, WhatsAppEmbeddedSignupStateProtector>();
+        builder.Services.AddScoped<WhatsAppSecureVault>();
+        builder.Services.AddScoped<IWhatsAppCredentialVault>(provider => provider.GetRequiredService<WhatsAppSecureVault>());
+        builder.Services.AddScoped<IWhatsAppPhonePinVault>(provider => provider.GetRequiredService<WhatsAppSecureVault>());
+        builder.Services.AddScoped<IWhatsAppEmbeddedSignupErrorLogger, WhatsAppEmbeddedSignupErrorLogger>();
         builder.Services.AddScoped<IConversacionesInformesService, ConversacionesInformesService>();
         builder.Services.AddScoped<ITablasReferenciaService, TablasReferenciaService>();
         builder.Services.AddScoped<IAnyDeskLocalSettingsService, AnyDeskLocalSettingsService>();
@@ -241,10 +261,39 @@ public class Program
         builder.Services.AddScoped<FilterStateService>();
         builder.Services.AddScoped<GestionFilterStateService>();
         builder.Services.AddHttpClient();
+        builder.Services.AddHttpClient("MetaEmbeddedSignupOAuth").RemoveAllLoggers();
         builder.Services.AddHttpContextAccessor();
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
+        var embeddedSignupSection = builder.Configuration.GetSection(WhatsAppEmbeddedSignupOptions.SectionName);
+        var embeddedSignupStartupOptions = embeddedSignupSection.Get<WhatsAppEmbeddedSignupOptions>() ?? new();
+        var dataProtection = builder.Services.AddDataProtection().SetApplicationName("AlfaCore.WhatsAppEmbeddedSignup");
+        if (!string.IsNullOrWhiteSpace(embeddedSignupStartupOptions.DataProtectionKeysPath))
+        {
+            var keyDirectory = new DirectoryInfo(embeddedSignupStartupOptions.DataProtectionKeysPath);
+            dataProtection.PersistKeysToFileSystem(keyDirectory);
+            if (OperatingSystem.IsWindows())
+                dataProtection.ProtectKeysWithDpapi();
+        }
+
+        builder.Services.AddOptions<WhatsAppEmbeddedSignupOptions>()
+            .Bind(embeddedSignupSection)
+            .Validate(options => !options.Enabled ||
+                (!string.IsNullOrWhiteSpace(options.AppId)
+                 && !string.IsNullOrWhiteSpace(options.BusinessPortfolioId)
+                 && !string.IsNullOrWhiteSpace(options.SystemUserId)
+                 && !string.IsNullOrWhiteSpace(options.EmbeddedSignupConfigId)
+                 && !string.IsNullOrWhiteSpace(options.GraphApiVersion)
+                 && Uri.TryCreate(options.GraphBaseUrl, UriKind.Absolute, out var graphBaseUri)
+                 && graphBaseUri.Scheme == Uri.UriSchemeHttps
+                 && !string.IsNullOrWhiteSpace(options.AppSecret)
+                 && !string.IsNullOrWhiteSpace(options.DataProtectionKeysPath)
+                 && Path.IsPathRooted(options.DataProtectionKeysPath)
+                 && options.OnboardingExpirationMinutes > 0
+                 && options.MaxRetryCount >= 0),
+                "La configuración global de WhatsApp Embedded Signup es inválida.")
+            .ValidateOnStart();
         builder.Services.Configure<PushNotificationsOptions>(builder.Configuration.GetSection(PushNotificationsOptions.SectionName));
         builder.Services.AddScoped<IAlfaKnowledgeSuggestionService, AlfaKnowledgeSuggestionService>();
         builder.Services.AddScoped<IConversacionAnalisisService, ConversacionAnalisisService>();
@@ -260,6 +309,7 @@ public class Program
         builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
         builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
         builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
+        builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
 
         var app = builder.Build();
 
@@ -287,8 +337,20 @@ public class Program
         });
 
         app.UseMiddleware<AppExceptionLoggingMiddleware>();
-        app.UseStaticFiles();
+        app.UseStaticFiles(new StaticFileOptions
+        {
+            FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(app.Environment.WebRootPath),
+            ContentTypeProvider = StaticFileContentTypes.CreateProvider()
+        });
         app.UseAntiforgery();
+
+        app.MapGet("/manifest.webmanifest", () =>
+        {
+            var manifestPath = Path.Combine(app.Environment.WebRootPath, "manifest.webmanifest");
+            return File.Exists(manifestPath)
+                ? Results.File(manifestPath, "application/manifest+json")
+                : Results.NotFound();
+        });
 
         app.MapGet("/app.css", () =>
             ResolveStaticAsset("app.css") is { } file

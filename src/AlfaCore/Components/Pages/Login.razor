@@ -772,6 +772,13 @@
 
         if (TryGetSafeReturnUrl(out var returnUrl))
         {
+            if (TryGetTenantBaseId(returnUrl, out var targetBaseId))
+            {
+                var tenantReady = await TryPrepareTenantIdentityAsync(targetBaseId);
+                if (!tenantReady)
+                    return;
+            }
+
             Logger.LogInformation("Login: navigating to returnUrl {ReturnUrl}", returnUrl);
             Nav.NavigateTo(returnUrl, replace: true);
             return;
@@ -816,6 +823,52 @@
 
         Logger.LogInformation("Login: redirecting to selector base");
         Nav.NavigateTo("/seleccionar-base", replace: true);
+    }
+
+    private async Task<bool> TryPrepareTenantIdentityAsync(int targetBaseId)
+    {
+        var targetSession = SessionSvc.GetAllSessions().FirstOrDefault(session => session.BaseId == targetBaseId);
+        if (targetSession is null)
+        {
+            _error = "La base solicitada no está disponible para tu cuenta.";
+            return false;
+        }
+
+        SessionSvc.SwitchSession(targetSession.Id);
+        await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", targetSession.Id.ToString());
+        AppUserSession.HandleSqlSessionChanged();
+
+        var centralLogin = AppUserSession.CurrentUser?.CentralLogin ?? _userName;
+        var internalSession = await LegacyBaseUserSession.ResolveByCentralLoginAsync(centralLogin);
+        if (internalSession is null)
+        {
+            _error = "Tu cuenta central es válida, pero no se pudo resolver el usuario interno de la base solicitada.";
+            return false;
+        }
+
+        AppUserSession.AdoptInternalUser(internalSession);
+        if (!AppUserSession.IsAuthorizedForSession(targetSession.Id))
+        {
+            _error = "No se pudo completar la identidad interna para la base solicitada.";
+            return false;
+        }
+
+        await PersistUserTokenAsync();
+        Logger.LogInformation(
+            "Login: identidad interna adoptada antes de returnUrl. BaseId={BaseId}, Usuario={Usuario}",
+            targetBaseId,
+            AppUserSession.CurrentUser?.UserName);
+        return true;
+    }
+
+    private static bool TryGetTenantBaseId(string returnUrl, out int baseId)
+    {
+        baseId = 0;
+        var path = returnUrl.Split('?', 2)[0].Split('#', 2)[0];
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return segments.Length >= 2
+               && int.TryParse(segments[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out baseId)
+               && baseId > 0;
     }
 
     private async Task OnKeyDownAsync(KeyboardEventArgs args)

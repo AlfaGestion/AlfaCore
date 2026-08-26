@@ -6,6 +6,7 @@
 @inject NavigationManager Nav
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
 @inject AlfaCore.Services.IRouteContextService RouteContext
@@ -1660,6 +1661,8 @@ else
         if (!firstRender)
             return;
 
+        SessionInitialization.BeginRestoring();
+
         try
         {
             StartGlobalConversationPolling();
@@ -1706,7 +1709,11 @@ else
                 {
                     var earlyToken = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
                     if (!string.IsNullOrEmpty(earlyToken))
-                        AppUserSession.TryRestoreFromToken(earlyToken);
+                    {
+                        var restored = AppUserSession.TryRestoreFromToken(earlyToken);
+                        if (!restored)
+                            await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_user_token");
+                    }
                 }
                 catch { }
             }
@@ -1725,7 +1732,11 @@ else
                     {
                         var token = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_user_token");
                         if (!string.IsNullOrEmpty(token))
-                            AppUserSession.TryRestoreFromToken(token);
+                        {
+                            var restored = AppUserSession.TryRestoreFromToken(token);
+                            if (!restored)
+                                await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_user_token");
+                        }
                     }
                 }
                 catch { }
@@ -1812,6 +1823,7 @@ else
         }
         finally
         {
+            SessionInitialization.Complete(AppUserSession.IsAuthenticated);
             _isInitializing = false;
             try
             {

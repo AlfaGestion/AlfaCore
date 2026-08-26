@@ -8,6 +8,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AlfaCore", "src\AlfaCore\Al
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AlfaCoreShell", "src\AlfaCoreShell\AlfaCoreShell.csproj", "{F9E79A11-0A8F-4A43-8E18-D1DD0C618B85}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AlfaCore.Tests", "tests\AlfaCore.Tests\AlfaCore.Tests.csproj", "{A27F0E8C-8B93-4FA6-BD75-A4B3A8A0E511}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -22,6 +24,10 @@ Global
 		{F9E79A11-0A8F-4A43-8E18-D1DD0C618B85}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{F9E79A11-0A8F-4A43-8E18-D1DD0C618B85}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{F9E79A11-0A8F-4A43-8E18-D1DD0C618B85}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A27F0E8C-8B93-4FA6-BD75-A4B3A8A0E511}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A27F0E8C-8B93-4FA6-BD75-A4B3A8A0E511}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A27F0E8C-8B93-4FA6-BD75-A4B3A8A0E511}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A27F0E8C-8B93-4FA6-BD75-A4B3A8A0E511}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -29,6 +35,7 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{36D8E7DD-050E-D843-A1CC-5DDF80953EE6} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{F9E79A11-0A8F-4A43-8E18-D1DD0C618B85} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{A27F0E8C-8B93-4FA6-BD75-A4B3A8A0E511} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {40A349BD-1641-4321-B3CB-565CD1B0D398}

@@ -1178,7 +1178,7 @@ Alcance exclusivo: `Configuración → Canales → WhatsApp API`. No se modific�
 Se separaron dos contextos que antes convivían dentro del mismo formulario y compartían un guardado ambiguo:
 
 - **Integración Meta global**: Read → `Editar integración` → Edit con `Guardar`/`Cancelar`.
-- **Números WhatsApp API**: lista izquierda y detalle derecho; Read → `Editar`/`Nuevo número`; Edit/Create → `Guardar`/`Cancelar`.
+- **Números WhatsApp API**: lista izquierda y detalle derecho; Read → `Editar`/`Agregar por Phone Number ID`; Edit/Create → `Guardar`/`Cancelar`.
 
 La barra contextual reutiliza `MainPageHeader`, acciones esenciales a la izquierda, historial mediante `IPageHeaderNavigationService` y el dirty-state existente. Cada handler invocado desde el header fuerza el rerender del componente propietario. El layout usa sidebar controlado + `minmax(0, 1fr)`, sin `max-width` global; a 1024 conserva maestro/detalle y debajo de 800 apila lista y detalle.
 
@@ -1194,7 +1194,7 @@ Secretos auditados: `AccessToken`, `VerifyToken` y `AppSecret`. Read/Edit normal
 
 Seleccionar un número queda en Read. Edit/Create trabajan sobre `ConversacionWhatsAppNumeroDto` completo e independiente. Campos editables: `Nombre` (identificación operativa) y `PhoneNumberId` (identificador que Meta entrega y clave funcional usada por el UPSERT existente). Solo lectura: `IdNumero` y proveedor; WABA/proveedor globales pertenecen a Integración Meta. Las propiedades Web/QR no se exponen y permanecen preservadas por el clon y el servicio.
 
-`Nuevo número` no persiste al abrir; Guardar reutiliza `SaveWhatsAppNumeroAsync` y mantiene su semántica de adopción/actualización por Phone Number ID. La clasificación sigue usando `IsWhatsAppWebManagedNumero`: API muestra exclusivamente registros no-Web y ya no filtra esa clasificación por `Activo`, usuarios ni número predeterminado.
+`Agregar por Phone Number ID` no persiste al abrir; Guardar reutiliza `SaveWhatsAppNumeroAsync` y mantiene su semántica de adopción/actualización por Phone Number ID. La clasificación sigue usando `IsWhatsAppWebManagedNumero`: API muestra exclusivamente registros no-Web. El listado operativo muestra los activos; usuarios y número predeterminado no intervienen en la clasificación.
 
 `Asignar usuarios` usa `AlfaDialog`, lista real y clon completo con colección `Usuarios` independiente. Cancelar descarta; Guardar reutiliza `SaveWhatsAppNumeroAsync`, recarga y conserva las demás propiedades.
 
@@ -1214,7 +1214,7 @@ No existe actualmente un flujo de WhatsApp Embedded Signup en AlfaCore: no hay b
 | Secreto Edit | Reemplazar | setters `SetReplace*` | Habilita input local | Habilitado en Edit |
 | Secreto Edit | Cancelar reemplazo | setters `SetReplace*`/`Set*Replacement` | Limpia reemplazo local | Habilitado en Edit |
 | Número Read | Editar | `StartEditSelectedApiNumeroAsync` | Crea clon; no persiste | Requiere selección |
-| Número Read | Nuevo número | `StartAddApiNumero` | Abre Create; no persiste | Deshabilitado durante carga/guardado |
+| Número Read | Agregar por Phone Number ID | `StartAddApiNumero` | Abre Create; no persiste | Deshabilitado durante carga/guardado |
 | Número Edit | Guardar | `SaveApiNumeroDraftAsync` | `SaveWhatsAppNumeroAsync` | Busy/deshabilitado al guardar |
 | Número Edit | Cancelar | `CancelApiNumeroEditAsync` | Descarta clon; no persiste | Deshabilitado al guardar |
 | Número Create | Guardar | `AddNumeroAsync` | `SaveWhatsAppNumeroAsync` | Busy/deshabilitado al guardar |
@@ -1234,3 +1234,32 @@ Validar visualmente y por interacción real a 2048, 1440, 1024 y menos de 800 px
 La vista principal no expone el callback tokenizado: muestra `Configurado`/`No configurado` y `Copiar callback` transfiere al portapapeles la URL completa ya cargada, sin generar ni reemplazar el token. La fuente de configuración y los ID internos quedaron en `Información técnica` colapsada.
 
 Modo y proveedor conservan sus selectores porque el sistema implementa alternativas reales (Meta, Business y convivencia; Meta o Business como proveedor predeterminado). WABA ID, versión Graph API y base pública se agrupan en `Configuración avanzada`. El resumen de accesos muestra hasta cinco usuarios y `+N`; el diálogo mantiene la lista completa.
+
+## Etapa 5.1 — Cierre funcional WhatsApp API
+
+### Quitar de AlfaCore
+
+El overflow de un número activo ofrece `Quitar de AlfaCore` con confirmación explícita. La operación clona el DTO completo, establece `Activo=false` y reutiliza `SaveWhatsAppNumeroAsync`. No ejecuta DELETE, no llama a Meta y no modifica conversaciones, mensajes ni historial. El registro deja de aparecer porque el listado operativo filtra activos.
+
+Si luego se agrega el mismo `PhoneNumberId`, el UPSERT existente encuentra la fila por ese identificador, actualiza nombre y `Activo=true`, y adopta el mismo `IdNumero`. Al ser una adopción sin usuarios nuevos, el servicio conserva las asignaciones existentes. También quedan conservadas las relaciones e historial asociados a ese ID.
+
+### Validación local
+
+El alta y la edición aplican `Trim`, requieren un valor no vacío y aceptan exclusivamente caracteres ASCII `0-9`; letras, espacios internos y símbolos bloquean Guardar y muestran el error junto al campo. No se impone longitud y esta validación no confirma la existencia del identificador en Meta.
+
+**Pendiente: validación remota del Phone Number ID.** No existe actualmente un endpoint/handler de AlfaCore que realice esa verificación.
+
+### Contrato futuro de Embedded Signup
+
+`Conectar con Meta` es el camino principal diseñado, pero no se renderiza como CTA hasta disponer de un handler real. El camino secundario disponible es `Agregar por Phone Number ID`.
+
+Flujo propuesto, sin persistencia paralela:
+
+1. Embedded Signup obtiene la autorización/código de Meta.
+2. El backend intercambia el código y obtiene el WABA autorizado.
+3. Consulta los números autorizados y sus Phone Number ID.
+4. Si Meta devuelve varios, permite seleccionar e importar uno o varios.
+5. Cada selección se normaliza al DTO actual y se persiste mediante `SaveWhatsAppNumeroAsync`.
+6. Se recarga `Números WhatsApp API` y luego se asignan usuarios con el diálogo existente.
+
+El usuario no copia el Phone Number ID en este flujo. Tanto altas manuales como Embedded Signup terminan en `CONV_WHATSAPP_NUMEROS` y en el mismo listado. Hoy no existe un dato persistente confiable para distinguir origen Manual/Embedded Signup; por eso no se muestra badge ni se infiere mediante heurísticas.

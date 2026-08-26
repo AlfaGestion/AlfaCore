@@ -1,3 +1,5 @@
+@inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment HostEnvironment
+
 <!DOCTYPE html>
 <html lang="es">
 
@@ -23,6 +25,20 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="AlfaCore" />
     <script src="https://www.google.com/recaptcha/api.js?render=explicit" async defer></script>
+    @if (HostEnvironment.IsDevelopment())
+    {
+        <script>
+            window.alfaEs2Diagnostics = {
+                activation: {},
+                capture: function (stage) {
+                    var active = navigator.userActivation?.isActive === true;
+                    this.activation[stage] = active;
+                    console.debug('[ES2]', stage, { userActivation: active });
+                    return active;
+                }
+            };
+        </script>
+    }
     <script>
         (function () {
             var t = localStorage.getItem('dashboard.theme') || 'dark';

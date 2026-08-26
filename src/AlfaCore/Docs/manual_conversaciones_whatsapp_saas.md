@@ -172,12 +172,14 @@ Ruta habitual:
 ### 6.1 Canal WhatsApp
 
 1. Abrir `Configuración → Canales → WhatsApp API`.
-2. Seleccionar `Integración Meta`.
-3. Elegir `Editar integración`.
-4. Revisar proveedor, WABA ID, Base pública HTTPS y versión de Graph API.
-5. Usar `Reemplazar` únicamente para la credencial que realmente deba cambiarse.
-6. Guardar desde la barra superior.
-7. Copiar el callback que muestra AlfaCore, confirmando que en SaaS termine con el token de base.
+2. Si el alta automática está habilitada en Development, usar `Conectar con Meta`. El asistente autoriza la cuenta; la importación automática de números quedará para una etapa posterior.
+3. `Agregar por Phone Number ID` continúa disponible como alternativa manual.
+4. Seleccionar `Integración Meta`.
+5. Elegir `Editar integración`.
+6. Revisar proveedor, WABA ID, Base pública HTTPS y versión de Graph API.
+7. Usar `Reemplazar` únicamente para la credencial que realmente deba cambiarse.
+8. Guardar desde la barra superior.
+9. Usar `Copiar callback`; AlfaCore no muestra en pantalla la URL tokenizada completa.
 
 ### 6.2 Secretos
 
@@ -193,7 +195,7 @@ Ruta habitual:
 Para cada número:
 
 1. Abrir `Configuración → Canales → WhatsApp API`.
-2. Elegir `Nuevo número`.
+2. Elegir `Agregar por Phone Number ID`.
 3. Escribir un nombre operativo claro, por ejemplo `Soporte AlfaNet - API`.
 4. Cargar el Phone Number ID, no el teléfono visible.
 5. Guardar desde la barra superior.
@@ -206,8 +208,10 @@ Reglas:
 - el historial queda ligado al número receptor;
 - el filtro superior no cambia el número de la conversación;
 - un número sin usuarios asignados queda visible para todos;
-- la clasificación entre WhatsApp API y WhatsApp Business depende de sus datos reales de proveedor/sesión, no de usuarios, estado activo o predeterminado;
+- la clasificación entre WhatsApp API y WhatsApp Business depende de sus datos reales de proveedor/sesión, no de usuarios o predeterminado; el listado operativo muestra los registros activos;
 - no reutilizar como global un Phone Number ID perteneciente a otro cliente.
+
+Para quitar un número del listado, seleccionarlo y usar `Quitar de AlfaCore` desde el menú de opciones. La acción no lo elimina de Meta ni borra conversaciones, mensajes o historial. Si se vuelve a agregar el mismo Phone Number ID, AlfaCore reactiva el registro existente.
 
 ## 8. Usuarios y administradores
 
