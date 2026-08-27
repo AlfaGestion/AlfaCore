@@ -56,10 +56,12 @@ public sealed class WhatsAppEmbeddedSignupSqlIntegrationTests
         var (baseA, baseB) = await GetTwoBaseIdsAsync();
         var now = DateTime.UtcNow;
         var item = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddMinutes(10));
+        item.OnboardingMode = WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence;
         var expired = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddSeconds(-1));
         try
         {
             await store.CreateAsync(item);
+            Assert.Equal(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, (await store.GetAsync(item.IdOnboarding))?.OnboardingMode);
             Assert.Null(await store.ConsumeStateAsync(item.StateHash, baseA, "otro", now));
             Assert.Null(await store.ConsumeStateAsync(item.StateHash, baseB, item.UsuarioIniciador, now));
             Assert.NotNull(await store.ConsumeStateAsync(item.StateHash, baseA, item.UsuarioIniciador, now));
@@ -75,11 +77,134 @@ public sealed class WhatsAppEmbeddedSignupSqlIntegrationTests
     }
 
     [SqlIntegrationFact]
-    public async Task Claiming_ProvidesSingleLeaseRecoveryAndExcludesTerminalStates()
+    public async Task ModesAndAuthorizedCredential_ArePersistedExactlyInSql()
     {
         var store = new WhatsAppEmbeddedSignupStore(Configuration);
         var (baseA, _) = await GetTwoBaseIdsAsync();
         var now = DateTime.UtcNow;
+        var standard = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddMinutes(10));
+        standard.OnboardingMode = WhatsAppEmbeddedOnboardingMode.Standard;
+        var coexistence = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddMinutes(10));
+        coexistence.OnboardingMode = WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence;
+        var reference = $"test-ref-{Guid.NewGuid():N}";
+        try
+        {
+            await store.CreateAsync(standard);
+            await store.CreateAsync(coexistence);
+
+            Assert.Equal(WhatsAppEmbeddedOnboardingMode.Standard, (await store.GetAsync(standard.IdOnboarding))?.OnboardingMode);
+            Assert.Equal(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, (await store.GetAsync(coexistence.IdOnboarding))?.OnboardingMode);
+
+            Assert.NotNull(await store.ConsumeStateAsync(standard.StateHash, baseA, standard.UsuarioIniciador, now));
+            await store.MarkAuthorizedAsync(standard.IdOnboarding, reference, string.Empty);
+            var authorized = await store.GetAsync(standard.IdOnboarding);
+            Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Authorized, authorized?.Status);
+            Assert.Equal("AUTHORIZED", authorized?.CurrentStep);
+            Assert.Equal(reference, authorized?.TokenReference);
+
+            await Assert.ThrowsAsync<ArgumentException>(() => store.MarkAuthorizedAsync(coexistence.IdOnboarding, "", string.Empty));
+            Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Started, (await store.GetAsync(coexistence.IdOnboarding))?.Status);
+        }
+        finally
+        {
+            await CleanupOnboardingsAsync([standard.IdOnboarding, coexistence.IdOnboarding]);
+        }
+    }
+
+    [SqlIntegrationFact]
+    public async Task StartAsync_RoundTripsTheAuthoritativeModeFromSql()
+    {
+        var store = new WhatsAppEmbeddedSignupStore(Configuration);
+        var (baseA, _) = await GetTwoBaseIdsAsync();
+        var orchestrator = new WhatsAppEmbeddedSignupOrchestrator(
+            store,
+            new WhatsAppEmbeddedSignupStateProtector(),
+            new UnusedMetaOAuthClient(),
+            new UnusedCredentialVault(),
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [baseA], OnboardingExpirationMinutes = 30 }));
+        WhatsAppEmbeddedStartResult? standard = null;
+        WhatsAppEmbeddedStartResult? coexistence = null;
+        try
+        {
+            standard = await orchestrator.StartAsync(new(baseA, "TEST", "integration-test", WhatsAppEmbeddedOnboardingMode.Standard));
+            coexistence = await orchestrator.StartAsync(new(baseA, "TEST", "integration-test", WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence));
+
+            Assert.Equal(WhatsAppEmbeddedOnboardingMode.Standard, standard.OnboardingMode);
+            Assert.Equal(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, coexistence.OnboardingMode);
+            Assert.Equal(WhatsAppEmbeddedOnboardingMode.Standard, (await store.GetAsync(standard.IdOnboarding))?.OnboardingMode);
+            Assert.Equal(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, (await store.GetAsync(coexistence.IdOnboarding))?.OnboardingMode);
+        }
+        finally
+        {
+            await CleanupOnboardingsAsync(new[] { standard?.IdOnboarding, coexistence?.IdOnboarding }.OfType<Guid>());
+        }
+    }
+
+    [SqlIntegrationFact]
+    public async Task UiChoiceMapping_RoundTripsDeterministicallyThroughStartAsyncAndSql()
+    {
+        var store = new WhatsAppEmbeddedSignupStore(Configuration);
+        var (baseA, _) = await GetTwoBaseIdsAsync();
+        var orchestrator = new WhatsAppEmbeddedSignupOrchestrator(
+            store,
+            new WhatsAppEmbeddedSignupStateProtector(),
+            new UnusedMetaOAuthClient(),
+            new UnusedCredentialVault(),
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [baseA], OnboardingExpirationMinutes = 30 }));
+        var created = new List<Guid>();
+
+        async Task AssertRoundTripAsync(WhatsAppConnectionChoice choice, WhatsAppEmbeddedOnboardingMode expectedMode)
+        {
+            var selection = new WhatsAppConnectionChoiceSelection();
+            selection.Begin();
+            selection.Select(choice);
+            var immutableChoice = selection.Consume();
+            var mappedMode = WhatsAppConnectionChoiceMapper.ToOnboardingMode(immutableChoice);
+            Assert.Equal(expectedMode, mappedMode);
+
+            var correlationId = Guid.NewGuid().ToString("N");
+            var start = await orchestrator.StartAsync(new(baseA, "TEST", "ui-mapping-integration", mappedMode, correlationId));
+            created.Add(start.IdOnboarding);
+            var persisted = await store.GetAsync(start.IdOnboarding);
+            Assert.Equal(expectedMode, start.OnboardingMode);
+            Assert.Equal(expectedMode, persisted?.OnboardingMode);
+            Assert.Equal(correlationId, persisted?.CorrelationId);
+        }
+
+        try
+        {
+            await AssertRoundTripAsync(WhatsAppConnectionChoice.NewWhatsApp, WhatsAppEmbeddedOnboardingMode.Standard);
+            await AssertRoundTripAsync(WhatsAppConnectionChoice.ExistingWhatsAppBusiness, WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+
+            var selection = new WhatsAppConnectionChoiceSelection();
+            selection.Begin();
+            selection.Select(WhatsAppConnectionChoice.ExistingWhatsAppBusiness);
+            selection.Clear();
+            selection.Begin();
+            selection.Select(WhatsAppConnectionChoice.NewWhatsApp);
+            await AssertRoundTripAsync(selection.Consume(), WhatsAppEmbeddedOnboardingMode.Standard);
+
+            selection.Begin();
+            selection.Select(WhatsAppConnectionChoice.NewWhatsApp);
+            selection.Clear();
+            selection.Begin();
+            selection.Select(WhatsAppConnectionChoice.ExistingWhatsAppBusiness);
+            await AssertRoundTripAsync(selection.Consume(), WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+        }
+        finally
+        {
+            await CleanupOnboardingsAsync(created);
+        }
+    }
+
+    [SqlIntegrationFact]
+    public async Task Claiming_ProvidesSingleLeaseRecoveryAndExcludesTerminalStates()
+    {
+        var store = new WhatsAppEmbeddedSignupStore(Configuration);
+        var (baseA, _) = await GetTwoBaseIdsAsync();
+        // El store reclama globalmente. Un reloj futuro mantiene fuera del lease a onboardings
+        // reales de prueba supervisada sin modificar ni limpiar su evidencia.
+        var now = DateTime.UtcNow.AddDays(7);
         var claimable = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Authorized, now.AddHours(1));
         claimable.NextAttemptUtc = now.AddSeconds(-1);
         var terminal = new[] { WhatsAppEmbeddedOnboardingStatus.Ready, WhatsAppEmbeddedOnboardingStatus.ActionRequired, WhatsAppEmbeddedOnboardingStatus.FailedFinal }
@@ -187,5 +312,18 @@ public sealed class WhatsAppEmbeddedSignupSqlIntegrationTests
         var ids = (await cn.QueryAsync<int>("SELECT TOP (2) id FROM dbo.bases ORDER BY id")).ToArray();
         if (ids.Length < 2) throw new InvalidOperationException("La ALFA_CENTRAL de test debe contener al menos dos bases fixture.");
         return (ids[0], ids[1]);
+    }
+
+    private sealed class UnusedMetaOAuthClient : IMetaOAuthClient
+    {
+        public Task<MetaTokenExchangeResult> ExchangeCodeAsync(string authorizationCode, WhatsAppVaultSecretContext vaultContext, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<MetaTokenInspectionResult> InspectTokenAsync(WhatsAppCredentialReference tokenReference, CancellationToken ct = default) => throw new NotSupportedException();
+    }
+
+    private sealed class UnusedCredentialVault : IWhatsAppCredentialVault
+    {
+        public Task<WhatsAppCredentialReference> StoreAsync(WhatsAppVaultSecretContext context, ReadOnlyMemory<char> secret, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<ReadOnlyMemory<char>> GetAsync(WhatsAppCredentialReference reference, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task RemoveAsync(WhatsAppCredentialReference reference, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

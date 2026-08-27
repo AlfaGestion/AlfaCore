@@ -12,17 +12,17 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
     {
         const string sql = """
             INSERT INTO dbo.WhatsAppEmbeddedOnboarding
-            (IdOnboarding, IdBase, IdCliente, UsuarioIniciador, CorrelationId, StateHash, Estado, PasoActual,
+            (IdOnboarding, IdBase, IdCliente, UsuarioIniciador, CorrelationId, StateHash, ModoOnboarding, Estado, PasoActual,
              FechaInicioUtc, FechaExpiracionUtc, FechaModificacionUtc, NextAttemptUtc)
             VALUES
-            (@IdOnboarding, @IdBase, @IdCliente, @UsuarioIniciador, @CorrelationId, @StateHash, @Estado, @PasoActual,
+            (@IdOnboarding, @IdBase, @IdCliente, @UsuarioIniciador, @CorrelationId, @StateHash, @ModoOnboarding, @Estado, @PasoActual,
              @StartedAtUtc, @ExpiresAtUtc, @ModifiedAtUtc, @NextAttemptUtc);
             """;
         await using var cn = new SqlConnection(ConnectionString);
         await cn.ExecuteAsync(new CommandDefinition(sql, new
         {
             item.IdOnboarding, item.IdBase, item.IdCliente, item.UsuarioIniciador, item.CorrelationId, item.StateHash,
-            Estado = ToDb(item.Status), PasoActual = item.CurrentStep, item.StartedAtUtc, item.ExpiresAtUtc, item.ModifiedAtUtc, item.NextAttemptUtc
+            ModoOnboarding = ToDb(item.OnboardingMode), Estado = ToDb(item.Status), PasoActual = item.CurrentStep, item.StartedAtUtc, item.ExpiresAtUtc, item.ModifiedAtUtc, item.NextAttemptUtc
         }, cancellationToken: ct));
     }
 
@@ -30,6 +30,14 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
     {
         await using var cn = new SqlConnection(ConnectionString);
         return await GetInternalAsync(cn, idOnboarding, null, ct);
+    }
+
+    public async Task<WhatsAppEmbeddedOnboardingDto?> GetLatestForBaseAsync(int idBase, CancellationToken ct = default)
+    {
+        const string sql = "SELECT TOP (1) * FROM dbo.WhatsAppEmbeddedOnboarding WHERE IdBase=@IdBase ORDER BY FechaInicioUtc DESC, FechaModificacionUtc DESC";
+        await using var cn = new SqlConnection(ConnectionString);
+        var row = await cn.QuerySingleOrDefaultAsync<OnboardingRow>(new CommandDefinition(sql, new { IdBase = idBase }, cancellationToken: ct));
+        return row?.ToDto();
     }
 
     public async Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string stateHash, int idBase, string usuario, DateTime nowUtc, CancellationToken ct = default)
@@ -63,8 +71,38 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
         if (rows != 1) throw new InvalidOperationException("El onboarding cambió concurrentemente o no existe.");
     }
 
-    public Task MarkAuthorizedAsync(Guid id, string tokenReference, string metaBusinessId, CancellationToken ct = default)
-        => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.Authorized, "AUTHORIZED", new { TokenReference = tokenReference, MetaBusinessId = metaBusinessId }, ct);
+    public async Task MarkAuthorizedAsync(Guid id, string tokenReference, string metaBusinessId, CancellationToken ct = default)
+    {
+        if (id == Guid.Empty) throw new ArgumentException("El onboarding es obligatorio.", nameof(id));
+        var normalizedReference = tokenReference?.Trim() ?? string.Empty;
+        if (normalizedReference.Length == 0)
+            throw new ArgumentException("La referencia segura es obligatoria para autorizar el onboarding.", nameof(tokenReference));
+
+        WhatsAppEmbeddedSignupStateMachine.EnsureTransition(
+            WhatsAppEmbeddedOnboardingStatus.Started,
+            WhatsAppEmbeddedOnboardingStatus.Authorized);
+
+        const string sql = """
+            UPDATE dbo.WhatsAppEmbeddedOnboarding
+            SET Estado='AUTHORIZED',
+                PasoActual='AUTHORIZED',
+                TokenReference=@TokenReference,
+                MetaBusinessId=@MetaBusinessId,
+                FechaModificacionUtc=SYSUTCDATETIME()
+            WHERE IdOnboarding=@Id
+              AND Estado='STARTED'
+              AND StateConsumedAtUtc IS NOT NULL;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        var rows = await cn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            Id = id,
+            TokenReference = normalizedReference,
+            MetaBusinessId = metaBusinessId?.Trim() ?? string.Empty
+        }, cancellationToken: ct));
+        if (rows != 1)
+            throw new InvalidOperationException("El onboarding no pudo autorizarse de forma atómica.");
+    }
 
     public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default)
         => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.ActionRequired, "ACTION_REQUIRED", new { ActionRequiredReason = ToDb(reason), ErrorSummary = summary, IncidentId = incidentId }, ct);
@@ -85,7 +123,7 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
             (
                 SELECT TOP (1) * FROM dbo.WhatsAppEmbeddedOnboarding WITH (UPDLOCK, READPAST, ROWLOCK)
                 WHERE Estado IN ('AUTHORIZED','DISCOVERING_ASSETS','VALIDATING_OWNERSHIP','CONFIGURING_ACCESS','SUBSCRIBING_WABAS',
-                                 'CHECKING_CUSTOMER_PAYMENT','DISCOVERING_PHONES','REGISTERING_PHONES','IMPORTING','FAILED_RETRYABLE')
+                                 'CHECKING_CUSTOMER_PAYMENT','DISCOVERING_PHONES','REGISTERING_PHONES','IMPORTING','SYNCING_HISTORY','SYNCING_CONTACTS','FAILED_RETRYABLE')
                   AND (NextAttemptUtc IS NULL OR NextAttemptUtc <= @NowUtc)
                   AND (ClaimExpiresAtUtc IS NULL OR ClaimExpiresAtUtc <= @NowUtc)
                   AND FechaExpiracionUtc > @NowUtc
@@ -112,7 +150,9 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
 
     private async Task UpdateFieldsAsync(Guid id, WhatsAppEmbeddedOnboardingStatus status, string step, object values, CancellationToken ct)
     {
-        var data = new DynamicParameters(values);
+        var data = new DynamicParameters();
+        foreach (var property in values.GetType().GetProperties())
+            data.Add(property.Name, property.GetValue(values));
         data.Add("Id", id); data.Add("Estado", ToDb(status)); data.Add("Paso", step);
         var assignments = new List<string> { "Estado=@Estado", "PasoActual=@Paso", "FechaModificacionUtc=SYSUTCDATETIME()" };
         foreach (var name in data.ParameterNames.Where(x => x is not "Id" and not "Estado" and not "Paso" and not "IncrementRetry")) assignments.Add($"{name}=@{name}");
@@ -134,7 +174,7 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
     {
         public Guid IdOnboarding { get; set; } public int IdBase { get; set; } public string IdCliente { get; set; } = ""; public string UsuarioIniciador { get; set; } = "";
         public string CorrelationId { get; set; } = ""; public string StateHash { get; set; } = ""; public DateTime? StateConsumedAtUtc { get; set; }
-        public string Estado { get; set; } = ""; public string PasoActual { get; set; } = ""; public string MetaBusinessId { get; set; } = "";
+        public string ModoOnboarding { get; set; } = "STANDARD"; public string Estado { get; set; } = ""; public string PasoActual { get; set; } = ""; public string MetaBusinessId { get; set; } = "";
         public DateTime FechaInicioUtc { get; set; } public DateTime FechaExpiracionUtc { get; set; } public DateTime FechaModificacionUtc { get; set; }
         public int RetryCount { get; set; } public DateTime? NextAttemptUtc { get; set; } public string ErrorCode { get; set; } = ""; public string ErrorSummary { get; set; } = "";
         public string IncidentId { get; set; } = ""; public string TokenReference { get; set; } = ""; public string? ActionRequiredReason { get; set; }
@@ -142,7 +182,7 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
         public WhatsAppEmbeddedOnboardingDto ToDto() => new()
         {
             IdOnboarding=IdOnboarding, IdBase=IdBase, IdCliente=IdCliente, UsuarioIniciador=UsuarioIniciador, CorrelationId=CorrelationId, StateHash=StateHash,
-            StateConsumedAtUtc=StateConsumedAtUtc, Status=Enum.Parse<WhatsAppEmbeddedOnboardingStatus>(Estado.Replace("_", ""), true), CurrentStep=PasoActual,
+            StateConsumedAtUtc=StateConsumedAtUtc, OnboardingMode=Enum.Parse<WhatsAppEmbeddedOnboardingMode>(ModoOnboarding.Replace("_", ""), true), Status=Enum.Parse<WhatsAppEmbeddedOnboardingStatus>(Estado.Replace("_", ""), true), CurrentStep=PasoActual,
             MetaBusinessId=MetaBusinessId, StartedAtUtc=FechaInicioUtc, ExpiresAtUtc=FechaExpiracionUtc, ModifiedAtUtc=FechaModificacionUtc, RetryCount=RetryCount,
             NextAttemptUtc=NextAttemptUtc, ErrorCode=ErrorCode, ErrorSummary=ErrorSummary, IncidentId=IncidentId, TokenReference=TokenReference,
             ActionRequiredReason=string.IsNullOrWhiteSpace(ActionRequiredReason)?null:Enum.Parse<WhatsAppEmbeddedActionRequiredReason>(ActionRequiredReason.Replace("_", ""), true),

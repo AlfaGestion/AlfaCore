@@ -3,7 +3,7 @@ const allowedOrigins = new Set([
     "https://web.facebook.com"
 ]);
 
-export const MODULE_VERSION = "es2-config-id-fix-1";
+export const MODULE_VERSION = "es2-coexistence-contract-1";
 
 let sdkPromise;
 
@@ -32,6 +32,14 @@ function loadSdk(appId, graphApiVersion) {
 function captureActivation(stage, enabled) {
     if (!enabled) return undefined;
     return window.alfaEs2Diagnostics?.capture(stage);
+}
+
+function captureLoginContract(contract, enabled) {
+    if (!enabled) return;
+    const metadata = Object.freeze({ ...contract });
+    if (window.alfaEs2Diagnostics)
+        window.alfaEs2Diagnostics.loginContract = metadata;
+    console.debug("[ES2] login-contract", metadata);
 }
 
 function findFunctionPaths(value, path = "options", seen = new WeakSet()) {
@@ -86,7 +94,11 @@ export async function launch(options, dotnet) {
         try { payload = JSON.parse(event.data); } catch { return; }
         if (payload?.type !== "WA_EMBEDDED_SIGNUP") return;
         const eventName = String(payload.event || "").toUpperCase();
-        if (eventName === "FINISH") {
+        const coexistence = options.onboardingMode === "businessAppCoexistence";
+        const isExpectedFinish = coexistence
+            ? eventName === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"
+            : eventName === "FINISH";
+        if (isExpectedFinish) {
             session = { wabaId: String(payload.data?.waba_id || ""), phoneNumberId: String(payload.data?.phone_number_id || "") };
             await completeIfReady();
         } else if (eventName === "CANCEL") {
@@ -119,18 +131,38 @@ export async function launch(options, dotnet) {
     }
 
     const configId = typeof options.config_id === "string" ? options.config_id.trim() : "";
+    const coexistence = options.onboardingMode === "businessAppCoexistence";
     const loginOptions = {
         config_id: configId,
         response_type: "code",
         override_default_response_type: true,
-        extras: { sessionInfoVersion: "3" }
+        extras: coexistence
+            ? { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" }
+            : { sessionInfoVersion: "3" }
     };
+    const setupPresent = Object.prototype.hasOwnProperty.call(loginOptions.extras, "setup");
+    const setupIsObject = setupPresent
+        && loginOptions.extras.setup !== null
+        && typeof loginOptions.extras.setup === "object"
+        && !Array.isArray(loginOptions.extras.setup);
+    const featureTypePresent = Object.prototype.hasOwnProperty.call(loginOptions.extras, "featureType");
     const loginContract = {
+        moduleVersion: MODULE_VERSION,
+        onboardingMode: coexistence ? "businessAppCoexistence" : "standard",
         configIdPresent: typeof loginOptions.config_id === "string" && loginOptions.config_id.length > 0,
-        configIdLength: loginOptions.config_id.length,
-        responseTypeValid: loginOptions.response_type === "code",
-        overrideDefaultResponseTypeValid: loginOptions.override_default_response_type === true
+        setupPresent,
+        featureTypePresent,
+        featureType: featureTypePresent ? loginOptions.extras.featureType : undefined,
+        sessionInfoVersion: loginOptions.extras.sessionInfoVersion
     };
+    const loginContractValid = loginContract.configIdPresent
+        && loginOptions.response_type === "code"
+        && loginOptions.override_default_response_type === true
+        && loginContract.sessionInfoVersion === "3"
+        && (coexistence
+            ? setupIsObject && loginContract.featureType === "whatsapp_business_app_onboarding"
+            : !setupPresent && !featureTypePresent);
+    captureLoginContract(loginContract, options.developmentDiagnostics);
     const callbackType = {
         typeof: typeof facebookLoginCallback,
         constructorIsFunction: facebookLoginCallback.constructor === Function,
@@ -143,9 +175,7 @@ export async function launch(options, dotnet) {
         || callbackType.constructorName !== "Function"
         || callbackType.objectTag !== "[object Function]"
         || functionPaths.length > 0
-        || !loginContract.configIdPresent
-        || !loginContract.responseTypeValid
-        || !loginContract.overrideDefaultResponseTypeValid) {
+        || !loginContractValid) {
         throw createFacebookLoginError(new Error("Validación local del contrato FB.login fallida."), callbackType, functionPaths, loginContract);
     }
 

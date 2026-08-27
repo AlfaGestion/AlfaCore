@@ -17,6 +17,7 @@ BEGIN
         CorrelationId nvarchar(64) NOT NULL,
         StateHash char(64) NOT NULL,
         StateConsumedAtUtc datetime2(3) NULL,
+        ModoOnboarding varchar(40) NOT NULL CONSTRAINT DF_WAEO_ModoOnboarding DEFAULT ('STANDARD'),
         Estado varchar(40) NOT NULL,
         PasoActual varchar(80) NOT NULL CONSTRAINT DF_WAEO_PasoActual DEFAULT (''),
         MetaBusinessId varchar(40) NOT NULL CONSTRAINT DF_WAEO_MetaBusinessId DEFAULT (''),
@@ -46,11 +47,19 @@ BEGIN
 END;
 GO
 
+IF COL_LENGTH(N'dbo.WhatsAppEmbeddedOnboarding', N'ModoOnboarding') IS NULL
+    ALTER TABLE dbo.WhatsAppEmbeddedOnboarding ADD ModoOnboarding varchar(40) NOT NULL CONSTRAINT DF_WAEO_ModoOnboarding DEFAULT ('STANDARD');
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.check_constraints WHERE parent_object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedOnboarding') AND name = N'CK_WAEO_ModoOnboarding')
+    ALTER TABLE dbo.WhatsAppEmbeddedOnboarding WITH CHECK ADD CONSTRAINT CK_WAEO_ModoOnboarding CHECK (ModoOnboarding IN ('STANDARD','BUSINESS_APP_COEXISTENCE'));
+GO
+
 IF EXISTS (SELECT 1 FROM sys.check_constraints WHERE parent_object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedOnboarding') AND name = N'CK_WAEO_Estado')
     ALTER TABLE dbo.WhatsAppEmbeddedOnboarding DROP CONSTRAINT CK_WAEO_Estado;
 ALTER TABLE dbo.WhatsAppEmbeddedOnboarding WITH CHECK ADD CONSTRAINT CK_WAEO_Estado CHECK (Estado IN
 ('STARTED','AUTHORIZED','DISCOVERING_ASSETS','VALIDATING_OWNERSHIP','CONFIGURING_ACCESS','SUBSCRIBING_WABAS',
- 'CHECKING_CUSTOMER_PAYMENT','DISCOVERING_PHONES','REGISTERING_PHONES','IMPORTING','READY','ACTION_REQUIRED',
+ 'CHECKING_CUSTOMER_PAYMENT','DISCOVERING_PHONES','REGISTERING_PHONES','IMPORTING','SYNCING_HISTORY','SYNCING_CONTACTS','READY','ACTION_REQUIRED',
  'FAILED_RETRYABLE','FAILED_FINAL','EXPIRED','CANCELLED'));
 GO
 

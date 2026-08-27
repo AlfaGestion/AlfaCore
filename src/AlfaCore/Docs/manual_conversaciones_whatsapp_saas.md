@@ -172,9 +172,9 @@ Ruta habitual:
 ### 6.1 Canal WhatsApp
 
 1. Abrir `Configuración → Canales → WhatsApp API`.
-2. Si el alta automática está habilitada en Development, usar `Conectar con Meta`. El asistente autoriza la cuenta; la importación automática de números quedará para una etapa posterior.
-3. `Agregar por Phone Number ID` continúa disponible como alternativa manual.
-4. Seleccionar `Integración Meta`.
+2. Usar `Conectar WhatsApp` y elegir si se conectará un WhatsApp Business existente o se configurará uno nuevo.
+3. `Agregar por Phone Number ID` continúa disponible como alternativa manual dentro de la configuración avanzada.
+4. Seleccionar `Configuración avanzada` cuando sea necesario revisar credenciales o parámetros técnicos.
 5. Elegir `Editar integración`.
 6. Revisar proveedor, WABA ID, Base pública HTTPS y versión de Graph API.
 7. Usar `Reemplazar` únicamente para la credencial que realmente deba cambiarse.

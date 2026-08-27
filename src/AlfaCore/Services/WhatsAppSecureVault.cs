@@ -4,6 +4,7 @@ using Dapper;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
 
 namespace AlfaCore.Services;
 
@@ -25,11 +26,96 @@ public sealed class WhatsAppSecureVault : IWhatsAppCredentialVault, IWhatsAppPho
     async Task<WhatsAppCredentialReference> IWhatsAppCredentialVault.StoreAsync(WhatsAppVaultSecretContext context, ReadOnlyMemory<char> secret, CancellationToken ct)
         => new(await StoreInternalAsync("CREDENTIAL", context, secret, _credentialProtector, ct));
 
+    async Task<WhatsAppCredentialReference?> IWhatsAppCredentialVault.FindActiveCredentialAsync(int idBase, string wabaId, string phoneNumberId, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) SecretReference
+            FROM dbo.WhatsAppSecureVault
+            WHERE SecretType = N'CREDENTIAL'
+              AND IdBase = @IdBase AND WabaId = @WabaId AND PhoneNumberId = @PhoneNumberId
+              AND RevokedAtUtc IS NULL
+              AND (ExpiresAtUtc IS NULL OR ExpiresAtUtc > SYSUTCDATETIME())
+            ORDER BY ModifiedAtUtc DESC, CreatedAtUtc DESC;
+            """;
+        await using var cn = new SqlConnection(_connectionString);
+        var value = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(sql, new
+        {
+            IdBase = idBase,
+            WabaId = (wabaId ?? string.Empty).Trim(),
+            PhoneNumberId = (phoneNumberId ?? string.Empty).Trim()
+        }, cancellationToken: ct));
+        return string.IsNullOrWhiteSpace(value) ? null : new WhatsAppCredentialReference(value);
+    }
+
     async Task<ReadOnlyMemory<char>> IWhatsAppCredentialVault.GetAsync(WhatsAppCredentialReference reference, CancellationToken ct)
         => (await GetInternalAsync(reference.Value, "CREDENTIAL", _credentialProtector, ct)).AsMemory();
 
+    async Task<WhatsAppVaultSecretContext?> IWhatsAppCredentialVault.GetContextAsync(WhatsAppCredentialReference reference, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT IdBase,IdOnboarding,MetaBusinessId,WabaId,PhoneNumberId,Purpose,ExpiresAtUtc
+            FROM dbo.WhatsAppSecureVault
+            WHERE SecretReference=@Reference AND SecretType='CREDENTIAL' AND RevokedAtUtc IS NULL;
+            """;
+        await using var cn = new SqlConnection(_connectionString);
+        return await cn.QuerySingleOrDefaultAsync<WhatsAppVaultSecretContext>(new CommandDefinition(sql, new { Reference = NormalizeReference(reference.Value) }, cancellationToken: ct));
+    }
+
     Task IWhatsAppCredentialVault.RemoveAsync(WhatsAppCredentialReference reference, CancellationToken ct)
         => RemoveInternalAsync(reference.Value, "CREDENTIAL", ct);
+
+    async Task<WhatsAppPhonePinReference> IWhatsAppPhonePinVault.GetOrCreateAsync(WhatsAppVaultSecretContext context, CancellationToken ct)
+    {
+        const string selectSql = """
+            SELECT TOP (1) SecretReference
+            FROM dbo.WhatsAppSecureVault WITH (UPDLOCK, HOLDLOCK)
+            WHERE SecretType='PHONE_PIN' AND IdBase=@IdBase AND IdOnboarding=@IdOnboarding
+              AND PhoneNumberId=@PhoneNumberId AND RevokedAtUtc IS NULL
+              AND (ExpiresAtUtc IS NULL OR ExpiresAtUtc > SYSUTCDATETIME())
+            ORDER BY CreatedAtUtc DESC;
+            """;
+        await using var cn = new SqlConnection(_connectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+        var existing = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(selectSql, new
+        {
+            context.IdBase,
+            context.IdOnboarding,
+            PhoneNumberId = context.PhoneNumberId.Trim()
+        }, transaction: tx, cancellationToken: ct));
+        if (!string.IsNullOrWhiteSpace(existing))
+        {
+            await tx.CommitAsync(ct);
+            return new WhatsAppPhonePinReference(existing);
+        }
+
+        var pin = new char[6];
+        var value = RandomNumberGenerator.GetInt32(1_000_000);
+        value.TryFormat(pin.AsSpan(), out _, "D6");
+        var reference = Guid.NewGuid().ToString("N");
+        var protectedValue = _pinProtector.Protect(new string(pin));
+        Array.Clear(pin);
+        const string insertSql = """
+            INSERT dbo.WhatsAppSecureVault
+            (SecretReference,SecretType,IdBase,IdOnboarding,MetaBusinessId,WabaId,PhoneNumberId,Purpose,ProtectedValue,ExpiresAtUtc,CreatedAtUtc,ModifiedAtUtc)
+            VALUES
+            (@Reference,'PHONE_PIN',@IdBase,@IdOnboarding,@MetaBusinessId,@WabaId,@PhoneNumberId,@Purpose,@ProtectedValue,@ExpiresAtUtc,SYSUTCDATETIME(),SYSUTCDATETIME());
+            """;
+        await cn.ExecuteAsync(new CommandDefinition(insertSql, new
+        {
+            Reference = reference,
+            context.IdBase,
+            context.IdOnboarding,
+            MetaBusinessId = context.MetaBusinessId.Trim(),
+            WabaId = context.WabaId.Trim(),
+            PhoneNumberId = context.PhoneNumberId.Trim(),
+            Purpose = context.Purpose.Trim(),
+            ProtectedValue = protectedValue,
+            context.ExpiresAtUtc
+        }, transaction: tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        return new WhatsAppPhonePinReference(reference);
+    }
 
     async Task<WhatsAppPhonePinReference> IWhatsAppPhonePinVault.StoreAsync(WhatsAppVaultSecretContext context, ReadOnlyMemory<char> pin, CancellationToken ct)
     {

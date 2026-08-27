@@ -161,12 +161,17 @@ public class Program
         builder.Services.AddScoped<ICostosService, CostosService>();
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
+        builder.Services.AddScoped<WhatsAppEmbeddedOperationalImportService>();
         builder.Services.AddScoped<IConversacionesAuthorizationService, ConversacionesAuthorizationService>();
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupStore, WhatsAppEmbeddedSignupStore>();
         builder.Services.AddScoped<IWhatsAppAssetOwnershipStore, WhatsAppAssetOwnershipStore>();
+        builder.Services.AddScoped<IWhatsAppWebhookTenantGuard, WhatsAppWebhookTenantGuard>();
+        builder.Services.AddScoped<IWhatsAppRuntimeCredentialResolver, WhatsAppRuntimeCredentialResolver>();
+        builder.Services.AddScoped<IWhatsAppWabaRoutingProvider, WhatsAppWabaRoutingProvider>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupOrchestrator, WhatsAppEmbeddedSignupOrchestrator>();
         builder.Services.AddScoped<IMetaOAuthClient, MetaOAuthClient>();
+        builder.Services.AddScoped<IMetaWhatsAppManagementClient, MetaWhatsAppManagementClient>();
         builder.Services.AddSingleton<IWhatsAppEmbeddedSignupStateProtector, WhatsAppEmbeddedSignupStateProtector>();
         builder.Services.AddScoped<WhatsAppSecureVault>();
         builder.Services.AddScoped<IWhatsAppCredentialVault>(provider => provider.GetRequiredService<WhatsAppSecureVault>());
@@ -262,6 +267,7 @@ public class Program
         builder.Services.AddScoped<GestionFilterStateService>();
         builder.Services.AddHttpClient();
         builder.Services.AddHttpClient("MetaEmbeddedSignupOAuth").RemoveAllLoggers();
+        builder.Services.AddHttpClient("MetaEmbeddedSignupManagement").RemoveAllLoggers();
         builder.Services.AddHttpContextAccessor();
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
@@ -280,7 +286,10 @@ public class Program
         builder.Services.AddOptions<WhatsAppEmbeddedSignupOptions>()
             .Bind(embeddedSignupSection)
             .Validate(options => !options.Enabled ||
-                (!string.IsNullOrWhiteSpace(options.AppId)
+                (options.AllowedBaseIds.Length > 0
+                 && options.AllowedBaseIds.All(static id => id > 0)
+                 && options.AllowedBaseIds.Distinct().Count() == options.AllowedBaseIds.Length
+                 && !string.IsNullOrWhiteSpace(options.AppId)
                  && !string.IsNullOrWhiteSpace(options.BusinessPortfolioId)
                  && !string.IsNullOrWhiteSpace(options.SystemUserId)
                  && !string.IsNullOrWhiteSpace(options.EmbeddedSignupConfigId)

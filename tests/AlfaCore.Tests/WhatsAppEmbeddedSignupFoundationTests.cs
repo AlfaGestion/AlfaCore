@@ -22,9 +22,9 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
             new WhatsAppEmbeddedSignupStateProtector(),
             new FakeMetaOAuthClient(),
             new FakeCredentialVault(),
-            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, OnboardingExpirationMinutes = 30 }));
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [106], OnboardingExpirationMinutes = 30 }));
 
-        var result = await orchestrator.StartAsync(new WhatsAppEmbeddedStartRequest(106, "ALFANET", "Eve"));
+        var result = await orchestrator.StartAsync(new WhatsAppEmbeddedStartRequest(106, "ALFANET", "Eve", WhatsAppEmbeddedOnboardingMode.Standard));
 
         Assert.NotNull(store.Created);
         Assert.Equal(result.IdOnboarding, store.Created.IdOnboarding);
@@ -32,6 +32,49 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         Assert.Equal("Eve", store.Created.UsuarioIniciador);
         Assert.NotEqual(result.State, store.Created.StateHash);
         Assert.Equal(store.Created.StartedAtUtc.AddMinutes(30), store.Created.ExpiresAtUtc);
+    }
+
+    [Fact]
+    public async Task OnboardingCreationPersistsSelectedMode()
+    {
+        var store = new CapturingOnboardingStore();
+        var orchestrator = new WhatsAppEmbeddedSignupOrchestrator(
+            store,
+            new WhatsAppEmbeddedSignupStateProtector(),
+            new FakeMetaOAuthClient(),
+            new FakeCredentialVault(),
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [106], OnboardingExpirationMinutes = 30 }));
+
+        await orchestrator.StartAsync(new WhatsAppEmbeddedStartRequest(
+            106,
+            "ALFANET",
+            "Eve",
+            WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence));
+
+        Assert.Equal(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, store.Created?.OnboardingMode);
+    }
+
+    [Fact]
+    public void ConnectionChoiceMapping_IsExplicitAndNeverLeaksBetweenAttempts()
+    {
+        var selection = new WhatsAppConnectionChoiceSelection();
+
+        selection.Begin();
+        selection.Select(WhatsAppConnectionChoice.ExistingWhatsAppBusiness);
+        selection.Clear();
+        selection.Begin();
+        selection.Select(WhatsAppConnectionChoice.NewWhatsApp);
+        Assert.Equal(WhatsAppEmbeddedOnboardingMode.Standard, WhatsAppConnectionChoiceMapper.ToOnboardingMode(selection.Consume()));
+        Assert.Null(selection.Selected);
+
+        selection.Begin();
+        selection.Select(WhatsAppConnectionChoice.NewWhatsApp);
+        selection.Clear();
+        selection.Begin();
+        selection.Select(WhatsAppConnectionChoice.ExistingWhatsAppBusiness);
+        Assert.Equal(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, WhatsAppConnectionChoiceMapper.ToOnboardingMode(selection.Consume()));
+        Assert.Null(selection.Selected);
+        Assert.Throws<InvalidOperationException>(() => selection.Consume());
     }
 
     [Fact]
@@ -126,6 +169,8 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         Assert.Empty(options.BusinessPortfolioId);
         Assert.Empty(options.SystemUserId);
         Assert.Empty(options.EmbeddedSignupConfigId);
+        Assert.Empty(options.AllowedBaseIds);
+        Assert.False(options.IsAllowedForBase(84));
         Assert.Equal(WhatsAppEmbeddedSignupCreditMode.CustomerPaysMeta, options.CreditMode);
     }
 
@@ -142,6 +187,52 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
     }
 
     [Fact]
+    public void LocalLauncher_IsPinnedToLocalDbAndBase84WithoutProductionFallback()
+    {
+        var launcher = File.ReadAllText(FindRepoFile("tools", "run-alfacore-es-local.ps1"));
+        Assert.Contains("ALFA_CENTRAL_DEV", launcher, StringComparison.Ordinal);
+        Assert.Contains("ALFACORE_ES_TENANT_DEV", launcher, StringComparison.Ordinal);
+        Assert.Contains("ConnectionStrings__AlfaCentral", launcher, StringComparison.Ordinal);
+        Assert.Contains("ConnectionStrings__AlfaGestion", launcher, StringComparison.Ordinal);
+        Assert.Contains("WhatsAppEmbeddedSignup__AllowedBaseIds__0 = \"84\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("WhatsAppEmbeddedSignup__WorkerEnabled = \"false\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("dotnet user-secrets list", launcher, StringComparison.Ordinal);
+        Assert.DoesNotContain("Password=", launcher, StringComparison.OrdinalIgnoreCase);
+
+        var fixture = File.ReadAllText(FindRepoFile("tools", "es-local", "fixtures", "inbound-text.json"));
+        Assert.DoesNotContain("1547539197385596", fixture, StringComparison.Ordinal);
+        Assert.DoesNotContain("1195619520311268", fixture, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CoexistenceCannotEnterPhoneRegistration()
+    {
+        Assert.True(WhatsAppEmbeddedPipelinePolicy.CanRegisterPhone(WhatsAppEmbeddedOnboardingMode.Standard));
+        Assert.False(WhatsAppEmbeddedPipelinePolicy.CanRegisterPhone(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence));
+        Assert.Throws<InvalidOperationException>(() =>
+            WhatsAppEmbeddedPipelinePolicy.EnsureCanRegisterPhone(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence));
+    }
+
+    [Fact]
+    public void BothModesConvergeToTheSameConnectedNumberMetadata()
+    {
+        var standard = new WhatsAppConnectedNumberMetadata("phone-test", WhatsAppEmbeddedOnboardingMode.Standard);
+        var coexistence = new WhatsAppConnectedNumberMetadata("phone-test", WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+
+        Assert.Equal(standard.PhoneNumberId, coexistence.PhoneNumberId);
+        Assert.Equal("AlfaCore", standard.UserFacingConnection);
+        Assert.Equal("WhatsApp Business + AlfaCore", coexistence.UserFacingConnection);
+    }
+
+    [Fact]
+    public void HistoryIdempotencyKeyIsStable()
+    {
+        Assert.Equal(
+            WhatsAppEmbeddedPipelinePolicy.BuildHistoryIdempotencyKey(106, "phone-test", "event-test"),
+            WhatsAppEmbeddedPipelinePolicy.BuildHistoryIdempotencyKey(106, "phone-test", "event-test"));
+    }
+
+    [Fact]
     public void PublicOnboardingModel_DoesNotExposeSecretsOrPin()
     {
         var propertyNames = typeof(WhatsAppEmbeddedOnboardingDto).GetProperties().Select(x => x.Name).ToArray();
@@ -152,6 +243,8 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         var json = JsonSerializer.Serialize(new WhatsAppEmbeddedOnboardingDto { TokenReference = "vault-reference" });
         Assert.DoesNotContain("access_token", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("authorization_code", json, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(typeof(WhatsAppEmbeddedAuthorizationCallback).GetProperties(), property =>
+            property.Name.Contains("Mode", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]
@@ -190,6 +283,7 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         public WhatsAppEmbeddedOnboardingDto? Created { get; private set; }
         public Task CreateAsync(WhatsAppEmbeddedOnboardingDto onboarding, CancellationToken ct = default) { Created = onboarding; return Task.CompletedTask; }
         public Task<WhatsAppEmbeddedOnboardingDto?> GetAsync(Guid idOnboarding, CancellationToken ct = default) => Task.FromResult(Created);
+        public Task<WhatsAppEmbeddedOnboardingDto?> GetLatestForBaseAsync(int idBase, CancellationToken ct = default) => Task.FromResult(Created?.IdBase == idBase ? Created : null);
         public Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string stateHash, int idBase, string usuario, DateTime nowUtc, CancellationToken ct = default) => throw new NotSupportedException();
         public Task UpdateStatusAsync(Guid idOnboarding, WhatsAppEmbeddedOnboardingStatus expectedStatus, WhatsAppEmbeddedOnboardingStatus nextStatus, string currentStep, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkAuthorizedAsync(Guid idOnboarding, string tokenReference, string metaBusinessId, CancellationToken ct = default) => throw new NotSupportedException();

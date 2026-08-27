@@ -7997,10 +7997,7 @@
 
         try
         {
-            _availableTemplates = (await ConversacionesSvc.GetTemplatesAsync(new ConversacionPlantillaFilters
-            {
-                IncluirInactivas = false
-            }))
+            _availableTemplates = (await ConversacionesSvc.GetTemplatesForConversationAsync(_selectedConversation!.IdConversacion))
             .Where(x => string.Equals(x.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
             .OrderBy(x => x.NombreVisible)
             .ToList();
@@ -8097,6 +8094,9 @@
             {
                 IdConversacion = _selectedConversation.IdConversacion,
                 IdPlantilla = SelectedTemplate.IdPlantilla,
+                NombreMeta = SelectedTemplate.NombreMeta,
+                Idioma = SelectedTemplate.Idioma,
+                EsMetaRemota = SelectedTemplate.EsMetaRemota,
                 ValoresVariables = TemplateValues.ToList(),
                 IdTecnicoAutor = CurrentMessageTechnicianId,
                 UsuarioAccion = CurrentUserNameForAudit,
