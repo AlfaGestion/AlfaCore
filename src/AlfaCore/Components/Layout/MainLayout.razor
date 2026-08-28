@@ -9,6 +9,8 @@
 @inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
+@inject Microsoft.Extensions.Options.IOptions<AlfaCore.Configuration.AlfaCoreEsLocalOptions> EsLocalOptions
+@inject Microsoft.Extensions.Hosting.IHostEnvironment HostEnvironment
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.ICentralClientesService CentralClientesSvc
 @inject AlfaCore.Services.IMenuService MenuSvc
@@ -1289,10 +1291,12 @@ else
                  OnClose="CloseLoginOverlayAsync" />
 
 <AppMsgBoxHost />
-<NovedadesPopup Enabled="@(!IsDirectMode)" />
+<NovedadesPopup Enabled="@(!IsDirectMode && !IsEsLocalMode)" />
 
 @code {
     private static readonly string BuildStamp = ResolveBuildStamp();
+    private bool IsEsLocalMode
+        => EsLocalOptions.Value.ShouldDisableUnrelatedHostedServices(HostEnvironment.EnvironmentName);
 
     private static string ResolveBuildStamp()
     {
@@ -1899,6 +1903,7 @@ else
                 routeSession.BaseId,
                 routeSession.Nombre);
             _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.BaseDatos}";
+            await TryAdoptCentralIdentityForActiveBaseAsync();
             return;
         }
 
@@ -1918,6 +1923,28 @@ else
             routeSession.BaseId,
             routeSession.Nombre);
         _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.BaseDatos}";
+        await TryAdoptCentralIdentityForActiveBaseAsync();
+    }
+
+    private async Task TryAdoptCentralIdentityForActiveBaseAsync()
+    {
+        if (!AppUserSession.IsAuthenticated || !AppUserSession.RequiresInternalLogin)
+            return;
+
+        var centralLogin = AppUserSession.CurrentUser?.CentralLogin;
+        if (string.IsNullOrWhiteSpace(centralLogin) || SessionSvc.GetActiveSession() is null)
+            return;
+
+        var internalUser = await LegacyBaseUserSession.ResolveByCentralLoginAsync(centralLogin);
+        if (internalUser is null)
+            return;
+
+        AppUserSession.AdoptInternalUser(internalUser);
+        Logger.LogInformation(
+            "MainLayout: identidad central adoptada para la base activa. BaseId={BaseId}, User={User}, SystemCode={SystemCode}",
+            SessionSvc.GetActiveSession()?.BaseId,
+            internalUser.UserName,
+            internalUser.SystemCode);
     }
 
     /// <summary>
@@ -1931,6 +1958,9 @@ else
     /// </summary>
     private void QueuePendingUpdatesCheckIfNeeded(SessionDto routeSession)
     {
+        if (EsLocalOptions.Value.ShouldDisableUnrelatedHostedServices(HostEnvironment.EnvironmentName))
+            return;
+
         if (!RouteUpdatesGuard.TryClaim(routeSession.Servidor, routeSession.BaseDatos))
             return;
 

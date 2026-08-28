@@ -28,6 +28,46 @@ public enum WhatsAppEmbeddedOnboardingMode
     BusinessAppCoexistence
 }
 
+public enum WhatsAppEmbeddedConnectionUiState
+{
+    Start,
+    Processing,
+    Importing,
+    ActionRequired,
+    Connected
+}
+
+public static class WhatsAppEmbeddedConnectionUiStateResolver
+{
+    public static WhatsAppEmbeddedConnectionUiState Resolve(
+        int operationalNumberCount,
+        WhatsAppEmbeddedOnboardingStatus? onboardingStatus)
+    {
+        if (operationalNumberCount > 0)
+            return WhatsAppEmbeddedConnectionUiState.Connected;
+
+        return onboardingStatus switch
+        {
+            WhatsAppEmbeddedOnboardingStatus.Authorized or
+            WhatsAppEmbeddedOnboardingStatus.DiscoveringAssets or
+            WhatsAppEmbeddedOnboardingStatus.ValidatingOwnership or
+            WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess or
+            WhatsAppEmbeddedOnboardingStatus.SubscribingWabas or
+            WhatsAppEmbeddedOnboardingStatus.CheckingCustomerPayment or
+            WhatsAppEmbeddedOnboardingStatus.DiscoveringPhones or
+            WhatsAppEmbeddedOnboardingStatus.RegisteringPhones or
+            WhatsAppEmbeddedOnboardingStatus.SyncingHistory or
+            WhatsAppEmbeddedOnboardingStatus.SyncingContacts
+                => WhatsAppEmbeddedConnectionUiState.Processing,
+            WhatsAppEmbeddedOnboardingStatus.Importing
+                => WhatsAppEmbeddedConnectionUiState.Importing,
+            WhatsAppEmbeddedOnboardingStatus.ActionRequired
+                => WhatsAppEmbeddedConnectionUiState.ActionRequired,
+            _ => WhatsAppEmbeddedConnectionUiState.Start
+        };
+    }
+}
+
 public enum MetaPhoneRegistrationStatus { Unknown, RegistrationRequired, Pending, Registered }
 
 public enum WhatsAppConnectionChoice

@@ -28,13 +28,15 @@ No pegar App Secret, tokens, PIN ni contenido del Vault en tickets, commits o lo
 
 1. Ejecutar `git pull`.
 2. Hacer doble clic en `Run-AlfaCore-ES-Local.cmd`.
-3. Iniciar sesión si el entorno local dispone de identidad de desarrollo.
+3. Iniciar sesión con las credenciales DEV que muestra el launcher (`eslocal@alfacore.dev` / `AlfaCore-ES-84!`).
 4. Ingresar a Base 84.
 5. Abrir `Configuración → WhatsApp API`.
 
 El launcher valida .NET, LocalDB, scripts, certificado y puerto 7055; prepara idempotentemente `ALFA_CENTRAL_DEV`; crea `ALFACORE_ES_TENANT_DEV` vacío para impedir fallback remoto; verifica schema ES y Base 84; habilita ES solo para Base 84; mantiene el worker apagado; usa un key ring propio en `%LOCALAPPDATA%`; sobrescribe dentro del proceso las conexiones central/tenant con LocalDB e inicia `https://localhost:7055`.
 
-La primera navegación puede requerir login. Si el checkout no tiene fixtures locales de autenticación, AlfaCore igualmente queda iniciado y el seed Base 84 queda disponible en el central DEV; nunca se consulta `ALFA_CENTRAL` para completar el login.
+La primera navegación requiere el login DEV mostrado por el launcher. Nunca se consulta `ALFA_CENTRAL` para completarlo.
+
+El bootstrap crea idempotentemente una identidad exclusivamente local en `ALFA_CENTRAL_DEV` y su usuario interno administrador en `ALFACORE_ES_TENANT_DEV`. Ambas operaciones exigen Development, `AlfaCoreEsLocal:Enabled=true`, LocalDB, Base permitida 84 y worker ES apagado. No existe bypass de autenticación ni se reutilizan usuarios o contraseñas productivas.
 
 Cada desarrollador realiza su propia autorización:
 
@@ -69,3 +71,8 @@ Embedded Signup puede abrir Meta desde `https://localhost:7055` si Meta admite e
 - Secrets: almacén local de .NET user-secrets.
 
 Los scripts nunca limpian automáticamente onboardings, Vault ni claves existentes. No se incluyó reset automático en esta etapa.
+## Workers ajenos al entorno mínimo
+
+El launcher activa `AlfaCoreEsLocal:Enabled=true`. Solo en `Development`, este modo no registra actualizaciones automáticas de base, Compra IA, recordatorios de pruebas de módulos, facturación, automatizaciones temporizadas de Conversaciones ni el inbox de WhatsApp Web/QR. Son procesos operativos ajenos a la prueba de WhatsApp Cloud API Embedded Signup y requieren estructuras que deliberadamente no forman parte de las bases LocalDB mínimas. Los servicios de UI de Login, Conversaciones y Configuración siguen disponibles; el hosted service de Embedded Signup sigue registrado y respeta `WorkerEnabled=false`.
+
+Development normal y Production conservan el registro habitual de esos hosted services.

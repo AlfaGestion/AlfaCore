@@ -40,6 +40,14 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
         return row?.ToDto();
     }
 
+    public async Task<WhatsAppEmbeddedOnboardingDto?> GetLatestReadyForBaseAsync(int idBase, CancellationToken ct = default)
+    {
+        const string sql = "SELECT TOP (1) * FROM dbo.WhatsAppEmbeddedOnboarding WHERE IdBase=@IdBase AND Estado='READY' AND PasoActual='READY' ORDER BY FechaModificacionUtc DESC, FechaInicioUtc DESC";
+        await using var cn = new SqlConnection(ConnectionString);
+        var row = await cn.QuerySingleOrDefaultAsync<OnboardingRow>(new CommandDefinition(sql, new { IdBase = idBase }, cancellationToken: ct));
+        return row?.ToDto();
+    }
+
     public async Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string stateHash, int idBase, string usuario, DateTime nowUtc, CancellationToken ct = default)
     {
         const string sql = """

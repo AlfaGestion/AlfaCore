@@ -272,6 +272,11 @@ public class Program
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
+        var esLocalOptions = builder.Configuration
+            .GetSection(AlfaCoreEsLocalOptions.SectionName)
+            .Get<AlfaCoreEsLocalOptions>() ?? new();
+        builder.Services.Configure<AlfaCoreEsLocalOptions>(
+            builder.Configuration.GetSection(AlfaCoreEsLocalOptions.SectionName));
         var embeddedSignupSection = builder.Configuration.GetSection(WhatsAppEmbeddedSignupOptions.SectionName);
         var embeddedSignupStartupOptions = embeddedSignupSection.Get<WhatsAppEmbeddedSignupOptions>() ?? new();
         var dataProtection = builder.Services.AddDataProtection().SetApplicationName("AlfaCore.WhatsAppEmbeddedSignup");
@@ -310,14 +315,17 @@ public class Program
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
-        builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
-        builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
-        builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
-        builder.Services.AddHostedService<BillingHostedService>();
-        builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
-        builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
-        builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
-        builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
+        if (!esLocalOptions.ShouldDisableUnrelatedHostedServices(builder.Environment.EnvironmentName))
+        {
+            builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
+            builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
+            builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
+            builder.Services.AddHostedService<BillingHostedService>();
+            builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
+            builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+            builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
+            builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
+        }
         builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
 
         var app = builder.Build();

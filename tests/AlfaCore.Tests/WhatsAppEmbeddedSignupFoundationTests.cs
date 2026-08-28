@@ -196,12 +196,74 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         Assert.Contains("ConnectionStrings__AlfaGestion", launcher, StringComparison.Ordinal);
         Assert.Contains("WhatsAppEmbeddedSignup__AllowedBaseIds__0 = \"84\"", launcher, StringComparison.Ordinal);
         Assert.Contains("WhatsAppEmbeddedSignup__WorkerEnabled = \"false\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("AlfaCoreEsLocal__Enabled = \"true\"", launcher, StringComparison.Ordinal);
+        Assert.Contains("Usuario: $esLocalLogin", launcher, StringComparison.Ordinal);
+        Assert.Contains("Password: $esLocalPassword", launcher, StringComparison.Ordinal);
         Assert.Contains("dotnet user-secrets list", launcher, StringComparison.Ordinal);
         Assert.DoesNotContain("Password=", launcher, StringComparison.OrdinalIgnoreCase);
 
         var fixture = File.ReadAllText(FindRepoFile("tools", "es-local", "fixtures", "inbound-text.json"));
         Assert.DoesNotContain("1547539197385596", fixture, StringComparison.Ordinal);
         Assert.DoesNotContain("1195619520311268", fixture, StringComparison.Ordinal);
+
+        var centralBootstrap = File.ReadAllText(FindRepoFile("docs", "base-datos", "sql-test", "bootstrap_alfa_central_dev_embedded_signup.sql"));
+        var tenantBootstrap = File.ReadAllText(FindRepoFile("docs", "base-datos", "sql-test", "bootstrap_alfacore_es_tenant_dev_auth.sql"));
+        Assert.Contains("SERVERPROPERTY('IsLocalDB')", centralBootstrap, StringComparison.Ordinal);
+        Assert.Contains("SERVERPROPERTY('IsLocalDB')", tenantBootstrap, StringComparison.Ordinal);
+        Assert.Contains("ALFACORE_ES_TENANT_DEV", tenantBootstrap, StringComparison.Ordinal);
+        Assert.DoesNotContain("eveantunez03", centralBootstrap, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("eveantunez03", tenantBootstrap, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void EsLocal_DisablesOnlyUnrelatedWorkersAndOnlyInDevelopment()
+    {
+        var disabled = new AlfaCoreEsLocalOptions { Enabled = true };
+        var normal = new AlfaCoreEsLocalOptions();
+
+        Assert.True(disabled.ShouldDisableUnrelatedHostedServices("Development"));
+        Assert.False(disabled.ShouldDisableUnrelatedHostedServices("Production"));
+        Assert.False(normal.ShouldDisableUnrelatedHostedServices("Development"));
+    }
+
+    [Fact]
+    public void ConnectedVisualState_RequiresAnOperationalNumber()
+    {
+        Assert.Equal(
+            WhatsAppEmbeddedConnectionUiState.Start,
+            WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, WhatsAppEmbeddedOnboardingStatus.Ready));
+        Assert.Equal(
+            WhatsAppEmbeddedConnectionUiState.Connected,
+            WhatsAppEmbeddedConnectionUiStateResolver.Resolve(1, WhatsAppEmbeddedOnboardingStatus.Ready));
+        Assert.Equal(
+            WhatsAppEmbeddedConnectionUiState.Connected,
+            WhatsAppEmbeddedConnectionUiStateResolver.Resolve(1, null));
+    }
+
+    [Theory]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Started)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Cancelled)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.FailedRetryable)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.FailedFinal)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Expired)]
+    public void NonRecoverableOnboardingWithoutOperationalNumber_AllowsNewConnection(
+        WhatsAppEmbeddedOnboardingStatus status)
+        => Assert.Equal(
+            WhatsAppEmbeddedConnectionUiState.Start,
+            WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, status));
+
+    [Fact]
+    public void RecoverableOnboardingWithoutOperationalNumber_RemainsVisible()
+    {
+        Assert.Equal(
+            WhatsAppEmbeddedConnectionUiState.Processing,
+            WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, WhatsAppEmbeddedOnboardingStatus.Authorized));
+        Assert.Equal(
+            WhatsAppEmbeddedConnectionUiState.Importing,
+            WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, WhatsAppEmbeddedOnboardingStatus.Importing));
+        Assert.Equal(
+            WhatsAppEmbeddedConnectionUiState.ActionRequired,
+            WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, WhatsAppEmbeddedOnboardingStatus.ActionRequired));
     }
 
     [Fact]

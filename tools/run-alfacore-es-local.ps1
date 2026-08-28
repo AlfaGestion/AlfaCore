@@ -12,6 +12,8 @@ $centralConnection = "Server=(localdb)\MSSQLLocalDB;Initial Catalog=ALFA_CENTRAL
 $tenantConnection = "Server=(localdb)\MSSQLLocalDB;Initial Catalog=ALFACORE_ES_TENANT_DEV;Integrated Security=True;TrustServerCertificate=True"
 $keyRingPath = Join-Path $env:LOCALAPPDATA "AlfaCore\DataProtectionKeys\WhatsAppEmbeddedSignup"
 $testUrl = "https://localhost:7055/ALFANET/84/conversaciones/configuracion?seccion=canales&subseccion=whatsapp-api"
+$esLocalLogin = "eslocal@alfacore.dev"
+$esLocalPassword = "AlfaCore-ES-84!"
 
 function Stop-Friendly([string]$message) {
     Write-Host ""
@@ -37,6 +39,13 @@ Write-Host "BASE PERMITIDA: 84"
 Write-Host ""
 
 try {
+    $env:ASPNETCORE_ENVIRONMENT = "Development"
+    $env:AlfaCoreEsLocal__Enabled = "true"
+    $env:ConnectionStrings__AlfaCentral = $centralConnection
+    $env:ConnectionStrings__AlfaGestion = $tenantConnection
+    $env:WhatsAppEmbeddedSignup__WorkerEnabled = "false"
+    $env:WhatsAppEmbeddedSignup__AllowedBaseIds__0 = "84"
+
     Write-Host "[1/7] Verificando entorno..."
     if (-not (Test-Path -LiteralPath $projectPath) -or -not (Test-Path -LiteralPath $bootstrapPath)) {
         Stop-Friendly "No se encontraron el proyecto o el bootstrap ES local. Ejecuta el launcher desde un checkout completo."
@@ -83,17 +92,20 @@ try {
         Stop-Friendly "El puerto 7055 esta siendo utilizado por PID $portPid. Cerra la instancia anterior y volve a intentar."
     }
 
-    $env:ASPNETCORE_ENVIRONMENT = "Development"
-    $env:ConnectionStrings__AlfaCentral = $centralConnection
-    $env:ConnectionStrings__AlfaGestion = $tenantConnection
     $env:WhatsAppEmbeddedSignup__CentralConnectionString = $centralConnection
     $env:WhatsAppEmbeddedSignup__Enabled = "true"
-    $env:WhatsAppEmbeddedSignup__WorkerEnabled = "false"
-    $env:WhatsAppEmbeddedSignup__AllowedBaseIds__0 = "84"
     $env:WhatsAppEmbeddedSignup__DataProtectionKeysPath = $keyRingPath
     $env:WhatsAppEmbeddedSignup__CallbackBaseUrl = "https://localhost:7055"
     $env:ServidorWeb__EscucharEnRed = "false"
     $env:ServidorWeb__AbrirNavegadorAlIniciar = "false"
+
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host "LOGIN ES LOCAL" -ForegroundColor Cyan
+    Write-Host "Usuario: $esLocalLogin"
+    Write-Host "Password: $esLocalPassword"
+    Write-Host "========================================" -ForegroundColor Cyan
+    Write-Host ""
 
     if ($PrepareOnly) {
         Write-Host "[6/7] Inicio omitido por validacion PrepareOnly."

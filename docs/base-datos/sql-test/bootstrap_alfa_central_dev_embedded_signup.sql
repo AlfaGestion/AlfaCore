@@ -5,6 +5,8 @@
   mediante :r. No pertenece a App_Data/updates y nunca debe ejecutarse en producción.
 */
 :setvar ExpectedDatabase "ALFA_CENTRAL_DEV"
+:setvar EsLocalLogin "eslocal@alfacore.dev"
+:setvar EsLocalPassword "AlfaCore-ES-84!"
 
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
@@ -15,6 +17,53 @@ IF DB_NAME() <> N'$(ExpectedDatabase)'
 
 IF UPPER(DB_NAME()) = N'ALFA_CENTRAL'
     THROW 51101, 'SEGURIDAD: ejecución rechazada en ALFA_CENTRAL.', 1;
+
+IF CAST(SERVERPROPERTY('IsLocalDB') AS int) <> 1
+    THROW 51106, 'SEGURIDAD: el bootstrap ES Local requiere SQL Server LocalDB.', 1;
+GO
+
+IF OBJECT_ID(N'dbo.Clientes', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.Clientes
+    (
+        idcliente nvarchar(50) NOT NULL,
+        nombre nvarchar(150) NOT NULL,
+        idweb nvarchar(50) NULL,
+        superadmin bit NOT NULL CONSTRAINT DF_ES_LOCAL_Clientes_superadmin DEFAULT (0),
+        LicenciaPrincipal nvarchar(100) NULL,
+        CONSTRAINT PK_ES_LOCAL_Clientes PRIMARY KEY (idcliente),
+        CONSTRAINT UQ_ES_LOCAL_Clientes_idweb UNIQUE (idweb)
+    );
+END;
+
+IF OBJECT_ID(N'dbo.users', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.users
+    (
+        [user] nvarchar(150) NOT NULL,
+        password nvarchar(255) NOT NULL,
+        idcliente nvarchar(50) NOT NULL,
+        CONSTRAINT PK_ES_LOCAL_users PRIMARY KEY ([user]),
+        CONSTRAINT FK_ES_LOCAL_users_Clientes FOREIGN KEY (idcliente) REFERENCES dbo.Clientes(idcliente)
+    );
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM dbo.Clientes WHERE idcliente = N'ES_LOCAL')
+    INSERT dbo.Clientes (idcliente, nombre, idweb, superadmin, LicenciaPrincipal)
+    VALUES (N'ES_LOCAL', N'Administrador ES Local', N'ALFANET', 0, NULL);
+ELSE
+    UPDATE dbo.Clientes
+    SET nombre = N'Administrador ES Local', idweb = N'ALFANET', superadmin = 0
+    WHERE idcliente = N'ES_LOCAL';
+
+IF NOT EXISTS (SELECT 1 FROM dbo.users WHERE LOWER(LTRIM(RTRIM([user]))) = LOWER(N'$(EsLocalLogin)'))
+    INSERT dbo.users ([user], password, idcliente)
+    VALUES (N'$(EsLocalLogin)', N'$(EsLocalPassword)', N'ES_LOCAL');
+ELSE
+    UPDATE dbo.users
+    SET password = N'$(EsLocalPassword)', idcliente = N'ES_LOCAL'
+    WHERE LOWER(LTRIM(RTRIM([user]))) = LOWER(N'$(EsLocalLogin)');
 GO
 
 IF OBJECT_ID(N'dbo.bases', N'U') IS NULL
@@ -61,6 +110,11 @@ SET idcliente = COALESCE(NULLIF(idcliente, N''), N'ES_LOCAL'),
     dbname = COALESCE(NULLIF(dbname, N''), N'ALFACORE_ES_TENANT_DEV')
 WHERE id = 84
   AND nombre = N'ES_DEV_BASE_84';
+
+UPDATE dbo.bases
+SET idcliente = N'ES_LOCAL_CROSS'
+WHERE id = 1900000106
+  AND nombre = N'ES_LOCAL_CROSS_TENANT_CALLBACK';
 GO
 
 /* Mantiene el esquema, constraints e índices del diseño central oficial. */
