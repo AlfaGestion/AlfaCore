@@ -10,7 +10,7 @@
 <PageTitle>Artículos | Dashboard de Compras</PageTitle>
 
 <section class="page-grid articulos-page">
-    <div class="page-intro"><div><h2 class="page-intro__title">Artículos</h2><p class="page-intro__text">Impacto económico, variación de precio, proveedor principal y últimas compras por artículo. <a class="help-link" href="/ayuda#9-artículos">Ver ayuda</a></p></div></div>
+    <div class="page-intro"><div><h2 class="page-intro__title">Artículos</h2><p class="page-intro__text">Impacto económico, variación de costo desde historial, proveedor principal y últimas compras por artículo. <a class="help-link" href="/ayuda#9-artículos">Ver ayuda</a></p></div></div>
     <GlobalFiltersBar Model="_filters" Options="_options" OnApply="LoadAsync" />
 
     @if (_page?.Kpis is not null)
@@ -109,9 +109,13 @@
                                 <strong>@item.DescripcionArticulo</strong>
                                 @if (!string.IsNullOrWhiteSpace(item.ProveedorPrincipal))
                                 {
-                                    <div class="text-muted">@item.ProveedorPrincipal</div>
-                                }
-                            </td>
+                                <div class="text-muted">@item.ProveedorPrincipal</div>
+                            }
+                            else if (item.VariacionPrecio.HasValue)
+                            {
+                                <div class="text-muted">Cambio detectado en historial de costos</div>
+                            }
+                        </td>
                             <td>@Fecha(item.FechaAlta)</td>
                             <td style="text-align:right;">@item.CantidadComprada.ToString("N2")</td>
                             <td style="text-align:right;">@Moneda(item.TotalComprado)</td>
@@ -145,9 +149,9 @@
             <div class="articulos-help__grid">
                 <div><strong>Total</strong><span>Suma del total comprado del artículo en el período actual.</span></div>
                 <div><strong>Costo prom.</strong><span>Promedio del costo de las compras del artículo dentro del período actual.</span></div>
-                <div><strong>Precio act.</strong><span>Mayor costo registrado para el artículo dentro del período actual.</span></div>
-                <div><strong>Precio ant.</strong><span>Promedio del costo del artículo en el período anterior equivalente.</span></div>
-                <div><strong>Variación</strong><span>Compara precio actual contra precio anterior: (actual - anterior) / anterior.</span></div>
+                <div><strong>Precio act.</strong><span>Último costo registrado en `V_MV_PreciosHis` hasta el fin del período, usando solo filas con `IdLista` nulo.</span></div>
+                <div><strong>Precio ant.</strong><span>Último costo anterior al inicio del período en `V_MV_PreciosHis`, también con `IdLista` nulo.</span></div>
+                <div><strong>Variación</strong><span>Compara costo actual contra costo anterior: (actual - anterior) / anterior.</span></div>
                 <div><strong>Nuevos</strong><span>Artículos con compras en el período actual y sin compras anteriores al inicio del período.</span></div>
                 <div><strong>Altas</strong><span>Artículos cuya fecha de alta del maestro cae dentro del período filtrado.</span></div>
             </div>
