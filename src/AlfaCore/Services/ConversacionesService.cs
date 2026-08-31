@@ -7054,30 +7054,37 @@ public sealed class ConversacionesService(
             if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
                 return;
 
-            var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
-            if (!config.IsConfigured)
-                return;
+            await RunWithConversationAutomationLockAsync(
+                idConversacion,
+                "fuera-horario",
+                async token =>
+                {
+                    var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(token).ConfigureAwait(false);
+                    if (!config.IsConfigured)
+                        return;
 
-            var businessNow = BusinessNow();
-            if (!IsOutsideBusinessHours(config, businessNow))
-                return;
+                    var businessNow = BusinessNow();
+                    if (!IsOutsideBusinessHours(config, businessNow))
+                        return;
 
-            // Si el asistente IA está configurado para atender fuera de horario, no mandamos el mensaje
-            // fijo: lo maneja el bot (que se presenta como IA, intenta ayudar y marca urgencias).
-            if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)
-                return;
+                    // Si el asistente IA está configurado para atender fuera de horario, no mandamos el mensaje
+                    // fijo: lo maneja el bot (que se presenta como IA, intenta ayudar y marca urgencias).
+                    if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)
+                        return;
 
-            if (await HasSentOutOfHoursNoticeAsync(idConversacion, businessNow, ct).ConfigureAwait(false))
-                return;
+                    if (await HasSentOutOfHoursNoticeAsync(idConversacion, businessNow, token).ConfigureAwait(false))
+                        return;
 
-            await SendMessageAsync(new ConversacionSendMessageRequest
-            {
-                IdConversacion = idConversacion,
-                Texto = config.MensajeFueraHorario,
-                MessageType = "TEXT",
-                UsuarioAccion = "AlfaCore",
-                SistemaAccion = "AUTOMATIZACION"
-            }, ct).ConfigureAwait(false);
+                    await SendMessageAsync(new ConversacionSendMessageRequest
+                    {
+                        IdConversacion = idConversacion,
+                        Texto = config.MensajeFueraHorario,
+                        MessageType = "TEXT",
+                        UsuarioAccion = "AlfaCore",
+                        SistemaAccion = "AUTOMATIZACION"
+                    }, token).ConfigureAwait(false);
+                },
+                ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -7242,151 +7249,133 @@ public sealed class ConversacionesService(
     // como desde el job de espera, ya con todos los chequeos de activación resueltos.
     private async Task EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct)
     {
-        if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
-            return;
-
-        if (config.BotSoloSinAsignar)
-        {
-            var tecnico = await GetConversationTechnicianIdAsync(idConversacion, ct).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(tecnico))
-                return;
-        }
-
-        var canalBot = await GetConversationChannelAsync(idConversacion, ct).ConfigureAwait(false);
-        if (!await IsSendWindowActiveAsync(idConversacion, canalBot, ct).ConfigureAwait(false))
-            return;
-
-        var (botCount, yaRespondioEsteMensaje) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
-        if (botCount >= Math.Max(1, config.BotMaxRespuestas))
-            return;
-        // No encimar sobre otra automática que ya haya respondido al último mensaje entrante
-        // (bienvenida, fuera de horario, auto-cierre, u otra corrida del propio bot). Se compara por
-        // IdMensaje (no por "el último saliente fue automático alguna vez"): si no, después de la
-        // primera respuesta automática de la conversación -- incluida la del propio bot -- esta
-        // condición quedaba true para siempre y el bot no volvía a responder nunca más.
-        if (yaRespondioEsteMensaje)
-            return;
-
-        var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
-        // Configurado para responder solo fuera de horario: en horario, calla y lo deja para un humano.
-        if (config.BotSoloFueraHorario && !fueraDeHorario)
-            return;
-
-        var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
-
-        // Datos del cliente: rubro (para razonar la respuesta) y si es un cliente prioritario
-        // (su clasificación está entre las configuradas como prioridad de atención).
-        var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, ct).ConfigureAwait(false);
-
-        // Prioridad de la conversación (solo sube, nunca baja): urgencia -> URGENTE; cliente
-        // prioritario -> ALTA. A los clientes prioritarios (restaurantes/POS, etc.) siempre se los prioriza.
-        if (esUrgente)
-            await SubirPrioridadAsync(idConversacion, "URGENTE", ct).ConfigureAwait(false);
-        else if (esPrioritario)
-            await SubirPrioridadAsync(idConversacion, "ALTA", ct).ConfigureAwait(false);
-
-        // Fuera de horario, dejamos nota para que un operador decida atender ahora (las urgencias y
-        // los clientes prioritarios se atienden en cualquier horario).
-        if (fueraDeHorario && (esUrgente || esPrioritario))
-        {
-            var motivo = esUrgente ? "posible URGENCIA" : "cliente prioritario";
-            var conRubro = string.IsNullOrWhiteSpace(rubro) ? string.Empty : $" (rubro: {rubro})";
-            await AddInternalEventCoreAsync(idConversacion,
-                $"⏰🚨 Fuera de horario, {motivo}{conRubro}. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
-                null, null, "AlfaCore", "URGENCIA", ct).ConfigureAwait(false);
-        }
-
-        var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
-
-        // Fase 2: sumar AlfaKnowledge como fuente. Recuperamos fragmentos de los documentos y se
-        // los damos al asistente para que responda combinando: comportamiento + info pegada + base.
-        var conocimientoBase = string.Empty;
-        if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
-            conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, ct).ConfigureAwait(false);
-
-        var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
-
-        // Herramientas (precio/saldo/pedidos): la cuenta se resuelve una sola vez acá, server-side,
-        // y viaja cerrada en el lambda ejecutor -- el modelo nunca puede elegir ni cambiar la cuenta.
-        var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, ct).ConfigureAwait(false);
-        var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
-        Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
-            ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
-                asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
-            : null;
-
-        var result = await asistenteService.ResponderAsync(
-            config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-            texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente,
-            herramientas, ejecutarHerramientaAsync, ct).ConfigureAwait(false);
-
-        // Nunca dejamos al cliente sin respuesta. El asistente decide el tipo:
-        //   RESUELVE -> resolvió; ACLARA -> repregunta para poder resolver (esperamos su respuesta);
-        //   DERIVA -> manda una contención y hay que pasar a un humano.
-        // Si por algún error no vino texto, mandamos igual una contención fija y derivamos.
-        var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
-        var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
-        var respuesta = !usoFallbackBot
-            ? result!.Respuesta.Trim()
-            : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
-        if (usoFallbackBot)
-            tipo = "DERIVA";
-
-        var businessNow = BusinessNow();
-        if (usoFallbackBot
-            && await HasSentAutomaticMessageTextAsync(idConversacion, "BOT", respuesta, businessNow, ct).ConfigureAwait(false))
-        {
-            await _appEvents.LogAuditAsync(
-                "Conversaciones", "BotFallbackDuplicadoOmitido", "CONV_CONVERSACIONES",
-                idConversacion.ToString(CultureInfo.InvariantCulture),
-                "Se omitió una contención repetida del bot porque ya se había enviado hoy en esta conversación.",
-                new { idConversacion, fueraDeHorario, respuesta }, ct).ConfigureAwait(false);
-            return;
-        }
-
-        await SendMessageAsync(new ConversacionSendMessageRequest
-        {
-            IdConversacion = idConversacion,
-            Texto = respuesta,
-            MessageType = "TEXT",
-            UsuarioAccion = "AlfaCore",
-            SistemaAccion = "BOT"
-        }, ct).ConfigureAwait(false);
-
-        if (tipo == "ACLARA")
-        {
-            await _appEvents.LogAuditAsync(
-                "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
-                idConversacion.ToString(CultureInfo.InvariantCulture),
-                "El asistente le pidió una aclaración al cliente para poder resolver.",
-                new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
-        }
-        else if (tipo == "DERIVA")
-        {
-            // Contención enviada: dejamos el caso listo para que un humano lo tome (nota + prioridad),
-            // salvo fuera de horario, donde de por sí queda para el próximo día hábil.
-            if (!fueraDeHorario)
+        await RunWithConversationAutomationLockAsync(
+            idConversacion,
+            "bot-auto-reply",
+            async token =>
             {
-                await AddInternalEventCoreAsync(idConversacion,
-                    "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
-                    null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
-                if (!esUrgente && !esPrioritario)
-                    await SubirPrioridadAsync(idConversacion, "MEDIA", ct).ConfigureAwait(false);
-            }
-            await _appEvents.LogAuditAsync(
-                "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
-                idConversacion.ToString(CultureInfo.InvariantCulture),
-                "El asistente mandó una contención y derivó a un humano (no pudo resolver).",
-                new { idConversacion, config.AsistentePolitica, fueraDeHorario }, ct).ConfigureAwait(false);
-        }
-        else
-        {
-            await _appEvents.LogAuditAsync(
-                "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
-                idConversacion.ToString(CultureInfo.InvariantCulture),
-                "El asistente respondió automáticamente.",
-                new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, ct).ConfigureAwait(false);
-        }
+                if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+                    return;
+
+                if (config.BotSoloSinAsignar)
+                {
+                    var tecnico = await GetConversationTechnicianIdAsync(idConversacion, token).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(tecnico))
+                        return;
+                }
+
+                var canalBot = await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false);
+                if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token).ConfigureAwait(false))
+                    return;
+
+                var (botCount, yaRespondioEsteMensaje) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
+                if (botCount >= Math.Max(1, config.BotMaxRespuestas))
+                    return;
+                if (yaRespondioEsteMensaje)
+                    return;
+
+                var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
+                if (config.BotSoloFueraHorario && !fueraDeHorario)
+                    return;
+
+                var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
+                var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, token).ConfigureAwait(false);
+
+                if (esUrgente)
+                    await SubirPrioridadAsync(idConversacion, "URGENTE", token).ConfigureAwait(false);
+                else if (esPrioritario)
+                    await SubirPrioridadAsync(idConversacion, "ALTA", token).ConfigureAwait(false);
+
+                if (fueraDeHorario && (esUrgente || esPrioritario))
+                {
+                    var motivo = esUrgente ? "posible URGENCIA" : "cliente prioritario";
+                    var conRubro = string.IsNullOrWhiteSpace(rubro) ? string.Empty : $" (rubro: {rubro})";
+                    await AddInternalEventCoreAsync(idConversacion,
+                        $"⏰🚨 Fuera de horario, {motivo}{conRubro}. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
+                        null, null, "AlfaCore", "URGENCIA", token).ConfigureAwait(false);
+                }
+
+                var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
+                var conocimientoBase = string.Empty;
+                if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
+                    conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false);
+
+                var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
+                var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
+                var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
+                Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
+                    ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
+                        asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
+                    : null;
+
+                var result = await asistenteService.ResponderAsync(
+                    config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
+                    texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente,
+                    herramientas, ejecutarHerramientaAsync, token).ConfigureAwait(false);
+
+                var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
+                var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
+                var respuesta = !usoFallbackBot
+                    ? result!.Respuesta.Trim()
+                    : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
+                if (usoFallbackBot)
+                    tipo = "DERIVA";
+
+                var businessNow = BusinessNow();
+                if (usoFallbackBot
+                    && await HasSentAutomaticMessageTextAsync(idConversacion, "BOT", respuesta, businessNow, token).ConfigureAwait(false))
+                {
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotFallbackDuplicadoOmitido", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "Se omitió una contención repetida del bot porque ya se había enviado hoy en esta conversación.",
+                        new { idConversacion, fueraDeHorario, respuesta }, token).ConfigureAwait(false);
+                    return;
+                }
+
+                await SendMessageAsync(new ConversacionSendMessageRequest
+                {
+                    IdConversacion = idConversacion,
+                    Texto = respuesta,
+                    MessageType = "TEXT",
+                    UsuarioAccion = "AlfaCore",
+                    SistemaAccion = "BOT"
+                }, token).ConfigureAwait(false);
+
+                if (tipo == "ACLARA")
+                {
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "El asistente le pidió una aclaración al cliente para poder resolver.",
+                        new { idConversacion, config.AsistentePolitica }, token).ConfigureAwait(false);
+                }
+                else if (tipo == "DERIVA")
+                {
+                    if (!fueraDeHorario)
+                    {
+                        await AddInternalEventCoreAsync(idConversacion,
+                            "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
+                            null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                        if (!esUrgente && !esPrioritario)
+                            await SubirPrioridadAsync(idConversacion, "MEDIA", token).ConfigureAwait(false);
+                    }
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "El asistente mandó una contención y derivó a un humano (no pudo resolver).",
+                        new { idConversacion, config.AsistentePolitica, fueraDeHorario }, token).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "El asistente respondió automáticamente.",
+                        new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, token).ConfigureAwait(false);
+                }
+            },
+            ct).ConfigureAwait(false);
     }
 
     // ===================== Mensajes programados (envío diferido) =====================
@@ -8205,6 +8194,70 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@FechaLocal", fechaLocalActual.Date);
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is not null;
+    }
+
+    private async Task RunWithConversationAutomationLockAsync(
+        long idConversacion,
+        string motivo,
+        Func<CancellationToken, Task> action,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        var resource = $"CONV_AUTO:{idConversacion}:{motivo}";
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        var lockResult = await AcquireApplicationLockAsync(cn, resource, ct).ConfigureAwait(false);
+        if (lockResult < 0)
+        {
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "AutomationLockSkipped", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "Se omitió una automatización porque otro nodo ya la estaba procesando para esta conversación.",
+                new { idConversacion, motivo, lockResult }, ct).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await action(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await ReleaseApplicationLockAsync(cn, resource, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<int> AcquireApplicationLockAsync(SqlConnection cn, string resource, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(
+            """
+            DECLARE @result int;
+            EXEC @result = sp_getapplock
+                @Resource = @Resource,
+                @LockMode = 'Exclusive',
+                @LockOwner = 'Session',
+                @LockTimeout = 0;
+            SELECT @result;
+            """,
+            cn);
+        cmd.Parameters.AddWithValue("@Resource", resource);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result is null or DBNull ? -999 : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task ReleaseApplicationLockAsync(SqlConnection cn, string resource, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(
+            """
+            EXEC sp_releaseapplock
+                @Resource = @Resource,
+                @LockOwner = 'Session';
+            """,
+            cn);
+        cmd.Parameters.AddWithValue("@Resource", resource);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     private async Task<bool> HasSentAutomaticMessageTextAsync(
