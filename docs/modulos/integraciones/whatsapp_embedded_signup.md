@@ -1,5 +1,7 @@
 # WhatsApp Embedded Signup — Fundación ES-1/ES-1.5
 
+El rollout vigente, limitado por allowlist a Base 84, se documenta en [whatsapp_embedded_signup_base84_rollout.md](../../gestion/whatsapp_embedded_signup_base84_rollout.md). El runbook de staging separado quedó reemplazado por esta decisión.
+
 ## Alcance
 
 ES-1 y ES-1.5 incorporan configuración tipada, state machine, persistencia central versionada, stores Dapper, claiming, vault persistente y logging seguro. No habilitan UI, OAuth/callback, Graph API, intercambio de códigos, registro de teléfonos ni cambios en webhooks.
@@ -14,6 +16,19 @@ ES-1 y ES-1.5 incorporan configuración tipada, state machine, persistencia cent
 - Una base soporta N Business, N WABA y N Phone Number ID.
 - Los números operativos continúan exclusivamente en `CONV_WHATSAPP_NUMEROS`.
 - El ownership central es seguridad/routing SaaS, no un modelo paralelo.
+
+### Modos de onboarding
+
+El onboarding persiste explícitamente `STANDARD` o `BUSINESS_APP_COEXISTENCE` en
+`WhatsAppEmbeddedOnboarding.ModoOnboarding`; el modo nunca se infiere por heurísticas.
+
+- `STANDARD`: podrá avanzar a descubrimiento, registro e importación cuando ES-3 implemente esas operaciones.
+- `BUSINESS_APP_COEXISTENCE`: conserva WhatsApp Business en el teléfono, usa
+  `featureType=whatsapp_business_app_onboarding` y tiene prohibido pasar por registro del teléfono.
+
+Ambos modos convergen en `CONV_WHATSAPP_NUMEROS`, ownership central y vault. Los eventos futuros
+`history`, `smb_app_state_sync` y `smb_message_echoes` deberán deduplicarse por base, número e
+identificador externo. En esta etapa no se procesa ni se afirma una importación real de historial.
 
 ## Configuración y secretos
 
@@ -99,6 +114,22 @@ La tabla mínima `dbo.bases` contiene `id int` como PK, única columna requerida
 
 Los tests de ownership generan WABA y Phone Number IDs numéricos artificiales con prefijo `9999`, validan concurrencia y eliminan solo esos IDs. Los tests de onboarding eliminan solamente sus propios GUID con `IdCliente='TEST'`. Los assets Meta reales de referencia no se usan como fixtures destructivos.
 
+## Pipeline de gestión posterior a AUTHORIZED
+
+El cliente `MetaWhatsAppManagementClient` usa un `HttpClient` dedicado y obtiene la credencial exclusivamente mediante la referencia opaca del onboarding y `WhatsAppSecureVault`. No reutiliza el token ni el WABA de la configuración manual de Conversaciones. La versión Graph proviene de `WhatsAppEmbeddedSignupOptions.GraphApiVersion`; requests, responses y secretos no se registran.
+
+El procesamiento durable posterior a la autorización ejecuta, por estado: discovery autorizado de Business/WABA/teléfonos, reserva global de ownership, comprobación de acceso, suscripción idempotente de la aplicación a la WABA, evaluación de pago y readiness del teléfono. Los hints del evento de Meta se usan solo para correlación; los activos operables deben confirmarse mediante Graph.
+
+La política de facturación permanece `CustomerPaysMeta`. Un estado de pago desconocido no se transforma por heurística en error ni en acción requerida. Solo una respuesta inequívoca de Meta puede producir `CUSTOMER_PAYMENT_SETUP_REQUIRED`; AlfaCore nunca comparte ni adjunta una línea de crédito.
+
+El alta supervisada se detiene antes de `SaveWhatsAppNumeroAsync`. `READY_FOR_IMPORT_APPROVAL` significa que el activo está listo para que una aprobación posterior autorice el UPSERT operativo. `REGISTRATION_REQUIRED` significa que un onboarding `STANDARD` descubrió un teléfono que todavía requiere registro; esta etapa no ejecuta `/register`. El modo `BUSINESS_APP_COEXISTENCE` nunca puede ingresar al registro telefónico.
+
+Para diagnóstico local existe `tools/AlfaCore.EsSupervisedRunner`. El runner exige confirmación explícita, valida `(localdb)\\MSSQLLocalDB / ALFA_CENTRAL_DEV`, `IsLocalDB=1`, Base 84, onboarding `STANDARD` y `WorkerEnabled=false`. No realiza UPSERT, no registra teléfonos y no habilita el hosted worker.
+
+### Resultado supervisado Base 84
+
+El onboarding `5bad6682-238b-4230-888f-c7b112fa9edd` avanzó hasta `RegisteringPhones / REGISTRATION_REQUIRED`. Graph confirmó WABA `1547539197385596` y Phone Number ID `1195619520311268`, con nombre visible `AlfaNet Tester`, teléfono `+1 555-482-7373`, calidad `UNKNOWN` y registro pendiente. El ownership de ambos activos quedó reservado para Base 84 y la suscripción de la aplicación a la WABA fue asegurada. No se invocó `SaveWhatsAppNumeroAsync` ni se escribió en `CONV_WHATSAPP_NUMEROS`.
+
 ## ES-2 — autorización mínima con Meta
 
 ES-2 incorpora únicamente `Start → FB.login → code → /oauth/access_token → vault → Authorized`. No descubre Business/WABA/teléfonos, no reserva ownership, no registra números, no suscribe webhooks y no activa el worker posterior.
@@ -114,6 +145,10 @@ Configuración Development no versionada requerida:
 - `WhatsAppEmbeddedSignup__AppSecret`: secreto privado de la Meta App.
 - `WhatsAppEmbeddedSignup__Enabled=true`.
 - `WhatsAppEmbeddedSignup__DataProtectionKeysPath`: directorio absoluto y persistente con ACL privada.
-- `WhatsAppEmbeddedSignup__CentralConnectionString`: conexión dedicada a `ALFA_CENTRAL_TEST`; evita reemplazar la conexión central normal de AlfaCore.
+- `WhatsAppEmbeddedSignup__CentralConnectionString`: conexión dedicada al catálogo central aislado del runtime. Para la prueba manual supervisada en Development apunta a `(localdb)\MSSQLLocalDB / ALFA_CENTRAL_DEV`; evita reemplazar la conexión central normal de AlfaCore.
+
+La prueba manual supervisada vigente usa la Base AlfaCore `84` (`ALFANET EN VB6`). En `ALFA_CENTRAL_DEV`, esa identidad se representa únicamente mediante el seed ficticio `84 / ES_DEV_BASE_84`; no se copian nombre, conexión, usuarios ni datos productivos. El seed reproducible está en `docs/base-datos/sql-test/seed_es_supervisado_base_84.sql`. La Base `106` queda solamente como antecedente histórico DEV y no existe fallback entre ambas.
+
+Los integration tests permanecen separados: leen exclusivamente `ALFACORE_ES_SQL_TEST_CONNECTION`, cuyo catálogo debe ser `ALFA_CENTRAL_TEST`, y usan los fixtures artificiales reservados `1900000001` y `1900000002`.
 
 La configuración versionada conserva `Enabled=false` y no contiene App Secret. La prueba manual requiere HTTPS, usuario con rol en la Meta App y el dominio agregado a Allowed Domains for JavaScript SDK.

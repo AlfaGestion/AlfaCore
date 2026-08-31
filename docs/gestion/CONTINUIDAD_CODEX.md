@@ -1,5 +1,7 @@
 # Continuidad Codex
 
+> Para continuar específicamente Conversaciones, WhatsApp y Embedded Signup desde el corte del 27/08/2026, usar como fuente principal [CONTINUIDAD_WHATSAPP_EMBEDDED_SIGNUP_ALBERTO_2026-08-27.md](./CONTINUIDAD_WHATSAPP_EMBEDDED_SIGNUP_ALBERTO_2026-08-27.md). Ese documento reemplaza las notas históricas de este archivo cuando exista una diferencia sobre ese alcance.
+
 ## Objetivo de este archivo
 
 Este archivo resume el estado actual del trabajo para poder continuarlo desde otra PC o en una nueva conversación sin tener que reconstruir todo el contexto.

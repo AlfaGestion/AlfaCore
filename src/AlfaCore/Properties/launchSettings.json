@@ -26,7 +26,7 @@
         "environmentVariables": {
           "ASPNETCORE_ENVIRONMENT": "Development",
           "ServidorWeb__PuertoHttpsDesarrollo": "7055",
-          "WhatsAppEmbeddedSignup__CentralConnectionString": "Server=(localdb)\\MSSQLLocalDB;Initial Catalog=ALFA_CENTRAL_TEST;Integrated Security=True;TrustServerCertificate=True"
+          "WhatsAppEmbeddedSignup__CentralConnectionString": "Server=(localdb)\\MSSQLLocalDB;Initial Catalog=ALFA_CENTRAL_DEV;Integrated Security=True;TrustServerCertificate=True"
         }
       },
       "IIS Express": {

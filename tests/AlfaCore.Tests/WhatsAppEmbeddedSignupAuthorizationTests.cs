@@ -9,7 +9,14 @@ namespace AlfaCore.Tests;
 
 public sealed class WhatsAppEmbeddedSignupAuthorizationTests
 {
-    [Fact] public async Task DisabledFeature_RejectsStart() => await Assert.ThrowsAsync<InvalidOperationException>(() => Create(enabled: false).Orchestrator.StartAsync(new(106, "TEST", "Eve")));
+    [Fact] public async Task DisabledFeature_RejectsStart() => await Assert.ThrowsAsync<InvalidOperationException>(() => Create(enabled: false).Orchestrator.StartAsync(new(106, "TEST", "Eve", WhatsAppEmbeddedOnboardingMode.Standard)));
+    [Fact] public async Task BaseOutsideAllowlist_RejectsStartBeforeCreatingOnboarding()
+    {
+        var context = Create(allowedBaseIds: [84]);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => context.Orchestrator.StartAsync(new(106, "TEST", "Eve", WhatsAppEmbeddedOnboardingMode.Standard)));
+        Assert.Null(context.Store.Item);
+        Assert.Equal(0, context.Meta.Calls);
+    }
     [Fact] public async Task MissingOnboarding_IsRejected() => await Assert.ThrowsAsync<UnauthorizedAccessException>(() => Create().Orchestrator.HandleAuthorizationCallbackAsync(Callback(Guid.NewGuid(), 106, "state", "Eve")));
     [Fact] public async Task EmptyCode_IsRejected() { var c = CreateWithOnboarding(); await Assert.ThrowsAsync<ArgumentException>(() => c.Orchestrator.HandleAuthorizationCallbackAsync(Callback(c.Item!.IdOnboarding, 106, c.State!, "Eve", ""))); }
     [Fact] public async Task WrongUser_IsRejected() { var c = CreateWithOnboarding(); await Assert.ThrowsAsync<UnauthorizedAccessException>(() => c.Orchestrator.HandleAuthorizationCallbackAsync(Callback(c.Item!.IdOnboarding, 106, c.State!, "Otro"))); }
@@ -65,6 +72,7 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
         var result = await client.ExchangeCodeAsync("fake-code", new(106, Guid.NewGuid(), "", "", "", "TEST", null));
         Assert.Equal("fake-token-value", vault.StoredSecret);
         Assert.Equal("captured-reference", result.TokenReference.Value);
+        Assert.Equal(1, vault.StoreCalls);
     }
 
     [Fact]
@@ -93,10 +101,10 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
 
     private static WhatsAppEmbeddedAuthorizationCallback Callback(Guid id, int idBase, string state, string user, string code = "fake-authorization-code") => new(id, idBase, state, code, user);
 
-    private static Context Create(bool enabled = true)
+    private static Context Create(bool enabled = true, int[]? allowedBaseIds = null)
     {
         var store = new MemoryStore(); var meta = new FakeMetaClient(); var vault = new FakeVault(); var protector = new WhatsAppEmbeddedSignupStateProtector();
-        return new(new(store, protector, meta, vault, Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = enabled, OnboardingExpirationMinutes = 30 })), store, meta, vault, protector);
+        return new(new(store, protector, meta, vault, Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = enabled, AllowedBaseIds = allowedBaseIds ?? [106], OnboardingExpirationMinutes = 30 })), store, meta, vault, protector);
     }
 
     private static Context CreateWithOnboarding(bool expired = false)
@@ -131,7 +139,8 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
     private sealed class CapturingVault : IWhatsAppCredentialVault
     {
         public string? StoredSecret { get; private set; }
-        public Task<WhatsAppCredentialReference> StoreAsync(WhatsAppVaultSecretContext context, ReadOnlyMemory<char> secret, CancellationToken ct = default) { StoredSecret = secret.ToString(); return Task.FromResult(new WhatsAppCredentialReference("captured-reference")); }
+        public int StoreCalls { get; private set; }
+        public Task<WhatsAppCredentialReference> StoreAsync(WhatsAppVaultSecretContext context, ReadOnlyMemory<char> secret, CancellationToken ct = default) { StoreCalls++; StoredSecret = secret.ToString(); return Task.FromResult(new WhatsAppCredentialReference("captured-reference")); }
         public Task<ReadOnlyMemory<char>> GetAsync(WhatsAppCredentialReference reference, CancellationToken ct = default) => throw new NotSupportedException();
         public Task RemoveAsync(WhatsAppCredentialReference reference, CancellationToken ct = default) => Task.CompletedTask;
     }
@@ -148,6 +157,7 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
         public WhatsAppEmbeddedOnboardingDto? Item { get; set; } public bool FailAuthorization { get; set; }
         public Task CreateAsync(WhatsAppEmbeddedOnboardingDto onboarding, CancellationToken ct = default) { Item = onboarding; return Task.CompletedTask; }
         public Task<WhatsAppEmbeddedOnboardingDto?> GetAsync(Guid id, CancellationToken ct = default) => Task.FromResult(Item?.IdOnboarding == id ? Item : null);
+        public Task<WhatsAppEmbeddedOnboardingDto?> GetLatestForBaseAsync(int idBase, CancellationToken ct = default) => Task.FromResult(Item?.IdBase == idBase ? Item : null);
         public Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string hash, int idBase, string user, DateTime now, CancellationToken ct = default)
         {
             if (Item is null || Item.IdBase != idBase || !string.Equals(Item.UsuarioIniciador, user, StringComparison.OrdinalIgnoreCase) || Item.StateHash != hash || Item.StateConsumedAtUtc is not null || Item.ExpiresAtUtc <= now || Item.Status != WhatsAppEmbeddedOnboardingStatus.Started) return Task.FromResult<WhatsAppEmbeddedOnboardingDto?>(null);

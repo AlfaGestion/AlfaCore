@@ -9,6 +9,20 @@ public sealed class WhatsAppAssetOwnershipStore(IConfiguration configuration, IH
 {
     private string ConnectionString => WhatsAppEmbeddedSignupConnection.Resolve(configuration, environment);
 
+    public async Task<bool> IsSchemaAvailableAsync(CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT CASE WHEN
+                OBJECT_ID(N'dbo.WhatsAppEmbeddedOnboarding', N'U') IS NOT NULL AND
+                OBJECT_ID(N'dbo.WhatsAppWabaOwnership', N'U') IS NOT NULL AND
+                OBJECT_ID(N'dbo.WhatsAppPhoneOwnership', N'U') IS NOT NULL AND
+                OBJECT_ID(N'dbo.WhatsAppSecureVault', N'U') IS NOT NULL
+            THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        return await cn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, cancellationToken: ct));
+    }
+
     public Task<WhatsAppAssetOwnershipDecision> ReserveWabaAsync(string wabaId, int idBase, string metaBusinessId, CancellationToken ct = default)
         => ReserveAsync("WABA", NormalizeId(wabaId, nameof(wabaId)), null, idBase, metaBusinessId, ct);
 

@@ -99,11 +99,9 @@ public sealed partial class InformesIaService
                 model = "gpt-4o-mini";
             }
 
-            var payload = new
-            {
+            var payload = BuildOpenAiChatPayload(
                 model,
-                temperature = 0,
-                messages = new object[]
+                new object[]
                 {
                     new
                     {
@@ -115,8 +113,8 @@ public sealed partial class InformesIaService
                         role = "user",
                         content = query
                     }
-                }
-            };
+                },
+                0);
 
             using var response = await client.PostAsync(
                 "https://api.openai.com/v1/chat/completions",
@@ -165,12 +163,9 @@ public sealed partial class InformesIaService
                 model = "gpt-4o-mini";
             }
 
-            var payload = new
-            {
+            var payload = BuildOpenAiChatPayload(
                 model,
-                temperature = 0,
-                response_format = new { type = "json_object" },
-                messages = new object[]
+                new object[]
                 {
                     new
                     {
@@ -238,8 +233,9 @@ public sealed partial class InformesIaService
                         - TipoComprobante: {{filters.TipoComprobante ?? "null"}}
                         """
                     }
-                }
-            };
+                },
+                0,
+                new { type = "json_object" });
 
             using var response = await client.PostAsync(
                 "https://api.openai.com/v1/chat/completions",
@@ -859,6 +855,31 @@ public sealed partial class InformesIaService
     private static object ToDbValue(string? value) => string.IsNullOrWhiteSpace(value) ? DBNull.Value : value.Trim();
     private static bool ContainsAll(string text, params string[] keywords) => keywords.All(keyword => text.Contains(keyword, StringComparison.OrdinalIgnoreCase));
     private static bool ContainsAny(string text, params string[] keywords) => keywords.Any(keyword => text.Contains(keyword, StringComparison.OrdinalIgnoreCase));
+
+    private static Dictionary<string, object?> BuildOpenAiChatPayload(
+        string model,
+        object[] messages,
+        double? temperature = null,
+        object? responseFormat = null)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = model,
+            ["messages"] = messages
+        };
+
+        if (responseFormat is not null)
+            payload["response_format"] = responseFormat;
+
+        if (temperature.HasValue && SupportsCustomTemperature(model))
+            payload["temperature"] = temperature.Value;
+
+        return payload;
+    }
+
+    private static bool SupportsCustomTemperature(string? model)
+        => string.IsNullOrWhiteSpace(model)
+           || !model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase);
 
     private static string Normalize(string value)
     {

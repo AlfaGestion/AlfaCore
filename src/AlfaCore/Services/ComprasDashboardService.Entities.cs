@@ -918,8 +918,10 @@ public sealed partial class ComprasDashboardService
         {
             await using var connection = await OpenConnectionAsync(cancellationToken);
             var fechaAltaExpr = await GetArticuloFechaAltaExpressionAsync(connection, cancellationToken);
+            var fechaDesdeComparacion = filters.FechaDesde?.Date
+                ?? new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
 
-            var currentRows = await ReadListAsync(connection, $"""
+            var currentPurchaseRows = await ReadListAsync(connection, $"""
                 SELECT
                     d.IDARTICULO,
                     COALESCE(NULLIF(d.DESCRIPCION_ARTICULO, ''), d.IDARTICULO) AS DescripcionArticulo,
@@ -946,14 +948,142 @@ public sealed partial class ComprasDashboardService
                 CantidadCompras = reader.GetInt32("CantidadCompras")
             }, cancellationToken);
 
-            var priorFilters = ComputePriorPeriodFilters(filters);
-            var priorCosts = await ReadListAsync(connection, $"""
+            var currentCostRows = await ReadListAsync(connection, """
+                WITH ranked AS (
+                    SELECT
+                        LTRIM(RTRIM(h.IdArticulo)) AS IDARTICULO,
+                        COALESCE(NULLIF(a.DESCRIPCION, ''), LTRIM(RTRIM(h.IdArticulo))) AS DescripcionArticulo,
+                        CAST(h.Costo AS decimal(18,4)) AS PrecioActual,
+                        h.FechaHora,
+                        a.FHALTA AS FechaAlta,
+                        COALESCE(NULLIF(p.RAZON_SOCIAL, ''), LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, '')))) AS ProveedorPrincipal,
+                        LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) AS ProveedorPrincipalCuenta,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY LTRIM(RTRIM(h.IdArticulo))
+                            ORDER BY h.FechaHora DESC, h.Id DESC
+                        ) AS rn
+                    FROM dbo.V_MV_PreciosHis h
+                    LEFT JOIN dbo.V_MA_ARTICULOS a
+                        ON LTRIM(RTRIM(a.IDARTICULO)) = LTRIM(RTRIM(h.IdArticulo))
+                    LEFT JOIN dbo.V_TA_Rubros r
+                        ON a.IDRUBRO = r.IdRubro
+                    LEFT JOIN dbo.V_TA_FAMILIAS f
+                        ON a.IdFamilia = f.IdFamilia
+                    LEFT JOIN dbo.Vt_Proveedores p
+                        ON LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) = LTRIM(RTRIM(p.CODIGO))
+                    WHERE h.IdLista IS NULL
+                      AND h.Costo IS NOT NULL
+                      AND (@FechaHasta IS NULL OR h.FechaHora < DATEADD(day, 1, @FechaHasta))
+                      AND (@Usuario IS NULL OR LTRIM(RTRIM(ISNULL(h.Usuario, ''))) = LTRIM(RTRIM(@Usuario)))
+                      AND (@Articulo IS NULL OR LTRIM(RTRIM(h.IdArticulo)) = LTRIM(RTRIM(@Articulo)))
+                      AND (@ArticuloCodigo IS NULL OR LTRIM(RTRIM(h.IdArticulo)) = LTRIM(RTRIM(@ArticuloCodigo)))
+                      AND (@ArticuloDescripcion IS NULL OR ISNULL(a.DESCRIPCION, '') LIKE '%' + @ArticuloDescripcion + '%')
+                      AND (@Rubro IS NULL OR ISNULL(r.Descripcion, '') = @Rubro)
+                      AND (@Familia IS NULL OR ISNULL(f.Descripcion, '') = @Familia)
+                      AND (
+                            @Proveedor IS NULL
+                            OR LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) LIKE '%' + LTRIM(RTRIM(@Proveedor)) + '%'
+                            OR ISNULL(p.RAZON_SOCIAL, '') LIKE '%' + @Proveedor + '%'
+                          )
+                )
                 SELECT
-                    d.IDARTICULO,
-                    AVG(CAST(d.COSTO AS decimal(18,4))) AS PrecioAnterior
-                {DetailFromClause}
-                GROUP BY d.IDARTICULO;
-                """, priorFilters, reader => new
+                    IDARTICULO,
+                    DescripcionArticulo,
+                    PrecioActual,
+                    FechaHora,
+                    FechaAlta,
+                    ProveedorPrincipal,
+                    ProveedorPrincipalCuenta
+                FROM ranked
+                WHERE rn = 1;
+                """,
+                cmd => AddCommonParameters(cmd, filters),
+                reader => new
+                {
+                    IdArticulo = reader.SafeGetString("IDARTICULO"),
+                    DescripcionArticulo = reader.SafeGetString("DescripcionArticulo"),
+                    PrecioActual = reader.GetDecimal("PrecioActual"),
+                    FechaHora = reader.GetNullableDateTime("FechaHora"),
+                    FechaAlta = reader.GetNullableDateTime("FechaAlta"),
+                    ProveedorPrincipal = reader.SafeGetString("ProveedorPrincipal"),
+                    ProveedorPrincipalCuenta = reader.SafeGetString("ProveedorPrincipalCuenta")
+                }, cancellationToken);
+
+            var changedCostRows = await ReadListAsync(connection, """
+                SELECT DISTINCT
+                    LTRIM(RTRIM(h.IdArticulo)) AS IDARTICULO
+                FROM dbo.V_MV_PreciosHis h
+                LEFT JOIN dbo.V_MA_ARTICULOS a
+                    ON LTRIM(RTRIM(a.IDARTICULO)) = LTRIM(RTRIM(h.IdArticulo))
+                LEFT JOIN dbo.V_TA_Rubros r
+                    ON a.IDRUBRO = r.IdRubro
+                LEFT JOIN dbo.V_TA_FAMILIAS f
+                    ON a.IdFamilia = f.IdFamilia
+                LEFT JOIN dbo.Vt_Proveedores p
+                    ON LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) = LTRIM(RTRIM(p.CODIGO))
+                WHERE h.IdLista IS NULL
+                  AND h.Costo IS NOT NULL
+                  AND (@FechaDesde IS NULL OR h.FechaHora >= @FechaDesde)
+                  AND (@FechaHasta IS NULL OR h.FechaHora < DATEADD(day, 1, @FechaHasta))
+                  AND (@Usuario IS NULL OR LTRIM(RTRIM(ISNULL(h.Usuario, ''))) = LTRIM(RTRIM(@Usuario)))
+                  AND (@Articulo IS NULL OR LTRIM(RTRIM(h.IdArticulo)) = LTRIM(RTRIM(@Articulo)))
+                  AND (@ArticuloCodigo IS NULL OR LTRIM(RTRIM(h.IdArticulo)) = LTRIM(RTRIM(@ArticuloCodigo)))
+                  AND (@ArticuloDescripcion IS NULL OR ISNULL(a.DESCRIPCION, '') LIKE '%' + @ArticuloDescripcion + '%')
+                  AND (@Rubro IS NULL OR ISNULL(r.Descripcion, '') = @Rubro)
+                  AND (@Familia IS NULL OR ISNULL(f.Descripcion, '') = @Familia)
+                  AND (
+                        @Proveedor IS NULL
+                        OR LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) LIKE '%' + LTRIM(RTRIM(@Proveedor)) + '%'
+                        OR ISNULL(p.RAZON_SOCIAL, '') LIKE '%' + @Proveedor + '%'
+                      );
+                """,
+                cmd => AddCommonParameters(cmd, filters),
+                reader => reader.SafeGetString("IDARTICULO"),
+                cancellationToken);
+
+            var priorCosts = await ReadListAsync(connection, """
+                WITH ranked AS (
+                    SELECT
+                        LTRIM(RTRIM(h.IdArticulo)) AS IDARTICULO,
+                        CAST(h.Costo AS decimal(18,4)) AS PrecioAnterior,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY LTRIM(RTRIM(h.IdArticulo))
+                            ORDER BY h.FechaHora DESC, h.Id DESC
+                        ) AS rn
+                    FROM dbo.V_MV_PreciosHis h
+                    LEFT JOIN dbo.V_MA_ARTICULOS a
+                        ON LTRIM(RTRIM(a.IDARTICULO)) = LTRIM(RTRIM(h.IdArticulo))
+                    LEFT JOIN dbo.V_TA_Rubros r
+                        ON a.IDRUBRO = r.IdRubro
+                    LEFT JOIN dbo.V_TA_FAMILIAS f
+                        ON a.IdFamilia = f.IdFamilia
+                    LEFT JOIN dbo.Vt_Proveedores p
+                        ON LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) = LTRIM(RTRIM(p.CODIGO))
+                    WHERE h.IdLista IS NULL
+                      AND h.Costo IS NOT NULL
+                      AND h.FechaHora < @FechaDesdeComparacion
+                      AND (@Usuario IS NULL OR LTRIM(RTRIM(ISNULL(h.Usuario, ''))) = LTRIM(RTRIM(@Usuario)))
+                      AND (@Articulo IS NULL OR LTRIM(RTRIM(h.IdArticulo)) = LTRIM(RTRIM(@Articulo)))
+                      AND (@ArticuloCodigo IS NULL OR LTRIM(RTRIM(h.IdArticulo)) = LTRIM(RTRIM(@ArticuloCodigo)))
+                      AND (@ArticuloDescripcion IS NULL OR ISNULL(a.DESCRIPCION, '') LIKE '%' + @ArticuloDescripcion + '%')
+                      AND (@Rubro IS NULL OR ISNULL(r.Descripcion, '') = @Rubro)
+                      AND (@Familia IS NULL OR ISNULL(f.Descripcion, '') = @Familia)
+                      AND (
+                            @Proveedor IS NULL
+                            OR LTRIM(RTRIM(ISNULL(a.CUENTAPROVEEDOR, ''))) LIKE '%' + LTRIM(RTRIM(@Proveedor)) + '%'
+                            OR ISNULL(p.RAZON_SOCIAL, '') LIKE '%' + @Proveedor + '%'
+                          )
+                )
+                SELECT IDARTICULO, PrecioAnterior
+                FROM ranked
+                WHERE rn = 1;
+                """,
+                cmd =>
+                {
+                    AddCommonParameters(cmd, filters);
+                    cmd.Parameters.AddWithValue("@FechaDesdeComparacion", fechaDesdeComparacion);
+                },
+                reader => new
             {
                 IdArticulo = reader.SafeGetString("IDARTICULO"),
                 PrecioAnterior = reader.GetDecimal("PrecioAnterior")
@@ -1018,40 +1148,71 @@ public sealed partial class ComprasDashboardService
 
             var conHistorialSet = new HashSet<string>(articulosConHistorial, StringComparer.OrdinalIgnoreCase);
 
+            var currentPurchaseLookup = currentPurchaseRows.ToDictionary(x => x.IdArticulo, StringComparer.OrdinalIgnoreCase);
+            var currentCostLookup = currentCostRows.ToDictionary(x => x.IdArticulo, StringComparer.OrdinalIgnoreCase);
+            var changedCostSet = new HashSet<string>(changedCostRows, StringComparer.OrdinalIgnoreCase);
             var priorLookup = priorCosts.ToDictionary(x => x.IdArticulo, x => x.PrecioAnterior, StringComparer.OrdinalIgnoreCase);
             var proveedorLookup = proveedoresPrincipales.ToDictionary(x => x.IdArticulo, x => x, StringComparer.OrdinalIgnoreCase);
+            var articleIds = currentPurchaseRows
+                .Select(x => x.IdArticulo)
+                .Concat(changedCostRows)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
-            var articulos = currentRows.Select(item =>
+            var articulos = articleIds.Select(idArticulo =>
             {
-                priorLookup.TryGetValue(item.IdArticulo, out var precioAnterior);
-                proveedorLookup.TryGetValue(item.IdArticulo, out var proveedor);
+                currentPurchaseLookup.TryGetValue(idArticulo, out var compra);
+                currentCostLookup.TryGetValue(idArticulo, out var costoActualRow);
+                priorLookup.TryGetValue(idArticulo, out var precioAnterior);
+                proveedorLookup.TryGetValue(idArticulo, out var proveedorCompra);
+
+                var precioActual = costoActualRow?.PrecioActual
+                    ?? compra?.PrecioActual
+                    ?? 0m;
+
                 decimal? variacion = null;
-                if (precioAnterior > 0)
+                if (precioAnterior > 0 && precioActual > 0)
                 {
-                    variacion = (item.PrecioActual - precioAnterior) / precioAnterior;
+                    variacion = (precioActual - precioAnterior) / precioAnterior;
                 }
 
-                var esNuevo = !conHistorialSet.Contains(item.IdArticulo.Trim());
+                var proveedorPrincipal = proveedorCompra?.ProveedorPrincipal
+                    ?? costoActualRow?.ProveedorPrincipal
+                    ?? string.Empty;
+
+                var proveedorPrincipalCuenta = proveedorCompra?.ProveedorPrincipalCuenta
+                    ?? costoActualRow?.ProveedorPrincipalCuenta
+                    ?? string.Empty;
+
+                var totalComprado = compra?.TotalComprado ?? 0m;
+                var totalProveedorCompra = proveedorCompra?.TotalProveedor ?? 0m;
+                var esNuevo = compra is not null && !conHistorialSet.Contains(idArticulo.Trim());
 
                 return new ArticuloResumenDto
                 {
-                    IdArticulo = item.IdArticulo,
-                    DescripcionArticulo = item.DescripcionArticulo,
-                    CantidadComprada = item.CantidadComprada,
-                    TotalComprado = item.TotalComprado,
-                    CostoPromedio = item.CostoPromedio,
-                    PrecioActual = item.PrecioActual,
+                    IdArticulo = idArticulo,
+                    DescripcionArticulo = compra?.DescripcionArticulo
+                        ?? costoActualRow?.DescripcionArticulo
+                        ?? idArticulo,
+                    CantidadComprada = compra?.CantidadComprada ?? 0m,
+                    TotalComprado = totalComprado,
+                    CostoPromedio = compra?.CostoPromedio ?? precioActual,
+                    PrecioActual = precioActual,
                     PrecioAnterior = precioAnterior,
                     VariacionPrecio = variacion,
-                    ProveedorPrincipal = proveedor?.ProveedorPrincipal ?? string.Empty,
-                    ProveedorPrincipalCuenta = proveedor?.ProveedorPrincipalCuenta ?? string.Empty,
-                    ParticipacionProveedorPrincipal = item.TotalComprado > 0 ? (proveedor?.TotalProveedor ?? 0m) / item.TotalComprado : 0m,
-                    UltimaCompra = item.UltimaCompra,
-                    FechaAlta = item.FechaAlta,
-                    CantidadCompras = item.CantidadCompras,
+                    ProveedorPrincipal = proveedorPrincipal,
+                    ProveedorPrincipalCuenta = proveedorPrincipalCuenta,
+                    ParticipacionProveedorPrincipal = totalComprado > 0 ? totalProveedorCompra / totalComprado : 0m,
+                    UltimaCompra = compra?.UltimaCompra,
+                    FechaAlta = compra?.FechaAlta ?? costoActualRow?.FechaAlta,
+                    CantidadCompras = compra?.CantidadCompras ?? 0,
                     EsNuevo = esNuevo
                 };
-            }).ToList();
+            })
+            .OrderByDescending(x => changedCostSet.Contains(x.IdArticulo))
+            .ThenByDescending(x => x.TotalComprado)
+            .ThenBy(x => x.DescripcionArticulo)
+            .ToList();
 
             var conVariacion = articulos.Where(x => x.VariacionPrecio.HasValue).ToList();
             var conAumento = conVariacion.Where(x => x.VariacionPrecio > 0).OrderByDescending(x => x.VariacionPrecio).ToList();
@@ -1166,12 +1327,14 @@ public sealed partial class ComprasDashboardService
 
         var evolucion = await ReadListAsync(connection, """
             SELECT TOP (12)
-                RIGHT('0' + CONVERT(varchar(2), MONTH(FECHA)), 2) + '/' + CONVERT(varchar(4), YEAR(FECHA)) AS Periodo,
-                AVG(CAST(COSTO AS decimal(18,4))) AS Total
-            FROM vw_compras_detalle_dashboard
-            WHERE LTRIM(RTRIM(IDARTICULO)) = LTRIM(RTRIM(@IdArticulo))
-            GROUP BY YEAR(FECHA), MONTH(FECHA)
-            ORDER BY YEAR(FECHA) DESC, MONTH(FECHA) DESC;
+                RIGHT('0' + CONVERT(varchar(2), MONTH(FechaHora)), 2) + '/' + CONVERT(varchar(4), YEAR(FechaHora)) AS Periodo,
+                AVG(CAST(Costo AS decimal(18,4))) AS Total
+            FROM dbo.V_MV_PreciosHis
+            WHERE LTRIM(RTRIM(IdArticulo)) = LTRIM(RTRIM(@IdArticulo))
+              AND IdLista IS NULL
+              AND Costo IS NOT NULL
+            GROUP BY YEAR(FechaHora), MONTH(FechaHora)
+            ORDER BY YEAR(FechaHora) DESC, MONTH(FechaHora) DESC;
             """, cmd => cmd.Parameters.AddWithValue("@IdArticulo", idArticulo), reader => new MonthlyPointDto
         {
             Periodo = reader.SafeGetString("Periodo"),

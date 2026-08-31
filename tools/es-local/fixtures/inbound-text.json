@@ -1,0 +1,35 @@
+{
+  "object": "whatsapp_business_account",
+  "entry": [
+    {
+      "id": "900000000000084",
+      "changes": [
+        {
+          "field": "messages",
+          "value": {
+            "messaging_product": "whatsapp",
+            "metadata": {
+              "display_phone_number": "+1 555 000 0084",
+              "phone_number_id": "{{PHONE_NUMBER_ID}}"
+            },
+            "contacts": [
+              {
+                "profile": { "name": "ES Local Fixture" },
+                "wa_id": "15550000999"
+              }
+            ],
+            "messages": [
+              {
+                "from": "15550000999",
+                "id": "{{EVENT_ID}}",
+                "timestamp": "1787788800",
+                "type": "text",
+                "text": { "body": "Mensaje ficticio ES local" }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <AssemblyName>AlfaCore</AssemblyName>
+    <UserSecretsId>AlfaCore-Development</UserSecretsId>
     <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;obj\**;artifacts\**;publish\**;App_Data\whatsapp-web\**</DefaultItemExcludes>
   </PropertyGroup>
 

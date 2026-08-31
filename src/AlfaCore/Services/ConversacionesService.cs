@@ -25,6 +25,9 @@ public sealed class ConversacionesService(
     IConversacionAsistenteService asistenteService,
     IConversacionAsistenteHerramientasService asistenteHerramientasService,
     IAlfaKnowledgeSuggestionService alfaKnowledgeService,
+    IWhatsAppWebhookTenantGuard whatsAppWebhookTenantGuard,
+    IWhatsAppRuntimeCredentialResolver whatsAppRuntimeCredentialResolver,
+    IMetaWhatsAppManagementClient metaWhatsAppManagementClient,
     IWebHostEnvironment environment) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
@@ -2287,6 +2290,15 @@ public sealed class ConversacionesService(
                 if (!string.IsNullOrWhiteSpace(phoneNumberIdParaEnvio))
                     whatsAppConfig.PhoneNumberId = phoneNumberIdParaEnvio;
 
+                var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
+                var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+                    activeBaseId, numeroWeb?.IdNumero ?? conversation.IdNumeroWhatsApp,
+                    whatsAppConfig.PhoneNumberId, whatsAppConfig, token);
+                whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
+                whatsAppConfig.BusinessAccountId = runtimeCredential.WabaId;
+                whatsAppConfig.ApiVersion = runtimeCredential.GraphVersion;
+                whatsAppConfig.AccessToken = runtimeCredential.AccessToken;
+
                 whatsAppDeliveryProvider = ResolveWhatsAppDeliveryProviderForNumero(whatsAppConfig, numeroWeb);
 
                 var isWhatsAppWebDelivery = string.Equals(whatsAppDeliveryProvider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase);
@@ -2676,6 +2688,23 @@ public sealed class ConversacionesService(
             return (IReadOnlyList<ConversacionPlantillaDto>)items;
         }, "No se pudieron cargar las plantillas de WhatsApp.", ct);
 
+    public Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesForConversationAsync(long idConversacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetTemplatesForConversation", async token =>
+        {
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(idConversacion, token);
+            var conversation = await RequireConversationAsync(idConversacion, token);
+            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
+            var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(sessionService.GetActiveSession()?.BaseId ?? 0,
+                conversation.IdNumeroWhatsApp, conversation.PhoneNumberId, config, token);
+            if (runtime.Origin == WhatsAppRuntimeCredentialOrigin.Legacy)
+                return await GetTemplatesAsync(new ConversacionPlantillaFilters { EstadoMeta = "APPROVED" }, token);
+            var reference = runtime.CredentialReference
+                ?? throw new InvalidOperationException("La referencia segura de Meta no está disponible.");
+            var templates = await metaWhatsAppManagementClient.DiscoverTemplatesAsync(runtime.WabaId, reference, token);
+            return templates.Where(static x => string.Equals(x.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
+                .Select(MapRemoteTemplate).OrderBy(static x => x.NombreVisible, StringComparer.OrdinalIgnoreCase).ToArray();
+        }, "No se pudieron cargar las plantillas aprobadas de este WhatsApp.", ct);
+
     public Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTemplate", async token =>
         {
@@ -2910,15 +2939,36 @@ public sealed class ConversacionesService(
             if (string.IsNullOrWhiteSpace(conversation.TelefonoWhatsApp))
                 throw new InvalidOperationException("La conversaciÃ³n no tiene telÃ©fono WhatsApp.");
 
-            var template = await GetTemplateAsync(request.IdPlantilla, token)
-                ?? throw new InvalidOperationException("La plantilla indicada no existe.");
+            ConversacionPlantillaDto template;
+            if (request.EsMetaRemota)
+            {
+                template = (await GetTemplatesForConversationAsync(request.IdConversacion, token)).SingleOrDefault(x => x.EsMetaRemota
+                    && string.Equals(x.NombreMeta, request.NombreMeta.Trim(), StringComparison.Ordinal)
+                    && string.Equals(x.Idioma, request.Idioma.Trim(), StringComparison.OrdinalIgnoreCase))
+                    ?? throw new InvalidOperationException("La plantilla ya no está aprobada para la WABA de este número.");
+            }
+            else
+            {
+                template = await GetTemplateAsync(request.IdPlantilla, token)
+                    ?? throw new InvalidOperationException("La plantilla indicada no existe.");
+            }
 
             var values = NormalizeTemplateValues(request.ValoresVariables);
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                 config.PhoneNumberId = conversation.PhoneNumberId;
+            var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+                sessionService.GetActiveSession()?.BaseId ?? 0,
+                conversation.IdNumeroWhatsApp,
+                config.PhoneNumberId,
+                config,
+                token);
+            config.PhoneNumberId = runtimeCredential.PhoneNumberId;
+            config.BusinessAccountId = runtimeCredential.WabaId;
+            config.ApiVersion = runtimeCredential.GraphVersion;
+            config.AccessToken = runtimeCredential.AccessToken;
             EnsureWhatsAppMetaProvider(config, "enviar plantillas");
-            if (!string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            if (!template.EsMetaRemota && !string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
             {
                 var meta = await GetMetaTemplateStatusAsync(config, template, token);
                 await UpdateTemplateMetaStateAsync(
@@ -3426,9 +3476,11 @@ public sealed class ConversacionesService(
                 : request.RawPayload;
             var headerJson = JsonSerializer.Serialize(request.Headers);
 
-            var webhookLogId = await InsertWebhookLogAsync("META_WHATSAPP", "Webhook", payloadJson, headerJson, token);
             var parsedMessages = ParseIncomingMessages(request.Payload.RootElement);
             var parsedStatuses = ParseIncomingStatuses(request.Payload.RootElement);
+            var currentBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
+            await whatsAppWebhookTenantGuard.ValidateAsync(currentBaseId, ExtractWhatsAppPhoneNumberIds(request.Payload.RootElement), token);
+            var webhookLogId = await InsertWebhookLogAsync("META_WHATSAPP", "Webhook", payloadJson, headerJson, token);
             var whatsAppConfig = parsedMessages.Any(x => x.Attachments.Count > 0)
                 ? await conversacionesConfigService.GetWhatsAppConfigAsync(token)
                 : null;
@@ -3465,7 +3517,15 @@ public sealed class ConversacionesService(
                 }
 
                 if (incoming.Attachments.Count > 0 && whatsAppConfig is not null)
+                {
+                    var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+                        currentBaseId, null, incoming.PhoneNumberId, whatsAppConfig, token);
+                    whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
+                    whatsAppConfig.BusinessAccountId = runtimeCredential.WabaId;
+                    whatsAppConfig.ApiVersion = runtimeCredential.GraphVersion;
+                    whatsAppConfig.AccessToken = runtimeCredential.AccessToken;
                     await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
+                }
 
                 if (string.Equals(incoming.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase))
                 {
@@ -6994,29 +7054,37 @@ public sealed class ConversacionesService(
             if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
                 return;
 
-            var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
-            if (!config.IsConfigured)
-                return;
+            await RunWithConversationAutomationLockAsync(
+                idConversacion,
+                "fuera-horario",
+                async token =>
+                {
+                    var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(token).ConfigureAwait(false);
+                    if (!config.IsConfigured)
+                        return;
 
-            if (!IsOutsideBusinessHours(config, BusinessNow()))
-                return;
+                    var businessNow = BusinessNow();
+                    if (!IsOutsideBusinessHours(config, businessNow))
+                        return;
 
-            // Si el asistente IA está configurado para atender fuera de horario, no mandamos el mensaje
-            // fijo: lo maneja el bot (que se presenta como IA, intenta ayudar y marca urgencias).
-            if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)
-                return;
+                    // Si el asistente IA está configurado para atender fuera de horario, no mandamos el mensaje
+                    // fijo: lo maneja el bot (que se presenta como IA, intenta ayudar y marca urgencias).
+                    if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)
+                        return;
 
-            if (await HasSentOutOfHoursNoticeAsync(idConversacion, ct).ConfigureAwait(false))
-                return;
+                    if (await HasSentOutOfHoursNoticeAsync(idConversacion, businessNow, token).ConfigureAwait(false))
+                        return;
 
-            await SendMessageAsync(new ConversacionSendMessageRequest
-            {
-                IdConversacion = idConversacion,
-                Texto = config.MensajeFueraHorario,
-                MessageType = "TEXT",
-                UsuarioAccion = "AlfaCore",
-                SistemaAccion = "AUTOMATIZACION"
-            }, ct).ConfigureAwait(false);
+                    await SendMessageAsync(new ConversacionSendMessageRequest
+                    {
+                        IdConversacion = idConversacion,
+                        Texto = config.MensajeFueraHorario,
+                        MessageType = "TEXT",
+                        UsuarioAccion = "AlfaCore",
+                        SistemaAccion = "AUTOMATIZACION"
+                    }, token).ConfigureAwait(false);
+                },
+                ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -7181,138 +7249,158 @@ public sealed class ConversacionesService(
     // como desde el job de espera, ya con todos los chequeos de activación resueltos.
     private async Task EjecutarRespuestaBotAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct)
     {
-        if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
-            return;
-
-        if (config.BotSoloSinAsignar)
-        {
-            var tecnico = await GetConversationTechnicianIdAsync(idConversacion, ct).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(tecnico))
-                return;
-        }
-
-        var canalBot = await GetConversationChannelAsync(idConversacion, ct).ConfigureAwait(false);
-        if (!await IsSendWindowActiveAsync(idConversacion, canalBot, ct).ConfigureAwait(false))
-            return;
-
-        var (botCount, yaRespondioEsteMensaje) = await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false);
-        if (botCount >= Math.Max(1, config.BotMaxRespuestas))
-            return;
-        // No encimar sobre otra automática que ya haya respondido al último mensaje entrante
-        // (bienvenida, fuera de horario, auto-cierre, u otra corrida del propio bot). Se compara por
-        // IdMensaje (no por "el último saliente fue automático alguna vez"): si no, después de la
-        // primera respuesta automática de la conversación -- incluida la del propio bot -- esta
-        // condición quedaba true para siempre y el bot no volvía a responder nunca más.
-        if (yaRespondioEsteMensaje)
-            return;
-
-        var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
-        // Configurado para responder solo fuera de horario: en horario, calla y lo deja para un humano.
-        if (config.BotSoloFueraHorario && !fueraDeHorario)
-            return;
-
-        var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
-
-        // Datos del cliente: rubro (para razonar la respuesta) y si es un cliente prioritario
-        // (su clasificación está entre las configuradas como prioridad de atención).
-        var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, ct).ConfigureAwait(false);
-
-        // Prioridad de la conversación (solo sube, nunca baja): urgencia -> URGENTE; cliente
-        // prioritario -> ALTA. A los clientes prioritarios (restaurantes/POS, etc.) siempre se los prioriza.
-        if (esUrgente)
-            await SubirPrioridadAsync(idConversacion, "URGENTE", ct).ConfigureAwait(false);
-        else if (esPrioritario)
-            await SubirPrioridadAsync(idConversacion, "ALTA", ct).ConfigureAwait(false);
-
-        // Fuera de horario, dejamos nota para que un operador decida atender ahora (las urgencias y
-        // los clientes prioritarios se atienden en cualquier horario).
-        if (fueraDeHorario && (esUrgente || esPrioritario))
-        {
-            var motivo = esUrgente ? "posible URGENCIA" : "cliente prioritario";
-            var conRubro = string.IsNullOrWhiteSpace(rubro) ? string.Empty : $" (rubro: {rubro})";
-            await AddInternalEventCoreAsync(idConversacion,
-                $"⏰🚨 Fuera de horario, {motivo}{conRubro}. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
-                null, null, "AlfaCore", "URGENCIA", ct).ConfigureAwait(false);
-        }
-
-        var mensajes = await GetRecentMessagesForBotAsync(idConversacion, ct).ConfigureAwait(false);
-
-        // Fase 2: sumar AlfaKnowledge como fuente. Recuperamos fragmentos de los documentos y se
-        // los damos al asistente para que responda combinando: comportamiento + info pegada + base.
-        var conocimientoBase = string.Empty;
-        if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
-            conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, ct).ConfigureAwait(false);
-
-        var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
-
-        // Herramientas (precio/saldo/pedidos): la cuenta se resuelve una sola vez acá, server-side,
-        // y viaja cerrada en el lambda ejecutor -- el modelo nunca puede elegir ni cambiar la cuenta.
-        var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, ct).ConfigureAwait(false);
-        var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
-        Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
-            ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
-                asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
-            : null;
-
-        var result = await asistenteService.ResponderAsync(
-            config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-            texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente,
-            herramientas, ejecutarHerramientaAsync, ct).ConfigureAwait(false);
-
-        // Nunca dejamos al cliente sin respuesta. El asistente decide el tipo:
-        //   RESUELVE -> resolvió; ACLARA -> repregunta para poder resolver (esperamos su respuesta);
-        //   DERIVA -> manda una contención y hay que pasar a un humano.
-        // Si por algún error no vino texto, mandamos igual una contención fija y derivamos.
-        var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
-        var respuesta = result is not null && !string.IsNullOrWhiteSpace(result.Respuesta)
-            ? result.Respuesta.Trim()
-            : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
-        if (result is null || string.IsNullOrWhiteSpace(result.Respuesta))
-            tipo = "DERIVA";
-
-        await SendMessageAsync(new ConversacionSendMessageRequest
-        {
-            IdConversacion = idConversacion,
-            Texto = respuesta,
-            MessageType = "TEXT",
-            UsuarioAccion = "AlfaCore",
-            SistemaAccion = "BOT"
-        }, ct).ConfigureAwait(false);
-
-        if (tipo == "ACLARA")
-        {
-            await _appEvents.LogAuditAsync(
-                "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
-                idConversacion.ToString(CultureInfo.InvariantCulture),
-                "El asistente le pidió una aclaración al cliente para poder resolver.",
-                new { idConversacion, config.AsistentePolitica }, ct).ConfigureAwait(false);
-        }
-        else if (tipo == "DERIVA")
-        {
-            // Contención enviada: dejamos el caso listo para que un humano lo tome (nota + prioridad),
-            // salvo fuera de horario, donde de por sí queda para el próximo día hábil.
-            if (!fueraDeHorario)
+        await RunWithConversationAutomationLockAsync(
+            idConversacion,
+            "bot-auto-reply",
+            async token =>
             {
-                await AddInternalEventCoreAsync(idConversacion,
-                    "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
-                    null, null, "AlfaCore", "BOT", ct).ConfigureAwait(false);
-                if (!esUrgente && !esPrioritario)
-                    await SubirPrioridadAsync(idConversacion, "MEDIA", ct).ConfigureAwait(false);
-            }
-            await _appEvents.LogAuditAsync(
-                "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
-                idConversacion.ToString(CultureInfo.InvariantCulture),
-                "El asistente mandó una contención y derivó a un humano (no pudo resolver).",
-                new { idConversacion, config.AsistentePolitica, fueraDeHorario }, ct).ConfigureAwait(false);
-        }
-        else
-        {
-            await _appEvents.LogAuditAsync(
-                "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
-                idConversacion.ToString(CultureInfo.InvariantCulture),
-                "El asistente respondió automáticamente.",
-                new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, ct).ConfigureAwait(false);
-        }
+                if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+                    return;
+
+                if (config.BotSoloSinAsignar)
+                {
+                    var tecnico = await GetConversationTechnicianIdAsync(idConversacion, token).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(tecnico))
+                        return;
+                }
+
+                var canalBot = await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false);
+                if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token).ConfigureAwait(false))
+                    return;
+
+                var (botCount, yaRespondioEsteMensaje) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
+                if (botCount >= Math.Max(1, config.BotMaxRespuestas))
+                    return;
+                if (yaRespondioEsteMensaje)
+                    return;
+
+                var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
+                if (config.BotSoloFueraHorario && !fueraDeHorario)
+                    return;
+
+                var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
+                var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, token).ConfigureAwait(false);
+
+                if (esUrgente)
+                    await SubirPrioridadAsync(idConversacion, "URGENTE", token).ConfigureAwait(false);
+                else if (esPrioritario)
+                    await SubirPrioridadAsync(idConversacion, "ALTA", token).ConfigureAwait(false);
+
+                if (fueraDeHorario && (esUrgente || esPrioritario))
+                {
+                    var motivo = esUrgente ? "posible URGENCIA" : "cliente prioritario";
+                    var conRubro = string.IsNullOrWhiteSpace(rubro) ? string.Empty : $" (rubro: {rubro})";
+                    await AddInternalEventCoreAsync(idConversacion,
+                        $"⏰🚨 Fuera de horario, {motivo}{conRubro}. El cliente escribió: \"{Truncar(texto, 200)}\". Revisar para atención inmediata.",
+                        null, null, "AlfaCore", "URGENCIA", token).ConfigureAwait(false);
+                }
+
+                var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
+                var knowledgeContext = new AsistenteKnowledgeContext();
+                if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
+                    knowledgeContext = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false);
+
+                var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
+                var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
+                var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
+                Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
+                    ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
+                        asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
+                    : null;
+
+                var result = await asistenteService.ResponderAsync(
+                    config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
+                    texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
+                    herramientas, ejecutarHerramientaAsync, token).ConfigureAwait(false);
+
+                if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
+                    && knowledgeContext.NeedsClarification
+                    && !string.IsNullOrWhiteSpace(knowledgeContext.ClarificationQuestion))
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "ACLARA",
+                        PuedeResponder = false,
+                        Respuesta = knowledgeContext.ClarificationQuestion
+                    };
+                }
+                else if ((result is null
+                          || string.IsNullOrWhiteSpace(result.Respuesta)
+                          || string.Equals(result.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase))
+                         && knowledgeContext.HasSufficientContext
+                         && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply))
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "RESUELVE",
+                        PuedeResponder = true,
+                        Respuesta = knowledgeContext.SuggestedReply
+                    };
+                }
+
+                var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
+                var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
+                var respuesta = !usoFallbackBot
+                    ? result!.Respuesta.Trim()
+                    : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
+                if (usoFallbackBot)
+                    tipo = "DERIVA";
+
+                var businessNow = BusinessNow();
+                if (usoFallbackBot
+                    && await HasSentAutomaticMessageTextAsync(idConversacion, "BOT", respuesta, businessNow, token).ConfigureAwait(false))
+                {
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotFallbackDuplicadoOmitido", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "Se omitió una contención repetida del bot porque ya se había enviado hoy en esta conversación.",
+                        new { idConversacion, fueraDeHorario, respuesta }, token).ConfigureAwait(false);
+                    return;
+                }
+
+                await SendMessageAsync(new ConversacionSendMessageRequest
+                {
+                    IdConversacion = idConversacion,
+                    Texto = respuesta,
+                    MessageType = "TEXT",
+                    UsuarioAccion = "AlfaCore",
+                    SistemaAccion = "BOT"
+                }, token).ConfigureAwait(false);
+
+                if (tipo == "ACLARA")
+                {
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotAclaracion", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "El asistente le pidió una aclaración al cliente para poder resolver.",
+                        new { idConversacion, config.AsistentePolitica }, token).ConfigureAwait(false);
+                }
+                else if (tipo == "DERIVA")
+                {
+                    if (!fueraDeHorario)
+                    {
+                        await AddInternalEventCoreAsync(idConversacion,
+                            "🤖➡️👤 El asistente no pudo resolver y le mandó una contención al cliente. Requiere que un operador lo tome.",
+                            null, null, "AlfaCore", "BOT", token).ConfigureAwait(false);
+                        if (!esUrgente && !esPrioritario)
+                            await SubirPrioridadAsync(idConversacion, "MEDIA", token).ConfigureAwait(false);
+                    }
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotHandoff", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "El asistente mandó una contención y derivó a un humano (no pudo resolver).",
+                        new { idConversacion, config.AsistentePolitica, fueraDeHorario }, token).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _appEvents.LogAuditAsync(
+                        "Conversaciones", "BotAutoReply", "CONV_CONVERSACIONES",
+                        idConversacion.ToString(CultureInfo.InvariantCulture),
+                        "El asistente respondió automáticamente.",
+                        new { idConversacion, config.AsistentePolitica, fueraDeHorario, esUrgente }, token).ConfigureAwait(false);
+                }
+            },
+            ct).ConfigureAwait(false);
     }
 
     // ===================== Mensajes programados (envío diferido) =====================
@@ -7981,9 +8069,19 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    // Recupera de AlfaKnowledge los fragmentos relevantes (plainText de las citas) y arma un bloque
-    // de texto para inyectar como conocimiento en el prompt del asistente. Si falla, devuelve vacío.
-    private async Task<string> ObtenerConocimientoBaseAsync(
+    private sealed class AsistenteKnowledgeContext
+    {
+        public string ConocimientoBase { get; init; } = string.Empty;
+        public string SuggestedReply { get; init; } = string.Empty;
+        public bool HasSufficientContext { get; init; }
+        public bool NeedsClarification { get; init; }
+        public string ClarificationQuestion { get; init; } = string.Empty;
+    }
+
+    // Recupera de AlfaKnowledge tanto los fragmentos relevantes como la sugerencia directa. Así el
+    // bot puede usar la respuesta sugerida como base principal cuando AlfaKnowledge sí encontró
+    // material suficiente, sin perder las citas que sirven de respaldo adicional para OpenAI.
+    private async Task<AsistenteKnowledgeContext> ObtenerConocimientoBaseAsync(
         string texto, IReadOnlyList<ConversacionMensajeDto> mensajes, long idConversacion, CancellationToken ct)
     {
         try
@@ -7992,8 +8090,8 @@ public sealed class ConversacionesService(
                 texto, mensajes, idConversacion, AlfaKnowledgeSuggestionModes.ReplySuggestion,
                 null, null, null, null, ct).ConfigureAwait(false);
 
-            if (ak is null || ak.Citations.Count == 0)
-                return string.Empty;
+            if (ak is null)
+                return new AsistenteKnowledgeContext();
 
             var sb = new StringBuilder();
             foreach (var cita in ak.Citations
@@ -8008,7 +8106,14 @@ public sealed class ConversacionesService(
                 sb.AppendLine();
             }
 
-            return sb.ToString().Trim();
+            return new AsistenteKnowledgeContext
+            {
+                ConocimientoBase = sb.ToString().Trim(),
+                SuggestedReply = (ak.SuggestedReply ?? string.Empty).Trim(),
+                HasSufficientContext = ak.HasSufficientContext,
+                NeedsClarification = ak.NeedsClarification,
+                ClarificationQuestion = (ak.ClarificationQuestion ?? string.Empty).Trim()
+            };
         }
         catch (Exception ex)
         {
@@ -8016,7 +8121,7 @@ public sealed class ConversacionesService(
                 "Conversaciones", "AsistenteKnowledge", ex,
                 "No se pudo recuperar conocimiento de AlfaKnowledge para el asistente.",
                 new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
-            return string.Empty;
+            return new AsistenteKnowledgeContext();
         }
     }
 
@@ -8108,25 +8213,119 @@ public sealed class ConversacionesService(
     }
 
     /// <summary>
-    /// Si ya se mandó el aviso fijo de "fuera de horario" (SistemaAutor='AUTOMATIZACION') alguna vez
-    /// en esta conversación, no se repite. Antes se miraba solo el ÚLTIMO mensaje saliente (¿fue
-    /// automático?), que se reseteaba apenas se mandaba cualquier otra cosa encima (otra automática,
-    /// una respuesta del bot) -- dejando avisar de nuevo en el próximo mensaje del cliente aunque ya
-    /// se hubiera avisado antes. Este chequeo es "una vez y listo" para toda la conversación, que es
-    /// el comportamiento pedido para este aviso.
+    /// Si ya se mandó el aviso fijo de "fuera de horario" (SistemaAutor='AUTOMATIZACION') en la
+    /// fecha local actual de la conversación, no se repite. Esto evita que varios mensajes seguidos
+    /// del cliente disparen la misma respuesta automática en cadena, pero permite volver a avisar al
+    /// día siguiente si la conversación sigue llegando fuera de horario.
     /// </summary>
-    private async Task<bool> HasSentOutOfHoursNoticeAsync(long idConversacion, CancellationToken ct)
+    private async Task<bool> HasSentOutOfHoursNoticeAsync(long idConversacion, DateTime fechaLocalActual, CancellationToken ct)
     {
         const string sql = """
             SELECT TOP (1) 1
             FROM dbo.CONV_MENSAJES
-            WHERE IdConversacion = @IdConversacion AND Direction = N'SALIENTE' AND SistemaAutor = N'AUTOMATIZACION';
+            WHERE IdConversacion = @IdConversacion
+              AND Direction = N'SALIENTE'
+              AND SistemaAutor = N'AUTOMATIZACION'
+              AND CAST(FechaHora AS date) = @FechaLocal;
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@FechaLocal", fechaLocalActual.Date);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is not null;
+    }
+
+    private async Task RunWithConversationAutomationLockAsync(
+        long idConversacion,
+        string motivo,
+        Func<CancellationToken, Task> action,
+        CancellationToken ct)
+    {
+        ArgumentNullException.ThrowIfNull(action);
+
+        var resource = $"CONV_AUTO:{idConversacion}:{motivo}";
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        var lockResult = await AcquireApplicationLockAsync(cn, resource, ct).ConfigureAwait(false);
+        if (lockResult < 0)
+        {
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "AutomationLockSkipped", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "Se omitió una automatización porque otro nodo ya la estaba procesando para esta conversación.",
+                new { idConversacion, motivo, lockResult }, ct).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await action(ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await ReleaseApplicationLockAsync(cn, resource, ct).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<int> AcquireApplicationLockAsync(SqlConnection cn, string resource, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(
+            """
+            DECLARE @result int;
+            EXEC @result = sp_getapplock
+                @Resource = @Resource,
+                @LockMode = 'Exclusive',
+                @LockOwner = 'Session',
+                @LockTimeout = 0;
+            SELECT @result;
+            """,
+            cn);
+        cmd.Parameters.AddWithValue("@Resource", resource);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result is null or DBNull ? -999 : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static async Task ReleaseApplicationLockAsync(SqlConnection cn, string resource, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(
+            """
+            EXEC sp_releaseapplock
+                @Resource = @Resource,
+                @LockOwner = 'Session';
+            """,
+            cn);
+        cmd.Parameters.AddWithValue("@Resource", resource);
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private async Task<bool> HasSentAutomaticMessageTextAsync(
+        long idConversacion,
+        string sistemaAutor,
+        string texto,
+        DateTime fechaLocalActual,
+        CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) 1
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @IdConversacion
+              AND Direction = N'SALIENTE'
+              AND UPPER(LTRIM(RTRIM(ISNULL(SistemaAutor, N'')))) = UPPER(LTRIM(RTRIM(@SistemaAutor)))
+              AND CAST(FechaHora AS date) = @FechaLocal
+              AND LTRIM(RTRIM(ISNULL(CAST(Texto AS nvarchar(max)), N''))) = LTRIM(RTRIM(@Texto));
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@SistemaAutor", sistemaAutor);
+        cmd.Parameters.AddWithValue("@FechaLocal", fechaLocalActual.Date);
+        cmd.Parameters.AddWithValue("@Texto", texto.Trim());
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is not null;
     }
@@ -11477,6 +11676,27 @@ public sealed class ConversacionesService(
         return items;
     }
 
+    private static IReadOnlyList<string> ExtractWhatsAppPhoneNumberIds(JsonElement root)
+    {
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        if (!root.TryGetProperty("entry", out var entries) || entries.ValueKind != JsonValueKind.Array)
+            return [];
+        foreach (var entry in entries.EnumerateArray())
+        {
+            if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array) continue;
+            foreach (var change in changes.EnumerateArray())
+            {
+                if (!change.TryGetProperty("value", out var value)
+                    || !value.TryGetProperty("metadata", out var metadata)
+                    || !metadata.TryGetProperty("phone_number_id", out var phone)
+                    || phone.ValueKind != JsonValueKind.String) continue;
+                var normalized = (phone.GetString() ?? string.Empty).Trim();
+                if (normalized.Length > 0) result.Add(normalized);
+            }
+        }
+        return result.ToArray();
+    }
+
     private static string BuildIncomingWhatsAppMessagePayloadJson(JsonElement message, string phoneNumberId, string displayPhoneNumber)
     {
         return JsonSerializer.Serialize(new
@@ -12624,6 +12844,20 @@ public sealed class ConversacionesService(
             .Select(x => (x ?? string.Empty).Trim())
             .Where(x => x.Length > 0)
             .ToList() ?? [];
+
+    private static ConversacionPlantillaDto MapRemoteTemplate(MetaMessageTemplate template)
+    {
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{template.Id}|{template.Name}|{template.Language}"));
+        var id = (long)(BitConverter.ToUInt64(hash, 0) & 0x7FFFFFFFFFFFFFFF);
+        if (id == 0) id = 1;
+        return new ConversacionPlantillaDto
+        {
+            IdPlantilla = id, NombreVisible = template.Name, NombreMeta = template.Name,
+            Categoria = template.Category, Idioma = template.Language, EncabezadoTexto = template.HeaderText,
+            CuerpoTexto = template.BodyText, PieTexto = template.FooterText, EstadoLocal = ConversacionPlantillaEstadosLocales.Sincronizada,
+            EstadoMeta = template.Status, MetaTemplateId = template.Id, Activa = true, EsMetaRemota = true
+        };
+    }
 
     private static string RenderTemplatePreview(string text, IReadOnlyList<string> values)
     {

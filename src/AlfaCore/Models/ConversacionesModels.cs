@@ -646,6 +646,7 @@ public sealed class ConversacionPlantillaDto
     public DateTime FechaHoraGrabacion { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }
     public DateTime? FechaHoraSincronizacion { get; set; }
+    public bool EsMetaRemota { get; set; }
 }
 
 public sealed class ConversacionPlantillaSaveRequest
@@ -675,6 +676,9 @@ public sealed class ConversacionPlantillaSendRequest
 {
     public long IdConversacion { get; set; }
     public long IdPlantilla { get; set; }
+    public string NombreMeta { get; set; } = string.Empty;
+    public string Idioma { get; set; } = string.Empty;
+    public bool EsMetaRemota { get; set; }
     public List<string> ValoresVariables { get; set; } = [];
     public string? IdTecnicoAutor { get; set; }
     public string? UsuarioAccion { get; set; }
