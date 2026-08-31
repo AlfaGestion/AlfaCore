@@ -2603,9 +2603,27 @@
                         {
                             <div class="conversations-empty">@_aiSuggestionError</div>
                         }
+                        else
+                        {
+                            <div class="conversations-empty">
+                                <p class="muted">Todavía no se pidió una sugerencia para esta conversación.</p>
+                                <button type="button" class="btn btn--primary btn--sm" @onclick="() => RequestAiSuggestionAsync()">
+                                    <i class="bi bi-stars"></i> Pedir sugerencia
+                                </button>
+                            </div>
+                        }
                     }
                     else
                     {
+                        @if (_aiSuggestionStale)
+                        {
+                            <div class="conversations-empty conversations-ai-stale">
+                                <span>Llegó un mensaje nuevo del cliente: esta sugerencia puede estar desactualizada.</span>
+                                <button type="button" class="btn btn--ghost btn--sm" @onclick="RefreshStaleAiSuggestionAsync">
+                                    <i class="bi bi-arrow-clockwise"></i> Actualizar sugerencia
+                                </button>
+                            </div>
+                        }
                         @if (_aiChatHistory.Count == 0)
                         {
                             @if (_aiSuggestion.NeedsClarification)
@@ -3526,6 +3544,7 @@
     private bool _showTemplatePanel;
     private bool _showAiSuggestionPanel;
     private bool _loadingAiSuggestion;
+    private bool _aiSuggestionStale;
     private bool _improvingReplyWithAi;
     private bool _transformandoReply;
     private CancellationTokenSource? _aiSuggestionRequestCts;
@@ -5424,10 +5443,23 @@
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
 
+        // Antes, si el panel de IA quedaba abierto mientras el operador navegaba entre
+        // conversaciones, cada clic en la bandeja disparaba sugerencia (AlfaKnowledge) + análisis
+        // (OpenAI) automáticamente para la conversación nueva -- aunque solo quisiera mirarla. Ahora
+        // solo se limpia el estado viejo (para no mostrar la sugerencia de la conversación anterior)
+        // y el operador pide la sugerencia/análisis a propósito con los botones del panel.
         if (_showAiSuggestionPanel)
         {
-            await RequestAiSuggestionAsync();
-            await RequestAnalisisAsync();
+            CancelAiSuggestionRequest();
+            _analisisCts?.Cancel();
+            _aiSuggestion = null;
+            _aiSuggestionConversationId = null;
+            _aiSuggestionError = null;
+            _aiSuggestionStale = false;
+            _aiChatHistory = [];
+            _analisis = null;
+            _analisisConversationId = null;
+            _analisisCargando = false;
         }
     }
 
@@ -7164,10 +7196,12 @@
                     _showReturnToLatest = true;
                 }
 
-                if (_showAiSuggestionPanel && !_loadingAiSuggestion)
+                // No se vuelve a pedir sola: llegó un mensaje nuevo del cliente con el panel
+                // abierto, pero la sugerencia anterior puede quedar desactualizada. Se avisa con un
+                // banner y el operador decide si vale la pena gastar otra consulta a la IA.
+                if (_showAiSuggestionPanel && !_loadingAiSuggestion && _aiSuggestion is not null)
                 {
-                    ResetAiConversation(clearFocus: true);
-                    await RequestAiSuggestionAsync();
+                    _aiSuggestionStale = true;
                 }
             }
         }
@@ -8662,6 +8696,12 @@
         }
     }
 
+    private async Task RefreshStaleAiSuggestionAsync()
+    {
+        ResetAiConversation(clearFocus: true);
+        await RequestAiSuggestionAsync();
+    }
+
     private async Task RequestAiSuggestionAsync(
         string? instruction = null,
         IReadOnlyList<AlfaKnowledgeAssistantMessage>? assistantHistory = null)
@@ -8673,6 +8713,7 @@
             return;
         }
 
+        _aiSuggestionStale = false;
         _aiSuggestionError = null;
 
         if (!AlfaKnowledgeSvc.IsConfigured)
