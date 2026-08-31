@@ -3194,10 +3194,13 @@
             </div>
             <div class="field">
                 <label>Asignado a</label>
-                <div class="ticket-creator-assignment">
-                    <span>@CurrentMessageTechnicianName</span>
-                    <small>Se asignará automáticamente al usuario que crea el ticket.</small>
-                </div>
+                <select @bind="_ticketAssignedTechnicianId" disabled="@_creatingTicket">
+                    <option value="">Sin técnico</option>
+                    @foreach (var tech in _technicians)
+                    {
+                        <option value="@tech.IdTecnico">@tech.Nombre</option>
+                    }
+                </select>
             </div>
         </div>
         <div class="actions usuarios-editor__actions">
@@ -3703,6 +3706,7 @@
     private readonly HashSet<long> _selectedTicketMessageIds = [];
     private string _ticketTitle = string.Empty;
     private string _ticketDescription = string.Empty;
+    private string _ticketAssignedTechnicianId = string.Empty;
     private int _ticketPriority = 2;
     private string? _ticketError;
     private bool _creatingTicket;
@@ -5721,6 +5725,7 @@
         _selectedTicketMessageIds.Clear();
         _ticketTitle = BuildDefaultTicketTitle();
         _ticketDescription = string.Empty;
+        _ticketAssignedTechnicianId = CurrentMessageTechnicianId;
         _ticketPriority = 2;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
@@ -5769,6 +5774,7 @@
         _showTicketDialog = false;
         _selectedTicketMessageIds.Clear();
         _ticketDescription = string.Empty;
+        _ticketAssignedTechnicianId = string.Empty;
         _ticketError = null;
         _allowCreateDespiteRelated = false;
         _relatedTicketMatches.Clear();
@@ -5794,6 +5800,11 @@
             _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
             return;
         }
+        if (string.IsNullOrWhiteSpace(_ticketAssignedTechnicianId))
+        {
+            _ticketError = "Seleccioná a qué técnico se asigna el ticket.";
+            return;
+        }
 
         if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
@@ -5816,7 +5827,7 @@
                 Descripcion = _ticketDescription,
                 CodigoEstado = TicketEstadoKeys.Nuevo,
                 Prioridad = _ticketPriority,
-                IdTecnico = creatorTechnicianId,
+                IdTecnico = _ticketAssignedTechnicianId,
                 ClienteCodigo = _selectedConversation.ClienteCodigo,
                 IdContacto = _selectedConversation.IdContacto,
                 IdConversacion = _selectedConversation.IdConversacion,
