@@ -741,7 +741,7 @@ public sealed class CrmCotizacionService(
         client.Timeout = TimeSpan.FromSeconds(40);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
 
-        var payload = new { model, temperature, messages };
+        var payload = BuildOpenAiChatPayload(model, messages, temperature);
         using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
@@ -751,6 +751,24 @@ public sealed class CrmCotizacionService(
         using var document = JsonDocument.Parse(body);
         return document.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString() ?? string.Empty;
     }
+
+    private static Dictionary<string, object?> BuildOpenAiChatPayload(string model, object[] messages, double? temperature = null)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = model,
+            ["messages"] = messages
+        };
+
+        if (temperature.HasValue && SupportsCustomTemperature(model))
+            payload["temperature"] = temperature.Value;
+
+        return payload;
+    }
+
+    private static bool SupportsCustomTemperature(string? model)
+        => string.IsNullOrWhiteSpace(model)
+           || !model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase);
 
     private static List<(string Buscar, decimal Cantidad)> ParseIntents(string json)
     {

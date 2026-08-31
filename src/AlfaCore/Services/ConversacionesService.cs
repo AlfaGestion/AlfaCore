@@ -7058,7 +7058,8 @@ public sealed class ConversacionesService(
             if (!config.IsConfigured)
                 return;
 
-            if (!IsOutsideBusinessHours(config, BusinessNow()))
+            var businessNow = BusinessNow();
+            if (!IsOutsideBusinessHours(config, businessNow))
                 return;
 
             // Si el asistente IA está configurado para atender fuera de horario, no mandamos el mensaje
@@ -7066,7 +7067,7 @@ public sealed class ConversacionesService(
             if (config.BotActivo && config.AsistenteFueraHorario && asistenteService.IsConfigured)
                 return;
 
-            if (await HasSentOutOfHoursNoticeAsync(idConversacion, ct).ConfigureAwait(false))
+            if (await HasSentOutOfHoursNoticeAsync(idConversacion, businessNow, ct).ConfigureAwait(false))
                 return;
 
             await SendMessageAsync(new ConversacionSendMessageRequest
@@ -7324,11 +7325,24 @@ public sealed class ConversacionesService(
         //   DERIVA -> manda una contención y hay que pasar a un humano.
         // Si por algún error no vino texto, mandamos igual una contención fija y derivamos.
         var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
-        var respuesta = result is not null && !string.IsNullOrWhiteSpace(result.Respuesta)
-            ? result.Respuesta.Trim()
+        var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
+        var respuesta = !usoFallbackBot
+            ? result!.Respuesta.Trim()
             : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
-        if (result is null || string.IsNullOrWhiteSpace(result.Respuesta))
+        if (usoFallbackBot)
             tipo = "DERIVA";
+
+        var businessNow = BusinessNow();
+        if (usoFallbackBot
+            && await HasSentAutomaticMessageTextAsync(idConversacion, "BOT", respuesta, businessNow, ct).ConfigureAwait(false))
+        {
+            await _appEvents.LogAuditAsync(
+                "Conversaciones", "BotFallbackDuplicadoOmitido", "CONV_CONVERSACIONES",
+                idConversacion.ToString(CultureInfo.InvariantCulture),
+                "Se omitió una contención repetida del bot porque ya se había enviado hoy en esta conversación.",
+                new { idConversacion, fueraDeHorario, respuesta }, ct).ConfigureAwait(false);
+            return;
+        }
 
         await SendMessageAsync(new ConversacionSendMessageRequest
         {
@@ -8168,25 +8182,55 @@ public sealed class ConversacionesService(
     }
 
     /// <summary>
-    /// Si ya se mandó el aviso fijo de "fuera de horario" (SistemaAutor='AUTOMATIZACION') alguna vez
-    /// en esta conversación, no se repite. Antes se miraba solo el ÚLTIMO mensaje saliente (¿fue
-    /// automático?), que se reseteaba apenas se mandaba cualquier otra cosa encima (otra automática,
-    /// una respuesta del bot) -- dejando avisar de nuevo en el próximo mensaje del cliente aunque ya
-    /// se hubiera avisado antes. Este chequeo es "una vez y listo" para toda la conversación, que es
-    /// el comportamiento pedido para este aviso.
+    /// Si ya se mandó el aviso fijo de "fuera de horario" (SistemaAutor='AUTOMATIZACION') en la
+    /// fecha local actual de la conversación, no se repite. Esto evita que varios mensajes seguidos
+    /// del cliente disparen la misma respuesta automática en cadena, pero permite volver a avisar al
+    /// día siguiente si la conversación sigue llegando fuera de horario.
     /// </summary>
-    private async Task<bool> HasSentOutOfHoursNoticeAsync(long idConversacion, CancellationToken ct)
+    private async Task<bool> HasSentOutOfHoursNoticeAsync(long idConversacion, DateTime fechaLocalActual, CancellationToken ct)
     {
         const string sql = """
             SELECT TOP (1) 1
             FROM dbo.CONV_MENSAJES
-            WHERE IdConversacion = @IdConversacion AND Direction = N'SALIENTE' AND SistemaAutor = N'AUTOMATIZACION';
+            WHERE IdConversacion = @IdConversacion
+              AND Direction = N'SALIENTE'
+              AND SistemaAutor = N'AUTOMATIZACION'
+              AND CAST(FechaHora AS date) = @FechaLocal;
             """;
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@FechaLocal", fechaLocalActual.Date);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is not null;
+    }
+
+    private async Task<bool> HasSentAutomaticMessageTextAsync(
+        long idConversacion,
+        string sistemaAutor,
+        string texto,
+        DateTime fechaLocalActual,
+        CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) 1
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @IdConversacion
+              AND Direction = N'SALIENTE'
+              AND UPPER(LTRIM(RTRIM(ISNULL(SistemaAutor, N'')))) = UPPER(LTRIM(RTRIM(@SistemaAutor)))
+              AND CAST(FechaHora AS date) = @FechaLocal
+              AND LTRIM(RTRIM(ISNULL(CAST(Texto AS nvarchar(max)), N''))) = LTRIM(RTRIM(@Texto));
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        cmd.Parameters.AddWithValue("@SistemaAutor", sistemaAutor);
+        cmd.Parameters.AddWithValue("@FechaLocal", fechaLocalActual.Date);
+        cmd.Parameters.AddWithValue("@Texto", texto.Trim());
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is not null;
     }

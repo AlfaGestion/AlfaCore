@@ -3846,7 +3846,7 @@
     private IReadOnlyList<TicketEstadoDto> ParteHoraTicketOpenStates
         => _parteHoraTicketEstados.Where(x => !x.EsCerrado).ToList();
     private IReadOnlyList<ConversacionMensajeDto> VisibleMessages
-        => OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x)));
+        => CompactVisibleMessages(OrderConversationMessages(_messages.Where(x => !IsReactionMessage(x))));
     private IReadOnlyList<ConversacionInboxItemDto> InboxDisplayItems
         => _canalActivo == "MERCADOLIBRE"
             ? BuildMercadoLibreInboxGroups()
@@ -10772,6 +10772,51 @@
         => string.Equals(message.Direction, "EVENTO_INTERNO", StringComparison.OrdinalIgnoreCase)
            || (string.Equals(message.Direction, "NOTA_INTERNA", StringComparison.OrdinalIgnoreCase)
                && string.Equals(message.MessageType, "SYSTEM", StringComparison.OrdinalIgnoreCase));
+
+    private static IReadOnlyList<ConversacionMensajeDto> CompactVisibleMessages(IReadOnlyList<ConversacionMensajeDto> messages)
+    {
+        if (messages.Count <= 1)
+            return messages;
+
+        var compacted = new List<ConversacionMensajeDto>(messages.Count);
+        var pendingSlaReminder = (ConversacionMensajeDto?)null;
+
+        foreach (var message in messages)
+        {
+            if (IsSlaReminderMessage(message))
+            {
+                // Para una misma racha de espera mostramos solo el recordatorio SLA más reciente.
+                pendingSlaReminder = message;
+                continue;
+            }
+
+            if (pendingSlaReminder is not null)
+            {
+                compacted.Add(pendingSlaReminder);
+                pendingSlaReminder = null;
+            }
+
+            compacted.Add(message);
+        }
+
+        if (pendingSlaReminder is not null)
+            compacted.Add(pendingSlaReminder);
+
+        return compacted;
+    }
+
+    private static bool IsSlaReminderMessage(ConversacionMensajeDto message)
+    {
+        if (!IsInternalEventMessage(message)
+            || !string.Equals(message.SistemaAutor, "SLA", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var text = NormalizeSimpleText(message.Texto);
+        return text.StartsWith("sla: el cliente espera respuesta hace", StringComparison.Ordinal)
+               || text.StartsWith("sla el cliente espera respuesta hace", StringComparison.Ordinal)
+               || text.StartsWith("⏰ sla: el cliente espera respuesta hace", StringComparison.Ordinal)
+               || text.StartsWith("⏰ sla el cliente espera respuesta hace", StringComparison.Ordinal);
+    }
 
     private static bool TryGetTicketIdFromEvent(ConversacionMensajeDto message, out long idTicket)
     {

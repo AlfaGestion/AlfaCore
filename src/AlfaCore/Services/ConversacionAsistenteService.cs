@@ -85,9 +85,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
 
             for (var ronda = 0; ronda <= MaxRondasHerramientas; ronda++)
             {
-                var payload = tools is null
-                    ? new { model, temperature = 0.3, response_format = new { type = "json_object" }, messages }
-                    : (object)new { model, temperature = 0.3, response_format = new { type = "json_object" }, messages, tools };
+                var payload = BuildChatPayload(model, messages, 0.3, responseFormat: new { type = "json_object" }, tools);
 
                 using var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
                 using var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content, ct);
@@ -193,16 +191,12 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         if (string.IsNullOrWhiteSpace(model))
             model = "gpt-4o-mini";
 
-        var payload = new
+        var messages = new object[]
         {
-            model,
-            temperature = 0.4,
-            messages = new object[]
-            {
-                new { role = "system", content = string.IsNullOrWhiteSpace(instrucciones) ? "Resumí el siguiente contenido de forma clara y breve." : instrucciones },
-                new { role = "user", content = contenido }
-            }
+            new { role = "system", content = string.IsNullOrWhiteSpace(instrucciones) ? "Resumí el siguiente contenido de forma clara y breve." : instrucciones },
+            new { role = "user", content = contenido }
         };
+        var payload = BuildChatPayload(model, messages, 0.4);
 
         try
         {
@@ -228,6 +222,35 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
             return null;
         }
     }
+
+    private static Dictionary<string, object?> BuildChatPayload(
+        string model,
+        IReadOnlyList<object> messages,
+        double? temperature = null,
+        object? responseFormat = null,
+        object? tools = null)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = model,
+            ["messages"] = messages
+        };
+
+        if (responseFormat is not null)
+            payload["response_format"] = responseFormat;
+
+        if (tools is not null)
+            payload["tools"] = tools;
+
+        if (temperature.HasValue && SupportsCustomTemperature(model))
+            payload["temperature"] = temperature.Value;
+
+        return payload;
+    }
+
+    private static bool SupportsCustomTemperature(string? model)
+        => string.IsNullOrWhiteSpace(model)
+           || !model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase);
 
     private static string BuildSystemPrompt(string comportamiento, string informacion, string politica,
         bool fueraDeHorario, bool esUrgente, string? conocimientoBase, string? contextoCliente, bool haySaldoEntreHerramientas = false)

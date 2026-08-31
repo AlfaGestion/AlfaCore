@@ -63,16 +63,14 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
         if (string.IsNullOrWhiteSpace(model))
             model = "gpt-4o-mini";
 
-        var payload = new
-        {
+        var payload = BuildChatPayload(
             model,
-            temperature = 0.2,
-            messages = new object[]
+            new object[]
             {
                 new { role = "system", content = systemPrompt },
                 new { role = "user", content = transcript }
-            }
-        };
+            },
+            0.2);
 
         try
         {
@@ -98,6 +96,24 @@ public sealed class ConversacionAnalisisService(IHttpClientFactory httpClientFac
             return null;
         }
     }
+
+    private static Dictionary<string, object?> BuildChatPayload(string model, IReadOnlyList<object> messages, double? temperature = null)
+    {
+        var payload = new Dictionary<string, object?>
+        {
+            ["model"] = model,
+            ["messages"] = messages
+        };
+
+        if (temperature.HasValue && SupportsCustomTemperature(model))
+            payload["temperature"] = temperature.Value;
+
+        return payload;
+    }
+
+    private static bool SupportsCustomTemperature(string? model)
+        => string.IsNullOrWhiteSpace(model)
+           || !model.StartsWith("gpt-5.6", StringComparison.OrdinalIgnoreCase);
 
     private static ConversacionExtraccionDto? ParseExtraccion(string? json)
     {
