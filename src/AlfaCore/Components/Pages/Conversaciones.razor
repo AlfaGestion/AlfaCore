@@ -2626,7 +2626,20 @@
                         }
                         @if (_aiChatHistory.Count == 0)
                         {
-                            @if (_aiSuggestion.NeedsClarification)
+                            @if (!string.IsNullOrWhiteSpace(_aiSuggestion.EscalationHint))
+                            {
+                                <div class="context-card" style="border-color:rgba(96,165,250,.6);background:#0d1a2e;">
+                                    <span class="context-card__label">Hay documentación interna relacionada</span>
+                                    <strong>@_aiSuggestion.EscalationHint</strong>
+                                    @if (AlfaKnowledgeSvc.IsConfigured)
+                                    {
+                                        <a href="@AlfaKnowledgeSvc.FullChatUrl" target="_blank" rel="noopener noreferrer">
+                                            Abrir AlfaKnowledge <i class="bi bi-box-arrow-up-right"></i>
+                                        </a>
+                                    }
+                                </div>
+                            }
+                            else if (_aiSuggestion.NeedsClarification)
                             {
                                 <div class="context-card" style="border-color:rgba(250,204,21,.6);background:#1a1506;">
                                     <span class="context-card__label">La IA pide una aclaración</span>

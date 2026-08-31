@@ -7366,6 +7366,16 @@ public sealed class ConversacionesService(
                 if (usoFallbackBot)
                     tipo = "DERIVA";
 
+                // El bot escala en silencio (nunca manda EscalationHint al cliente), pero deja la
+                // pista en el timeline interno para que el humano que retome sepa que hay
+                // documentación marcada "uso interno" en AlfaKnowledge relacionada con esta consulta.
+                if (usoFallbackBot && !string.IsNullOrWhiteSpace(knowledgeContext.EscalationHint))
+                {
+                    await AddInternalEventCoreAsync(idConversacion,
+                        $"📚 {knowledgeContext.EscalationHint}",
+                        null, null, "AlfaCore", "ALFAKNOWLEDGE", token).ConfigureAwait(false);
+                }
+
                 var businessNow = BusinessNow();
                 if (usoFallbackBot
                     && await HasSentAutomaticMessageTextAsync(idConversacion, "BOT", respuesta, businessNow, token).ConfigureAwait(false))
@@ -8096,6 +8106,14 @@ public sealed class ConversacionesService(
         public bool HasSufficientContext { get; init; }
         public bool NeedsClarification { get; init; }
         public string ClarificationQuestion { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Nota SOLO para uso interno (nunca se envía al cliente): AlfaKnowledge la llena cuando la
+        /// mejor fuente para esta consulta estaba marcada "uso interno únicamente" y por eso no se
+        /// pudo usar en la respuesta. Se deja registrada como nota interna de la conversación para
+        /// que un humano la revise en AlfaKnowledge con su propio usuario.
+        /// </summary>
+        public string EscalationHint { get; init; } = string.Empty;
     }
 
     // Recupera de AlfaKnowledge tanto los fragmentos relevantes como la sugerencia directa. Así el
@@ -8132,7 +8150,8 @@ public sealed class ConversacionesService(
                 SuggestedReply = (ak.SuggestedReply ?? string.Empty).Trim(),
                 HasSufficientContext = ak.HasSufficientContext,
                 NeedsClarification = ak.NeedsClarification,
-                ClarificationQuestion = (ak.ClarificationQuestion ?? string.Empty).Trim()
+                ClarificationQuestion = (ak.ClarificationQuestion ?? string.Empty).Trim(),
+                EscalationHint = (ak.EscalationHint ?? string.Empty).Trim()
             };
         }
         catch (Exception ex)
