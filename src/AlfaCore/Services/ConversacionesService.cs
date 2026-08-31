@@ -3496,7 +3496,8 @@ public sealed class ConversacionesService(
             {
                 var conversationId = await EnsureConversationAsync(incoming, token);
                 var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
-                if (messageId <= 0)
+                var isNewMessage = messageId <= 0;
+                if (isNewMessage)
                 {
                     messageId = await InsertMessageAsync(new PendingMessageInsert
                     {
@@ -3539,12 +3540,15 @@ public sealed class ConversacionesService(
                 else
                 {
                     await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
-                    await NotifyIncomingMessageAsync(conversationId, messageId, token);
-                    if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                    if (isNewMessage)
                     {
-                        await TryAutoReplyWelcomeAsync(conversationId, token);
-                        await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                        await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                        await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        {
+                            await TryAutoReplyWelcomeAsync(conversationId, token);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                        }
                     }
                 }
                 processed++;
@@ -3670,7 +3674,8 @@ public sealed class ConversacionesService(
 
                 var conversationId = await EnsureConversationAsync(incoming, token);
                 var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
-                if (messageId <= 0)
+                var isNewMessage = messageId <= 0;
+                if (isNewMessage)
                 {
                     messageId = await InsertMessageAsync(new PendingMessageInsert
                     {
@@ -3702,12 +3707,15 @@ public sealed class ConversacionesService(
                 else
                 {
                     await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
-                    await NotifyIncomingMessageAsync(conversationId, messageId, token);
-                    if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                    if (isNewMessage)
                     {
-                        await TryAutoReplyWelcomeAsync(conversationId, token);
-                        await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                        await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                        await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        {
+                            await TryAutoReplyWelcomeAsync(conversationId, token);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                        }
                     }
                 }
 
@@ -7296,10 +7304,6 @@ public sealed class ConversacionesService(
                 }
 
                 var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
-                var knowledgeContext = new AsistenteKnowledgeContext();
-                if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
-                    knowledgeContext = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false);
-
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
                 var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
@@ -7308,27 +7312,24 @@ public sealed class ConversacionesService(
                         asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
                     : null;
 
-                var result = await asistenteService.ResponderAsync(
-                    config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-                    texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
-                    herramientas, ejecutarHerramientaAsync, token).ConfigureAwait(false);
+                var usaKnowledge = config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
+                var knowledgeContext = usaKnowledge
+                    ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
+                    : new AsistenteKnowledgeContext();
 
-                if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
-                    && knowledgeContext.NeedsClarification
-                    && !string.IsNullOrWhiteSpace(knowledgeContext.ClarificationQuestion))
-                {
-                    result = new ConversacionAsistenteRespuesta
-                    {
-                        Tipo = "ACLARA",
-                        PuedeResponder = false,
-                        Respuesta = knowledgeContext.ClarificationQuestion
-                    };
-                }
-                else if ((result is null
-                          || string.IsNullOrWhiteSpace(result.Respuesta)
-                          || string.Equals(result.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase))
-                         && knowledgeContext.HasSufficientContext
-                         && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply))
+                // Modo exclusivo automático: si AlfaKnowledge ya tiene contexto suficiente y el mensaje
+                // no necesita herramientas (saldo/precio/pedido -- eso son datos reales de AlfaCore que
+                // AlfaKnowledge no tiene), se responde directo con lo que trajo AlfaKnowledge sin llamar
+                // a OpenAI. Es la fuente de verdad para consultas de conocimiento, y evita pagar tokens
+                // de un modelo cuya respuesta se iba a descartar igual (además de que puede "alucinar"
+                // contenido plausible: ver caso real donde inventó un video de YouTube en vez de
+                // linkear el manual real que AlfaKnowledge sí tenía).
+                var resueltoSoloPorKnowledge = herramientas.Count == 0
+                    && knowledgeContext.HasSufficientContext
+                    && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply);
+
+                ConversacionAsistenteRespuesta? result;
+                if (resueltoSoloPorKnowledge)
                 {
                     result = new ConversacionAsistenteRespuesta
                     {
@@ -7336,6 +7337,25 @@ public sealed class ConversacionesService(
                         PuedeResponder = true,
                         Respuesta = knowledgeContext.SuggestedReply
                     };
+                }
+                else
+                {
+                    result = await asistenteService.ResponderAsync(
+                        config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
+                        texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
+                        herramientas, ejecutarHerramientaAsync, token).ConfigureAwait(false);
+
+                    if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
+                        && knowledgeContext.NeedsClarification
+                        && !string.IsNullOrWhiteSpace(knowledgeContext.ClarificationQuestion))
+                    {
+                        result = new ConversacionAsistenteRespuesta
+                        {
+                            Tipo = "ACLARA",
+                            PuedeResponder = false,
+                            Respuesta = knowledgeContext.ClarificationQuestion
+                        };
+                    }
                 }
 
                 var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
