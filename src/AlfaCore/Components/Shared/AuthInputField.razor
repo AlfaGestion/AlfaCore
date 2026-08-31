@@ -1,4 +1,5 @@
 @using Microsoft.AspNetCore.Components.Web
+@inject IJSRuntime JS
 
 <div class="@WrapperClass">
     @if (!string.IsNullOrWhiteSpace(IconClass))
@@ -12,7 +13,6 @@
            id="@Id"
            class="@InputClass"
            type="@EffectiveInputType"
-           value="@Value"
            @oninput="HandleInputAsync"
            @onkeydown="HandleKeyDownAsync"
            placeholder="@Placeholder"
@@ -60,10 +60,45 @@
 
     private string EffectiveInputType => ShowPasswordToggle ? (ShowPassword ? "text" : "password") : InputType;
 
+    // El <input> no lleva value="@Value" en el markup a propósito: si Blazor reaplica el value en
+    // cada render disparado por @oninput, escribir rápido hace que el round-trip al servidor pise
+    // letras que el usuario ya tecleó (el DOM y el estado del servidor quedan compitiendo por el
+    // valor). El campo queda "no controlado" mientras se escribe; solo empujamos Value hacia el DOM
+    // por JS cuando cambia por fuera de este componente (ver OnParametersSet).
+    private string? _lastEmittedValue;
+    private bool _pendingDomSync;
+
+    protected override void OnParametersSet()
+    {
+        if (!string.Equals(Value, _lastEmittedValue, StringComparison.Ordinal))
+            _pendingDomSync = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_pendingDomSync)
+            return;
+
+        _pendingDomSync = false;
+        _lastEmittedValue = Value;
+
+        try
+        {
+            await JS.InvokeVoidAsync("alfaCoreFormInput.setValue", _inputRef, Value);
+        }
+        catch
+        {
+        }
+    }
+
     public ValueTask FocusAsync(bool preventScroll = false) => _inputRef.FocusAsync(preventScroll);
 
     private async Task HandleInputAsync(ChangeEventArgs args)
-        => await ValueChanged.InvokeAsync(args.Value?.ToString() ?? string.Empty);
+    {
+        var value = args.Value?.ToString() ?? string.Empty;
+        _lastEmittedValue = value;
+        await ValueChanged.InvokeAsync(value);
+    }
 
     private async Task HandleKeyDownAsync(KeyboardEventArgs args)
     {

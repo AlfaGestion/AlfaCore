@@ -107,6 +107,16 @@
                 document.cookie = 'AlfaCore.SqlSessionId=; path=/; max-age=0; samesite=lax';
             }
         };
+        window.alfaCoreFormInput = {
+            // El input queda "no controlado" del lado del render (ver AuthInputField.razor): el valor
+            // en el DOM manda mientras el usuario escribe, y solo lo pisamos por acá cuando el cambio
+            // viene de afuera (limpiar el formulario, etc). Esto evita que el round-trip de Blazor
+            // Server por cada tecla "coma" letras cuando se escribe rápido.
+            setValue: function (element, value) {
+                if (!element) return;
+                element.value = value || '';
+            }
+        };
         window.alfaCorePwaFunctionExists = function (name) {
             return !!(window.alfaCorePwa && typeof window.alfaCorePwa[name] === 'function');
         };

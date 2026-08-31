@@ -20,6 +20,12 @@
     place-items: center;
 }
 
+.catalogo-publico-loading-shell {
+    min-height: min(70vh, 520px);
+    display: grid;
+    place-items: center;
+}
+
 .catalogo-publico-empty-panel {
     display: flex;
     justify-content: center;
@@ -28,6 +34,12 @@
 
 .catalogo-publico-empty-panel ::deep .alfa-empty-state {
     width: min(100%, 680px);
+}
+
+.catalogo-publico-image-loading {
+    margin: 0 0 1rem;
+    display: flex;
+    justify-content: center;
 }
 
 .catalogo-publico-hero {
