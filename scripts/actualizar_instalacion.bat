@@ -117,17 +117,19 @@ echo   1^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL^)
 echo   2^) Otra ruta
 echo.
 set /p "DEST_OPTION=Elige destino [1/2]: "
-set "DEST_OPTION=%DEST_OPTION:"=%"
+rem OJO: %VAR:"=% con VAR vacia/indefinida corrompe la variable (deja basura
+rem tipo "= en vez de vacio) -- por eso el "if defined" guarda en cada uso.
+if defined DEST_OPTION set "DEST_OPTION=%DEST_OPTION:"=%"
 
 if /i "%DEST_OPTION%"=="1" (
   set "DEST_DIR_FULL=%DEFAULT_DEST_2%"
 ) else (
   set /p "DEST_DIR_FULL=Destino de instalacion: "
-  set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
+  if defined DEST_DIR_FULL set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
 )
 
 :got_destination
-set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
+if defined DEST_DIR_FULL set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
 
 rem quita la barra final (si la hay) para evitar que "%DEST_DIR_FULL%" escape la comilla de cierre en robocopy
 if "%DEST_DIR_FULL:~-1%"=="\" if not "%DEST_DIR_FULL:~-2,1%"==":" set "DEST_DIR_FULL=%DEST_DIR_FULL:~0,-1%"
