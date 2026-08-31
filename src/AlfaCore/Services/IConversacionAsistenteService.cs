@@ -20,6 +20,7 @@ public interface IConversacionAsistenteService
         bool fueraDeHorario = false,
         bool esUrgente = false,
         string? conocimientoBase = null,
+        string? sugerenciaKnowledge = null,
         string? contextoCliente = null,
         IReadOnlyList<ConversacionAsistenteHerramientaDefinicionDto>? herramientas = null,
         Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = null,

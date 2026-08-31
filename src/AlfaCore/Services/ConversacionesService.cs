@@ -7296,9 +7296,9 @@ public sealed class ConversacionesService(
                 }
 
                 var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
-                var conocimientoBase = string.Empty;
+                var knowledgeContext = new AsistenteKnowledgeContext();
                 if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
-                    conocimientoBase = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false);
+                    knowledgeContext = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false);
 
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
@@ -7310,8 +7310,33 @@ public sealed class ConversacionesService(
 
                 var result = await asistenteService.ResponderAsync(
                     config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-                    texto, mensajes, fueraDeHorario, esUrgente, conocimientoBase, contextoCliente,
+                    texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
                     herramientas, ejecutarHerramientaAsync, token).ConfigureAwait(false);
+
+                if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
+                    && knowledgeContext.NeedsClarification
+                    && !string.IsNullOrWhiteSpace(knowledgeContext.ClarificationQuestion))
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "ACLARA",
+                        PuedeResponder = false,
+                        Respuesta = knowledgeContext.ClarificationQuestion
+                    };
+                }
+                else if ((result is null
+                          || string.IsNullOrWhiteSpace(result.Respuesta)
+                          || string.Equals(result.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase))
+                         && knowledgeContext.HasSufficientContext
+                         && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply))
+                {
+                    result = new ConversacionAsistenteRespuesta
+                    {
+                        Tipo = "RESUELVE",
+                        PuedeResponder = true,
+                        Respuesta = knowledgeContext.SuggestedReply
+                    };
+                }
 
                 var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
                 var usoFallbackBot = result is null || string.IsNullOrWhiteSpace(result.Respuesta);
@@ -8044,9 +8069,19 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    // Recupera de AlfaKnowledge los fragmentos relevantes (plainText de las citas) y arma un bloque
-    // de texto para inyectar como conocimiento en el prompt del asistente. Si falla, devuelve vacío.
-    private async Task<string> ObtenerConocimientoBaseAsync(
+    private sealed class AsistenteKnowledgeContext
+    {
+        public string ConocimientoBase { get; init; } = string.Empty;
+        public string SuggestedReply { get; init; } = string.Empty;
+        public bool HasSufficientContext { get; init; }
+        public bool NeedsClarification { get; init; }
+        public string ClarificationQuestion { get; init; } = string.Empty;
+    }
+
+    // Recupera de AlfaKnowledge tanto los fragmentos relevantes como la sugerencia directa. Así el
+    // bot puede usar la respuesta sugerida como base principal cuando AlfaKnowledge sí encontró
+    // material suficiente, sin perder las citas que sirven de respaldo adicional para OpenAI.
+    private async Task<AsistenteKnowledgeContext> ObtenerConocimientoBaseAsync(
         string texto, IReadOnlyList<ConversacionMensajeDto> mensajes, long idConversacion, CancellationToken ct)
     {
         try
@@ -8055,8 +8090,8 @@ public sealed class ConversacionesService(
                 texto, mensajes, idConversacion, AlfaKnowledgeSuggestionModes.ReplySuggestion,
                 null, null, null, null, ct).ConfigureAwait(false);
 
-            if (ak is null || ak.Citations.Count == 0)
-                return string.Empty;
+            if (ak is null)
+                return new AsistenteKnowledgeContext();
 
             var sb = new StringBuilder();
             foreach (var cita in ak.Citations
@@ -8071,7 +8106,14 @@ public sealed class ConversacionesService(
                 sb.AppendLine();
             }
 
-            return sb.ToString().Trim();
+            return new AsistenteKnowledgeContext
+            {
+                ConocimientoBase = sb.ToString().Trim(),
+                SuggestedReply = (ak.SuggestedReply ?? string.Empty).Trim(),
+                HasSufficientContext = ak.HasSufficientContext,
+                NeedsClarification = ak.NeedsClarification,
+                ClarificationQuestion = (ak.ClarificationQuestion ?? string.Empty).Trim()
+            };
         }
         catch (Exception ex)
         {
@@ -8079,7 +8121,7 @@ public sealed class ConversacionesService(
                 "Conversaciones", "AsistenteKnowledge", ex,
                 "No se pudo recuperar conocimiento de AlfaKnowledge para el asistente.",
                 new { idConversacion }, AppEventSeverity.Warning, ct).ConfigureAwait(false);
-            return string.Empty;
+            return new AsistenteKnowledgeContext();
         }
     }
 
