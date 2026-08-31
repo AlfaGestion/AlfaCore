@@ -23,13 +23,15 @@
 <PageTitle>Catálogo público | AlfaCore</PageTitle>
 
 <section class="@(Embedded ? "catalogo-publico-page catalogo-publico-page--embedded" : "page-grid catalogo-publico-page")">
-    @if (_redirecting || _loading)
+    @if (ShowBlockingLoadingState)
     {
         @* Un único estado de carga, sin encabezado: mientras se resuelve el link seguro o se
            consulta la base no hay branding real todavía (GetBrandingName()/GetBrandingLogoUrl()
            siguen en sus valores por defecto) — mostrarlo acá era lo que se veía como "dos
            encabezados", uno genérico seguido del real del cliente apenas terminaba de cargar. *@
-        <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="@(_redirecting ? "Redirigiendo..." : "Cargando catálogo...")" />
+        <div class="catalogo-publico-loading-shell">
+            <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="@GetBlockingLoadingText()" />
+        </div>
     }
     else
     {
@@ -165,6 +167,13 @@
             }
             else
             {
+                @if (IsLoadingImages)
+                {
+                    <div class="catalogo-publico-image-loading">
+                        <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Cargando imágenes..." Compact="true" />
+                    </div>
+                }
+
                 @foreach (var grupo in gruposVisibles)
                 {
                     @if (!string.IsNullOrWhiteSpace(grupo.Etiqueta))
@@ -384,16 +393,19 @@
     private CatalogosCatalogoDetalleDto? _catalogo;
     private CatalogosPublicIdentityDto _branding = new();
     private AppUiMessage? _catalogFeedback;
-    private bool _loading = true;
+    private CatalogoLoadPhase _loadPhase = CatalogoLoadPhase.Connecting;
     private bool _redirecting;
     private bool _hasRendered;
     private bool _sessionBusy;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private bool _restoreAttempted;
+    private bool _catalogLoadStarted;
     private bool _viewModeRestored;
     private CatalogoViewMode _viewMode = CatalogoViewMode.Lista;
     private PuntoVentaSettingsDto _puntoVentaSettings = new();
     private bool _routeSessionError;
+    private bool _imagesLoading;
+    private int _catalogLoadVersion;
     private const string ViewModeStorageKey = "alfacore_catalogo_publico_view_mode";
     private bool _isDark = true;
     private string _filtroRubro = string.Empty;
@@ -406,25 +418,31 @@
         Cuadricula = 1
     }
 
+    private enum CatalogoLoadPhase
+    {
+        Connecting = 0,
+        LoadingCatalog = 1,
+        LoadingImages = 2,
+        Ready = 3,
+        Error = 4
+    }
+
     private sealed class CatalogoPublicoGrupoMarca
     {
         public string Etiqueta { get; init; } = string.Empty;
         public IReadOnlyList<CatalogosCatalogoItemDto> Articulos { get; init; } = [];
     }
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         CatalogoClienteSession.StateChanged += OnClientSessionStateChanged;
-        await EnsureRouteSessionAsync();
-        if (_redirecting)
-            return;
-        await LoadImageSettingsAsync();
-        await LoadPublicIdentityAsync();
-        await RefreshCatalogAsync();
     }
 
     protected override async Task OnParametersSetAsync()
     {
+        if (!_hasRendered)
+            return;
+
         await EnsureRouteSessionAsync();
         if (_redirecting)
             return;
@@ -440,8 +458,11 @@
             await RestoreClientSessionAsync();
         }
 
+        if (!_catalogLoadStarted)
+            return;
+
         await LoadPublicIdentityAsync();
-        await EnsureCatalogStateAsync();
+        await RefreshCatalogStateAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -476,6 +497,12 @@
             {
                 // Sin JS interop disponible (prerender): se mantiene el modo oscuro por defecto.
             }
+
+            if (!_catalogLoadStarted)
+            {
+                _catalogLoadStarted = true;
+                _ = StartInitialLoadAsync();
+            }
         }
 
     }
@@ -501,7 +528,7 @@
     private void OnClientSessionStateChanged()
         => _ = InvokeAsync(async () =>
         {
-            await EnsureCatalogStateAsync();
+            await RefreshCatalogStateAsync();
             await InvokeAsync(StateHasChanged);
         });
 
@@ -510,21 +537,65 @@
            && string.Equals(client.IdWeb, NormalizeRouteSegment(idweb), StringComparison.OrdinalIgnoreCase)
            && client.IdBase == (GetEffectiveIdBase() ?? 0);
 
-    private async Task EnsureCatalogStateAsync()
+    private bool ShowBlockingLoadingState
+        => _loadPhase is CatalogoLoadPhase.Connecting or CatalogoLoadPhase.LoadingCatalog;
+
+    private bool IsLoadingImages
+        => _imagesLoading && _loadPhase == CatalogoLoadPhase.LoadingImages;
+
+    private string GetBlockingLoadingText()
+        => _redirecting
+            ? "Redirigiendo..."
+            : _loadPhase == CatalogoLoadPhase.Connecting
+                ? "Conectando con el catálogo..."
+                : "Cargando catálogo...";
+
+    private async Task RefreshCatalogStateAsync()
     {
         if (_routeSessionError)
         {
-            _loading = false;
             _catalogo = null;
+            _loadPhase = CatalogoLoadPhase.Error;
             return;
         }
 
         if (_catalogo is not null
             && _catalogo.IdInsert == IdInsert
-            && !_loading)
+            && _loadPhase == CatalogoLoadPhase.Ready)
             return;
 
         await RefreshCatalogAsync();
+    }
+
+    private async Task StartInitialLoadAsync()
+    {
+        var loadVersion = Interlocked.Increment(ref _catalogLoadVersion);
+
+        _loadPhase = CatalogoLoadPhase.Connecting;
+        _imagesLoading = false;
+        await InvokeAsync(StateHasChanged);
+
+        await EnsureRouteSessionAsync();
+        if (_redirecting || loadVersion != _catalogLoadVersion)
+            return;
+
+        if (_routeSessionError)
+        {
+            _catalogo = null;
+            _loadPhase = CatalogoLoadPhase.Error;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        await LoadImageSettingsAsync();
+        if (loadVersion != _catalogLoadVersion)
+            return;
+
+        await LoadPublicIdentityAsync();
+        if (loadVersion != _catalogLoadVersion)
+            return;
+
+        await RefreshCatalogAsync(loadVersion);
     }
 
     private int? _effectiveIdBase;
@@ -785,14 +856,16 @@
         _routeSessionError = false;
     }
 
-    private async Task RefreshCatalogAsync()
+    private async Task RefreshCatalogAsync(int? loadVersion = null)
     {
-        _loading = true;
+        loadVersion ??= Interlocked.Increment(ref _catalogLoadVersion);
+        _loadPhase = CatalogoLoadPhase.LoadingCatalog;
+        _imagesLoading = false;
 
         if (_routeSessionError)
         {
             _catalogo = null;
-            _loading = false;
+            _loadPhase = CatalogoLoadPhase.Error;
             return;
         }
 
@@ -803,20 +876,45 @@
             "No se pudo cargar el catálogo público.");
         if (result.Success)
         {
+            if (loadVersion != _catalogLoadVersion)
+                return;
+
             _catalogo = result.Value;
-            // Fire-and-forget: esperar acá a que bajen las ~50-200 imágenes del catálogo antes de
-            // mostrar nada (como se hizo en un intento anterior) hacía que la carga se sintiera
-            // muy lenta — mejor mostrar el catálogo ya mismo (nombre, precios, filtros) y dejar que
-            // las imágenes se sigan bajando en paralelo mientras tanto; con catálogos ya visitados
-            // (caché tibia) igual aparecen casi al instante.
-            _ = PrecalentarImagenesAsync();
+            _loadPhase = CatalogoLoadPhase.LoadingImages;
+            _imagesLoading = (_catalogo?.Articulos.Count ?? 0) > 0;
+
+            if (_imagesLoading)
+            {
+                _ = TrackImageWarmupAsync(loadVersion.Value);
+            }
+            else
+            {
+                _loadPhase = CatalogoLoadPhase.Ready;
+            }
         }
         else
         {
             _catalogo = null;
             _catalogFeedback = result.Feedback;
+            _loadPhase = CatalogoLoadPhase.Error;
         }
-        _loading = false;
+    }
+
+    private async Task TrackImageWarmupAsync(int loadVersion)
+    {
+        try
+        {
+            await PrecalentarImagenesAsync();
+        }
+        finally
+        {
+            if (loadVersion == _catalogLoadVersion)
+            {
+                _imagesLoading = false;
+                _loadPhase = CatalogoLoadPhase.Ready;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
     }
 
     // Tope duro: si el FTP está lento/caído, mejor mostrar el catálogo con imágenes sueltas
@@ -907,7 +1005,7 @@
         {
         }
 
-        await EnsureCatalogStateAsync();
+        await RefreshCatalogStateAsync();
     }
 
     private async Task LogoutClienteAsync()
