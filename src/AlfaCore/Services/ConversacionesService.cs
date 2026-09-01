@@ -7339,8 +7339,10 @@ public sealed class ConversacionesService(
                 }
 
                 var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
+                await TraceDiagAsync("Paso:MensajesOk", idConversacion, ct).ConfigureAwait(false);
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
+                await TraceDiagAsync("Paso:CuentaVinculadaOk", idConversacion, ct).ConfigureAwait(false);
                 var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
@@ -7348,9 +7350,11 @@ public sealed class ConversacionesService(
                     : null;
 
                 var usaKnowledge = config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
+                await TraceDiagAsync($"Paso:AntesKnowledge:usaKnowledge={usaKnowledge}", idConversacion, ct).ConfigureAwait(false);
                 var knowledgeContext = usaKnowledge
                     ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
                     : new AsistenteKnowledgeContext();
+                await TraceDiagAsync("Paso:DespuesKnowledgeOk", idConversacion, ct).ConfigureAwait(false);
 
                 // Modo exclusivo automático: si AlfaKnowledge ya tiene contexto suficiente y el mensaje
                 // no necesita herramientas (saldo/precio/pedido -- eso son datos reales de AlfaCore que
@@ -7375,10 +7379,12 @@ public sealed class ConversacionesService(
                 }
                 else
                 {
+                    await TraceDiagAsync($"Paso:AntesResponderAsync:herramientas={herramientas.Count}", idConversacion, ct).ConfigureAwait(false);
                     result = await asistenteService.ResponderAsync(
                         config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
                         texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
                         herramientas, ejecutarHerramientaAsync, token).ConfigureAwait(false);
+                    await TraceDiagAsync($"Paso:DespuesResponderAsync:resultNull={result is null}", idConversacion, ct).ConfigureAwait(false);
 
                     if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
                         && knowledgeContext.NeedsClarification
