@@ -3543,11 +3543,17 @@ public sealed class ConversacionesService(
                     if (isNewMessage)
                     {
                         await NotifyIncomingMessageAsync(conversationId, messageId, token);
-                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
                         {
-                            await TryAutoReplyWelcomeAsync(conversationId, token);
-                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
                         }
                     }
                 }
@@ -3710,11 +3716,17 @@ public sealed class ConversacionesService(
                     if (isNewMessage)
                     {
                         await NotifyIncomingMessageAsync(conversationId, messageId, token);
-                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
                         {
-                            await TryAutoReplyWelcomeAsync(conversationId, token);
-                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
                         }
                     }
                 }
@@ -3953,11 +3965,17 @@ public sealed class ConversacionesService(
                     if (storedMessage.Created)
                     {
                         await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
-                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
                         {
-                            await TryAutoReplyWelcomeAsync(conversationId, token);
-                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
                         }
                     }
                     processed++;
@@ -4022,11 +4040,17 @@ public sealed class ConversacionesService(
                     if (storedMessage.Created)
                     {
                         await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
-                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
                         {
-                            await TryAutoReplyWelcomeAsync(conversationId, token);
-                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
                         }
                     }
                     processed++;
@@ -4094,11 +4118,17 @@ public sealed class ConversacionesService(
                     if (storedMessage.Created)
                     {
                         await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
-                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
                         {
-                            await TryAutoReplyWelcomeAsync(conversationId, token);
-                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
                         }
                     }
                     processed++;
