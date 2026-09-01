@@ -8698,8 +8698,15 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@Usuario", normalizedUser);
         cmd.Parameters.AddWithValue("@Sistema", normalizedSystem);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
+        // Si el par (usuario, sistema) no matchea un usuario legacy real (ej. "AlfaCore"/"BOT",
+        // "AlfaCore"/"BIENVENIDA", "AlfaCore"/"AUTOMATIZACION" -- identidades sintéticas del sistema,
+        // nunca van a estar en TA_USUARIOS), hay que conservar los valores tal cual los mandó el
+        // llamador, NO vaciarlos. El resto del código depende de SistemaAutor='BOT' (tope de
+        // respuestas, guardarraíl anti-repetición) para identificar mensajes automáticos -- si se
+        // vacía acá, esos chequeos quedan permanentemente inertes (bug real encontrado en producción:
+        // SistemaAutor siempre NULL en todos los mensajes automáticos).
         if (!await rd.ReadAsync(ct))
-            return (string.Empty, string.Empty);
+            return (normalizedUser, normalizedSystem);
 
         return (GetString(rd, 0), GetString(rd, 1));
     }
