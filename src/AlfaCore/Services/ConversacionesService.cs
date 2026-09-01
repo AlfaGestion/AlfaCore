@@ -7366,6 +7366,7 @@ public sealed class ConversacionesService(
                 var resueltoSoloPorKnowledge = herramientas.Count == 0
                     && knowledgeContext.HasSufficientContext
                     && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply);
+                await TraceDiagAsync($"Paso:Rama:resueltoSoloPorKnowledge={resueltoSoloPorKnowledge}", idConversacion, ct).ConfigureAwait(false);
 
                 ConversacionAsistenteRespuesta? result;
                 if (resueltoSoloPorKnowledge)
@@ -7429,6 +7430,7 @@ public sealed class ConversacionesService(
                     return;
                 }
 
+                await TraceDiagAsync($"Paso:AntesSendMessage:tipo={tipo}", idConversacion, ct).ConfigureAwait(false);
                 await SendMessageAsync(new ConversacionSendMessageRequest
                 {
                     IdConversacion = idConversacion,
@@ -7437,6 +7439,7 @@ public sealed class ConversacionesService(
                     UsuarioAccion = "AlfaCore",
                     SistemaAccion = "BOT"
                 }, token).ConfigureAwait(false);
+                await TraceDiagAsync("Paso:DespuesSendMessageOk", idConversacion, ct).ConfigureAwait(false);
 
                 if (tipo == "ACLARA")
                 {
