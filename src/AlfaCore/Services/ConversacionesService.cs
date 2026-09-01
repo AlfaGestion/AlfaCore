@@ -9316,6 +9316,7 @@ public sealed class ConversacionesService(
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
         using var response = await client.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
@@ -9330,6 +9331,12 @@ public sealed class ConversacionesService(
             PayloadJson = responseBody
         };
     }
+
+    // Sin esto, HttpClient usa su default de 100s -- si la API de Meta/Mercado Libre responde lento,
+    // el request del webhook (y el bot que espera adentro) queda bloqueado ese tiempo entero sin dar
+    // ninguna señal de error. Visto en producción: un mensaje del bot que quedó en "Pendiente" sin
+    // confirmar éxito ni error.
+    private static readonly TimeSpan MetaSendTimeout = TimeSpan.FromSeconds(30);
 
     private async Task<WhatsAppSendResult> SendToInstagramAsync(
         ConversacionInstagramConfigDto config,
@@ -9351,6 +9358,7 @@ public sealed class ConversacionesService(
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
         using var response = await client.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
@@ -9386,6 +9394,7 @@ public sealed class ConversacionesService(
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
         using var response = await client.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
@@ -9428,6 +9437,7 @@ public sealed class ConversacionesService(
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
         using var response = await client.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
