@@ -8769,15 +8769,20 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@Usuario", normalizedUser);
         cmd.Parameters.AddWithValue("@Sistema", normalizedSystem);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
-        // Si el par (usuario, sistema) no matchea un usuario legacy real (ej. "AlfaCore"/"BOT",
-        // "AlfaCore"/"BIENVENIDA", "AlfaCore"/"AUTOMATIZACION" -- identidades sintéticas del sistema,
-        // nunca van a estar en TA_USUARIOS), hay que conservar los valores tal cual los mandó el
-        // llamador, NO vaciarlos. El resto del código depende de SistemaAutor='BOT' (tope de
-        // respuestas, guardarraíl anti-repetición) para identificar mensajes automáticos -- si se
-        // vacía acá, esos chequeos quedan permanentemente inertes (bug real encontrado en producción:
-        // SistemaAutor siempre NULL en todos los mensajes automáticos).
         if (!await rd.ReadAsync(ct))
-            return (normalizedUser, normalizedSystem);
+        {
+            // Si el par (usuario, sistema) no matchea un usuario legacy real (ej. "AlfaCore"/"BOT",
+            // "AlfaCore"/"BIENVENIDA", "AlfaCore"/"AUTOMATIZACION" -- identidades sintéticas del
+            // sistema, nunca van a estar en TA_USUARIOS), hay que conservar Sistema tal cual lo mandó
+            // el llamador (el resto del código depende de SistemaAutor='BOT' para el tope de
+            // respuestas y el guardarraíl anti-repetición; bug real: quedaba siempre NULL). Usuario
+            // en cambio SÍ hay que vaciarlo a NULL en este caso: CONV_MENSAJES.UsuarioAutor tiene una
+            // FOREIGN KEY contra TA_USUARIOS (FK_CONV_MENSAJES_USUARIO) -- NULL la respeta, pero un
+            // valor inventado como "AlfaCore" la viola y el INSERT entero falla (bug real encontrado
+            // en producción: todos los envíos automáticos empezaron a fallar en silencio tras
+            // preservar Usuario acá también).
+            return (string.Empty, normalizedSystem);
+        }
 
         return (GetString(rd, 0), GetString(rd, 1));
     }
