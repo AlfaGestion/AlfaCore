@@ -7112,24 +7112,37 @@ public sealed class ConversacionesService(
     // espera. Si no, corre los guardarraíles y responde ya (ver EjecutarRespuestaBotAsync).
     private async Task TryAutoReplyBotAsync(long idConversacion, string? incomingText, CancellationToken ct)
     {
+        await TraceDiagAsync("BotStart", idConversacion, ct).ConfigureAwait(false);
         try
         {
             if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+            {
+                await TraceDiagAsync("BotStop:ModuloInactivo", idConversacion, ct).ConfigureAwait(false);
                 return;
+            }
 
             var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
             if (!config.BotActivo || !asistenteService.IsConfigured)
+            {
+                await TraceDiagAsync($"BotStop:BotActivo={config.BotActivo},OpenAiConfigured={asistenteService.IsConfigured}", idConversacion, ct).ConfigureAwait(false);
                 return;
+            }
 
             var texto = (incomingText ?? string.Empty).Trim();
             if (texto.Length == 0)
+            {
+                await TraceDiagAsync("BotStop:TextoVacio", idConversacion, ct).ConfigureAwait(false);
                 return;
+            }
 
             if (config.BotEsperaMinutos > 0)
             {
+                await TraceDiagAsync("BotStop:Encolado", idConversacion, ct).ConfigureAwait(false);
                 await EncolarRespuestaBotAsync(idConversacion, config.BotEsperaMinutos, ct).ConfigureAwait(false);
                 return;
             }
+
+            await TraceDiagAsync("BotSigueAEjecutar", idConversacion, ct).ConfigureAwait(false);
 
             await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
         }
@@ -7262,29 +7275,51 @@ public sealed class ConversacionesService(
             "bot-auto-reply",
             async token =>
             {
+                await TraceDiagAsync("LockOk:EjecutarStart", idConversacion, ct).ConfigureAwait(false);
+
                 if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+                {
+                    await TraceDiagAsync("EjecutarStop:PalabraEscalado", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
 
                 if (config.BotSoloSinAsignar)
                 {
                     var tecnico = await GetConversationTechnicianIdAsync(idConversacion, token).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(tecnico))
+                    {
+                        await TraceDiagAsync($"EjecutarStop:TecnicoAsignado={tecnico}", idConversacion, ct).ConfigureAwait(false);
                         return;
+                    }
                 }
 
                 var canalBot = await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false);
                 if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token).ConfigureAwait(false))
+                {
+                    await TraceDiagAsync($"EjecutarStop:VentanaInactiva:{canalBot}", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
 
                 var (botCount, yaRespondioEsteMensaje) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
                 if (botCount >= Math.Max(1, config.BotMaxRespuestas))
+                {
+                    await TraceDiagAsync($"EjecutarStop:MaxRespuestas={botCount}", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
                 if (yaRespondioEsteMensaje)
+                {
+                    await TraceDiagAsync("EjecutarStop:YaRespondioEsteMensaje", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
 
                 var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
                 if (config.BotSoloFueraHorario && !fueraDeHorario)
+                {
+                    await TraceDiagAsync("EjecutarStop:SoloFueraHorario", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
+
+                await TraceDiagAsync("EjecutarSigueALlamarOpenAi", idConversacion, ct).ConfigureAwait(false);
 
                 var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
                 var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, token).ConfigureAwait(false);
@@ -8277,6 +8312,32 @@ public sealed class ConversacionesService(
         return result is not null;
     }
 
+    // DIAGNÓSTICO TEMPORAL (retirar una vez encontrada la causa de las respuestas silenciosas del
+    // bot): escribe directo a AUX_ERR por SQL, sin pasar por AppEventService/el archivo .jsonl -- ese
+    // archivo pierde escrituras por una condición de carrera cuando varios procesos escriben a la vez
+    // (confirmado en producción, "the file is being used by another process"), lo que hacía
+    // indistinguible "no se ejecutó este paso" de "se ejecutó pero el log se perdió". Esto no debería
+    // fallar nunca (columna Error es NOT NULL en AUX_ERR, se manda -1 como valor sin significado); si
+    // aun así falla, se traga el error para no romper el flujo real por un problema de diagnóstico.
+    private async Task TraceDiagAsync(string paso, long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await using var cmd = new SqlCommand(
+                "INSERT INTO dbo.AUX_ERR (Proceso, Fecha, Error, Descripcion, Usuario) VALUES (@Proceso, GETDATE(), -1, @Descripcion, N'DIAG');",
+                cn);
+            cmd.Parameters.AddWithValue("@Proceso", "Conversaciones.TraceDiag");
+            cmd.Parameters.AddWithValue("@Descripcion", $"{paso} | idConversacion={idConversacion}");
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Best-effort: un fallo acá nunca debe interrumpir el flujo real.
+        }
+    }
+
     private async Task RunWithConversationAutomationLockAsync(
         long idConversacion,
         string motivo,
@@ -8292,6 +8353,7 @@ public sealed class ConversacionesService(
         var lockResult = await AcquireApplicationLockAsync(cn, resource, ct).ConfigureAwait(false);
         if (lockResult < 0)
         {
+            await TraceDiagAsync($"LockSkip:{motivo}:lockResult={lockResult}", idConversacion, ct).ConfigureAwait(false);
             await _appEvents.LogAuditAsync(
                 "Conversaciones", "AutomationLockSkipped", "CONV_CONVERSACIONES",
                 idConversacion.ToString(CultureInfo.InvariantCulture),
