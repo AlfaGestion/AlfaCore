@@ -28,7 +28,7 @@ public sealed class AlfaKnowledgeSuggestionService(
         }
     }
 
-    public string GetCitationUrl(AlfaKnowledgeSuggestionCitation citation)
+    public string? TryGetPublicCitationUrl(AlfaKnowledgeSuggestionCitation citation)
     {
         var sourceReference = citation.SourceReference?.Trim();
         if (Uri.TryCreate(sourceReference, UriKind.Absolute, out var sourceUri)
@@ -37,6 +37,16 @@ public sealed class AlfaKnowledgeSuggestionService(
             return sourceUri.AbsoluteUri;
         }
 
+        return null;
+    }
+
+    public string GetCitationUrl(AlfaKnowledgeSuggestionCitation citation)
+    {
+        var publicUrl = TryGetPublicCitationUrl(citation);
+        if (publicUrl is not null)
+            return publicUrl;
+
+        var sourceReference = citation.SourceReference?.Trim();
         var baseUrl = FullChatUrl.TrimEnd('/');
         if (string.Equals(citation.SourceType, "WordFile", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(sourceReference))
@@ -174,6 +184,7 @@ public sealed class AlfaKnowledgeSuggestionService(
                 HasSufficientContext = apiResult.HasSufficientContext,
                 ImageAnalyzed = apiResult.ImageAnalyzed,
                 ImageContext = apiResult.ImageContext,
+                EscalationHint = apiResult.EscalationHint,
                 Citations = (apiResult.Citations ?? [])
                     .Select(static citation => new AlfaKnowledgeSuggestionCitation
                     {
@@ -555,6 +566,7 @@ public sealed class AlfaKnowledgeSuggestionService(
         public bool HasSufficientContext { get; set; }
         public bool ImageAnalyzed { get; set; }
         public string? ImageContext { get; set; }
+        public string? EscalationHint { get; set; }
         public List<SuggestReplyApiCitation>? Citations { get; set; }
     }
 

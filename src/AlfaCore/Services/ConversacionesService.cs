@@ -3496,7 +3496,8 @@ public sealed class ConversacionesService(
             {
                 var conversationId = await EnsureConversationAsync(incoming, token);
                 var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
-                if (messageId <= 0)
+                var isNewMessage = messageId <= 0;
+                if (isNewMessage)
                 {
                     messageId = await InsertMessageAsync(new PendingMessageInsert
                     {
@@ -3539,12 +3540,21 @@ public sealed class ConversacionesService(
                 else
                 {
                     await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
-                    await NotifyIncomingMessageAsync(conversationId, messageId, token);
-                    if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                    if (isNewMessage)
                     {
-                        await TryAutoReplyWelcomeAsync(conversationId, token);
-                        await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                        await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                        await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
+                        {
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
+                        }
                     }
                 }
                 processed++;
@@ -3670,7 +3680,8 @@ public sealed class ConversacionesService(
 
                 var conversationId = await EnsureConversationAsync(incoming, token);
                 var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
-                if (messageId <= 0)
+                var isNewMessage = messageId <= 0;
+                if (isNewMessage)
                 {
                     messageId = await InsertMessageAsync(new PendingMessageInsert
                     {
@@ -3702,12 +3713,21 @@ public sealed class ConversacionesService(
                 else
                 {
                     await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
-                    await NotifyIncomingMessageAsync(conversationId, messageId, token);
-                    if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                    if (isNewMessage)
                     {
-                        await TryAutoReplyWelcomeAsync(conversationId, token);
-                        await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                        await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                        await NotifyIncomingMessageAsync(conversationId, messageId, token);
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
+                        {
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
+                        }
                     }
                 }
 
@@ -3945,11 +3965,17 @@ public sealed class ConversacionesService(
                     if (storedMessage.Created)
                     {
                         await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
-                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
                         {
-                            await TryAutoReplyWelcomeAsync(conversationId, token);
-                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
                         }
                     }
                     processed++;
@@ -4014,11 +4040,17 @@ public sealed class ConversacionesService(
                     if (storedMessage.Created)
                     {
                         await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
-                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
                         {
-                            await TryAutoReplyWelcomeAsync(conversationId, token);
-                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
                         }
                     }
                     processed++;
@@ -4086,11 +4118,17 @@ public sealed class ConversacionesService(
                     if (storedMessage.Created)
                     {
                         await NotifyIncomingMessageAsync(conversationId, storedMessage.MessageId, token);
-                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, token))
+                        // Las respuestas automáticas (reglas/bienvenida/fuera de horario/bot) se corren
+                        // con un token propio, no el de la request del webhook: si quien llama (Meta u
+                        // otro proveedor) corta la conexión antes de que el bot termine -- AlfaKnowledge +
+                        // OpenAI + el envío real pueden superar fácil los ~20s que tolera el webhook --,
+                        // "token" se cancela y aborta todo en silencio a mitad de camino: el mensaje queda
+                        // insertado en PENDIENTE, sin error, sin traza, sin envío. Visto en producción.
+                        if (!await TryAutoReplyReglasAsync(conversationId, incoming.Text, CancellationToken.None))
                         {
-                            await TryAutoReplyWelcomeAsync(conversationId, token);
-                            await TryAutoReplyOutOfHoursAsync(conversationId, token);
-                            await TryAutoReplyBotAsync(conversationId, incoming.Text, token);
+                            await TryAutoReplyWelcomeAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyOutOfHoursAsync(conversationId, CancellationToken.None);
+                            await TryAutoReplyBotAsync(conversationId, incoming.Text, CancellationToken.None);
                         }
                     }
                     processed++;
@@ -7104,24 +7142,37 @@ public sealed class ConversacionesService(
     // espera. Si no, corre los guardarraíles y responde ya (ver EjecutarRespuestaBotAsync).
     private async Task TryAutoReplyBotAsync(long idConversacion, string? incomingText, CancellationToken ct)
     {
+        await TraceDiagAsync("BotStart", idConversacion, ct).ConfigureAwait(false);
         try
         {
             if (!await centralAdminService.IsModuloActivoParaClienteActualAsync("AUTOMATIZACIONES", ct).ConfigureAwait(false))
+            {
+                await TraceDiagAsync("BotStop:ModuloInactivo", idConversacion, ct).ConfigureAwait(false);
                 return;
+            }
 
             var config = await conversacionesConfigService.GetAutomatizacionesConfigAsync(ct).ConfigureAwait(false);
             if (!config.BotActivo || !asistenteService.IsConfigured)
+            {
+                await TraceDiagAsync($"BotStop:BotActivo={config.BotActivo},OpenAiConfigured={asistenteService.IsConfigured}", idConversacion, ct).ConfigureAwait(false);
                 return;
+            }
 
             var texto = (incomingText ?? string.Empty).Trim();
             if (texto.Length == 0)
+            {
+                await TraceDiagAsync("BotStop:TextoVacio", idConversacion, ct).ConfigureAwait(false);
                 return;
+            }
 
             if (config.BotEsperaMinutos > 0)
             {
+                await TraceDiagAsync("BotStop:Encolado", idConversacion, ct).ConfigureAwait(false);
                 await EncolarRespuestaBotAsync(idConversacion, config.BotEsperaMinutos, ct).ConfigureAwait(false);
                 return;
             }
+
+            await TraceDiagAsync("BotSigueAEjecutar", idConversacion, ct).ConfigureAwait(false);
 
             await EjecutarRespuestaBotAsync(idConversacion, texto, config, ct).ConfigureAwait(false);
         }
@@ -7254,29 +7305,51 @@ public sealed class ConversacionesService(
             "bot-auto-reply",
             async token =>
             {
+                await TraceDiagAsync("LockOk:EjecutarStart", idConversacion, ct).ConfigureAwait(false);
+
                 if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
+                {
+                    await TraceDiagAsync("EjecutarStop:PalabraEscalado", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
 
                 if (config.BotSoloSinAsignar)
                 {
                     var tecnico = await GetConversationTechnicianIdAsync(idConversacion, token).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(tecnico))
+                    {
+                        await TraceDiagAsync($"EjecutarStop:TecnicoAsignado={tecnico}", idConversacion, ct).ConfigureAwait(false);
                         return;
+                    }
                 }
 
                 var canalBot = await GetConversationChannelAsync(idConversacion, token).ConfigureAwait(false);
                 if (!await IsSendWindowActiveAsync(idConversacion, canalBot, token).ConfigureAwait(false))
+                {
+                    await TraceDiagAsync($"EjecutarStop:VentanaInactiva:{canalBot}", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
 
                 var (botCount, yaRespondioEsteMensaje) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
                 if (botCount >= Math.Max(1, config.BotMaxRespuestas))
+                {
+                    await TraceDiagAsync($"EjecutarStop:MaxRespuestas={botCount}", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
                 if (yaRespondioEsteMensaje)
+                {
+                    await TraceDiagAsync("EjecutarStop:YaRespondioEsteMensaje", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
 
                 var fueraDeHorario = config.IsConfigured && IsOutsideBusinessHours(config, BusinessNow());
                 if (config.BotSoloFueraHorario && !fueraDeHorario)
+                {
+                    await TraceDiagAsync("EjecutarStop:SoloFueraHorario", idConversacion, ct).ConfigureAwait(false);
                     return;
+                }
+
+                await TraceDiagAsync("EjecutarSigueALlamarOpenAi", idConversacion, ct).ConfigureAwait(false);
 
                 var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
                 var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, token).ConfigureAwait(false);
@@ -7296,46 +7369,72 @@ public sealed class ConversacionesService(
                 }
 
                 var mensajes = await GetRecentMessagesForBotAsync(idConversacion, token).ConfigureAwait(false);
-                var knowledgeContext = new AsistenteKnowledgeContext();
-                if (config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured)
-                    knowledgeContext = await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false);
-
+                await TraceDiagAsync("Paso:MensajesOk", idConversacion, ct).ConfigureAwait(false);
                 var contextoCliente = ConstruirContextoCliente(rubro, esPrioritario);
                 var cuentaVinculada = await ResolverCuentaVinculadaAsync(idConversacion, token).ConfigureAwait(false);
+                await TraceDiagAsync("Paso:CuentaVinculadaOk", idConversacion, ct).ConfigureAwait(false);
                 var herramientas = asistenteHerramientasService.ObtenerHerramientasDisponibles(config, cuentaVinculada, texto);
                 Func<string, string, CancellationToken, Task<string>>? ejecutarHerramientaAsync = herramientas.Count > 0
                     ? (nombreHerramienta, argumentosJson, ctHerramienta) =>
                         asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
                     : null;
 
-                var result = await asistenteService.ResponderAsync(
-                    config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
-                    texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
-                    herramientas, ejecutarHerramientaAsync, token).ConfigureAwait(false);
+                var usaKnowledge = config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
+                await TraceDiagAsync($"Paso:AntesKnowledge:usaKnowledge={usaKnowledge}", idConversacion, ct).ConfigureAwait(false);
+                var knowledgeContext = usaKnowledge
+                    ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
+                    : new AsistenteKnowledgeContext();
+                await TraceDiagAsync("Paso:DespuesKnowledgeOk", idConversacion, ct).ConfigureAwait(false);
 
-                if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
-                    && knowledgeContext.NeedsClarification
-                    && !string.IsNullOrWhiteSpace(knowledgeContext.ClarificationQuestion))
+                // Modo exclusivo automático: si AlfaKnowledge ya tiene contexto suficiente y el mensaje
+                // no necesita herramientas (saldo/precio/pedido -- eso son datos reales de AlfaCore que
+                // AlfaKnowledge no tiene), se responde directo con lo que trajo AlfaKnowledge sin llamar
+                // a OpenAI. Es la fuente de verdad para consultas de conocimiento, y evita pagar tokens
+                // de un modelo cuya respuesta se iba a descartar igual (además de que puede "alucinar"
+                // contenido plausible: ver caso real donde inventó un video de YouTube en vez de
+                // linkear el manual real que AlfaKnowledge sí tenía).
+                var resueltoSoloPorKnowledge = herramientas.Count == 0
+                    && knowledgeContext.HasSufficientContext
+                    && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply);
+                await TraceDiagAsync($"Paso:Rama:resueltoSoloPorKnowledge={resueltoSoloPorKnowledge}", idConversacion, ct).ConfigureAwait(false);
+
+                ConversacionAsistenteRespuesta? result;
+                if (resueltoSoloPorKnowledge)
                 {
-                    result = new ConversacionAsistenteRespuesta
+                    var respuestaConLink = knowledgeContext.SuggestedReply;
+                    if (!string.IsNullOrWhiteSpace(knowledgeContext.LinkPublico)
+                        && !respuestaConLink.Contains(knowledgeContext.LinkPublico, StringComparison.OrdinalIgnoreCase))
                     {
-                        Tipo = "ACLARA",
-                        PuedeResponder = false,
-                        Respuesta = knowledgeContext.ClarificationQuestion
-                    };
-                }
-                else if ((result is null
-                          || string.IsNullOrWhiteSpace(result.Respuesta)
-                          || string.Equals(result.Tipo, "DERIVA", StringComparison.OrdinalIgnoreCase))
-                         && knowledgeContext.HasSufficientContext
-                         && !string.IsNullOrWhiteSpace(knowledgeContext.SuggestedReply))
-                {
+                        respuestaConLink = $"{respuestaConLink}\n\n{knowledgeContext.LinkPublico}";
+                    }
+
                     result = new ConversacionAsistenteRespuesta
                     {
                         Tipo = "RESUELVE",
                         PuedeResponder = true,
-                        Respuesta = knowledgeContext.SuggestedReply
+                        Respuesta = respuestaConLink
                     };
+                }
+                else
+                {
+                    await TraceDiagAsync($"Paso:AntesResponderAsync:herramientas={herramientas.Count}", idConversacion, ct).ConfigureAwait(false);
+                    result = await asistenteService.ResponderAsync(
+                        config.AsistenteComportamiento, config.AsistenteInformacion, config.AsistentePolitica,
+                        texto, mensajes, fueraDeHorario, esUrgente, knowledgeContext.ConocimientoBase, knowledgeContext.SuggestedReply, contextoCliente,
+                        herramientas, ejecutarHerramientaAsync, token).ConfigureAwait(false);
+                    await TraceDiagAsync($"Paso:DespuesResponderAsync:resultNull={result is null}", idConversacion, ct).ConfigureAwait(false);
+
+                    if ((result is null || string.IsNullOrWhiteSpace(result.Respuesta))
+                        && knowledgeContext.NeedsClarification
+                        && !string.IsNullOrWhiteSpace(knowledgeContext.ClarificationQuestion))
+                    {
+                        result = new ConversacionAsistenteRespuesta
+                        {
+                            Tipo = "ACLARA",
+                            PuedeResponder = false,
+                            Respuesta = knowledgeContext.ClarificationQuestion
+                        };
+                    }
                 }
 
                 var tipo = (result?.Tipo ?? "DERIVA").ToUpperInvariant();
@@ -7345,6 +7444,16 @@ public sealed class ConversacionesService(
                     : "Gracias por tu mensaje. Lo estoy viendo con un compañero y te respondemos en un ratito 🙂";
                 if (usoFallbackBot)
                     tipo = "DERIVA";
+
+                // El bot escala en silencio (nunca manda EscalationHint al cliente), pero deja la
+                // pista en el timeline interno para que el humano que retome sepa que hay
+                // documentación marcada "uso interno" en AlfaKnowledge relacionada con esta consulta.
+                if (usoFallbackBot && !string.IsNullOrWhiteSpace(knowledgeContext.EscalationHint))
+                {
+                    await AddInternalEventCoreAsync(idConversacion,
+                        $"📚 {knowledgeContext.EscalationHint}",
+                        null, null, "AlfaCore", "ALFAKNOWLEDGE", token).ConfigureAwait(false);
+                }
 
                 var businessNow = BusinessNow();
                 if (usoFallbackBot
@@ -7358,6 +7467,7 @@ public sealed class ConversacionesService(
                     return;
                 }
 
+                await TraceDiagAsync($"Paso:AntesSendMessage:tipo={tipo}", idConversacion, ct).ConfigureAwait(false);
                 await SendMessageAsync(new ConversacionSendMessageRequest
                 {
                     IdConversacion = idConversacion,
@@ -7366,6 +7476,7 @@ public sealed class ConversacionesService(
                     UsuarioAccion = "AlfaCore",
                     SistemaAccion = "BOT"
                 }, token).ConfigureAwait(false);
+                await TraceDiagAsync("Paso:DespuesSendMessageOk", idConversacion, ct).ConfigureAwait(false);
 
                 if (tipo == "ACLARA")
                 {
@@ -7665,7 +7776,22 @@ public sealed class ConversacionesService(
             await using (var cn = new SqlConnection(ConnectionString))
             {
                 await cn.OpenAsync(ct);
+                // Si hay un ticket abierto vinculado, un humano ya se hizo cargo de forma asíncrona
+                // (ej. "lo vamos a analizar y te avisamos") -- el cliente no está siendo ignorado, así
+                // que el aviso de "¿seguís ahí?" y el cierre automático no aplican mientras ese ticket
+                // siga abierto.
                 const string sql = """
+                    DECLARE @ConTicketAbierto TABLE (IdConversacion bigint NOT NULL PRIMARY KEY);
+                    IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
+                    BEGIN
+                        INSERT INTO @ConTicketAbierto (IdConversacion)
+                        SELECT DISTINCT tk.IdConversacion
+                        FROM dbo.TICK_TICKETS tk
+                        INNER JOIN dbo.TICK_ESTADOS te ON te.CodigoEstado = tk.CodigoEstado
+                        WHERE tk.IdConversacion IS NOT NULL
+                          AND ISNULL(te.EsCerrado, 0) = 0;
+                    END
+
                     SELECT TOP (200) c.IdConversacion, ISNULL(c.Canal, '') AS Canal, m.SistemaAutor
                     FROM dbo.CONV_CONVERSACIONES c
                     INNER JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
@@ -7678,6 +7804,7 @@ public sealed class ConversacionesService(
                     WHERE ISNULL(c.Archivada, 0) = 0
                       AND ISNULL(e.EsCerrado, 0) = 0
                       AND m.Direction = N'SALIENTE'
+                      AND NOT EXISTS (SELECT 1 FROM @ConTicketAbierto tk WHERE tk.IdConversacion = c.IdConversacion)
                       AND (
                             (m.SistemaAutor <> N'AUTOCIERRE_AVISO' AND m.FechaHora <= DATEADD(hour, -@HorasAviso, GETDATE()))
                          OR (m.SistemaAutor =  N'AUTOCIERRE_AVISO' AND m.FechaHora <= DATEADD(hour, -@HorasCierre, GETDATE()))
@@ -8076,6 +8203,20 @@ public sealed class ConversacionesService(
         public bool HasSufficientContext { get; init; }
         public bool NeedsClarification { get; init; }
         public string ClarificationQuestion { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Nota SOLO para uso interno (nunca se envía al cliente): AlfaKnowledge la llena cuando la
+        /// mejor fuente para esta consulta estaba marcada "uso interno únicamente" y por eso no se
+        /// pudo usar en la respuesta. Se deja registrada como nota interna de la conversación para
+        /// que un humano la revise en AlfaKnowledge con su propio usuario.
+        /// </summary>
+        public string EscalationHint { get; init; } = string.Empty;
+
+        /// <summary>
+        /// URL pública real (no un link interno de AlfaKnowledge) de la mejor cita, si hay una. Se
+        /// adjunta al enviarle SuggestedReply directo al cliente -- ver ObtenerConocimientoBaseAsync.
+        /// </summary>
+        public string LinkPublico { get; init; } = string.Empty;
     }
 
     // Recupera de AlfaKnowledge tanto los fragmentos relevantes como la sugerencia directa. Así el
@@ -8106,13 +8247,24 @@ public sealed class ConversacionesService(
                 sb.AppendLine();
             }
 
+            // AlfaKnowledge redacta suggestedReply pensando en un técnico que la revisa y, si hace
+            // falta, agrega el link de la cita a mano desde su propio chat (ahí las citas se muestran
+            // como chips aparte). Acá no hay técnico en el medio -- si no se adjunta el link ahora, se
+            // pierde: el cliente se queda con una respuesta genérica sin la fuente real.
+            var linkPublico = ak.Citations
+                .OrderByDescending(c => c.Score)
+                .Select(c => alfaKnowledgeService.TryGetPublicCitationUrl(c))
+                .FirstOrDefault(url => !string.IsNullOrWhiteSpace(url)) ?? string.Empty;
+
             return new AsistenteKnowledgeContext
             {
                 ConocimientoBase = sb.ToString().Trim(),
                 SuggestedReply = (ak.SuggestedReply ?? string.Empty).Trim(),
                 HasSufficientContext = ak.HasSufficientContext,
                 NeedsClarification = ak.NeedsClarification,
-                ClarificationQuestion = (ak.ClarificationQuestion ?? string.Empty).Trim()
+                ClarificationQuestion = (ak.ClarificationQuestion ?? string.Empty).Trim(),
+                EscalationHint = (ak.EscalationHint ?? string.Empty).Trim(),
+                LinkPublico = linkPublico
             };
         }
         catch (Exception ex)
@@ -8157,7 +8309,23 @@ public sealed class ConversacionesService(
 
     private async Task<IReadOnlyList<ConversacionMensajeDto>> GetRecentMessagesForBotAsync(long idConversacion, CancellationToken ct)
     {
+        // Si la conversación se cerró y después se reabrió (un cliente nuevo escribe tiempo después),
+        // FechaHoraCierre ya quedó en NULL para ese momento (se limpia al reabrir -- ver
+        // RefreshConversationAsync/ReopenClosedConversationsWithIncomingAfterCloseAsync), así que no
+        // sirve para acotar el historial. En cambio, el cierre siempre deja un evento de sistema
+        // ("... cerró la conversación.") en CONV_MENSAJES -- se usa ESE como corte: todo lo anterior al
+        // último cierre es una consulta ya resuelta y no debe mezclarse con la conversación nueva (el
+        // bot llegó a responder una pregunta vieja de antes del cierre en vez del saludo actual).
         const string sql = """
+            DECLARE @UltimoCierre datetime = (
+                SELECT MAX(FechaHora)
+                FROM dbo.CONV_MENSAJES
+                WHERE IdConversacion = @Id
+                  AND Direction = N'NOTA_INTERNA'
+                  AND MessageType = N'SYSTEM'
+                  AND (Texto LIKE N'%cerrÃ³ la conversaciÃ³n%' OR Texto LIKE N'%cerro la conversacion%')
+            );
+
             SELECT TOP (40)
                 ISNULL(Direction, '') AS Direction,
                 ISNULL(CAST(Texto AS nvarchar(max)), '') AS Texto,
@@ -8166,6 +8334,7 @@ public sealed class ConversacionesService(
             WHERE IdConversacion = @Id
               AND Direction IN (N'ENTRANTE', N'SALIENTE')
               AND ISNULL(CAST(Texto AS nvarchar(max)), '') <> ''
+              AND (@UltimoCierre IS NULL OR FechaHora > @UltimoCierre)
             ORDER BY FechaHora DESC, IdMensaje DESC;
             """;
         var result = new List<ConversacionMensajeDto>();
@@ -8238,6 +8407,32 @@ public sealed class ConversacionesService(
         return result is not null;
     }
 
+    // DIAGNÓSTICO TEMPORAL (retirar una vez encontrada la causa de las respuestas silenciosas del
+    // bot): escribe directo a AUX_ERR por SQL, sin pasar por AppEventService/el archivo .jsonl -- ese
+    // archivo pierde escrituras por una condición de carrera cuando varios procesos escriben a la vez
+    // (confirmado en producción, "the file is being used by another process"), lo que hacía
+    // indistinguible "no se ejecutó este paso" de "se ejecutó pero el log se perdió". Esto no debería
+    // fallar nunca (columna Error es NOT NULL en AUX_ERR, se manda -1 como valor sin significado); si
+    // aun así falla, se traga el error para no romper el flujo real por un problema de diagnóstico.
+    private async Task TraceDiagAsync(string paso, long idConversacion, CancellationToken ct)
+    {
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct).ConfigureAwait(false);
+            await using var cmd = new SqlCommand(
+                "INSERT INTO dbo.AUX_ERR (Proceso, Fecha, Error, Descripcion, Usuario) VALUES (@Proceso, GETDATE(), -1, @Descripcion, N'DIAG');",
+                cn);
+            cmd.Parameters.AddWithValue("@Proceso", "Conversaciones.TraceDiag");
+            cmd.Parameters.AddWithValue("@Descripcion", $"{paso} | idConversacion={idConversacion}");
+            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Best-effort: un fallo acá nunca debe interrumpir el flujo real.
+        }
+    }
+
     private async Task RunWithConversationAutomationLockAsync(
         long idConversacion,
         string motivo,
@@ -8253,6 +8448,7 @@ public sealed class ConversacionesService(
         var lockResult = await AcquireApplicationLockAsync(cn, resource, ct).ConfigureAwait(false);
         if (lockResult < 0)
         {
+            await TraceDiagAsync($"LockSkip:{motivo}:lockResult={lockResult}", idConversacion, ct).ConfigureAwait(false);
             await _appEvents.LogAuditAsync(
                 "Conversaciones", "AutomationLockSkipped", "CONV_CONVERSACIONES",
                 idConversacion.ToString(CultureInfo.InvariantCulture),
@@ -8660,7 +8856,18 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@Sistema", normalizedSystem);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
         if (!await rd.ReadAsync(ct))
+        {
+            // dbo.CONV_MENSAJES tiene un CHECK (CK_CONV_MENSAJES_UsuarioAutor) que exige que
+            // UsuarioAutor y SistemaAutor sean los DOS NULL o los DOS con valor -- no se puede
+            // vaciar uno solo. Sumado a que UsuarioAutor tiene una FOREIGN KEY contra TA_USUARIOS
+            // (no puede llevar un valor inventado como "AlfaCore" que no existe ahí), la única
+            // combinación segura cuando el par no matchea un usuario legacy real es vaciar los DOS.
+            // (Se intentó preservar solo Sistema para destrabar el tope de respuestas/guardarraíl
+            // anti-repetición -- rompió el INSERT en producción por el CHECK. Revertido: para que
+            // SistemaAutor identifique mensajes automáticos hace falta una columna nueva, dedicada,
+            // no reusar este par legacy.)
             return (string.Empty, string.Empty);
+        }
 
         return (GetString(rd, 0), GetString(rd, 1));
     }
@@ -9277,6 +9484,7 @@ public sealed class ConversacionesService(
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
         using var response = await client.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
@@ -9291,6 +9499,12 @@ public sealed class ConversacionesService(
             PayloadJson = responseBody
         };
     }
+
+    // Sin esto, HttpClient usa su default de 100s -- si la API de Meta/Mercado Libre responde lento,
+    // el request del webhook (y el bot que espera adentro) queda bloqueado ese tiempo entero sin dar
+    // ninguna señal de error. Visto en producción: un mensaje del bot que quedó en "Pendiente" sin
+    // confirmar éxito ni error.
+    private static readonly TimeSpan MetaSendTimeout = TimeSpan.FromSeconds(30);
 
     private async Task<WhatsAppSendResult> SendToInstagramAsync(
         ConversacionInstagramConfigDto config,
@@ -9312,6 +9526,7 @@ public sealed class ConversacionesService(
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
         using var response = await client.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
@@ -9347,6 +9562,7 @@ public sealed class ConversacionesService(
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
         using var response = await client.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
@@ -9389,6 +9605,7 @@ public sealed class ConversacionesService(
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
         using var response = await client.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 

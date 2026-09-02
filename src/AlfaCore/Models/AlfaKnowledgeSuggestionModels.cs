@@ -49,6 +49,15 @@ public sealed class AlfaKnowledgeSuggestionResult
     public bool HasSufficientContext { get; set; }
     public bool ImageAnalyzed { get; set; }
     public string? ImageContext { get; set; }
+
+    /// <summary>
+    /// Nota SOLO para el humano que revisa esta sugerencia (técnico de soporte) -- nunca debe
+    /// mandarse tal cual al cliente. Se llena cuando la mejor fuente encontrada para la consulta
+    /// estaba marcada "uso interno únicamente" en AlfaKnowledge y por eso no se pudo usar para
+    /// responder. Null en cualquier otro caso.
+    /// </summary>
+    public string? EscalationHint { get; set; }
+
     public List<AlfaKnowledgeSuggestionCitation> Citations { get; set; } = [];
 }
 
