@@ -28,7 +28,7 @@ public sealed class AlfaKnowledgeSuggestionService(
         }
     }
 
-    public string GetCitationUrl(AlfaKnowledgeSuggestionCitation citation)
+    public string? TryGetPublicCitationUrl(AlfaKnowledgeSuggestionCitation citation)
     {
         var sourceReference = citation.SourceReference?.Trim();
         if (Uri.TryCreate(sourceReference, UriKind.Absolute, out var sourceUri)
@@ -37,6 +37,16 @@ public sealed class AlfaKnowledgeSuggestionService(
             return sourceUri.AbsoluteUri;
         }
 
+        return null;
+    }
+
+    public string GetCitationUrl(AlfaKnowledgeSuggestionCitation citation)
+    {
+        var publicUrl = TryGetPublicCitationUrl(citation);
+        if (publicUrl is not null)
+            return publicUrl;
+
+        var sourceReference = citation.SourceReference?.Trim();
         var baseUrl = FullChatUrl.TrimEnd('/');
         if (string.Equals(citation.SourceType, "WordFile", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(sourceReference))

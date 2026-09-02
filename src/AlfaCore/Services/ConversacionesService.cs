@@ -7401,11 +7401,18 @@ public sealed class ConversacionesService(
                 ConversacionAsistenteRespuesta? result;
                 if (resueltoSoloPorKnowledge)
                 {
+                    var respuestaConLink = knowledgeContext.SuggestedReply;
+                    if (!string.IsNullOrWhiteSpace(knowledgeContext.LinkPublico)
+                        && !respuestaConLink.Contains(knowledgeContext.LinkPublico, StringComparison.OrdinalIgnoreCase))
+                    {
+                        respuestaConLink = $"{respuestaConLink}\n\n{knowledgeContext.LinkPublico}";
+                    }
+
                     result = new ConversacionAsistenteRespuesta
                     {
                         Tipo = "RESUELVE",
                         PuedeResponder = true,
-                        Respuesta = knowledgeContext.SuggestedReply
+                        Respuesta = respuestaConLink
                     };
                 }
                 else
@@ -8204,6 +8211,12 @@ public sealed class ConversacionesService(
         /// que un humano la revise en AlfaKnowledge con su propio usuario.
         /// </summary>
         public string EscalationHint { get; init; } = string.Empty;
+
+        /// <summary>
+        /// URL pública real (no un link interno de AlfaKnowledge) de la mejor cita, si hay una. Se
+        /// adjunta al enviarle SuggestedReply directo al cliente -- ver ObtenerConocimientoBaseAsync.
+        /// </summary>
+        public string LinkPublico { get; init; } = string.Empty;
     }
 
     // Recupera de AlfaKnowledge tanto los fragmentos relevantes como la sugerencia directa. Así el
@@ -8234,6 +8247,15 @@ public sealed class ConversacionesService(
                 sb.AppendLine();
             }
 
+            // AlfaKnowledge redacta suggestedReply pensando en un técnico que la revisa y, si hace
+            // falta, agrega el link de la cita a mano desde su propio chat (ahí las citas se muestran
+            // como chips aparte). Acá no hay técnico en el medio -- si no se adjunta el link ahora, se
+            // pierde: el cliente se queda con una respuesta genérica sin la fuente real.
+            var linkPublico = ak.Citations
+                .OrderByDescending(c => c.Score)
+                .Select(c => alfaKnowledgeService.TryGetPublicCitationUrl(c))
+                .FirstOrDefault(url => !string.IsNullOrWhiteSpace(url)) ?? string.Empty;
+
             return new AsistenteKnowledgeContext
             {
                 ConocimientoBase = sb.ToString().Trim(),
@@ -8241,7 +8263,8 @@ public sealed class ConversacionesService(
                 HasSufficientContext = ak.HasSufficientContext,
                 NeedsClarification = ak.NeedsClarification,
                 ClarificationQuestion = (ak.ClarificationQuestion ?? string.Empty).Trim(),
-                EscalationHint = (ak.EscalationHint ?? string.Empty).Trim()
+                EscalationHint = (ak.EscalationHint ?? string.Empty).Trim(),
+                LinkPublico = linkPublico
             };
         }
         catch (Exception ex)
