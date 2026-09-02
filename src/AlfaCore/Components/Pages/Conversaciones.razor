@@ -4117,6 +4117,13 @@
     {
         if (firstRender)
         {
+            // Se reafirma acá (no solo en OnInitializedAsync): si se navega desde otra pantalla
+            // AlfaDesign (ej. Configuración), el Dispose() de esa página anterior -- que hace
+            // PageHeader.Clear() -- puede correr DESPUÉS del OnInitializedAsync de esta, pisando el
+            // header recién seteado y dejando visible la barra de acciones/tab activo de la pantalla
+            // vieja. OnAfterRenderAsync corre estrictamente después de ese commit de render, así que
+            // volver a setearlo acá gana la carrera de forma confiable.
+            UpdatePageHeader();
             try
             {
                 await JS.InvokeVoidAsync("conversacionesUi.bindColumnResizers", "conversations-page");
