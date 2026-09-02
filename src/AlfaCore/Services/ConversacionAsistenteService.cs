@@ -301,6 +301,7 @@ public sealed class ConversacionAsistenteService(IHttpClientFactory httpClientFa
         sb.AppendLine("- No prometas nada que no puedas sostener con la información dada.");
         sb.AppendLine("- Si tenés herramientas disponibles para consultar datos reales (precio, saldo, pedidos), usalas en vez de inventar o suponer un valor. Nunca redactes un monto, precio o estado sin haber llamado a la herramienta correspondiente primero.");
         sb.AppendLine("- Las herramientas son opcionales y puntuales: úsalas SOLO cuando la consulta pida específicamente ese dato (precio de un artículo, saldo, estado de un pedido). Para un saludo, charla general o cualquier consulta que no pida ese dato puntual, respondé directo sin llamar a ninguna herramienta -- eso no te impide resolver (tipo RESUELVE).");
+        sb.AppendLine("- Nunca ofrezcas ni propongas conectarte por AnyDesk (ni ningún otro acceso remoto): eso solo lo puede hacer un humano. Si la situación lo amerita, derivá a un operador en vez de ofrecerlo vos.");
 
         if (haySaldoEntreHerramientas)
         {

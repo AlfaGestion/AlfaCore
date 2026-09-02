@@ -8270,7 +8270,23 @@ public sealed class ConversacionesService(
 
     private async Task<IReadOnlyList<ConversacionMensajeDto>> GetRecentMessagesForBotAsync(long idConversacion, CancellationToken ct)
     {
+        // Si la conversación se cerró y después se reabrió (un cliente nuevo escribe tiempo después),
+        // FechaHoraCierre ya quedó en NULL para ese momento (se limpia al reabrir -- ver
+        // RefreshConversationAsync/ReopenClosedConversationsWithIncomingAfterCloseAsync), así que no
+        // sirve para acotar el historial. En cambio, el cierre siempre deja un evento de sistema
+        // ("... cerró la conversación.") en CONV_MENSAJES -- se usa ESE como corte: todo lo anterior al
+        // último cierre es una consulta ya resuelta y no debe mezclarse con la conversación nueva (el
+        // bot llegó a responder una pregunta vieja de antes del cierre en vez del saludo actual).
         const string sql = """
+            DECLARE @UltimoCierre datetime = (
+                SELECT MAX(FechaHora)
+                FROM dbo.CONV_MENSAJES
+                WHERE IdConversacion = @Id
+                  AND Direction = N'NOTA_INTERNA'
+                  AND MessageType = N'SYSTEM'
+                  AND (Texto LIKE N'%cerrÃ³ la conversaciÃ³n%' OR Texto LIKE N'%cerro la conversacion%')
+            );
+
             SELECT TOP (40)
                 ISNULL(Direction, '') AS Direction,
                 ISNULL(CAST(Texto AS nvarchar(max)), '') AS Texto,
@@ -8279,6 +8295,7 @@ public sealed class ConversacionesService(
             WHERE IdConversacion = @Id
               AND Direction IN (N'ENTRANTE', N'SALIENTE')
               AND ISNULL(CAST(Texto AS nvarchar(max)), '') <> ''
+              AND (@UltimoCierre IS NULL OR FechaHora > @UltimoCierre)
             ORDER BY FechaHora DESC, IdMensaje DESC;
             """;
         var result = new List<ConversacionMensajeDto>();
