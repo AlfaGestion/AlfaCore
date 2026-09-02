@@ -5,6 +5,13 @@
     window.__alfaCoreReconnectModalInitialized = true;
     window.__alfaCoreReconnectReloadTimer = window.__alfaCoreReconnectReloadTimer || null;
 
+    // Blazor maneja este modal en forma nativa poniendo/sacando clases CSS
+    // (components-reconnect-show / -paused / -failed / -rejected) sobre el propio
+    // elemento #components-reconnect-modal — no dispara ningún evento personalizado.
+    // Por eso todo esto se resuelve observando la clase real del elemento, en vez de
+    // esperar un evento que Blazor nunca emite.
+    var STATE_CLASSES = ['show', 'paused', 'failed', 'rejected'];
+
     function getModal() {
         return document.getElementById('components-reconnect-modal');
     }
@@ -14,7 +21,7 @@
     }
 
     function setStatus(modal, message) {
-        const status = getStatusElement(modal);
+        var status = getStatusElement(modal);
         if (status)
             status.textContent = message;
     }
@@ -46,73 +53,59 @@
         window.location.reload();
     }
 
-    function setVisible(modal, visible) {
-        if (!modal)
-            return;
+    function currentState(modal) {
+        for (var i = 0; i < STATE_CLASSES.length; i++) {
+            if (modal.classList.contains('components-reconnect-' + STATE_CLASSES[i]))
+                return STATE_CLASSES[i];
+        }
 
-        modal.hidden = !visible;
-        modal.setAttribute('aria-hidden', visible ? 'false' : 'true');
+        return 'hide';
     }
 
-    function applyState(state) {
-        const modal = getModal();
-        if (!modal)
-            return;
+    function applyState(modal, state) {
+        modal.setAttribute('aria-hidden', state === 'hide' ? 'true' : 'false');
 
-        const normalizedState = (state || '').toLowerCase();
-        modal.dataset.state = normalizedState;
-
-        if (normalizedState === 'hide') {
+        if (state === 'hide') {
             if (modal.dataset.hadDisconnect === 'true') {
                 setStatus(modal, 'La conexión volvió. Vamos a recargar la página para reactivar los botones.');
                 scheduleReload(250);
             }
 
-            setVisible(modal, false);
             modal.dataset.hadDisconnect = 'false';
             return;
         }
 
         modal.dataset.hadDisconnect = 'true';
-        setVisible(modal, true);
 
-        if (normalizedState === 'show' || normalizedState === 'paused') {
+        if (state === 'show' || state === 'paused') {
             setStatus(modal, 'Reconectando con el servidor. Esperá un momento.');
-        } else if (normalizedState === 'retrying') {
-            setStatus(modal, 'La sesión sigue recuperándose. Reintentamos automáticamente.');
-        } else if (normalizedState === 'failed') {
+        } else if (state === 'failed') {
             setStatus(modal, 'No se pudo reconectar todavía. Vamos a reintentar automáticamente.');
-        } else if (normalizedState === 'rejected') {
-            setStatus(modal, 'La conexión volvió, pero la sesión anterior ya no se puede reutilizar. Hay que recargar.');
-        } else {
-            setStatus(modal, 'Reconectando con el servidor. Esperá un momento.');
-        }
-
-        if (normalizedState === 'failed') {
             window.setTimeout(tryReconnect, 250);
-        }
-
-        if (normalizedState === 'rejected') {
-            const reloadButton = modal.querySelector('[data-reconnect-action="reload"]');
-            if (reloadButton && typeof reloadButton.focus === 'function') {
-                window.setTimeout(() => reloadButton.focus({ preventScroll: true }), 0);
-            }
+        } else if (state === 'rejected') {
+            // El servidor descartó el circuito (reinicio, deploy, crash): no hay sesión que
+            // reconectar, así que en vez de esperar a que el usuario note el cartel y apriete
+            // "Recargar", recargamos solos después de darle un instante para leer el mensaje.
+            setStatus(modal, 'La sesión anterior ya no está disponible. Vamos a recargar la página automáticamente...');
+            var reloadButton = modal.querySelector('[data-reconnect-action="reload"]');
+            if (reloadButton && typeof reloadButton.focus === 'function')
+                window.setTimeout(function () { reloadButton.focus({ preventScroll: true }); }, 0);
+            scheduleReload(2000);
         }
     }
 
     function bindModal() {
-        const modal = getModal();
+        var modal = getModal();
         if (!modal || modal.dataset.reconnectWired === 'true')
             return;
 
         modal.dataset.reconnectWired = 'true';
         modal.dataset.hadDisconnect = 'false';
-        setVisible(modal, false);
         setStatus(modal, 'Preparando la reconexión...');
         clearReloadTimer();
 
-        const retryButton = modal.querySelector('[data-reconnect-action="retry"]');
-        const reloadButton = modal.querySelector('[data-reconnect-action="reload"]');
+        var retryButton = modal.querySelector('[data-reconnect-action="retry"]');
+        var reloadButton = modal.querySelector('[data-reconnect-action="reload"]');
 
         if (retryButton) {
             retryButton.addEventListener('click', function () {
@@ -128,12 +121,16 @@
             });
         }
 
-        modal.addEventListener('components-reconnect-state-changed', function (event) {
-            applyState(event.detail && event.detail.state);
+        var observer = new MutationObserver(function () {
+            applyState(modal, currentState(modal));
         });
+        observer.observe(modal, { attributes: true, attributeFilter: ['class'] });
+
+        // Estado inicial (por si Blazor ya puso una clase antes de que este script corriera).
+        applyState(modal, currentState(modal));
 
         window.addEventListener('online', function () {
-            if (modal.hidden)
+            if (currentState(modal) === 'hide')
                 return;
 
             setStatus(modal, 'Volvió la conexión. Estamos recuperando la sesión...');
@@ -141,7 +138,7 @@
         });
 
         window.addEventListener('focus', function () {
-            if (modal.hidden)
+            if (currentState(modal) === 'hide')
                 return;
 
             setStatus(modal, 'La ventana volvió al frente. Reintentando conexión...');

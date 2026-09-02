@@ -67,10 +67,6 @@ h1:focus {
     color: #e2e8f0;
 }
 
-.app-reconnect-modal[hidden] {
-    display: none !important;
-}
-
 .app-reconnect-modal__card {
     width: min(100%, 540px);
     padding: 1.25rem 1.25rem 1.1rem;
