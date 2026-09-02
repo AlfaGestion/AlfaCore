@@ -7769,7 +7769,22 @@ public sealed class ConversacionesService(
             await using (var cn = new SqlConnection(ConnectionString))
             {
                 await cn.OpenAsync(ct);
+                // Si hay un ticket abierto vinculado, un humano ya se hizo cargo de forma asíncrona
+                // (ej. "lo vamos a analizar y te avisamos") -- el cliente no está siendo ignorado, así
+                // que el aviso de "¿seguís ahí?" y el cierre automático no aplican mientras ese ticket
+                // siga abierto.
                 const string sql = """
+                    DECLARE @ConTicketAbierto TABLE (IdConversacion bigint NOT NULL PRIMARY KEY);
+                    IF OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
+                    BEGIN
+                        INSERT INTO @ConTicketAbierto (IdConversacion)
+                        SELECT DISTINCT tk.IdConversacion
+                        FROM dbo.TICK_TICKETS tk
+                        INNER JOIN dbo.TICK_ESTADOS te ON te.CodigoEstado = tk.CodigoEstado
+                        WHERE tk.IdConversacion IS NOT NULL
+                          AND ISNULL(te.EsCerrado, 0) = 0;
+                    END
+
                     SELECT TOP (200) c.IdConversacion, ISNULL(c.Canal, '') AS Canal, m.SistemaAutor
                     FROM dbo.CONV_CONVERSACIONES c
                     INNER JOIN dbo.CONV_ESTADOS e ON e.CodigoEstado = c.CodigoEstado
@@ -7782,6 +7797,7 @@ public sealed class ConversacionesService(
                     WHERE ISNULL(c.Archivada, 0) = 0
                       AND ISNULL(e.EsCerrado, 0) = 0
                       AND m.Direction = N'SALIENTE'
+                      AND NOT EXISTS (SELECT 1 FROM @ConTicketAbierto tk WHERE tk.IdConversacion = c.IdConversacion)
                       AND (
                             (m.SistemaAutor <> N'AUTOCIERRE_AVISO' AND m.FechaHora <= DATEADD(hour, -@HorasAviso, GETDATE()))
                          OR (m.SistemaAutor =  N'AUTOCIERRE_AVISO' AND m.FechaHora <= DATEADD(hour, -@HorasCierre, GETDATE()))
