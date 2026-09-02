@@ -8046,26 +8046,24 @@ public sealed class ConversacionesService(
     // Saludos de apertura Y cierres/agradecimientos: ninguno de los dos tiene nada que buscar en la
     // base de conocimiento -- un "muchas gracias" al final de una consulta ya resuelta es tan vacío
     // de contenido como un "hola" al principio, y le adjuntaba igual el link de la mejor cita.
-    private static readonly HashSet<string> MensajesSociales = new(StringComparer.OrdinalIgnoreCase)
+    // Comparar contra frases exactas era demasiado frágil (una variante como "hola denuevo" no
+    // matcheaba nada); en cambio, se clasifica por PALABRA: si TODAS las palabras del mensaje son de
+    // relleno social (sin acentos, listadas abajo), no hay contenido real que buscar. Cualquier
+    // palabra fuera de esta lista ("factura", "stock", etc.) ya lo saca de esta clasificación.
+    private static readonly HashSet<string> PalabrasSocialesRelleno = new(StringComparer.OrdinalIgnoreCase)
     {
-        "hola", "holis", "holaa", "holaaa", "buenas", "buen dia", "buen día",
-        "buenos dias", "buenos días", "buenas tardes", "buenas noches",
-        "que tal", "qué tal", "hey", "hi", "buenass",
-        "gracias", "muchas gracias", "muchisimas gracias", "muchísimas gracias",
-        "mil gracias", "gracias totales", "genial gracias", "perfecto gracias",
-        "dale gracias", "ok gracias", "listo gracias", "buenisimo gracias",
-        "excelente gracias", "gracias!", "genial", "perfecto", "buenisimo",
-        "buenísimo", "excelente", "joya", "barbaro", "bárbaro", "dale", "ok",
-        "listo", "de nada"
+        "hola", "holis", "buenas", "buenos", "dias", "dia", "tardes", "noches",
+        "tal", "hey", "hi", "que", "de", "nuevo", "denuevo", "otra", "vez",
+        "gracias", "mil", "muchas", "muchisimas", "totales", "genial", "perfecto",
+        "buenisimo", "excelente", "dale", "ok", "okay", "listo", "joya", "barbaro",
+        "nada", "bien", "todo", "vos", "y", "che", "buen"
     };
 
-    // Compara exacto (no "empieza con") a propósito: "hola necesito ayuda con..." o "gracias, pero
-    // además..." tienen contenido real que sí vale la pena buscar en la base de conocimiento; solo
-    // el mensaje social pelado no.
     private static bool EsMensajeSocial(string texto)
     {
-        var t = (texto ?? string.Empty).Trim().Trim('.', '!', '?', '¡', '¿', ',', ' ');
-        return MensajesSociales.Contains(t);
+        var normalizado = RemoveDiacritics(texto).ToLowerInvariant();
+        var palabras = Regex.Matches(normalizado, "[a-z]+").Select(m => m.Value).ToArray();
+        return palabras.Length > 0 && palabras.All(PalabrasSocialesRelleno.Contains);
     }
 
     private static string ConstruirContextoCliente(string rubro, bool esPrioritario)
