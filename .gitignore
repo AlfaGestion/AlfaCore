@@ -73,6 +73,9 @@ publish/
 scripts/publish/
 Instalador/AlfaCore/
 
+# Carpeta de salida accidental de un "dotnet publish" mal tipeado (quedó literal "=" en la raíz)
+/=/
+
 # Capturas locales de validación de Fase 3
 artifacts/
 
