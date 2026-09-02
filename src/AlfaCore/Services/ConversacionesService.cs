@@ -7379,7 +7379,11 @@ public sealed class ConversacionesService(
                         asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
                     : null;
 
-                var usaKnowledge = config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
+                // Un saludo suelto no tiene nada que buscar -- consultarlo igual en AlfaKnowledge
+                // puede traer una cita débil (ej. la página de presentación del bot) que después se
+                // le adjunta como link al cliente, aunque no preguntó nada. Se deja resolver por
+                // OpenAI directo, que ya sabe responder un saludo sin inventar un link.
+                var usaKnowledge = !EsSaludoSimple(texto) && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
                 await TraceDiagAsync($"Paso:AntesKnowledge:usaKnowledge={usaKnowledge}", idConversacion, ct).ConfigureAwait(false);
                 var knowledgeContext = usaKnowledge
                     ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
@@ -8037,6 +8041,21 @@ public sealed class ConversacionesService(
     {
         var t = (texto ?? string.Empty).Trim();
         return t.Length <= max ? t : t[..max] + "…";
+    }
+
+    private static readonly HashSet<string> SaludosSimples = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "hola", "holis", "holaa", "holaaa", "buenas", "buen dia", "buen día",
+        "buenos dias", "buenos días", "buenas tardes", "buenas noches",
+        "que tal", "qué tal", "hey", "hi", "buenass"
+    };
+
+    // Compara exacto (no "empieza con") a propósito: "hola necesito ayuda con..." tiene contenido
+    // real que sí vale la pena buscar en la base de conocimiento; solo el saludo pelado no.
+    private static bool EsSaludoSimple(string texto)
+    {
+        var t = (texto ?? string.Empty).Trim().Trim('.', '!', '?', '¡', '¿', ',', ' ');
+        return SaludosSimples.Contains(t);
     }
 
     private static string ConstruirContextoCliente(string rubro, bool esPrioritario)
