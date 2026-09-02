@@ -7379,11 +7379,11 @@ public sealed class ConversacionesService(
                         asistenteHerramientasService.EjecutarAsync(nombreHerramienta, argumentosJson, cuentaVinculada, ctHerramienta)
                     : null;
 
-                // Un saludo suelto no tiene nada que buscar -- consultarlo igual en AlfaKnowledge
-                // puede traer una cita débil (ej. la página de presentación del bot) que después se
-                // le adjunta como link al cliente, aunque no preguntó nada. Se deja resolver por
-                // OpenAI directo, que ya sabe responder un saludo sin inventar un link.
-                var usaKnowledge = !EsSaludoSimple(texto) && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
+                // Un saludo o un cierre/agradecimiento suelto no tiene nada que buscar -- consultarlo
+                // igual en AlfaKnowledge puede traer una cita débil (ej. la página de presentación del
+                // bot) que después se le adjunta como link al cliente, aunque no preguntó nada. Se deja
+                // resolver por OpenAI directo, que ya sabe responder sin inventar un link.
+                var usaKnowledge = !EsMensajeSocial(texto) && config.AsistenteUsaKnowledge && alfaKnowledgeService.IsConfigured;
                 await TraceDiagAsync($"Paso:AntesKnowledge:usaKnowledge={usaKnowledge}", idConversacion, ct).ConfigureAwait(false);
                 var knowledgeContext = usaKnowledge
                     ? await ObtenerConocimientoBaseAsync(texto, mensajes, idConversacion, token).ConfigureAwait(false)
@@ -8043,19 +8043,29 @@ public sealed class ConversacionesService(
         return t.Length <= max ? t : t[..max] + "…";
     }
 
-    private static readonly HashSet<string> SaludosSimples = new(StringComparer.OrdinalIgnoreCase)
+    // Saludos de apertura Y cierres/agradecimientos: ninguno de los dos tiene nada que buscar en la
+    // base de conocimiento -- un "muchas gracias" al final de una consulta ya resuelta es tan vacío
+    // de contenido como un "hola" al principio, y le adjuntaba igual el link de la mejor cita.
+    private static readonly HashSet<string> MensajesSociales = new(StringComparer.OrdinalIgnoreCase)
     {
         "hola", "holis", "holaa", "holaaa", "buenas", "buen dia", "buen día",
         "buenos dias", "buenos días", "buenas tardes", "buenas noches",
-        "que tal", "qué tal", "hey", "hi", "buenass"
+        "que tal", "qué tal", "hey", "hi", "buenass",
+        "gracias", "muchas gracias", "muchisimas gracias", "muchísimas gracias",
+        "mil gracias", "gracias totales", "genial gracias", "perfecto gracias",
+        "dale gracias", "ok gracias", "listo gracias", "buenisimo gracias",
+        "excelente gracias", "gracias!", "genial", "perfecto", "buenisimo",
+        "buenísimo", "excelente", "joya", "barbaro", "bárbaro", "dale", "ok",
+        "listo", "de nada"
     };
 
-    // Compara exacto (no "empieza con") a propósito: "hola necesito ayuda con..." tiene contenido
-    // real que sí vale la pena buscar en la base de conocimiento; solo el saludo pelado no.
-    private static bool EsSaludoSimple(string texto)
+    // Compara exacto (no "empieza con") a propósito: "hola necesito ayuda con..." o "gracias, pero
+    // además..." tienen contenido real que sí vale la pena buscar en la base de conocimiento; solo
+    // el mensaje social pelado no.
+    private static bool EsMensajeSocial(string texto)
     {
         var t = (texto ?? string.Empty).Trim().Trim('.', '!', '?', '¡', '¿', ',', ' ');
-        return SaludosSimples.Contains(t);
+        return MensajesSociales.Contains(t);
     }
 
     private static string ConstruirContextoCliente(string rubro, bool esPrioritario)
