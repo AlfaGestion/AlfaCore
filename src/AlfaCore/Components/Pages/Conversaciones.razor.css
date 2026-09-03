@@ -1,13 +1,24 @@
-/* Ancla la raíz de la pantalla al nuevo shell AlfaDesign (barra superior en vez del sidebar
-   lateral): le falta una altura definida para que .shell__content (display:flex) le pase el 100%
-   real en vez de dejar un hueco donde antes estaba el sidebar. A propósito NO se toca "display": la
-   pantalla depende de .conversations-page--odoo { grid-template-rows: auto minmax(0,1fr) !important; }
-   (app.css) para apilar la barra de herramientas (Contexto/Sugerencia IA/etc, fila "auto") arriba de
-   la lista+chat (fila "1fr") -- forzar display:flex acá rompía esa fila y "tapaba" esos botones.
-   .page-grid ya trae width:100% !important; solo falta la altura. */
+/* CAUSA REAL (encontrada con bordes de diagnóstico): .conversations-page--odoo ya tenía, de antes,
+   position:fixed; inset:0 0 0 <ancho-sidebar>px; z-index:25 (ver app.css, keyed a .shell--collapsed /
+   .shell:not(.shell--collapsed)) -- se ancla al viewport desde top:0 para ocupar toda la pantalla,
+   pensado para el sidebar lateral legacy. Con el nuevo alfa-app-topbar (z-index:1910) arriba, ese
+   position:fixed hace que la fila superior de la página (la barra de herramientas Contexto/
+   Sugerencia IA/etc) quede exactamente debajo del topbar, tapada -- ninguno de los ajustes de
+   display/height/overflow tenía efecto porque position:fixed sale del flujo normal por completo.
+   Bajo el shell AlfaDesign no hace falta: .shell__content (display:flex) ya le da un alto real
+   contenido debajo del topbar, así que se vuelve al flujo normal. */
 .shell.shell--alfa-design .conversations-page {
-    height: 100%;
-    min-height: 0;
+    position: static !important;
+    inset: auto !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: auto !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden;
 }
 
 /* .conversations-page es display:grid con dos filas (auto + 1fr, ver app.css), pero

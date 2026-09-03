@@ -1585,13 +1585,21 @@ else
         if (IsLauncherRoute)
             _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
-        // Módulos que setean su propio PageHeader (AlfaDesignPilot) y navegan internamente vía
+        // Páginas que setean su propio PageHeader (AlfaDesignPilot) y navegan internamente vía
         // query string dentro de la misma ruta (ej. Conversaciones: seleccionar un chat cambia
         // ?id=X sin cambiar de componente) -- sin este preservado, cada click volvía a mostrar el
         // sidebar legacy porque este handler corre en CADA cambio de ubicación, incluidos los
         // internos, y limpiaba el header recién seteado por la propia página.
-        var preserveAlfaDesignPilot = (string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
+        // OJO: se compara por RUTA EXACTA (GetEffectiveCurrentPath), no por _currentModule -- este
+        // último es solo el primer segmento ("conversaciones"), compartido por Plantillas/
+        // Estadísticas/Informes, que NUNCA llaman PageHeader.Set() propio. Preservar por módulo
+        // dejaba el header de Conversaciones pegado al navegar a esas otras páginas (topbar
+        // ausente, contenido tapado, o la pestaña "Configuración" marcada activa sin corresponder).
+        var effectivePathForHeader = GetEffectiveCurrentPath().ToLowerInvariant();
+        var isAlfaDesignManagedPage = string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(effectivePathForHeader, "conversaciones", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(effectivePathForHeader, "conversaciones/configuracion", StringComparison.OrdinalIgnoreCase);
+        var preserveAlfaDesignPilot = isAlfaDesignManagedPage
             && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
         if (!preserveAlfaDesignPilot)
             PageHeader.Clear();
