@@ -1585,9 +1585,15 @@ else
         if (IsLauncherRoute)
             _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
-        var preserveContactosPilot = string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
+        // Módulos que setean su propio PageHeader (AlfaDesignPilot) y navegan internamente vía
+        // query string dentro de la misma ruta (ej. Conversaciones: seleccionar un chat cambia
+        // ?id=X sin cambiar de componente) -- sin este preservado, cada click volvía a mostrar el
+        // sidebar legacy porque este handler corre en CADA cambio de ubicación, incluidos los
+        // internos, y limpiaba el header recién seteado por la propia página.
+        var preserveAlfaDesignPilot = (string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
             && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
-        if (!preserveContactosPilot)
+        if (!preserveAlfaDesignPilot)
             PageHeader.Clear();
         if (EnforceDirectMode())
             return;
