@@ -2785,8 +2785,6 @@
             actions = listActions;
         }
 
-        actions = [.. BuildHistoryActions(), .. actions];
-
         PageHeader.Set(new PageHeaderConfig
         {
             Title = GetContextToolbarTitle(),
@@ -2800,56 +2798,9 @@
             RecordToolbar = IsWhatsAppBusinessView,
             ShowHistoryNavigation = false,
             TopNavigationItems = BuildTopNavigationItems(),
-            OnBack = HeaderNavigation.CanGoBack
-                ? () => RequestNavigationAsync(() =>
-                {
-                    HeaderNavigation.GoBack(Nav);
-                    return Task.CompletedTask;
-                })
-                : null,
-            OnForward = HeaderNavigation.CanGoForward
-                ? () => RequestNavigationAsync(() =>
-                {
-                    HeaderNavigation.GoForward(Nav);
-                    return Task.CompletedTask;
-                })
-                : null,
             Actions = actions
         });
     }
-
-    private IReadOnlyList<PageHeaderAction> BuildHistoryActions()
-        =>
-        [
-            new()
-            {
-                Key = "historial-atras",
-                Label = "Atrás",
-                Icon = "bi-arrow-left",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Essential,
-                Disabled = !HeaderNavigation.CanGoBack,
-                OnClick = () => RequestNavigationAsync(() =>
-                {
-                    HeaderNavigation.GoBack(Nav);
-                    return Task.CompletedTask;
-                })
-            },
-            new()
-            {
-                Key = "historial-adelante",
-                Label = "Adelante",
-                Icon = "bi-arrow-right",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Essential,
-                Disabled = !HeaderNavigation.CanGoForward,
-                OnClick = () => RequestNavigationAsync(() =>
-                {
-                    HeaderNavigation.GoForward(Nav);
-                    return Task.CompletedTask;
-                })
-            }
-        ];
 
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
