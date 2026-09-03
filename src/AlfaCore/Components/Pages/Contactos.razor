@@ -1019,6 +1019,8 @@
         return actions;
     }
 
+    // Usuarios y Configuración se sacaron a pedido: Usuarios es un módulo aparte (no de Contactos), y
+    // Configuración es la de Conversaciones, no tiene nada que ver acá.
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
         =>
         [
@@ -1028,18 +1030,6 @@
                 Label = "Contactos",
                 Url = RouteContext.BuildRoute("/contactos"),
                 Active = true
-            },
-            new()
-            {
-                Key = "usuarios",
-                Label = "Usuarios",
-                Url = RouteContext.BuildRoute("/usuarios")
-            },
-            new()
-            {
-                Key = "configuracion",
-                Label = "Configuración",
-                Url = RouteContext.BuildRoute("/conversaciones/configuracion")
             }
         ];
 

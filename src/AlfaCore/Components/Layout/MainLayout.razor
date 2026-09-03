@@ -835,9 +835,12 @@ else
                             <i class="bi bi-bell"></i>
                         </button>
                     }
-                    <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
-                        <i class="bi bi-gear"></i>
-                    </a>
+                    @if (!string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
+                            <i class="bi bi-gear"></i>
+                        </a>
+                    }
                     <button type="button" class="alfa-app-topbar__chip alfa-app-topbar__chip--base" @onclick="OpenSqlSessionDrawerAsync" title="Base activa">
                         <i class="bi bi-database"></i>
                         <span>@GetActiveBaseShortLabel()</span>
