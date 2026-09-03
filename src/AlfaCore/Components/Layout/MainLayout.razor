@@ -859,7 +859,9 @@ else
         }
 
         <CascadingValue Name="AlfaDesignShellActive" Value="IsAlfaDesignShellActive">
-            <MainPageHeader />
+            <CascadingValue Name="SuppressPageHeader" Value="IsLauncherRoute">
+                <MainPageHeader />
+            </CascadingValue>
         </CascadingValue>
 
         @if (ShouldShowConversationMobilePwaActions)
