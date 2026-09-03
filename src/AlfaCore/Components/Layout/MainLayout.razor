@@ -1365,7 +1365,12 @@ else
         => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase)
            || string.Equals(_currentModule, "catalogo", StringComparison.OrdinalIgnoreCase)
            || string.Equals(_currentModule, "catalogos", StringComparison.OrdinalIgnoreCase);
-    private bool IsAlfaDesignShellActive => PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+    // !IsLauncherRoute es una salvaguarda además del PageHeader.Clear() de OnLocationChanged (no en
+    // vez de): IsLauncherRoute se recalcula en cada acceso a partir de la URL actual, sin depender de
+    // que el Clear() haya ganado la carrera contra el Dispose() de la página AlfaDesign anterior --
+    // si esa carrera se pierde en algún caso no cubierto, Inicio nunca puede quedar con el topbar
+    // pegado de otra pantalla.
+    private bool IsAlfaDesignShellActive => !IsLauncherRoute && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
     private bool ShowSidebar => !UseTopOnlyNavigation && !IsAlfaDesignShellActive && !IsDirectMode;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
