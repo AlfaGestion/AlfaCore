@@ -6570,6 +6570,25 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     box-sizing: border-box;
 }
 
+/* Bajo el shell AlfaDesign (barra superior, z-index alto), este position:fixed pensado para el
+   sidebar lateral legacy queda anclado al viewport desde top:0 -- tapado por esa barra. Aplica a
+   .conversations-page--odoo Y .templates-page--odoo (Plantillas, Estadísticas: ambas comparten esta
+   clase y ninguna gestiona su propio PageHeader) por si el shell llega a quedar en modo AlfaDesign
+   mientras se las ve -- vuelve al flujo normal, contenido por .shell__content (display:flex). */
+.shell.shell--alfa-design .conversations-page--odoo,
+.shell.shell--alfa-design .templates-page--odoo {
+    position: static !important;
+    inset: auto !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: auto !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    padding: 0 !important;
+}
+
 .conversations-page--odoo .conversations-filters,
 .templates-page--odoo > .panel-card {
     border-radius: 0;
