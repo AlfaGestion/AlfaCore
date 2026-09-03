@@ -2785,9 +2785,17 @@
             actions = listActions;
         }
 
+        // El Context Toolbar (Title + Actions) se oculta cuando lo único que tendría para mostrar es
+        // "Recargar" solo -- pedido explícito: esa fila no aporta valor ahí y ocupa una línea entera
+        // de pantalla. Se mantiene en todos los casos con acciones reales (Guardar/Cancelar al editar
+        // -- incluida una Regla en Automatización, no solo WhatsApp --, Editar/Reconectar/Conectar
+        // WhatsApp/Cerrar sesión/Quitar de AlfaCore/Agregar por Phone Number ID). Se inspecciona el
+        // resultado ya calculado en vez de re-derivar la condición, para no perder ningún caso.
+        var hasRealContextActions = actions.Count > 1
+            || (actions.Count == 1 && actions[0].Key != "recargar");
         PageHeader.Set(new PageHeaderConfig
         {
-            Title = GetContextToolbarTitle(),
+            Title = hasRealContextActions ? GetContextToolbarTitle() : string.Empty,
             State = CurrentEditorMode switch
             {
                 SettingsEditorMode.Create => PageHeaderState.Creating,
@@ -2798,7 +2806,7 @@
             RecordToolbar = IsWhatsAppBusinessView,
             ShowHistoryNavigation = false,
             TopNavigationItems = BuildTopNavigationItems(),
-            Actions = actions
+            Actions = hasRealContextActions ? actions : []
         });
     }
 

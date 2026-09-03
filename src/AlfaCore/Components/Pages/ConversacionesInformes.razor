@@ -1,8 +1,11 @@
 @page "/conversaciones/informes"
 @page "/{idweb}/{idbase:int}/conversaciones/informes"
 @inject AlfaCore.Services.IConversacionesInformesService InformesSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject Microsoft.JSInterop.IJSRuntime Js
+@implements IDisposable
 @using AlfaCore.Models
 
 <PageTitle>Informes de conversaciones | Alfa Gestion</PageTitle>
@@ -211,6 +214,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        UpdatePageHeader();
         if (AnioQuery is > 0 && MesQuery is >= 1 and <= 12)
         {
             // Volvemos de un detalle: reabrimos el mismo período.
@@ -226,6 +230,69 @@
         }
         await CargarListaAsync();
         await AutoAbrirPeriodoAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Se reafirma acá (no solo en OnInitializedAsync): si se navega desde otra pantalla
+        // AlfaDesign, el Dispose() de esa página anterior -- que hace PageHeader.Clear() -- puede
+        // correr DESPUÉS del OnInitializedAsync de esta, pisando el header recién seteado.
+        // OnAfterRender corre estrictamente después de ese commit de render, así que volver a
+        // setearlo acá gana esa carrera de forma confiable (mismo patrón que Conversaciones.razor).
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private bool IsDirectMode
+        => Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri)
+           && System.Web.HttpUtility.ParseQueryString(uri.Query)["directo"] == "1";
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = BuildTopNavigationItems()
+        });
+    }
+
+    private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
+    {
+        var items = new List<PageHeaderTopNavItem>
+        {
+            BuildTopNavItem("conversaciones", "Conversaciones", "/conversaciones")
+        };
+
+        if (!IsDirectMode)
+        {
+            items.Add(BuildTopNavItem("contactos", "Contactos", "/contactos"));
+            items.Add(BuildTopNavItem("clientes", "Clientes", "/clientes"));
+        }
+
+        items.Add(BuildTopNavItem("plantillas", "Plantillas", "/conversaciones/plantillas"));
+        items.Add(BuildTopNavItem("configuracion", "Configuración", "/conversaciones/configuracion"));
+        items.Add(BuildTopNavItem("estadisticas", "Estadísticas", "/conversaciones/estadisticas"));
+        items.Add(new() { Key = "informes", Label = "Informes", Url = RouteContext.BuildRoute("/conversaciones/informes"), Active = true });
+
+        return items;
+    }
+
+    private PageHeaderTopNavItem BuildTopNavItem(string key, string label, string route)
+    {
+        var url = RouteContext.BuildRoute(route);
+        return new PageHeaderTopNavItem
+        {
+            Key = key,
+            Label = label,
+            Url = url,
+            OnClick = () =>
+            {
+                Nav.NavigateTo(url);
+                return Task.CompletedTask;
+            }
+        };
     }
 
     // Si ya existe un informe guardado para el período elegido, lo abre solo (sin regenerar).

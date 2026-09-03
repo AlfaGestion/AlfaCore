@@ -1436,6 +1436,18 @@ else
             : string.Empty;
     private IReadOnlyList<ShellMenuSearchItemDto> FilteredMenuSearchResults => GetFilteredMenuSearchResults();
 
+    // Rutas de la familia Conversaciones que configuran su propio PageHeader (AlfaDesignPilot) --
+    // ver el preservado en OnLocationChanged. Cualquier ruta de Conversaciones que NO esté acá cae
+    // a PageHeader.Clear() (shell legacy) en vez de arrastrar el header de la página anterior.
+    private static readonly HashSet<string> AlfaDesignManagedConversacionesPaths = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "conversaciones",
+        "conversaciones/configuracion",
+        "conversaciones/plantillas",
+        "conversaciones/estadisticas",
+        "conversaciones/informes"
+    };
+
     private string _currentModule = string.Empty;
     private string _activeShellModuleKey = string.Empty;
     private string _directModuleKey = string.Empty;
@@ -1597,8 +1609,7 @@ else
         // ausente, contenido tapado, o la pestaña "Configuración" marcada activa sin corresponder).
         var effectivePathForHeader = GetEffectiveCurrentPath().ToLowerInvariant();
         var isAlfaDesignManagedPage = string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(effectivePathForHeader, "conversaciones", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(effectivePathForHeader, "conversaciones/configuracion", StringComparison.OrdinalIgnoreCase);
+            || AlfaDesignManagedConversacionesPaths.Contains(effectivePathForHeader);
         var preserveAlfaDesignPilot = isAlfaDesignManagedPage
             && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
         if (!preserveAlfaDesignPilot)
