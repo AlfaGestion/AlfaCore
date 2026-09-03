@@ -10,6 +10,16 @@
     min-height: 0;
 }
 
+/* .conversations-page es display:grid con dos filas (auto + 1fr, ver app.css), pero
+   .conversations-core-workspace es su ÚNICO hijo directo y nunca declaró ocupar ambas -- antes no
+   importaba porque .conversations-page no tenía una altura definida (el "1fr" no distribuía nada
+   real). Ahora que le dimos altura arriba, la fila "1fr" queda vacía y .conversations-core-workspace
+   se comprime a su alto mínimo de contenido, tapando la barra de herramientas (Contexto/Sugerencia
+   IA/etc) dentro de él. Lo hacemos ocupar las dos filas explícitamente. */
+.shell.shell--alfa-design .conversations-page > .conversations-core-workspace {
+    grid-row: 1 / -1;
+}
+
 .conversations-list,
 .conversations-chat {
     position: relative;
