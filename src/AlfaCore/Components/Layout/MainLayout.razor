@@ -835,7 +835,8 @@ else
                             <i class="bi bi-bell"></i>
                         </button>
                     }
-                    @if (!string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase))
+                    @if (!string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "usuarios", StringComparison.OrdinalIgnoreCase))
                     {
                         <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
                             <i class="bi bi-gear"></i>

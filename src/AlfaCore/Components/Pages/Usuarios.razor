@@ -1327,27 +1327,17 @@
             ? "usuarios-page usuarios-page--editor"
             : "usuarios-page usuarios-page--list";
 
+    // Contactos y Configuración se sacaron a pedido: son de otros módulos (Contactos es aparte, y
+    // Configuración ahí apuntaba a la de Conversaciones) -- ninguna pertenece al menú de Usuarios.
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
         =>
         [
-            new()
-            {
-                Key = "contactos",
-                Label = "Contactos",
-                Url = RouteContext.BuildRoute("/contactos")
-            },
             new()
             {
                 Key = "usuarios",
                 Label = "Usuarios",
                 Url = RouteContext.BuildRoute("/usuarios"),
                 Active = true
-            },
-            new()
-            {
-                Key = "configuracion",
-                Label = "Configuración",
-                Url = RouteContext.BuildRoute("/conversaciones/configuracion")
             }
         ];
 
