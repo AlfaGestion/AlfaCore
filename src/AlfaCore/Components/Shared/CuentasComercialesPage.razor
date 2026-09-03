@@ -230,21 +230,24 @@
 }
 else
 {
-<div class="page-grid" @onclick="HandlePageClickAsync">
-    <section class="page-intro">
-        <div>
-            <h2 class="page-intro__title">@PluralLabel</h2>
-            <p class="page-intro__text">@IntroText</p>
-        </div>
-        <div class="actions">
-            <button type="button" class="btn btn--primary" @onclick="BeginNewAsync">
-                <i class="bi bi-plus-circle"></i> Nuevo @SingularLabelLower
-            </button>
-            <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
-                <i class="bi bi-arrow-clockwise"></i> Recargar
-            </button>
-        </div>
-    </section>
+<div class="page-grid @(Tipo == CuentaComercialTipo.Cliente && _showEditor ? "cuentas-page-grid--cliente-editor" : string.Empty)" @onclick="HandlePageClickAsync">
+    @if (Tipo != CuentaComercialTipo.Cliente || !_showEditor)
+    {
+        <section class="page-intro">
+            <div>
+                <h2 class="page-intro__title">@PluralLabel</h2>
+                <p class="page-intro__text">@IntroText</p>
+            </div>
+            <div class="actions">
+                <button type="button" class="btn btn--primary" @onclick="BeginNewAsync">
+                    <i class="bi bi-plus-circle"></i> Nuevo @SingularLabelLower
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
+                    <i class="bi bi-arrow-clockwise"></i> Recargar
+                </button>
+            </div>
+        </section>
+    }
 
     @if (_feedback is not null)
     {
@@ -269,6 +272,8 @@ else
         </section>
     }
 
+    @if (Tipo != CuentaComercialTipo.Cliente || !_showEditor)
+    {
     <section class="panel-card smart-search-card">
         <div class="smart-search" @onclick:stopPropagation>
             <div class="smart-search__bar">
@@ -345,6 +350,7 @@ else
             }
         </div>
     </section>
+    }
 
     @if (_showViewSettings && !_showEditor)
     {
@@ -402,18 +408,21 @@ else
     @if (_showEditor)
     {
         <section class="panel-card">
-            <div class="panel-card__header">
-                <div>
-                    <h3 class="panel-card__title">@(_isNewMode ? $"Nuevo {SingularLabelLower}" : $"Editar {_form.RazonSocial}")</h3>
-                    <p class="panel-card__subtitle">@(_isNewMode ? $"Cuenta título configurada: {_lookups.TituloCuenta}" : $"Código: {_form.Codigo} · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
+            @if (Tipo != CuentaComercialTipo.Cliente)
+            {
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">@(_isNewMode ? $"Nuevo {SingularLabelLower}" : $"Editar {_form.RazonSocial}")</h3>
+                        <p class="panel-card__subtitle">@(_isNewMode ? $"Cuenta título configurada: {_lookups.TituloCuenta}" : $"Código: {_form.Codigo} · Estado: {(_selectedActivo ? "Activo" : "Inactivo")}")</p>
+                    </div>
+                    <div class="actions">
+                        <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
+                            <i class="bi bi-arrow-left"></i>
+                            <span>Volver al listado</span>
+                        </button>
+                    </div>
                 </div>
-                <div class="actions">
-                    <button type="button" class="btn btn--ghost" @onclick="CerrarEditor" disabled="@_saving">
-                        <i class="bi bi-arrow-left"></i>
-                        <span>Volver al listado</span>
-                    </button>
-                </div>
-            </div>
+            }
 
             <div class="cuentas-partner-summary">
                 <div class="cuentas-partner-summary__avatar @GetAccountAvatarClass()">
@@ -1114,23 +1123,26 @@ else
                     </div>
                 }
 
-                <div class="actions usuarios-editor__actions">
-                    <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
-                        <i class="bi bi-floppy"></i>
-                        <span>@(_saving ? $"Guardando {SingularLabelLower}..." : $"Guardar {SingularLabelLower}")</span>
-                    </button>
-                    <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
-                        <i class="bi bi-eraser"></i>
-                        <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
-                    </button>
-                    @if (!_isNewMode && _selectedActivo)
-                    {
-                        <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
-                            <i class="bi bi-person-dash"></i>
-                            <span>Dar de baja</span>
+                @if (Tipo != CuentaComercialTipo.Cliente)
+                {
+                    <div class="actions usuarios-editor__actions">
+                        <button type="button" class="btn btn--primary" @onclick="GuardarAsync" disabled="@_saving">
+                            <i class="bi bi-floppy"></i>
+                            <span>@(_saving ? $"Guardando {SingularLabelLower}..." : $"Guardar {SingularLabelLower}")</span>
                         </button>
-                    }
-                </div>
+                        <button type="button" class="btn btn--ghost" @onclick="ResetForm" disabled="@_saving">
+                            <i class="bi bi-eraser"></i>
+                            <span>@(_isNewMode ? "Limpiar" : "Revertir")</span>
+                        </button>
+                        @if (!_isNewMode && _selectedActivo)
+                        {
+                            <button type="button" class="btn btn--ghost usuarios-btn-danger" @onclick="DarDeBajaAsync" disabled="@_saving">
+                                <i class="bi bi-person-dash"></i>
+                                <span>Dar de baja</span>
+                            </button>
+                        }
+                    </div>
+                }
 
                 @if (!_isNewMode)
                 {
@@ -2001,10 +2013,52 @@ else
 
         if (_showEditor)
         {
+            var editorActions = new List<PageHeaderAction>
+            {
+                new()
+                {
+                    Key = "guardar",
+                    Label = _saving ? "Guardando..." : "Guardar",
+                    Icon = "bi-floppy",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = _saving,
+                    Busy = _saving,
+                    OnClick = GuardarAsync
+                },
+                new()
+                {
+                    Key = "cancelar",
+                    Label = "Cancelar",
+                    Icon = "bi-x-circle",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = _saving,
+                    OnClick = () => { CerrarEditor(); return Task.CompletedTask; }
+                }
+            };
+            if (!_isNewMode && _selectedActivo)
+            {
+                editorActions.Add(new PageHeaderAction
+                {
+                    Key = "baja",
+                    Label = "Dar de baja",
+                    Icon = "bi-person-dash",
+                    Style = PageHeaderActionStyle.Danger,
+                    Priority = PageHeaderActionPriority.Overflow,
+                    Disabled = _saving,
+                    OnClick = DarDeBajaAsync
+                });
+            }
+
             PageHeader.Set(new PageHeaderConfig
             {
+                Title = _isNewMode ? $"Nuevo {SingularLabelLower}" : $"Editar {_form.RazonSocial}",
+                Breadcrumb = ["Comercial", "Clientes"],
+                State = _saving ? PageHeaderState.Loading : _isNewMode ? PageHeaderState.Creating : PageHeaderState.Editing,
                 ShellMode = PageHeaderShellMode.AlfaDesignPilot,
                 TopNavigationItems = [new() { Key = "clientes", Label = "Clientes", Url = RouteContext.BuildRoute("/clientes"), Active = true }],
+                Actions = editorActions
             });
             return;
         }
@@ -2414,6 +2468,7 @@ else
     {
         ClearFieldErrors();
         _saving = true;
+        UpdatePageHeader();
         try
         {
             try
@@ -2445,6 +2500,7 @@ else
         finally
         {
             _saving = false;
+            UpdatePageHeader();
         }
     }
 
