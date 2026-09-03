@@ -1,13 +1,19 @@
 @page "/conversaciones/informes/detalle/{idDetalle:int}"
 @page "/{idweb}/{idbase:int}/conversaciones/informes/detalle/{idDetalle:int}"
 @inject AlfaCore.Services.IConversacionesInformesService InformesSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
+@implements IDisposable
 @using AlfaCore.Models
 
 <PageTitle>Detalle de informe | Alfa Gestion</PageTitle>
 
 <style>
     .conv-infdet-page { padding: 1.25rem 1.5rem 3rem; max-width: 1100px; margin: 0 auto; }
+    /* Bajo el shell AlfaDesign, .shell__content es display:flex + overflow:hidden y esta página
+       nunca declaraba su propia altura/scroll -- quedaba sin forma de bajar con mouse ni teclado. */
+    .shell.shell--alfa-design .conv-infdet-page { height: 100%; overflow-y: auto; }
     .conv-infdet-head { display: flex; flex-wrap: wrap; gap: .8rem; align-items: center; margin-bottom: .3rem; }
     .conv-infdet-metrics { display: flex; flex-wrap: wrap; gap: .5rem; margin: .6rem 0 1rem; }
     .conv-infdet-metric { background: rgba(148,163,184,.08); border: 1px solid rgba(148,163,184,.16); border-radius: 8px; padding: .35rem .7rem; font-size: .8rem; }
@@ -137,6 +143,56 @@
     private string? _error;
     private string? _feedback;
     private bool _feedbackOk;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Se reafirma acá (no solo en OnInitialized): si se navega desde otra pantalla AlfaDesign,
+        // el Dispose() de esa página anterior -- que hace PageHeader.Clear() -- puede correr DESPUÉS
+        // de OnInitialized acá, pisando el header recién seteado. OnAfterRender corre estrictamente
+        // después de ese commit de render, así que volver a setearlo acá gana esa carrera de forma
+        // confiable (mismo patrón que las demás páginas del módulo).
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = BuildTopNavigationItems()
+        });
+    }
+
+    private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
+        =>
+        [
+            BuildTopNavItem("conversaciones", "Conversaciones", "/conversaciones"),
+            BuildTopNavItem("plantillas", "Plantillas", "/conversaciones/plantillas"),
+            BuildTopNavItem("configuracion", "Configuración", "/conversaciones/configuracion"),
+            BuildTopNavItem("estadisticas", "Estadísticas", "/conversaciones/estadisticas"),
+            new() { Key = "informes", Label = "Informes", Url = RouteContext.BuildRoute("/conversaciones/informes"), Active = true }
+        ];
+
+    private PageHeaderTopNavItem BuildTopNavItem(string key, string label, string route)
+    {
+        var url = RouteContext.BuildRoute(route);
+        return new PageHeaderTopNavItem
+        {
+            Key = key,
+            Label = label,
+            Url = url,
+            OnClick = () =>
+            {
+                Nav.NavigateTo(url);
+                return Task.CompletedTask;
+            }
+        };
+    }
 
     protected override async Task OnParametersSetAsync() => await CargarAsync();
 

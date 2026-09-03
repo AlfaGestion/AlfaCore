@@ -1703,7 +1703,15 @@ else
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
+        {
+            // Se reafirma acá (no solo en OnInitializedAsync): si se navega desde otra pantalla
+            // AlfaDesign, el Dispose() de esa página anterior -- que hace PageHeader.Clear() -- puede
+            // correr DESPUÉS del OnInitializedAsync de esta, pisando el header recién seteado.
+            // OnAfterRenderAsync corre estrictamente después de ese commit de render, así que volver
+            // a setearlo acá gana esa carrera de forma confiable (mismo patrón que Conversaciones).
+            UpdatePageHeader();
             _richEditorJs = await Js.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
+        }
 
         if (_showEditor && _activeTab == CuentaComercialTab.Notas && !_notesEditorsReady && _richEditorJs is not null)
             await InitializeNotesEditorsAsync();
@@ -1985,9 +1993,19 @@ else
 
     private void UpdatePageHeader()
     {
-        if (!IsClienteBrowseAlfaDesign)
+        if (Tipo != CuentaComercialTipo.Cliente)
         {
             PageHeader.Clear();
+            return;
+        }
+
+        if (_showEditor)
+        {
+            PageHeader.Set(new PageHeaderConfig
+            {
+                ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+                TopNavigationItems = [new() { Key = "clientes", Label = "Clientes", Url = RouteContext.BuildRoute("/clientes"), Active = true }],
+            });
             return;
         }
 
@@ -2011,6 +2029,7 @@ else
             State = _loadingList ? PageHeaderState.Loading : _selectedCodes.Count > 0 ? PageHeaderState.Selection : PageHeaderState.List,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             ShowHistoryNavigation = true,
+            TopNavigationItems = [new() { Key = "clientes", Label = "Clientes", Url = RouteContext.BuildRoute("/clientes"), Active = true }],
             Search = new PageHeaderSearchConfig(),
             SearchContent = RenderClientesSmartSearch(),
             Pagination = BuildHeaderPagination(),
@@ -2299,6 +2318,7 @@ else
         }
 
         MapDetailToForm(result.Value);
+        UpdatePageHeader();
         await LoadContactosCuentaAsync();
     }
 
