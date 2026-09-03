@@ -462,10 +462,6 @@
 
     public void Dispose() => PageHeader.Clear();
 
-    private bool IsDirectMode
-        => Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri)
-           && System.Web.HttpUtility.ParseQueryString(uri.Query)["directo"] == "1";
-
     private void UpdatePageHeader()
     {
         PageHeader.Set(new PageHeaderConfig
@@ -477,16 +473,13 @@
 
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
+        // Contactos/Clientes se sacaron a propósito: son páginas con su propio menú superior
+        // (Contactos, y Clientes vía CuentasComercialesPage -- compartido con Proveedores), y entrar
+        // ahí desde acá pisaba este menú con el suyo, dejando la navegación inconsistente.
         var items = new List<PageHeaderTopNavItem>
         {
             BuildTopNavItem("conversaciones", "Conversaciones", "/conversaciones")
         };
-
-        if (!IsDirectMode)
-        {
-            items.Add(BuildTopNavItem("contactos", "Contactos", "/contactos"));
-            items.Add(BuildTopNavItem("clientes", "Clientes", "/clientes"));
-        }
 
         items.Add(new() { Key = "plantillas", Label = "Plantillas", Url = RouteContext.BuildRoute("/conversaciones/plantillas"), Active = true });
         items.Add(BuildTopNavItem("configuracion", "Configuración", "/conversaciones/configuracion"));

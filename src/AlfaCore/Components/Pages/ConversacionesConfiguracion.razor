@@ -2147,10 +2147,6 @@
         new(ConversacionWhatsAppWebSessionModes.PhoneNumber, "Ingresar número de teléfono")
     ];
 
-    private bool IsDirectMode
-        => Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri)
-           && System.Web.HttpUtility.ParseQueryString(uri.Query)["directo"] == "1";
-
     protected override Task OnInitializedAsync()
     {
         Nav.LocationChanged += HandleLocationChanged;
@@ -2812,16 +2808,13 @@
 
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
+        // Contactos/Clientes se sacaron a propósito: son páginas con su propio menú superior
+        // (Contactos, y Clientes vía CuentasComercialesPage -- compartido con Proveedores), y entrar
+        // ahí desde acá pisaba este menú con el suyo, dejando la navegación inconsistente.
         var items = new List<PageHeaderTopNavItem>
         {
             BuildProtectedTopNavItem("conversaciones", "Conversaciones", "/conversaciones")
         };
-
-        if (!IsDirectMode)
-        {
-            items.Add(BuildProtectedTopNavItem("contactos", "Contactos", "/contactos"));
-            items.Add(BuildProtectedTopNavItem("clientes", "Clientes", "/clientes"));
-        }
 
         items.Add(BuildProtectedTopNavItem("plantillas", "Plantillas", "/conversaciones/plantillas"));
         items.Add(new() { Key = "configuracion", Label = "Configuración", Url = RouteContext.BuildRoute("/conversaciones/configuracion"), Active = true });

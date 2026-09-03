@@ -3990,10 +3990,6 @@
     // probado en ConversacionesConfiguracion.razor). Se deja Title/Actions vacíos a propósito -- así
     // MainPageHeader.HasHeader da false y no se agrega una barra de Context Toolbar extra encima del
     // propio toolbar del inbox; el único cambio visible es sidebar -> barra superior.
-    private bool IsDirectMode
-        => Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri)
-           && System.Web.HttpUtility.ParseQueryString(uri.Query)["directo"] == "1";
-
     private void UpdatePageHeader()
     {
         PageHeader.Set(new PageHeaderConfig
@@ -4005,16 +4001,13 @@
 
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
+        // Contactos/Clientes se sacaron a propósito: son páginas con su propio menú superior
+        // (Contactos, y Clientes vía CuentasComercialesPage -- compartido con Proveedores), y entrar
+        // ahí desde acá pisaba este menú con el suyo, dejando la navegación inconsistente.
         var items = new List<PageHeaderTopNavItem>
         {
             new() { Key = "conversaciones", Label = "Conversaciones", Url = RouteContext.BuildRoute("/conversaciones"), Active = true }
         };
-
-        if (!IsDirectMode)
-        {
-            items.Add(BuildTopNavItem("contactos", "Contactos", "/contactos"));
-            items.Add(BuildTopNavItem("clientes", "Clientes", "/clientes"));
-        }
 
         items.Add(BuildTopNavItem("plantillas", "Plantillas", "/conversaciones/plantillas"));
         items.Add(BuildTopNavItem("configuracion", "Configuración", "/conversaciones/configuracion"));
