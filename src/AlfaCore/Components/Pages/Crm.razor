@@ -842,6 +842,7 @@
                    value="@_filters.Texto"
                    placeholder="Buscar oportunidad, cliente, contacto..."
                    disabled="@_loading"
+                   @onfocus="OpenSearchPanelAsync"
                    @oninput="OnHeaderSearchInputAsync"
                    @onkeydown="HandleSearchKeyDownAsync" />
             <button type="button" class="smart-search__toggle @(_searchPanelOpen ? "is-active" : string.Empty)" @onclick="ToggleSearchPanelAsync" aria-label="Mostrar filtros">
@@ -1452,6 +1453,16 @@
     private Task ToggleSearchPanelAsync()
     {
         _searchPanelOpen = !_searchPanelOpen;
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    private Task OpenSearchPanelAsync()
+    {
+        if (_searchPanelOpen)
+            return Task.CompletedTask;
+
+        _searchPanelOpen = true;
         UpdatePageHeader();
         return Task.CompletedTask;
     }
