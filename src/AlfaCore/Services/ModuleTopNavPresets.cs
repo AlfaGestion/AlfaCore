@@ -54,6 +54,12 @@ public static class ModuleTopNavPresets
             ("resumen", "Resumen", "/stock")
         ]);
 
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildCrm(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("oportunidades", "Oportunidades", "/crm")
+        ]);
+
     private static IReadOnlyList<PageHeaderTopNavItem> Build(
         IRouteContextService routeContext,
         NavigationManager nav,

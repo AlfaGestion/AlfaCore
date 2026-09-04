@@ -9,6 +9,7 @@
 @inject IConfiguration Config
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @implements IDisposable
@@ -1212,6 +1213,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+            UpdatePageHeader();
+
         if (_cotizEditorNeedsSync && _showCotizEditor && _cotizEsServicio)
         {
             _cotizEditorNeedsSync = false;
@@ -1388,6 +1392,8 @@
         {
             Title = _showEditor ? (_form.IdOportunidad > 0 ? $"#{_detail?.CodigoVisible} {_form.Titulo}" : "Nueva oportunidad") : "CRM oportunidades",
             Breadcrumb = _showEditor ? ["CRM", "Oportunidades", "Detalle"] : ["CRM", "Oportunidades"],
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCrm(RouteContext, Nav, "oportunidades"),
             State = _loading
                 ? PageHeaderState.Loading
                 : _showEditor
