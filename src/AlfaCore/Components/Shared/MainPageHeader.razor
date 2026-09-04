@@ -154,11 +154,11 @@
 @code {
     [CascadingParameter(Name = "AlfaDesignShellActive")] public bool AlfaDesignShellActive { get; set; }
 
-    // Salvaguarda análoga a MainLayout.IsAlfaDesignShellActive (que ya exige !IsLauncherRoute para el
-    // topbar/sidebar): esta se recalcula en cada render a partir de la ruta actual, así que Inicio
-    // nunca puede quedar mostrando la barra de acciones (Nuevo contacto, filtros, etc.) de otra
-    // pantalla, sin importar si el PageHeader.Clear() de esa pantalla ganó o no la carrera contra su
-    // propio Dispose() al navegar afuera.
+    // Se alimenta directo de MainLayout.IsAlfaDesignShellActive (!IsAlfaDesignShellActive), que ya
+    // exige ruta AlfaDesign-managed además de !IsLauncherRoute: así, cualquier página no migrada
+    // (Inicio, /compras, etc.) nunca puede quedar mostrando la barra de acciones (Nuevo contacto,
+    // filtros, etc.) de la pantalla anterior, sin importar si el PageHeader.Clear() de esa pantalla
+    // ganó o no la carrera contra su propio Dispose() al navegar afuera.
     [CascadingParameter(Name = "SuppressPageHeader")] public bool SuppressPageHeader { get; set; }
 
     private PageHeaderConfig Config => PageHeader.Current;

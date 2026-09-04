@@ -870,7 +870,7 @@ else
         }
 
         <CascadingValue Name="AlfaDesignShellActive" Value="IsAlfaDesignShellActive">
-            <CascadingValue Name="SuppressPageHeader" Value="IsLauncherRoute">
+            <CascadingValue Name="SuppressPageHeader" Value="!IsAlfaDesignShellActive">
                 <MainPageHeader />
             </CascadingValue>
         </CascadingValue>
@@ -1387,7 +1387,7 @@ else
     // que el Clear() haya ganado la carrera contra el Dispose() de la página AlfaDesign anterior --
     // si esa carrera se pierde en algún caso no cubierto, Inicio nunca puede quedar con el topbar
     // pegado de otra pantalla.
-    private bool IsAlfaDesignShellActive => !IsLauncherRoute && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+    private bool IsAlfaDesignShellActive => !IsLauncherRoute && IsCurrentRouteAlfaDesignManaged() && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
     private bool ShowSidebar => !UseTopOnlyNavigation && !IsAlfaDesignShellActive && !IsDirectMode;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
@@ -1469,6 +1469,32 @@ else
         "conversaciones/estadisticas",
         "conversaciones/informes"
     };
+
+    // Módulos (_currentModule) migrados al shell AlfaDesign que se autogestionan su propio PageHeader
+    // (no dependen del "preservado" por ruta exacta de arriba porque tienen sus propias páginas con
+    // rutas internas -- ej. Clientes: alta/edición vía el mismo componente, sin cambiar de ruta).
+    private static readonly HashSet<string> AlfaDesignManagedModules = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "contactos",
+        "usuarios",
+        "clientes"
+    };
+
+    // Única fuente de verdad de "esta ruta es una de las que ya migramos a AlfaDesign". Se usa tanto
+    // para decidir si preservar el PageHeader en OnLocationChanged como para decidir si mostrar el
+    // topbar/Context Toolbar de AlfaDesign en IsAlfaDesignShellActive -- así, aunque el
+    // PageHeader.Clear() de una navegación pierda alguna carrera rara, una página no migrada (ej.
+    // /compras) nunca puede terminar mostrando el header pegado de la página anterior: la ruta actual
+    // se vuelve a chequear en cada render, no solo en el momento de navegar.
+    private bool IsCurrentRouteAlfaDesignManaged()
+    {
+        var effectivePath = GetEffectiveCurrentPath().ToLowerInvariant();
+        return AlfaDesignManagedModules.Contains(_currentModule)
+            || AlfaDesignManagedConversacionesPaths.Contains(effectivePath)
+            // Detalle de informe: ruta con parámetro ("conversaciones/informes/detalle/{id}"), no
+            // matchea el HashSet de rutas exactas de arriba.
+            || effectivePath.StartsWith("conversaciones/informes/detalle/", StringComparison.OrdinalIgnoreCase);
+    }
 
     private string _currentModule = string.Empty;
     private string _activeShellModuleKey = string.Empty;
@@ -1629,10 +1655,7 @@ else
         // Estadísticas/Informes, que NUNCA llaman PageHeader.Set() propio. Preservar por módulo
         // dejaba el header de Conversaciones pegado al navegar a esas otras páginas (topbar
         // ausente, contenido tapado, o la pestaña "Configuración" marcada activa sin corresponder).
-        var effectivePathForHeader = GetEffectiveCurrentPath().ToLowerInvariant();
-        var isAlfaDesignManagedPage = string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
-            || AlfaDesignManagedConversacionesPaths.Contains(effectivePathForHeader);
-        var preserveAlfaDesignPilot = isAlfaDesignManagedPage
+        var preserveAlfaDesignPilot = IsCurrentRouteAlfaDesignManaged()
             && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
         if (!preserveAlfaDesignPilot)
             PageHeader.Clear();
