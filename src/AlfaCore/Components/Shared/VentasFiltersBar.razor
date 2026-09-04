@@ -50,12 +50,11 @@
         <div class="uneg-checklist">
             @foreach (var item in Options.UnidadesNegocio)
             {
-                <label class="uneg-checklist__item">
-                    <input type="checkbox"
-                           checked="@Model.UnidadesNegocio.Contains(item.Codigo)"
-                           @onchange="e => ToggleUnidadNegocio(item.Codigo, e.Value)" />
-                    <span>@item.Descripcion</span>
-                </label>
+                <AlfaCheckbox Class="uneg-checklist__item"
+                              Value="@Model.UnidadesNegocio.Contains(item.Codigo)"
+                              ValueChanged="v => ToggleUnidadNegocio(item.Codigo, v)">
+                    @item.Descripcion
+                </AlfaCheckbox>
             }
             @if (Options.UnidadesNegocio.Count == 0)
             {
@@ -143,9 +142,9 @@
 
     private void ToggleAdvanced() => _showAdvanced = !_showAdvanced;
 
-    private void ToggleUnidadNegocio(string codigo, object? isChecked)
+    private void ToggleUnidadNegocio(string codigo, bool? isChecked)
     {
-        var marcado = isChecked is bool b && b;
+        var marcado = isChecked == true;
         if (marcado && !Model.UnidadesNegocio.Contains(codigo))
             Model.UnidadesNegocio.Add(codigo);
         else if (!marcado)
