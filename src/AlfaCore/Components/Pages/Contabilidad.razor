@@ -2,6 +2,10 @@
 @page "/{idweb}/{idbase:int}/contabilidad"
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.GestionFilterStateService FilterState
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Contabilidad | Alfa Gestión</PageTitle>
 
@@ -180,6 +184,22 @@
 
     // Nombres de nivel en orden ascendente (índice 0 = más alto = Capítulo)
     private static readonly string[] _nivelNombres = ["Capítulo", "Sub-Capítulo", "Rubro", "Sub-Rubro"];
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildContabilidad(RouteContext, Nav, "resumen")
+    });
 
     protected override async Task OnInitializedAsync()
     {

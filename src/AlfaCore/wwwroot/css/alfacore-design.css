@@ -437,6 +437,16 @@
     min-height: 0;
 }
 
+/* Páginas legacy migradas a AlfaDesign (Compras/Ventas/Contabilidad/Caja y Bancos) que todavía
+   usan el wrapper genérico .page-grid como raíz -- sin esto, .page-grid no declara su propia
+   altura/scroll y bajo .shell__content (flex + overflow:hidden) el contenido queda sin forma de
+   bajar con mouse ni teclado. Al estar scopeado a .shell--alfa-design, no afecta absolutamente
+   nada a los módulos que siguen en el shell legacy (ahí .shell--alfa-design nunca está presente). */
+.shell.shell--alfa-design .shell__content > .page-grid {
+    height: 100%;
+    overflow-y: auto;
+}
+
 .shell.shell--alfa-design.shell--direct .alfa-app-topbar__nav,
 .shell.shell--alfa-design.shell--direct .alfa-app-topbar__global-icon {
     display: none;

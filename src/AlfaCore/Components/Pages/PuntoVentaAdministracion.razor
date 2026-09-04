@@ -5,6 +5,10 @@
 @inject IPuntoVentaConfigService PosConfigSvc
 @inject IAppUiOperationService UiOps
 @inject IAppUserSessionService AppUserSession
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Puntos de Venta | Configuración</PageTitle>
 
@@ -286,6 +290,22 @@
     private PuntoVentaMesaSaveRequest _mesaForm = new();
 
     private AppUiMessage? _feedback;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = ModuleTopNavPresets.BuildVentas(RouteContext, Nav, "puntos-venta-admin")
+    });
 
     protected override async Task OnInitializedAsync() => await LoadPuntosVentaAsync();
 

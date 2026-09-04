@@ -837,6 +837,12 @@ else
                     </nav>
                 </div>
                 <div class="alfa-app-topbar__global-actions">
+                    @if (string.Equals(_currentModule, "compras", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <button type="button" class="alfa-app-topbar__global-icon no-print" @onclick="ExportCurrentPageToPdfAsync" title="Exportar pantalla actual a PDF" aria-label="Exportar pantalla actual a PDF">
+                            <i class="bi bi-file-earmark-pdf"></i>
+                        </button>
+                    }
                     <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones")" title="Conversaciones" aria-label="Conversaciones">
                         <i class="bi bi-chat-left-text"></i>
                     </a>
@@ -847,7 +853,12 @@ else
                         </button>
                     }
                     @if (!string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "usuarios", StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(_currentModule, "usuarios", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "clientes", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "compras", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "ventas", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "contabilidad", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "caja-bancos", StringComparison.OrdinalIgnoreCase))
                     {
                         <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
                             <i class="bi bi-gear"></i>
@@ -1477,7 +1488,11 @@ else
     {
         "contactos",
         "usuarios",
-        "clientes"
+        "clientes",
+        "compras",
+        "ventas",
+        "contabilidad",
+        "caja-bancos"
     };
 
     // Única fuente de verdad de "esta ruta es una de las que ya migramos a AlfaDesign". Se usa tanto

@@ -3,8 +3,11 @@
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
 @inject AlfaCore.Services.IInformesIaService InformesIaService
 @inject AlfaCore.Services.FilterStateService FilterState
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>InformesIA | Dashboard de Compras</PageTitle>
 
@@ -137,6 +140,22 @@
     private FilterOptionsDto _options = new();
     private IReadOnlyList<InformeIaSuggestionDto> _suggestions = [];
     private IReadOnlyList<InformeIaHistoryItemDto> _history = [];
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "informesia")
+    });
 
     protected override async Task OnInitializedAsync()
     {

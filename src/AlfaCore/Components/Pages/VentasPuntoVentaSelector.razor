@@ -5,7 +5,9 @@
 @inject IPuntoVentaConfigService PosConfigSvc
 @inject IAppUiOperationService UiOps
 @inject IRouteContextService RouteCtx
+@inject IPageHeaderService PageHeader
 @inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Punto de Venta | Ventas</PageTitle>
 
@@ -63,6 +65,22 @@
     private bool _loading = true;
     private List<PuntoVentaEntidadDto> _puntosVenta = [];
     private AppUiMessage? _feedback;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = ModuleTopNavPresets.BuildVentas(RouteCtx, Nav, "punto-venta")
+    });
 
     protected override async Task OnInitializedAsync()
     {
