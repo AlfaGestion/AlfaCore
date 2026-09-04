@@ -196,6 +196,15 @@
     gap: 6px;
 }
 
+.alfa-app-topbar__history {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-right: 4px;
+    padding-right: 18px;
+    border-right: 1px solid var(--alfa-border-default);
+}
+
 .alfa-app-topbar__global-icon {
     width: 32px;
     height: 32px;
@@ -216,6 +225,12 @@
     background: color-mix(in srgb, var(--alfa-accent) 10%, transparent);
     color: var(--alfa-accent-hover);
     outline: 1px solid color-mix(in srgb, var(--alfa-accent) 72%, transparent);
+}
+
+.alfa-app-topbar__global-icon:disabled {
+    opacity: .35;
+    cursor: default;
+    pointer-events: none;
 }
 
 .alfa-app-topbar__global-icon.is-active,

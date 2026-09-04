@@ -789,6 +789,17 @@ else
                             <small>@GetModuleTitle()</small>
                         </span>
                     </a>
+                    <div class="alfa-app-topbar__history" aria-label="Historial de navegación">
+                        <button type="button" class="alfa-app-topbar__global-icon" @onclick="GoToLauncher" title="Ir a Inicio" aria-label="Ir a Inicio">
+                            <i class="bi bi-house"></i>
+                        </button>
+                        <button type="button" class="alfa-app-topbar__global-icon" @onclick="() => HeaderNavigation.GoBack(Nav)" disabled="@(!HeaderNavigation.CanGoBack)" title="Atrás" aria-label="Atrás">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <button type="button" class="alfa-app-topbar__global-icon" @onclick="() => HeaderNavigation.GoForward(Nav)" disabled="@(!HeaderNavigation.CanGoForward)" title="Adelante" aria-label="Adelante">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
                     <nav class="alfa-app-topbar__nav" aria-label="Navegación principal">
                         @foreach (var item in PageHeader.Current.TopNavigationItems)
                         {
