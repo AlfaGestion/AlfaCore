@@ -60,6 +60,12 @@ public static class ModuleTopNavPresets
             ("oportunidades", "Oportunidades", "/crm")
         ]);
 
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildTickets(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("mesadeayuda", "Mesa de ayuda", "/tickets")
+        ]);
+
     private static IReadOnlyList<PageHeaderTopNavItem> Build(
         IRouteContextService routeContext,
         NavigationManager nav,
