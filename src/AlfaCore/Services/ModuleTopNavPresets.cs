@@ -20,8 +20,7 @@ public static class ModuleTopNavPresets
             ("familias", "Familias", "/compras/familias"),
             ("articulos", "Artículos", "/compras/articulos"),
             ("actividad", "Actividad", "/compras/actividad"),
-            ("informesia", "InformesIA", "/compras/informesia"),
-            ("reportes", "Reportes", "/compras/reportes")
+            ("informesia", "InformesIA", "/compras/informesia")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildVentas(IRouteContextService routeContext, NavigationManager nav, string activeKey)
