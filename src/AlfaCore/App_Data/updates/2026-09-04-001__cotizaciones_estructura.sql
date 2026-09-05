@@ -138,27 +138,59 @@ GO
     Config nueva en TA_CONFIGURACION (clave/valor, respeta la regla del proyecto: nunca
     borrado masivo, siempre por CLAVE, JSON grande va a ValorAux). Se insertan solo si no
     existen -- no se pisa nada si un cliente ya las cargó a mano.
+
+    Distintas instalaciones tienen TA_CONFIGURACION con anchos de columna distintos (algunas
+    bases más viejas tienen GRUPO/DESCRIPCION más angostos que en la base de referencia). Para
+    que este script sea seguro en cualquier base cliente:
+      - GRUPO/VALOR/DESCRIPCION se recortan al ancho real de la columna (son informativos, nunca
+        se leen por clave desde el código -- truncarlos no rompe nada).
+      - CLAVE NUNCA se recorta: el código (ReadConfigAsync/SetConfigAsync) busca por CLAVE exacta,
+        así que una clave truncada rompería el módulo en silencio. Si la columna es demasiado
+        angosta para la clave más larga que necesitamos, el script frena con un mensaje claro en
+        vez de grabar datos corruptos.
 */
 IF OBJECT_ID(N'dbo.TA_CONFIGURACION', N'U') IS NOT NULL
 BEGIN
+    DECLARE @LenGrupo int, @LenClave int, @LenValor int, @LenDescripcion int;
+
+    SELECT @LenGrupo = CASE WHEN max_length = -1 THEN 4000 ELSE max_length / 2 END
+    FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.TA_CONFIGURACION') AND name = N'GRUPO';
+
+    SELECT @LenClave = CASE WHEN max_length = -1 THEN 4000 ELSE max_length / 2 END
+    FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.TA_CONFIGURACION') AND name = N'CLAVE';
+
+    SELECT @LenValor = CASE WHEN max_length = -1 THEN 4000 ELSE max_length / 2 END
+    FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.TA_CONFIGURACION') AND name = N'VALOR';
+
+    SELECT @LenDescripcion = CASE WHEN max_length = -1 THEN 4000 ELSE max_length / 2 END
+    FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.TA_CONFIGURACION') AND name = N'DESCRIPCION';
+
+    IF @LenClave IS NOT NULL AND @LenClave < 37
+        THROW 50000, N'dbo.TA_CONFIGURACION.CLAVE es demasiado angosto (menos de 37 caracteres) para las claves de Cotizaciones. Ampliar la columna antes de aplicar este script.', 1;
+
     IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'COTIZACIONES_PERMITE_DESCUENTO_LINEA')
         INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion)
-        VALUES (N'COTIZACIONES', N'COTIZACIONES_PERMITE_DESCUENTO_LINEA', N'0', N'Habilita el descuento por línea en el módulo Cotizaciones (además del descuento general, siempre disponible).', GETDATE());
+        VALUES (LEFT(N'COTIZACIONES', ISNULL(@LenGrupo, 100)), N'COTIZACIONES_PERMITE_DESCUENTO_LINEA', LEFT(N'0', ISNULL(@LenValor, 100)),
+                LEFT(N'Habilita el descuento por línea en el módulo Cotizaciones (además del descuento general, siempre disponible).', ISNULL(@LenDescripcion, 500)), GETDATE());
 
     IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'COTIZACIONES_ALFA_PRECIO_BASE')
         INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion)
-        VALUES (N'COTIZACIONES', N'COTIZACIONES_ALFA_PRECIO_BASE', N'0', N'Precio base del configurador "Alfa Gestión" dentro de Cotizaciones.', GETDATE());
+        VALUES (LEFT(N'COTIZACIONES', ISNULL(@LenGrupo, 100)), N'COTIZACIONES_ALFA_PRECIO_BASE', LEFT(N'0', ISNULL(@LenValor, 100)),
+                LEFT(N'Precio base del configurador "Alfa Gestión" dentro de Cotizaciones.', ISNULL(@LenDescripcion, 500)), GETDATE());
 
     IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'COTIZACIONES_ALFA_PRECIO_USUARIO')
         INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion)
-        VALUES (N'COTIZACIONES', N'COTIZACIONES_ALFA_PRECIO_USUARIO', N'0', N'Valor por usuario adicional del configurador "Alfa Gestión" dentro de Cotizaciones.', GETDATE());
+        VALUES (LEFT(N'COTIZACIONES', ISNULL(@LenGrupo, 100)), N'COTIZACIONES_ALFA_PRECIO_USUARIO', LEFT(N'0', ISNULL(@LenValor, 100)),
+                LEFT(N'Valor por usuario adicional del configurador "Alfa Gestión" dentro de Cotizaciones.', ISNULL(@LenDescripcion, 500)), GETDATE());
 
     IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'COTIZACIONES_ALFA_MODULOS')
         INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, ValorAux, DESCRIPCION, FechaHora_Grabacion)
-        VALUES (N'COTIZACIONES', N'COTIZACIONES_ALFA_MODULOS', N'', N'[]', N'Catálogo de módulos de Alfa Gestión disponibles en el configurador (JSON: [{"codigo","nombre"}]). Vacío por defecto -- un cliente que nunca lo carga no ve nada para configurar acá.', GETDATE());
+        VALUES (LEFT(N'COTIZACIONES', ISNULL(@LenGrupo, 100)), N'COTIZACIONES_ALFA_MODULOS', LEFT(N'', ISNULL(@LenValor, 100)), N'[]',
+                LEFT(N'Catálogo de módulos de Alfa Gestión disponibles en el configurador (JSON: [{"codigo","nombre"}]). Vacío por defecto -- un cliente que nunca lo carga no ve nada para configurar acá.', ISNULL(@LenDescripcion, 500)), GETDATE());
 
     IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'COTIZACIONES_ALFA_PACKS')
         INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, ValorAux, DESCRIPCION, FechaHora_Grabacion)
-        VALUES (N'COTIZACIONES', N'COTIZACIONES_ALFA_PACKS', N'', N'[]', N'Reglas de recomendación de pack de horas de implementación (JSON: [{"maxUsuarios","maxModulos","idTarea"}]), cada idTarea referencia V_TA_Tareas.IdTarea.', GETDATE());
+        VALUES (LEFT(N'COTIZACIONES', ISNULL(@LenGrupo, 100)), N'COTIZACIONES_ALFA_PACKS', LEFT(N'', ISNULL(@LenValor, 100)), N'[]',
+                LEFT(N'Reglas de recomendación de pack de horas de implementación (JSON: [{"maxUsuarios","maxModulos","idTarea"}]), cada idTarea referencia V_TA_Tareas.IdTarea.', ISNULL(@LenDescripcion, 500)), GETDATE());
 END;
 GO
