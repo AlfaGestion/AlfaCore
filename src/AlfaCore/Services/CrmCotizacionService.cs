@@ -14,7 +14,8 @@ public sealed class CrmCotizacionService(
     ISessionService sessionService,
     IAppEventService appEvents,
     IHttpClientFactory httpClientFactory,
-    ICentralBasesService centralBasesService) : ICrmCotizacionService
+    ICentralBasesService centralBasesService,
+    IArticuloPrecioResolverService priceResolver) : ICrmCotizacionService
 {
     private const string ModuleName = "CRM";
     private const string DefaultTc = "CTZ";
@@ -29,7 +30,7 @@ public sealed class CrmCotizacionService(
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            return await ResolvePricingContextInternalAsync(cn, clienteCodigo, token);
+            return await priceResolver.ResolveContextAsync(cn,clienteCodigo, token);
         }, "No se pudo resolver la lista de precios del cliente.", ct);
 
     public Task<IReadOnlyList<CrmCotizacionArticuloDto>> SearchArticulosAsync(string? clienteCodigo, string texto, int take = 25, CancellationToken ct = default)
@@ -37,75 +38,9 @@ public sealed class CrmCotizacionService(
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var pricing = await ResolvePricingContextInternalAsync(cn, clienteCodigo, token);
-            return await SearchArticulosCoreAsync(cn, pricing, texto, take, token);
+            var pricing = await priceResolver.ResolveContextAsync(cn,clienteCodigo, token);
+            return await priceResolver.SearchArticulosAsync(cn, pricing,texto, take, token);
         }, "No se pudieron cargar los artículos para la cotización.", ct);
-
-    private static async Task<IReadOnlyList<CrmCotizacionArticuloDto>> SearchArticulosCoreAsync(
-        SqlConnection cn, CrmCotizacionPricingContextDto pricing, string texto, int take, CancellationToken token)
-    {
-        var clase = Math.Clamp(pricing.ClasePrecio, 1, 8);
-        var limit = Math.Clamp(take, 1, 100);
-
-        var palabras = (texto ?? string.Empty).ToUpperInvariant()
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-
-        var wordFilters = new StringBuilder();
-        var parameters = new DynamicParameters();
-        parameters.Add("IdLista", pricing.IdLista);
-        parameters.Add("Take", limit);
-        for (var i = 0; i < palabras.Length; i++)
-        {
-            parameters.Add($"Like{i}", $"%{palabras[i]}%");
-            wordFilters.Append($"""
-
-              AND (
-                    UPPER(LTRIM(RTRIM(a.IDARTICULO))) LIKE @Like{i}
-                    OR UPPER(LTRIM(RTRIM(a.DESCRIPCION))) LIKE @Like{i}
-                    OR UPPER(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, '')))) LIKE @Like{i}
-              )
-            """);
-        }
-
-        var sql = $"""
-            SELECT TOP (@Take)
-                LTRIM(RTRIM(a.IDARTICULO)) AS IdArticulo,
-                ISNULL(LTRIM(RTRIM(a.CODIGOBARRA)), '') AS Codigo,
-                ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), '') AS Descripcion,
-                ISNULL(CAST(a.TasaIVA AS decimal(9,4)), 0) AS TasaIva,
-                ISNULL(a.PRECIO{clase}, 0) AS PrecioMaestro,
-                ISNULL(p.Precio{clase}, 0) AS PrecioLista
-            FROM dbo.V_MA_ARTICULOS a
-            LEFT JOIN dbo.V_MA_Precios p
-                ON p.IdArticulo = a.IDARTICULO
-               AND p.IdLista = @IdLista
-               AND p.TipoLista = 'V'
-            WHERE ISNULL(a.Suspendido, 0) <> 1
-              AND ISNULL(a.SuspendidoV, 0) <> 1
-              {wordFilters}
-            ORDER BY a.DESCRIPCION, a.IDARTICULO;
-            """;
-
-        var rows = await cn.QueryAsync<ArticuloPrecioRow>(new CommandDefinition(sql, parameters, cancellationToken: token));
-
-        var result = new List<CrmCotizacionArticuloDto>();
-        foreach (var row in rows)
-        {
-            var bruto = pricing.UsaListas && row.PrecioLista > 0 ? row.PrecioLista : row.PrecioMaestro;
-            var (neto, conIva) = SplitPrice(bruto, row.TasaIva, pricing.PreciosConIva);
-            result.Add(new CrmCotizacionArticuloDto
-            {
-                IdArticulo = row.IdArticulo,
-                Codigo = row.Codigo,
-                Descripcion = row.Descripcion,
-                TasaIva = decimal.Round(row.TasaIva, 4),
-                PrecioUnitarioNeto = neto,
-                PrecioUnitarioConIva = conIva
-            });
-        }
-
-        return result;
-    }
 
     public Task<IReadOnlyList<CrmCotizacionDto>> GetByOportunidadAsync(long idOportunidad, CancellationToken ct = default)
         => ExecuteLoggedAsync("CotizacionesPorOportunidad", async token =>
@@ -168,7 +103,7 @@ public sealed class CrmCotizacionService(
             await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(token);
             try
             {
-                var pricing = await ResolvePricingContextInternalAsync(cn, request.ClienteCodigo, token, tx);
+                var pricing = await priceResolver.ResolveContextAsync(cn,request.ClienteCodigo, token, tx);
                 var clienteNombre = string.IsNullOrWhiteSpace(request.ClienteNombre) ? pricing.ClienteNombre : request.ClienteNombre.Trim();
                 var estado = NormalizeEstado(request.Estado);
                 var unegocio = string.IsNullOrWhiteSpace(request.UNegocio) ? null : request.UNegocio.Trim();
@@ -178,7 +113,7 @@ public sealed class CrmCotizacionService(
                 foreach (var l in lineas)
                 {
                     var tasa = decimal.Round(l.TasaIva, 4);
-                    var (neto, conIva) = SplitPrice(l.PrecioUnitario, tasa, pricing.PreciosConIva);
+                    var (neto, conIva) = ArticuloPrecioResolverService.SplitPrice(l.PrecioUnitario, tasa, pricing.PreciosConIva);
                     var subNeto = decimal.Round(neto * l.Cantidad, 2);
                     var subConIva = decimal.Round(conIva * l.Cantidad, 2);
                     var subIva = decimal.Round(subConIva - subNeto, 2);
@@ -693,7 +628,7 @@ public sealed class CrmCotizacionService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var pricing = await ResolvePricingContextInternalAsync(cn, clienteCodigo, token);
+            var pricing = await priceResolver.ResolveContextAsync(cn,clienteCodigo, token);
 
             var sugerencias = new List<CrmCotizacionAiLineaSugeridaDto>();
             var vistos = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -701,7 +636,7 @@ public sealed class CrmCotizacionService(
             {
                 if (string.IsNullOrWhiteSpace(intent.Buscar))
                     continue;
-                var articulos = await SearchArticulosCoreAsync(cn, pricing, intent.Buscar, 15, token);
+                var articulos = await priceResolver.SearchArticulosAsync(cn, pricing,intent.Buscar, 15, token);
                 foreach (var art in articulos)
                 {
                     if (!vistos.Add(art.IdArticulo))
@@ -822,66 +757,8 @@ public sealed class CrmCotizacionService(
             c.TotalNeto, c.TotalIva, c.Total, ISNULL(c.UsuarioAlta, '') AS UsuarioAlta, c.FechaHoraAlta, c.FechaHoraModificacion
         """;
 
-    private async Task<CrmCotizacionPricingContextDto> ResolvePricingContextInternalAsync(SqlConnection cn, string? clienteCodigo, CancellationToken ct, SqlTransaction? tx = null)
-    {
-        var usaListas = ParseBool(await ReadConfigAsync(cn, "UsaListasDePrecios", ct, tx));
-        var maestroConIva = ParseBool(await ReadConfigAsync(cn, "MaestroArticuloConIVA", ct, tx));
-        var fijaListasConIva = ParseBool(await ReadConfigAsync(cn, "FIJALISTASCONIVA", ct, tx));
-        var fijaListasSinIva = ParseBool(await ReadConfigAsync(cn, "FIJALISTASSINIVA", ct, tx));
-        var claseDefaultRaw = await ReadConfigAsync(cn, "CLASEPRECIOVENTA", ct, tx);
-        if (string.IsNullOrWhiteSpace(claseDefaultRaw))
-            claseDefaultRaw = await ReadConfigAsync(cn, "ClaseDePrecioDefault", ct, tx);
-        var claseDefault = int.TryParse(claseDefaultRaw, out var cd) && cd is >= 1 and <= 8 ? cd : 1;
-
-        var codigo = (clienteCodigo ?? string.Empty).Trim();
-        var esConsumidorFinal = false;
-        if (string.IsNullOrWhiteSpace(codigo))
-        {
-            codigo = (await ReadConfigAsync(cn, "CUENTACONSUMIDORFINAL", ct, tx)).Trim();
-            esConsumidorFinal = true;
-        }
-
-        var cliente = string.IsNullOrWhiteSpace(codigo)
-            ? null
-            : await cn.QueryFirstOrDefaultAsync<ClienteListaRow>(new CommandDefinition("""
-                SELECT TOP (1)
-                    ISNULL(LTRIM(RTRIM(IdLista)), '') AS IdLista,
-                    ISNULL(Clase, 0) AS Clase,
-                    ISNULL(RAZON_SOCIAL, '') AS Nombre
-                FROM dbo.Vt_Clientes
-                WHERE LTRIM(RTRIM(Codigo)) = @Codigo;
-                """, new { Codigo = codigo }, tx, cancellationToken: ct));
-
-        var idLista = cliente?.IdLista?.Trim() ?? string.Empty;
-        var clase = cliente is { Clase: >= 1 and <= 8 } ? cliente.Clase : claseDefault;
-        var usaLista = usaListas && !string.IsNullOrWhiteSpace(idLista);
-        // Listas: si FIJALISTASCONIVA está prendido, los precios de lista ya incluyen IVA
-        // (FIJALISTASSINIVA es el flag opuesto, que deja el default en false). Maestro: MaestroArticuloConIVA.
-        _ = fijaListasSinIva;
-        var preciosConIva = usaLista ? fijaListasConIva : maestroConIva;
-
-        return new CrmCotizacionPricingContextDto
-        {
-            ClienteCodigo = codigo,
-            ClienteNombre = cliente?.Nombre?.Trim() ?? string.Empty,
-            EsConsumidorFinal = esConsumidorFinal,
-            IdLista = idLista,
-            ClasePrecio = clase,
-            PreciosConIva = preciosConIva,
-            UsaListas = usaLista
-        };
-    }
-
-    private static (decimal neto, decimal conIva) SplitPrice(decimal bruto, decimal tasa, bool preciosConIva)
-    {
-        var factor = 1m + tasa / 100m;
-        if (preciosConIva)
-        {
-            var neto = factor == 0 ? bruto : decimal.Round(bruto / factor, 4);
-            return (neto, decimal.Round(bruto, 4));
-        }
-        return (decimal.Round(bruto, 4), decimal.Round(bruto * factor, 4));
-    }
+    // Resolución de lista/clase/precio de artículos: extraída a ArticuloPrecioResolverService
+    // (ver priceResolver) para que Cotizaciones use exactamente la misma regla.
 
     private async Task<string> ReadConfigAsync(SqlConnection cn, string clave, CancellationToken ct, SqlTransaction? tx = null)
     {
@@ -955,20 +832,4 @@ public sealed class CrmCotizacionService(
             return true;
         }, userMessage, ct);
 
-    private sealed class ArticuloPrecioRow
-    {
-        public string IdArticulo { get; set; } = string.Empty;
-        public string Codigo { get; set; } = string.Empty;
-        public string Descripcion { get; set; } = string.Empty;
-        public decimal TasaIva { get; set; }
-        public decimal PrecioMaestro { get; set; }
-        public decimal PrecioLista { get; set; }
-    }
-
-    private sealed class ClienteListaRow
-    {
-        public string IdLista { get; set; } = string.Empty;
-        public int Clase { get; set; }
-        public string Nombre { get; set; } = string.Empty;
-    }
 }

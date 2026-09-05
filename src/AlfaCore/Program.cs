@@ -184,7 +184,9 @@ public class Program
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
         builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
         builder.Services.AddScoped<ICrmService, CrmService>();
+        builder.Services.AddScoped<IArticuloPrecioResolverService, ArticuloPrecioResolverService>();
         builder.Services.AddScoped<ICrmCotizacionService, CrmCotizacionService>();
+        builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
         builder.Services.AddScoped<ITareasService, TareasService>();
@@ -466,6 +468,18 @@ public class Program
             CancellationToken ct) =>
         {
             var html = await cotizSvc.RenderPublicHtmlAsync(idbase, token, ct);
+            return html is null
+                ? Results.NotFound("La cotización no existe o el enlace expiró.")
+                : Results.Content(html, "text/html; charset=utf-8");
+        }).AllowAnonymous();
+
+        app.MapGet("/cotizacion-publica/{idbase:int}/{token}", async (
+            int idbase,
+            string token,
+            ICotizacionesService cotizacionesSvc,
+            CancellationToken ct) =>
+        {
+            var html = await cotizacionesSvc.RenderPublicHtmlAsync(idbase, token, ct);
             return html is null
                 ? Results.NotFound("La cotización no existe o el enlace expiró.")
                 : Results.Content(html, "text/html; charset=utf-8");

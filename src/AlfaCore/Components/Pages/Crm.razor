@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/crm"
 @using AlfaCore.Models
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.ICrmService CrmSvc
 @inject AlfaCore.Services.ICrmCotizacionService CotizSvc
 @inject AlfaCore.Services.IConversacionesService ConvSvc
@@ -816,6 +817,20 @@
 
     private IEnumerable<CrmViewColumnDto> VisibleColumns => _viewSettings.Columnas.Where(x => x.Visible).OrderBy(x => x.Order);
     private string CurrentUserName => AppUserSession.CurrentUser?.UserName ?? Environment.UserName;
+
+    private string BuildCotizacionModuloUrl()
+    {
+        var url = RouteContext.BuildRoute("/cotizaciones");
+        if (_detail is null)
+            return url;
+
+        url = QueryHelpers.AddQueryString(url, "oportunidad", _detail.IdOportunidad.ToString());
+        if (!string.IsNullOrWhiteSpace(_detail.ClienteNombre))
+            url = QueryHelpers.AddQueryString(url, "empresa", _detail.ClienteNombre);
+        if (!string.IsNullOrWhiteSpace(_detail.ContactoNombre))
+            url = QueryHelpers.AddQueryString(url, "contacto", _detail.ContactoNombre);
+        return url;
+    }
     private string? CurrentUserTechId => _lookups.Tecnicos.FirstOrDefault(x =>
         string.Equals(x.UsuarioAsociado, CurrentUserName, StringComparison.OrdinalIgnoreCase)
         || string.Equals(x.IdTecnico, CurrentUserName, StringComparison.OrdinalIgnoreCase))?.IdTecnico;
@@ -1148,6 +1163,9 @@
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => NuevaCotizacionAsync(CrmCotizacionTipos.Servicio)" disabled="@(_saving || _detail is null)" title="Cotización de servicio con IA">
                             <i class="bi bi-stars"></i> Servicio (IA)
                         </button>
+                        <a class="btn btn--ghost btn--sm" href="@BuildCotizacionModuloUrl()" title="Abrir el módulo general de Cotizaciones, precargado con esta oportunidad">
+                            <i class="bi bi-file-earmark-text"></i> Nueva cotización
+                        </a>
                     </div>
                 </div>
                 @if (_detail is null)

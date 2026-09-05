@@ -1,0 +1,120 @@
+@page "/cotizaciones/configuracion"
+@page "/{idweb}/{idbase:int}/cotizaciones/configuracion"
+@using AlfaCore.Models
+@inject AlfaCore.Services.ICotizacionesService CotizSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Configuración de Cotizaciones | Alfa Gestión</PageTitle>
+
+<style>
+    .cotizcfg-page { display: flex; flex-direction: column; gap: 1rem; padding: 1rem 1.25rem 3rem; max-width: 900px; margin: 0 auto; }
+    .cotizcfg-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: .5rem; align-items: center; }
+    .cotizcfg-row input { background: var(--alfa-bg-input); border: 1px solid var(--alfa-border-default); border-radius: 6px; padding: .35rem .55rem; color: var(--alfa-text-primary); }
+</style>
+
+<div class="page-grid cotizcfg-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="panel-card">
+        <h3 class="panel-card__title" style="margin:0 0 .6rem;">Descuentos</h3>
+        <AlfaCheckbox Value="@_permiteDescuentoLinea" ValueChanged="v => _permiteDescuentoLinea = v == true">
+            Permitir descuento por línea (además del descuento general, siempre disponible)
+        </AlfaCheckbox>
+    </section>
+
+    <section class="panel-card">
+        <h3 class="panel-card__title" style="margin:0 0 .6rem;">Configurador "Alfa Gestión"</h3>
+        <div class="cotiz-datos-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.75rem;margin-bottom:1rem;">
+            <div class="field">
+                <label>Precio base</label>
+                <input class="field-input" type="number" step="0.01" @bind="_config.PrecioBase" />
+            </div>
+            <div class="field">
+                <label>Precio por usuario</label>
+                <input class="field-input" type="number" step="0.01" @bind="_config.PrecioPorUsuario" />
+            </div>
+        </div>
+
+        <h4>Módulos</h4>
+        @foreach (var modulo in _config.Modulos)
+        {
+            <div class="cotizcfg-row">
+                <input value="@modulo.Codigo" @onchange="args => modulo.Codigo = args.Value?.ToString() ?? string.Empty" placeholder="Código" />
+                <input value="@modulo.Nombre" @onchange="args => modulo.Nombre = args.Value?.ToString() ?? string.Empty" placeholder="Nombre" />
+                <AlfaIconButton Icon="bi bi-trash" Label="Quitar módulo" Size="AlfaSize.Sm" OnClick="_ => _config.Modulos.Remove(modulo)" />
+            </div>
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="_ => _config.Modulos.Add(new CotizacionAlfaModuloDto())">Agregar módulo</AlfaButton>
+
+        <h4 style="margin-top:1rem;">Reglas de pack de horas recomendado</h4>
+        <p class="panel-card__subtitle">Cada regla apunta a una tarea real (V_TA_Tareas.IdTarea) que trae descripción, horas y valor.</p>
+        @foreach (var pack in _config.Packs)
+        {
+            <div class="cotizcfg-row" style="grid-template-columns:1fr 1fr 1fr auto;">
+                <input type="number" value="@pack.MaxUsuarios" @onchange="args => pack.MaxUsuarios = ParseInt(args.Value)" placeholder="Máx. usuarios" />
+                <input type="number" value="@pack.MaxModulos" @onchange="args => pack.MaxModulos = ParseInt(args.Value)" placeholder="Máx. módulos" />
+                <input value="@pack.IdTarea" @onchange="args => pack.IdTarea = args.Value?.ToString() ?? string.Empty" placeholder="IdTarea" />
+                <AlfaIconButton Icon="bi bi-trash" Label="Quitar regla" Size="AlfaSize.Sm" OnClick="_ => _config.Packs.Remove(pack)" />
+            </div>
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="_ => _config.Packs.Add(new CotizacionAlfaPackReglaDto())">Agregar regla</AlfaButton>
+    </section>
+
+    <div>
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar configuración</AlfaButton>
+    </div>
+</div>
+
+@code {
+    private CotizacionAlfaConfigDto _config = new();
+    private bool _permiteDescuentoLinea;
+    private bool _saving;
+    private AppUiMessage? _feedback;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var configResult = await UiOps.RunAsync(() => CotizSvc.GetAlfaConfigAsync(), "No se pudo cargar la configuración.");
+        if (configResult.Success && configResult.Value is not null)
+            _config = configResult.Value;
+
+        var permiteResult = await UiOps.RunAsync(() => CotizSvc.PermiteDescuentoPorLineaAsync(), "No se pudo cargar la configuración de descuento.");
+        if (permiteResult.Success)
+            _permiteDescuentoLinea = permiteResult.Value;
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Configuración",
+        Breadcrumb = ["Cotizaciones", "Configuración"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCotizaciones(RouteContext, Nav, "configuracion")
+    });
+
+    private async Task GuardarAsync()
+    {
+        _saving = true;
+        var saveConfigResult = await UiOps.RunAsync(async () => { await CotizSvc.SaveAlfaConfigAsync(_config); return true; }, "No se pudo guardar la configuración.");
+        var saveDtoResult = await UiOps.RunAsync(async () => { await CotizSvc.SetPermiteDescuentoPorLineaAsync(_permiteDescuentoLinea); return true; }, "No se pudo guardar la configuración de descuento.");
+        _saving = false;
+        _feedback = saveConfigResult.Success && saveDtoResult.Success
+            ? AppUiMessage.Success("Configuración guardada", "Los cambios se guardaron correctamente.")
+            : (saveConfigResult.Feedback ?? saveDtoResult.Feedback);
+    }
+
+    private static int ParseInt(object? value)
+        => int.TryParse(value?.ToString(), out var v) ? v : 0;
+}
