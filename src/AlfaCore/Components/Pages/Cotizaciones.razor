@@ -313,13 +313,25 @@
     private List<CotizacionTareaDto> _tareasEncontradas = [];
 
     private long _seccionTempCounter = -1;
+    private bool _pendingRichEditorSync;
 
     protected override void OnInitialized() => UpdatePageHeader();
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
             UpdatePageHeader();
+
+        // El editor de texto enriquecido usa @ref (_richEditorRef), que Blazor solo termina de
+        // asignar DESPUÉS del primer render -- nunca se puede tocar desde OnInitializedAsync (ej.
+        // el flujo de "Nueva cotización" que llega precargado desde CRM abre el editor ahí mismo).
+        // Por eso AbrirAsync solo marca la bandera; la sincronización real del JS se hace acá,
+        // donde el elemento del DOM ya existe.
+        if (_pendingRichEditorSync)
+        {
+            _pendingRichEditorSync = false;
+            await SyncRichEditorAsync();
+        }
     }
 
     public void Dispose() => PageHeader.Clear();
@@ -431,7 +443,7 @@
         var permiteResult = await UiOps.RunAsync(() => CotizSvc.PermiteDescuentoPorLineaAsync(), "No se pudo leer la configuración de descuento por línea.");
         _permiteDescuentoLinea = permiteResult.Success && permiteResult.Value;
         UpdatePageHeader();
-        await SyncRichEditorAsync();
+        _pendingRichEditorSync = true;
     }
 
     private void CerrarEditor()
