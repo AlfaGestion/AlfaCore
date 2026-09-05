@@ -29,6 +29,7 @@ public sealed class CotizacionesService(
             var texto = string.IsNullOrWhiteSpace(filters.Texto) ? null : $"%{filters.Texto.Trim()}%";
             var estado = string.IsNullOrWhiteSpace(filters.Estado) ? null : filters.Estado.Trim().ToUpperInvariant();
             var cliente = string.IsNullOrWhiteSpace(filters.CodigoCliente) ? null : filters.CodigoCliente.Trim();
+            var soloVencidas = filters.SoloVencidas == true ? (bool?)true : null;
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -58,6 +59,8 @@ public sealed class CotizacionesService(
                            OR v.ContactoNombre LIKE @Texto
                            OR c.CodigoCliente LIKE @Texto
                            OR CAST(c.Numero AS nvarchar(20)) LIKE @Texto)
+                      AND (@SoloVencidas IS NULL
+                           OR (c.Estado NOT IN ('ACEPTADA', 'RECHAZADA', 'ANULADA') AND v.FechaVencimiento < CAST(GETDATE() AS date)))
                 )
                 SELECT * FROM Filtered
                 ORDER BY Fecha DESC, IdCotizacion DESC
@@ -70,6 +73,7 @@ public sealed class CotizacionesService(
                 filters.FechaDesde,
                 filters.FechaHasta,
                 Texto = texto,
+                SoloVencidas = soloVencidas,
                 Offset = (pageNumber - 1) * pageSize,
                 PageSize = pageSize
             }, cancellationToken: token))).AsList();
@@ -761,6 +765,87 @@ public sealed class CotizacionesService(
             await cn.OpenAsync(token);
             await SetConfigAsync(cn, "COTIZACIONES_PERMITE_DESCUENTO_LINEA", permitido ? "1" : "0", null, token);
         }, "No se pudo guardar la configuración de descuento por línea.", ct);
+
+    public Task<IReadOnlyList<CotizacionVersionSummaryDto>> GetVersionesAsync(long idCotizacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetVersiones", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var rows = (await cn.QueryAsync<CotizacionVersionSummaryDto>(new CommandDefinition("""
+                SELECT
+                    v.IdVersion, v.NumeroVersion, ISNULL(v.EstadoVersion, 'BORRADOR') AS EstadoVersion,
+                    v.FechaHoraAlta, v.FechaHoraEnvio, ISNULL(v.UsuarioAlta, '') AS UsuarioAlta,
+                    CAST(CASE WHEN v.IdVersion = c.IdVersionActual THEN 1 ELSE 0 END AS bit) AS EsActual
+                FROM dbo.COT_VERSION v
+                INNER JOIN dbo.COT_COTIZACION c ON c.IdCotizacion = v.IdCotizacion
+                WHERE v.IdCotizacion = @Id
+                ORDER BY v.NumeroVersion DESC;
+                """, new { Id = idCotizacion }, cancellationToken: token))).AsList();
+            return (IReadOnlyList<CotizacionVersionSummaryDto>)rows;
+        }, "No se pudo cargar el historial de versiones.", ct);
+
+    public Task<IReadOnlyList<CotizacionClienteOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SearchClientes", async token =>
+        {
+            var search = (texto ?? string.Empty).Trim();
+            if (search.Length < 2)
+                return (IReadOnlyList<CotizacionClienteOptionDto>)Array.Empty<CotizacionClienteOptionDto>();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var rows = (await cn.QueryAsync<CotizacionClienteOptionDto>(new CommandDefinition("""
+                SELECT TOP (12)
+                    LTRIM(RTRIM(ISNULL(CODIGO, ''))) AS Codigo,
+                    ISNULL(RAZON_SOCIAL, '') AS RazonSocial,
+                    ISNULL(LOCALIDAD, '') AS Localidad,
+                    ISNULL(PROVINCIA, '') AS Provincia
+                FROM dbo.VT_CLIENTES
+                WHERE LTRIM(RTRIM(ISNULL(CODIGO, ''))) <> ''
+                  AND (
+                        CODIGO LIKE @Prefijo
+                        OR RAZON_SOCIAL COLLATE Latin1_General_CI_AI LIKE @Contiene
+                      )
+                ORDER BY RAZON_SOCIAL;
+                """, new { Prefijo = $"{search}%", Contiene = $"%{search}%" }, cancellationToken: token))).AsList();
+            return (IReadOnlyList<CotizacionClienteOptionDto>)rows;
+        }, "No se pudieron buscar clientes.", ct);
+
+    public Task<CotizacionClienteInfoDto?> ResolveClienteAsync(string codigoCliente, CancellationToken ct = default)
+        => ExecuteLoggedAsync("ResolveCliente", async token =>
+        {
+            if (string.IsNullOrWhiteSpace(codigoCliente))
+                return (CotizacionClienteInfoDto?)null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var pricing = await priceResolver.ResolveContextAsync(cn, codigoCliente, token);
+            return new CotizacionClienteInfoDto
+            {
+                Codigo = pricing.ClienteCodigo,
+                Nombre = pricing.ClienteNombre,
+                IdLista = pricing.IdLista,
+                ClasePrecio = pricing.ClasePrecio,
+                EsConsumidorFinal = pricing.EsConsumidorFinal
+            };
+        }, "No se pudo resolver el cliente.", ct);
+
+    public Task<CotizacionResumenDto> GetResumenAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetResumen", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var inicioMes = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+            var row = await cn.QueryFirstOrDefaultAsync<CotizacionResumenDto>(new CommandDefinition("""
+                SELECT
+                    ISNULL(SUM(CASE WHEN c.Estado NOT IN ('ACEPTADA', 'RECHAZADA', 'ANULADA') THEN v.Total ELSE 0 END), 0) AS TotalAbierto,
+                    ISNULL(SUM(CASE WHEN c.Estado = 'ENVIADA' THEN 1 ELSE 0 END), 0) AS EsperandoRespuesta,
+                    ISNULL(SUM(CASE WHEN c.Estado = 'ACEPTADA' AND c.FechaHoraModificacion >= @InicioMes THEN 1 ELSE 0 END), 0) AS AceptadasEsteMes
+                FROM dbo.COT_COTIZACION c
+                INNER JOIN dbo.COT_VERSION v ON v.IdVersion = c.IdVersionActual
+                WHERE ISNULL(c.Baja, 0) = 0;
+                """, new { InicioMes = inicioMes }, cancellationToken: token));
+            return row ?? new CotizacionResumenDto();
+        }, "No se pudo cargar el resumen de cotizaciones.", ct);
 
     // ---- Helpers privados ----
 

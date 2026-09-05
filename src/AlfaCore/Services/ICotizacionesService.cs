@@ -53,4 +53,17 @@ public interface ICotizacionesService
     Task<bool> PermiteDescuentoPorLineaAsync(CancellationToken ct = default);
 
     Task SetPermiteDescuentoPorLineaAsync(bool permitido, CancellationToken ct = default);
+
+    /// <summary>Historial de versiones de una cotización (más nueva primero), para el selector de
+    /// versiones y la pestaña Historial.</summary>
+    Task<IReadOnlyList<CotizacionVersionSummaryDto>> GetVersionesAsync(long idCotizacion, CancellationToken ct = default);
+
+    /// <summary>Búsqueda de clientes (VT_CLIENTES) por código/razón social, para el selector de cliente.</summary>
+    Task<IReadOnlyList<CotizacionClienteOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default);
+
+    /// <summary>Resuelve nombre/lista/clase de un cliente ya elegido, reutilizando IArticuloPrecioResolverService.</summary>
+    Task<CotizacionClienteInfoDto?> ResolveClienteAsync(string codigoCliente, CancellationToken ct = default);
+
+    /// <summary>Métricas reales (montos y conteos) para la cabecera del listado.</summary>
+    Task<CotizacionResumenDto> GetResumenAsync(CancellationToken ct = default);
 }

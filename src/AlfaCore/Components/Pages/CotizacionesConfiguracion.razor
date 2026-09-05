@@ -10,25 +10,26 @@
 
 <PageTitle>Configuración de Cotizaciones | Alfa Gestión</PageTitle>
 
-<style>
-    .cotizcfg-page { display: flex; flex-direction: column; gap: 1rem; padding: 1rem 1.25rem 3rem; max-width: 900px; margin: 0 auto; }
-    .cotizcfg-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: .5rem; align-items: center; }
-    .cotizcfg-row input { background: var(--alfa-bg-input); border: 1px solid var(--alfa-border-default); border-radius: 6px; padding: .35rem .55rem; color: var(--alfa-text-primary); }
-</style>
-
 <div class="page-grid cotizcfg-page">
     <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
 
     <section class="panel-card">
-        <h3 class="panel-card__title" style="margin:0 0 .6rem;">Descuentos</h3>
+        <h3 class="panel-card__title">Descuentos</h3>
+        <p class="panel-card__subtitle">El descuento general por cotización siempre está disponible. Este toggle habilita, además, un descuento por línea individual.</p>
         <AlfaCheckbox Value="@_permiteDescuentoLinea" ValueChanged="v => _permiteDescuentoLinea = v == true">
-            Permitir descuento por línea (además del descuento general, siempre disponible)
+            Permitir descuento por línea
         </AlfaCheckbox>
     </section>
 
     <section class="panel-card">
-        <h3 class="panel-card__title" style="margin:0 0 .6rem;">Configurador "Alfa Gestión"</h3>
-        <div class="cotiz-datos-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:.75rem;margin-bottom:1rem;">
+        <div class="cotizcfg-section-header">
+            <div>
+                <h3 class="panel-card__title">Configurador "Alfa Gestión"</h3>
+                <p class="panel-card__subtitle">Catálogo de módulos y precio de licencia que usa el botón "Configurar Alfa Gestión" dentro de una cotización.</p>
+            </div>
+        </div>
+
+        <div class="cotiz-datos-grid cotizcfg-pricing-grid">
             <div class="field">
                 <label>Precio base</label>
                 <input class="field-input" type="number" step="0.01" @bind="_config.PrecioBase" />
@@ -37,34 +38,58 @@
                 <label>Precio por usuario</label>
                 <input class="field-input" type="number" step="0.01" @bind="_config.PrecioPorUsuario" />
             </div>
+            <div class="cotizcfg-preview">
+                <span>Ejemplo con 5 usuarios</span>
+                <strong>@(_config.PrecioBase + _config.PrecioPorUsuario * 5).ToString("N2")</strong>
+            </div>
         </div>
 
-        <h4>Módulos</h4>
-        @foreach (var modulo in _config.Modulos)
+        <h4 class="cotizcfg-subtitle">Módulos <span class="cotizcfg-count">@_config.Modulos.Count</span></h4>
+        @if (_config.Modulos.Count == 0)
         {
-            <div class="cotizcfg-row">
-                <input value="@modulo.Codigo" @onchange="args => modulo.Codigo = args.Value?.ToString() ?? string.Empty" placeholder="Código" />
-                <input value="@modulo.Nombre" @onchange="args => modulo.Nombre = args.Value?.ToString() ?? string.Empty" placeholder="Nombre" />
-                <AlfaIconButton Icon="bi bi-trash" Label="Quitar módulo" Size="AlfaSize.Sm" OnClick="_ => _config.Modulos.Remove(modulo)" />
+            <AlfaEmptyState Title="Todavía no cargaste módulos" Message="Agregá los módulos que se van a poder elegir en el configurador." />
+        }
+        else
+        {
+            <div class="cotizcfg-list">
+                @foreach (var modulo in _config.Modulos)
+                {
+                    <div class="cotizcfg-row">
+                        <i class="bi bi-grid-3x3-gap"></i>
+                        <input value="@modulo.Codigo" @onchange="args => modulo.Codigo = args.Value?.ToString() ?? string.Empty" placeholder="Código" />
+                        <input value="@modulo.Nombre" @onchange="args => modulo.Nombre = args.Value?.ToString() ?? string.Empty" placeholder="Nombre visible" />
+                        <AlfaIconButton Icon="bi bi-trash" Label="Quitar módulo" Size="AlfaSize.Sm" OnClick="_ => _config.Modulos.Remove(modulo)" />
+                    </div>
+                }
             </div>
         }
         <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="_ => _config.Modulos.Add(new CotizacionAlfaModuloDto())">Agregar módulo</AlfaButton>
 
-        <h4 style="margin-top:1rem;">Reglas de pack de horas recomendado</h4>
-        <p class="panel-card__subtitle">Cada regla apunta a una tarea real (V_TA_Tareas.IdTarea) que trae descripción, horas y valor.</p>
-        @foreach (var pack in _config.Packs)
+        <h4 class="cotizcfg-subtitle cotizcfg-subtitle--spaced">Reglas de pack de horas recomendado <span class="cotizcfg-count">@_config.Packs.Count</span></h4>
+        <p class="panel-card__subtitle">Cada regla apunta a una tarea real (V_TA_Tareas.IdTarea) que trae su propia descripción, horas y valor por hora.</p>
+        @if (_config.Packs.Count == 0)
         {
-            <div class="cotizcfg-row" style="grid-template-columns:1fr 1fr 1fr auto;">
-                <input type="number" value="@pack.MaxUsuarios" @onchange="args => pack.MaxUsuarios = ParseInt(args.Value)" placeholder="Máx. usuarios" />
-                <input type="number" value="@pack.MaxModulos" @onchange="args => pack.MaxModulos = ParseInt(args.Value)" placeholder="Máx. módulos" />
-                <input value="@pack.IdTarea" @onchange="args => pack.IdTarea = args.Value?.ToString() ?? string.Empty" placeholder="IdTarea" />
-                <AlfaIconButton Icon="bi bi-trash" Label="Quitar regla" Size="AlfaSize.Sm" OnClick="_ => _config.Packs.Remove(pack)" />
+            <AlfaEmptyState Title="Todavía no cargaste reglas de pack" Message="Sin reglas, el configurador no va a recomendar ningún pack de implementación." />
+        }
+        else
+        {
+            <div class="cotizcfg-list">
+                @foreach (var pack in _config.Packs)
+                {
+                    <div class="cotizcfg-row cotizcfg-row--pack">
+                        <i class="bi bi-stopwatch"></i>
+                        <input type="number" value="@pack.MaxUsuarios" @onchange="args => pack.MaxUsuarios = ParseInt(args.Value)" placeholder="Máx. usuarios" />
+                        <input type="number" value="@pack.MaxModulos" @onchange="args => pack.MaxModulos = ParseInt(args.Value)" placeholder="Máx. módulos" />
+                        <input value="@pack.IdTarea" @onchange="args => pack.IdTarea = args.Value?.ToString() ?? string.Empty" placeholder="IdTarea (V_TA_Tareas)" />
+                        <AlfaIconButton Icon="bi bi-trash" Label="Quitar regla" Size="AlfaSize.Sm" OnClick="_ => _config.Packs.Remove(pack)" />
+                    </div>
+                }
             </div>
         }
         <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="_ => _config.Packs.Add(new CotizacionAlfaPackReglaDto())">Agregar regla</AlfaButton>
     </section>
 
-    <div>
+    <div class="cotizcfg-save-bar">
         <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar configuración</AlfaButton>
     </div>
 </div>

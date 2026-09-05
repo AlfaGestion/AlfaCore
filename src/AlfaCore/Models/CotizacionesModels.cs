@@ -58,6 +58,7 @@ public sealed class CotizacionListFiltersDto
     public DateTime? FechaHasta { get; set; }
     public string? CodigoCliente { get; set; }
     public bool? SoloOrigenCrm { get; set; }
+    public bool? SoloVencidas { get; set; }
     public int PageNumber { get; set; } = 1;
     public int PageSize { get; set; } = 50;
 }
@@ -208,4 +209,43 @@ public sealed class CotizacionShareDto
     public string RelativeUrl => IdBase > 0 && !string.IsNullOrWhiteSpace(Token)
         ? $"/cotizacion-publica/{IdBase}/{Token}"
         : string.Empty;
+}
+
+/// <summary>Fila liviana para el selector de versiones y la pestaña Historial (§13/§14).</summary>
+public sealed class CotizacionVersionSummaryDto
+{
+    public long IdVersion { get; set; }
+    public int NumeroVersion { get; set; }
+    public string EstadoVersion { get; set; } = CotizacionEstados.Borrador;
+    public DateTime FechaHoraAlta { get; set; }
+    public DateTime? FechaHoraEnvio { get; set; }
+    public string UsuarioAlta { get; set; } = string.Empty;
+    public bool EsActual { get; set; }
+}
+
+/// <summary>Resultado de búsqueda de clientes (VT_CLIENTES) para el selector de cliente (§8).</summary>
+public sealed class CotizacionClienteOptionDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string RazonSocial { get; set; } = string.Empty;
+    public string Localidad { get; set; } = string.Empty;
+    public string Provincia { get; set; } = string.Empty;
+}
+
+/// <summary>Info comercial resuelta de un cliente ya elegido (lista/clase), para mostrar en la cabecera (§8).</summary>
+public sealed class CotizacionClienteInfoDto
+{
+    public string Codigo { get; set; } = string.Empty;
+    public string Nombre { get; set; } = string.Empty;
+    public string IdLista { get; set; } = string.Empty;
+    public int ClasePrecio { get; set; }
+    public bool EsConsumidorFinal { get; set; }
+}
+
+/// <summary>Métricas reales del listado (§15) — nunca estimadas, siempre agregadas de COT_COTIZACION/COT_VERSION.</summary>
+public sealed class CotizacionResumenDto
+{
+    public decimal TotalAbierto { get; set; }
+    public int EsperandoRespuesta { get; set; }
+    public int AceptadasEsteMes { get; set; }
 }
