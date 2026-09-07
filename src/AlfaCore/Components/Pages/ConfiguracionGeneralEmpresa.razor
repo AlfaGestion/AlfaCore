@@ -1,0 +1,166 @@
+@page "/configuracion-general"
+@page "/{idweb}/{idbase:int}/configuracion-general"
+@using AlfaCore.Models
+@inject AlfaCore.Services.IConfiguracionGeneralService ConfigSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Configuración General | Alfa Gestión</PageTitle>
+
+<div class="page-grid cfggral-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="panel-card">
+        <h3 class="panel-card__title">Datos de la empresa</h3>
+        <p class="panel-card__subtitle">Estos datos se usan en comprobantes, propuestas y todo lo que la app muestre como "tu empresa".</p>
+
+        <div class="cfggral-grid">
+            <div class="field cfggral-grid__full">
+                <label>Razón Social</label>
+                <input class="field-input" maxlength="100" @bind="_empresa.Nombre" />
+            </div>
+            <div class="field cfggral-grid__wide">
+                <label>Domicilio</label>
+                <input class="field-input" maxlength="50" @bind="_empresa.Calle" />
+            </div>
+            <div class="field">
+                <label>Número</label>
+                <input class="field-input" @bind="_empresa.Numero" />
+            </div>
+            <div class="field">
+                <label>Piso</label>
+                <input class="field-input" @bind="_empresa.Piso" />
+            </div>
+            <div class="field">
+                <label>Departamento</label>
+                <input class="field-input" maxlength="3" @bind="_empresa.Departamento" />
+            </div>
+
+            <div class="field">
+                <label>Código Postal</label>
+                <input class="field-input" @bind="_empresa.CodigoPostal" />
+            </div>
+            <div class="field cfggral-grid__wide">
+                <label>Localidad</label>
+                <input class="field-input" maxlength="100" @bind="_empresa.Localidad" />
+            </div>
+            <div class="field">
+                <label>Provincia</label>
+                <input class="field-input" maxlength="100" @bind="_empresa.Provincia" />
+            </div>
+            <div class="field">
+                <label>País</label>
+                <input class="field-input" maxlength="100" @bind="_empresa.Pais" />
+            </div>
+
+            <div class="field cfggral-grid__wide">
+                <label>Teléfonos</label>
+                <input class="field-input" maxlength="100" @bind="_empresa.Telefono" />
+            </div>
+            <div class="field cfggral-grid__wide">
+                <label>Condición de IVA</label>
+                <AlfaSelect Value="@_empresa.CondicionIva" ValueChanged="v => _empresa.CondicionIva = v ?? string.Empty" Options="@_condIvaOptions" />
+            </div>
+
+            <div class="field">
+                <label>CUIT</label>
+                <input class="field-input" maxlength="100" @bind="_empresa.Cuit" />
+            </div>
+            <div class="field">
+                <label>Nro. Ing. Brutos</label>
+                <input class="field-input" maxlength="100" @bind="_empresa.NroIngresosBrutos" />
+            </div>
+            <div class="field cfggral-grid__checks">
+                <AlfaCheckbox Value="@_empresa.AgenteRetencionIibb" ValueChanged="v => _empresa.AgenteRetencionIibb = v == true">Es agente de Retención IIBB</AlfaCheckbox>
+                <AlfaCheckbox Value="@_empresa.AgenteRetencionGanancias" ValueChanged="v => _empresa.AgenteRetencionGanancias = v == true">Es agente de Retención Ganancias</AlfaCheckbox>
+            </div>
+
+            <div class="field">
+                <label>Fecha inicio de actividades</label>
+                <input type="date" class="field-input" value="@_empresa.FechaInicioActividades?.ToString("yyyy-MM-dd")"
+                       @onchange="args => _empresa.FechaInicioActividades = DateTime.TryParse(args.Value?.ToString(), out var d) ? d : null" />
+            </div>
+            <div class="field">
+                <label>Punto de venta principal</label>
+                <input class="field-input" maxlength="4" @bind="_empresa.PuntoVentaPrincipal" />
+            </div>
+            <div class="field">
+                <label>Unidad de negocio</label>
+                <input class="field-input" maxlength="4" @bind="_empresa.UnidadNegocio" />
+            </div>
+
+            <div class="field">
+                <label>Código Fiscal N°</label>
+                <input class="field-input" maxlength="100" @bind="_empresa.CodigoFiscal" />
+            </div>
+            <div class="field cfggral-grid__wide">
+                <label>Registro en la I.G.J.</label>
+                <input class="field-input" maxlength="35" @bind="_empresa.RegistroIgj" />
+            </div>
+            <div class="field cfggral-grid__wide">
+                <label>Registro SAGPyA</label>
+                <input class="field-input" maxlength="35" @bind="_empresa.RegistroSagpya" />
+            </div>
+
+            <div class="field cfggral-grid__full">
+                <label>Página</label>
+                <input class="field-input" maxlength="100" placeholder="Página que se visualiza en el menú" @bind="_empresa.Pagina" />
+            </div>
+        </div>
+    </section>
+
+    <div class="cfggral-save-bar">
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar</AlfaButton>
+    </div>
+</div>
+
+@code {
+    private ConfiguracionEmpresaDto _empresa = new();
+    private IReadOnlyList<AlfaSelectOption> _condIvaOptions = [];
+    private bool _saving;
+    private AppUiMessage? _feedback;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var empresaResult = await UiOps.RunAsync(() => ConfigSvc.GetEmpresaAsync(), "No se pudieron cargar los datos de la empresa.");
+        if (empresaResult.Success && empresaResult.Value is not null)
+            _empresa = empresaResult.Value;
+
+        var condIvaResult = await UiOps.RunAsync(() => ConfigSvc.GetCondicionesIvaAsync(), "No se pudieron cargar las condiciones de IVA.");
+        if (condIvaResult.Success && condIvaResult.Value is not null)
+            _condIvaOptions = condIvaResult.Value.Select(c => new AlfaSelectOption(c.Codigo, $"{c.Codigo} - {c.Descripcion}")).ToList();
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Empresa",
+        Breadcrumb = ["Configuración General", "Empresa"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "empresa")
+    });
+
+    private async Task GuardarAsync()
+    {
+        _saving = true;
+        var usuario = AppUserSession.CurrentUser?.UserName ?? Environment.UserName;
+        var result = await UiOps.RunAsync(async () => { await ConfigSvc.SaveEmpresaAsync(_empresa, usuario); return true; }, "No se pudieron guardar los datos de la empresa.");
+        _saving = false;
+        _feedback = result.Success
+            ? AppUiMessage.Success("Guardado", "Los datos de la empresa se guardaron correctamente.")
+            : result.Feedback;
+    }
+}

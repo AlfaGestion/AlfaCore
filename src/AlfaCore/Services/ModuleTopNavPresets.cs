@@ -73,6 +73,13 @@ public static class ModuleTopNavPresets
             ("mesadeayuda", "Mesa de ayuda", "/tickets")
         ]);
 
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildConfiguracionGeneral(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("empresa", "Empresa", "/configuracion-general"),
+            ("logo", "Logo y Estilo", "/configuracion-general/logo")
+        ]);
+
     private static IReadOnlyList<PageHeaderTopNavItem> Build(
         IRouteContextService routeContext,
         NavigationManager nav,

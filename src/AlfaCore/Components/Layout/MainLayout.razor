@@ -862,7 +862,8 @@ else
                         && !string.Equals(_currentModule, "stock", StringComparison.OrdinalIgnoreCase)
                         && !string.Equals(_currentModule, "crm", StringComparison.OrdinalIgnoreCase)
                         && !string.Equals(_currentModule, "tickets", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "cotizaciones", StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(_currentModule, "cotizaciones", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "configuracion-general", StringComparison.OrdinalIgnoreCase))
                     {
                         <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
                             <i class="bi bi-gear"></i>
@@ -1500,7 +1501,8 @@ else
         "stock",
         "crm",
         "tickets",
-        "cotizaciones"
+        "cotizaciones",
+        "configuracion-general"
     };
 
     // Única fuente de verdad de "esta ruta es una de las que ya migramos a AlfaDesign". Se usa tanto
