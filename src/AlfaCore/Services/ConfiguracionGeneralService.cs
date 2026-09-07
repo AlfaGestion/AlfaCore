@@ -154,8 +154,15 @@ public sealed class ConfiguracionGeneralService(
             if (!await SqlObjectExistsAsync(cn, "dbo.TA_LOGOS", token))
                 return null;
 
-            return await cn.ExecuteScalarAsync<byte[]?>(new CommandDefinition(
-                "SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = @Id;", new { Id = LogoId }, cancellationToken: token));
+            // Lectura vía SqlDataReader (no ExecuteScalar de Dapper): la columna IMAGEN es del
+            // tipo legacy "image", y el camino escalar genérico truncaba el blob en la práctica.
+            await using var cmd = new SqlCommand("SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = @Id;", cn);
+            cmd.Parameters.AddWithValue("@Id", LogoId);
+            await using var reader = await cmd.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token) || await reader.IsDBNullAsync(0, token))
+                return null;
+
+            return reader.GetFieldValue<byte[]>(0);
         }, "No se pudo cargar el logo.", ct);
 
     public Task SaveLogoAsync(byte[] contenido, CancellationToken ct = default)

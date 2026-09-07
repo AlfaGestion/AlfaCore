@@ -98,7 +98,7 @@
             _logo = result.Value;
             _tieneLogo = _logo.TieneLogo;
             if (_tieneLogo)
-                _previewUrl = RouteContext.BuildRoute("/api/configuracion-general/logo") + $"?v={Guid.NewGuid():N}";
+                _previewUrl = $"/api/configuracion-general/logo?v={Guid.NewGuid():N}";
         }
     }
 
