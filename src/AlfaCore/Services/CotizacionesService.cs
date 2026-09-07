@@ -610,6 +610,75 @@ public sealed class CotizacionesService(
             };
         }, "No se pudo preparar el enlace de la cotización.", ct);
 
+    public Task SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SendByEmail", async token =>
+        {
+            var to = (destinatario ?? string.Empty).Trim();
+            if (to.Length == 0)
+                throw new InvalidOperationException("Ingresá un email de destino.");
+            _ = new System.Net.Mail.MailAddress(to);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var detail = await LoadVersionDetailAsync(cn, idVersion, null, token)
+                         ?? throw new InvalidOperationException("La cotización indicada no existe.");
+            var mail = await ResolveMailConfigAsync(cn, token);
+            var html = BuildPublicHtml(detail);
+
+            using var message = new System.Net.Mail.MailMessage
+            {
+                From = new System.Net.Mail.MailAddress(mail.From),
+                Subject = $"Cotización {detail.CodigoVisible}",
+                Body = html,
+                IsBodyHtml = true
+            };
+            message.To.Add(to);
+
+            using var client = new System.Net.Mail.SmtpClient(mail.Server, mail.Port)
+            {
+                EnableSsl = mail.EnableSsl,
+                DeliveryMethod = System.Net.Mail.SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false,
+                Credentials = new System.Net.NetworkCredential(mail.From, mail.Password)
+            };
+            await client.SendMailAsync(message, token);
+
+            if (string.Equals(detail.EstadoVersion, CotizacionEstados.Borrador, StringComparison.OrdinalIgnoreCase))
+            {
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE dbo.COT_VERSION SET EstadoVersion = @Estado, FechaHoraEnvio = GETDATE(), FechaHoraModificacion = GETDATE() WHERE IdVersion = @Id;",
+                    new { Id = idVersion, Estado = CotizacionEstados.Enviada }, cancellationToken: token));
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE dbo.COT_COTIZACION SET Estado = @Estado, FechaHoraModificacion = GETDATE() WHERE IdCotizacion = @Id;",
+                    new { Id = detail.IdCotizacion, Estado = CotizacionEstados.Enviada }, cancellationToken: token));
+            }
+        }, "No se pudo enviar la cotización por email.", ct);
+
+    private async Task<MailInfo> ResolveMailConfigAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var server = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_SERVER", ct), "EMAIL_SERVER");
+        var port = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_PORT", ct), "EMAIL_PORT");
+        var account = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_CTA", ct), "EMAIL_CTA");
+        var password = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_PASS", ct), "EMAIL_PASS");
+        var ssl = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_SSL", ct), "EMAIL_SSL");
+
+        if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(port) || string.IsNullOrWhiteSpace(account) || string.IsNullOrWhiteSpace(password))
+            throw new InvalidOperationException("Falta configurar el correo saliente. Revisá EMAIL_SERVER, EMAIL_PORT, EMAIL_CTA y EMAIL_PASS en Configuración.");
+        if (!int.TryParse(port, out var smtpPort) || smtpPort <= 0)
+            throw new InvalidOperationException("EMAIL_PORT no tiene un valor válido.");
+
+        var enableSsl = ssl.Equals("SI", StringComparison.OrdinalIgnoreCase)
+            || ssl.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+            || ssl.Equals("1", StringComparison.OrdinalIgnoreCase);
+        return new MailInfo(server, smtpPort, account, password, enableSsl);
+    }
+
+    private string ConfigOrAppSetting(string dbValue, string key)
+        => !string.IsNullOrWhiteSpace(dbValue) ? dbValue : (configuration[key] ?? string.Empty);
+
+    private sealed record MailInfo(string Server, int Port, string From, string Password, bool EnableSsl);
+
     public Task<string?> RenderPublicHtmlAsync(int idBase, string token, CancellationToken ct = default)
         => ExecuteLoggedAsync("RenderPublic", async innerCt =>
         {

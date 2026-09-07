@@ -518,6 +518,23 @@ button.cotiz-stat--action.is-active {
     color: var(--alfa-text-secondary);
 }
 
+/* Diálogo Compartir */
+
+.cotiz-compartir-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.cotiz-compartir-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.cotiz-compartir-email {
+    margin-top: 1rem;
+}
+
 /* Asistente de IA (sugerir líneas / redactar propuesta) */
 
 .cotiz-ia-input {

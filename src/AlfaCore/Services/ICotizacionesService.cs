@@ -76,4 +76,9 @@ public interface ICotizacionesService
     /// <summary>Asistente de IA: redacta el texto de la propuesta (HTML simple) a partir de un
     /// pedido en lenguaje natural. Nunca inventa precios/importes. Delega en ICrmCotizacionService.</summary>
     Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default);
+
+    /// <summary>Envía la versión por email (misma cuenta SMTP configurada en TA_CONFIGURACION que
+    /// ya usa el resto de la app -- EMAIL_SERVER/EMAIL_PORT/EMAIL_CTA/EMAIL_PASS/EMAIL_SSL). Si la
+    /// versión seguía en BORRADOR, queda marcada ENVIADA.</summary>
+    Task SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, CancellationToken ct = default);
 }

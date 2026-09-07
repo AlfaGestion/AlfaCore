@@ -8,6 +8,7 @@
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime JS
+@inject IConfiguration Config
 @implements IDisposable
 
 <PageTitle>Cotizaciones | Alfa Gestión</PageTitle>
@@ -587,6 +588,39 @@
                         Message="@($"¿Anular la cotización {_detail?.CodigoVisible}? La cotización quedará marcada como anulada y no se podrá revertir desde acá.")"
                         ConfirmLabel="Anular" CancelLabel="Cancelar" Loading="@_anulando"
                         OnConfirm="ConfirmarAnularAsync" OnCancel="() => _showAnularConfirm = false" />
+
+    <AlfaDialog Open="@_showCompartirDialog" Title="Compartir cotización" Eyebrow="@(_detail?.CodigoVisible)" Size="AlfaDialogSize.Md" OnClose="_ => _showCompartirDialog = false">
+        <ChildContent>
+            @if (!string.IsNullOrWhiteSpace(_compartirUrl))
+            {
+                <div class="field">
+                    <label>Link público</label>
+                    <div class="cotiz-compartir-row">
+                        <input class="field-input" readonly value="@_compartirUrl" />
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-clipboard" OnClick="_ => CopiarLinkAsync()">Copiar</AlfaButton>
+                    </div>
+                    <p class="panel-card__subtitle">Cualquiera con este link puede ver esta versión de la cotización, sin necesidad de iniciar sesión.</p>
+                </div>
+            }
+            else
+            {
+                <p class="panel-card__subtitle">Generando el link público...</p>
+            }
+
+            <div class="field cotiz-compartir-email">
+                <label>Enviar por email</label>
+                <div class="cotiz-compartir-row">
+                    <input class="field-input" type="email" placeholder="cliente@correo.com" value="@_compartirEmail"
+                           @oninput="args => _compartirEmail = args.Value?.ToString() ?? string.Empty" />
+                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-envelope" Loading="@_enviandoEmail"
+                                Disabled="@string.IsNullOrWhiteSpace(_compartirEmail)" OnClick="_ => EnviarEmailAsync()">Enviar</AlfaButton>
+                </div>
+            </div>
+        </ChildContent>
+        <Footer>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" OnClick="_ => _showCompartirDialog = false">Cerrar</AlfaButton>
+        </Footer>
+    </AlfaDialog>
 </div>
 
 @code {
@@ -657,6 +691,11 @@
     private bool _prospectoMode;
     private bool _showAnularConfirm;
     private bool _anulando;
+
+    private bool _showCompartirDialog;
+    private string _compartirUrl = string.Empty;
+    private string _compartirEmail = string.Empty;
+    private bool _enviandoEmail;
 
     private ElementReference _richEditorRef;
     private IJSObjectReference? _richEditorJs;
@@ -764,13 +803,15 @@
             if (_detail.EsBorrador)
             {
                 actions.Add(new PageHeaderAction { Key = "guardar", Label = "Guardar borrador", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = GuardarBorradorAsync });
-                actions.Add(new PageHeaderAction { Key = "enviar", Label = "Marcar enviada", Icon = "bi-send", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = MarcarEnviadaAsync });
+                actions.Add(new PageHeaderAction { Key = "compartir", Label = "Compartir", Icon = "bi-send", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = AbrirCompartirDialogAsync });
+                actions.Add(new PageHeaderAction { Key = "marcar-enviada", Label = "Marcar enviada", Icon = "bi-check2", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = MarcarEnviadaAsync });
             }
             else
             {
+                actions.Add(new PageHeaderAction { Key = "compartir", Label = "Compartir", Icon = "bi-send", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = AbrirCompartirDialogAsync });
                 if (string.Equals(_detail.EstadoVersion, CotizacionEstados.Enviada, StringComparison.OrdinalIgnoreCase))
                 {
-                    actions.Add(new PageHeaderAction { Key = "aceptar", Label = "Marcar aceptada", Icon = "bi-check-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = MarcarAceptadaAsync });
+                    actions.Add(new PageHeaderAction { Key = "aceptar", Label = "Marcar aceptada", Icon = "bi-check-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = MarcarAceptadaAsync });
                     actions.Add(new PageHeaderAction { Key = "rechazar", Label = "Marcar rechazada", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, OnClick = MarcarRechazadaAsync });
                 }
                 actions.Add(new PageHeaderAction { Key = "nueva-version", Label = "Nueva versión", Icon = "bi-file-earmark-plus", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = NuevaVersionAsync });
@@ -1077,6 +1118,65 @@
             CerrarEditor();
         else
             SetFeedback(result.Feedback);
+    }
+
+    // ---- Compartir / enviar ----
+
+    private async Task AbrirCompartirDialogAsync()
+    {
+        if (_detail is null)
+            return;
+
+        _showCompartirDialog = true;
+        _compartirUrl = string.Empty;
+        _compartirEmail = string.Empty;
+        StateHasChanged();
+
+        var result = await UiOps.RunAsync(() => CotizSvc.EnsureShareAsync(_detail.IdVersion), "No se pudo generar el link para compartir.");
+        if (result.Success && result.Value is not null && !string.IsNullOrWhiteSpace(result.Value.RelativeUrl))
+            _compartirUrl = BuildPublicBase().TrimEnd('/') + result.Value.RelativeUrl;
+        else if (!result.Success)
+            SetFeedback(result.Feedback);
+
+        StateHasChanged();
+    }
+
+    private string BuildPublicBase()
+    {
+        var configured = Config["ServidorWeb:UrlBasePublica"];
+        return string.IsNullOrWhiteSpace(configured) ? Nav.BaseUri : configured;
+    }
+
+    private async Task CopiarLinkAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_compartirUrl))
+            return;
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", _compartirUrl);
+        SetFeedback(AppUiMessage.Success("Copiado", "El link se copió al portapapeles."));
+    }
+
+    private async Task EnviarEmailAsync()
+    {
+        if (_detail is null || string.IsNullOrWhiteSpace(_compartirEmail))
+            return;
+
+        _enviandoEmail = true;
+        var destino = _compartirEmail.Trim();
+        var idVersion = _detail.IdVersion;
+        var urlParaEnviar = string.IsNullOrWhiteSpace(_compartirUrl) ? null : _compartirUrl;
+        var result = await UiOps.RunAsync(async () => { await CotizSvc.SendByEmailAsync(idVersion, destino, urlParaEnviar); return true; }, "No se pudo enviar la cotización por email.");
+        _enviandoEmail = false;
+
+        if (result.Success)
+        {
+            _showCompartirDialog = false;
+            SetFeedback(AppUiMessage.Success("Email enviado", $"La cotización se envió a {destino}."));
+            await AbrirAsync(idVersion, resetTab: false);
+        }
+        else
+        {
+            SetFeedback(result.Feedback);
+        }
     }
 
     // ---- Cliente ----
