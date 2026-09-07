@@ -84,7 +84,7 @@
                                 @foreach (var item in _items)
                                 {
                                     <tr class="cuentas-list-table__row" @onclick="() => AbrirAsync(item.IdVersion)">
-                                        <td><span class="cotiz-list__code">@item.CodigoVisible</span> <span class="cotiz-list__version">v@item.NumeroVersion</span></td>
+                                        <td><span class="cotiz-list__code">@item.CodigoVisible</span> <span class="cotiz-list__version">v@(item.NumeroVersion)</span></td>
                                         <td><strong>@DisplayOrFallback(item.EmpresaProspecto, item.CodigoCliente)</strong></td>
                                         <td>@item.ContactoNombre</td>
                                         <td class="num">@item.Total.ToString("N2") <span class="cotiz-list__currency">@item.CodigoMoneda</span></td>
@@ -178,7 +178,7 @@
                 </div>
             }
 
-            <AlfaTabs Items="@EditorTabs" ActiveKey="@_activeTab" ActiveKeyChanged="OnEditorTabChanged" AriaLabel="Secciones de la cotización" />
+            <AlfaTabs Items="@EditorTabs" ActiveKey="@_activeTab" ActiveKeyChanged="ChangeTabAsync" AriaLabel="Secciones de la cotización" />
 
             <div class="cotiz-body">
                 <main class="cotiz-main">
@@ -596,7 +596,23 @@
 
     private string CurrentUserName => AppUserSession.CurrentUser?.UserName ?? Environment.UserName;
 
-    private void OnEditorTabChanged(string? key) => _activeTab = key ?? "productos";
+    private async Task ChangeTabAsync(string? key)
+    {
+        var next = key ?? "productos";
+
+        // El editor de texto enriquecido solo existe en el DOM mientras la pestaña Propuesta
+        // está activa (@if la desmonta al salir). Si el usuario escribió algo ahí, hay que
+        // volcarlo a _detail.CuerpoPropuesta ANTES de desmontar -- si no, GetRichEditorHtmlAsync
+        // (llamado desde Guardar borrador en cualquier pestaña) quedaría con una referencia a un
+        // elemento que ya no existe.
+        if (_activeTab == "propuesta" && next != "propuesta" && _richEditorJs is not null && _detail is not null)
+            _detail.CuerpoPropuesta = await GetRichEditorHtmlAsync();
+
+        _activeTab = next;
+
+        if (_activeTab == "propuesta")
+            _pendingRichEditorSync = true;
+    }
 
     private Task HandlePageClickAsync()
     {
@@ -700,6 +716,7 @@
 
         _loadingList = false;
         UpdatePageHeader();
+        StateHasChanged();
     }
 
     private async Task AbrirNuevaAsync()
@@ -711,7 +728,7 @@
             SetFeedback(result.Feedback);
     }
 
-    private async Task AbrirAsync(long idVersion)
+    private async Task AbrirAsync(long idVersion, bool resetTab = true)
     {
         var result = await UiOps.RunAsync(() => CotizSvc.GetVersionDetailAsync(idVersion), "No se pudo cargar la cotización.");
         if (!result.Success || result.Value is null)
@@ -722,7 +739,8 @@
 
         _detail = result.Value;
         _showEditor = true;
-        _activeTab = "productos";
+        if (resetTab)
+            _activeTab = "productos";
         _showAlfaDialog = false;
         _alfaResult = null;
         _alfaSelectedModulos.Clear();
@@ -746,7 +764,17 @@
         }
 
         UpdatePageHeader();
-        _pendingRichEditorSync = true;
+        // Solo tiene sentido sincronizar el editor JS si la pestaña Propuesta va a estar
+        // montada en este render -- si no, _richEditorRef no apunta a ningún elemento real.
+        if (_activeTab == "propuesta")
+            _pendingRichEditorSync = true;
+
+        // Esta acción llega disparada desde el botón de la barra superior (otro componente,
+        // MainPageHeader), no desde un evento propio de Cotizaciones -- Blazor solo re-renderiza
+        // automáticamente al componente dueño del evento que disparó el handler, así que sin este
+        // StateHasChanged explícito el estado cambia (por eso la barra sí se actualiza, vía
+        // IPageHeaderService) pero el cuerpo de la página se queda mostrando lo anterior.
+        StateHasChanged();
     }
 
     private async Task SeleccionarVersionAsync(long idVersion)
@@ -762,6 +790,7 @@
         _showEditor = false;
         _detail = null;
         UpdatePageHeader();
+        StateHasChanged();
         _ = BuscarAsync();
     }
 
@@ -777,7 +806,10 @@
 
     private async Task<string> GetRichEditorHtmlAsync()
     {
-        if (_richEditorJs is null)
+        // _richEditorRef solo es válido mientras la pestaña Propuesta está montada -- en
+        // cualquier otra pestaña, _detail.CuerpoPropuesta ya tiene el último valor conocido
+        // (ChangeTabAsync lo vuelca ahí justo antes de desmontar el editor).
+        if (_richEditorJs is null || _activeTab != "propuesta")
             return _detail?.CuerpoPropuesta ?? string.Empty;
         return await _richEditorJs.InvokeAsync<string>("getHtml", _richEditorRef);
     }
@@ -810,7 +842,7 @@
         if (result.Success)
         {
             SetFeedback(AppUiMessage.Success("Cotización guardada", "El borrador se guardó correctamente."));
-            await AbrirAsync(_detail.IdVersion);
+            await AbrirAsync(_detail.IdVersion, resetTab: false);
         }
         else
         {
@@ -835,7 +867,7 @@
             return;
         var result = await UiOps.RunAsync(async () => { await CotizSvc.MarkEnviadaAsync(_detail.IdVersion, CurrentUserName); return true; }, "No se pudo marcar la cotización como enviada.");
         if (result.Success)
-            await AbrirAsync(_detail.IdVersion);
+            await AbrirAsync(_detail.IdVersion, resetTab: false);
         else
             SetFeedback(result.Feedback);
     }
@@ -853,7 +885,7 @@
                 Title = "Cotización aceptada",
                 Message = result.Value ? "La oportunidad vinculada en CRM se cerró como ganada." : "No se pudo cerrar la oportunidad automáticamente en CRM; revisala a mano si corresponde."
             });
-            await AbrirAsync(_detail.IdVersion);
+            await AbrirAsync(_detail.IdVersion, resetTab: false);
         }
         else
         {
@@ -867,7 +899,7 @@
             return;
         var result = await UiOps.RunAsync(async () => { await CotizSvc.MarkRechazadaAsync(_detail.IdVersion, CurrentUserName); return true; }, "No se pudo marcar la cotización como rechazada.");
         if (result.Success)
-            await AbrirAsync(_detail.IdVersion);
+            await AbrirAsync(_detail.IdVersion, resetTab: false);
         else
             SetFeedback(result.Feedback);
     }
