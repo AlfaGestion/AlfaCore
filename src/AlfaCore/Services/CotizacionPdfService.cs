@@ -13,7 +13,7 @@ public sealed class CotizacionPdfService : ICotizacionPdfService
 {
     private static readonly CultureInfo CulturaAr = CultureInfo.GetCultureInfo("es-AR");
 
-    public byte[] GenerarPdf(CotizacionVersionDetailDto detail, string nombreEmpresa)
+    public byte[] GenerarPdf(CotizacionVersionDetailDto detail, string nombreEmpresa, byte[]? logoBytes = null)
     {
         var document = Document.Create(doc =>
         {
@@ -23,7 +23,7 @@ public sealed class CotizacionPdfService : ICotizacionPdfService
                 page.Margin(28);
                 page.DefaultTextStyle(x => x.FontSize(9));
 
-                page.Header().Element(header => ComposeHeader(header, detail, nombreEmpresa));
+                page.Header().Element(header => ComposeHeader(header, detail, nombreEmpresa, logoBytes));
 
                 page.Content().PaddingTop(14).Column(column =>
                 {
@@ -72,10 +72,16 @@ public sealed class CotizacionPdfService : ICotizacionPdfService
         return document.GeneratePdf();
     }
 
-    private static void ComposeHeader(IContainer container, CotizacionVersionDetailDto detail, string nombreEmpresa)
+    private static void ComposeHeader(IContainer container, CotizacionVersionDetailDto detail, string nombreEmpresa, byte[]? logoBytes)
     {
         container.PaddingBottom(10).BorderBottom(1).BorderColor(Colors.Grey.Lighten2).Row(row =>
         {
+            if (logoBytes is { Length: > 0 })
+            {
+                row.ConstantItem(56).Height(56).Image(logoBytes).FitArea();
+                row.ConstantItem(12);
+            }
+
             row.RelativeItem().Column(col =>
             {
                 col.Item().Text(nombreEmpresa).FontSize(15).Bold();

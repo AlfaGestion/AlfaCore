@@ -721,7 +721,8 @@ public sealed class CotizacionesService(
             if (detail is null)
                 return null;
             var nombreEmpresa = await ReadConfigAsync(cn, "Nombre", token);
-            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa);
+            var logo = await LoadLogoParaPdfAsync(cn, token);
+            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa, logo);
         }, "No se pudo generar el PDF.", ct);
 
     public Task<byte[]?> RenderPublicPdfAsync(int idBase, string token, CancellationToken ct = default)
@@ -757,8 +758,30 @@ public sealed class CotizacionesService(
                 return null;
 
             var nombreEmpresa = await ReadConfigAsync(cn, "Nombre", innerCt);
-            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa);
+            var logo = await LoadLogoParaPdfAsync(cn, innerCt);
+            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa, logo);
         }, "No se pudo generar el PDF.", ct);
+
+    // El logo vive en TA_LOGOS (no en TA_CONFIGURACION, ver ConfiguracionGeneralService), y se
+    // consulta directo con la conexión ya abierta de cada método (nunca vía
+    // IConfiguracionGeneralService acá: ese servicio resuelve la conexión de la sesión ACTIVA del
+    // circuito, que en RenderPublicPdfAsync sería la equivocada -- ahí la conexión real es la del
+    // idBase resuelto por token, cruzando tenant). Respeta el mismo toggle "Incluir logo en
+    // Presupuestos" que ya configura el usuario en Configuración General > Logo y Estilo
+    // (Cotizaciones no tiene su propio checkbox: conceptualmente un presupuesto es lo más
+    // parecido a una cotización en el sistema legacy).
+    private async Task<byte[]?> LoadLogoParaPdfAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var incluir = ParseBool(await ReadConfigAsync(cn, "PRINTLOGO_PROFORMA", ct));
+        if (!incluir || !await SqlObjectExistsAsync(cn, "dbo.TA_LOGOS", ct))
+            return null;
+
+        await using var cmd = new SqlCommand("SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = 'LOGOEMPRESA';", cn);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct) && !await reader.IsDBNullAsync(0, ct))
+            return reader.GetFieldValue<byte[]>(0);
+        return null;
+    }
 
     public Task<CotizacionAlfaConfigDto> GetAlfaConfigAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("GetAlfaConfig", async token =>
