@@ -11,7 +11,8 @@ public sealed class CotizacionesService(
     IAppEventService appEvents,
     ICentralBasesService centralBasesService,
     IArticuloPrecioResolverService priceResolver,
-    ICrmService crmService) : ICotizacionesService
+    ICrmService crmService,
+    ICrmCotizacionService crmCotizacionService) : ICotizacionesService
 {
     private const string ModuleName = "Cotizaciones";
     private const string DefaultTc = "COT";
@@ -846,6 +847,16 @@ public sealed class CotizacionesService(
                 """, new { InicioMes = inicioMes }, cancellationToken: token));
             return row ?? new CotizacionResumenDto();
         }, "No se pudo cargar el resumen de cotizaciones.", ct);
+
+    // El asistente de IA (búsqueda de artículos por lenguaje natural / redacción de propuesta)
+    // ya está implementado y probado en ICrmCotizacionService -- no toca CRM_COTIZACION, solo
+    // llama a OpenAI y al mismo IArticuloPrecioResolverService que ya usamos acá. Se delega
+    // directo en vez de duplicar el prompt engineering.
+    public Task<IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>> SuggestLinesFromPromptAsync(string? clienteCodigo, string prompt, CancellationToken ct = default)
+        => crmCotizacionService.SuggestLinesFromPromptAsync(clienteCodigo, prompt, ct);
+
+    public Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default)
+        => crmCotizacionService.GenerateServiceProposalAsync(prompt, clienteNombre, ct);
 
     // ---- Helpers privados ----
 

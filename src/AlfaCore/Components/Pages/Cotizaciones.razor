@@ -187,6 +187,19 @@
                         <section class="panel-card cotiz-propuesta-card">
                             <h3 class="panel-card__title">Propuesta comercial</h3>
                             <p class="panel-card__subtitle">Este texto se muestra en la vista pública que recibe el cliente. Escribí "/" para insertar títulos, listas, banners o imágenes.</p>
+
+                            @if (_detail.EsBorrador)
+                            {
+                                <div class="cotiz-ia-input">
+                                    <i class="bi bi-stars"></i>
+                                    <input placeholder="Ej: cotizar Alfa Gestión para 5 usuarios, con soporte y capacitación" value="@_iaPropuestaPrompt"
+                                           @oninput="args => _iaPropuestaPrompt = args.Value?.ToString() ?? string.Empty" @onkeydown="OnIaPropuestaKeyDownAsync" />
+                                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-magic" Loading="@_iaPropuestaCargando"
+                                                Disabled="@string.IsNullOrWhiteSpace(_iaPropuestaPrompt)" OnClick="_ => GenerarPropuestaIaAsync()">Generar</AlfaButton>
+                                </div>
+                                <p class="cotiz-ia-hint">La IA redacta el texto de la propuesta. Los precios se cargan en Productos y servicios (no los inventa).</p>
+                            }
+
                             <div class="tickets-rich-editor cotiz-rich-editor">
                                 <div class="tickets-rich-editor__surface cotiz-rich-editor__surface"
                                      @ref="_richEditorRef"
@@ -333,6 +346,7 @@
                                     <div class="cotiz-add-panel__tabs">
                                         <button type="button" class="@(_addPanelMode == "articulo" ? "is-active" : "")" @onclick='() => _addPanelMode = "articulo"'>Artículos</button>
                                         <button type="button" class="@(_addPanelMode == "servicio" ? "is-active" : "")" @onclick='() => _addPanelMode = "servicio"'>Servicios</button>
+                                        <button type="button" class="@(_addPanelMode == "ia" ? "is-active" : "")" @onclick='() => _addPanelMode = "ia"'><i class="bi bi-stars"></i> Asistente IA</button>
                                         <button type="button" class="cotiz-add-panel__close" @onclick="() => _showAddPanel = false" aria-label="Cerrar"><i class="bi bi-x-lg"></i></button>
                                     </div>
                                     @if (_addPanelMode == "articulo")
@@ -346,7 +360,7 @@
                                             </ItemTemplate>
                                         </AlfaLookup>
                                     }
-                                    else
+                                    else if (_addPanelMode == "servicio")
                                     {
                                         <AlfaLookup TItem="CotizacionTareaDto" Placeholder="Buscar servicio..."
                                                     SearchFunc="BuscarTareasLookupAsync" ItemKey="t => t.IdTarea"
@@ -356,6 +370,39 @@
                                                 <span class="cotiz-lookup-item__meta">@t.ValorHora.ToString("N2") / hora</span>
                                             </ItemTemplate>
                                         </AlfaLookup>
+                                    }
+                                    else
+                                    {
+                                        <div class="cotiz-ia-input">
+                                            <input placeholder="Ej: 5 cajas de tornillos y una de cinta" value="@_iaPrompt"
+                                                   @oninput="args => _iaPrompt = args.Value?.ToString() ?? string.Empty" @onkeydown="OnIaKeyDownAsync" />
+                                            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-magic" Loading="@_iaCargando"
+                                                        Disabled="@string.IsNullOrWhiteSpace(_iaPrompt)" OnClick="_ => SugerirLineasIaAsync()">Sugerir</AlfaButton>
+                                        </div>
+                                        <p class="cotiz-ia-hint">La IA interpreta tu pedido y busca los artículos reales del catálogo. Los precios salen del maestro, nunca los inventa.</p>
+
+                                        @if (_iaSugerencias.Count > 0)
+                                        {
+                                            <div class="cotiz-ia-results">
+                                                <div class="cotiz-ia-results__head">
+                                                    <strong>@_iaSugerencias.Count sugerencia(s)</strong>
+                                                    <div class="cotiz-ia-results__actions">
+                                                        <button type="button" class="cotiz-link-btn" @onclick="ToggleTodasIaSugerencias">@(_iaSeleccion.Count == _iaSugerencias.Count ? "Ninguno" : "Todos")</button>
+                                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-plus-lg" Disabled="@(_iaSeleccion.Count == 0)" OnClick="_ => AgregarSugerenciasIaSeleccionadas()">Agregar (@_iaSeleccion.Count)</AlfaButton>
+                                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="_ => { _iaSugerencias.Clear(); _iaSeleccion.Clear(); }">Descartar</AlfaButton>
+                                                    </div>
+                                                </div>
+                                                @foreach (var sug in _iaSugerencias)
+                                                {
+                                                    <div class="cotiz-ia-result">
+                                                        <AlfaCheckbox Value="@_iaSeleccion.Contains(sug.IdArticulo)" ValueChanged="v => ToggleIaSugerencia(sug.IdArticulo, v == true)">
+                                                            <span class="cotiz-ia-result__desc">@sug.Descripcion</span>
+                                                            <span class="cotiz-ia-result__meta">@sug.Cantidad.ToString("0.##") × @sug.PrecioUnitarioNeto.ToString("N2")</span>
+                                                        </AlfaCheckbox>
+                                                    </div>
+                                                }
+                                            </div>
+                                        }
                                     }
                                 </div>
                             }
@@ -623,6 +670,14 @@
 
     private bool _showAddPanel;
     private string _addPanelMode = "articulo";
+
+    private string _iaPrompt = string.Empty;
+    private bool _iaCargando;
+    private List<CrmCotizacionAiLineaSugeridaDto> _iaSugerencias = [];
+    private HashSet<string> _iaSeleccion = [];
+
+    private string _iaPropuestaPrompt = string.Empty;
+    private bool _iaPropuestaCargando;
 
     private bool _showPropuestaCommands;
 
@@ -1175,6 +1230,114 @@
             Orden = _detail.Lineas.Count
         });
         RecalcularTotales();
+    }
+
+    // ---- Asistente de IA: sugerir artículos por texto ----
+
+    private async Task OnIaKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await SugerirLineasIaAsync();
+    }
+
+    private async Task SugerirLineasIaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_iaPrompt) || _detail is null)
+            return;
+
+        _iaCargando = true;
+        var result = await UiOps.RunAsync(() => CotizSvc.SuggestLinesFromPromptAsync(_detail.CodigoCliente, _iaPrompt), "No se pudo generar sugerencias con el asistente de IA.");
+        _iaCargando = false;
+
+        if (result.Success && result.Value is not null)
+        {
+            _iaSugerencias = result.Value.ToList();
+            _iaSeleccion = _iaSugerencias.Select(x => x.IdArticulo).ToHashSet();
+            if (_iaSugerencias.Count == 0)
+                SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Info, Title = "Sin resultados", Message = "El asistente no encontró artículos para ese pedido. Probá con otras palabras." });
+        }
+        else
+        {
+            SetFeedback(result.Feedback);
+        }
+    }
+
+    private void ToggleIaSugerencia(string idArticulo, bool value)
+    {
+        if (value)
+            _iaSeleccion.Add(idArticulo);
+        else
+            _iaSeleccion.Remove(idArticulo);
+    }
+
+    private void ToggleTodasIaSugerencias()
+        => _iaSeleccion = _iaSeleccion.Count == _iaSugerencias.Count ? [] : _iaSugerencias.Select(x => x.IdArticulo).ToHashSet();
+
+    private void AgregarSugerenciasIaSeleccionadas()
+    {
+        if (_detail is null)
+            return;
+
+        foreach (var sug in _iaSugerencias.Where(x => _iaSeleccion.Contains(x.IdArticulo)))
+        {
+            _detail.Lineas.Add(new CotizacionLineaDto
+            {
+                Tipo = CotizacionDetTipos.Articulo,
+                CodigoRef = sug.IdArticulo,
+                Descripcion = sug.Descripcion,
+                Cantidad = sug.Cantidad > 0 ? sug.Cantidad : 1m,
+                PrecioBase = sug.PrecioUnitarioNeto,
+                PrecioUnitario = sug.PrecioUnitarioNeto,
+                TasaIva = sug.TasaIva,
+                ImpactaTotal = true,
+                OrigenPrecio = string.IsNullOrWhiteSpace(_detail.CodigoCliente) ? CotizacionOrigenPrecio.ConsumidorFinal : CotizacionOrigenPrecio.Cliente,
+                Orden = _detail.Lineas.Count
+            });
+        }
+
+        _iaSugerencias.Clear();
+        _iaSeleccion.Clear();
+        _iaPrompt = string.Empty;
+        RecalcularTotales();
+    }
+
+    // ---- Asistente de IA: redactar propuesta ----
+
+    private async Task OnIaPropuestaKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter")
+            await GenerarPropuestaIaAsync();
+    }
+
+    private async Task GenerarPropuestaIaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_iaPropuestaPrompt) || _detail is null)
+            return;
+
+        _iaPropuestaCargando = true;
+        var result = await UiOps.RunAsync(() => CotizSvc.GenerateServiceProposalAsync(_iaPropuestaPrompt, _detail.EmpresaProspecto), "No se pudo generar la propuesta con el asistente de IA.");
+        _iaPropuestaCargando = false;
+
+        if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+            return;
+        }
+
+        var html = result.Value ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(html))
+            return;
+
+        // Se llama solo desde la pestaña Propuesta, ya montada -- _richEditorRef es válido acá.
+        await EnsureRichEditorLoadedAsync();
+        if (_richEditorJs is null)
+            return;
+
+        var actual = await _richEditorJs.InvokeAsync<string>("getHtml", _richEditorRef);
+        var combinado = string.IsNullOrWhiteSpace(actual) ? html : actual + html;
+        await _richEditorJs.InvokeVoidAsync("setHtml", _richEditorRef, combinado);
+        _detail.CuerpoPropuesta = combinado;
+        _iaPropuestaPrompt = string.Empty;
     }
 
     // ---- Configurador Alfa Gestión ----

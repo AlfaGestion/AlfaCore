@@ -518,6 +518,82 @@ button.cotiz-stat--action.is-active {
     color: var(--alfa-text-secondary);
 }
 
+/* Asistente de IA (sugerir líneas / redactar propuesta) */
+
+.cotiz-ia-input {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .1rem;
+}
+
+.cotiz-ia-input i {
+    color: var(--alfa-accent);
+}
+
+.cotiz-ia-input input {
+    flex: 1 1 auto;
+    height: var(--alfa-control-md);
+    background: var(--alfa-bg-input);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    color: var(--alfa-text-primary);
+    padding: 0 .7rem;
+}
+
+.cotiz-ia-input input:focus {
+    outline: none;
+    border-color: var(--alfa-accent);
+}
+
+.cotiz-ia-hint {
+    margin: .3rem 0 0;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+}
+
+.cotiz-ia-results {
+    margin-top: .75rem;
+    padding-top: .6rem;
+    border-top: 1px solid var(--alfa-border-default);
+}
+
+.cotiz-ia-results__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .5rem;
+    color: var(--alfa-text-primary);
+}
+
+.cotiz-ia-results__actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.cotiz-ia-result {
+    padding: .3rem 0;
+}
+
+.cotiz-ia-result ::deep .alfa-checkbox__label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .4rem;
+}
+
+.cotiz-ia-result__desc {
+    color: var(--alfa-text-primary);
+}
+
+.cotiz-ia-result__meta {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+}
+
 .cotiz-lookup-item__title {
     display: block;
     color: var(--alfa-text-primary);

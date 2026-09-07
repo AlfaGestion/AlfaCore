@@ -66,4 +66,14 @@ public interface ICotizacionesService
 
     /// <summary>Métricas reales (montos y conteos) para la cabecera del listado.</summary>
     Task<CotizacionResumenDto> GetResumenAsync(CancellationToken ct = default);
+
+    /// <summary>Asistente de IA: interpreta un pedido en lenguaje natural y busca los artículos
+    /// reales del catálogo (precio siempre resuelto por IArticuloPrecioResolverService, la IA
+    /// solo aporta el término de búsqueda y la cantidad). Delega en ICrmCotizacionService, que ya
+    /// tiene esta lógica implementada y probada -- no se duplica.</summary>
+    Task<IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>> SuggestLinesFromPromptAsync(string? clienteCodigo, string prompt, CancellationToken ct = default);
+
+    /// <summary>Asistente de IA: redacta el texto de la propuesta (HTML simple) a partir de un
+    /// pedido en lenguaje natural. Nunca inventa precios/importes. Delega en ICrmCotizacionService.</summary>
+    Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default);
 }
