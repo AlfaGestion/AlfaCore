@@ -589,12 +589,19 @@ public sealed class CotizacionesService(
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var actual = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                "SELECT PublicToken FROM dbo.COT_VERSION WHERE IdVersion = @Id;", new { Id = idVersion }, cancellationToken: token));
-            if (actual is null)
+
+            // ExecuteScalarAsync devuelve NULL tanto si la versión no existe como si existe pero
+            // PublicToken todavía es NULL -- que es el caso normal de CUALQUIER cotización que
+            // nunca se compartió. Hay que distinguir ambos casos con un EXISTS separado; antes
+            // esto tiraba "La versión indicada no existe" para toda cotización nueva.
+            var fila = await cn.QueryFirstOrDefaultAsync<(bool Existe, string? PublicToken)>(new CommandDefinition("""
+                SELECT CAST(1 AS bit) AS Existe, PublicToken
+                FROM dbo.COT_VERSION WHERE IdVersion = @Id;
+                """, new { Id = idVersion }, cancellationToken: token));
+            if (!fila.Existe)
                 throw new InvalidOperationException("La versión indicada no existe.");
 
-            var tk = actual.Trim();
+            var tk = (fila.PublicToken ?? string.Empty).Trim();
             if (tk.Length == 0)
             {
                 tk = Guid.NewGuid().ToString("N");
