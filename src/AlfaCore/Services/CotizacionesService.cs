@@ -12,7 +12,8 @@ public sealed class CotizacionesService(
     ICentralBasesService centralBasesService,
     IArticuloPrecioResolverService priceResolver,
     ICrmService crmService,
-    ICrmCotizacionService crmCotizacionService) : ICotizacionesService
+    ICrmCotizacionService crmCotizacionService,
+    ICotizacionPdfService pdfService) : ICotizacionesService
 {
     private const string ModuleName = "Cotizaciones";
     private const string DefaultTc = "COT";
@@ -710,6 +711,54 @@ public sealed class CotizacionesService(
             var detail = await LoadVersionDetailAsync(cn, idVersion.Value, null, innerCt);
             return detail is null ? null : BuildPublicHtml(detail);
         }, "No se pudo mostrar la cotización.", ct);
+
+    public Task<byte[]?> GeneratePdfAsync(long idVersion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GeneratePdf", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detail = await LoadVersionDetailAsync(cn, idVersion, null, token);
+            if (detail is null)
+                return null;
+            var nombreEmpresa = await ReadConfigAsync(cn, "Nombre", token);
+            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa);
+        }, "No se pudo generar el PDF.", ct);
+
+    public Task<byte[]?> RenderPublicPdfAsync(int idBase, string token, CancellationToken ct = default)
+        => ExecuteLoggedAsync("RenderPublicPdf", async innerCt =>
+        {
+            var tk = (token ?? string.Empty).Trim();
+            if (idBase <= 0 || tk.Length == 0)
+                return null;
+
+            var baseInfo = await centralBasesService.GetByIdAsync(idBase, innerCt);
+            if (baseInfo is null)
+                return null;
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(innerCt);
+
+            var idVersion = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(
+                "SELECT IdVersion FROM dbo.COT_VERSION WHERE PublicToken = @Token;", new { Token = tk }, cancellationToken: innerCt));
+            if (idVersion is null)
+                return null;
+
+            var detail = await LoadVersionDetailAsync(cn, idVersion.Value, null, innerCt);
+            if (detail is null)
+                return null;
+
+            var nombreEmpresa = await ReadConfigAsync(cn, "Nombre", innerCt);
+            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa);
+        }, "No se pudo generar el PDF.", ct);
 
     public Task<CotizacionAlfaConfigDto> GetAlfaConfigAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("GetAlfaConfig", async token =>

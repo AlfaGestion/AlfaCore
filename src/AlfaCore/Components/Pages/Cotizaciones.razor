@@ -600,6 +600,7 @@
                         <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-clipboard" OnClick="_ => CopiarLinkAsync()">Copiar</AlfaButton>
                     </div>
                     <p class="panel-card__subtitle">Cualquiera con este link puede ver esta versión de la cotización, sin necesidad de iniciar sesión.</p>
+                    <a class="btn btn--ghost btn--sm" href="@(_compartirUrl + "/pdf")" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> Descargar PDF</a>
                 </div>
             }
             else

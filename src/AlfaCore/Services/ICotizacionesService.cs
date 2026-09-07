@@ -81,4 +81,11 @@ public interface ICotizacionesService
     /// ya usa el resto de la app -- EMAIL_SERVER/EMAIL_PORT/EMAIL_CTA/EMAIL_PASS/EMAIL_SSL). Si la
     /// versión seguía en BORRADOR, queda marcada ENVIADA.</summary>
     Task SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, CancellationToken ct = default);
+
+    /// <summary>PDF de la versión, para descarga desde el editor (sesión autenticada actual).</summary>
+    Task<byte[]?> GeneratePdfAsync(long idVersion, CancellationToken ct = default);
+
+    /// <summary>PDF de la versión resuelta por token público, mismo alcance que RenderPublicHtmlAsync
+    /// (cruza a la base del cliente vía ICentralBasesService, sin depender de la sesión actual).</summary>
+    Task<byte[]?> RenderPublicPdfAsync(int idBase, string token, CancellationToken ct = default);
 }
