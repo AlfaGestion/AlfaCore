@@ -186,8 +186,51 @@
                     {
                         <section class="panel-card cotiz-propuesta-card">
                             <h3 class="panel-card__title">Propuesta comercial</h3>
-                            <p class="panel-card__subtitle">Este texto se muestra en la vista pública que recibe el cliente.</p>
-                            <div class="cotiz-rich-editor" @ref="_richEditorRef" contenteditable="@(_detail.EsBorrador ? "true" : "false")"></div>
+                            <p class="panel-card__subtitle">Este texto se muestra en la vista pública que recibe el cliente. Escribí "/" para insertar títulos, listas, banners o imágenes.</p>
+                            <div class="tickets-rich-editor cotiz-rich-editor">
+                                <div class="tickets-rich-editor__surface cotiz-rich-editor__surface"
+                                     @ref="_richEditorRef"
+                                     contenteditable="@(_detail.EsBorrador ? "true" : "false")"
+                                     data-placeholder="Escribí / para comandos"
+                                     @oninput="OnPropuestaInputAsync"
+                                     @onkeyup="OnPropuestaInputAsync"
+                                     @onfocus="OnPropuestaFocusAsync"></div>
+                                @if (_detail.EsBorrador)
+                                {
+                                    <div class="tickets-rich-editor__bar">
+                                        @foreach (var option in ToolbarPropuestaCommands)
+                                        {
+                                            <button type="button" class="tickets-rich-editor__tool" title="@option.Title" @onclick="() => RunPropuestaCommandAsync(option)">
+                                                <i class="bi @option.Icon"></i>
+                                            </button>
+                                        }
+                                        <button type="button" class="tickets-rich-editor__tool" title="Comandos" @onclick="TogglePropuestaCommands">
+                                            <i class="bi bi-three-dots-vertical"></i>
+                                        </button>
+                                    </div>
+                                    @if (_showPropuestaCommands)
+                                    {
+                                        <div class="tickets-slash-menu">
+                                            @foreach (var group in PropuestaCommands.GroupBy(x => x.Group))
+                                            {
+                                                <div class="tickets-slash-menu__group">
+                                                    <span>@group.Key</span>
+                                                    @foreach (var option in group)
+                                                    {
+                                                        <button type="button" @onclick="() => RunPropuestaCommandAsync(option)">
+                                                            <i class="bi @option.Icon"></i>
+                                                            <span>
+                                                                <strong>@option.Title</strong>
+                                                                <small>@option.Description</small>
+                                                            </span>
+                                                        </button>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                }
+                            </div>
                         </section>
                     }
                     else if (_activeTab == "condiciones")
@@ -514,6 +557,37 @@
         new("historial", "Historial")
     ];
 
+    private sealed record PropuestaCommandOption(string Group, string Title, string Description, string Icon, string Command);
+
+    // Mismo catálogo de comandos que usa Tickets (tickets-rich-editor.js), curado para una
+    // propuesta comercial: se dejan afuera los específicos de tickets (Artículo, Índice).
+    private static readonly IReadOnlyList<PropuestaCommandOption> PropuestaCommands =
+    [
+        new("FORMATEAR", "Título 1", "Título de sección grande", "bi-type-h1", "h1"),
+        new("FORMATEAR", "Título 2", "Título de sección mediano", "bi-type-h2", "h2"),
+        new("FORMATEAR", "Título 3", "Título de sección pequeño", "bi-type-h3", "h3"),
+        new("FORMATEAR", "Texto", "Bloque de párrafo", "bi-paragraph", "paragraph"),
+        new("ESTRUCTURA", "Separador", "Insertar un separador horizontal", "bi-dash-lg", "separator"),
+        new("ESTRUCTURA", "Lista de viñetas", "Crear una lista simple", "bi-list-ul", "bulletList"),
+        new("ESTRUCTURA", "Lista numerada", "Crear una lista numerada", "bi-list-ol", "numberedList"),
+        new("ESTRUCTURA", "Lista de comprobación", "Llevar seguimiento de entregables", "bi-check2-square", "checkList"),
+        new("BANNER", "Banner de información", "Insertar un aviso informativo", "bi-info-circle-fill", "infoBanner"),
+        new("BANNER", "Banner de éxito", "Insertar un aviso destacado", "bi-check-circle-fill", "successBanner"),
+        new("BANNER", "Banner de advertencia", "Insertar un aviso de advertencia", "bi-exclamation-triangle-fill", "warningBanner"),
+        new("MEDIOS", "Imagen", "Insertar o pegar una imagen", "bi-file-earmark-image", "media"),
+        new("NAVEGACIÓN", "Enlace", "Añadir un enlace", "bi-link-45deg", "link"),
+        new("NAVEGACIÓN", "Cita", "Añadir una cita destacada", "bi-quote", "quote")
+    ];
+
+    private static readonly IReadOnlyList<PropuestaCommandOption> ToolbarPropuestaCommands =
+    [
+        PropuestaCommands[0],
+        PropuestaCommands[5],
+        PropuestaCommands[6],
+        PropuestaCommands[11],
+        PropuestaCommands[12]
+    ];
+
     // ---- Listado ----
     private List<CotizacionListItemDto> _items = [];
     private bool _loadingList = true;
@@ -549,6 +623,8 @@
 
     private bool _showAddPanel;
     private string _addPanelMode = "articulo";
+
+    private bool _showPropuestaCommands;
 
     private long _seccionTempCounter = -1;
 
@@ -812,6 +888,32 @@
         if (_richEditorJs is null || _activeTab != "propuesta")
             return _detail?.CuerpoPropuesta ?? string.Empty;
         return await _richEditorJs.InvokeAsync<string>("getHtml", _richEditorRef);
+    }
+
+    private async Task OnPropuestaInputAsync()
+    {
+        if (_detail is not null)
+            _detail.CuerpoPropuesta = await GetRichEditorHtmlAsync();
+        if (_richEditorJs is not null)
+            _showPropuestaCommands = await _richEditorJs.InvokeAsync<bool>("shouldShowCommands", _richEditorRef);
+    }
+
+    private async Task OnPropuestaFocusAsync()
+    {
+        if (_richEditorJs is not null)
+            _showPropuestaCommands = await _richEditorJs.InvokeAsync<bool>("shouldShowCommands", _richEditorRef);
+    }
+
+    private void TogglePropuestaCommands() => _showPropuestaCommands = !_showPropuestaCommands;
+
+    private async Task RunPropuestaCommandAsync(PropuestaCommandOption option)
+    {
+        if (_richEditorJs is null)
+            return;
+        await _richEditorJs.InvokeVoidAsync("runCommand", _richEditorRef, option.Command);
+        if (_detail is not null)
+            _detail.CuerpoPropuesta = await GetRichEditorHtmlAsync();
+        _showPropuestaCommands = false;
     }
 
     private async Task GuardarBorradorAsync()

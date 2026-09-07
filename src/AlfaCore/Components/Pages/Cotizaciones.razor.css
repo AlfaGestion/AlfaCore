@@ -709,13 +709,11 @@ button.cotiz-stat--action.is-active {
     gap: .35rem;
 }
 
-.cotiz-rich-editor {
+/* .cotiz-rich-editor convive con las clases globales .tickets-rich-editor (mismo editor que
+   usa Tickets, reutilizado tal cual) -- acá solo se ajusta la altura para una propuesta
+   comercial, que necesita más espacio que la descripción de un ticket. */
+.cotiz-rich-editor .tickets-rich-editor__surface {
     min-height: 22rem;
-    border: 1px solid var(--alfa-border-default);
-    border-radius: var(--alfa-radius-md);
-    padding: .85rem 1rem;
-    background: var(--alfa-bg-input);
-    color: var(--alfa-text-primary);
 }
 
 /* ======================================================================
