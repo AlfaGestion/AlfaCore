@@ -280,23 +280,7 @@ public class Program
         var embeddedSignupStartupOptions = embeddedSignupSection.Get<WhatsAppEmbeddedSignupOptions>() ?? new();
         builder.Services.AddOptions<WhatsAppEmbeddedSignupOptions>()
             .Bind(embeddedSignupSection)
-            .Validate(options => !options.Enabled ||
-                (options.AllowedBaseIds.Length > 0
-                 && options.AllowedBaseIds.All(static id => id > 0)
-                 && options.AllowedBaseIds.Distinct().Count() == options.AllowedBaseIds.Length
-                 && !string.IsNullOrWhiteSpace(options.AppId)
-                 && !string.IsNullOrWhiteSpace(options.BusinessPortfolioId)
-                 && !string.IsNullOrWhiteSpace(options.SystemUserId)
-                 && !string.IsNullOrWhiteSpace(options.EmbeddedSignupConfigId)
-                 && !string.IsNullOrWhiteSpace(options.GraphApiVersion)
-                 && Uri.TryCreate(options.GraphBaseUrl, UriKind.Absolute, out var graphBaseUri)
-                 && graphBaseUri.Scheme == Uri.UriSchemeHttps
-                 && (options.UseApplicationCentralConnection ^ !string.IsNullOrWhiteSpace(options.CentralConnectionString))
-                 && !string.IsNullOrWhiteSpace(options.AppSecret)
-                 && !string.IsNullOrWhiteSpace(options.DataProtectionKeysPath)
-                 && Path.IsPathRooted(options.DataProtectionKeysPath)
-                 && options.OnboardingExpirationMinutes > 0
-                 && options.MaxRetryCount >= 0),
+            .Validate(static options => options.IsValidStartupConfiguration(),
                 "La configuración global de WhatsApp Embedded Signup es inválida.")
             .ValidateOnStart();
         builder.Services.Configure<PushNotificationsOptions>(builder.Configuration.GetSection(PushNotificationsOptions.SectionName));

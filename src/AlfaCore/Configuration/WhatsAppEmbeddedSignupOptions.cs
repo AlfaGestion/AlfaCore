@@ -28,6 +28,34 @@ public sealed class WhatsAppEmbeddedSignupOptions
 
     public bool IsAllowedForBase(int idBase)
         => Enabled && idBase > 0 && AllowedBaseIds.Contains(idBase);
+
+    public bool HasDataProtectionKeyRingConfiguration()
+        => !string.IsNullOrWhiteSpace(DataProtectionKeysPath)
+            && Path.IsPathRooted(DataProtectionKeysPath);
+
+    public bool IsValidStartupConfiguration()
+    {
+        if (!Enabled)
+            return true;
+
+        var hasValidCommonConfiguration = AllowedBaseIds.Length > 0
+            && AllowedBaseIds.All(static id => id > 0)
+            && AllowedBaseIds.Distinct().Count() == AllowedBaseIds.Length
+            && !string.IsNullOrWhiteSpace(AppId)
+            && !string.IsNullOrWhiteSpace(BusinessPortfolioId)
+            && !string.IsNullOrWhiteSpace(SystemUserId)
+            && !string.IsNullOrWhiteSpace(EmbeddedSignupConfigId)
+            && !string.IsNullOrWhiteSpace(GraphApiVersion)
+            && Uri.TryCreate(GraphBaseUrl, UriKind.Absolute, out var graphBaseUri)
+            && graphBaseUri.Scheme == Uri.UriSchemeHttps
+            && (UseApplicationCentralConnection ^ !string.IsNullOrWhiteSpace(CentralConnectionString))
+            && !string.IsNullOrWhiteSpace(AppSecret)
+            && OnboardingExpirationMinutes > 0
+            && MaxRetryCount >= 0;
+
+        return hasValidCommonConfiguration
+            && (!WorkerEnabled || HasDataProtectionKeyRingConfiguration());
+    }
 }
 
 public enum WhatsAppEmbeddedSignupCreditMode

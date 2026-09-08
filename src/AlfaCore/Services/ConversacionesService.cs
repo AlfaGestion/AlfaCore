@@ -1,5 +1,7 @@
+using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Options;
 using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Globalization;
@@ -28,6 +30,7 @@ public sealed class ConversacionesService(
     IWhatsAppWebhookTenantGuard whatsAppWebhookTenantGuard,
     IWhatsAppRuntimeCredentialResolver whatsAppRuntimeCredentialResolver,
     IMetaWhatsAppManagementClient metaWhatsAppManagementClient,
+    IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
     IWebHostEnvironment environment,
     ILogger<ConversacionesService> logger) : IConversacionesService
 {
@@ -3547,6 +3550,8 @@ public sealed class ConversacionesService(
             var whatsAppConfig = parsedMessages.Any(x => x.Attachments.Count > 0)
                 ? await conversacionesConfigService.GetWhatsAppConfigAsync(token)
                 : null;
+            var embeddedSignupWithoutVault = embeddedSignupOptions.Value.IsAllowedForBase(currentBaseId)
+                && !embeddedSignupOptions.Value.HasDataProtectionKeyRingConfiguration();
             var processed = 0;
 
             foreach (var status in parsedStatuses)
@@ -3580,7 +3585,7 @@ public sealed class ConversacionesService(
                     }, token);
                 }
 
-                if (incoming.Attachments.Count > 0 && whatsAppConfig is not null)
+                if (incoming.Attachments.Count > 0 && whatsAppConfig is not null && !embeddedSignupWithoutVault)
                 {
                     var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
                         currentBaseId, null, incoming.PhoneNumberId, whatsAppConfig, token);
@@ -3589,6 +3594,10 @@ public sealed class ConversacionesService(
                     whatsAppConfig.ApiVersion = runtimeCredential.GraphVersion;
                     whatsAppConfig.AccessToken = runtimeCredential.AccessToken;
                     await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
+                }
+                else if (incoming.Attachments.Count > 0 && embeddedSignupWithoutVault)
+                {
+                    logger.LogWarning("Se omitió la descarga de adjuntos del webhook Embedded Signup porque el vault no está disponible en este proceso.");
                 }
 
                 if (string.Equals(incoming.MessageType, "REACTION", StringComparison.OrdinalIgnoreCase))

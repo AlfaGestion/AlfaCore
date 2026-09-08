@@ -88,8 +88,28 @@ public sealed class WhatsAppTenantIsolationTests
     public async Task EmbeddedSignupWithoutVault_FailsWithoutLegacyFallback()
     {
         var resolver = CreateResolver(new("9201", "9101", 1, DateTime.UtcNow), null, "");
-        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => resolver.ResolveAsync(1, 7, "9201", Legacy()));
+        var error = await Assert.ThrowsAsync<WhatsAppEmbeddedVaultUnavailableException>(() => resolver.ResolveAsync(1, 7, "9201", Legacy()));
         Assert.Contains("credencial segura", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task EmbeddedSignupWithoutDataProtection_DoesNotReadVaultOrUseLegacyFallback()
+    {
+        var vault = new CountingVault();
+        var options = Options.Create(new WhatsAppEmbeddedSignupOptions
+        {
+            Enabled = true,
+            AllowedBaseIds = [84],
+            GraphApiVersion = "v26.0"
+        });
+        var resolver = new WhatsAppRuntimeCredentialResolver(
+            new OwnershipStore(new("9201", "9101", 84, DateTime.UtcNow)), vault, options);
+
+        await Assert.ThrowsAsync<WhatsAppEmbeddedVaultUnavailableException>(() =>
+            resolver.ResolveAsync(84, 7, "9201", Legacy()));
+
+        Assert.Equal(0, vault.Finds);
+        Assert.Equal(0, vault.Reads);
     }
 
     [Fact]
@@ -140,6 +160,45 @@ public sealed class WhatsAppTenantIsolationTests
         Assert.Contains("SistemaAccion = \"BIENVENIDA\"", source, StringComparison.Ordinal);
         Assert.Contains("await SendMessageAsync(new ConversacionSendMessageRequest", source, StringComparison.Ordinal);
         Assert.Contains("GetTemplatesForConversationAsync", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TextAndStatusWebhooks_DoNotResolveVaultCredentials()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        var method = source.IndexOf("RegisterIncomingWebhookAsync", StringComparison.Ordinal);
+        var withoutVault = source.IndexOf("var embeddedSignupWithoutVault", method, StringComparison.Ordinal);
+        var attachments = source.IndexOf("if (incoming.Attachments.Count > 0 && whatsAppConfig is not null && !embeddedSignupWithoutVault)", method, StringComparison.Ordinal);
+        var resolver = source.IndexOf("whatsAppRuntimeCredentialResolver.ResolveAsync", method, StringComparison.Ordinal);
+        var status = source.IndexOf("UpdateWhatsAppMessageStatusAsync(status", method, StringComparison.Ordinal);
+
+        Assert.True(method >= 0 && withoutVault > method && status > withoutVault && attachments > status && resolver > attachments);
+    }
+
+    [Fact]
+    public void WebhookRuntimeWithoutWorker_DoesNotRequireDataProtection()
+    {
+        var options = ValidStartupOptions(workerEnabled: false);
+        options.DataProtectionKeysPath = string.Empty;
+
+        Assert.True(options.IsValidStartupConfiguration());
+    }
+
+    [Fact]
+    public void WorkerWithoutDataProtection_IsRejectedAtStartup()
+    {
+        var options = ValidStartupOptions(workerEnabled: true);
+        options.DataProtectionKeysPath = string.Empty;
+
+        Assert.False(options.IsValidStartupConfiguration());
+    }
+
+    [Fact]
+    public void StartupValidation_UsesTheWorkerAwareEmbeddedSignupContract()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
+
+        Assert.Contains(".Validate(static options => options.IsValidStartupConfiguration(),", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -199,7 +258,31 @@ public sealed class WhatsAppTenantIsolationTests
     private static WhatsAppRuntimeCredentialResolver CreateResolver(WhatsAppPhoneOwnership? owner, WhatsAppCredentialReference? reference, string secret)
         => new(new OwnershipStore(owner), new Vault(reference, secret), OptionsFor(1));
     private static IOptions<WhatsAppEmbeddedSignupOptions> OptionsFor(params int[] allowedBaseIds)
-        => Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = allowedBaseIds, GraphApiVersion = "v26.0" });
+        => Options.Create(new WhatsAppEmbeddedSignupOptions
+        {
+            Enabled = true,
+            AllowedBaseIds = allowedBaseIds,
+            GraphApiVersion = "v26.0",
+            DataProtectionKeysPath = @"C:\AlfaCore\EmbeddedSignupKeys"
+        });
+    private static WhatsAppEmbeddedSignupOptions ValidStartupOptions(bool workerEnabled)
+        => new()
+        {
+            Enabled = true,
+            WorkerEnabled = workerEnabled,
+            AllowedBaseIds = [84],
+            AppId = "app-id",
+            BusinessPortfolioId = "business-id",
+            SystemUserId = "system-user-id",
+            EmbeddedSignupConfigId = "config-id",
+            GraphApiVersion = "v26.0",
+            GraphBaseUrl = "https://graph.facebook.com",
+            UseApplicationCentralConnection = true,
+            AppSecret = "app-secret",
+            DataProtectionKeysPath = @"C:\AlfaCore\EmbeddedSignupKeys",
+            OnboardingExpirationMinutes = 30,
+            MaxRetryCount = 8
+        };
     private static ConversacionWhatsAppConfigDto Legacy() => new() { AccessToken = "legacy-token", PhoneNumberId = "legacy", BusinessAccountId = "legacy-waba", ApiVersion = "v22.0" };
 
     private sealed class OwnershipStore(WhatsAppPhoneOwnership? phone, bool schemaAvailable = true) : IWhatsAppAssetOwnershipStore
