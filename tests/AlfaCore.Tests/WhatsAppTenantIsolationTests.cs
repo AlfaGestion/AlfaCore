@@ -178,8 +178,7 @@ public sealed class WhatsAppTenantIsolationTests
     [Fact]
     public void WebhookRuntimeWithoutWorker_DoesNotRequireDataProtection()
     {
-        var options = ValidStartupOptions(workerEnabled: false);
-        options.DataProtectionKeysPath = string.Empty;
+        var options = WebhookOnlyStartupOptions();
 
         Assert.True(options.IsValidStartupConfiguration());
     }
@@ -187,10 +186,28 @@ public sealed class WhatsAppTenantIsolationTests
     [Fact]
     public void WorkerWithoutDataProtection_IsRejectedAtStartup()
     {
-        var options = ValidStartupOptions(workerEnabled: true);
+        var options = WorkerStartupOptions();
         options.DataProtectionKeysPath = string.Empty;
 
         Assert.False(options.IsValidStartupConfiguration());
+    }
+
+    [Fact]
+    public void WorkerWithoutGraphConfiguration_IsRejectedAtStartup()
+    {
+        var options = WebhookOnlyStartupOptions();
+        options.WorkerEnabled = true;
+        options.DataProtectionKeysPath = @"C:\AlfaCore\EmbeddedSignupKeys";
+
+        Assert.False(options.IsValidStartupConfiguration());
+    }
+
+    [Fact]
+    public void WebhookOnlyHost_RejectsOnboardingGraphOperationsExplicitly()
+    {
+        var options = WebhookOnlyStartupOptions();
+
+        Assert.Throws<WhatsAppEmbeddedSignupOnboardingConfigurationException>(() => options.EnsureOnboardingGraphConfiguration());
     }
 
     [Fact]
@@ -265,11 +282,21 @@ public sealed class WhatsAppTenantIsolationTests
             GraphApiVersion = "v26.0",
             DataProtectionKeysPath = @"C:\AlfaCore\EmbeddedSignupKeys"
         });
-    private static WhatsAppEmbeddedSignupOptions ValidStartupOptions(bool workerEnabled)
+    private static WhatsAppEmbeddedSignupOptions WebhookOnlyStartupOptions()
         => new()
         {
             Enabled = true,
-            WorkerEnabled = workerEnabled,
+            AllowedBaseIds = [84],
+            WorkerEnabled = false,
+            WebhookRoutingEnabled = false,
+            UseApplicationCentralConnection = true,
+            AppSecret = "app-secret"
+        };
+    private static WhatsAppEmbeddedSignupOptions WorkerStartupOptions()
+        => new()
+        {
+            Enabled = true,
+            WorkerEnabled = true,
             AllowedBaseIds = [84],
             AppId = "app-id",
             BusinessPortfolioId = "business-id",

@@ -104,7 +104,18 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
     private static Context Create(bool enabled = true, int[]? allowedBaseIds = null)
     {
         var store = new MemoryStore(); var meta = new FakeMetaClient(); var vault = new FakeVault(); var protector = new WhatsAppEmbeddedSignupStateProtector();
-        return new(new(store, protector, meta, vault, Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = enabled, AllowedBaseIds = allowedBaseIds ?? [106], OnboardingExpirationMinutes = 30 })), store, meta, vault, protector);
+        return new(new(store, protector, meta, vault, Options.Create(new WhatsAppEmbeddedSignupOptions
+        {
+            Enabled = enabled,
+            AllowedBaseIds = allowedBaseIds ?? [106],
+            AppId = "test-app-id",
+            BusinessPortfolioId = "test-business-id",
+            SystemUserId = "test-system-user-id",
+            EmbeddedSignupConfigId = "test-config-id",
+            GraphApiVersion = "v26.0",
+            GraphBaseUrl = "https://graph.facebook.com",
+            OnboardingExpirationMinutes = 30
+        })), store, meta, vault, protector);
     }
 
     private static Context CreateWithOnboarding(bool expired = false)

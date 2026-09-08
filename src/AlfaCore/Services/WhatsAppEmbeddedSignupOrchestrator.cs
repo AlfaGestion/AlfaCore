@@ -32,6 +32,7 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         EnsureBaseAllowed(request.IdBase);
         if (request.IdBase <= 0 || string.IsNullOrWhiteSpace(request.UsuarioIniciador))
             throw new ArgumentException("La base y el usuario iniciador son obligatorios.", nameof(request));
+        _options.EnsureOnboardingGraphConfiguration();
 
         var now = DateTime.UtcNow;
         var latest = await store.GetLatestForBaseAsync(request.IdBase, ct);
@@ -72,6 +73,7 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         EnsureBaseAllowed(callback.IdBase);
         if (callback.IdOnboarding == Guid.Empty || callback.IdBase <= 0 || string.IsNullOrWhiteSpace(callback.Usuario))
             throw new UnauthorizedAccessException("La sesión de autorización no es válida.");
+        _options.EnsureOnboardingGraphConfiguration();
         if (string.IsNullOrWhiteSpace(callback.State) || string.IsNullOrWhiteSpace(callback.AuthorizationCode))
             throw new ArgumentException("La autorización de Meta está incompleta.", nameof(callback));
 
