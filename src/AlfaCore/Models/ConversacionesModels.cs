@@ -37,6 +37,11 @@ public sealed class ConversacionesInboxFilters
     public string? Clasifica1 { get; set; }
     public string? Clasifica2 { get; set; }
     public string? Clasifica3 { get; set; }
+    /// <summary>
+    /// Base esperada por la ruta que inició la carga. El servicio la valida contra la sesión activa
+    /// antes de consultar SQL para impedir que una sesión anterior atienda la petición.
+    /// </summary>
+    public int? ExpectedBaseId { get; set; }
 }
 
 public static class ConversacionesInboxOrden
@@ -509,7 +514,6 @@ public sealed class ConversacionUploadAdjuntoRequest
     public string? IdTecnicoAutor { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
-    public bool PermitirEnvioConVentanaVencida { get; set; }
 }
 
 public sealed class ConversacionAdjuntoServeDto
@@ -549,6 +553,7 @@ public sealed class ConversacionRenameRequest
 public sealed class ConversacionCrearWhatsAppRequest
 {
     public string TelefonoWhatsApp { get; set; } = string.Empty;
+    public int? IdNumeroWhatsApp { get; set; }
     public string? IdTecnico { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
@@ -622,6 +627,7 @@ public sealed class ConversacionEstadoOptionDto
 
 public sealed class ConversacionPlantillaFilters
 {
+    public int? IdNumeroWhatsApp { get; set; }
     public string Search { get; set; } = string.Empty;
     public string? EstadoMeta { get; set; }
     public bool IncluirInactivas { get; set; }
@@ -642,6 +648,7 @@ public sealed class ConversacionPlantillaDto
     public string EstadoMeta { get; set; } = string.Empty;
     public string MetaTemplateId { get; set; } = string.Empty;
     public string MetaRechazoMotivo { get; set; } = string.Empty;
+    public string? WabaId { get; set; }
     public bool Activa { get; set; } = true;
     public DateTime FechaHoraGrabacion { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }
@@ -651,6 +658,7 @@ public sealed class ConversacionPlantillaDto
 
 public sealed class ConversacionPlantillaSaveRequest
 {
+    public int? IdNumeroWhatsApp { get; set; }
     public long IdPlantilla { get; set; }
     public string NombreVisible { get; set; } = string.Empty;
     public string NombreMeta { get; set; } = string.Empty;
@@ -668,6 +676,7 @@ public sealed class ConversacionPlantillaSaveRequest
 public sealed class ConversacionPlantillaSubmitRequest
 {
     public long IdPlantilla { get; set; }
+    public int? IdNumeroWhatsApp { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
 }

@@ -1,6 +1,7 @@
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
 
 namespace AlfaCore.Services;
 
@@ -12,15 +13,28 @@ public sealed class WhatsAppWebhookTenantGuard(IWhatsAppAssetOwnershipStore owne
     public async Task ValidateAsync(int currentBaseId, IEnumerable<string> phoneNumberIds, CancellationToken ct = default)
     {
         if (currentBaseId <= 0) throw new InvalidOperationException("El webhook no tiene una base resuelta.");
+        if (!_options.IsAllowedForBase(currentBaseId))
+            return;
+
         if (!await ownershipStore.IsSchemaAvailableAsync(ct))
         {
             if (_options.Enabled) throw new WhatsAppEmbeddedSchemaUnavailableException();
             return;
         }
-        foreach (var phoneNumberId in phoneNumberIds.Select(static x => (x ?? string.Empty).Trim()).Where(static x => x.Length > 0).Distinct(StringComparer.Ordinal))
+        var normalizedPhoneNumberIds = phoneNumberIds
+            .Select(static x => (x ?? string.Empty).Trim())
+            .Where(static x => x.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (normalizedPhoneNumberIds.Length == 0)
+            throw new WhatsAppWebhookPhoneNumberIdMissingException(currentBaseId);
+
+        foreach (var phoneNumberId in normalizedPhoneNumberIds)
         {
             var ownership = await ownershipStore.GetPhoneOwnershipAsync(phoneNumberId, ct);
-            if (ownership is not null && ownership.IdBase != currentBaseId)
+            if (ownership is null)
+                throw new WhatsAppWebhookPhoneOwnershipMissingException(currentBaseId, phoneNumberId);
+            if (ownership.IdBase != currentBaseId)
                 throw new WhatsAppWebhookTenantMismatchException(currentBaseId, ownership.IdBase, phoneNumberId);
         }
     }
@@ -29,13 +43,29 @@ public sealed class WhatsAppWebhookTenantGuard(IWhatsAppAssetOwnershipStore owne
 public sealed class WhatsAppEmbeddedSchemaUnavailableException()
     : InvalidOperationException("El esquema central de WhatsApp Embedded Signup no está disponible. La operación fue detenida de forma segura.");
 
+public sealed class WhatsAppWebhookPhoneNumberIdMissingException(int callbackBaseId)
+    : Exception("El webhook no incluye metadata.phone_number_id. Fue bloqueado antes de persistir datos.")
+{
+    public int CallbackBaseId { get; } = callbackBaseId;
+}
+
+public sealed class WhatsAppWebhookPhoneOwnershipMissingException(int callbackBaseId, string phoneNumberId)
+    : Exception("El Phone Number ID recibido no tiene ownership central. El webhook fue bloqueado antes de persistir datos.")
+{
+    public int CallbackBaseId { get; } = callbackBaseId;
+    public string PhoneNumberId { get; } = phoneNumberId;
+}
+
 public sealed class WhatsAppWebhookTenantMismatchException(int callbackBaseId, int ownerBaseId, string phoneNumberId)
-    : InvalidOperationException("El Phone Number ID recibido pertenece a otra base. El webhook fue bloqueado antes de persistir datos.")
+    : Exception("El Phone Number ID recibido pertenece a otra base. El webhook fue bloqueado antes de persistir datos.")
 {
     public int CallbackBaseId { get; } = callbackBaseId;
     public int OwnerBaseId { get; } = ownerBaseId;
     public string PhoneNumberId { get; } = phoneNumberId;
 }
+
+public sealed class WhatsAppEmbeddedVaultUnavailableException(string message, Exception? innerException = null)
+    : InvalidOperationException(message, innerException);
 
 public sealed class WhatsAppRuntimeCredentialResolver(IWhatsAppAssetOwnershipStore ownershipStore, IWhatsAppCredentialVault credentialVault,
     IOptions<WhatsAppEmbeddedSignupOptions> options) : IWhatsAppRuntimeCredentialResolver
@@ -45,6 +75,9 @@ public sealed class WhatsAppRuntimeCredentialResolver(IWhatsAppAssetOwnershipSto
     public async Task<WhatsAppRuntimeCredential> ResolveAsync(int idBase, int? idNumero, string phoneNumberId, ConversacionWhatsAppConfigDto legacyConfig, CancellationToken ct = default)
     {
         var normalizedPhoneId = (phoneNumberId ?? string.Empty).Trim();
+        if (!_options.IsAllowedForBase(idBase))
+            return Legacy(normalizedPhoneId, legacyConfig);
+
         if (!await ownershipStore.IsSchemaAvailableAsync(ct))
         {
             if (_options.Enabled) throw new WhatsAppEmbeddedSchemaUnavailableException();
@@ -55,10 +88,23 @@ public sealed class WhatsAppRuntimeCredentialResolver(IWhatsAppAssetOwnershipSto
             return Legacy(normalizedPhoneId, legacyConfig);
         if (ownership.IdBase != idBase) throw new UnauthorizedAccessException("El número de WhatsApp pertenece a otra base.");
 
-        var reference = await credentialVault.FindActiveCredentialAsync(idBase, ownership.WabaId, normalizedPhoneId, ct)
-            ?? throw new InvalidOperationException("La credencial segura del número Embedded Signup no está disponible.");
-        var secret = await credentialVault.GetAsync(reference, ct);
-        if (secret.IsEmpty) throw new InvalidOperationException("La credencial segura del número Embedded Signup está vacía.");
+        if (!_options.HasDataProtectionKeyRingConfiguration())
+            throw new WhatsAppEmbeddedVaultUnavailableException("La credencial segura de WhatsApp Embedded Signup no está disponible en este proceso porque falta configurar Data Protection.");
+
+        WhatsAppCredentialReference reference;
+        ReadOnlyMemory<char> secret;
+        try
+        {
+            reference = await credentialVault.FindActiveCredentialAsync(idBase, ownership.WabaId, normalizedPhoneId, ct)
+                ?? throw new WhatsAppEmbeddedVaultUnavailableException("La credencial segura del número Embedded Signup no está disponible.");
+            secret = await credentialVault.GetAsync(reference, ct);
+        }
+        catch (CryptographicException ex)
+        {
+            throw new WhatsAppEmbeddedVaultUnavailableException("La credencial segura de WhatsApp Embedded Signup no puede abrirse en este proceso.", ex);
+        }
+
+        if (secret.IsEmpty) throw new WhatsAppEmbeddedVaultUnavailableException("La credencial segura del número Embedded Signup está vacía.");
         return new(ownership.WabaId, normalizedPhoneId, _options.GraphApiVersion, secret.ToString(), WhatsAppRuntimeCredentialOrigin.EmbeddedSignup, reference);
     }
 

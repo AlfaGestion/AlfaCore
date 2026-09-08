@@ -213,17 +213,72 @@ public sealed class MetaWhatsAppManagementClient(
     private static async Task<MetaWhatsAppManagementException> CreateExceptionAsync(HttpResponseMessage response, CancellationToken ct)
     {
         string code = ((int)response.StatusCode).ToString();
+        string? subcode = null;
         try
         {
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
             using var document = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
-            if (document.RootElement.TryGetProperty("error", out var error) && error.TryGetProperty("code", out var errorCode))
-                code = errorCode.ToString();
+            if (document.RootElement.TryGetProperty("error", out var error))
+            {
+                if (error.TryGetProperty("code", out var errorCode))
+                    code = errorCode.ToString();
+                if (error.TryGetProperty("error_subcode", out var errorSubcode))
+                    subcode = errorSubcode.ToString();
+            }
         }
         catch { }
+        var retryAfter = response.Headers.RetryAfter?.Delta;
+        var businessUsage = TryReadBusinessUseCaseUsage(response);
         var reauth = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden || code is "190" or "10";
-        var transient = (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.TooManyRequests || code is "1" or "2" or "4" or "17" or "32" or "613";
-        return new MetaWhatsAppManagementException(code, transient, reauth, "Meta no pudo completar la operación de administración de WhatsApp.");
+        var transient = (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.TooManyRequests
+            || retryAfter.HasValue || businessUsage.EstimatedTimeToRegainAccess.HasValue
+            || code is "1" or "2" or "4" or "17" or "32" or "613" or "80008";
+        return new MetaWhatsAppManagementException(code, transient, reauth, "Meta no pudo completar la operación de administración de WhatsApp.",
+            null, subcode, (int)response.StatusCode, retryAfter, businessUsage.HeaderPresent, businessUsage.EstimatedTimeToRegainAccess);
+    }
+
+    private static (bool HeaderPresent, TimeSpan? EstimatedTimeToRegainAccess) TryReadBusinessUseCaseUsage(HttpResponseMessage response)
+    {
+        if (!response.Headers.TryGetValues("X-Business-Use-Case-Usage", out var values))
+            return (false, null);
+
+        var raw = values.FirstOrDefault();
+        if (string.IsNullOrWhiteSpace(raw))
+            return (true, null);
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            if (TryFindEstimatedSeconds(document.RootElement, out var seconds) && seconds >= 0)
+                return (true, TimeSpan.FromSeconds(seconds));
+        }
+        catch (JsonException) { }
+
+        return (true, null);
+    }
+
+    private static bool TryFindEstimatedSeconds(JsonElement element, out double seconds)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (string.Equals(property.Name, "estimated_time_to_regain_access", StringComparison.OrdinalIgnoreCase)
+                    && property.Value.TryGetDouble(out seconds))
+                    return true;
+                if (TryFindEstimatedSeconds(property.Value, out seconds))
+                    return true;
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+                if (TryFindEstimatedSeconds(item, out seconds))
+                    return true;
+        }
+
+        seconds = 0;
+        return false;
     }
 
     private static MetaPhoneRegistrationStatus MapRegistrationStatus(string platformType)

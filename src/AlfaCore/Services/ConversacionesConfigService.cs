@@ -18,7 +18,8 @@ public sealed class ConversacionesConfigService(
     IOptions<WhatsAppOptions> whatsAppOptions,
     IHttpClientFactory httpClientFactory,
     IAppUserSessionService appUserSession,
-    IConversacionesAuthorizationService conversacionesAuthorizationService) : IConversacionesConfigService
+    IConversacionesAuthorizationService conversacionesAuthorizationService,
+    ICentralBasesService centralBasesService) : IConversacionesConfigService
 {
     private const string ConfigGroup = "CONVERSACIONES";
     private const string DefaultUrgenciaPalabras =
@@ -1511,6 +1512,90 @@ public sealed class ConversacionesConfigService(
 
             return true;
         }, "No se pudo guardar el número de WhatsApp.", ct);
+    }
+
+    public async Task<ConversacionWhatsAppNumeroDto> UpsertEmbeddedSignupWhatsAppNumeroForBaseAsync(
+        int idBase,
+        ConversacionWhatsAppNumeroDto numero,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(numero);
+        if (idBase <= 0)
+            throw new ArgumentOutOfRangeException(nameof(idBase));
+
+        var phoneNumberId = (numero.PhoneNumberId ?? string.Empty).Trim();
+        var nombre = (numero.Nombre ?? string.Empty).Trim();
+        if (phoneNumberId.Length == 0)
+            throw new InvalidOperationException("El Phone Number ID es obligatorio.");
+        if (nombre.Length == 0)
+            throw new InvalidOperationException("El nombre del número es obligatorio.");
+
+        var baseInfo = await centralBasesService.GetByIdAsync(idBase, ct)
+            ?? throw new InvalidOperationException("La base del onboarding no existe.");
+        var connectionString = new SqlConnectionStringBuilder
+        {
+            DataSource = baseInfo.DbServer,
+            InitialCatalog = baseInfo.DbName,
+            UserID = baseInfo.DbUser,
+            Password = baseInfo.DbPassword,
+            TrustServerCertificate = true
+        }.ConnectionString;
+
+        await using var cn = new SqlConnection(connectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = await cn.BeginTransactionAsync(ct);
+
+        const string findSql = """
+            SELECT TOP (1) IdNumero
+            FROM dbo.CONV_WHATSAPP_NUMEROS WITH (UPDLOCK, HOLDLOCK)
+            WHERE PhoneNumberId = @PhoneNumberId;
+            """;
+        int idNumero;
+        await using (var find = new SqlCommand(findSql, cn, (SqlTransaction)tx))
+        {
+            find.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
+            var existing = await find.ExecuteScalarAsync(ct);
+            idNumero = existing is null or DBNull ? 0 : Convert.ToInt32(existing, CultureInfo.InvariantCulture);
+        }
+
+        if (idNumero > 0)
+        {
+            const string updateSql = """
+                UPDATE dbo.CONV_WHATSAPP_NUMEROS
+                SET Nombre = @Nombre,
+                    Activo = @Activo,
+                    FechaHora_Modificacion = GETDATE()
+                WHERE IdNumero = @IdNumero;
+                """;
+            await using var update = new SqlCommand(updateSql, cn, (SqlTransaction)tx);
+            update.Parameters.AddWithValue("@Nombre", nombre);
+            update.Parameters.AddWithValue("@Activo", numero.Activo);
+            update.Parameters.AddWithValue("@IdNumero", idNumero);
+            await update.ExecuteNonQueryAsync(ct);
+        }
+        else
+        {
+            const string insertSql = """
+                INSERT INTO dbo.CONV_WHATSAPP_NUMEROS (PhoneNumberId, Nombre, Activo)
+                OUTPUT INSERTED.IdNumero
+                VALUES (@PhoneNumberId, @Nombre, @Activo);
+                """;
+            await using var insert = new SqlCommand(insertSql, cn, (SqlTransaction)tx);
+            insert.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
+            insert.Parameters.AddWithValue("@Nombre", nombre);
+            insert.Parameters.AddWithValue("@Activo", numero.Activo);
+            idNumero = (int)(await insert.ExecuteScalarAsync(ct))!;
+        }
+
+        await tx.CommitAsync(ct);
+        return new ConversacionWhatsAppNumeroDto
+        {
+            IdNumero = idNumero,
+            PhoneNumberId = phoneNumberId,
+            Nombre = nombre,
+            Activo = numero.Activo,
+            Usuarios = []
+        };
     }
 
     public Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default)

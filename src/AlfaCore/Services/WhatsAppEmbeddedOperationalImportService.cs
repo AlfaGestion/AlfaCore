@@ -4,7 +4,21 @@ using Microsoft.Extensions.Options;
 
 namespace AlfaCore.Services;
 
-public sealed record WhatsAppEmbeddedOperationalImportResult(int IdNumero, string Nombre, string DisplayPhoneNumber);
+public sealed record WhatsAppEmbeddedOperationalImportedNumber(
+    int IdNumero,
+    string Nombre,
+    string DisplayPhoneNumber,
+    string PhoneNumberId,
+    string WabaId);
+
+public sealed record WhatsAppEmbeddedOperationalImportResult(IReadOnlyList<WhatsAppEmbeddedOperationalImportedNumber> Numbers)
+{
+    public int IdNumero => Numbers.Count == 1 ? Numbers[0].IdNumero : 0;
+    public string Nombre => Numbers.Count == 1 ? Numbers[0].Nombre : $"{Numbers.Count} números";
+    public string DisplayPhoneNumber => Numbers.Count == 1 ? Numbers[0].DisplayPhoneNumber : string.Empty;
+    public int Count => Numbers.Count;
+}
+
 public sealed record WhatsAppEmbeddedRecoveryCandidate(
     Guid IdOnboarding,
     string PhoneNumberId,
@@ -19,55 +33,149 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
     IWhatsAppAssetOwnershipStore ownershipStore,
     IConversacionesConfigService conversacionesConfig,
     ISessionService sessionService,
-    IOptions<WhatsAppEmbeddedSignupOptions> options)
+    IOptions<WhatsAppEmbeddedSignupOptions> options) : IWhatsAppEmbeddedOperationalImportService
 {
     private readonly WhatsAppEmbeddedSignupOptions _options = options.Value;
+    private readonly Dictionary<Guid, PendingConnectionMetadata> _pendingConnectionMetadata = [];
 
     public async Task<WhatsAppEmbeddedOperationalImportResult> CompleteAsync(Guid idOnboarding, CancellationToken ct = default)
     {
         var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
+        return await CompleteForBaseAsync(idOnboarding, activeBaseId, ct);
+    }
+
+    public async Task<WhatsAppEmbeddedOperationalImportResult> CompleteForBaseAsync(Guid idOnboarding, int activeBaseId, CancellationToken ct = default)
+    {
         if (!_options.IsAllowedForBase(activeBaseId))
             throw new UnauthorizedAccessException("Embedded Signup no está habilitado para esta base.");
         var onboarding = await store.GetAsync(idOnboarding, ct)
             ?? throw new InvalidOperationException("El onboarding no existe.");
         if (activeBaseId <= 0 || onboarding.IdBase != activeBaseId)
             throw new UnauthorizedAccessException("El onboarding no pertenece a la base activa.");
-        if (onboarding.OnboardingMode != WhatsAppEmbeddedOnboardingMode.Standard
-            || onboarding.Status != WhatsAppEmbeddedOnboardingStatus.Importing
-            || onboarding.CurrentStep != "READY_FOR_OPERATIONAL_UPSERT")
+        var readyForOperationalUpsert = onboarding.CurrentStep == "READY_FOR_OPERATIONAL_UPSERT"
+            || (onboarding.OnboardingMode == WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence
+                && onboarding.CurrentStep == "READY_FOR_IMPORT_APPROVAL");
+        if (onboarding.Status != WhatsAppEmbeddedOnboardingStatus.Importing || !readyForOperationalUpsert)
             throw new InvalidOperationException("El onboarding no está listo para el alta operativa.");
 
         var tokenReference = new WhatsAppCredentialReference(onboarding.TokenReference.Trim());
         var context = await credentialVault.GetContextAsync(tokenReference, ct)
             ?? throw new InvalidOperationException("La credencial segura no tiene contexto vigente.");
-        if (context.IdBase != activeBaseId || context.IdOnboarding != idOnboarding
-            || string.IsNullOrWhiteSpace(context.WabaId) || string.IsNullOrWhiteSpace(context.PhoneNumberId))
+        if (context.IdBase != activeBaseId || context.IdOnboarding != idOnboarding)
             throw new InvalidOperationException("El contexto seguro no coincide con el onboarding.");
 
-        var phones = await managementClient.DiscoverPhoneNumbersAsync(context.WabaId, tokenReference, ct);
-        var phone = phones.SingleOrDefault(x => x.PhoneNumberId == context.PhoneNumberId && x.WabaId == context.WabaId)
-            ?? throw new InvalidOperationException("Meta no devolvió exactamente el teléfono autorizado.");
-        if (phone.RegistrationStatus != MetaPhoneRegistrationStatus.Registered)
-            throw new InvalidOperationException("Meta todavía no confirma el teléfono como registrado.");
+        var phones = await DiscoverAuthorizedPhonesAsync(context, tokenReference, ct);
+        if (phones.Count == 0)
+            throw new InvalidOperationException("Meta no devolvió números de WhatsApp autorizados.");
+        if (phones.Any(phone => phone.RegistrationStatus != MetaPhoneRegistrationStatus.Registered))
+            throw new InvalidOperationException("Meta todavía no confirma todos los teléfonos como registrados.");
 
-        var wabaOwnership = await ownershipStore.ReserveWabaAsync(phone.WabaId, activeBaseId, context.MetaBusinessId, ct);
-        var phoneOwnership = await ownershipStore.ReservePhoneAsync(phone.PhoneNumberId, phone.WabaId, activeBaseId, ct);
-        if (wabaOwnership.Result == WhatsAppAssetOwnershipResult.Conflict
-            || phoneOwnership.Result == WhatsAppAssetOwnershipResult.Conflict)
-            throw new UnauthorizedAccessException("El activo de WhatsApp pertenece a otra base.");
-
-        await conversacionesConfig.SaveWhatsAppNumeroAsync(new ConversacionWhatsAppNumeroDto
+        foreach (var waba in phones.GroupBy(phone => new { phone.WabaId, phone.MetaBusinessId }).Select(group => group.Key))
         {
-            PhoneNumberId = phone.PhoneNumberId,
-            Nombre = phone.VerifiedName,
-            Activo = true,
-            Usuarios = []
-        }, ct);
+            var wabaOwnership = await ownershipStore.ReserveWabaAsync(waba.WabaId, activeBaseId, waba.MetaBusinessId, ct);
+            if (wabaOwnership.Result == WhatsAppAssetOwnershipResult.Conflict)
+                throw new UnauthorizedAccessException("El activo de WhatsApp pertenece a otra base.");
+        }
 
-        var saved = (await conversacionesConfig.GetWhatsAppNumerosAsync(ct))
-            .Single(x => x.PhoneNumberId == phone.PhoneNumberId);
+        var imported = new List<WhatsAppEmbeddedOperationalImportedNumber>();
+        foreach (var phone in phones)
+        {
+            var phoneOwnership = await ownershipStore.ReservePhoneAsync(phone.PhoneNumberId, phone.WabaId, activeBaseId, ct);
+            if (phoneOwnership.Result == WhatsAppAssetOwnershipResult.Conflict)
+                throw new UnauthorizedAccessException("El activo de WhatsApp pertenece a otra base.");
+
+            var saved = await conversacionesConfig.UpsertEmbeddedSignupWhatsAppNumeroForBaseAsync(activeBaseId, new ConversacionWhatsAppNumeroDto
+            {
+                PhoneNumberId = phone.PhoneNumberId,
+                Nombre = phone.VerifiedName,
+                Activo = true,
+                Usuarios = []
+            }, ct);
+            imported.Add(new WhatsAppEmbeddedOperationalImportedNumber(
+                saved.IdNumero,
+                saved.Nombre,
+                phone.DisplayPhoneNumber,
+                phone.PhoneNumberId,
+                phone.WabaId));
+        }
+
         await store.MarkReadyAsync(idOnboarding, ct);
-        return new WhatsAppEmbeddedOperationalImportResult(saved.IdNumero, saved.Nombre, phone.DisplayPhoneNumber);
+        return new WhatsAppEmbeddedOperationalImportResult(imported);
+    }
+
+    public async Task<IReadOnlyList<WhatsAppEmbeddedPendingConnection>> GetPendingConnectionsAsync(CancellationToken ct = default)
+    {
+        var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
+        if (!_options.IsAllowedForBase(activeBaseId))
+            return [];
+
+        var operationalPhoneIds = (await conversacionesConfig.GetWhatsAppNumerosAsync(ct))
+            .Where(item => item.Activo && !string.IsNullOrWhiteSpace(item.PhoneNumberId))
+            .Select(item => item.PhoneNumberId.Trim())
+            .ToHashSet(StringComparer.Ordinal);
+        var pending = await store.GetPendingForBaseAsync(activeBaseId, ct);
+        var result = new List<WhatsAppEmbeddedPendingConnection>();
+
+        foreach (var onboarding in pending)
+        {
+            var name = "Nuevo WhatsApp";
+            var displayPhoneNumber = string.Empty;
+            var phoneNumberId = string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(onboarding.TokenReference))
+            {
+                var tokenReference = new WhatsAppCredentialReference(onboarding.TokenReference.Trim());
+                var context = await credentialVault.GetContextAsync(tokenReference, ct);
+                if (context is { IdBase: var contextBaseId, IdOnboarding: var contextOnboardingId }
+                    && contextBaseId == activeBaseId
+                    && contextOnboardingId == onboarding.IdOnboarding)
+                {
+                    phoneNumberId = context.PhoneNumberId.Trim();
+                    if (_pendingConnectionMetadata.TryGetValue(onboarding.IdOnboarding, out var cached)
+                        && string.Equals(cached.PhoneNumberId, phoneNumberId, StringComparison.Ordinal))
+                    {
+                        name = cached.Nombre;
+                        displayPhoneNumber = cached.DisplayPhoneNumber;
+                    }
+                    else if (onboarding.Status != WhatsAppEmbeddedOnboardingStatus.Importing
+                        && !string.IsNullOrWhiteSpace(context.WabaId) && !string.IsNullOrWhiteSpace(phoneNumberId))
+                    {
+                        try
+                        {
+                            var phone = (await managementClient.DiscoverPhoneNumbersAsync(context.WabaId, tokenReference, ct))
+                                .SingleOrDefault(item => string.Equals(item.PhoneNumberId, phoneNumberId, StringComparison.Ordinal));
+                            if (phone is not null)
+                            {
+                                name = string.IsNullOrWhiteSpace(phone.VerifiedName) ? name : phone.VerifiedName;
+                                displayPhoneNumber = phone.DisplayPhoneNumber;
+                                _pendingConnectionMetadata[onboarding.IdOnboarding] = new PendingConnectionMetadata(
+                                    phoneNumberId,
+                                    name,
+                                    displayPhoneNumber);
+                            }
+                        }
+                        catch (MetaWhatsAppManagementException)
+                        {
+                            // La tarjeta sigue siendo útil aunque Meta todavía no devuelva el detalle visible.
+                        }
+                    }
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(phoneNumberId) && operationalPhoneIds.Contains(phoneNumberId))
+                continue;
+
+            result.Add(new WhatsAppEmbeddedPendingConnection(
+                onboarding.IdOnboarding,
+                onboarding.Status,
+                onboarding.OnboardingMode,
+                name,
+                displayPhoneNumber,
+                phoneNumberId,
+                onboarding.ActionRequiredReason));
+        }
+
+        return result;
     }
 
     public async Task<WhatsAppEmbeddedRecoveryCandidate?> GetRecoveryCandidateAsync(CancellationToken ct = default)
@@ -144,9 +252,81 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
         if (matches.Length != 1 || !matches[0].Activo)
             throw new InvalidOperationException("La recuperación no produjo un único número operativo.");
 
-        return new WhatsAppEmbeddedOperationalImportResult(
-            matches[0].IdNumero,
-            matches[0].Nombre,
-            candidate.DisplayPhoneNumber);
+        return new WhatsAppEmbeddedOperationalImportResult([
+            new WhatsAppEmbeddedOperationalImportedNumber(
+                matches[0].IdNumero,
+                matches[0].Nombre,
+                candidate.DisplayPhoneNumber,
+                candidate.PhoneNumberId,
+                string.Empty)
+        ]);
     }
+
+    private async Task<IReadOnlyList<AuthorizedPhoneForImport>> DiscoverAuthorizedPhonesAsync(
+        WhatsAppVaultSecretContext context,
+        WhatsAppCredentialReference tokenReference,
+        CancellationToken ct)
+    {
+        var result = new List<AuthorizedPhoneForImport>();
+        if (!string.IsNullOrWhiteSpace(context.WabaId))
+        {
+            var knownWabaPhones = await managementClient.DiscoverPhoneNumbersAsync(context.WabaId, tokenReference, ct);
+            result.AddRange(knownWabaPhones.Select(phone => new AuthorizedPhoneForImport(
+                context.MetaBusinessId,
+                context.WabaId,
+                phone.PhoneNumberId,
+                phone.DisplayPhoneNumber,
+                phone.VerifiedName,
+                phone.RegistrationStatus)));
+            if (result.Count > 0)
+                return result
+                    .GroupBy(phone => phone.PhoneNumberId, StringComparer.Ordinal)
+                    .Select(group => group.First())
+                    .ToArray();
+        }
+
+        IReadOnlyList<MetaAuthorizedBusiness> businesses;
+        try
+        {
+            businesses = await managementClient.DiscoverAuthorizedBusinessesAsync(tokenReference, ct);
+        }
+        catch (MetaWhatsAppManagementException ex) when (ex.ErrorCode is "100" or "2500")
+        {
+            businesses = [];
+        }
+
+        foreach (var business in businesses)
+        {
+            var wabas = await managementClient.DiscoverWabasAsync(business.BusinessId, tokenReference, ct);
+            foreach (var waba in wabas)
+            {
+                var phones = await managementClient.DiscoverPhoneNumbersAsync(waba.WabaId, tokenReference, ct);
+                result.AddRange(phones.Select(phone => new AuthorizedPhoneForImport(
+                    business.BusinessId,
+                    waba.WabaId,
+                    phone.PhoneNumberId,
+                    phone.DisplayPhoneNumber,
+                    phone.VerifiedName,
+                    phone.RegistrationStatus)));
+            }
+        }
+
+        return result
+            .GroupBy(phone => phone.PhoneNumberId, StringComparer.Ordinal)
+            .Select(group => group.First())
+            .ToArray();
+    }
+
+    private sealed record AuthorizedPhoneForImport(
+        string MetaBusinessId,
+        string WabaId,
+        string PhoneNumberId,
+        string DisplayPhoneNumber,
+        string VerifiedName,
+        MetaPhoneRegistrationStatus RegistrationStatus);
+
+    private sealed record PendingConnectionMetadata(
+        string PhoneNumberId,
+        string Nombre,
+        string DisplayPhoneNumber);
 }

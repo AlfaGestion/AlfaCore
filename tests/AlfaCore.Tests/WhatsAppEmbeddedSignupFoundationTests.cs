@@ -3,6 +3,7 @@ using AlfaCore.Models;
 using AlfaCore.Repositories;
 using AlfaCore.Services;
 using System.Text.Json;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -110,6 +111,7 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
     public void StateMachine_AllowsExpectedTransitionAndRejectsInvalidTransition()
     {
         Assert.True(WhatsAppEmbeddedSignupStateMachine.CanTransition(WhatsAppEmbeddedOnboardingStatus.Started, WhatsAppEmbeddedOnboardingStatus.Authorized));
+        Assert.True(WhatsAppEmbeddedSignupStateMachine.CanTransition(WhatsAppEmbeddedOnboardingStatus.ValidatingOwnership, WhatsAppEmbeddedOnboardingStatus.RegisteringPhones));
         Assert.Throws<InvalidOperationException>(() => WhatsAppEmbeddedSignupStateMachine.EnsureTransition(WhatsAppEmbeddedOnboardingStatus.Ready, WhatsAppEmbeddedOnboardingStatus.Started));
     }
 
@@ -127,6 +129,16 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         var now = new DateTime(2026, 8, 25, 12, 0, 0, DateTimeKind.Utc);
         Assert.Equal(now.AddSeconds(30), WhatsAppEmbeddedSignupStateMachine.ScheduleRetry(now, 0, 30, 1800));
         Assert.Equal(now.AddSeconds(1800), WhatsAppEmbeddedSignupStateMachine.ScheduleRetry(now, 20, 30, 1800));
+    }
+
+    [Fact]
+    public void RateLimitRetryScheduling_UsesEstimatedDelayOrConservativeBackoff()
+    {
+        var now = new DateTime(2026, 8, 25, 12, 0, 0, DateTimeKind.Utc);
+        Assert.Equal(now.AddMinutes(15), WhatsAppEmbeddedSignupStateMachine.ScheduleRateLimitRetry(now, 0, null, null));
+        Assert.Equal(now.AddMinutes(30), WhatsAppEmbeddedSignupStateMachine.ScheduleRateLimitRetry(now, 1, null, null));
+        Assert.Equal(now.AddMinutes(60), WhatsAppEmbeddedSignupStateMachine.ScheduleRateLimitRetry(now, 2, null, null));
+        Assert.Equal(now.AddMinutes(7), WhatsAppEmbeddedSignupStateMachine.ScheduleRateLimitRetry(now, 0, null, TimeSpan.FromMinutes(7)));
     }
 
     [Theory]
@@ -187,43 +199,34 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
     }
 
     [Fact]
-    public void LocalLauncher_IsPinnedToLocalDbAndBase84WithoutProductionFallback()
+    public void EmbeddedSignupConnection_UsesApplicationCentralOnlyWhenExplicit()
     {
-        var launcher = File.ReadAllText(FindRepoFile("tools", "run-alfacore-es-local.ps1"));
-        Assert.Contains("ALFA_CENTRAL_DEV", launcher, StringComparison.Ordinal);
-        Assert.Contains("ALFACORE_ES_TENANT_DEV", launcher, StringComparison.Ordinal);
-        Assert.Contains("ConnectionStrings__AlfaCentral", launcher, StringComparison.Ordinal);
-        Assert.Contains("ConnectionStrings__AlfaGestion", launcher, StringComparison.Ordinal);
-        Assert.Contains("WhatsAppEmbeddedSignup__AllowedBaseIds__0 = \"84\"", launcher, StringComparison.Ordinal);
-        Assert.Contains("WhatsAppEmbeddedSignup__WorkerEnabled = \"false\"", launcher, StringComparison.Ordinal);
-        Assert.Contains("AlfaCoreEsLocal__Enabled = \"true\"", launcher, StringComparison.Ordinal);
-        Assert.Contains("Usuario: $esLocalLogin", launcher, StringComparison.Ordinal);
-        Assert.Contains("Password: $esLocalPassword", launcher, StringComparison.Ordinal);
-        Assert.Contains("dotnet user-secrets list", launcher, StringComparison.Ordinal);
-        Assert.DoesNotContain("Password=", launcher, StringComparison.OrdinalIgnoreCase);
+        var configuration = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:AlfaCentral"] = "Server=central;Database=ALFA_CENTRAL;",
+                ["WhatsAppEmbeddedSignup:UseApplicationCentralConnection"] = "true"
+            })
+            .Build();
 
-        var fixture = File.ReadAllText(FindRepoFile("tools", "es-local", "fixtures", "inbound-text.json"));
-        Assert.DoesNotContain("1547539197385596", fixture, StringComparison.Ordinal);
-        Assert.DoesNotContain("1195619520311268", fixture, StringComparison.Ordinal);
-
-        var centralBootstrap = File.ReadAllText(FindRepoFile("docs", "base-datos", "sql-test", "bootstrap_alfa_central_dev_embedded_signup.sql"));
-        var tenantBootstrap = File.ReadAllText(FindRepoFile("docs", "base-datos", "sql-test", "bootstrap_alfacore_es_tenant_dev_auth.sql"));
-        Assert.Contains("SERVERPROPERTY('IsLocalDB')", centralBootstrap, StringComparison.Ordinal);
-        Assert.Contains("SERVERPROPERTY('IsLocalDB')", tenantBootstrap, StringComparison.Ordinal);
-        Assert.Contains("ALFACORE_ES_TENANT_DEV", tenantBootstrap, StringComparison.Ordinal);
-        Assert.DoesNotContain("eveantunez03", centralBootstrap, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("eveantunez03", tenantBootstrap, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal("Server=central;Database=ALFA_CENTRAL;", WhatsAppEmbeddedSignupConnection.Resolve(configuration));
     }
 
     [Fact]
-    public void EsLocal_DisablesOnlyUnrelatedWorkersAndOnlyInDevelopment()
+    public void EmbeddedSignupConnection_RejectsAmbiguousOrMissingCentralSelection()
     {
-        var disabled = new AlfaCoreEsLocalOptions { Enabled = true };
-        var normal = new AlfaCoreEsLocalOptions();
+        var ambiguous = new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["ConnectionStrings:AlfaCentral"] = "Server=central;Database=ALFA_CENTRAL;",
+                ["WhatsAppEmbeddedSignup:UseApplicationCentralConnection"] = "true",
+                ["WhatsAppEmbeddedSignup:CentralConnectionString"] = "Server=dedicated;Database=ALFA_CENTRAL_ES;"
+            })
+            .Build();
+        Assert.Throws<InvalidOperationException>(() => WhatsAppEmbeddedSignupConnection.Resolve(ambiguous));
 
-        Assert.True(disabled.ShouldDisableUnrelatedHostedServices("Development"));
-        Assert.False(disabled.ShouldDisableUnrelatedHostedServices("Production"));
-        Assert.False(normal.ShouldDisableUnrelatedHostedServices("Development"));
+        var missing = new ConfigurationBuilder().Build();
+        Assert.Throws<InvalidOperationException>(() => WhatsAppEmbeddedSignupConnection.Resolve(missing));
     }
 
     [Fact]
@@ -264,6 +267,93 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         Assert.Equal(
             WhatsAppEmbeddedConnectionUiState.ActionRequired,
             WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, WhatsAppEmbeddedOnboardingStatus.ActionRequired));
+    }
+
+    [Theory]
+    [InlineData(0, "Conectar WhatsApp")]
+    [InlineData(1, "Conectar otro WhatsApp")]
+    [InlineData(3, "Conectar otro WhatsApp")]
+    public void EmbeddedSignupCta_IsAlwaysVisibleForAllowedBaseOutsideActiveOnboarding(
+        int operationalNumberCount,
+        string expectedLabel)
+    {
+        var state = WhatsAppEmbeddedSignupCtaPolicy.Resolve(
+            true,
+            operationalNumberCount,
+            WhatsAppEmbeddedOnboardingStatus.Ready);
+
+        Assert.True(state.ShowPrimaryAction);
+        Assert.False(state.IsBlockedByActiveOnboarding);
+        Assert.Equal(expectedLabel, state.PrimaryActionLabel);
+    }
+
+    [Theory]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Ready)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Cancelled)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.FailedRetryable)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.FailedFinal)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Expired)]
+    public void HistoricalOnboarding_DoesNotHideNewEmbeddedSignupCta(WhatsAppEmbeddedOnboardingStatus status)
+    {
+        var state = WhatsAppEmbeddedSignupCtaPolicy.Resolve(true, 0, status);
+
+        Assert.True(state.ShowPrimaryAction);
+        Assert.False(state.IsBlockedByActiveOnboarding);
+        Assert.Equal("Conectar WhatsApp", state.PrimaryActionLabel);
+    }
+
+    [Fact]
+    public void BaseOutsideAllowlist_DoesNotExposeEmbeddedSignupCta()
+    {
+        var state = WhatsAppEmbeddedSignupCtaPolicy.Resolve(false, 0, null);
+
+        Assert.False(state.IsAllowed);
+        Assert.False(state.ShowPrimaryAction);
+    }
+
+    [Theory]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Started)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Authorized)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.DiscoveringAssets)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.ValidatingOwnership)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.SubscribingWabas)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.CheckingCustomerPayment)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.DiscoveringPhones)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.RegisteringPhones)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.Importing)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.SyncingHistory)]
+    [InlineData(WhatsAppEmbeddedOnboardingStatus.SyncingContacts)]
+    public void ActiveOnboarding_BlocksDuplicateEmbeddedSignupCta(WhatsAppEmbeddedOnboardingStatus status)
+    {
+        var state = WhatsAppEmbeddedSignupCtaPolicy.Resolve(true, 0, status);
+
+        Assert.False(state.ShowPrimaryAction);
+        Assert.True(state.IsBlockedByActiveOnboarding);
+    }
+
+    [Fact]
+    public async Task OnboardingCreation_RejectsConcurrentActiveAttempt()
+    {
+        var store = new CapturingOnboardingStore();
+        store.Seed(new WhatsAppEmbeddedOnboardingDto
+        {
+            IdOnboarding = Guid.NewGuid(),
+            IdBase = 106,
+            IdCliente = "ALFANET",
+            UsuarioIniciador = "Eve",
+            Status = WhatsAppEmbeddedOnboardingStatus.Started,
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(10)
+        });
+        var orchestrator = new WhatsAppEmbeddedSignupOrchestrator(
+            store,
+            new WhatsAppEmbeddedSignupStateProtector(),
+            new FakeMetaOAuthClient(),
+            new FakeCredentialVault(),
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [106], OnboardingExpirationMinutes = 30 }));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            orchestrator.StartAsync(new WhatsAppEmbeddedStartRequest(106, "ALFANET", "Eve", WhatsAppEmbeddedOnboardingMode.Standard)));
     }
 
     [Fact]
@@ -343,6 +433,7 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
     private sealed class CapturingOnboardingStore : IWhatsAppEmbeddedSignupStore
     {
         public WhatsAppEmbeddedOnboardingDto? Created { get; private set; }
+        public void Seed(WhatsAppEmbeddedOnboardingDto onboarding) => Created = onboarding;
         public Task CreateAsync(WhatsAppEmbeddedOnboardingDto onboarding, CancellationToken ct = default) { Created = onboarding; return Task.CompletedTask; }
         public Task<WhatsAppEmbeddedOnboardingDto?> GetAsync(Guid idOnboarding, CancellationToken ct = default) => Task.FromResult(Created);
         public Task<WhatsAppEmbeddedOnboardingDto?> GetLatestForBaseAsync(int idBase, CancellationToken ct = default) => Task.FromResult(Created?.IdBase == idBase ? Created : null);

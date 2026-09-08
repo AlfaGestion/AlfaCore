@@ -7,6 +7,8 @@ public interface IWhatsAppEmbeddedSignupStore
     Task CreateAsync(WhatsAppEmbeddedOnboardingDto onboarding, CancellationToken ct = default);
     Task<WhatsAppEmbeddedOnboardingDto?> GetAsync(Guid idOnboarding, CancellationToken ct = default);
     Task<WhatsAppEmbeddedOnboardingDto?> GetLatestForBaseAsync(int idBase, CancellationToken ct = default);
+    Task<IReadOnlyList<WhatsAppEmbeddedOnboardingDto>> GetPendingForBaseAsync(int idBase, CancellationToken ct = default)
+        => Task.FromResult<IReadOnlyList<WhatsAppEmbeddedOnboardingDto>>([]);
     Task<WhatsAppEmbeddedOnboardingDto?> GetLatestReadyForBaseAsync(int idBase, CancellationToken ct = default)
         => Task.FromResult<WhatsAppEmbeddedOnboardingDto?>(null);
     Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string stateHash, int idBase, string usuario, DateTime nowUtc, CancellationToken ct = default);
@@ -14,9 +16,13 @@ public interface IWhatsAppEmbeddedSignupStore
     Task MarkAuthorizedAsync(Guid idOnboarding, string tokenReference, string metaBusinessId, CancellationToken ct = default);
     Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default);
     Task MarkRetryableFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default);
+    Task ScheduleRetryAsync(Guid idOnboarding, WhatsAppEmbeddedOnboardingStatus resumeStatus, string resumeStep, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default)
+        => MarkRetryableFailureAsync(idOnboarding, errorCode, summary, incidentId, nextAttemptUtc, ct);
     Task MarkFinalFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, CancellationToken ct = default);
     Task MarkReadyAsync(Guid idOnboarding, CancellationToken ct = default);
     Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string workerId, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct = default);
+    Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextForBasesAsync(string workerId, IReadOnlyCollection<int> allowedBaseIds, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct = default)
+        => ClaimNextAsync(workerId, nowUtc, claimExpiresAtUtc, ct);
     Task ReleaseClaimAsync(Guid idOnboarding, string workerId, DateTime? nextAttemptUtc, CancellationToken ct = default);
 }
 
@@ -83,11 +89,22 @@ public sealed class MetaWhatsAppManagementException(
     bool isTransient,
     bool requiresReauthorization,
     string message,
-    Exception? innerException = null) : Exception(message, innerException)
+    Exception? innerException = null,
+    string? errorSubcode = null,
+    int? httpStatusCode = null,
+    TimeSpan? retryAfter = null,
+    bool hasBusinessUseCaseUsage = false,
+    TimeSpan? estimatedTimeToRegainAccess = null) : Exception(message, innerException)
 {
     public string ErrorCode { get; } = errorCode;
     public bool IsTransient { get; } = isTransient;
     public bool RequiresReauthorization { get; } = requiresReauthorization;
+    public string? ErrorSubcode { get; } = errorSubcode;
+    public int? HttpStatusCode { get; } = httpStatusCode;
+    public TimeSpan? RetryAfter { get; } = retryAfter;
+    public bool HasBusinessUseCaseUsage { get; } = hasBusinessUseCaseUsage;
+    public TimeSpan? EstimatedTimeToRegainAccess { get; } = estimatedTimeToRegainAccess;
+    public bool IsRateLimit => ErrorCode is "80008";
 }
 
 public interface IWhatsAppCredentialVault
@@ -126,4 +143,9 @@ public interface IWhatsAppPhonePinVault
 public interface IWhatsAppEmbeddedSignupErrorLogger
 {
     Task<string> LogAsync(Guid idOnboarding, int idBase, string step, string errorCode, string? wabaId, string? phoneNumberId, int retryCount, CancellationToken ct = default);
+}
+
+public interface IWhatsAppEmbeddedOperationalImportService
+{
+    Task<WhatsAppEmbeddedOperationalImportResult> CompleteForBaseAsync(Guid idOnboarding, int activeBaseId, CancellationToken ct = default);
 }

@@ -9,8 +9,6 @@
 @inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
-@inject Microsoft.Extensions.Options.IOptions<AlfaCore.Configuration.AlfaCoreEsLocalOptions> EsLocalOptions
-@inject Microsoft.Extensions.Hosting.IHostEnvironment HostEnvironment
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.ICentralClientesService CentralClientesSvc
 @inject AlfaCore.Services.IMenuService MenuSvc
@@ -1324,12 +1322,10 @@ else
                  OnClose="CloseLoginOverlayAsync" />
 
 <AppMsgBoxHost />
-<NovedadesPopup Enabled="@(!IsDirectMode && !IsEsLocalMode)" />
+<NovedadesPopup Enabled="@(!IsDirectMode)" />
 
 @code {
     private static readonly string BuildStamp = ResolveBuildStamp();
-    private bool IsEsLocalMode
-        => EsLocalOptions.Value.ShouldDisableUnrelatedHostedServices(HostEnvironment.EnvironmentName);
 
     private static string ResolveBuildStamp()
     {
@@ -1667,6 +1663,8 @@ else
     {
         HeaderNavigation.Record(args.Location);
         _mobileSidebarOpen = false;
+        if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
+            _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (IsLauncherRoute)
             _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
@@ -2053,9 +2051,6 @@ else
     /// </summary>
     private void QueuePendingUpdatesCheckIfNeeded(SessionDto routeSession)
     {
-        if (EsLocalOptions.Value.ShouldDisableUnrelatedHostedServices(HostEnvironment.EnvironmentName))
-            return;
-
         if (!RouteUpdatesGuard.TryClaim(routeSession.Servidor, routeSession.BaseDatos))
             return;
 

@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Options;
 
 namespace AlfaCore;
 
@@ -162,6 +163,7 @@ public class Program
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
         builder.Services.AddScoped<WhatsAppEmbeddedOperationalImportService>();
+        builder.Services.AddScoped<IWhatsAppEmbeddedOperationalImportService>(provider => provider.GetRequiredService<WhatsAppEmbeddedOperationalImportService>());
         builder.Services.AddScoped<IConversacionesAuthorizationService, ConversacionesAuthorizationService>();
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupStore, WhatsAppEmbeddedSignupStore>();
@@ -276,40 +278,11 @@ public class Program
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
-        var esLocalOptions = builder.Configuration
-            .GetSection(AlfaCoreEsLocalOptions.SectionName)
-            .Get<AlfaCoreEsLocalOptions>() ?? new();
-        builder.Services.Configure<AlfaCoreEsLocalOptions>(
-            builder.Configuration.GetSection(AlfaCoreEsLocalOptions.SectionName));
         var embeddedSignupSection = builder.Configuration.GetSection(WhatsAppEmbeddedSignupOptions.SectionName);
         var embeddedSignupStartupOptions = embeddedSignupSection.Get<WhatsAppEmbeddedSignupOptions>() ?? new();
-        var dataProtection = builder.Services.AddDataProtection().SetApplicationName("AlfaCore.WhatsAppEmbeddedSignup");
-        if (!string.IsNullOrWhiteSpace(embeddedSignupStartupOptions.DataProtectionKeysPath))
-        {
-            var keyDirectory = new DirectoryInfo(embeddedSignupStartupOptions.DataProtectionKeysPath);
-            dataProtection.PersistKeysToFileSystem(keyDirectory);
-            if (OperatingSystem.IsWindows())
-                dataProtection.ProtectKeysWithDpapi();
-        }
-
         builder.Services.AddOptions<WhatsAppEmbeddedSignupOptions>()
             .Bind(embeddedSignupSection)
-            .Validate(options => !options.Enabled ||
-                (options.AllowedBaseIds.Length > 0
-                 && options.AllowedBaseIds.All(static id => id > 0)
-                 && options.AllowedBaseIds.Distinct().Count() == options.AllowedBaseIds.Length
-                 && !string.IsNullOrWhiteSpace(options.AppId)
-                 && !string.IsNullOrWhiteSpace(options.BusinessPortfolioId)
-                 && !string.IsNullOrWhiteSpace(options.SystemUserId)
-                 && !string.IsNullOrWhiteSpace(options.EmbeddedSignupConfigId)
-                 && !string.IsNullOrWhiteSpace(options.GraphApiVersion)
-                 && Uri.TryCreate(options.GraphBaseUrl, UriKind.Absolute, out var graphBaseUri)
-                 && graphBaseUri.Scheme == Uri.UriSchemeHttps
-                 && !string.IsNullOrWhiteSpace(options.AppSecret)
-                 && !string.IsNullOrWhiteSpace(options.DataProtectionKeysPath)
-                 && Path.IsPathRooted(options.DataProtectionKeysPath)
-                 && options.OnboardingExpirationMinutes > 0
-                 && options.MaxRetryCount >= 0),
+            .Validate(static options => options.IsValidStartupConfiguration(),
                 "La configuración global de WhatsApp Embedded Signup es inválida.")
             .ValidateOnStart();
         builder.Services.Configure<PushNotificationsOptions>(builder.Configuration.GetSection(PushNotificationsOptions.SectionName));
@@ -319,17 +292,14 @@ public class Program
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
-        if (!esLocalOptions.ShouldDisableUnrelatedHostedServices(builder.Environment.EnvironmentName))
-        {
-            builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
-            builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
-            builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
-            builder.Services.AddHostedService<BillingHostedService>();
-            builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
-            builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
-            builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
-            builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
-        }
+        builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
+        builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
+        builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
+        builder.Services.AddHostedService<BillingHostedService>();
+        builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
+        builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+        builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
+        builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
         builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
 
         var app = builder.Build();
@@ -2021,13 +1991,14 @@ public class Program
             IConversacionesConfigService configService,
             IConversacionesService svc,
             ICentralBasesService basesService,
+            IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
             ISessionService sessionService,
             CancellationToken ct) =>
         {
             if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
                 return Results.NotFound();
 
-            return await HandleWhatsAppMessageAsync(request, configService, svc, ct);
+            return await HandleWhatsAppMessageAsync(request, configService, svc, embeddedSignupOptions, sessionService, ct);
         });
 
         app.MapGet("/api/conversaciones/instagram/webhook", HandleInstagramVerifyAsync);
@@ -2837,23 +2808,25 @@ public class Program
         HttpRequest request,
         IConversacionesConfigService configService,
         IConversacionesService svc,
+        IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
+        ISessionService sessionService,
         CancellationToken ct)
     {
         var options = await configService.GetWhatsAppConfigAsync(ct);
+        var appSecret = ResolveWhatsAppWebhookAppSecret(
+            embeddedSignupOptions.Value,
+            sessionService.GetActiveSession()?.BaseId ?? 0,
+            options.AppSecret);
 
         using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         var rawPayload = await reader.ReadToEndAsync(ct);
 
-        // A diferencia de Instagram/Facebook, WhatsApp no exigía App Secret hasta ahora — exigirlo
-        // de golpe rompería al cliente que ya está en producción sin haberlo cargado. Se valida
-        // la firma solo si el App Secret está configurado; queda como mejora pendiente pedirlo
-        // siempre una vez que la configuración actual lo tenga cargado.
-        if (!string.IsNullOrWhiteSpace(options.AppSecret))
-        {
-            var signature = request.Headers["X-Hub-Signature-256"].ToString();
-            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
-                return Results.Unauthorized();
-        }
+        if (string.IsNullOrWhiteSpace(appSecret))
+            return Results.Problem("WhatsApp App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+        var signature = request.Headers["X-Hub-Signature-256"].ToString();
+        if (!IsValidMetaSignature(rawPayload, appSecret, signature))
+            return Results.Unauthorized();
 
         using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
         var headers = request.Headers.ToDictionary(
@@ -2869,6 +2842,19 @@ public class Program
         }, ct);
 
         return Results.Ok(result);
+    }
+
+    internal static string ResolveWhatsAppWebhookAppSecret(
+        WhatsAppEmbeddedSignupOptions embeddedSignupOptions,
+        int idBase,
+        string legacyAppSecret)
+    {
+        ArgumentNullException.ThrowIfNull(embeddedSignupOptions);
+
+        // ES bases must validate webhooks with the application-level secret, never tenant legacy configuration.
+        return embeddedSignupOptions.IsAllowedForBase(idBase)
+            ? embeddedSignupOptions.AppSecret.Trim()
+            : legacyAppSecret?.Trim() ?? string.Empty;
     }
 
     private static async Task<IResult> HandleInstagramVerifyAsync(
@@ -2991,7 +2977,7 @@ public class Program
         return Results.Ok(result);
     }
 
-    private static bool IsValidMetaSignature(string rawPayload, string appSecret, string signature)
+    internal static bool IsValidMetaSignature(string rawPayload, string appSecret, string signature)
     {
         const string prefix = "sha256=";
         if (string.IsNullOrWhiteSpace(rawPayload)

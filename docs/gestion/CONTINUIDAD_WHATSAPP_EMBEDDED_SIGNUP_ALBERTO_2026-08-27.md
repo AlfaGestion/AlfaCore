@@ -1,3 +1,7 @@
+# HISTÓRICO — NO USAR COMO PROCEDIMIENTO ACTUAL
+
+Este handoff describe la estrategia vigente al 27/08/2026. El 07/09/2026 fue reemplazada por el flujo normal de desarrollo: iniciar AlfaCore en `localhost:5055`, login SaaS normal, Base 84 real y Embedded Signup limitado por configuración no versionada. Las referencias a launchers ES Local, LocalDB DEV, staging separado o simuladores manuales quedan solo como registro histórico.
+
 # Continuidad para Alberto — Conversaciones, WhatsApp y Embedded Signup
 
 Fecha de corte: 27/08/2026  

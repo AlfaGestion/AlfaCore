@@ -6,6 +6,7 @@ public sealed class WhatsAppEmbeddedSignupOptions
 
     public bool Enabled { get; set; }
     public bool WorkerEnabled { get; set; }
+    public bool WebhookRoutingEnabled { get; set; }
     public int[] AllowedBaseIds { get; set; } = [];
     public string AppId { get; set; } = string.Empty;
     public string BusinessPortfolioId { get; set; } = string.Empty;
@@ -13,6 +14,7 @@ public sealed class WhatsAppEmbeddedSignupOptions
     public string EmbeddedSignupConfigId { get; set; } = string.Empty;
     public string GraphApiVersion { get; set; } = "v26.0";
     public string GraphBaseUrl { get; set; } = "https://graph.facebook.com";
+    public bool UseApplicationCentralConnection { get; set; }
     public string CentralConnectionString { get; set; } = string.Empty;
     public string AppSecret { get; set; } = string.Empty;
     public string CallbackBaseUrl { get; set; } = string.Empty;
@@ -26,6 +28,34 @@ public sealed class WhatsAppEmbeddedSignupOptions
 
     public bool IsAllowedForBase(int idBase)
         => Enabled && idBase > 0 && AllowedBaseIds.Contains(idBase);
+
+    public bool HasDataProtectionKeyRingConfiguration()
+        => !string.IsNullOrWhiteSpace(DataProtectionKeysPath)
+            && Path.IsPathRooted(DataProtectionKeysPath);
+
+    public bool IsValidStartupConfiguration()
+    {
+        if (!Enabled)
+            return true;
+
+        var hasValidCommonConfiguration = AllowedBaseIds.Length > 0
+            && AllowedBaseIds.All(static id => id > 0)
+            && AllowedBaseIds.Distinct().Count() == AllowedBaseIds.Length
+            && !string.IsNullOrWhiteSpace(AppId)
+            && !string.IsNullOrWhiteSpace(BusinessPortfolioId)
+            && !string.IsNullOrWhiteSpace(SystemUserId)
+            && !string.IsNullOrWhiteSpace(EmbeddedSignupConfigId)
+            && !string.IsNullOrWhiteSpace(GraphApiVersion)
+            && Uri.TryCreate(GraphBaseUrl, UriKind.Absolute, out var graphBaseUri)
+            && graphBaseUri.Scheme == Uri.UriSchemeHttps
+            && (UseApplicationCentralConnection ^ !string.IsNullOrWhiteSpace(CentralConnectionString))
+            && !string.IsNullOrWhiteSpace(AppSecret)
+            && OnboardingExpirationMinutes > 0
+            && MaxRetryCount >= 0;
+
+        return hasValidCommonConfiguration
+            && (!WorkerEnabled || HasDataProtectionKeyRingConfiguration());
+    }
 }
 
 public enum WhatsAppEmbeddedSignupCreditMode

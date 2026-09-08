@@ -6,6 +6,7 @@
 @using System.Text.Json
 @using System.Text.RegularExpressions
 @using Microsoft.AspNetCore.WebUtilities
+@using AlfaCore.Services
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IContactosService ContactosSvc
@@ -21,6 +22,8 @@
 @inject AlfaCore.Services.INotificacionesPushService PushSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject IWebHostEnvironment HostEnvironment
+@inject ILogger<Conversaciones> Logger
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @implements IAsyncDisposable
@@ -159,7 +162,7 @@
 </style>
 
 <section id="conversations-page"
-         class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty) @(_showAiSuggestionPanel ? "conversations-page--ai-open" : string.Empty)"
+         class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty) @(IsAiSuggestionDrawerVisible ? "conversations-page--ai-open" : string.Empty)"
          @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
     {
@@ -888,7 +891,7 @@
                         }
                         else if (ShouldShowStartConversationCta)
                         {
-                            <button type="button" class="btn btn--primary btn--sm" @onclick="FocusInboxSearchAsync">
+                            <button type="button" class="btn btn--primary btn--sm" @onclick="OpenNewWhatsAppConversation">
                                 <i class="bi bi-plus-circle-fill"></i> Empezar una conversación
                             </button>
                         }
@@ -2485,7 +2488,7 @@
              aria-orientation="vertical"
              tabindex="@(_showAiSuggestionPanel ? "0" : "-1")"></div>
 
-        <aside class="panel-card conversations-context conversations-context-drawer conversations-ai-suggestion-drawer @(_showAiSuggestionPanel ? "is-open" : string.Empty)">
+        <aside class="panel-card conversations-context conversations-context-drawer conversations-ai-suggestion-drawer @(IsAiSuggestionDrawerVisible ? "is-open" : string.Empty)">
                 <div class="conversations-context__section conversations-ai-header">
                     <div class="conversations-ai-header__identity">
                         <span class="conversations-ai-header__avatar"><i class="bi bi-stars"></i></span>
@@ -2864,7 +2867,7 @@
                             }
                             else if (_availableTemplates.Count == 0)
                             {
-                                <option value="0">No hay plantillas aprobadas</option>
+                                <option value="0">No hay plantillas aprobadas para este WhatsApp</option>
                             }
                             else
                             {
@@ -2876,6 +2879,17 @@
                             }
                         </select>
                     </div>
+
+                    @if (!_loadingTemplates && _availableTemplates.Count == 0)
+                    {
+                        <div class="conversations-template-empty-state">
+                            <strong>No hay plantillas aprobadas para @GetSelectedWhatsAppNumeroLabel().</strong>
+                            <span>Para iniciar una conversación fuera de la ventana de 24 horas necesitás una plantilla aprobada por Meta.</span>
+                            <button type="button" class="btn btn--ghost btn--sm" @onclick="GoToWhatsAppTemplates">
+                                <i class="bi bi-file-earmark-plus"></i> Crear plantilla
+                            </button>
+                        </div>
+                    }
 
                     @if (SelectedTemplate is not null && CountTemplateVariables(SelectedTemplate.CuerpoTexto) > 0)
                     {
@@ -3008,6 +3022,79 @@
                 <button type="button" class="btn btn--ghost" @onclick="CerrarNuevoHilo">
                     Cancelar
                 </button>
+            </div>
+        </div>
+    </div>
+}
+
+@if (_showNewWhatsAppConversation)
+{
+    <div class="modal-overlay conversations-new-whatsapp-modal" @onmousedown="CloseNewWhatsAppConversation">
+        <div class="modal-card conversations-new-whatsapp-modal__card" role="dialog" aria-modal="true" aria-labelledby="new-whatsapp-conversation-title" @onmousedown:stopPropagation @onclick:stopPropagation>
+            <h3 id="new-whatsapp-conversation-title" class="modal-card__title">Nueva conversación</h3>
+            <div class="field">
+                <label for="new-whatsapp-search">Contacto o teléfono</label>
+                <input id="new-whatsapp-search"
+                       type="text"
+                       value="@_newWhatsAppConversationSearch"
+                       placeholder="Buscá un contacto o escribí un celular..."
+                       @oninput="HandleNewWhatsAppConversationSearchAsync"
+                       @onkeydown="HandleNewWhatsAppConversationKeyDownAsync" />
+            </div>
+
+            @if (AvailableManualWhatsAppNumeros.Count > 1)
+            {
+                <div class="field">
+                    <label for="new-whatsapp-numero">Enviar desde</label>
+                    <select id="new-whatsapp-numero" @bind="_newWhatsAppConversationNumeroId">
+                        @foreach (var numero in AvailableManualWhatsAppNumeros)
+                        {
+                            <option value="@numero.IdNumero">@GetWhatsAppSendNumeroLabel(numero)</option>
+                        }
+                    </select>
+                </div>
+            }
+
+            @if (_loadingNewWhatsAppConversationSearch)
+            {
+                <div class="conversations-new-whatsapp-modal__state"><i class="bi bi-hourglass-split"></i> Buscando contactos...</div>
+            }
+            else if (_newWhatsAppConversationContacts.Count > 0)
+            {
+                <div class="conversations-new-whatsapp-modal__results" aria-live="polite">
+                    @foreach (var contact in _newWhatsAppConversationContacts)
+                    {
+                        var phone = GetContactPhone(contact);
+                        <div class="conversations-contact-suggest__item">
+                            <div class="conversations-contact-suggest__main">
+                                <strong>@contact.NombreApellido</strong>
+                                <span>@DisplayOrFallback(contact.Cargo)</span>
+                                <small>@DisplayOrFallback(phone, contact.Email)</small>
+                            </div>
+                            <div class="conversations-contact-suggest__actions">
+                                <button type="button" class="btn btn--primary btn--sm" disabled="@string.IsNullOrWhiteSpace(phone)" @onclick="() => CreateWhatsAppForNewConversationContactAsync(contact)">
+                                    Abrir
+                                </button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else if (_newWhatsAppConversationSearch.Trim().Length >= 2 && !IsPotentialPhone(_newWhatsAppConversationSearch))
+            {
+                <div class="conversations-new-whatsapp-modal__state">No encontramos contactos con ese dato.</div>
+            }
+
+            @if (_newWhatsAppConversationError is not null)
+            {
+                <div class="conversations-error conversations-notice">@_newWhatsAppConversationError</div>
+            }
+
+            <div class="modal-card__actions">
+                <button type="button" class="btn btn--primary" @onclick="CreateNewWhatsAppConversationAsync" disabled="@(_busyAction || !IsPotentialPhone(_newWhatsAppConversationSearch))">
+                    <i class="bi bi-chat-dots"></i> Abrir conversación
+                </button>
+                <button type="button" class="btn btn--ghost" @onclick="CloseNewWhatsAppConversation">Cancelar</button>
             </div>
         </div>
     </div>
@@ -3555,11 +3642,21 @@
 
     private string _canalActivo = "SOCIAL";
     private bool _showNuevoHilo;
+    private bool _showNewWhatsAppConversation;
+    private string _newWhatsAppConversationSearch = string.Empty;
+    private int? _newWhatsAppConversationNumeroId;
+    private List<ContactoGridItemDto> _newWhatsAppConversationContacts = [];
+    private bool _loadingNewWhatsAppConversationSearch;
+    private string? _newWhatsAppConversationError;
+    private CancellationTokenSource? _newWhatsAppConversationSearchCts;
     private bool _showContextPanel;
     private bool _showMobileAdvancedFilters;
     private bool _showTemplatePanel;
     private bool _showAiSuggestionPanel;
     private bool _loadingAiSuggestion;
+
+    private bool IsAiSuggestionDrawerVisible
+        => _showAiSuggestionPanel && _selectedConversationId is not null && _selectedConversation is not null;
     private bool _aiSuggestionStale;
     private bool _improvingReplyWithAi;
     private bool _transformandoReply;
@@ -3664,6 +3761,12 @@
     private Task? _typingPollingTask;
     private CancellationTokenSource? _searchDebounceCts;
     private CancellationTokenSource? _contactSearchCts;
+    private CancellationTokenSource? _tenantRequestCts;
+    private readonly ConversationTenantLoadGuard _tenantLoadGuard = new();
+    private ConversationTenantLoadLease _tenantLoadLease;
+    private readonly Guid _tenantDiagnosticCircuitId = Guid.NewGuid();
+    private bool _tenantAwaitingMatchingSession;
+    private long _initializedTenantGeneration;
     private long? _scrollHandlerConversationId;
     private long? _fileDropHandlerConversationId;
     private long? _firstNewMessageId;
@@ -3945,16 +4048,28 @@
     {
         _floatingWindowRegistration = FloatingWindows.Register(AlfaCore.Services.FloatingWindowType.DropdownMenu, CloseFloatingWindowsAsync);
         Nav.LocationChanged += OnLocationChanged;
+        SessionSvc.SessionChanged += OnSessionChanged;
         UpdatePageHeader();
         ApplyStartupQuery();
+        await InitializeTenantAsync();
+    }
+
+    private async Task InitializeTenantAsync()
+    {
+        if (!TryCaptureTenantLoad(out var lease) || _initializedTenantGeneration == lease.Generation)
+            return;
+
+        _initializedTenantGeneration = lease.Generation;
         _ticketsModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("TICKETS");
         _alfaKnowledgeModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("ALFAKNOWLEDGE");
         _crmModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("CRM");
+        if (!IsTenantLoadCurrent(lease))
+            return;
         await LoadWhatsAppNumerosAndAdminStatusAsync();
         await LoadInboxPreferenceAsync();
 
         await Task.WhenAll(LoadLookupsAsync(), LoadFavoriteStickersAsync());
-        if (_loadError is null)
+        if (IsTenantLoadCurrent(lease) && _loadError is null)
         {
             await LoadInboxAsync();
             if (_startupConversationId.HasValue)
@@ -3966,7 +4081,117 @@
     }
 
     private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
-        => _ = InvokeAsync(ApplyCurrentLocationAsync);
+        => _ = InvokeAsync(async () =>
+        {
+            if (!TryCaptureTenantLoad(out _))
+                return;
+
+            await ApplyCurrentLocationAsync();
+        });
+
+    private void OnSessionChanged()
+        => _ = InvokeAsync(HandleTenantSessionChangedAsync);
+
+    private async Task HandleTenantSessionChangedAsync()
+    {
+        if (!TryCaptureTenantLoad(out _))
+            return;
+
+        _tenantAwaitingMatchingSession = false;
+        await InitializeTenantAsync();
+    }
+
+    private bool TryCaptureTenantLoad(out ConversationTenantLoadLease lease)
+    {
+        var routeBaseId = GetRouteBaseId();
+        var activeSession = SessionSvc.GetActiveSession();
+        lease = _tenantLoadGuard.Capture(routeBaseId, activeSession?.BaseId);
+        LogTenantDiagnostic("capture", routeBaseId, activeSession, lease);
+
+        if (!lease.IsValid)
+        {
+            if (!_tenantAwaitingMatchingSession)
+            {
+                _tenantAwaitingMatchingSession = true;
+                _tenantLoadGuard.Invalidate();
+                ResetTenantBoundState();
+            }
+
+            return false;
+        }
+
+        if (_tenantLoadLease.Generation != lease.Generation)
+        {
+            _tenantLoadLease = lease;
+            ResetTenantBoundState();
+        }
+
+        return true;
+    }
+
+    private bool IsTenantLoadCurrent(ConversationTenantLoadLease lease)
+        => _tenantLoadGuard.IsCurrent(lease, GetRouteBaseId(), SessionSvc.GetActiveSession()?.BaseId);
+
+    private int? GetRouteBaseId()
+    {
+        var path = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0].Trim('/');
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return segments.Length >= 2 && int.TryParse(segments[1], out var routeBaseId) && routeBaseId > 0
+            ? routeBaseId
+            : null;
+    }
+
+    private void ResetTenantBoundState()
+    {
+        _tenantRequestCts?.Cancel();
+        _tenantRequestCts?.Dispose();
+        _tenantRequestCts = new CancellationTokenSource();
+        _inbox = [];
+        _messages = [];
+        _auditMessages = [];
+        _typingUsers = [];
+        _conversationCache.Clear();
+        _channelCache.Clear();
+        _selectedConversation = null;
+        _selectedConversationId = null;
+        _whatsAppInboxNumeroId = null;
+        _overrideWhatsAppSendNumeroId = null;
+        _canalActivo = "SOCIAL";
+        _filters.Canal = "SOCIAL";
+        _filters.IdNumeroWhatsApp = null;
+        _loadingInbox = false;
+        _loadingConversation = false;
+        _loadError = null;
+    }
+
+    private void LogTenantDiagnostic(string stage, int? routeBaseId, SessionDto? activeSession, ConversationTenantLoadLease lease)
+    {
+        if (!HostEnvironment.IsDevelopment())
+            return;
+
+        Logger.LogInformation(
+            "Tenant diagnostic: Conversations {Stage}. Circuit={Circuit}, RouteBaseId={RouteBaseId}, SessionBaseId={SessionBaseId}, IdWeb={IdWeb}, BaseName={BaseName}, Server={Server}, Database={Database}, User={User}, IdNumeroWhatsApp={IdNumeroWhatsApp}, Canal={Canal}, LeaseGeneration={LeaseGeneration}, LeaseValid={LeaseValid}",
+            stage,
+            _tenantDiagnosticCircuitId,
+            routeBaseId,
+            activeSession?.BaseId,
+            GetRouteIdWeb(),
+            activeSession?.Nombre,
+            activeSession?.Servidor,
+            activeSession?.BaseDatos,
+            AppUserSession.CurrentUser?.UserName,
+            _filters.IdNumeroWhatsApp,
+            _canalActivo,
+            lease.Generation,
+            lease.IsValid);
+    }
+
+    private string? GetRouteIdWeb()
+    {
+        var segments = Nav.ToBaseRelativePath(Nav.Uri).Split('?', '#')[0]
+            .Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return segments.Length >= 2 && int.TryParse(segments[1], out _) ? segments[0] : null;
+    }
 
     private async Task ApplyCurrentLocationAsync()
     {
@@ -4521,6 +4746,14 @@
     private bool ShouldShowStartConversationCta
         => ShouldUseWhatsAppEmptyState && HasAccessibleWhatsAppChannel;
 
+    private IReadOnlyList<ConversacionWhatsAppNumeroDto> AvailableManualWhatsAppNumeros
+        => _whatsappNumeros
+            .Where(CanUseWhatsAppNumeroForSend)
+            .OrderByDescending(n => _whatsAppInboxNumeroId == n.IdNumero)
+            .ThenByDescending(n => n.Activo)
+            .ThenBy(n => n.Nombre)
+            .ToList();
+
     private bool HasAnyNonWhatsAppInboxItems
         => _inbox.Any(x => !string.Equals(x.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase));
 
@@ -4725,12 +4958,22 @@
         Nav.NavigateTo(target);
     }
 
-    private async Task FocusInboxSearchAsync()
-    {
-        if (_canalActivo != "WHATSAPP")
-            await ChangeCanalAsync("WHATSAPP");
+    private void GoToWhatsAppTemplates()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones/plantillas"));
 
-        await JS.InvokeVoidAsync("eval", "document.getElementById('conv-inbox-search')?.focus()");
+    private string GetSelectedWhatsAppNumeroLabel()
+    {
+        var numero = _whatsappNumeros.FirstOrDefault(x => x.IdNumero == _selectedConversation?.IdNumeroWhatsApp);
+        return FirstNonEmpty(numero?.Nombre, numero?.WebDisplayName, "este WhatsApp");
+    }
+
+    private void OpenNewWhatsAppConversation()
+    {
+        _newWhatsAppConversationSearch = string.Empty;
+        _newWhatsAppConversationError = null;
+        _newWhatsAppConversationContacts = [];
+        _newWhatsAppConversationNumeroId = AvailableManualWhatsAppNumeros.FirstOrDefault()?.IdNumero;
+        _showNewWhatsAppConversation = true;
     }
 
     private static string GetWhatsAppSendNumeroLabel(ConversacionWhatsAppNumeroDto numero)
@@ -5170,6 +5413,9 @@
 
     private async Task<int> RefreshInboxAsync(bool showLoading, bool allowSelectionChange, bool trackNewMessages = false)
     {
+        if (!TryCaptureTenantLoad(out var lease))
+            return 0;
+
         if (showLoading)
         {
             _loadingInbox = true;
@@ -5184,7 +5430,11 @@
         {
             var previousInbox = _inbox.ToDictionary(x => x.IdConversacion);
             ApplyCurrentUserToFilters(_filters);
-            var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters)).ToList();
+            _filters.ExpectedBaseId = lease.BaseId;
+            var token = _tenantRequestCts?.Token ?? CancellationToken.None;
+            var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters, token)).ToList();
+            if (!IsTenantLoadCurrent(lease))
+                return 0;
             if (trackNewMessages)
                 newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
             _inbox = refreshedInbox;
@@ -5223,6 +5473,9 @@
 
     private async Task LoadAuditMessagesIfNeededAsync()
     {
+        if (!TryCaptureTenantLoad(out var lease))
+            return;
+
         if (!ShouldKeepAuditResultsOpen)
         {
             _auditMessages = [];
@@ -5234,7 +5487,12 @@
         await Task.Yield();
         try
         {
-            _auditMessages = (await ConversacionesSvc.GetAuditMessagesAsync(_filters)).ToList();
+            _filters.ExpectedBaseId = lease.BaseId;
+            var token = _tenantRequestCts?.Token ?? CancellationToken.None;
+            var auditMessages = (await ConversacionesSvc.GetAuditMessagesAsync(_filters, token)).ToList();
+            if (!IsTenantLoadCurrent(lease))
+                return;
+            _auditMessages = auditMessages;
         }
         catch (Exception ex)
         {
@@ -5594,6 +5852,9 @@
 
     private async Task LoadConversationAsync(long idConversacion, bool showLoading, bool clearActionState)
     {
+        if (!TryCaptureTenantLoad(out var lease))
+            return;
+
         var conversationChanged = _selectedConversationId != idConversacion;
         _selectedConversationId = idConversacion;
         if (conversationChanged)
@@ -5638,14 +5899,17 @@
 
         try
         {
-            var conversationTask = ConversacionesSvc.GetConversationAsync(idConversacion);
-            var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId);
+            var token = _tenantRequestCts?.Token ?? CancellationToken.None;
+            var conversationTask = ConversacionesSvc.GetConversationAsync(idConversacion, token);
+            var typingTask = ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId, token);
             var pageSize = conversationChanged || clearActionState
                 ? ConversationMessagePageSize
                 : Math.Max(ConversationMessagePageSize, _messages.Count);
-            var messagesTask = ConversacionesSvc.GetMessagesPageAsync(idConversacion, pageSize);
+            var messagesTask = ConversacionesSvc.GetMessagesPageAsync(idConversacion, pageSize, ct: token);
 
             await Task.WhenAll(conversationTask, messagesTask, typingTask);
+            if (!IsTenantLoadCurrent(lease))
+                return;
 
             _selectedConversation = await conversationTask;
             RefreshSelectedMercadoLibreGroup();
@@ -5662,7 +5926,9 @@
                 .ToArray();
             var adjuntos = messageIds.Length == 0
                 ? []
-                : await ConversacionesSvc.GetMessageAttachmentsAsync(idConversacion, messageIds);
+                : await ConversacionesSvc.GetMessageAttachmentsAsync(idConversacion, messageIds, token);
+            if (!IsTenantLoadCurrent(lease))
+                return;
             ApplyConversationMessagesPage(messagesPage, adjuntos);
             _typingUsers = (await typingTask).ToList();
 
@@ -7139,7 +7405,8 @@
             Orden = filters.Orden,
             Clasifica1 = filters.Clasifica1,
             Clasifica2 = filters.Clasifica2,
-            Clasifica3 = filters.Clasifica3
+            Clasifica3 = filters.Clasifica3,
+            ExpectedBaseId = filters.ExpectedBaseId
         };
 
     private void StartPolling()
@@ -7190,6 +7457,9 @@
 
     private async Task RefreshTypingAsync()
     {
+        if (!TryCaptureTenantLoad(out var lease))
+            return;
+
         if (_selectedConversationId is not { } idConversacion)
         {
             if (_typingUsers.Count > 0)
@@ -7203,7 +7473,10 @@
 
         try
         {
-            var typing = (await ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId)).ToList();
+            var token = _tenantRequestCts?.Token ?? CancellationToken.None;
+            var typing = (await ConversacionesSvc.GetTypingAsync(idConversacion, _typingClientId, token)).ToList();
+            if (!IsTenantLoadCurrent(lease))
+                return;
             if (AreSameTypingUsers(_typingUsers, typing))
                 return;
 
@@ -7315,6 +7588,7 @@
            || _editingConversationName
            || _savingConversationName
            || _showNuevoHilo
+           || _showNewWhatsAppConversation
            || _showTemplatePanel;
 
     private async Task<bool> IsThreadNearBottomAsync()
@@ -8224,7 +8498,7 @@
             ClearTemplateSelection();
 
             if (templateAttachmentsToSend.Count > 0)
-                await UploadPendingAttachmentsAsync(templateAttachmentsToSend, RemoveTemplatePendingAttachment, allowExpiredWhatsAppWindow: true);
+                await UploadPendingAttachmentsAsync(templateAttachmentsToSend, RemoveTemplatePendingAttachment);
 
             await SelectConversationAsync(selectedConversationId, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
@@ -8602,6 +8876,12 @@
         if (!_showAiSuggestionPanel)
         {
             CancelAiSuggestionRequest();
+            return;
+        }
+
+        if (_selectedConversationId is null || _selectedConversation is null)
+        {
+            _showAiSuggestionPanel = false;
             return;
         }
 
@@ -9592,7 +9872,7 @@
 
             _canalActivo = "WHATSAPP";
             _filters.Canal = "WHATSAPP";
-            _filters.Search = result.TelefonoWhatsApp;
+            _filters.Search = string.Empty;
 
             await LoadInboxAsync();
             await SelectConversationAsync(result.IdConversacion, showMobileChat: true);
@@ -9604,6 +9884,105 @@
         catch (Exception ex)
         {
             _actionError = ex.Message;
+        }
+        finally
+        {
+            _busyAction = false;
+        }
+    }
+
+    private async Task HandleNewWhatsAppConversationSearchAsync(ChangeEventArgs args)
+    {
+        _newWhatsAppConversationSearch = Convert.ToString(args.Value, CultureInfo.InvariantCulture) ?? string.Empty;
+        _newWhatsAppConversationError = null;
+        _newWhatsAppConversationContacts = [];
+        _newWhatsAppConversationSearchCts?.Cancel();
+
+        if (_newWhatsAppConversationSearch.Trim().Length < 2 || IsPotentialPhone(_newWhatsAppConversationSearch))
+        {
+            _loadingNewWhatsAppConversationSearch = false;
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _newWhatsAppConversationSearchCts = cts;
+        _loadingNewWhatsAppConversationSearch = true;
+        try
+        {
+            await Task.Delay(220, cts.Token);
+            var results = await ContactosSvc.SearchAsync(new ContactosFilters
+            {
+                Texto = _newWhatsAppConversationSearch.Trim(),
+                Activo = true,
+                PageNumber = 1,
+                PageSize = 6
+            }, cts.Token);
+            if (!cts.IsCancellationRequested)
+                _newWhatsAppConversationContacts = results.Items.ToList();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _newWhatsAppConversationError = ex.Message;
+        }
+        finally
+        {
+            if (_newWhatsAppConversationSearchCts == cts)
+            {
+                _loadingNewWhatsAppConversationSearch = false;
+                _newWhatsAppConversationSearchCts = null;
+                cts.Dispose();
+            }
+        }
+    }
+
+    private async Task HandleNewWhatsAppConversationKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+        {
+            CloseNewWhatsAppConversation();
+            return;
+        }
+
+        if (string.Equals(args.Key, "Enter", StringComparison.OrdinalIgnoreCase))
+            await CreateNewWhatsAppConversationAsync();
+    }
+
+    private Task CreateWhatsAppForNewConversationContactAsync(ContactoGridItemDto contact)
+    {
+        _newWhatsAppConversationSearch = GetContactPhone(contact);
+        return CreateNewWhatsAppConversationAsync();
+    }
+
+    private async Task CreateNewWhatsAppConversationAsync()
+    {
+        if (!IsPotentialPhone(_newWhatsAppConversationSearch))
+        {
+            _newWhatsAppConversationError = "Ingresá un número de celular válido o elegí un contacto con celular.";
+            return;
+        }
+
+        _busyAction = true;
+        _newWhatsAppConversationError = null;
+        try
+        {
+            var result = await ConversacionesSvc.CreateOrGetWhatsAppConversationAsync(new ConversacionCrearWhatsAppRequest
+            {
+                TelefonoWhatsApp = _newWhatsAppConversationSearch,
+                IdNumeroWhatsApp = _newWhatsAppConversationNumeroId
+            });
+            _canalActivo = "WHATSAPP";
+            _filters.Canal = "WHATSAPP";
+            _filters.Search = string.Empty;
+            CloseNewWhatsAppConversation();
+            await LoadInboxAsync();
+            await SelectConversationAsync(result.IdConversacion, showMobileChat: true);
+        }
+        catch (Exception ex)
+        {
+            _newWhatsAppConversationError = ex.Message;
         }
         finally
         {
@@ -10265,8 +10644,7 @@
 
     private async Task UploadPendingAttachmentsAsync(
         IReadOnlyList<PendingAttachment> attachmentsToSend,
-        Action<Guid> removeAttachment,
-        bool allowExpiredWhatsAppWindow = false)
+        Action<Guid> removeAttachment)
     {
         if (_selectedConversation is null)
             return;
@@ -10292,8 +10670,7 @@
                     TamanoBytes = attachmentToSend.TamanoBytes,
                     IdTecnicoAutor = string.IsNullOrWhiteSpace(CurrentMessageTechnicianId) ? null : CurrentMessageTechnicianId,
                     UsuarioAccion = CurrentUserNameForAudit,
-                    SistemaAccion = CurrentUserSystemForAudit,
-                    PermitirEnvioConVentanaVencida = allowExpiredWhatsAppWindow
+                    SistemaAccion = CurrentUserSystemForAudit
                 });
 
                 removeAttachment(attachmentToSend.Id);
@@ -10316,9 +10693,21 @@
         _nuevoHiloError = null;
     }
 
+    private void CloseNewWhatsAppConversation()
+    {
+        _newWhatsAppConversationSearchCts?.Cancel();
+        _newWhatsAppConversationSearchCts = null;
+        _showNewWhatsAppConversation = false;
+        _newWhatsAppConversationSearch = string.Empty;
+        _newWhatsAppConversationContacts = [];
+        _newWhatsAppConversationError = null;
+        _loadingNewWhatsAppConversationSearch = false;
+    }
+
     private void ClearSelection()
     {
         CancelAiSuggestionRequest();
+        _showAiSuggestionPanel = false;
         _selectedConversationId = null;
         _selectedConversation = null;
         _messages = [];
@@ -12241,7 +12630,7 @@
             return "bi-exclamation-circle-fill";
         if (state is "PENDIENTE" or "PENDIENTE_CONFIG")
             return "bi-clock";
-        if (state is "ENVIADO_META" or "ENTREGADO" or "LEIDO")
+        if (state is "ENTREGADO" or "LEIDO")
             return "bi-check2-all";
         return "bi-check2";
     }
@@ -12298,6 +12687,8 @@
     {
         PageHeader.Clear();
         Nav.LocationChanged -= OnLocationChanged;
+        SessionSvc.SessionChanged -= OnSessionChanged;
+        _tenantRequestCts?.Cancel();
         CancelAiSuggestionRequest();
         await ClearTypingAsync();
         CancelSearchDebounce();

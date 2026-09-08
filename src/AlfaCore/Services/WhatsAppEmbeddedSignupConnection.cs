@@ -1,22 +1,24 @@
 namespace AlfaCore.Services;
 
-internal static class WhatsAppEmbeddedSignupConnection
+public static class WhatsAppEmbeddedSignupConnection
 {
     public static string Resolve(IConfiguration configuration, IHostEnvironment? environment = null)
     {
         var options = configuration
             .GetSection(Configuration.WhatsAppEmbeddedSignupOptions.SectionName)
             .Get<Configuration.WhatsAppEmbeddedSignupOptions>() ?? new();
-        if (!string.IsNullOrWhiteSpace(options.CentralConnectionString))
+        var hasDedicatedConnection = !string.IsNullOrWhiteSpace(options.CentralConnectionString);
+        if (options.UseApplicationCentralConnection && hasDedicatedConnection)
+            throw new InvalidOperationException("WhatsApp Embedded Signup tiene dos conexiones centrales configuradas; elegí UseApplicationCentralConnection o CentralConnectionString.");
+
+        if (options.UseApplicationCentralConnection)
+            return configuration.GetConnectionString("AlfaCentral")
+                ?? throw new InvalidOperationException("WhatsApp Embedded Signup requiere ConnectionStrings:AlfaCentral porque UseApplicationCentralConnection=true.");
+
+        if (hasDedicatedConnection)
             return options.CentralConnectionString.Trim();
 
-        if (environment?.IsDevelopment() == true)
-        {
-            throw new InvalidOperationException(
-                "WhatsApp Embedded Signup requiere una conexión central explícita en Development; no se permite usar ConnectionStrings:AlfaCentral como fallback.");
-        }
-
-        return configuration.GetConnectionString("AlfaCentral")
-            ?? throw new InvalidOperationException("No se configuró la conexión central de WhatsApp Embedded Signup.");
+        throw new InvalidOperationException(
+            "WhatsApp Embedded Signup requiere una conexión central explícita: UseApplicationCentralConnection=true o WhatsAppEmbeddedSignup:CentralConnectionString.");
     }
 }
