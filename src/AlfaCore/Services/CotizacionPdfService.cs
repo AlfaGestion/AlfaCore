@@ -78,15 +78,15 @@ public sealed class CotizacionPdfService : ICotizacionPdfService
         {
             if (logoBytes is { Length: > 0 })
             {
-                row.ConstantItem(56).Height(56).Image(logoBytes).FitArea();
-                row.ConstantItem(12);
+                row.ConstantItem(84).Height(84).Image(logoBytes).FitArea();
+                row.ConstantItem(16);
             }
 
             row.RelativeItem().Column(col =>
             {
-                col.Item().Text(nombreEmpresa).FontSize(15).Bold();
-                col.Item().Text($"Cotización {detail.CodigoVisible} · v{detail.NumeroVersion}").FontSize(11).SemiBold().FontColor(Colors.Grey.Darken2);
-                col.Item().PaddingTop(2).Text(EstadoLabel(detail.EstadoVersion)).FontSize(8).FontColor(Colors.Grey.Darken1);
+                col.Item().Text(nombreEmpresa).FontSize(20).Bold();
+                col.Item().PaddingTop(2).Text($"Cotización {detail.CodigoVisible} · v{detail.NumeroVersion}").FontSize(13).SemiBold().FontColor(Colors.Grey.Darken2);
+                col.Item().PaddingTop(3).Text(EstadoLabel(detail.EstadoVersion)).FontSize(9).FontColor(Colors.Grey.Darken1);
             });
 
             row.ConstantItem(150).AlignRight().Column(col =>

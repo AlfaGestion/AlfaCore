@@ -34,23 +34,9 @@
                         <strong class="cotiz-stat__value">@_resumen.AceptadasEsteMes</strong>
                     </button>
                 </div>
-
-                <div class="cotiz-list-toolbar">
-                    <div class="cotiz-search">
-                        <i class="bi bi-search"></i>
-                        <input placeholder="Buscar por número, cliente o contacto..." value="@_filters.Texto" @oninput="OnBuscarTextoAsync" />
-                    </div>
-                    <div class="cotiz-filter-tabs">
-                        <button type="button" class="@(_listTab == "todas" ? "is-active" : "")" @onclick='() => SetListTabAsync("todas")'>Todas</button>
-                        <button type="button" class="@(_listTab == "borradores" ? "is-active" : "")" @onclick='() => SetListTabAsync("borradores")'>Borradores</button>
-                        <button type="button" class="@(_listTab == "enviadas" ? "is-active" : "")" @onclick='() => SetListTabAsync("enviadas")'>Enviadas</button>
-                        <button type="button" class="@(_listTab == "aceptadas" ? "is-active" : "")" @onclick='() => SetListTabAsync("aceptadas")'>Aceptadas</button>
-                        <button type="button" class="@(_listTab == "vencidas" ? "is-active" : "")" @onclick='() => SetListTabAsync("vencidas")'>Vencidas</button>
-                    </div>
-                </div>
             </header>
 
-            <section class="cuentas-list-shell">
+            <section class="cuentas-list-shell @(_selectedIds.Count > 0 ? "cuentas-list-shell--selection" : string.Empty)">
                 @if (_loadingList)
                 {
                     <div class="cuentas-list-shell__state">
@@ -72,6 +58,14 @@
                         <table class="cuentas-list-table cotiz-list-table">
                             <thead>
                                 <tr>
+                                    <th class="cuentas-list-table__select">
+                                        <input type="checkbox"
+                                               class="cuentas-list-table__checkbox"
+                                               checked="@AreAllVisibleSelected"
+                                               @onchange="ToggleSelectAllAsync"
+                                               aria-label="Seleccionar todas las cotizaciones visibles"
+                                               title="Seleccionar todas las cotizaciones visibles" />
+                                    </th>
                                     <th>Número</th>
                                     <th>Cliente / Prospecto</th>
                                     <th>Contacto</th>
@@ -84,7 +78,15 @@
                             <tbody>
                                 @foreach (var item in _items)
                                 {
-                                    <tr class="cuentas-list-table__row" @onclick="() => AbrirAsync(item.IdVersion)">
+                                    <tr class="cuentas-list-table__row @(_selectedIds.Contains(item.IdCotizacion) ? "is-selected" : string.Empty)" @onclick="() => AbrirAsync(item.IdVersion)">
+                                        <td class="cuentas-list-table__select" @onclick:stopPropagation="true">
+                                            <input type="checkbox"
+                                                   class="cuentas-list-table__checkbox"
+                                                   checked="@_selectedIds.Contains(item.IdCotizacion)"
+                                                   @onchange="args => ToggleRowSelectionAsync(item.IdCotizacion, args)"
+                                                   aria-label="@($"Seleccionar {item.CodigoVisible}")"
+                                                   title="@($"Seleccionar {item.CodigoVisible}")" />
+                                        </td>
                                         <td><span class="cotiz-list__code">@item.CodigoVisible</span> <span class="cotiz-list__version">v@(item.NumeroVersion)</span></td>
                                         <td><strong>@DisplayOrFallback(item.EmpresaProspecto, item.CodigoCliente)</strong></td>
                                         <td>@item.ContactoNombre</td>
@@ -104,8 +106,23 @@
                         </table>
                     </div>
                 }
+                <footer class="alfa-data-view-footer">
+                    <span class="alfa-data-view-footer__summary">@GetCotizBrowseSummary()</span>
+                    <div class="alfa-data-view-footer__controls">
+                        <AlfaSelect Value="@_filters.PageSize.ToString()"
+                                    ValueChanged="SetCotizPageSizeAsync"
+                                    Options="@CotizPageSizeOptions"
+                                    Disabled="@_loadingList"
+                                    Class="alfa-data-view-footer__page-size" />
+                    </div>
+                </footer>
             </section>
         </section>
+
+        <AlfaConfirmDialog Open="@_showBulkAnularConfirm" Title="Anular cotizaciones"
+                            Message="@($"¿Anular {_selectedIds.Count} cotización(es) seleccionada(s)? Quedarán marcadas como anuladas y no se podrá revertir desde acá.")"
+                            ConfirmLabel="Anular" CancelLabel="Cancelar" Loading="@_bulkAnulando"
+                            OnConfirm="ConfirmarAnularSeleccionadasAsync" OnCancel="() => _showBulkAnularConfirm = false" />
     }
     else if (_detail is not null)
     {
@@ -600,7 +617,7 @@
                         <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-clipboard" OnClick="_ => CopiarLinkAsync()">Copiar</AlfaButton>
                     </div>
                     <p class="panel-card__subtitle">Cualquiera con este link puede ver esta versión de la cotización, sin necesidad de iniciar sesión.</p>
-                    <a class="btn btn--ghost btn--sm" href="@(_compartirUrl + "/pdf")" target="_blank" rel="noopener"><i class="bi bi-file-earmark-pdf"></i> Descargar PDF</a>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-file-earmark-pdf" OnClick="_ => DescargarPdfCompartirAsync()">Descargar PDF</AlfaButton>
                 </div>
             }
             else
@@ -675,9 +692,23 @@
     private bool _loadingList = true;
     private CotizacionListFiltersDto _filters = new();
     private int _totalRegistros;
+    private int _totalPages = 1;
+    private bool _hasPrevPage;
+    private bool _hasNextPage;
     private CotizacionResumenDto _resumen = new();
     private string _listTab = "todas";
     private CancellationTokenSource? _searchDebounceCts;
+    private bool _showSearchPanel;
+    private readonly HashSet<long> _selectedIds = new();
+    private bool _showBulkAnularConfirm;
+    private bool _bulkAnulando;
+
+    private static readonly IReadOnlyList<AlfaSelectOption> CotizPageSizeOptions =
+    [
+        new("25", "25 por página"),
+        new("50", "50 por página"),
+        new("100", "100 por página")
+    ];
 
     // ---- Editor ----
     private bool _showEditor;
@@ -788,6 +819,11 @@
     private Task HandlePageClickAsync()
     {
         _showVersionMenu = false;
+        if (_showSearchPanel)
+        {
+            _showSearchPanel = false;
+            UpdatePageHeader();
+        }
         return Task.CompletedTask;
     }
 
@@ -796,6 +832,12 @@
         var actions = new List<PageHeaderAction>();
         if (!_showEditor)
         {
+            if (_selectedIds.Count > 0)
+            {
+                actions.Add(new PageHeaderAction { Key = "seleccion", Label = $"{_selectedIds.Count} seleccionadas", Icon = "bi-check2-square", Style = PageHeaderActionStyle.Ghost, Disabled = true });
+                actions.Add(new PageHeaderAction { Key = "anular-masiva", Label = "Anular", Icon = "bi-slash-circle", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Essential, OnClick = () => { _showBulkAnularConfirm = true; return Task.CompletedTask; } });
+                actions.Add(new PageHeaderAction { Key = "cancelar-seleccion", Label = "Cancelar selección", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, OnClick = ClearSelectionAsync });
+            }
             actions.Add(new PageHeaderAction { Key = "nueva", Label = "Nueva cotización", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = AbrirNuevaAsync });
             actions.Add(new PageHeaderAction { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Disabled = _loadingList, OnClick = BuscarAsync });
         }
@@ -825,10 +867,108 @@
         {
             Title = !_showEditor ? "Cotizaciones" : _detail is null ? "Cotización" : $"{_detail.CodigoVisible} · v{_detail.NumeroVersion}",
             Breadcrumb = ["Cotizaciones"],
+            State = _showEditor ? PageHeaderState.Editing : _loadingList ? PageHeaderState.Loading : _selectedIds.Count > 0 ? PageHeaderState.Selection : PageHeaderState.List,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCotizaciones(RouteContext, Nav, "cotizaciones"),
+            Search = _showEditor ? null : new PageHeaderSearchConfig(),
+            SearchContent = _showEditor ? null : RenderCotizSmartSearch(),
+            Pagination = _showEditor ? null : BuildCotizHeaderPagination(),
             Actions = actions
         });
+    }
+
+    private PageHeaderPaginationConfig BuildCotizHeaderPagination()
+        => new()
+        {
+            Label = $"{_totalRegistros} registro(s)",
+            PageLabel = $"{_filters.PageNumber} / {_totalPages}",
+            HasPrevious = _hasPrevPage,
+            HasNext = _hasNextPage,
+            Disabled = _loadingList,
+            OnPrevious = () => CambiarPaginaCotizAsync(_filters.PageNumber - 1),
+            OnNext = () => CambiarPaginaCotizAsync(_filters.PageNumber + 1)
+        };
+
+    private async Task CambiarPaginaCotizAsync(int page)
+    {
+        if (page < 1 || page > _totalPages || _loadingList)
+            return;
+        _filters.PageNumber = page;
+        await BuscarAsync();
+    }
+
+    private async Task SetCotizPageSizeAsync(string? value)
+    {
+        if (int.TryParse(value, out var size) && size > 0)
+            _filters.PageSize = size;
+        _filters.PageNumber = 1;
+        await BuscarAsync();
+    }
+
+    private string GetCotizBrowseSummary()
+        => $"{(_totalRegistros == 1 ? "1 registro" : $"{_totalRegistros} registros")} · Página {_filters.PageNumber} de {_totalPages}";
+
+    // ---- Selección masiva ----
+
+    private bool AreAllVisibleSelected
+        => _items.Count > 0 && _items.All(i => _selectedIds.Contains(i.IdCotizacion));
+
+    private async Task ToggleSelectAllAsync(ChangeEventArgs args)
+    {
+        var check = args.Value is bool b && b;
+        if (check)
+            foreach (var item in _items)
+                _selectedIds.Add(item.IdCotizacion);
+        else
+            foreach (var item in _items)
+                _selectedIds.Remove(item.IdCotizacion);
+        UpdatePageHeader();
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    private async Task ToggleRowSelectionAsync(long idCotizacion, ChangeEventArgs args)
+    {
+        var check = args.Value is bool b && b;
+        if (check)
+            _selectedIds.Add(idCotizacion);
+        else
+            _selectedIds.Remove(idCotizacion);
+        UpdatePageHeader();
+        StateHasChanged();
+        await Task.CompletedTask;
+    }
+
+    private Task ClearSelectionAsync()
+    {
+        _selectedIds.Clear();
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    private async Task ConfirmarAnularSeleccionadasAsync()
+    {
+        _bulkAnulando = true;
+        var ids = _selectedIds.ToList();
+        var fallo = 0;
+        foreach (var idCotizacion in ids)
+        {
+            var result = await UiOps.RunAsync(async () => { await CotizSvc.AnularAsync(idCotizacion, CurrentUserName); return true; }, "No se pudo anular la cotización.");
+            if (result.Success)
+                _selectedIds.Remove(idCotizacion);
+            else
+                fallo++;
+        }
+
+        _bulkAnulando = false;
+        _showBulkAnularConfirm = false;
+
+        if (fallo == 0)
+            SetFeedback(AppUiMessage.Success("Cotizaciones anuladas", $"Se anularon {ids.Count} cotización(es)."));
+        else
+            SetFeedback(new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Anulación parcial", Message = $"No se pudieron anular {fallo} de {ids.Count} cotización(es) seleccionadas." });
+
+        await BuscarAsync();
     }
 
     // ---- Listado ----
@@ -845,8 +985,100 @@
             _ => null
         };
         _filters.PageNumber = 1;
+        _showSearchPanel = false;
         await BuscarAsync();
     }
+
+    // ---- Búsqueda inteligente (barra superior, mismo patrón que Técnicos/Contactos) ----
+
+    private sealed record SmartChip(string Key, string Label);
+
+    private RenderFragment RenderCotizSmartSearch() => @<div class="smart-search" @onclick:stopPropagation @onkeydown="HandleCotizApplyKeyDownAsync">
+        @{ var activeChips = BuildCotizFilterChips(); }
+        <div class="smart-search__bar @(_showSearchPanel ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button"
+                    class="smart-search__filter-button @(_showSearchPanel || activeChips.Count > 0 ? "is-active" : string.Empty)"
+                    title="Abrir filtros" aria-label="Abrir filtros" aria-expanded="@_showSearchPanel"
+                    @onclick="ToggleCotizSearchPanel">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @foreach (var chip in activeChips)
+                {
+                    <button type="button" class="smart-search__active-filter" title="@($"Quitar filtro {chip.Label}")" aria-label="@($"Quitar filtro {chip.Label}")" @onclick='() => SetListTabAsync("todas")'>
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+            </div>
+            <input type="search" placeholder="Buscar por número, cliente o contacto..." value="@_filters.Texto" @onfocus="OpenCotizSearchPanel" @oninput="OnBuscarTextoAsync" @onkeydown="HandleCotizApplyKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleCotizSearchPanel" aria-label="Mostrar filtros" aria-expanded="@_showSearchPanel">
+                <i class="bi @(_showSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_showSearchPanel)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseCotizSearchPanel"></button>
+            <div class="smart-search__panel smart-search__panel--compact" @onclick:stopPropagation @onkeydown="HandleCotizApplyKeyDownAsync">
+                <div class="smart-search__column smart-search__section smart-search__section--status">
+                    <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
+                    <button type="button" class="@GetSmartOptionClass(_listTab == "todas")" @onclick='() => SetListTabAsync("todas")'>Todas</button>
+                    <button type="button" class="@GetSmartOptionClass(_listTab == "borradores")" @onclick='() => SetListTabAsync("borradores")'>Borradores</button>
+                    <button type="button" class="@GetSmartOptionClass(_listTab == "enviadas")" @onclick='() => SetListTabAsync("enviadas")'>Enviadas</button>
+                    <button type="button" class="@GetSmartOptionClass(_listTab == "aceptadas")" @onclick='() => SetListTabAsync("aceptadas")'>Aceptadas</button>
+                    <button type="button" class="@GetSmartOptionClass(_listTab == "vencidas")" @onclick='() => SetListTabAsync("vencidas")'>Vencidas</button>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private void OpenCotizSearchPanel()
+    {
+        _showSearchPanel = true;
+        UpdatePageHeader();
+    }
+
+    private void ToggleCotizSearchPanel()
+    {
+        _showSearchPanel = !_showSearchPanel;
+        UpdatePageHeader();
+    }
+
+    private void CloseCotizSearchPanel()
+    {
+        if (!_showSearchPanel)
+            return;
+        _showSearchPanel = false;
+        UpdatePageHeader();
+    }
+
+    private Task HandleCotizApplyKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            CloseCotizSearchPanel();
+        return Task.CompletedTask;
+    }
+
+    private IReadOnlyList<SmartChip> BuildCotizFilterChips()
+    {
+        var chips = new List<SmartChip>();
+        var label = _listTab switch
+        {
+            "borradores" => "Borradores",
+            "enviadas" => "Enviadas",
+            "aceptadas" => "Aceptadas",
+            "vencidas" => "Vencidas",
+            _ => null
+        };
+        if (label is not null)
+            chips.Add(new("estado", label));
+        return chips;
+    }
+
+    private static string GetSmartOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
 
     private async Task OnBuscarTextoAsync(ChangeEventArgs args)
     {
@@ -877,6 +1109,10 @@
         {
             _items = listResult.Value.Items.ToList();
             _totalRegistros = listResult.Value.Total;
+            _totalPages = Math.Max(1, listResult.Value.TotalPages);
+            _hasPrevPage = listResult.Value.HasPrev;
+            _hasNextPage = listResult.Value.HasNext;
+            _selectedIds.RemoveWhere(id => !_items.Any(i => i.IdCotizacion == id));
         }
         else
         {
@@ -1154,6 +1390,14 @@
             return;
         await JS.InvokeVoidAsync("navigator.clipboard.writeText", _compartirUrl);
         SetFeedback(AppUiMessage.Success("Copiado", "El link se copió al portapapeles."));
+    }
+
+    private Task DescargarPdfCompartirAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_compartirUrl))
+            return Task.CompletedTask;
+        Nav.NavigateTo(_compartirUrl + "/pdf", forceLoad: true);
+        return Task.CompletedTask;
     }
 
     private async Task EnviarEmailAsync()
