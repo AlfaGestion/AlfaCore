@@ -147,10 +147,41 @@ public sealed class WhatsAppTenantIsolationTests
     {
         var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
         var handler = source.IndexOf("private static async Task<IResult> HandleWhatsAppMessageAsync", StringComparison.Ordinal);
-        var secretRequired = source.IndexOf("if (string.IsNullOrWhiteSpace(options.AppSecret))", handler, StringComparison.Ordinal);
-        var signatureCheck = source.IndexOf("if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))", handler, StringComparison.Ordinal);
+        var resolveSecret = source.IndexOf("ResolveWhatsAppWebhookAppSecret(", handler, StringComparison.Ordinal);
+        var secretRequired = source.IndexOf("if (string.IsNullOrWhiteSpace(appSecret))", handler, StringComparison.Ordinal);
+        var signatureCheck = source.IndexOf("if (!IsValidMetaSignature(rawPayload, appSecret, signature))", handler, StringComparison.Ordinal);
         var payloadParse = source.IndexOf("JsonDocument.Parse", handler, StringComparison.Ordinal);
-        Assert.True(handler >= 0 && secretRequired > handler && signatureCheck > secretRequired && payloadParse > signatureCheck);
+        Assert.True(handler >= 0 && resolveSecret > handler && secretRequired > resolveSecret && signatureCheck > secretRequired && payloadParse > signatureCheck);
+    }
+
+    [Fact]
+    public void EmbeddedSignupBase_UsesApplicationSecretInsteadOfLegacyTenantSecret()
+    {
+        var options = new WhatsAppEmbeddedSignupOptions
+        {
+            Enabled = true,
+            AllowedBaseIds = [84],
+            AppSecret = "application-secret"
+        };
+
+        var secret = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(options, 84, "legacy-tenant-secret");
+
+        Assert.Equal("application-secret", secret);
+    }
+
+    [Fact]
+    public void BaseOutsideEmbeddedSignupAllowlist_PreservesLegacyWebhookSecret()
+    {
+        var options = new WhatsAppEmbeddedSignupOptions
+        {
+            Enabled = true,
+            AllowedBaseIds = [84],
+            AppSecret = "application-secret"
+        };
+
+        var secret = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(options, 106, "legacy-tenant-secret");
+
+        Assert.Equal("legacy-tenant-secret", secret);
     }
 
     [Fact]
