@@ -10,6 +10,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Options;
 
 namespace AlfaCore;
 
@@ -1982,13 +1983,14 @@ public class Program
             IConversacionesConfigService configService,
             IConversacionesService svc,
             ICentralBasesService basesService,
+            IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
             ISessionService sessionService,
             CancellationToken ct) =>
         {
             if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
                 return Results.NotFound();
 
-            return await HandleWhatsAppMessageAsync(request, configService, svc, ct);
+            return await HandleWhatsAppMessageAsync(request, configService, svc, embeddedSignupOptions, sessionService, ct);
         });
 
         app.MapGet("/api/conversaciones/instagram/webhook", HandleInstagramVerifyAsync);
@@ -2798,18 +2800,24 @@ public class Program
         HttpRequest request,
         IConversacionesConfigService configService,
         IConversacionesService svc,
+        IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
+        ISessionService sessionService,
         CancellationToken ct)
     {
         var options = await configService.GetWhatsAppConfigAsync(ct);
+        var appSecret = ResolveWhatsAppWebhookAppSecret(
+            embeddedSignupOptions.Value,
+            sessionService.GetActiveSession()?.BaseId ?? 0,
+            options.AppSecret);
 
         using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         var rawPayload = await reader.ReadToEndAsync(ct);
 
-        if (string.IsNullOrWhiteSpace(options.AppSecret))
+        if (string.IsNullOrWhiteSpace(appSecret))
             return Results.Problem("WhatsApp App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
 
         var signature = request.Headers["X-Hub-Signature-256"].ToString();
-        if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
+        if (!IsValidMetaSignature(rawPayload, appSecret, signature))
             return Results.Unauthorized();
 
         using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
@@ -2826,6 +2834,19 @@ public class Program
         }, ct);
 
         return Results.Ok(result);
+    }
+
+    internal static string ResolveWhatsAppWebhookAppSecret(
+        WhatsAppEmbeddedSignupOptions embeddedSignupOptions,
+        int idBase,
+        string legacyAppSecret)
+    {
+        ArgumentNullException.ThrowIfNull(embeddedSignupOptions);
+
+        // ES bases must validate webhooks with the application-level secret, never tenant legacy configuration.
+        return embeddedSignupOptions.IsAllowedForBase(idBase)
+            ? embeddedSignupOptions.AppSecret.Trim()
+            : legacyAppSecret?.Trim() ?? string.Empty;
     }
 
     private static async Task<IResult> HandleInstagramVerifyAsync(
