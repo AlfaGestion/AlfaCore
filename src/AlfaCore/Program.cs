@@ -2805,16 +2805,12 @@ public class Program
         using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         var rawPayload = await reader.ReadToEndAsync(ct);
 
-        // A diferencia de Instagram/Facebook, WhatsApp no exigía App Secret hasta ahora — exigirlo
-        // de golpe rompería al cliente que ya está en producción sin haberlo cargado. Se valida
-        // la firma solo si el App Secret está configurado; queda como mejora pendiente pedirlo
-        // siempre una vez que la configuración actual lo tenga cargado.
-        if (!string.IsNullOrWhiteSpace(options.AppSecret))
-        {
-            var signature = request.Headers["X-Hub-Signature-256"].ToString();
-            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
-                return Results.Unauthorized();
-        }
+        if (string.IsNullOrWhiteSpace(options.AppSecret))
+            return Results.Problem("WhatsApp App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+        var signature = request.Headers["X-Hub-Signature-256"].ToString();
+        if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
+            return Results.Unauthorized();
 
         using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
         var headers = request.Headers.ToDictionary(
@@ -2952,7 +2948,7 @@ public class Program
         return Results.Ok(result);
     }
 
-    private static bool IsValidMetaSignature(string rawPayload, string appSecret, string signature)
+    internal static bool IsValidMetaSignature(string rawPayload, string appSecret, string signature)
     {
         const string prefix = "sha256=";
         if (string.IsNullOrWhiteSpace(rawPayload)

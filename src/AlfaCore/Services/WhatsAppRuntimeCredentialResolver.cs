@@ -20,10 +20,20 @@ public sealed class WhatsAppWebhookTenantGuard(IWhatsAppAssetOwnershipStore owne
             if (_options.Enabled) throw new WhatsAppEmbeddedSchemaUnavailableException();
             return;
         }
-        foreach (var phoneNumberId in phoneNumberIds.Select(static x => (x ?? string.Empty).Trim()).Where(static x => x.Length > 0).Distinct(StringComparer.Ordinal))
+        var normalizedPhoneNumberIds = phoneNumberIds
+            .Select(static x => (x ?? string.Empty).Trim())
+            .Where(static x => x.Length > 0)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+        if (normalizedPhoneNumberIds.Length == 0)
+            throw new WhatsAppWebhookPhoneNumberIdMissingException(currentBaseId);
+
+        foreach (var phoneNumberId in normalizedPhoneNumberIds)
         {
             var ownership = await ownershipStore.GetPhoneOwnershipAsync(phoneNumberId, ct);
-            if (ownership is not null && ownership.IdBase != currentBaseId)
+            if (ownership is null)
+                throw new WhatsAppWebhookPhoneOwnershipMissingException(currentBaseId, phoneNumberId);
+            if (ownership.IdBase != currentBaseId)
                 throw new WhatsAppWebhookTenantMismatchException(currentBaseId, ownership.IdBase, phoneNumberId);
         }
     }
@@ -32,8 +42,21 @@ public sealed class WhatsAppWebhookTenantGuard(IWhatsAppAssetOwnershipStore owne
 public sealed class WhatsAppEmbeddedSchemaUnavailableException()
     : InvalidOperationException("El esquema central de WhatsApp Embedded Signup no está disponible. La operación fue detenida de forma segura.");
 
+public sealed class WhatsAppWebhookPhoneNumberIdMissingException(int callbackBaseId)
+    : Exception("El webhook no incluye metadata.phone_number_id. Fue bloqueado antes de persistir datos.")
+{
+    public int CallbackBaseId { get; } = callbackBaseId;
+}
+
+public sealed class WhatsAppWebhookPhoneOwnershipMissingException(int callbackBaseId, string phoneNumberId)
+    : Exception("El Phone Number ID recibido no tiene ownership central. El webhook fue bloqueado antes de persistir datos.")
+{
+    public int CallbackBaseId { get; } = callbackBaseId;
+    public string PhoneNumberId { get; } = phoneNumberId;
+}
+
 public sealed class WhatsAppWebhookTenantMismatchException(int callbackBaseId, int ownerBaseId, string phoneNumberId)
-    : InvalidOperationException("El Phone Number ID recibido pertenece a otra base. El webhook fue bloqueado antes de persistir datos.")
+    : Exception("El Phone Number ID recibido pertenece a otra base. El webhook fue bloqueado antes de persistir datos.")
 {
     public int CallbackBaseId { get; } = callbackBaseId;
     public int OwnerBaseId { get; } = ownerBaseId;

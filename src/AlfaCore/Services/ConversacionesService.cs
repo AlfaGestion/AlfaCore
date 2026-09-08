@@ -3533,16 +3533,17 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingWebhook", async token =>
         {
             ArgumentNullException.ThrowIfNull(request);
-            var payloadJson = string.IsNullOrWhiteSpace(request.RawPayload)
-                ? request.Payload.RootElement.GetRawText()
-                : request.RawPayload;
-            var headerJson = JsonSerializer.Serialize(request.Headers);
-
             var parsedMessages = ParseIncomingMessages(request.Payload.RootElement);
             var parsedStatuses = ParseIncomingStatuses(request.Payload.RootElement);
             var currentBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
-            await whatsAppWebhookTenantGuard.ValidateAsync(currentBaseId, ExtractWhatsAppPhoneNumberIds(request.Payload.RootElement), token);
-            var webhookLogId = await InsertWebhookLogAsync("META_WHATSAPP", "Webhook", payloadJson, headerJson, token);
+            var phoneNumberIds = ExtractWhatsAppPhoneNumberIds(request.Payload.RootElement);
+            await whatsAppWebhookTenantGuard.ValidateAsync(currentBaseId, phoneNumberIds, token);
+            var webhookLogId = await InsertWebhookLogAsync(
+                "META_WHATSAPP",
+                "Webhook",
+                BuildWhatsAppWebhookLogPayload(phoneNumberIds, parsedMessages.Count, parsedStatuses.Count),
+                "{}",
+                token);
             var whatsAppConfig = parsedMessages.Any(x => x.Attachments.Count > 0)
                 ? await conversacionesConfigService.GetWhatsAppConfigAsync(token)
                 : null;
@@ -12023,6 +12024,14 @@ public sealed class ConversacionesService(
         }
         return result.ToArray();
     }
+
+    private static string BuildWhatsAppWebhookLogPayload(IReadOnlyList<string> phoneNumberIds, int messageCount, int statusCount)
+        => JsonSerializer.Serialize(new
+        {
+            PhoneNumberIds = phoneNumberIds,
+            MessageCount = messageCount,
+            StatusCount = statusCount
+        });
 
     private static string BuildIncomingWhatsAppMessagePayloadJson(JsonElement message, string phoneNumberId, string displayPhoneNumber)
     {

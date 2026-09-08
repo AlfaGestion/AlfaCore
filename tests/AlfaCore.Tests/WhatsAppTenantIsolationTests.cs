@@ -2,6 +2,8 @@ using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Services;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 using Xunit;
 
 namespace AlfaCore.Tests;
@@ -36,12 +38,12 @@ public sealed class WhatsAppTenantIsolationTests
     }
 
     [Fact]
-    public async Task CallbackBaseAAndOwnershipBaseB_IsRejectedBeforeTenantWork()
+    public async Task Base84TokenWithBase106Ownership_IsRejectedBeforeTenantWork()
     {
-        var guard = new WhatsAppWebhookTenantGuard(new OwnershipStore(new("9201", "9101", 2, DateTime.UtcNow)), OptionsFor(1));
-        var error = await Assert.ThrowsAsync<WhatsAppWebhookTenantMismatchException>(() => guard.ValidateAsync(1, ["9201"]));
-        Assert.Equal(1, error.CallbackBaseId);
-        Assert.Equal(2, error.OwnerBaseId);
+        var guard = new WhatsAppWebhookTenantGuard(new OwnershipStore(new("9201", "9101", 106, DateTime.UtcNow)), OptionsFor(84));
+        var error = await Assert.ThrowsAsync<WhatsAppWebhookTenantMismatchException>(() => guard.ValidateAsync(84, ["9201"]));
+        Assert.Equal(84, error.CallbackBaseId);
+        Assert.Equal(106, error.OwnerBaseId);
     }
 
     [Fact]
@@ -49,8 +51,28 @@ public sealed class WhatsAppTenantIsolationTests
         => await new WhatsAppWebhookTenantGuard(new OwnershipStore(new("9201", "9101", 1, DateTime.UtcNow)), OptionsFor(1)).ValidateAsync(1, ["9201"]);
 
     [Fact]
-    public async Task LegacyPhoneWithoutOwnership_RemainsCompatible()
-        => await new WhatsAppWebhookTenantGuard(new OwnershipStore(null), OptionsFor(1)).ValidateAsync(1, ["legacy-phone"]);
+    public async Task AllowedBaseWithUnknownPhone_IsRejectedBeforeAnyTenantWrite()
+    {
+        var guard = new WhatsAppWebhookTenantGuard(new OwnershipStore(null), OptionsFor(84));
+        var error = await Assert.ThrowsAsync<WhatsAppWebhookPhoneOwnershipMissingException>(() => guard.ValidateAsync(84, ["unknown-phone"]));
+        Assert.Equal(84, error.CallbackBaseId);
+        Assert.Equal("unknown-phone", error.PhoneNumberId);
+    }
+
+    [Fact]
+    public async Task AllowedBaseWithMissingPhoneNumberId_IsRejectedBeforeAnyTenantWrite()
+    {
+        var error = await Assert.ThrowsAsync<WhatsAppWebhookPhoneNumberIdMissingException>(() =>
+            new WhatsAppWebhookTenantGuard(new OwnershipStore(null), OptionsFor(84)).ValidateAsync(84, []));
+        Assert.Equal(84, error.CallbackBaseId);
+    }
+
+    [Fact]
+    public async Task AllowedBaseWithOwnedPhone_IsAcceptedForMessagesAndStatuses()
+    {
+        var guard = new WhatsAppWebhookTenantGuard(new OwnershipStore(new("9201", "9101", 84, DateTime.UtcNow)), OptionsFor(84));
+        await guard.ValidateAsync(84, ["9201"]);
+    }
 
     [Fact]
     public async Task EmbeddedSignup_UsesVaultAndNeverLegacyToken()
@@ -109,12 +131,38 @@ public sealed class WhatsAppTenantIsolationTests
         var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
         var method = source.IndexOf("RegisterIncomingWebhookAsync", StringComparison.Ordinal);
         var guard = source.IndexOf("whatsAppWebhookTenantGuard.ValidateAsync", method, StringComparison.Ordinal);
-        var log = source.IndexOf("InsertWebhookLogAsync(\"META_WHATSAPP\"", method, StringComparison.Ordinal);
+        var log = source.IndexOf("var webhookLogId = await InsertWebhookLogAsync(", method, StringComparison.Ordinal);
+        var status = source.IndexOf("UpdateWhatsAppMessageStatusAsync(status", method, StringComparison.Ordinal);
         var conversation = source.IndexOf("EnsureConversationAsync(incoming", method, StringComparison.Ordinal);
-        Assert.True(method >= 0 && guard > method && log > guard && conversation > log);
+        var messageParser = source.IndexOf("var parsedMessages = ParseIncomingMessages", method, StringComparison.Ordinal);
+        var statusParser = source.IndexOf("var parsedStatuses = ParseIncomingStatuses", method, StringComparison.Ordinal);
+        Assert.True(method >= 0 && messageParser > method && statusParser > messageParser && guard > statusParser && log > guard && status > log && conversation > log);
         Assert.Contains("SistemaAccion = \"BIENVENIDA\"", source, StringComparison.Ordinal);
         Assert.Contains("await SendMessageAsync(new ConversacionSendMessageRequest", source, StringComparison.Ordinal);
         Assert.Contains("GetTemplatesForConversationAsync", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WhatsAppWebhookRequiresAValidSignatureBeforePayloadProcessing()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
+        var handler = source.IndexOf("private static async Task<IResult> HandleWhatsAppMessageAsync", StringComparison.Ordinal);
+        var secretRequired = source.IndexOf("if (string.IsNullOrWhiteSpace(options.AppSecret))", handler, StringComparison.Ordinal);
+        var signatureCheck = source.IndexOf("if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))", handler, StringComparison.Ordinal);
+        var payloadParse = source.IndexOf("JsonDocument.Parse", handler, StringComparison.Ordinal);
+        Assert.True(handler >= 0 && secretRequired > handler && signatureCheck > secretRequired && payloadParse > signatureCheck);
+    }
+
+    [Fact]
+    public void MetaSignatureValidator_RejectsAnInvalidSignature()
+    {
+        const string payload = "{\"entry\":[]}";
+        const string secret = "test-secret";
+        var validHash = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(payload));
+        var validSignature = "sha256=" + Convert.ToHexString(validHash).ToLowerInvariant();
+
+        Assert.True(AlfaCore.Program.IsValidMetaSignature(payload, secret, validSignature));
+        Assert.False(AlfaCore.Program.IsValidMetaSignature(payload, secret, "sha256=00"));
     }
 
     private static WhatsAppRuntimeCredentialResolver CreateResolver(WhatsAppPhoneOwnership? owner, WhatsAppCredentialReference? reference, string secret)
