@@ -1661,6 +1661,8 @@ else
     {
         HeaderNavigation.Record(args.Location);
         _mobileSidebarOpen = false;
+        if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
+            _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (IsLauncherRoute)
             _sidebarCollapsedOverride = null;
         UpdateCurrentModule();

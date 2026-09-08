@@ -30,9 +30,9 @@ public interface IConversacionesService
     Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesForConversationAsync(long idConversacion, CancellationToken ct = default);
     Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, CancellationToken ct = default);
     Task<long> SaveTemplateDraftAsync(ConversacionPlantillaSaveRequest request, CancellationToken ct = default);
-    Task ArchiveTemplateAsync(long idPlantilla, CancellationToken ct = default);
+    Task ArchiveTemplateAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);
     Task SubmitTemplateForApprovalAsync(ConversacionPlantillaSubmitRequest request, CancellationToken ct = default);
-    Task SyncTemplateStatusAsync(long idPlantilla, CancellationToken ct = default);
+    Task SyncTemplateStatusAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);
     Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, int variableCount, CancellationToken ct = default);
     Task<ConversacionPlantillaMessageResultDto> SendTemplateMessageAsync(ConversacionPlantillaSendRequest request, CancellationToken ct = default);
     Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default);

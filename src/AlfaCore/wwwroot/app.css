@@ -27946,6 +27946,16 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     margin: 0 !important;
 }
 
+/* Conversaciones es el cuerpo directo de un shell flex. Sin un contrato de flex propio,
+   un page-grid puede resolver su ancho contra contenido y dejar una franja vacía a la derecha. */
+.shell.shell--alfa-design .shell__content > .conversations-page--odoo {
+    flex: 1 1 auto !important;
+    inline-size: 100% !important;
+    max-inline-size: none !important;
+    min-inline-size: 0 !important;
+    align-self: stretch !important;
+}
+
 .conversations-page--odoo > .conversations-ai-suggestion-drawer .conversations-ai-header {
     min-height: 92px !important;
     display: flex !important;

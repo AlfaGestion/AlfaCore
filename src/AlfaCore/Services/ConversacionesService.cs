@@ -28,7 +28,8 @@ public sealed class ConversacionesService(
     IWhatsAppWebhookTenantGuard whatsAppWebhookTenantGuard,
     IWhatsAppRuntimeCredentialResolver whatsAppRuntimeCredentialResolver,
     IMetaWhatsAppManagementClient metaWhatsAppManagementClient,
-    IWebHostEnvironment environment) : IConversacionesService
+    IWebHostEnvironment environment,
+    ILogger<ConversacionesService> logger) : IConversacionesService
 {
     private readonly IAppEventService _appEvents = appEvents;
     private readonly INotificacionesPushService _notificacionesPushService = notificacionesPushService;
@@ -84,6 +85,41 @@ public sealed class ConversacionesService(
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
+
+    private string GetConnectionStringForExpectedTenant(int? expectedBaseId, string operation)
+    {
+        EnsureExpectedTenant(expectedBaseId, operation);
+        return ConnectionString;
+    }
+
+    private void EnsureExpectedTenant(int? expectedBaseId, string operation)
+    {
+        if (expectedBaseId is not > 0)
+            return;
+
+        var active = sessionService.GetActiveSession();
+        if (active?.BaseId != expectedBaseId)
+        {
+            throw new InvalidOperationException(
+                $"La sesión activa no coincide con la base solicitada para Conversaciones.{operation}.");
+        }
+    }
+
+    private void LogInboxConnection(ConversacionesInboxFilters filters, SqlConnection connection)
+    {
+        if (!environment.IsDevelopment())
+            return;
+
+        var active = sessionService.GetActiveSession();
+        logger.LogInformation(
+            "Tenant diagnostic: Conversations inbox query. ExpectedBaseId={ExpectedBaseId}, SessionBaseId={SessionBaseId}, Server={Server}, Database={Database}, Canal={Canal}, IdNumeroWhatsApp={IdNumeroWhatsApp}",
+            filters.ExpectedBaseId,
+            active?.BaseId,
+            connection.DataSource,
+            connection.Database,
+            filters.Canal,
+            filters.IdNumeroWhatsApp);
+    }
 
     private async Task<string> ResolveConnectionStringAsync(int? idBase, CancellationToken ct)
     {
@@ -810,7 +846,9 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "GetInbox", async token =>
         {
             filters ??= new();
-            if (ShouldRunMaintenance("AutoCloseExpiredOpenWhatsAppConversations", InboxMaintenanceInterval))
+            var connectionString = GetConnectionStringForExpectedTenant(filters.ExpectedBaseId, "GetInbox");
+            if (filters.ExpectedBaseId is null
+                && ShouldRunMaintenance("AutoCloseExpiredOpenWhatsAppConversations", InboxMaintenanceInterval))
                 await AutoCloseExpiredOpenWhatsAppConversationsAsync(null, token);
 
             var items = new List<ConversacionInboxItemDto>();
@@ -1223,14 +1261,16 @@ public sealed class ConversacionesService(
                 OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
                 """;
 
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
+            LogInboxConnection(filters, cn);
             await EnsureConversationPinsTableAsync(cn, token);
             await EnsureConversationReadStateTableAsync(cn, token);
-            if (ShouldRunMaintenance($"ReadBaselines:{usuarioActual}:{sistemaActual}:{clienteCodigo}", ReadBaselineMaintenanceInterval))
+            if (filters.ExpectedBaseId is null
+                && ShouldRunMaintenance($"ReadBaselines:{usuarioActual}:{sistemaActual}:{clienteCodigo}", ReadBaselineMaintenanceInterval))
                 await EnsureConversationReadBaselinesAsync(cn, usuarioActual, sistemaActual, clienteCodigo, token);
 
-            if (string.IsNullOrWhiteSpace(clienteCodigo))
+            if (filters.ExpectedBaseId is null && string.IsNullOrWhiteSpace(clienteCodigo))
             {
                 if (ShouldRunMaintenance("LinkUnassociatedWhatsAppConversationsByPhone", InboxMaintenanceInterval))
                     await LinkUnassociatedWhatsAppConversationsByPhoneAsync(cn, token);
@@ -1320,6 +1360,7 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "GetAuditMessages", async token =>
         {
             filters ??= new();
+            var connectionString = GetConnectionStringForExpectedTenant(filters.ExpectedBaseId, "GetAuditMessages");
             var searchPhone = NormalizePhone(filters.Search);
             var searchPhoneTail = GetPhoneComparableTail(searchPhone);
             var desde = filters.Desde?.Date;
@@ -1402,7 +1443,7 @@ public sealed class ConversacionesService(
                 """;
 
             var items = new List<ConversacionAuditoriaMensajeDto>();
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
@@ -2643,6 +2684,7 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "GetTemplates", async token =>
         {
             filters ??= new();
+            var templateContext = await ResolveTemplateContextAsync(filters.IdNumeroWhatsApp, token);
             const string sql = """
                 SELECT
                     IdPlantilla,
@@ -2658,6 +2700,7 @@ public sealed class ConversacionesService(
                     ISNULL(EstadoMeta, ''),
                     ISNULL(MetaTemplateId, ''),
                     ISNULL(MetaRechazoMotivo, ''),
+                    WabaId,
                     ISNULL(Activa, 1),
                     FechaHora_Grabacion,
                     FechaHora_Modificacion,
@@ -2666,6 +2709,7 @@ public sealed class ConversacionesService(
                 WHERE
                     (@IncluirInactivas = 1 OR ISNULL(Activa, 1) = 1)
                     AND (@EstadoMeta IS NULL OR EstadoMeta = @EstadoMeta)
+                    AND ((@WabaId IS NULL AND WabaId IS NULL) OR WabaId = @WabaId)
                     AND (
                         @Search IS NULL
                         OR NombreVisible LIKE @Search
@@ -2682,6 +2726,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@IncluirInactivas", filters.IncluirInactivas);
             cmd.Parameters.AddWithValue("@EstadoMeta", DbNullable(filters.EstadoMeta));
             cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
+            cmd.Parameters.AddWithValue("@WabaId", DbNullable(templateContext.WabaId));
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
                 items.Add(ReadTemplate(rd));
@@ -2724,6 +2769,7 @@ public sealed class ConversacionesService(
                     ISNULL(EstadoMeta, ''),
                     ISNULL(MetaTemplateId, ''),
                     ISNULL(MetaRechazoMotivo, ''),
+                    WabaId,
                     ISNULL(Activa, 1),
                     FechaHora_Grabacion,
                     FechaHora_Modificacion,
@@ -2744,9 +2790,16 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "SaveTemplateDraft", async token =>
         {
             var normalized = NormalizeTemplateRequest(request);
+            var templateContext = await ResolveTemplateContextAsync(normalized.IdNumeroWhatsApp, token);
+            if (normalized.IdPlantilla > 0)
+            {
+                var existing = await GetTemplateAsync(normalized.IdPlantilla, token)
+                    ?? throw new InvalidOperationException("La plantilla indicada no existe.");
+                EnsureTemplateScope(existing, templateContext);
+            }
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            await EnsureTemplateNameIsUniqueAsync(cn, normalized, token);
+            await EnsureTemplateNameIsUniqueAsync(cn, normalized, templateContext.WabaId, token);
 
             if (normalized.IdPlantilla <= 0)
             {
@@ -2761,6 +2814,7 @@ public sealed class ConversacionesService(
                         CuerpoTexto,
                         PieTexto,
                         EjemplosVariablesJson,
+                        WabaId,
                         EstadoLocal,
                         EstadoMeta,
                         Activa,
@@ -2778,6 +2832,7 @@ public sealed class ConversacionesService(
                         @CuerpoTexto,
                         @PieTexto,
                         @EjemplosVariablesJson,
+                        @WabaId,
                         @EstadoLocal,
                         @EstadoMeta,
                         @Activa,
@@ -2791,6 +2846,7 @@ public sealed class ConversacionesService(
 
                 await using var cmd = new SqlCommand(insertSql, cn);
                 AddTemplateParameters(cmd, normalized);
+                cmd.Parameters.AddWithValue("@WabaId", DbNullable(templateContext.WabaId));
                 cmd.Parameters.AddWithValue("@EstadoLocal", ConversacionPlantillaEstadosLocales.Borrador);
                 cmd.Parameters.AddWithValue("@EstadoMeta", "DRAFT");
                 var result = await cmd.ExecuteScalarAsync(token);
@@ -2808,6 +2864,7 @@ public sealed class ConversacionesService(
                     CuerpoTexto = @CuerpoTexto,
                     PieTexto = @PieTexto,
                     EjemplosVariablesJson = @EjemplosVariablesJson,
+                    WabaId = @WabaId,
                     EstadoLocal = CASE WHEN EstadoMeta IN (N'APPROVED', N'PENDING') THEN EstadoLocal ELSE @EstadoLocal END,
                     EstadoMeta = CASE WHEN EstadoMeta IN (N'APPROVED', N'PENDING') THEN EstadoMeta ELSE @EstadoMeta END,
                     Activa = @Activa,
@@ -2819,6 +2876,7 @@ public sealed class ConversacionesService(
 
             await using var updateCmd = new SqlCommand(updateSql, cn);
             AddTemplateParameters(updateCmd, normalized);
+            updateCmd.Parameters.AddWithValue("@WabaId", DbNullable(templateContext.WabaId));
             updateCmd.Parameters.AddWithValue("@EstadoLocal", ConversacionPlantillaEstadosLocales.Borrador);
             updateCmd.Parameters.AddWithValue("@EstadoMeta", "DRAFT");
             var affected = await updateCmd.ExecuteNonQueryAsync(token);
@@ -2828,23 +2886,27 @@ public sealed class ConversacionesService(
             return normalized.IdPlantilla;
         }, "No se pudo guardar la plantilla de WhatsApp.", ct);
 
-    public Task ArchiveTemplateAsync(long idPlantilla, CancellationToken ct = default)
+    public Task ArchiveTemplateAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "ArchiveTemplate", async token =>
         {
             if (idPlantilla <= 0)
                 throw new InvalidOperationException("La plantilla es obligatoria.");
 
+            var templateContext = await ResolveTemplateContextAsync(idNumeroWhatsApp, token);
+
             const string sql = """
                 UPDATE dbo.CONV_PLANTILLAS
                 SET Activa = 0,
                     FechaHora_Modificacion = GETDATE()
-                WHERE IdPlantilla = @IdPlantilla;
+                WHERE IdPlantilla = @IdPlantilla
+                  AND ((@WabaId IS NULL AND WabaId IS NULL) OR WabaId = @WabaId);
                 """;
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+            cmd.Parameters.AddWithValue("@WabaId", DbNullable(templateContext.WabaId));
             var affected = await cmd.ExecuteNonQueryAsync(token);
             if (affected == 0)
                 throw new InvalidOperationException("La plantilla indicada no existe.");
@@ -2869,13 +2931,12 @@ public sealed class ConversacionesService(
 
             var template = await GetTemplateAsync(request.IdPlantilla, token)
                 ?? throw new InvalidOperationException("La plantilla indicada no existe.");
+            var templateContext = await ResolveTemplateContextAsync(request.IdNumeroWhatsApp, token);
+            EnsureTemplateScope(template, templateContext);
+            EnsureTemplateHasNotBeenSubmitted(template);
             ValidateTemplateCanSubmit(template);
 
-            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
-            if (string.IsNullOrWhiteSpace(config.BusinessAccountId))
-                throw new InvalidOperationException("Falta configurar el WhatsApp Business Account ID.");
-            if (string.IsNullOrWhiteSpace(config.AccessToken))
-                throw new InvalidOperationException("Falta configurar el token de acceso de WhatsApp.");
+            var config = templateContext.Config;
 
             var submitResult = await CreateMetaTemplateAsync(config, template, token);
             await UpdateTemplateMetaStateAsync(
@@ -2899,17 +2960,17 @@ public sealed class ConversacionesService(
             return true;
         }, "No se pudo enviar la plantilla a aprobaciÃ³n de Meta.", ct);
 
-    public Task SyncTemplateStatusAsync(long idPlantilla, CancellationToken ct = default)
+    public Task SyncTemplateStatusAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SyncTemplateStatus", async token =>
         {
             var template = await GetTemplateAsync(idPlantilla, token)
                 ?? throw new InvalidOperationException("La plantilla indicada no existe.");
+            var templateContext = await ResolveTemplateContextAsync(idNumeroWhatsApp, token);
+            EnsureTemplateScope(template, templateContext);
             if (string.IsNullOrWhiteSpace(template.NombreMeta))
                 throw new InvalidOperationException("La plantilla no tiene nombre Meta para sincronizar.");
 
-            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
-            if (string.IsNullOrWhiteSpace(config.BusinessAccountId) || string.IsNullOrWhiteSpace(config.AccessToken))
-                throw new InvalidOperationException("Falta configurar la cuenta de WhatsApp para sincronizar plantillas.");
+            var config = templateContext.Config;
 
             var meta = await GetMetaTemplateStatusAsync(config, template, token);
             await UpdateTemplateMetaStateAsync(
@@ -12836,6 +12897,39 @@ public sealed class ConversacionesService(
         item.VentanaWhatsAppActiva = BusinessNow() <= item.FechaHoraVencimientoVentanaWhatsApp.Value;
     }
 
+    private sealed record TemplateContext(string? WabaId, ConversacionWhatsAppConfigDto Config);
+
+    private async Task<TemplateContext> ResolveTemplateContextAsync(int? idNumeroWhatsApp, CancellationToken ct)
+    {
+        var config = await conversacionesConfigService.GetWhatsAppConfigAsync(ct);
+        if (idNumeroWhatsApp is not > 0)
+            return new(null, config);
+
+        await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct);
+        var numero = await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct)
+            ?? throw new InvalidOperationException("El WhatsApp seleccionado ya no está disponible.");
+        if (!numero.Activo || string.IsNullOrWhiteSpace(numero.PhoneNumberId))
+            throw new InvalidOperationException("El WhatsApp seleccionado no está operativo.");
+
+        var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+            sessionService.GetActiveSession()?.BaseId ?? 0,
+            numero.IdNumero,
+            numero.PhoneNumberId,
+            config,
+            ct);
+        config.PhoneNumberId = runtime.PhoneNumberId;
+        config.BusinessAccountId = runtime.WabaId;
+        config.ApiVersion = runtime.GraphVersion;
+        config.AccessToken = runtime.AccessToken;
+        return new(runtime.Origin == WhatsAppRuntimeCredentialOrigin.EmbeddedSignup ? runtime.WabaId : null, config);
+    }
+
+    private static void EnsureTemplateScope(ConversacionPlantillaDto template, TemplateContext context)
+    {
+        if (!string.Equals(template.WabaId ?? string.Empty, context.WabaId ?? string.Empty, StringComparison.Ordinal))
+            throw new UnauthorizedAccessException("La plantilla no pertenece al WhatsApp seleccionado.");
+    }
+
     private static ConversacionPlantillaDto ReadTemplate(SqlDataReader rd)
         => new()
         {
@@ -12852,10 +12946,11 @@ public sealed class ConversacionesService(
             EstadoMeta = GetString(rd, 10),
             MetaTemplateId = GetString(rd, 11),
             MetaRechazoMotivo = GetString(rd, 12),
-            Activa = !rd.IsDBNull(13) && rd.GetBoolean(13),
-            FechaHoraGrabacion = rd.IsDBNull(14) ? DateTime.MinValue : rd.GetDateTime(14),
-            FechaHoraModificacion = rd.IsDBNull(15) ? null : rd.GetDateTime(15),
-            FechaHoraSincronizacion = rd.IsDBNull(16) ? null : rd.GetDateTime(16)
+            WabaId = rd.IsDBNull(13) ? null : GetString(rd, 13),
+            Activa = !rd.IsDBNull(14) && rd.GetBoolean(14),
+            FechaHoraGrabacion = rd.IsDBNull(15) ? DateTime.MinValue : rd.GetDateTime(15),
+            FechaHoraModificacion = rd.IsDBNull(16) ? null : rd.GetDateTime(16),
+            FechaHoraSincronizacion = rd.IsDBNull(17) ? null : rd.GetDateTime(17)
         };
 
     private static ConversacionPlantillaSaveRequest NormalizeTemplateRequest(ConversacionPlantillaSaveRequest request)
@@ -12878,6 +12973,7 @@ public sealed class ConversacionesService(
         return new ConversacionPlantillaSaveRequest
         {
             IdPlantilla = request.IdPlantilla,
+            IdNumeroWhatsApp = request.IdNumeroWhatsApp,
             NombreVisible = request.NombreVisible.Trim(),
             NombreMeta = metaName,
             Categoria = NormalizeTemplateCategory(request.Categoria),
@@ -12892,7 +12988,7 @@ public sealed class ConversacionesService(
         };
     }
 
-    private static async Task EnsureTemplateNameIsUniqueAsync(SqlConnection cn, ConversacionPlantillaSaveRequest request, CancellationToken ct)
+    private static async Task EnsureTemplateNameIsUniqueAsync(SqlConnection cn, ConversacionPlantillaSaveRequest request, string? wabaId, CancellationToken ct)
     {
         const string sql = """
             SELECT TOP 1 IdPlantilla
@@ -12900,12 +12996,14 @@ public sealed class ConversacionesService(
             WHERE NombreMeta = @NombreMeta
               AND Idioma = @Idioma
               AND IdPlantilla <> @IdPlantilla
+              AND ((@WabaId IS NULL AND WabaId IS NULL) OR WabaId = @WabaId)
             """;
 
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@NombreMeta", request.NombreMeta);
         cmd.Parameters.AddWithValue("@Idioma", request.Idioma);
         cmd.Parameters.AddWithValue("@IdPlantilla", request.IdPlantilla);
+        cmd.Parameters.AddWithValue("@WabaId", DbNullable(wabaId));
         var existing = await cmd.ExecuteScalarAsync(ct);
         if (existing is not null && existing != DBNull.Value)
             throw new InvalidOperationException($"Ya existe una plantilla con nombre Meta '{request.NombreMeta}' e idioma '{request.Idioma}'. Abrila desde la lista o usa otro nombre Meta.");
@@ -12941,6 +13039,19 @@ public sealed class ConversacionesService(
         if (StartsOrEndsWithTemplateVariable(template.CuerpoTexto))
             throw new InvalidOperationException("Meta no permite variables al principio ni al final del cuerpo. AgregÃ¡ texto fijo antes y despuÃ©s de la variable.");
     }
+
+    private static void EnsureTemplateHasNotBeenSubmitted(ConversacionPlantillaDto template)
+    {
+        if (!string.IsNullOrWhiteSpace(template.MetaTemplateId)
+            || IsSubmittedMetaState(template.EstadoMeta))
+        {
+            throw new InvalidOperationException(
+                "La plantilla ya fue enviada a Meta. Sincronizá su estado antes de volver a editarla o enviarla.");
+        }
+    }
+
+    private static bool IsSubmittedMetaState(string? estadoMeta)
+        => estadoMeta?.Trim().ToUpperInvariant() is "PENDING" or "APPROVED" or "REJECTED" or "PAUSED" or "DISABLED";
 
     private static bool StartsOrEndsWithTemplateVariable(string? text)
     {

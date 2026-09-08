@@ -337,6 +337,15 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             return Task.CompletedTask;
         }
 
+        public async Task<ConversacionWhatsAppNumeroDto> UpsertEmbeddedSignupWhatsAppNumeroForBaseAsync(
+            int idBase,
+            ConversacionWhatsAppNumeroDto numero,
+            CancellationToken ct = default)
+        {
+            await SaveWhatsAppNumeroAsync(numero, ct);
+            return Numeros.Single(item => string.Equals(item.PhoneNumberId, numero.PhoneNumberId, StringComparison.Ordinal));
+        }
+
         public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(string connectionString, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveWhatsAppConfigAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();

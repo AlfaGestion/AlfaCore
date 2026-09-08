@@ -77,34 +77,28 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
                 throw new UnauthorizedAccessException("El activo de WhatsApp pertenece a otra base.");
         }
 
+        var imported = new List<WhatsAppEmbeddedOperationalImportedNumber>();
         foreach (var phone in phones)
         {
             var phoneOwnership = await ownershipStore.ReservePhoneAsync(phone.PhoneNumberId, phone.WabaId, activeBaseId, ct);
             if (phoneOwnership.Result == WhatsAppAssetOwnershipResult.Conflict)
                 throw new UnauthorizedAccessException("El activo de WhatsApp pertenece a otra base.");
 
-            await conversacionesConfig.SaveWhatsAppNumeroAsync(new ConversacionWhatsAppNumeroDto
+            var saved = await conversacionesConfig.UpsertEmbeddedSignupWhatsAppNumeroForBaseAsync(activeBaseId, new ConversacionWhatsAppNumeroDto
             {
                 PhoneNumberId = phone.PhoneNumberId,
                 Nombre = phone.VerifiedName,
                 Activo = true,
                 Usuarios = []
             }, ct);
+            imported.Add(new WhatsAppEmbeddedOperationalImportedNumber(
+                saved.IdNumero,
+                saved.Nombre,
+                phone.DisplayPhoneNumber,
+                phone.PhoneNumberId,
+                phone.WabaId));
         }
 
-        var savedNumbers = (await conversacionesConfig.GetWhatsAppNumerosAsync(ct)).ToArray();
-        var imported = phones
-            .Select(phone =>
-            {
-                var saved = savedNumbers.Single(item => string.Equals(item.PhoneNumberId, phone.PhoneNumberId, StringComparison.Ordinal));
-                return new WhatsAppEmbeddedOperationalImportedNumber(
-                    saved.IdNumero,
-                    saved.Nombre,
-                    phone.DisplayPhoneNumber,
-                    phone.PhoneNumberId,
-                    phone.WabaId);
-            })
-            .ToArray();
         await store.MarkReadyAsync(idOnboarding, ct);
         return new WhatsAppEmbeddedOperationalImportResult(imported);
     }
