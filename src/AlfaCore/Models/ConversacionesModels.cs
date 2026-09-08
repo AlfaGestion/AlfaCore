@@ -509,7 +509,6 @@ public sealed class ConversacionUploadAdjuntoRequest
     public string? IdTecnicoAutor { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
-    public bool PermitirEnvioConVentanaVencida { get; set; }
 }
 
 public sealed class ConversacionAdjuntoServeDto
@@ -549,6 +548,7 @@ public sealed class ConversacionRenameRequest
 public sealed class ConversacionCrearWhatsAppRequest
 {
     public string TelefonoWhatsApp { get; set; } = string.Empty;
+    public int? IdNumeroWhatsApp { get; set; }
     public string? IdTecnico { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }

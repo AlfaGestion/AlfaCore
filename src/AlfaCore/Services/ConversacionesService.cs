@@ -2233,6 +2233,7 @@ public sealed class ConversacionesService(
                 await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(request.IdNumeroWhatsApp.Value, token);
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
+            EnsureRequestedWhatsAppNumeroMatchesConversation(request.IdNumeroWhatsApp, conversation);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
             var isInstagram = string.Equals(conversation.Canal, "INSTAGRAM", StringComparison.OrdinalIgnoreCase);
@@ -4310,8 +4311,18 @@ public sealed class ConversacionesService(
             await cn.OpenAsync(token);
 
             var contact = await TryFindContactByPhoneAsync(cn, phone, token);
-            var defaultWebNumero = await ResolveDefaultWhatsAppWebNumeroForManualConversationAsync(token);
-            var idNumeroWhatsApp = defaultWebNumero?.IdNumero;
+            var idNumeroWhatsApp = request.IdNumeroWhatsApp;
+            if (idNumeroWhatsApp is > 0)
+            {
+                var selectedNumero = await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, token);
+                if (selectedNumero is null || !selectedNumero.Activo)
+                    throw new InvalidOperationException("El número de WhatsApp seleccionado ya no está disponible.");
+            }
+            else
+            {
+                var defaultWebNumero = await ResolveDefaultWhatsAppWebNumeroForManualConversationAsync(token);
+                idNumeroWhatsApp = defaultWebNumero?.IdNumero;
+            }
             if (idNumeroWhatsApp.HasValue)
                 await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, token);
             var existing = await FindWhatsAppConversationByPhoneAsync(cn, phone, contact.IdContact, idNumeroWhatsApp, token);
@@ -4429,6 +4440,7 @@ public sealed class ConversacionesService(
                 await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(request.IdNumeroWhatsApp.Value, token);
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
+            EnsureRequestedWhatsAppNumeroMatchesConversation(request.IdNumeroWhatsApp, conversation);
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
             if (!isInternal && !isWhatsApp)
@@ -4466,7 +4478,7 @@ public sealed class ConversacionesService(
                 var deliveryProvider = ResolveWhatsAppDeliveryProviderForNumero(whatsAppConfig, numero);
                 EnsureWhatsAppProviderImplemented(deliveryProvider, "enviar adjuntos");
                 var windowActive = await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
-                if (!windowActive && !request.PermitirEnvioConVentanaVencida)
+                if (!windowActive)
                     throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
 
                 initialState = whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
@@ -6948,6 +6960,16 @@ public sealed class ConversacionesService(
             WhatsAppMessageId = GetString(rd, 1),
             Direction = GetString(rd, 2)
         };
+    }
+
+    private static void EnsureRequestedWhatsAppNumeroMatchesConversation(int? requestedNumeroId, ConversationIdentity conversation)
+    {
+        if (requestedNumeroId is > 0
+            && conversation.IdNumeroWhatsApp is > 0
+            && requestedNumeroId != conversation.IdNumeroWhatsApp)
+        {
+            throw new InvalidOperationException("La conversación está asociada a otro número de WhatsApp. Cambiá el número de la conversación antes de enviar.");
+        }
     }
 
     private async Task<bool> IsWhatsAppWindowActiveAsync(long idConversacion, CancellationToken ct)

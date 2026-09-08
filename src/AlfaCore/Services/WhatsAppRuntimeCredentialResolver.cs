@@ -12,6 +12,9 @@ public sealed class WhatsAppWebhookTenantGuard(IWhatsAppAssetOwnershipStore owne
     public async Task ValidateAsync(int currentBaseId, IEnumerable<string> phoneNumberIds, CancellationToken ct = default)
     {
         if (currentBaseId <= 0) throw new InvalidOperationException("El webhook no tiene una base resuelta.");
+        if (!_options.IsAllowedForBase(currentBaseId))
+            return;
+
         if (!await ownershipStore.IsSchemaAvailableAsync(ct))
         {
             if (_options.Enabled) throw new WhatsAppEmbeddedSchemaUnavailableException();
@@ -45,6 +48,9 @@ public sealed class WhatsAppRuntimeCredentialResolver(IWhatsAppAssetOwnershipSto
     public async Task<WhatsAppRuntimeCredential> ResolveAsync(int idBase, int? idNumero, string phoneNumberId, ConversacionWhatsAppConfigDto legacyConfig, CancellationToken ct = default)
     {
         var normalizedPhoneId = (phoneNumberId ?? string.Empty).Trim();
+        if (!_options.IsAllowedForBase(idBase))
+            return Legacy(normalizedPhoneId, legacyConfig);
+
         if (!await ownershipStore.IsSchemaAvailableAsync(ct))
         {
             if (_options.Enabled) throw new WhatsAppEmbeddedSchemaUnavailableException();

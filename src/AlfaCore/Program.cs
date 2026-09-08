@@ -162,6 +162,7 @@ public class Program
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
         builder.Services.AddScoped<WhatsAppEmbeddedOperationalImportService>();
+        builder.Services.AddScoped<IWhatsAppEmbeddedOperationalImportService>(provider => provider.GetRequiredService<WhatsAppEmbeddedOperationalImportService>());
         builder.Services.AddScoped<IConversacionesAuthorizationService, ConversacionesAuthorizationService>();
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupStore, WhatsAppEmbeddedSignupStore>();
@@ -274,22 +275,8 @@ public class Program
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
-        var esLocalOptions = builder.Configuration
-            .GetSection(AlfaCoreEsLocalOptions.SectionName)
-            .Get<AlfaCoreEsLocalOptions>() ?? new();
-        builder.Services.Configure<AlfaCoreEsLocalOptions>(
-            builder.Configuration.GetSection(AlfaCoreEsLocalOptions.SectionName));
         var embeddedSignupSection = builder.Configuration.GetSection(WhatsAppEmbeddedSignupOptions.SectionName);
         var embeddedSignupStartupOptions = embeddedSignupSection.Get<WhatsAppEmbeddedSignupOptions>() ?? new();
-        var dataProtection = builder.Services.AddDataProtection().SetApplicationName("AlfaCore.WhatsAppEmbeddedSignup");
-        if (!string.IsNullOrWhiteSpace(embeddedSignupStartupOptions.DataProtectionKeysPath))
-        {
-            var keyDirectory = new DirectoryInfo(embeddedSignupStartupOptions.DataProtectionKeysPath);
-            dataProtection.PersistKeysToFileSystem(keyDirectory);
-            if (OperatingSystem.IsWindows())
-                dataProtection.ProtectKeysWithDpapi();
-        }
-
         builder.Services.AddOptions<WhatsAppEmbeddedSignupOptions>()
             .Bind(embeddedSignupSection)
             .Validate(options => !options.Enabled ||
@@ -303,6 +290,7 @@ public class Program
                  && !string.IsNullOrWhiteSpace(options.GraphApiVersion)
                  && Uri.TryCreate(options.GraphBaseUrl, UriKind.Absolute, out var graphBaseUri)
                  && graphBaseUri.Scheme == Uri.UriSchemeHttps
+                 && (options.UseApplicationCentralConnection ^ !string.IsNullOrWhiteSpace(options.CentralConnectionString))
                  && !string.IsNullOrWhiteSpace(options.AppSecret)
                  && !string.IsNullOrWhiteSpace(options.DataProtectionKeysPath)
                  && Path.IsPathRooted(options.DataProtectionKeysPath)
@@ -317,17 +305,14 @@ public class Program
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
-        if (!esLocalOptions.ShouldDisableUnrelatedHostedServices(builder.Environment.EnvironmentName))
-        {
-            builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
-            builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
-            builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
-            builder.Services.AddHostedService<BillingHostedService>();
-            builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
-            builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
-            builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
-            builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
-        }
+        builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
+        builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
+        builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
+        builder.Services.AddHostedService<BillingHostedService>();
+        builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
+        builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+        builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
+        builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
         builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
 
         var app = builder.Build();

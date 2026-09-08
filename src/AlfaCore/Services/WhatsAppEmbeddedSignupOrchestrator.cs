@@ -34,6 +34,13 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
             throw new ArgumentException("La base y el usuario iniciador son obligatorios.", nameof(request));
 
         var now = DateTime.UtcNow;
+        var latest = await store.GetLatestForBaseAsync(request.IdBase, ct);
+        if (latest is not null
+            && latest.IdBase == request.IdBase
+            && latest.ExpiresAtUtc > now
+            && WhatsAppEmbeddedSignupCtaPolicy.IsActiveInProgress(latest.Status))
+            throw new InvalidOperationException("Ya hay una configuración de WhatsApp en curso para esta base.");
+
         var (state, hash) = stateProtector.Create();
         var item = new WhatsAppEmbeddedOnboardingDto
         {
@@ -178,7 +185,14 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
                 case WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess:
                     foreach (var wabaId in (await DiscoverAssetsAsync(item, tokenReference, ct)).Select(x => x.WabaId).Distinct(StringComparer.Ordinal))
                         await managementClient.EnsureSystemUserAssignmentAsync(wabaId, tokenReference, ct);
-                    await store.UpdateStatusAsync(item.IdOnboarding, item.Status, WhatsAppEmbeddedOnboardingStatus.SubscribingWabas, "SUBSCRIBING_WABAS", ct);
+                    await store.UpdateStatusAsync(
+                        item.IdOnboarding,
+                        item.Status,
+                        _options.WebhookRoutingEnabled
+                            ? WhatsAppEmbeddedOnboardingStatus.SubscribingWabas
+                            : WhatsAppEmbeddedOnboardingStatus.CheckingCustomerPayment,
+                        _options.WebhookRoutingEnabled ? "SUBSCRIBING_WABAS" : "ROUTING_PENDING",
+                        ct);
                     break;
 
                 case WhatsAppEmbeddedOnboardingStatus.SubscribingWabas:
@@ -218,7 +232,7 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
                         await MarkCustomerActionRequiredAsync(item, "Meta todavía no informa el número como utilizable.", ct);
                         return;
                     }
-                    await store.UpdateStatusAsync(item.IdOnboarding, item.Status, WhatsAppEmbeddedOnboardingStatus.Importing, "READY_FOR_IMPORT_APPROVAL", ct);
+                    await store.UpdateStatusAsync(item.IdOnboarding, item.Status, WhatsAppEmbeddedOnboardingStatus.Importing, "READY_FOR_OPERATIONAL_UPSERT", ct);
                     break;
 
                 case WhatsAppEmbeddedOnboardingStatus.RegisteringPhones:
@@ -244,6 +258,10 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
                     await store.UpdateStatusAsync(item.IdOnboarding, item.Status, WhatsAppEmbeddedOnboardingStatus.Importing, "READY_FOR_OPERATIONAL_UPSERT", ct);
                     break;
 
+                case WhatsAppEmbeddedOnboardingStatus.FailedRetryable:
+                    await store.UpdateStatusAsync(item.IdOnboarding, item.Status, WhatsAppEmbeddedOnboardingStatus.Authorized, "RETRYING", ct);
+                    break;
+
                 default:
                     throw new InvalidOperationException($"El estado {item.Status} no admite avance manual en esta etapa.");
             }
@@ -261,8 +279,18 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         }
     }
 
-    public Task RetryAsync(WhatsAppEmbeddedRetryRequest request, CancellationToken ct = default)
-        => throw new NotSupportedException("Los reintentos del pipeline Meta pertenecen a ES-2.");
+    public async Task RetryAsync(WhatsAppEmbeddedRetryRequest request, CancellationToken ct = default)
+    {
+        var item = await store.GetAsync(request.IdOnboarding, ct)
+            ?? throw new InvalidOperationException("El onboarding no existe.");
+        EnsureBaseAllowed(item.IdBase);
+        if (!string.Equals(item.UsuarioIniciador.Trim(), request.Usuario.Trim(), StringComparison.OrdinalIgnoreCase))
+            throw new UnauthorizedAccessException("El onboarding no pertenece al usuario actual.");
+        if (item.Status != WhatsAppEmbeddedOnboardingStatus.FailedRetryable)
+            throw new InvalidOperationException("El onboarding no está disponible para reintentar.");
+
+        await store.UpdateStatusAsync(item.IdOnboarding, item.Status, WhatsAppEmbeddedOnboardingStatus.Authorized, "RETRYING", ct);
+    }
 
     private void EnsureBaseAllowed(int idBase)
     {
@@ -361,15 +389,22 @@ public static class WhatsAppEmbeddedSignupProgressMapper
         ("authorized", "Cuenta autorizada", WhatsAppEmbeddedOnboardingStatus.Authorized),
         ("assets", "Cuenta de WhatsApp encontrada", WhatsAppEmbeddedOnboardingStatus.DiscoveringAssets),
         ("access", "Configurando permisos", WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess),
-        ("webhooks", "Configurando webhooks", WhatsAppEmbeddedOnboardingStatus.SubscribingWabas),
         ("numbers", "Importando números", WhatsAppEmbeddedOnboardingStatus.Importing),
-        ("history", "Recuperando conversaciones", WhatsAppEmbeddedOnboardingStatus.SyncingHistory),
-        ("contacts", "Sincronizando contactos", WhatsAppEmbeddedOnboardingStatus.SyncingContacts)
     ];
 
     public static WhatsAppEmbeddedStatusView Map(WhatsAppEmbeddedOnboardingDto item)
     {
-        var current = Array.FindIndex(Steps, x => x.Status == item.Status);
+        var current = item.Status switch
+        {
+            WhatsAppEmbeddedOnboardingStatus.Authorized => 0,
+            WhatsAppEmbeddedOnboardingStatus.DiscoveringAssets or WhatsAppEmbeddedOnboardingStatus.ValidatingOwnership => 1,
+            WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess or WhatsAppEmbeddedOnboardingStatus.SubscribingWabas
+                or WhatsAppEmbeddedOnboardingStatus.CheckingCustomerPayment or WhatsAppEmbeddedOnboardingStatus.DiscoveringPhones
+                or WhatsAppEmbeddedOnboardingStatus.RegisteringPhones => 2,
+            WhatsAppEmbeddedOnboardingStatus.Importing => 3,
+            WhatsAppEmbeddedOnboardingStatus.Ready => Steps.Length,
+            _ => -1
+        };
         var terminalReady = item.Status == WhatsAppEmbeddedOnboardingStatus.Ready;
         return new WhatsAppEmbeddedStatusView
         {
@@ -377,14 +412,15 @@ public static class WhatsAppEmbeddedSignupProgressMapper
             Status = item.Status,
             OnboardingMode = item.OnboardingMode,
             ActionRequiredReason = item.ActionRequiredReason,
-            Title = terminalReady ? "Listo" : "Conectando WhatsApp",
+            Title = terminalReady ? "Listo" : item.Status == WhatsAppEmbeddedOnboardingStatus.Importing ? "Activación en proceso" : "Conectando WhatsApp",
             Message = item.Status switch
             {
                 WhatsAppEmbeddedOnboardingStatus.ActionRequired when item.ActionRequiredReason == WhatsAppEmbeddedActionRequiredReason.CustomerPaymentSetupRequired => "Para terminar de activar WhatsApp, agregá un método de pago en tu cuenta de Meta. Los cargos de WhatsApp se pagan directamente a Meta.",
                 WhatsAppEmbeddedOnboardingStatus.ActionRequired => "Necesitamos que completes un paso en tu cuenta Meta para continuar.",
                 WhatsAppEmbeddedOnboardingStatus.FailedRetryable => "No pudimos completar la configuración. Podrás reintentar.",
                 WhatsAppEmbeddedOnboardingStatus.FailedFinal => "No se pudo completar la configuración.",
-                WhatsAppEmbeddedOnboardingStatus.Authorized => "Autorización recibida correctamente. La configuración automática continuará en la próxima etapa.",
+                WhatsAppEmbeddedOnboardingStatus.Importing => "Meta está demorando temporalmente la activación. AlfaCore continuará automáticamente en unos minutos. No necesitás hacer nada.",
+                WhatsAppEmbeddedOnboardingStatus.Authorized => "Autorización recibida correctamente. La conexión requiere completar las siguientes etapas.",
                 WhatsAppEmbeddedOnboardingStatus.Cancelled => "Conexión cancelada. Podés intentarlo nuevamente.",
                 _ => string.Empty
             },

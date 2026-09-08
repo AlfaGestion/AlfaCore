@@ -29,6 +29,42 @@
    IA/etc) dentro de él. Lo hacemos ocupar las dos filas explícitamente. */
 .shell.shell--alfa-design .conversations-page > .conversations-core-workspace {
     grid-row: 1 / -1;
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+.conversations-new-whatsapp-modal__card {
+    width: min(560px, calc(100vw - 2rem));
+    max-width: 560px;
+}
+
+.conversations-new-whatsapp-modal__results {
+    display: grid;
+    max-height: min(360px, 42vh);
+    gap: .42rem;
+    overflow-y: auto;
+}
+
+.conversations-new-whatsapp-modal__state {
+    padding: .75rem 0;
+    color: var(--color-muted);
+}
+
+.conversations-template-empty-state {
+    display: grid;
+    gap: .5rem;
+    padding: .85rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-muted);
+}
+
+.conversations-template-empty-state strong {
+    color: var(--color-text);
+}
+
+.conversations-template-empty-state .btn {
+    justify-self: start;
 }
 
 .conversations-list,

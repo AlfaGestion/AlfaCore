@@ -86,6 +86,24 @@ public sealed class MetaWhatsAppManagementClientTests
     }
 
     [Fact]
+    public async Task RateLimit80008IsRecoverableAndReadsBusinessUsageEstimate()
+    {
+        var response = new HttpResponseMessage(HttpStatusCode.BadRequest)
+        {
+            Content = new StringContent("{\"error\":{\"code\":80008}}")
+        };
+        response.Headers.Add("X-Business-Use-Case-Usage", "{\"app\":[{\"estimated_time_to_regain_access\":900}]}" );
+        var client = Create(new RoutingHandler(_ => response));
+
+        var error = await Assert.ThrowsAsync<MetaWhatsAppManagementException>(() => client.DiscoverPhoneNumbersAsync("9101", new("ref")));
+
+        Assert.True(error.IsRateLimit);
+        Assert.True(error.IsTransient);
+        Assert.True(error.HasBusinessUseCaseUsage);
+        Assert.Equal(TimeSpan.FromMinutes(15), error.EstimatedTimeToRegainAccess);
+    }
+
+    [Fact]
     public async Task RegisterPhoneUsesProtectedPinAndConfiguredGraphVersion()
     {
         HttpMethod? capturedMethod = null;
