@@ -573,6 +573,7 @@ public sealed class ConversacionWebhookRequest
     public JsonDocument Payload { get; set; } = JsonDocument.Parse("{}");
     public string RawPayload { get; set; } = string.Empty;
     public IDictionary<string, string> Headers { get; set; } = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+    public Action<string>? TraceStage { get; set; }
 }
 
 public sealed class ConversacionWhatsAppWebIncomingMessageDto

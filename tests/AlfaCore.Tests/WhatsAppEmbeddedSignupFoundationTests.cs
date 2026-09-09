@@ -23,7 +23,7 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
             new WhatsAppEmbeddedSignupStateProtector(),
             new FakeMetaOAuthClient(),
             new FakeCredentialVault(),
-            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [106], OnboardingExpirationMinutes = 30 }));
+            Options.Create(OnboardingOptions()));
 
         var result = await orchestrator.StartAsync(new WhatsAppEmbeddedStartRequest(106, "ALFANET", "Eve", WhatsAppEmbeddedOnboardingMode.Standard));
 
@@ -44,7 +44,7 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
             new WhatsAppEmbeddedSignupStateProtector(),
             new FakeMetaOAuthClient(),
             new FakeCredentialVault(),
-            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [106], OnboardingExpirationMinutes = 30 }));
+            Options.Create(OnboardingOptions()));
 
         await orchestrator.StartAsync(new WhatsAppEmbeddedStartRequest(
             106,
@@ -350,7 +350,7 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
             new WhatsAppEmbeddedSignupStateProtector(),
             new FakeMetaOAuthClient(),
             new FakeCredentialVault(),
-            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [106], OnboardingExpirationMinutes = 30 }));
+            Options.Create(OnboardingOptions()));
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
             orchestrator.StartAsync(new WhatsAppEmbeddedStartRequest(106, "ALFANET", "Eve", WhatsAppEmbeddedOnboardingMode.Standard)));
@@ -415,6 +415,20 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         Assert.Contains("123", repository.Entry.SqlDetail, StringComparison.Ordinal);
         Assert.Contains("456", repository.Entry.SqlDetail, StringComparison.Ordinal);
     }
+
+    private static WhatsAppEmbeddedSignupOptions OnboardingOptions()
+        => new()
+        {
+            Enabled = true,
+            AllowedBaseIds = [106],
+            AppId = "test-app-id",
+            BusinessPortfolioId = "test-business-id",
+            SystemUserId = "test-system-user-id",
+            EmbeddedSignupConfigId = "test-config-id",
+            GraphApiVersion = "v26.0",
+            GraphBaseUrl = "https://graph.facebook.com",
+            OnboardingExpirationMinutes = 30
+        };
 
     private static string FindRepoFile(params string[] segments)
     {
