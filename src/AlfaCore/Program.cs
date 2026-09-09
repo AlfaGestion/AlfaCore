@@ -27,6 +27,19 @@ public class Program
         // directo si los ve, por eso a veces parecia que "andaba").
         DotEnvLoader.LoadIfPresent(AppContext.BaseDirectory);
 
+        // Modo one-shot de migración del vault de WhatsApp Embedded Signup. Se resuelve ANTES de
+        // CreateBuilder: no arranca Kestrel, no registra ni inicia hosted services, no toca el
+        // webhook. Dry-run por defecto; sólo escribe con --commit. Ver WhatsAppVaultMigrationCommand.
+        if (WhatsAppVaultMigrationCommand.IsRequested(args))
+        {
+            var migrationExitCode = WhatsAppVaultMigrationCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(migrationExitCode);
+            return;
+        }
+
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
         var webRootCandidates = new[]

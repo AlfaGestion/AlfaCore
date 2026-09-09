@@ -19,6 +19,24 @@ public sealed class WhatsAppEmbeddedSignupOptions
     public string AppSecret { get; set; } = string.Empty;
     public string CallbackBaseUrl { get; set; } = string.Empty;
     public string DataProtectionKeysPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Cómo se protege en reposo el key ring de Data Protection del vault.
+    /// <see cref="WhatsAppDataProtectionKeyProtection.DpapiCurrentUser"/> es el valor histórico
+    /// (compatible hacia atrás): sólo lo abre la cuenta Windows que generó las keys, en esa máquina.
+    /// Para un proceso IIS público hay que usar <see cref="WhatsAppDataProtectionKeyProtection.DpapiLocalMachine"/>
+    /// (key ring generado en ese mismo servidor) o <see cref="WhatsAppDataProtectionKeyProtection.Certificate"/>
+    /// (key ring portable entre máquinas, protegido con un X.509).
+    /// </summary>
+    public WhatsAppDataProtectionKeyProtection DataProtectionKeyProtection { get; set; }
+        = WhatsAppDataProtectionKeyProtection.DpapiCurrentUser;
+
+    /// <summary>
+    /// Huella (thumbprint) del certificado X.509 que protege el key ring cuando
+    /// <see cref="DataProtectionKeyProtection"/> es <see cref="WhatsAppDataProtectionKeyProtection.Certificate"/>.
+    /// Se busca en <c>LocalMachine\My</c> y luego en <c>CurrentUser\My</c>. Nunca es un secreto.
+    /// </summary>
+    public string DataProtectionCertificateThumbprint { get; set; } = string.Empty;
     public int OnboardingExpirationMinutes { get; set; } = 30;
     public int WorkerIntervalSeconds { get; set; } = 15;
     public int RetryInitialDelaySeconds { get; set; } = 30;
@@ -31,7 +49,9 @@ public sealed class WhatsAppEmbeddedSignupOptions
 
     public bool HasDataProtectionKeyRingConfiguration()
         => !string.IsNullOrWhiteSpace(DataProtectionKeysPath)
-            && Path.IsPathRooted(DataProtectionKeysPath);
+            && Path.IsPathRooted(DataProtectionKeysPath)
+            && (DataProtectionKeyProtection != WhatsAppDataProtectionKeyProtection.Certificate
+                || !string.IsNullOrWhiteSpace(DataProtectionCertificateThumbprint));
 
     public bool HasWebhookRuntimeConfiguration()
         => AllowedBaseIds.Length > 0
@@ -77,4 +97,14 @@ public sealed class WhatsAppEmbeddedSignupOnboardingConfigurationException()
 public enum WhatsAppEmbeddedSignupCreditMode
 {
     CustomerPaysMeta
+}
+
+public enum WhatsAppDataProtectionKeyProtection
+{
+    /// <summary>DPAPI ámbito usuario actual. Valor histórico; no portable entre cuentas/máquinas.</summary>
+    DpapiCurrentUser = 0,
+    /// <summary>DPAPI ámbito máquina local. Cualquier cuenta del servidor abre el key ring generado ahí.</summary>
+    DpapiLocalMachine = 1,
+    /// <summary>Key ring protegido con un certificado X.509 (portable entre máquinas).</summary>
+    Certificate = 2
 }
