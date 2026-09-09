@@ -338,13 +338,19 @@ public sealed class CrmCotizacionService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            var actual = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                "SELECT PublicToken FROM dbo.CRM_COTIZACION WHERE IdCotizacion = @Id AND ISNULL(Baja, 0) = 0;",
-                new { Id = idCotizacion }, cancellationToken: token));
-            if (actual is null)
+            // ExecuteScalarAsync devuelve NULL tanto si la cotización no existe como si existe
+            // pero PublicToken todavía es NULL -- el caso normal de cualquier cotización que nunca
+            // se compartió. Hay que distinguir ambos casos con un EXISTS separado; antes esto
+            // tiraba "La cotización indicada no existe" para toda cotización nueva, así que
+            // "Compartir" nunca generaba un link la primera vez.
+            var fila = await cn.QueryFirstOrDefaultAsync<(bool Existe, string? PublicToken)>(new CommandDefinition("""
+                SELECT CAST(1 AS bit) AS Existe, PublicToken
+                FROM dbo.CRM_COTIZACION WHERE IdCotizacion = @Id AND ISNULL(Baja, 0) = 0;
+                """, new { Id = idCotizacion }, cancellationToken: token));
+            if (!fila.Existe)
                 throw new InvalidOperationException("La cotización indicada no existe.");
 
-            var tk = actual.Trim();
+            var tk = (fila.PublicToken ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(tk))
             {
                 tk = Guid.NewGuid().ToString("N");

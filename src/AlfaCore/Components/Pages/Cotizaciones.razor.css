@@ -22,18 +22,124 @@
     flex: 0 0 auto;
 }
 
-.cotiz-stats {
+/* Estas clases replican el patrón de listado de Clientes/Contactos (CuentasComercialesPage) --
+   ese CSS vive scoped a ese componente y no llega acá, así que se redefine puntualmente para
+   Cotizaciones con el mismo diseño (checkbox de selección, filas con hover/alternado, scroll
+   con barras visibles en ambos ejes). */
+.cuentas-list-shell {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
     display: flex;
-    flex-wrap: wrap;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
+}
+
+.cuentas-list-shell__state {
+    flex: 1 1 auto;
+    min-height: 0;
+    padding: var(--alfa-space-16);
+    overflow: auto;
+}
+
+.cuentas-list-shell__table-scroll {
+    position: relative;
+    flex: 1 1 auto;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    min-height: 0;
+    overflow: auto;
+    overscroll-behavior: contain;
+}
+
+.cuentas-list-table {
+    min-width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.cuentas-list-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    height: 32px;
+    padding: 0 var(--alfa-space-8);
+    border-bottom: 1px solid var(--alfa-border-default);
+    background: var(--alfa-bg-table-header);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+    font-weight: 700;
+    line-height: 12px;
+    text-align: left;
+    text-transform: uppercase;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.cuentas-list-table td {
+    height: 32px;
+    padding: 0 var(--alfa-space-8);
+    border-bottom: 1px solid var(--alfa-border-subtle);
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    line-height: 16px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    white-space: nowrap;
+}
+
+.cuentas-list-table__row {
+    background: var(--alfa-bg-surface);
+    cursor: pointer;
+}
+
+.cuentas-list-table__row:nth-child(even) {
+    background: var(--alfa-bg-row-alt);
+}
+
+.cuentas-list-table__row:hover {
+    background: var(--alfa-bg-row-hover);
+}
+
+.cuentas-list-table__row.is-selected {
+    background: color-mix(in srgb, var(--alfa-state-selected) 44%, var(--alfa-bg-surface));
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--alfa-accent) 72%, transparent);
+}
+
+.cuentas-list-table__row strong {
+    color: var(--alfa-text-primary);
+    font-weight: 600;
+}
+
+.cuentas-list-table__select {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+    text-align: center;
+}
+
+.cuentas-list-table__checkbox {
+    width: 15px;
+    height: 15px;
+    accent-color: var(--alfa-accent);
+}
+
+.cotiz-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
     gap: var(--alfa-space-12);
 }
 
 .cotiz-stat {
-    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     gap: 2px;
-    min-width: 10.5rem;
     padding: .65rem .95rem;
     border: 1px solid var(--alfa-border-default);
     border-radius: var(--alfa-radius-md);
@@ -70,76 +176,6 @@ button.cotiz-stat--action.is-active {
     line-height: 1.2;
 }
 
-.cotiz-list-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--alfa-space-12);
-}
-
-.cotiz-search {
-    display: flex;
-    align-items: center;
-    gap: .5rem;
-    flex: 1 1 260px;
-    max-width: 360px;
-    padding: 0 .7rem;
-    height: var(--alfa-control-md);
-    border: 1px solid var(--alfa-border-default);
-    border-radius: var(--alfa-radius-md);
-    background: var(--alfa-bg-input);
-    color: var(--alfa-text-secondary);
-}
-
-.cotiz-search:focus-within {
-    border-color: var(--alfa-accent);
-}
-
-.cotiz-search i {
-    font-size: .85rem;
-}
-
-.cotiz-search input {
-    flex: 1 1 auto;
-    border: 0;
-    background: transparent;
-    color: var(--alfa-text-primary);
-    font-size: var(--alfa-font-body);
-    outline: none;
-}
-
-.cotiz-filter-tabs {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
-    padding: 3px;
-    border: 1px solid var(--alfa-border-default);
-    border-radius: var(--alfa-radius-md);
-    background: var(--alfa-bg-surface);
-}
-
-.cotiz-filter-tabs button {
-    border: 0;
-    border-radius: var(--alfa-radius-sm);
-    background: transparent;
-    color: var(--alfa-text-secondary);
-    padding: .35rem .7rem;
-    font-size: var(--alfa-font-small);
-    font-weight: 600;
-    cursor: pointer;
-    transition: background .12s ease, color .12s ease;
-}
-
-.cotiz-filter-tabs button:hover {
-    color: var(--alfa-text-primary);
-}
-
-.cotiz-filter-tabs button.is-active {
-    background: var(--alfa-accent);
-    color: #fff;
-}
-
 .cotiz-list-table__col--right,
 .cotiz-list-table td.num,
 .cotiz-list-table th.num {
@@ -170,8 +206,8 @@ button.cotiz-stat--action.is-active {
     flex-direction: column;
     gap: var(--alfa-space-16);
     padding: var(--alfa-space-16);
-    max-width: 1320px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: 100%;
 }
 
 .cotiz-hero {
@@ -518,6 +554,99 @@ button.cotiz-stat--action.is-active {
     color: var(--alfa-text-secondary);
 }
 
+/* Diálogo Compartir */
+
+.cotiz-compartir-row {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.cotiz-compartir-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.cotiz-compartir-email {
+    margin-top: 1rem;
+}
+
+/* Asistente de IA (sugerir líneas / redactar propuesta) */
+
+.cotiz-ia-input {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .1rem;
+}
+
+.cotiz-ia-input i {
+    color: var(--alfa-accent);
+}
+
+.cotiz-ia-input input {
+    flex: 1 1 auto;
+    height: var(--alfa-control-md);
+    background: var(--alfa-bg-input);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    color: var(--alfa-text-primary);
+    padding: 0 .7rem;
+}
+
+.cotiz-ia-input input:focus {
+    outline: none;
+    border-color: var(--alfa-accent);
+}
+
+.cotiz-ia-hint {
+    margin: .3rem 0 0;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+}
+
+.cotiz-ia-results {
+    margin-top: .75rem;
+    padding-top: .6rem;
+    border-top: 1px solid var(--alfa-border-default);
+}
+
+.cotiz-ia-results__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-bottom: .5rem;
+    color: var(--alfa-text-primary);
+}
+
+.cotiz-ia-results__actions {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+}
+
+.cotiz-ia-result {
+    padding: .3rem 0;
+}
+
+.cotiz-ia-result ::deep .alfa-checkbox__label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: .4rem;
+}
+
+.cotiz-ia-result__desc {
+    color: var(--alfa-text-primary);
+}
+
+.cotiz-ia-result__meta {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+}
+
 .cotiz-lookup-item__title {
     display: block;
     color: var(--alfa-text-primary);
@@ -709,13 +838,11 @@ button.cotiz-stat--action.is-active {
     gap: .35rem;
 }
 
-.cotiz-rich-editor {
+/* .cotiz-rich-editor convive con las clases globales .tickets-rich-editor (mismo editor que
+   usa Tickets, reutilizado tal cual) -- acá solo se ajusta la altura para una propuesta
+   comercial, que necesita más espacio que la descripción de un ticket. */
+.cotiz-rich-editor .tickets-rich-editor__surface {
     min-height: 22rem;
-    border: 1px solid var(--alfa-border-default);
-    border-radius: var(--alfa-radius-md);
-    padding: .85rem 1rem;
-    background: var(--alfa-bg-input);
-    color: var(--alfa-text-primary);
 }
 
 /* ======================================================================
@@ -978,14 +1105,5 @@ button.cotiz-stat--action.is-active {
 
     .cotiz-stepper {
         margin-left: 0;
-    }
-
-    .cotiz-list-toolbar {
-        flex-direction: column;
-        align-items: stretch;
-    }
-
-    .cotiz-search {
-        max-width: none;
     }
 }

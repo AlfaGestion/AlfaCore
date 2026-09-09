@@ -11,7 +11,9 @@ public sealed class CotizacionesService(
     IAppEventService appEvents,
     ICentralBasesService centralBasesService,
     IArticuloPrecioResolverService priceResolver,
-    ICrmService crmService) : ICotizacionesService
+    ICrmService crmService,
+    ICrmCotizacionService crmCotizacionService,
+    ICotizacionPdfService pdfService) : ICotizacionesService
 {
     private const string ModuleName = "Cotizaciones";
     private const string DefaultTc = "COT";
@@ -587,12 +589,19 @@ public sealed class CotizacionesService(
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
-            var actual = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
-                "SELECT PublicToken FROM dbo.COT_VERSION WHERE IdVersion = @Id;", new { Id = idVersion }, cancellationToken: token));
-            if (actual is null)
+
+            // ExecuteScalarAsync devuelve NULL tanto si la versión no existe como si existe pero
+            // PublicToken todavía es NULL -- que es el caso normal de CUALQUIER cotización que
+            // nunca se compartió. Hay que distinguir ambos casos con un EXISTS separado; antes
+            // esto tiraba "La versión indicada no existe" para toda cotización nueva.
+            var fila = await cn.QueryFirstOrDefaultAsync<(bool Existe, string? PublicToken)>(new CommandDefinition("""
+                SELECT CAST(1 AS bit) AS Existe, PublicToken
+                FROM dbo.COT_VERSION WHERE IdVersion = @Id;
+                """, new { Id = idVersion }, cancellationToken: token));
+            if (!fila.Existe)
                 throw new InvalidOperationException("La versión indicada no existe.");
 
-            var tk = actual.Trim();
+            var tk = (fila.PublicToken ?? string.Empty).Trim();
             if (tk.Length == 0)
             {
                 tk = Guid.NewGuid().ToString("N");
@@ -608,6 +617,75 @@ public sealed class CotizacionesService(
                 Token = tk
             };
         }, "No se pudo preparar el enlace de la cotización.", ct);
+
+    public Task SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SendByEmail", async token =>
+        {
+            var to = (destinatario ?? string.Empty).Trim();
+            if (to.Length == 0)
+                throw new InvalidOperationException("Ingresá un email de destino.");
+            _ = new System.Net.Mail.MailAddress(to);
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var detail = await LoadVersionDetailAsync(cn, idVersion, null, token)
+                         ?? throw new InvalidOperationException("La cotización indicada no existe.");
+            var mail = await ResolveMailConfigAsync(cn, token);
+            var html = BuildPublicHtml(detail);
+
+            using var message = new System.Net.Mail.MailMessage
+            {
+                From = new System.Net.Mail.MailAddress(mail.From),
+                Subject = $"Cotización {detail.CodigoVisible}",
+                Body = html,
+                IsBodyHtml = true
+            };
+            message.To.Add(to);
+
+            using var client = new System.Net.Mail.SmtpClient(mail.Server, mail.Port)
+            {
+                EnableSsl = mail.EnableSsl,
+                DeliveryMethod = System.Net.Mail.SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false,
+                Credentials = new System.Net.NetworkCredential(mail.From, mail.Password)
+            };
+            await client.SendMailAsync(message, token);
+
+            if (string.Equals(detail.EstadoVersion, CotizacionEstados.Borrador, StringComparison.OrdinalIgnoreCase))
+            {
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE dbo.COT_VERSION SET EstadoVersion = @Estado, FechaHoraEnvio = GETDATE(), FechaHoraModificacion = GETDATE() WHERE IdVersion = @Id;",
+                    new { Id = idVersion, Estado = CotizacionEstados.Enviada }, cancellationToken: token));
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE dbo.COT_COTIZACION SET Estado = @Estado, FechaHoraModificacion = GETDATE() WHERE IdCotizacion = @Id;",
+                    new { Id = detail.IdCotizacion, Estado = CotizacionEstados.Enviada }, cancellationToken: token));
+            }
+        }, "No se pudo enviar la cotización por email.", ct);
+
+    private async Task<MailInfo> ResolveMailConfigAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var server = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_SERVER", ct), "EMAIL_SERVER");
+        var port = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_PORT", ct), "EMAIL_PORT");
+        var account = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_CTA", ct), "EMAIL_CTA");
+        var password = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_PASS", ct), "EMAIL_PASS");
+        var ssl = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_SSL", ct), "EMAIL_SSL");
+
+        if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(port) || string.IsNullOrWhiteSpace(account) || string.IsNullOrWhiteSpace(password))
+            throw new InvalidOperationException("Falta configurar el correo saliente. Revisá EMAIL_SERVER, EMAIL_PORT, EMAIL_CTA y EMAIL_PASS en Configuración.");
+        if (!int.TryParse(port, out var smtpPort) || smtpPort <= 0)
+            throw new InvalidOperationException("EMAIL_PORT no tiene un valor válido.");
+
+        var enableSsl = ssl.Equals("SI", StringComparison.OrdinalIgnoreCase)
+            || ssl.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+            || ssl.Equals("1", StringComparison.OrdinalIgnoreCase);
+        return new MailInfo(server, smtpPort, account, password, enableSsl);
+    }
+
+    private string ConfigOrAppSetting(string dbValue, string key)
+        => !string.IsNullOrWhiteSpace(dbValue) ? dbValue : (configuration[key] ?? string.Empty);
+
+    private sealed record MailInfo(string Server, int Port, string From, string Password, bool EnableSsl);
 
     public Task<string?> RenderPublicHtmlAsync(int idBase, string token, CancellationToken ct = default)
         => ExecuteLoggedAsync("RenderPublic", async innerCt =>
@@ -640,6 +718,77 @@ public sealed class CotizacionesService(
             var detail = await LoadVersionDetailAsync(cn, idVersion.Value, null, innerCt);
             return detail is null ? null : BuildPublicHtml(detail);
         }, "No se pudo mostrar la cotización.", ct);
+
+    public Task<byte[]?> GeneratePdfAsync(long idVersion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GeneratePdf", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var detail = await LoadVersionDetailAsync(cn, idVersion, null, token);
+            if (detail is null)
+                return null;
+            var nombreEmpresa = await ReadConfigAsync(cn, "Nombre", token);
+            var logo = await LoadLogoParaPdfAsync(cn, token);
+            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa, logo);
+        }, "No se pudo generar el PDF.", ct);
+
+    public Task<byte[]?> RenderPublicPdfAsync(int idBase, string token, CancellationToken ct = default)
+        => ExecuteLoggedAsync("RenderPublicPdf", async innerCt =>
+        {
+            var tk = (token ?? string.Empty).Trim();
+            if (idBase <= 0 || tk.Length == 0)
+                return null;
+
+            var baseInfo = await centralBasesService.GetByIdAsync(idBase, innerCt);
+            if (baseInfo is null)
+                return null;
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(innerCt);
+
+            var idVersion = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(
+                "SELECT IdVersion FROM dbo.COT_VERSION WHERE PublicToken = @Token;", new { Token = tk }, cancellationToken: innerCt));
+            if (idVersion is null)
+                return null;
+
+            var detail = await LoadVersionDetailAsync(cn, idVersion.Value, null, innerCt);
+            if (detail is null)
+                return null;
+
+            var nombreEmpresa = await ReadConfigAsync(cn, "Nombre", innerCt);
+            var logo = await LoadLogoParaPdfAsync(cn, innerCt);
+            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa, logo);
+        }, "No se pudo generar el PDF.", ct);
+
+    // El logo vive en TA_LOGOS (no en TA_CONFIGURACION, ver ConfiguracionGeneralService), y se
+    // consulta directo con la conexión ya abierta de cada método (nunca vía
+    // IConfiguracionGeneralService acá: ese servicio resuelve la conexión de la sesión ACTIVA del
+    // circuito, que en RenderPublicPdfAsync sería la equivocada -- ahí la conexión real es la del
+    // idBase resuelto por token, cruzando tenant). Respeta el mismo toggle "Incluir logo en
+    // Presupuestos" que ya configura el usuario en Configuración General > Logo y Estilo
+    // (Cotizaciones no tiene su propio checkbox: conceptualmente un presupuesto es lo más
+    // parecido a una cotización en el sistema legacy).
+    private async Task<byte[]?> LoadLogoParaPdfAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var incluir = ParseBool(await ReadConfigAsync(cn, "PRINTLOGO_PROFORMA", ct));
+        if (!incluir || !await SqlObjectExistsAsync(cn, "dbo.TA_LOGOS", ct))
+            return null;
+
+        await using var cmd = new SqlCommand("SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = 'LOGOEMPRESA';", cn);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct) && !await reader.IsDBNullAsync(0, ct))
+            return reader.GetFieldValue<byte[]>(0);
+        return null;
+    }
 
     public Task<CotizacionAlfaConfigDto> GetAlfaConfigAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("GetAlfaConfig", async token =>
@@ -846,6 +995,16 @@ public sealed class CotizacionesService(
                 """, new { InicioMes = inicioMes }, cancellationToken: token));
             return row ?? new CotizacionResumenDto();
         }, "No se pudo cargar el resumen de cotizaciones.", ct);
+
+    // El asistente de IA (búsqueda de artículos por lenguaje natural / redacción de propuesta)
+    // ya está implementado y probado en ICrmCotizacionService -- no toca CRM_COTIZACION, solo
+    // llama a OpenAI y al mismo IArticuloPrecioResolverService que ya usamos acá. Se delega
+    // directo en vez de duplicar el prompt engineering.
+    public Task<IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>> SuggestLinesFromPromptAsync(string? clienteCodigo, string prompt, CancellationToken ct = default)
+        => crmCotizacionService.SuggestLinesFromPromptAsync(clienteCodigo, prompt, ct);
+
+    public Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default)
+        => crmCotizacionService.GenerateServiceProposalAsync(prompt, clienteNombre, ct);
 
     // ---- Helpers privados ----
 

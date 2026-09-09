@@ -1,0 +1,124 @@
+.cfglogo-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-16);
+    padding: var(--alfa-space-16) var(--alfa-space-16) 3rem;
+    max-width: 720px;
+    margin: 0 auto;
+}
+
+.cfglogo-uploader {
+    display: flex;
+    align-items: center;
+    gap: var(--alfa-space-16);
+    width: min(100%, 560px);
+    padding: 12px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-raised);
+}
+
+.cfglogo-uploader__preview {
+    width: 96px;
+    height: 96px;
+    flex: 0 0 96px;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-disabled);
+    font-size: 28px;
+}
+
+.cfglogo-uploader__preview img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.cfglogo-uploader__content {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.cfglogo-uploader__content > strong {
+    font-size: var(--alfa-font-body);
+    font-weight: 600;
+    color: var(--alfa-text-primary);
+}
+
+.cfglogo-uploader__content > span {
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
+
+.cfglogo-uploader__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-8);
+    margin-top: 4px;
+}
+
+.cfglogo-picker {
+    position: relative;
+    display: inline-flex;
+    overflow: hidden;
+    border-radius: var(--alfa-radius-sm);
+}
+
+.cfglogo-input {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.cfglogo-input:disabled {
+    cursor: not-allowed;
+}
+
+.cfglogo-picker:focus-within {
+    outline: 2px solid var(--alfa-accent-hover);
+    outline-offset: 2px;
+}
+
+.cfglogo-checks {
+    display: flex;
+    flex-direction: column;
+    gap: .5rem;
+}
+
+.cfglogo-subtitle {
+    margin: 1.1rem 0 .5rem;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+    text-transform: uppercase;
+    letter-spacing: .03em;
+}
+
+.cfglogo-position {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.25rem;
+}
+
+.cfglogo-position__option {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-body);
+    cursor: pointer;
+}
+
+.cfglogo-save-bar {
+    position: sticky;
+    bottom: 0;
+    padding-top: .5rem;
+}

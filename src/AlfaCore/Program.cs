@@ -188,6 +188,8 @@ public class Program
         builder.Services.AddScoped<ICrmService, CrmService>();
         builder.Services.AddScoped<IArticuloPrecioResolverService, ArticuloPrecioResolverService>();
         builder.Services.AddScoped<ICrmCotizacionService, CrmCotizacionService>();
+        builder.Services.AddScoped<ICotizacionPdfService, CotizacionPdfService>();
+        builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
@@ -455,6 +457,18 @@ public class Program
                 : Results.Content(html, "text/html; charset=utf-8");
         }).AllowAnonymous();
 
+        app.MapGet("/cotizacion-publica/{idbase:int}/{token}/pdf", async (
+            int idbase,
+            string token,
+            ICotizacionesService cotizacionesSvc,
+            CancellationToken ct) =>
+        {
+            var pdfBytes = await cotizacionesSvc.RenderPublicPdfAsync(idbase, token, ct);
+            return pdfBytes is null
+                ? Results.NotFound("La cotización no existe o el enlace expiró.")
+                : Results.File(pdfBytes, "application/pdf", "cotizacion.pdf");
+        }).AllowAnonymous();
+
         app.MapGet("/api/usuarios/{nombre}/foto", async (
             string nombre,
             IUsuariosService usuariosSvc,
@@ -465,6 +479,16 @@ public class Program
                 return Results.NotFound();
 
             return Results.File(photo.RutaCompleta, photo.MimeType, photo.NombreArchivo);
+        });
+
+        app.MapGet("/api/configuracion-general/logo", async (
+            IConfiguracionGeneralService configSvc,
+            CancellationToken ct) =>
+        {
+            var bytes = await configSvc.GetLogoBytesAsync(ct);
+            return bytes is null || bytes.Length == 0
+                ? Results.NotFound()
+                : Results.File(bytes, "image/jpeg");
         });
 
         app.MapGet("/api/catalogos/logo-publico/{idweb}", async (
