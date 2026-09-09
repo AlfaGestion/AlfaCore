@@ -189,6 +189,10 @@ public class Program
         builder.Services.AddScoped<IArticuloPrecioResolverService, ArticuloPrecioResolverService>();
         builder.Services.AddScoped<ICrmCotizacionService, CrmCotizacionService>();
         builder.Services.AddScoped<ICotizacionPdfService, CotizacionPdfService>();
+        builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
+        builder.Services.AddScoped<IDocumentRenderer, DocumentRenderer>();
+        builder.Services.AddScoped<IDocumentPdfService, DocumentPdfService>();
+        builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
