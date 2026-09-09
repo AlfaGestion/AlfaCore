@@ -2775,7 +2775,7 @@ public class Program
     /// Devuelve <c>false</c> si el token no corresponde a ninguna base — el caller debe responder
     /// 404 sin exponer si el token "casi" era válido.
     /// </summary>
-    private static async Task<bool> TryResolveWebhookTenantAsync(
+    internal static async Task<bool> TryResolveWebhookTenantAsync(
         string token,
         ICentralBasesService basesService,
         ISessionService sessionService,
@@ -2874,7 +2874,7 @@ public class Program
             : Results.Unauthorized();
     }
 
-    private static async Task<IResult> HandleWhatsAppMessageAsync(
+    internal static async Task<IResult> HandleWhatsAppMessageAsync(
         HttpRequest request,
         IConversacionesConfigService configService,
         IConversacionesService svc,
