@@ -246,11 +246,11 @@ public sealed class CotizacionesService(
                     INSERT INTO dbo.COT_VERSION
                     (IdCotizacion, NumeroVersion, Fecha, FechaVencimiento, EmpresaProspecto, ContactoNombre, ContactoEmail,
                      ContactoTelefono, DocumentoFiscal, CodigoMoneda, Observaciones, CuerpoPropuesta,
-                     DescuentoGeneralPorcentaje, Subtotal, TotalDescuento, Total, EstadoVersion, UsuarioAlta, FechaHoraAlta)
+                     DescuentoGeneralPorcentaje, Subtotal, TotalDescuento, Total, IncluyePortada, EstadoVersion, UsuarioAlta, FechaHoraAlta)
                     OUTPUT INSERTED.IdVersion
                     VALUES (@IdCotizacion, @NumeroVersion, CAST(GETDATE() AS date), @FechaVencimiento, @EmpresaProspecto, @ContactoNombre,
                             @ContactoEmail, @ContactoTelefono, @DocumentoFiscal, @CodigoMoneda, @Observaciones, @CuerpoPropuesta,
-                            @DescuentoGeneralPorcentaje, @Subtotal, @TotalDescuento, @Total, @Estado, @Usuario, GETDATE());
+                            @DescuentoGeneralPorcentaje, @Subtotal, @TotalDescuento, @Total, @IncluyePortada, @Estado, @Usuario, GETDATE());
                     """, new
                 {
                     IdCotizacion = idCotizacion,
@@ -268,6 +268,7 @@ public sealed class CotizacionesService(
                     detail.Subtotal,
                     detail.TotalDescuento,
                     detail.Total,
+                    detail.IncluyePortada,
                     Estado = CotizacionEstados.Borrador,
                     Usuario = NormalizeUser(usuarioAccion)
                 }, tx, cancellationToken: token));
@@ -391,7 +392,7 @@ public sealed class CotizacionesService(
                         ContactoTelefono = @ContactoTelefono, DocumentoFiscal = @DocumentoFiscal, CodigoMoneda = @CodigoMoneda,
                         FechaVencimiento = @FechaVencimiento, Observaciones = @Observaciones, CuerpoPropuesta = @CuerpoPropuesta,
                         DescuentoGeneralPorcentaje = @DescuentoGeneral, Subtotal = @Subtotal, TotalDescuento = @TotalDescuento,
-                        Total = @Total, FechaHoraModificacion = GETDATE()
+                        Total = @Total, IncluyePortada = @IncluyePortada, FechaHoraModificacion = GETDATE()
                     WHERE IdVersion = @IdVersion;
                     """, new
                 {
@@ -408,7 +409,8 @@ public sealed class CotizacionesService(
                     DescuentoGeneral = descuentoGeneral,
                     Subtotal = subtotal,
                     TotalDescuento = totalDescuento,
-                    Total = total
+                    Total = total,
+                    request.IncluyePortada
                 }, tx, cancellationToken: token));
 
                 await cn.ExecuteAsync(new CommandDefinition(
@@ -729,7 +731,9 @@ public sealed class CotizacionesService(
                 return null;
             var nombreEmpresa = await ReadConfigAsync(cn, "Nombre", token);
             var logo = await LoadLogoParaPdfAsync(cn, token);
-            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa, logo);
+            var portada = await LoadPortadaParaPdfAsync(cn, detail.IncluyePortada, token);
+            var firma = await LoadFirmaParaPdfAsync(cn, detail.UsuarioAlta, token);
+            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa, logo, portada, firma, detail.UsuarioAlta);
         }, "No se pudo generar el PDF.", ct);
 
     public Task<byte[]?> RenderPublicPdfAsync(int idBase, string token, CancellationToken ct = default)
@@ -766,7 +770,9 @@ public sealed class CotizacionesService(
 
             var nombreEmpresa = await ReadConfigAsync(cn, "Nombre", innerCt);
             var logo = await LoadLogoParaPdfAsync(cn, innerCt);
-            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa, logo);
+            var portada = await LoadPortadaParaPdfAsync(cn, detail.IncluyePortada, innerCt);
+            var firma = await LoadFirmaParaPdfAsync(cn, detail.UsuarioAlta, innerCt);
+            return pdfService.GenerarPdf(detail, string.IsNullOrWhiteSpace(nombreEmpresa) ? "Cotización" : nombreEmpresa, logo, portada, firma, detail.UsuarioAlta);
         }, "No se pudo generar el PDF.", ct);
 
     // El logo vive en TA_LOGOS (no en TA_CONFIGURACION, ver ConfiguracionGeneralService), y se
@@ -784,6 +790,84 @@ public sealed class CotizacionesService(
             return null;
 
         await using var cmd = new SqlCommand("SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = 'LOGOEMPRESA';", cn);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct) && !await reader.IsDBNullAsync(0, ct))
+            return reader.GetFieldValue<byte[]>(0);
+        return null;
+    }
+
+    private const string PortadaId = "COT_PORTADA";
+
+    // La portada se guarda en TA_LOGOS (misma tabla del logo de empresa, otra fila con
+    // IDLOGO='COT_PORTADA') en vez de crear una tabla nueva -- incluirEnPdf es por VERSIÓN
+    // (detail.IncluyePortada), no un toggle global como el logo.
+    private async Task<byte[]?> LoadPortadaParaPdfAsync(SqlConnection cn, bool incluye, CancellationToken ct)
+    {
+        if (!incluye || !await SqlObjectExistsAsync(cn, "dbo.TA_LOGOS", ct))
+            return null;
+
+        await using var cmd = new SqlCommand("SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = @Id;", cn);
+        cmd.Parameters.AddWithValue("@Id", PortadaId);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        if (await reader.ReadAsync(ct) && !await reader.IsDBNullAsync(0, ct))
+            return reader.GetFieldValue<byte[]>(0);
+        return null;
+    }
+
+    public Task<byte[]?> GetPortadaBytesAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetPortadaBytes", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            return await LoadPortadaParaPdfAsync(cn, true, token);
+        }, "No se pudo cargar la portada.", ct);
+
+    public Task SavePortadaAsync(byte[] contenido, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SavePortada", async token =>
+        {
+            if (contenido is null || contenido.Length == 0)
+                throw new InvalidOperationException("La portada está vacía.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var existe = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                "SELECT COUNT(1) FROM dbo.TA_LOGOS WHERE IDLOGO = @Id;", new { Id = PortadaId }, cancellationToken: token));
+            if (existe > 0)
+            {
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "UPDATE dbo.TA_LOGOS SET IMAGEN = @Imagen WHERE IDLOGO = @Id;",
+                    new { Id = PortadaId, Imagen = contenido }, cancellationToken: token));
+            }
+            else
+            {
+                await cn.ExecuteAsync(new CommandDefinition(
+                    "INSERT INTO dbo.TA_LOGOS (IDLOGO, RUTA, IMAGEN) VALUES (@Id, '', @Imagen);",
+                    new { Id = PortadaId, Imagen = contenido }, cancellationToken: token));
+            }
+        }, "No se pudo guardar la portada.", ct);
+
+    public Task DeletePortadaAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("DeletePortada", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await cn.ExecuteAsync(new CommandDefinition(
+                "DELETE FROM dbo.TA_LOGOS WHERE IDLOGO = @Id;", new { Id = PortadaId }, cancellationToken: token));
+        }, "No se pudo quitar la portada.", ct);
+
+    // La firma vive en MA_FIRMAS_USUARIO (blob por usuario), no en el filesystem como la foto de
+    // perfil (ver UsuariosService.TryResolvePhotoPathAsync) -- el PDF público resuelve la conexión
+    // de otro tenant por token (RenderPublicPdfAsync), y un archivo en disco local del server no
+    // viajaría con esa conexión cruzada.
+    private async Task<byte[]?> LoadFirmaParaPdfAsync(SqlConnection cn, string? usuario, CancellationToken ct)
+    {
+        var nombre = (usuario ?? string.Empty).Trim();
+        if (nombre.Length == 0 || !await SqlObjectExistsAsync(cn, "dbo.MA_FIRMAS_USUARIO", ct))
+            return null;
+
+        await using var cmd = new SqlCommand("SELECT TOP (1) Imagen FROM dbo.MA_FIRMAS_USUARIO WHERE Usuario = @Usuario;", cn);
+        cmd.Parameters.AddWithValue("@Usuario", nombre);
         await using var reader = await cmd.ExecuteReaderAsync(ct);
         if (await reader.ReadAsync(ct) && !await reader.IsDBNullAsync(0, ct))
             return reader.GetFieldValue<byte[]>(0);
@@ -1057,7 +1141,8 @@ public sealed class CotizacionesService(
                 ISNULL(v.CodigoMoneda, '') AS CodigoMoneda,
                 ISNULL(v.Observaciones, '') AS Observaciones,
                 ISNULL(v.CuerpoPropuesta, '') AS CuerpoPropuesta,
-                v.DescuentoGeneralPorcentaje, v.Subtotal, v.TotalDescuento, v.Total, v.PublicToken
+                v.DescuentoGeneralPorcentaje, v.Subtotal, v.TotalDescuento, v.Total, v.PublicToken,
+                v.IncluyePortada, v.UsuarioAlta
             FROM dbo.COT_VERSION v
             INNER JOIN dbo.COT_COTIZACION c ON c.IdCotizacion = v.IdCotizacion
             WHERE v.IdVersion = @Id;
@@ -1102,6 +1187,8 @@ public sealed class CotizacionesService(
             TotalDescuento = header.TotalDescuento,
             Total = header.Total,
             PublicToken = header.PublicToken,
+            IncluyePortada = header.IncluyePortada,
+            UsuarioAlta = header.UsuarioAlta,
             Secciones = secciones,
             Lineas = lineas
         };
@@ -1306,5 +1393,7 @@ public sealed class CotizacionesService(
         public decimal TotalDescuento { get; set; }
         public decimal Total { get; set; }
         public string? PublicToken { get; set; }
+        public bool IncluyePortada { get; set; } = true;
+        public string? UsuarioAlta { get; set; }
     }
 }

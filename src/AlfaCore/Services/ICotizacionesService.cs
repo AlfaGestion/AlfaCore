@@ -88,4 +88,9 @@ public interface ICotizacionesService
     /// <summary>PDF de la versión resuelta por token público, mismo alcance que RenderPublicHtmlAsync
     /// (cruza a la base del cliente vía ICentralBasesService, sin depender de la sesión actual).</summary>
     Task<byte[]?> RenderPublicPdfAsync(int idBase, string token, CancellationToken ct = default);
+
+    /// <summary>Imagen de portada usada como primera página del PDF (TA_LOGOS, IDLOGO='COT_PORTADA').</summary>
+    Task<byte[]?> GetPortadaBytesAsync(CancellationToken ct = default);
+    Task SavePortadaAsync(byte[] contenido, CancellationToken ct = default);
+    Task DeletePortadaAsync(CancellationToken ct = default);
 }
