@@ -302,6 +302,49 @@ public sealed class WhatsAppVaultMigrationTests : IDisposable
         Assert.Contains("Round-trip", ex.Message);
     }
 
+    // --- verify-keyring ------------------------------------------------------------------
+
+    [Fact]
+    public void VerifyKeyring_CertificateMode_OkForIndependentProvider()
+    {
+        var keyDir = NewKeyDir("probe-ok");
+        var cert = NewCert("probe");
+
+        // Sembrar el key ring con un provider previo (como haría el dry-run al crearlo).
+        _ = CertProvider(keyDir, cert)
+            .CreateProtector(WhatsAppEmbeddedSignupDataProtection.PurposeRoot, "Credential", "v1")
+            .Protect("seed");
+
+        using var store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadWrite);
+        store.Add(cert);
+        try
+        {
+            var writer = new StringWriter();
+            var exit = WhatsAppKeyRingProbeCommand.Run(
+                ["--verify-keyring", "--keys", keyDir, "--protection", "certificate", "--cert-thumbprint", cert.Thumbprint],
+                writer);
+
+            Assert.Equal(0, exit);
+            Assert.Contains("VERIFY KEYRING: OK", writer.ToString(), StringComparison.Ordinal);
+        }
+        finally
+        {
+            store.Remove(cert);
+        }
+    }
+
+    [Fact]
+    public void VerifyKeyring_Certificate_RequiresThumbprint()
+    {
+        var writer = new StringWriter();
+        var exit = WhatsAppKeyRingProbeCommand.Run(
+            ["--verify-keyring", "--keys", NewKeyDir("probe-nothumb"), "--protection", "certificate"], writer);
+
+        Assert.Equal(2, exit);
+        Assert.Contains("--cert-thumbprint", writer.ToString(), StringComparison.Ordinal);
+    }
+
     private sealed class MutatingProtector(IDataProtector inner) : IDataProtector
     {
         public IDataProtector CreateProtector(string purpose) => new MutatingProtector(inner.CreateProtector(purpose));
