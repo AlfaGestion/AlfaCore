@@ -158,6 +158,20 @@ internal static class WhatsAppVaultMigrationCommand
             return 0;
         }
 
+        var secretReferences = rows.Select(r => r.SecretReference).ToArray();
+
+        TenantFingerprint baselineBefore;
+        try
+        {
+            baselineBefore = await CaptureTenantFingerprintAsync(connectionString, parsed.IdBase, secretReferences, ct);
+        }
+        catch (Exception ex)
+        {
+            output.WriteLine($"ERROR (baseline previo): {ex.Message}");
+            output.WriteLine("WRITES SQL: 0");
+            return 5;
+        }
+
         int writes;
         try
         {
@@ -172,7 +186,97 @@ internal static class WhatsAppVaultMigrationCommand
 
         output.WriteLine($"COMMIT OK: {pending.Length} fila(s) re-envuelta(s).");
         output.WriteLine($"WRITES SQL: {writes}");
+
+        // Verificaciones read-only post-commit, en el mismo proceso/artefactos.
+        try
+        {
+            var after = await CaptureTenantFingerprintAsync(connectionString, parsed.IdBase, secretReferences, ct);
+            var persisted = await ReadRowsAsync(connectionString, parsed.IdBase, ct);
+            var backups = await CountBackupsAsync(connectionString, secretReferences, ct);
+
+            var reopened = 0;
+            foreach (var row in persisted)
+            {
+                var protector = WhatsAppEmbeddedSignupDataProtection.ProtectorFor(newProvider, row.SecretType);
+                if (TryUnprotect(protector, row.ProtectedValue, out _))
+                    reopened++;
+            }
+
+            var sameRefs = persisted.Select(r => r.SecretReference).OrderBy(x => x, StringComparer.Ordinal)
+                .SequenceEqual(secretReferences.OrderBy(x => x, StringComparer.Ordinal));
+
+            output.WriteLine("POST-COMMIT VERIFY");
+            output.WriteLine($"  filas persistidas       : CREDENTIAL={persisted.Count(r => IsCredential(r.SecretType))} PHONE_PIN={persisted.Count(r => IsPin(r.SecretType))}");
+            output.WriteLine($"  SecretReference set      : {(sameRefs ? "IGUAL" : "CAMBIÓ")} ({persisted.Count}/{secretReferences.Length})");
+            output.WriteLine($"  backups creados          : {backups}");
+            output.WriteLine($"  nuevo provider Unprotect : {reopened}/{persisted.Count} OK");
+            output.WriteLine($"  TokenReference (IdBase {parsed.IdBase}) : {(baselineBefore.TokenReferences == after.TokenReferences ? "IGUAL" : "CAMBIÓ")} ({after.TokenReferenceCount} fila/s)");
+            output.WriteLine($"  ownership WABA+phone     : {(baselineBefore.Ownership == after.Ownership ? "IGUAL" : "CAMBIÓ")} ({after.OwnershipCount} fila/s)");
+            output.WriteLine($"  Base106 afectada         : {(after.Base106Rows == 0 ? "NO" : after.Base106Rows.ToString())}");
+        }
+        catch (Exception ex)
+        {
+            output.WriteLine($"AVISO: commit OK pero la verificación post-commit falló: {ex.Message}");
+        }
+
         return 0;
+    }
+
+    internal sealed record TenantFingerprint(
+        string TokenReferences,
+        int TokenReferenceCount,
+        string Ownership,
+        int OwnershipCount,
+        int Base106Rows);
+
+    private static async Task<TenantFingerprint> CaptureTenantFingerprintAsync(
+        string connectionString, int idBase, IReadOnlyList<string> secretReferences, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(connectionString);
+        await cn.OpenAsync(ct);
+
+        var tokenRefs = (await cn.QueryAsync<(string IdOnboarding, string TokenReference)>(new CommandDefinition(
+            "SELECT CONVERT(char(36), IdOnboarding) AS IdOnboarding, TokenReference FROM dbo.WhatsAppEmbeddedOnboarding WHERE IdBase = @IdBase ORDER BY IdOnboarding;",
+            new { IdBase = idBase }, cancellationToken: ct))).AsList();
+
+        var waba = (await cn.QueryAsync<(string WabaId, int IdBase, string MetaBusinessId)>(new CommandDefinition(
+            "SELECT WabaId, IdBase, MetaBusinessId FROM dbo.WhatsAppWabaOwnership WHERE IdBase = @IdBase ORDER BY WabaId;",
+            new { IdBase = idBase }, cancellationToken: ct))).AsList();
+
+        var phone = (await cn.QueryAsync<(string PhoneNumberId, string WabaId, int IdBase)>(new CommandDefinition(
+            "SELECT PhoneNumberId, WabaId, IdBase FROM dbo.WhatsAppPhoneOwnership WHERE IdBase = @IdBase ORDER BY PhoneNumberId;",
+            new { IdBase = idBase }, cancellationToken: ct))).AsList();
+
+        var base106 = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            "SELECT COUNT(*) FROM dbo.WhatsAppSecureVault WHERE IdBase = 106 AND SecretReference IN @Refs;",
+            new { Refs = secretReferences }, cancellationToken: ct));
+
+        var tokenFp = string.Join("|", tokenRefs.Select(t => $"{t.IdOnboarding}={t.TokenReference}"));
+        var ownershipFp = "W:" + string.Join(",", waba.Select(w => $"{w.WabaId}:{w.IdBase}:{w.MetaBusinessId}"))
+            + ";P:" + string.Join(",", phone.Select(p => $"{p.PhoneNumberId}:{p.WabaId}:{p.IdBase}"));
+
+        return new TenantFingerprint(tokenFp, tokenRefs.Count, ownershipFp, waba.Count + phone.Count, base106);
+    }
+
+    private static async Task<List<VaultRow>> ReadRowsAsync(string connectionString, int idBase, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(connectionString);
+        await cn.OpenAsync(ct);
+        return (await cn.QueryAsync<VaultRow>(new CommandDefinition(SelectActiveRowsSql,
+            new { IdBase = idBase }, cancellationToken: ct))).AsList();
+    }
+
+    private static async Task<int> CountBackupsAsync(string connectionString, IReadOnlyList<string> secretReferences, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(connectionString);
+        await cn.OpenAsync(ct);
+        if (await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+                $"SELECT COUNT(*) FROM sys.objects WHERE object_id = OBJECT_ID(N'{BackupTable}') AND type = 'U';",
+                cancellationToken: ct)) == 0)
+            return 0;
+        return await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            $"SELECT COUNT(*) FROM {BackupTable} WHERE SecretReference IN @Refs;",
+            new { Refs = secretReferences }, cancellationToken: ct));
     }
 
     // --- núcleo puro (sin SQL, sin salida) -------------------------------------------------
