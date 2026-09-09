@@ -224,7 +224,7 @@
         await BusyAsync(async () =>
         {
             var pdf = await CotizDocumentSvc.GeneratePdfAsync(_previewVersionId, NullIfEmpty(_uNegocio));
-            await JS.InvokeVoidAsync("interfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"cotizacion-beta-{_previewVersionId}.pdf");
+            await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"cotizacion-beta-{_previewVersionId}.pdf");
         });
     }
 
