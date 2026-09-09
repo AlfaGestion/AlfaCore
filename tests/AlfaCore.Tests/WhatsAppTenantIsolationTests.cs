@@ -219,6 +219,40 @@ public sealed class WhatsAppTenantIsolationTests
     }
 
     [Fact]
+    public void TenantizedWhatsAppWebhookRoutes_DisableCachingBeforeResolvingTheRouteToken()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
+        var getRoute = source.IndexOf("app.MapGet(\"/api/conversaciones/whatsapp/webhook/{token}\"", StringComparison.Ordinal);
+        var postRoute = source.IndexOf("app.MapPost(\"/api/conversaciones/whatsapp/webhook/{token}\"", StringComparison.Ordinal);
+        var resolver = "TryResolveWebhookTenantAsync(token, basesService, sessionService, ct)";
+
+        var getNoCache = source.IndexOf("DisableWebhookCaching(response);", getRoute, StringComparison.Ordinal);
+        var getResolve = source.IndexOf(resolver, getRoute, StringComparison.Ordinal);
+        var postNoCache = source.IndexOf("DisableWebhookCaching(response);", postRoute, StringComparison.Ordinal);
+        var postResolve = source.IndexOf(resolver, postRoute, StringComparison.Ordinal);
+
+        Assert.True(getRoute >= 0 && getNoCache > getRoute && getResolve > getNoCache);
+        Assert.True(postRoute >= 0 && postNoCache > postRoute && postResolve > postNoCache);
+        Assert.Contains("response.Headers.CacheControl = \"no-store, no-cache, max-age=0\";", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TenantizedWebhookRoute_ResolvesTheRawRouteTokenThroughCentralBases()
+    {
+        var programSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
+        var basesSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "CentralBasesService.cs"));
+        var route = programSource.IndexOf("app.MapGet(\"/api/conversaciones/whatsapp/webhook/{token}\"", StringComparison.Ordinal);
+        var resolution = programSource.IndexOf("TryResolveWebhookTenantAsync(token, basesService, sessionService, ct)", route, StringComparison.Ordinal);
+        var lookup = programSource.IndexOf("basesService.GetByWebhookTokenAsync(token, ct)", StringComparison.Ordinal);
+        var sessionOverride = programSource.IndexOf("sessionService.SetWebhookOverride", lookup, StringComparison.Ordinal);
+
+        Assert.True(route >= 0 && resolution > route);
+        Assert.True(lookup >= 0 && lookup < sessionOverride);
+        Assert.Contains("WHERE WebhookToken = @WebhookToken", basesSource, StringComparison.Ordinal);
+        Assert.Contains("new { WebhookToken = webhookToken.Trim() }", basesSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void WhatsAppWebhookRequiresAValidSignatureBeforePayloadProcessing()
     {
         var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));

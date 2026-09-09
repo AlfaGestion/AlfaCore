@@ -1973,11 +1973,13 @@ public class Program
         app.MapGet("/api/conversaciones/whatsapp/webhook/{token}", async (
             string token,
             HttpRequest request,
+            HttpResponse response,
             IConversacionesConfigService configService,
             ICentralBasesService basesService,
             ISessionService sessionService,
             CancellationToken ct) =>
         {
+            DisableWebhookCaching(response);
             if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
                 return Results.NotFound();
 
@@ -1988,6 +1990,7 @@ public class Program
         app.MapPost("/api/conversaciones/whatsapp/webhook/{token}", async (
             string token,
             HttpRequest request,
+            HttpResponse response,
             IConversacionesConfigService configService,
             IConversacionesService svc,
             ICentralBasesService basesService,
@@ -1995,6 +1998,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
+            DisableWebhookCaching(response);
             if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
                 return Results.NotFound();
 
@@ -2736,6 +2740,13 @@ public class Program
         });
 
         return true;
+    }
+
+    private static void DisableWebhookCaching(HttpResponse response)
+    {
+        response.Headers.CacheControl = "no-store, no-cache, max-age=0";
+        response.Headers.Pragma = "no-cache";
+        response.Headers.Expires = "0";
     }
 
     /// <summary>
