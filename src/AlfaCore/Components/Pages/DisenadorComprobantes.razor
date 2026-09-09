@@ -51,38 +51,50 @@
                 {
                     <div class="document-designer__readonly">Plantilla del sistema. Duplicala para personalizarla.</div>
                 }
-                <label>Nombre <input @bind="_draft.Nombre" disabled="@_selected.EsSistema" maxlength="100" /></label>
-                <label><input type="checkbox" @bind="_draft.EsPredeterminado" disabled="@_selected.EsSistema" /> Predeterminada para esta unidad</label>
-                <label>Tamaño
-                    <select @bind="_draft.Definition.Paper.Size" disabled="@_selected.EsSistema"><option>A4</option><option>A5</option></select>
-                </label>
-                <label>Orientación
-                    <select @bind="_draft.Definition.Paper.Orientation" disabled="@_selected.EsSistema"><option>Portrait</option><option>Landscape</option></select>
-                </label>
-                <div class="document-designer__margins">
-                    <label>Sup. <input type="number" @bind="_draft.Definition.Paper.MarginTopMm" disabled="@_selected.EsSistema" /></label>
-                    <label>Inf. <input type="number" @bind="_draft.Definition.Paper.MarginBottomMm" disabled="@_selected.EsSistema" /></label>
-                    <label>Izq. <input type="number" @bind="_draft.Definition.Paper.MarginLeftMm" disabled="@_selected.EsSistema" /></label>
-                    <label>Der. <input type="number" @bind="_draft.Definition.Paper.MarginRightMm" disabled="@_selected.EsSistema" /></label>
-                </div>
+                <section class="document-designer__settings-group">
+                    <div class="document-designer__settings-heading">Formato</div>
+                    <label>Nombre <input @bind="_draft.Nombre" disabled="@_selected.EsSistema" maxlength="100" /></label>
+                    <label class="document-designer__toggle"><input type="checkbox" @bind="_draft.EsPredeterminado" disabled="@_selected.EsSistema" /><span>Predeterminada para esta unidad</span></label>
+                    <div class="document-designer__settings-grid">
+                        <label>Tamaño
+                            <select @bind="_draft.Definition.Paper.Size" disabled="@_selected.EsSistema"><option>A4</option><option>A5</option></select>
+                        </label>
+                        <label>Orientación
+                            <select @bind="_draft.Definition.Paper.Orientation" disabled="@_selected.EsSistema"><option>Portrait</option><option>Landscape</option></select>
+                        </label>
+                    </div>
+                    <div class="document-designer__settings-heading document-designer__settings-heading--subtle">Márgenes (mm)</div>
+                    <div class="document-designer__margins">
+                        <label>Sup. <input type="number" @bind="_draft.Definition.Paper.MarginTopMm" disabled="@_selected.EsSistema" /></label>
+                        <label>Inf. <input type="number" @bind="_draft.Definition.Paper.MarginBottomMm" disabled="@_selected.EsSistema" /></label>
+                        <label>Izq. <input type="number" @bind="_draft.Definition.Paper.MarginLeftMm" disabled="@_selected.EsSistema" /></label>
+                        <label>Der. <input type="number" @bind="_draft.Definition.Paper.MarginRightMm" disabled="@_selected.EsSistema" /></label>
+                    </div>
+                </section>
                 @if (LogoBlock is not null)
                 {
-                    <h3>Logo</h3>
-                    <label><input type="checkbox" @bind="LogoBlock.Visible" disabled="@_selected.EsSistema" /> Mostrar logo</label>
-                    <label>Alineación <select @bind="LogoBlock.Align" disabled="@_selected.EsSistema"><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select></label>
-                    <label>Ancho (px) <input type="number" @bind="LogoBlock.Width" disabled="@_selected.EsSistema" /></label>
+                    <section class="document-designer__settings-group">
+                        <div class="document-designer__settings-heading">Logo</div>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="LogoBlock.Visible" disabled="@_selected.EsSistema" /><span>Mostrar logo</span></label>
+                        <div class="document-designer__settings-grid">
+                            <label>Alineación <select @bind="LogoBlock.Align" disabled="@_selected.EsSistema"><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select></label>
+                            <label>Ancho (px) <input type="number" @bind="LogoBlock.Width" disabled="@_selected.EsSistema" /></label>
+                        </div>
+                    </section>
                 }
                 @if (ItemsBlock is not null)
                 {
-                    <h3>Columnas del detalle</h3>
-                    @foreach (var column in ItemsBlock.Columns)
-                    {
-                        <div class="document-designer__column">
-                            <input type="checkbox" @bind="column.Visible" disabled="@_selected.EsSistema" />
-                            <input @bind="column.Title" disabled="@_selected.EsSistema" aria-label="Título @column.Field" />
-                            <input type="number" @bind="column.WidthPercent" disabled="@_selected.EsSistema" aria-label="Ancho @column.Field" />
-                        </div>
-                    }
+                    <section class="document-designer__settings-group">
+                        <div class="document-designer__settings-heading">Columnas del detalle</div>
+                        @foreach (var column in ItemsBlock.Columns)
+                        {
+                            <div class="document-designer__column">
+                                <input type="checkbox" @bind="column.Visible" disabled="@_selected.EsSistema" aria-label="Mostrar @column.Field" />
+                                <input @bind="column.Title" disabled="@_selected.EsSistema" aria-label="Título @column.Field" />
+                                <input type="number" @bind="column.WidthPercent" disabled="@_selected.EsSistema" aria-label="Ancho @column.Field" />
+                            </div>
+                        }
+                    </section>
                 }
             </aside>
             <main class="document-designer__preview panel-card">
