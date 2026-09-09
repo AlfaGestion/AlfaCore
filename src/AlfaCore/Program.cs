@@ -39,6 +39,13 @@ public class Program
             return;
         }
 
+        if (WhatsAppKeyRingProbeCommand.IsRequested(args))
+        {
+            var probeExitCode = WhatsAppKeyRingProbeCommand.Run(args, Console.Out);
+            Environment.Exit(probeExitCode);
+            return;
+        }
+
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
         var webRootCandidates = new[]
