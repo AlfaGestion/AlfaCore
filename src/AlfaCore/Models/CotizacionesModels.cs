@@ -91,6 +91,8 @@ public sealed class CotizacionVersionDetailDto
     public decimal TotalDescuento { get; set; }
     public decimal Total { get; set; }
     public string? PublicToken { get; set; }
+    public bool IncluyePortada { get; set; } = true;
+    public string? UsuarioAlta { get; set; }
     public List<CotizacionSeccionDto> Secciones { get; set; } = [];
     public List<CotizacionLineaDto> Lineas { get; set; } = [];
     public bool EsBorrador => string.Equals(EstadoVersion, CotizacionEstados.Borrador, StringComparison.OrdinalIgnoreCase);
@@ -149,6 +151,7 @@ public sealed class CotizacionSaveVersionRequest
     public string? Observaciones { get; set; }
     public string? CuerpoPropuesta { get; set; }
     public decimal DescuentoGeneralPorcentaje { get; set; }
+    public bool IncluyePortada { get; set; } = true;
     public List<CotizacionSeccionDto> Secciones { get; set; } = [];
     public List<CotizacionLineaDto> Lineas { get; set; } = [];
     public string? UsuarioAccion { get; set; }

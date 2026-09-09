@@ -189,6 +189,10 @@ public class Program
         builder.Services.AddScoped<IArticuloPrecioResolverService, ArticuloPrecioResolverService>();
         builder.Services.AddScoped<ICrmCotizacionService, CrmCotizacionService>();
         builder.Services.AddScoped<ICotizacionPdfService, CotizacionPdfService>();
+        builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
+        builder.Services.AddScoped<IDocumentRenderer, DocumentRenderer>();
+        builder.Services.AddScoped<IDocumentPdfService, DocumentPdfService>();
+        builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
@@ -489,6 +493,27 @@ public class Program
             return bytes is null || bytes.Length == 0
                 ? Results.NotFound()
                 : Results.File(bytes, "image/jpeg");
+        });
+
+        app.MapGet("/api/cotizaciones/portada", async (
+            ICotizacionesService cotizacionesSvc,
+            CancellationToken ct) =>
+        {
+            var bytes = await cotizacionesSvc.GetPortadaBytesAsync(ct);
+            return bytes is null || bytes.Length == 0
+                ? Results.NotFound()
+                : Results.File(bytes, "image/jpeg");
+        });
+
+        app.MapGet("/api/usuarios/{nombre}/firma", async (
+            string nombre,
+            IUsuariosService usuariosSvc,
+            CancellationToken ct) =>
+        {
+            var bytes = await usuariosSvc.GetSignatureBytesAsync(nombre, ct);
+            return bytes is null || bytes.Length == 0
+                ? Results.NotFound()
+                : Results.File(bytes, "image/png");
         });
 
         app.MapGet("/api/catalogos/logo-publico/{idweb}", async (

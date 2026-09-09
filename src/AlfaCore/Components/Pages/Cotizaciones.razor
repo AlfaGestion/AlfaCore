@@ -299,6 +299,11 @@
                                 <label>Observaciones internas</label>
                                 <textarea class="field-input" rows="3" @bind="_detail.Observaciones" disabled="@(!_detail.EsBorrador)"></textarea>
                             </div>
+                            <div class="cotiz-observaciones">
+                                <AlfaCheckbox Value="@_detail.IncluyePortada" ValueChanged="v => _detail.IncluyePortada = v == true" Disabled="@(!_detail.EsBorrador)">
+                                    Incluir portada al generar el PDF
+                                </AlfaCheckbox>
+                            </div>
                         </section>
 
                         <section class="panel-card">
@@ -618,6 +623,7 @@
                     </div>
                     <p class="panel-card__subtitle">Cualquiera con este link puede ver esta versión de la cotización, sin necesidad de iniciar sesión.</p>
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-file-earmark-pdf" OnClick="_ => DescargarPdfCompartirAsync()">Descargar PDF</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-flask" OnClick="_ => AbrirPdfBetaAsync()">Probar PDF beta</AlfaButton>
                 </div>
             }
             else
@@ -1268,6 +1274,7 @@
             Observaciones = _detail.Observaciones,
             CuerpoPropuesta = cuerpo,
             DescuentoGeneralPorcentaje = _detail.DescuentoGeneralPorcentaje,
+            IncluyePortada = _detail.IncluyePortada,
             Secciones = _detail.Secciones,
             Lineas = _detail.Lineas,
             UsuarioAccion = CurrentUserName
@@ -1397,6 +1404,13 @@
         if (string.IsNullOrWhiteSpace(_compartirUrl))
             return Task.CompletedTask;
         Nav.NavigateTo(_compartirUrl + "/pdf", forceLoad: true);
+        return Task.CompletedTask;
+    }
+
+    private Task AbrirPdfBetaAsync()
+    {
+        if (_detail is not null)
+            Nav.NavigateTo(RouteContext.BuildRoute($"/documentos/disenador?idVersion={_detail.IdVersion}"));
         return Task.CompletedTask;
     }
 

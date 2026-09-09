@@ -1,0 +1,21 @@
+.document-designer { gap: 1rem; }
+.document-designer__header, .document-designer__toolbar, .document-designer__actions, .document-designer__preview-toolbar { display:flex; align-items:center; gap:1rem; }
+.document-designer__header { justify-content:space-between; }
+.document-designer__header h1 { margin:.15rem 0; }
+.document-designer__header p { margin:0; color:var(--alfa-text-muted, #64748b); }
+.document-designer__toolbar { flex-wrap:wrap; }
+.document-designer label { display:grid; gap:.35rem; color:var(--alfa-text-muted, #64748b); font-size:.82rem; }
+.document-designer input, .document-designer select { min-height:2.2rem; padding:.35rem .5rem; border:1px solid var(--alfa-border, #cbd5e1); border-radius:.45rem; background:var(--alfa-surface, #fff); color:inherit; }
+.document-designer__layout { display:grid; grid-template-columns:minmax(260px, 330px) minmax(0, 1fr); gap:1rem; }
+.document-designer__settings { display:grid; align-content:start; gap:.9rem; }
+.document-designer__settings h3 { margin:.25rem 0 -.35rem; font-size:.95rem; }
+.document-designer__margins { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+.document-designer__column { display:grid; grid-template-columns:auto 1fr 4rem; gap:.35rem; align-items:center; }
+.document-designer__column input[type=checkbox] { min-height:auto; }
+.document-designer__preview { min-height:70vh; display:flex; flex-direction:column; gap:.8rem; }
+.document-designer__preview-toolbar { justify-content:space-between; flex-wrap:wrap; }
+.document-designer__frame { width:100%; flex:1; min-height:62vh; border:1px solid var(--alfa-border, #cbd5e1); border-radius:.5rem; background:#fff; }
+.document-designer__notice { padding:.7rem .9rem; border-radius:.5rem; background:#dbeafe; color:#1e3a5f; }
+.document-designer__notice--error { background:#fee2e2; color:#991b1b; }
+.document-designer__readonly { padding:.6rem; border-radius:.4rem; background:#fef3c7; color:#7c2d12; font-size:.85rem; }
+@media (max-width: 900px) { .document-designer__header, .document-designer__layout { grid-template-columns:1fr; display:grid; } .document-designer__actions { margin-top:.6rem; } }

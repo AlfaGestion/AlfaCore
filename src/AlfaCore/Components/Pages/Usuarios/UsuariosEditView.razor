@@ -139,6 +139,51 @@
                     {
                         <section class="usuarios-edit-section">
                             <div class="usuarios-edit-section__heading">
+                                <h3>Firma digital</h3>
+                                <p>Se usa al pie de los PDF que este usuario genera (ej. Cotizaciones).</p>
+                            </div>
+                            <div class="usuarios-edit-photo">
+                                <div class="usuarios-edit-photo__preview">
+                                    @if (!string.IsNullOrWhiteSpace(CurrentFirmaUrl))
+                                    {
+                                        <img src="@CurrentFirmaUrl" alt="Firma del usuario" />
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-pen" aria-hidden="true"></i>
+                                    }
+                                </div>
+                                <div class="usuarios-edit-photo__content">
+                                    <strong>@(HasFirma ? "Firma guardada" : "Sin firma")</strong>
+                                    <span>Imagen PNG/JPG, idealmente con fondo transparente.</span>
+                                    <div class="usuarios-edit-photo__actions">
+                                        <div class="usuarios-edit-photo__picker">
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                                                        Size="AlfaSize.Sm"
+                                                        Icon="bi bi-pen"
+                                                        Disabled="@SavingFirma">@(HasFirma ? "Cambiar firma" : "Agregar firma")</AlfaButton>
+                                            <InputFile @key="FirmaPickerVersion"
+                                                       class="usuarios-edit-photo__input"
+                                                       OnChange="HandleFirmaSelectedAsync"
+                                                       accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+                                                       disabled="@SavingFirma"
+                                                       aria-label="@(HasFirma ? "Cambiar firma del usuario" : "Agregar firma del usuario")" />
+                                        </div>
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                                    Size="AlfaSize.Sm"
+                                                    Icon="bi bi-trash"
+                                                    Disabled="@(SavingFirma || !HasFirma)"
+                                                    OnClick="_ => RemoveFirmaAsync()">Quitar</AlfaButton>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+                    }
+
+                    @if (!CreateMode)
+                    {
+                        <section class="usuarios-edit-section">
+                            <div class="usuarios-edit-section__heading">
                                 <h3>Metadata</h3>
                                 <p>Información de auditoría disponible para esta cuenta.</p>
                             </div>
@@ -242,6 +287,12 @@
     [Parameter] public EventCallback<InputFileChangeEventArgs> OnPhotoSelected { get; set; }
     [Parameter] public EventCallback OnRemovePhoto { get; set; }
     [Parameter] public EventCallback OnTogglePassword { get; set; }
+    [Parameter] public string? CurrentFirmaUrl { get; set; }
+    [Parameter] public bool HasFirma { get; set; }
+    [Parameter] public int FirmaPickerVersion { get; set; }
+    [Parameter] public bool SavingFirma { get; set; }
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnFirmaSelected { get; set; }
+    [Parameter] public EventCallback OnRemoveFirma { get; set; }
 
     private static readonly IReadOnlyList<AlfaTabItem> Tabs =
     [
@@ -306,6 +357,8 @@
 
     private Task HandlePhotoSelectedAsync(InputFileChangeEventArgs args) => OnPhotoSelected.InvokeAsync(args);
     private Task RemovePhotoAsync() => OnRemovePhoto.InvokeAsync();
+    private Task HandleFirmaSelectedAsync(InputFileChangeEventArgs args) => OnFirmaSelected.InvokeAsync(args);
+    private Task RemoveFirmaAsync() => OnRemoveFirma.InvokeAsync();
     private Task TogglePasswordAsync() => OnTogglePassword.InvokeAsync();
     private static string FormatDate(DateTime? value) => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
 }

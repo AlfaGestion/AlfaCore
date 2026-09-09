@@ -563,6 +563,56 @@ Criterio aplicado:
 - Datos que usa: `IAuditoriaService`
 - Observaciones: expone el campo `Sql` de `AUX_ERR` para inspección/copiado.
 
+## Diseñador de comprobantes
+
+### DocumentTemplateService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/DocumentTemplateService.cs`
+- Propósito: administra plantillas JSON de documentos, su resolución por unidad de negocio y el snapshot de versiones previo a una edición.
+- Datos que usa: `CORE_DocumentTemplate`, `CORE_DocumentTemplateVersion`, `V_TA_UnidadNegocio`
+- Observaciones: valida el esquema v1 y mantiene separada la plantilla global de las específicas por `UNegocio`.
+
+### CotizacionDocumentService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CotizacionDocumentService.cs`
+- Propósito: adapta una versión de Cotización al contrato de impresión y coordina su render HTML o PDF beta.
+- Datos que usa: `COT_COTIZACION`, `COT_VERSION`, `COT_DET`, `TA_CONFIGURACION`, `TA_LOGOS`, `CORE_DocumentTemplate`
+- Observaciones: consume `ICotizacionesService`; no expone tablas legacy directamente al renderer y no reemplaza QuestPDF.
+
+### DocumentRenderer
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/DocumentRenderer.cs`
+- Propósito: genera HTML autocontenido desde la definición JSON v1 y `CotizacionDocumentData`.
+- Datos que usa: DTOs de documentos y definición serializada de `CORE_DocumentTemplate`
+- Observaciones: renderiza únicamente bloques y columnas permitidos; no ejecuta JavaScript de plantilla.
+
+### DocumentPdfService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/DocumentPdfService.cs`
+- Propósito: convierte HTML ya validado a PDF mediante Chromium headless de Microsoft Playwright.
+- Datos que usa: HTML en memoria y `IAppEventService`
+- Observaciones: informa errores en `AUX_ERR`; Chromium requiere instalación por ambiente.
+
+### DiseñadorComprobantes
+
+- Tipo: Page
+- Ubicación: `src/AlfaCore/Components/Pages/DisenadorComprobantes.razor`
+- Propósito: permite elegir unidad, duplicar/editar plantilla, configurar papel, logo y columnas, y usar una Cotización real para preview/PDF beta.
+- Datos que usa: `IDocumentTemplateService`, `ICotizacionesService`, `ICotizacionDocumentService`
+- Observaciones: se publica bajo Utilidades y mantiene la edición de plantillas del sistema bloqueada hasta que se duplican.
+
+### DocumentosModels
+
+- Tipo: DTO
+- Ubicación: `src/AlfaCore/Models/DocumentosModels.cs`
+- Propósito: define el contrato JSON v1, bloques permitidos, datos de impresión y solicitudes de guardado del motor de documentos.
+- Datos que usa: modela `TemplateJson` y datos adaptados de Cotización.
+- Observaciones: es independiente de Dapper, UI y Playwright.
+
 ## Stored Procedures usados
 
 No se identificaron stored procedures invocados directamente desde el código actual de `src/AlfaCore`. La búsqueda realizada sobre `.cs` y `.razor` no mostró usos de `EXEC`, `EXECUTE` ni llamadas concretas a objetos `sp_`.
