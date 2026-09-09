@@ -356,7 +356,7 @@ public sealed class WhatsAppTenantIsolationTests
         requestContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
         requestContext.Request.Headers["X-Hub-Signature-256"] = BuildSignature(appSecret, body);
 
-        Assert.True(await AlfaCore.Program.TryResolveWebhookTenantAsync("test-route-token", bases, session, CancellationToken.None));
+        Assert.Equal(84, await AlfaCore.Program.TryResolveWebhookTenantAsync("test-route-token", bases, session, CancellationToken.None));
 
         var result = await AlfaCore.Program.HandleWhatsAppMessageAsync(
             requestContext.Request,
@@ -382,6 +382,143 @@ public sealed class WhatsAppTenantIsolationTests
         Assert.Contains("JSON_PARSED", stages);
         Assert.Contains("COMPLETED", stages);
         Assert.Equal(0, serviceProxy.OperationalWrites);
+    }
+
+    // Regresión del hotfix webhook-outcome-diag: el POST tenantizado de Meta llega sin sesión Blazor
+    // (GetActiveSession() == null). Antes, HandleWhatsAppMessageAsync deducía la base con
+    // GetActiveSession()?.BaseId ?? 0 => 0, ResolveWhatsAppWebhookAppSecret no matcheaba la allowlist
+    // ES, caía al AppSecret legacy (vacío para Base84) y devolvía Results.Problem(500)
+    // APP_SECRET_NOT_CONFIGURED (Stage=BODY_READ). El fix pasa el resolvedBaseId del token.
+    [Fact]
+    public async Task TenantizedWebhook_ResolvedBaseIdSelectsEsAppSecret_EvenWhenSessionHasNoActiveTenant()
+    {
+        const string esAppSecret = "es-application-secret";
+        const string phoneNumberId = "1233329726536711";
+        var session = new SessionlessWebhookService();
+        var config = CreateProxy<IConversacionesConfigService, WebhookConfigProxy>();
+        ((WebhookConfigProxy)(object)config).Config = new ConversacionWhatsAppConfigDto(); // AppSecret legacy vacío
+        var service = CreateProxy<IConversacionesService, WebhookServiceProxy>();
+        var serviceProxy = (WebhookServiceProxy)(object)service;
+        var stages = new List<string>();
+        var body = BuildWebhookPayload("messages", phoneNumberId);
+        var requestContext = new DefaultHttpContext();
+        requestContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
+        requestContext.Request.Headers["X-Hub-Signature-256"] = BuildSignature(esAppSecret, body);
+
+        var result = await AlfaCore.Program.HandleWhatsAppMessageAsync(
+            requestContext.Request,
+            config,
+            service,
+            Options.Create(new WhatsAppEmbeddedSignupOptions
+            {
+                Enabled = true,
+                AllowedBaseIds = [84],
+                WorkerEnabled = false,
+                WebhookRoutingEnabled = false,
+                UseApplicationCentralConnection = true,
+                AppSecret = esAppSecret
+            }),
+            session,
+            CancellationToken.None,
+            stages.Add,
+            resolvedBaseId: 84);
+
+        Assert.Null(session.GetActiveSession());
+        Assert.Equal(StatusCodes.Status200OK, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Contains("SIGNATURE_VALID", stages);
+        Assert.Contains("COMPLETED", stages);
+        Assert.NotNull(serviceProxy.Request);
+    }
+
+    [Fact]
+    public async Task TenantizedWebhook_WithResolvedBaseId_StillRejectsInvalidSignature()
+    {
+        const string esAppSecret = "es-application-secret";
+        const string phoneNumberId = "1233329726536711";
+        var session = new SessionlessWebhookService();
+        var config = CreateProxy<IConversacionesConfigService, WebhookConfigProxy>();
+        ((WebhookConfigProxy)(object)config).Config = new ConversacionWhatsAppConfigDto();
+        var service = CreateProxy<IConversacionesService, WebhookServiceProxy>();
+        var stages = new List<string>();
+        var body = BuildWebhookPayload("messages", phoneNumberId);
+        var requestContext = new DefaultHttpContext();
+        requestContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
+        requestContext.Request.Headers["X-Hub-Signature-256"] = BuildSignature("firma-con-secret-equivocado", body);
+
+        var result = await AlfaCore.Program.HandleWhatsAppMessageAsync(
+            requestContext.Request,
+            config,
+            service,
+            Options.Create(new WhatsAppEmbeddedSignupOptions
+            {
+                Enabled = true,
+                AllowedBaseIds = [84],
+                WorkerEnabled = false,
+                WebhookRoutingEnabled = false,
+                UseApplicationCentralConnection = true,
+                AppSecret = esAppSecret
+            }),
+            session,
+            CancellationToken.None,
+            stages.Add,
+            resolvedBaseId: 84);
+
+        Assert.Equal(StatusCodes.Status401Unauthorized, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.DoesNotContain("SIGNATURE_VALID", stages);
+    }
+
+    [Fact]
+    public async Task TenantizedWebhook_ResolvedBaseOutsideAllowlist_DoesNotBorrowEsAppSecret()
+    {
+        const string esAppSecret = "es-application-secret";
+        const string phoneNumberId = "1233329726536711";
+        var session = new SessionlessWebhookService();
+        var config = CreateProxy<IConversacionesConfigService, WebhookConfigProxy>();
+        ((WebhookConfigProxy)(object)config).Config = new ConversacionWhatsAppConfigDto(); // AppSecret legacy vacío
+        var service = CreateProxy<IConversacionesService, WebhookServiceProxy>();
+        var stages = new List<string>();
+        var body = BuildWebhookPayload("messages", phoneNumberId);
+        var requestContext = new DefaultHttpContext();
+        requestContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
+        requestContext.Request.Headers["X-Hub-Signature-256"] = BuildSignature(esAppSecret, body);
+
+        var result = await AlfaCore.Program.HandleWhatsAppMessageAsync(
+            requestContext.Request,
+            config,
+            service,
+            Options.Create(new WhatsAppEmbeddedSignupOptions
+            {
+                Enabled = true,
+                AllowedBaseIds = [84],
+                WorkerEnabled = false,
+                WebhookRoutingEnabled = false,
+                UseApplicationCentralConnection = true,
+                AppSecret = esAppSecret
+            }),
+            session,
+            CancellationToken.None,
+            stages.Add,
+            resolvedBaseId: 106);
+
+        Assert.Equal(StatusCodes.Status500InternalServerError, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Contains("BODY_READ", stages);
+        Assert.DoesNotContain("SIGNATURE_VALID", stages);
+    }
+
+    [Fact]
+    public void ResolvedBaseId_TakesPrecedenceOverSession_ForAppSecretSelection()
+    {
+        var options = new WhatsAppEmbeddedSignupOptions
+        {
+            Enabled = true,
+            AllowedBaseIds = [84],
+            AppSecret = "application-secret"
+        };
+
+        // resolvedBaseId autoritativo del token (84) => secret de aplicación ES, sin mirar la sesión.
+        Assert.Equal("application-secret", AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(options, 84, string.Empty));
+        // base 0 (lo que devolvía GetActiveSession() en producción) => sin secret => 500.
+        Assert.Equal(string.Empty, AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(options, 0, string.Empty));
     }
 
     private static WhatsAppRuntimeCredentialResolver CreateResolver(WhatsAppPhoneOwnership? owner, WhatsAppCredentialReference? reference, string secret)
@@ -455,6 +592,24 @@ public sealed class WhatsAppTenantIsolationTests
         public void UpdateSession(Guid a, string b, string c, string d, string e, string f) => throw new NotSupportedException();
         public void DeleteSession(Guid id) => throw new NotSupportedException();
         public void ClearActiveSession() => session = null;
+    }
+
+    // Simula el POST servidor-servidor de Meta en IIS in-process: aunque TryResolveWebhookTenantAsync
+    // llame a SetWebhookOverride, no hay sesión Blazor y GetActiveSession() devuelve null.
+    private sealed class SessionlessWebhookService : ISessionService
+    {
+        public event Action? SessionChanged;
+        public bool WebhookOverrideWasSet { get; private set; }
+        public string GetConnectionString() => "Server=test-server;Database=test-db;";
+        public SessionDto? GetActiveSession() => null;
+        public void SetWebhookOverride(SessionDto value) { WebhookOverrideWasSet = true; SessionChanged?.Invoke(); }
+        public void ClearWebhookOverride() => SessionChanged?.Invoke();
+        public IReadOnlyList<SessionDto> GetAllSessions() => [];
+        public void SwitchSession(Guid id) => throw new NotSupportedException();
+        public Guid AddSession(string a, string b, string c, string d, string e) => throw new NotSupportedException();
+        public void UpdateSession(Guid a, string b, string c, string d, string e, string f) => throw new NotSupportedException();
+        public void DeleteSession(Guid id) => throw new NotSupportedException();
+        public void ClearActiveSession() { }
     }
 
     private sealed class WebhookCentralBasesService(BaseCentralDto baseInfo) : ICentralBasesService
