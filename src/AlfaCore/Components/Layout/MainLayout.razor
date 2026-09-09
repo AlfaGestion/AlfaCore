@@ -861,7 +861,8 @@ else
                         && !string.Equals(_currentModule, "crm", StringComparison.OrdinalIgnoreCase)
                         && !string.Equals(_currentModule, "tickets", StringComparison.OrdinalIgnoreCase)
                         && !string.Equals(_currentModule, "cotizaciones", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "configuracion-general", StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(_currentModule, "configuracion-general", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "documentos", StringComparison.OrdinalIgnoreCase))
                     {
                         <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
                             <i class="bi bi-gear"></i>
@@ -3823,6 +3824,9 @@ else
         "usuarios" => "Usuarios",
         "seguridad" => "Seguridad",
         "contactos" => "Contactos",
+        "cotizaciones" => "Cotizaciones",
+        "configuracion-general" => "Configuración General",
+        "documentos" => "Diseñador de comprobantes",
         _ => "Inicio"
     };
 

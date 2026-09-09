@@ -2,7 +2,12 @@ using Microsoft.Playwright;
 
 namespace AlfaCore.Services;
 
-public sealed class DocumentPdfService(IAppEventService appEvents, ILogger<DocumentPdfService> logger) : IDocumentPdfService, IAsyncDisposable
+// Registrado como Singleton (ver Program.cs): lanzar un Chromium headless por request sería
+// carísimo (~1-2s + memoria) cuando el propio diseño de la clase (el _gate + "_browser is not
+// null" de GetBrowserAsync) ya asume una única instancia reutilizada. Por eso NO recibe
+// IAppEventService por constructor (sería una dependencia "cautiva": un scoped capturado para
+// siempre por un singleton) -- resuelve un scope propio recién cuando necesita loguear un error.
+public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogger<DocumentPdfService> logger) : IDocumentPdfService, IAsyncDisposable
 {
     private IPlaywright? _playwright;
     private IBrowser? _browser;
@@ -25,6 +30,8 @@ public sealed class DocumentPdfService(IAppEventService appEvents, ILogger<Docum
         }
         catch (Exception ex)
         {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var appEvents = scope.ServiceProvider.GetRequiredService<IAppEventService>();
             var incidentId = await appEvents.LogErrorAsync("Documentos", "GenerarPdfPlaywright", ex, "No se pudo generar el PDF beta con Chromium.", ct: ct);
             throw new AppUserFacingException("No se pudo generar el PDF beta. Verificá la instalación de Chromium en el servidor.", incidentId, ex);
         }

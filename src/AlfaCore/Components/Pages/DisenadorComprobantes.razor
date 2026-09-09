@@ -1,6 +1,7 @@
 @page "/documentos/disenador"
 @page "/{idweb}/{idbase:int}/documentos/disenador"
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Forms
 @using AlfaCore.Models
 @using AlfaCore.Services
 @inject IDocumentTemplateService TemplateSvc
@@ -10,6 +11,7 @@
 @inject IJSRuntime JS
 @inject IPageHeaderService PageHeader
 @inject IRouteContextService RouteContext
+@inject NavigationManager Nav
 @implements IDisposable
 
 <PageTitle>Diseñador de comprobantes | Alfa Gestión</PageTitle>
@@ -49,38 +51,109 @@
             <aside class="document-designer__settings panel-card">
                 @if (_selected.EsSistema)
                 {
-                    <div class="document-designer__readonly">Plantilla del sistema. Duplicala para personalizarla.</div>
+                    <div class="document-designer__readonly">
+                        @if (IsTemplateReadOnly)
+                        {
+                            <span>@(_canEditSystemTemplate ? "Plantilla original protegida. Usá Editar original para habilitarla en esta sesión." : "Plantilla del sistema. Duplicala para personalizarla.")</span>
+                        }
+                        else
+                        {
+                            <span>Estás modificando la plantilla original del sistema. Al guardar se conservará una versión anterior.</span>
+                        }
+                    </div>
                 }
                 <section class="document-designer__settings-group">
                     <div class="document-designer__settings-heading">Formato</div>
-                    <label>Nombre <input @bind="_draft.Nombre" disabled="@_selected.EsSistema" maxlength="100" /></label>
-                    <label class="document-designer__toggle"><input type="checkbox" @bind="_draft.EsPredeterminado" disabled="@_selected.EsSistema" /><span>Predeterminada para esta unidad</span></label>
+                    <label>Nombre <input @bind="_draft.Nombre" disabled="@IsTemplateReadOnly" maxlength="100" /></label>
+                    <label class="document-designer__toggle"><input type="checkbox" @bind="_draft.EsPredeterminado" disabled="@IsTemplateReadOnly" /><span>Predeterminada para esta unidad</span></label>
                     <div class="document-designer__settings-grid">
                         <label>Tamaño
-                            <select @bind="_draft.Definition.Paper.Size" disabled="@_selected.EsSistema"><option>A4</option><option>A5</option></select>
+                            <select @bind="_draft.Definition.Paper.Size" disabled="@IsTemplateReadOnly"><option>A4</option><option>A5</option></select>
                         </label>
                         <label>Orientación
-                            <select @bind="_draft.Definition.Paper.Orientation" disabled="@_selected.EsSistema"><option>Portrait</option><option>Landscape</option></select>
+                            <select @bind="_draft.Definition.Paper.Orientation" disabled="@IsTemplateReadOnly"><option>Portrait</option><option>Landscape</option></select>
                         </label>
                     </div>
                     <div class="document-designer__settings-heading document-designer__settings-heading--subtle">Márgenes (mm)</div>
                     <div class="document-designer__margins">
-                        <label>Sup. <input type="number" @bind="_draft.Definition.Paper.MarginTopMm" disabled="@_selected.EsSistema" /></label>
-                        <label>Inf. <input type="number" @bind="_draft.Definition.Paper.MarginBottomMm" disabled="@_selected.EsSistema" /></label>
-                        <label>Izq. <input type="number" @bind="_draft.Definition.Paper.MarginLeftMm" disabled="@_selected.EsSistema" /></label>
-                        <label>Der. <input type="number" @bind="_draft.Definition.Paper.MarginRightMm" disabled="@_selected.EsSistema" /></label>
+                        <label>Sup. <input type="number" @bind="_draft.Definition.Paper.MarginTopMm" disabled="@IsTemplateReadOnly" /></label>
+                        <label>Inf. <input type="number" @bind="_draft.Definition.Paper.MarginBottomMm" disabled="@IsTemplateReadOnly" /></label>
+                        <label>Izq. <input type="number" @bind="_draft.Definition.Paper.MarginLeftMm" disabled="@IsTemplateReadOnly" /></label>
+                        <label>Der. <input type="number" @bind="_draft.Definition.Paper.MarginRightMm" disabled="@IsTemplateReadOnly" /></label>
                     </div>
                 </section>
+                @if (PortadaBlock is not null)
+                {
+                    <section class="document-designer__settings-group">
+                        <div class="document-designer__settings-heading">Portada</div>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="PortadaBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Incluir portada al generar el PDF</span></label>
+                        @if (_selected is { IdTemplate: > 0 })
+                        {
+                            <div class="cfglogo-uploader">
+                                <div class="cfglogo-uploader__preview cfglogo-uploader__preview--portrait">
+                                    @if (!string.IsNullOrWhiteSpace(_portadaPreviewUrl))
+                                    {
+                                        <img src="@_portadaPreviewUrl" alt="Portada" />
+                                    }
+                                    else
+                                    {
+                                        <i class="bi bi-file-earmark-image"></i>
+                                    }
+                                </div>
+                                <div class="cfglogo-uploader__content">
+                                    <strong>@(_tienePortada ? "Portada cargada" : "Sin portada")</strong>
+                                    <span>JPG o PNG, A4 vertical recomendado, hasta 5 MB.</span>
+                                    <div class="cfglogo-uploader__actions">
+                                        <div class="cfglogo-picker">
+                                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-upload" Disabled="@(IsTemplateReadOnly || _subiendoPortada)">@(_tienePortada ? "Cambiar" : "Subir")</AlfaButton>
+                                            <InputFile class="cfglogo-input" OnChange="HandlePortadaSelectedAsync" accept=".jpg,.jpeg,.png,image/jpeg,image/png" disabled="@(IsTemplateReadOnly || _subiendoPortada)" />
+                                        </div>
+                                        @if (_tienePortada)
+                                        {
+                                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-trash" Disabled="@(IsTemplateReadOnly || _subiendoPortada)" OnClick="QuitarPortadaAsync">Quitar</AlfaButton>
+                                        }
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="document-designer__hint">Guardá la plantilla para poder subirle una portada.</p>
+                        }
+                    </section>
+                }
                 @if (LogoBlock is not null)
                 {
                     <section class="document-designer__settings-group">
                         <div class="document-designer__settings-heading">Logo</div>
-                        <label class="document-designer__toggle"><input type="checkbox" @bind="LogoBlock.Visible" disabled="@_selected.EsSistema" /><span>Mostrar logo</span></label>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="LogoBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar logo</span></label>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="LogoBlock.CombineWithCompany" disabled="@IsTemplateReadOnly" /><span>Combinar con los datos de la empresa (logo de un lado, datos del otro)</span></label>
                         <div class="document-designer__settings-grid">
-                            <label>Alineación <select @bind="LogoBlock.Align" disabled="@_selected.EsSistema"><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select></label>
-                            <label>Ancho (px) <input type="number" @bind="LogoBlock.Width" disabled="@_selected.EsSistema" /></label>
+                            <label>@(LogoBlock.CombineWithCompany ? "Lado" : "Alineación")
+                                <select @bind="LogoBlock.Align" disabled="@IsTemplateReadOnly">
+                                    <option value="left">Izquierda</option>
+                                    @if (!LogoBlock.CombineWithCompany)
+                                    {
+                                        <option value="center">Centro</option>
+                                    }
+                                    <option value="right">Derecha</option>
+                                </select>
+                            </label>
+                            <label>Ancho (px) <input type="number" @bind="LogoBlock.Width" disabled="@IsTemplateReadOnly" /></label>
                         </div>
                     </section>
+                }
+                @if (EmpresaBlock is not null)
+                {
+                    @RenderFieldBlockSettings("Datos de la empresa", EmpresaBlock, TiposBloqueDocumento.Empresa)
+                }
+                @if (ComprobanteBlock is not null)
+                {
+                    @RenderFieldBlockSettings("Condiciones", ComprobanteBlock, TiposBloqueDocumento.Comprobante)
+                }
+                @if (ClienteBlock is not null)
+                {
+                    @RenderFieldBlockSettings("Datos del cliente", ClienteBlock, TiposBloqueDocumento.Cliente)
                 }
                 @if (ItemsBlock is not null)
                 {
@@ -89,11 +162,34 @@
                         @foreach (var column in ItemsBlock.Columns)
                         {
                             <div class="document-designer__column">
-                                <input type="checkbox" @bind="column.Visible" disabled="@_selected.EsSistema" aria-label="Mostrar @column.Field" />
-                                <input @bind="column.Title" disabled="@_selected.EsSistema" aria-label="Título @column.Field" />
-                                <input type="number" @bind="column.WidthPercent" disabled="@_selected.EsSistema" aria-label="Ancho @column.Field" />
+                                <input type="checkbox" @bind="column.Visible" disabled="@IsTemplateReadOnly" aria-label="Mostrar @column.Field" />
+                                <input @bind="column.Title" disabled="@IsTemplateReadOnly" aria-label="Título @column.Field" />
+                                <input type="number" @bind="column.WidthPercent" disabled="@IsTemplateReadOnly" aria-label="Ancho @column.Field" />
                             </div>
                         }
+                        <label>Tamaño de letra (pt)
+                            <input type="number" min="6" max="24" value="@(ItemsBlock.FontSizePt?.ToString() ?? string.Empty)" @onchange="args => SetFontSize(ItemsBlock, args)" disabled="@IsTemplateReadOnly" placeholder="Automático" />
+                        </label>
+                    </section>
+                }
+                @if (TotalesBlock is not null)
+                {
+                    @RenderFieldBlockSettings("Totales", TotalesBlock, TiposBloqueDocumento.Totales)
+                }
+                @if (PropuestaBlock is not null)
+                {
+                    <section class="document-designer__settings-group">
+                        <div class="document-designer__settings-heading">Propuesta</div>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="PropuestaBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar el texto de la propuesta (con imágenes)</span></label>
+                        <p class="document-designer__hint">Se completa desde la solapa "Propuesta" de cada cotización, nunca desde las Observaciones internas.</p>
+                    </section>
+                }
+                @if (FirmaBlock is not null)
+                {
+                    <section class="document-designer__settings-group">
+                        <div class="document-designer__settings-heading">Firma</div>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="FirmaBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar firma</span></label>
+                        <p class="document-designer__hint">Usa la firma cargada por quien creó la cotización (Usuarios → Firma digital).</p>
                     </section>
                 }
             </aside>
@@ -129,14 +225,29 @@
     private long _previewVersionId;
     private string? _previewHtml;
     private bool _busy;
+    private bool _canEditSystemTemplate;
+    private bool _systemTemplateEditingEnabled;
     private string? _error;
     private string? _message;
+    private bool _tienePortada;
+    private string? _portadaPreviewUrl;
+    private bool _subiendoPortada;
+
+    private bool IsTemplateReadOnly => _selected?.EsSistema == true && !_systemTemplateEditingEnabled;
 
     private DocumentBlockDefinition? LogoBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Logo, StringComparison.OrdinalIgnoreCase));
     private DocumentBlockDefinition? ItemsBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Items, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? EmpresaBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Empresa, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? ComprobanteBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Comprobante, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? ClienteBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Cliente, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? TotalesBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Totales, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? PropuestaBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Propuesta, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? FirmaBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Firma, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? PortadaBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {
+        _canEditSystemTemplate = await TemplateSvc.CanEditSystemTemplatesAsync();
         UpdatePageHeader();
         _unidades = await TemplateSvc.GetUnidadesNegocioAsync();
         var list = await CotizSvc.GetListAsync(new CotizacionListFiltersDto { PageSize = 20 });
@@ -154,47 +265,54 @@
 
     private void UpdatePageHeader()
     {
+        var actions = new List<PageHeaderAction>();
+        if (_selected?.EsSistema == true && IsTemplateReadOnly && _canEditSystemTemplate)
+        {
+            actions.Add(new PageHeaderAction
+            {
+                Key = "editar-original",
+                Label = "Editar original",
+                Icon = "bi-shield-lock",
+                Style = PageHeaderActionStyle.Secondary,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _busy,
+                OnClick = HabilitarEdicionOriginalAsync
+            });
+        }
+
+        actions.AddRange(
+        [
+            new PageHeaderAction
+            {
+                Key = "nueva",
+                Label = "Nueva",
+                Icon = "bi-plus-lg",
+                Style = PageHeaderActionStyle.Ghost,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _busy,
+                OnClick = NuevaAsync
+            },
+            new PageHeaderAction
+            {
+                Key = "guardar",
+                Label = "Guardar",
+                Icon = "bi-floppy",
+                Style = PageHeaderActionStyle.Primary,
+                Priority = PageHeaderActionPriority.Essential,
+                Disabled = _busy || IsTemplateReadOnly,
+                Busy = _busy,
+                OnClick = GuardarAsync
+            }
+        ]);
+
         PageHeader.Set(new PageHeaderConfig
         {
             Title = "Diseñador de comprobantes",
             Breadcrumb = ["Utilidades", "Documentos"],
             State = _busy ? PageHeaderState.Loading : PageHeaderState.Editing,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-            TopNavigationItems =
-            [
-                new PageHeaderTopNavItem
-                {
-                    Key = "disenador-comprobantes",
-                    Label = "Diseñador",
-                    Url = RouteContext.BuildRoute("/documentos/disenador"),
-                    Icon = "bi-file-earmark-richtext",
-                    Active = true
-                }
-            ],
-            Actions =
-            [
-                new PageHeaderAction
-                {
-                    Key = "nueva",
-                    Label = "Nueva",
-                    Icon = "bi-plus-lg",
-                    Style = PageHeaderActionStyle.Ghost,
-                    Priority = PageHeaderActionPriority.Essential,
-                    Disabled = _busy,
-                    OnClick = NuevaAsync
-                },
-                new PageHeaderAction
-                {
-                    Key = "guardar",
-                    Label = "Guardar",
-                    Icon = "bi-floppy",
-                    Style = PageHeaderActionStyle.Primary,
-                    Priority = PageHeaderActionPriority.Essential,
-                    Disabled = _busy,
-                    Busy = _busy,
-                    OnClick = GuardarAsync
-                }
-            ]
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildDocumentos(RouteContext, Nav, "disenador"),
+            Actions = actions
         });
     }
 
@@ -215,6 +333,7 @@
     private Task SelectTemplateAsync(DocumentTemplateDto template)
     {
         _selected = template;
+        _systemTemplateEditingEnabled = false;
         _selectedTemplateId = template.IdTemplate;
         _draft = new DocumentTemplateSaveRequest
         {
@@ -223,15 +342,41 @@
             EsPredeterminado = template.EsPredeterminado, Activo = template.Activo, Usuario = AppUserSession.GetCurrentUserName("Sistema")
         };
         _previewHtml = null;
+        _tienePortada = template.TienePortada;
+        _portadaPreviewUrl = _tienePortada ? $"/api/documentos/plantillas/{template.IdTemplate}/portada?v={Guid.NewGuid():N}" : null;
+        UpdatePageHeader();
         return Task.CompletedTask;
     }
 
     private Task NuevaAsync()
     {
         _selected = new DocumentTemplateDto { IdTemplate = 0, TipoDocumento = TiposDocumentoCore.Cotizacion };
+        _systemTemplateEditingEnabled = false;
         _selectedTemplateId = 0;
         _draft = new DocumentTemplateSaveRequest { UNegocio = NullIfEmpty(_uNegocio), Nombre = "Nueva cotización", Usuario = AppUserSession.GetCurrentUserName("Sistema") };
         _previewHtml = null;
+        _tienePortada = false;
+        _portadaPreviewUrl = null;
+        UpdatePageHeader();
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    // El botón "Editar original" vive en la barra superior (MainPageHeader, otro componente) --
+    // el post-render automático de Blazor solo refresca al dueño del evento DOM, así que sin este
+    // StateHasChanged explícito el estado quedaba habilitado internamente pero los campos del
+    // formulario seguían viéndose (y comportándose) como deshabilitados hasta el próximo evento
+    // propio de esta página.
+    private Task HabilitarEdicionOriginalAsync()
+    {
+        if (!_canEditSystemTemplate || _selected?.EsSistema != true)
+            return Task.CompletedTask;
+
+        _systemTemplateEditingEnabled = true;
+        _draft.IdTemplate = _selected.IdTemplate;
+        _message = "Edición de plantilla original habilitada para esta sesión. Al guardar se conservará una versión anterior.";
+        UpdatePageHeader();
+        StateHasChanged();
         return Task.CompletedTask;
     }
 
@@ -249,7 +394,7 @@
 
     private async Task GuardarAsync()
     {
-        if (_selected?.EsSistema == true) { _error = "Duplicá la plantilla del sistema antes de editarla."; return; }
+        if (IsTemplateReadOnly) { _error = "La plantilla original está protegida. Duplicala o usá Editar original si sos administrador."; return; }
         await BusyAsync(async () =>
         {
             _draft.UNegocio = NullIfEmpty(_uNegocio);
@@ -259,6 +404,63 @@
             await LoadTemplatesAsync();
             await SelectTemplateAsync(saved);
         });
+    }
+
+    private async Task HandlePortadaSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null || _selected is not { IdTemplate: > 0 })
+            return;
+
+        _subiendoPortada = true;
+        StateHasChanged();
+        try
+        {
+            await using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            await using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+
+            await TemplateSvc.SavePortadaImageAsync(_selected.IdTemplate, bytes);
+            _tienePortada = true;
+            var mime = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType;
+            _portadaPreviewUrl = $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+            _message = "Portada actualizada.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _subiendoPortada = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task QuitarPortadaAsync()
+    {
+        if (_selected is not { IdTemplate: > 0 })
+            return;
+
+        _subiendoPortada = true;
+        StateHasChanged();
+        try
+        {
+            await TemplateSvc.DeletePortadaImageAsync(_selected.IdTemplate);
+            _tienePortada = false;
+            _portadaPreviewUrl = null;
+            _message = "Se quitó la portada.";
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _subiendoPortada = false;
+            StateHasChanged();
+        }
     }
 
     private Task PreviewVersionChangedAsync(ChangeEventArgs args)
@@ -307,8 +509,42 @@
         {
             _busy = false;
             UpdatePageHeader();
+            StateHasChanged();
         }
     }
+    private RenderFragment RenderFieldBlockSettings(string heading, DocumentBlockDefinition block, string tipo) => @<section class="document-designer__settings-group">
+        <div class="document-designer__settings-heading">@heading</div>
+        <label class="document-designer__toggle"><input type="checkbox" @bind="block.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar esta sección</span></label>
+        <div class="document-designer__column-fields">
+            @foreach (var option in DocumentBlockFields.For(tipo))
+            {
+                <label class="document-designer__toggle document-designer__toggle--compact">
+                    <input type="checkbox" checked="@IsFieldVisible(block, option.Field)" @onchange="args => ToggleField(block, option.Field, args)" disabled="@IsTemplateReadOnly" />
+                    <span>@option.Label</span>
+                </label>
+            }
+        </div>
+        <label>Tamaño de letra (pt)
+            <input type="number" min="6" max="24" value="@(block.FontSizePt?.ToString() ?? string.Empty)" @onchange="args => SetFontSize(block, args)" disabled="@IsTemplateReadOnly" placeholder="Automático" />
+        </label>
+    </section>;
+
+    private static bool IsFieldVisible(DocumentBlockDefinition block, string field)
+        => block.VisibleFields is null || block.VisibleFields.Contains(field, StringComparer.OrdinalIgnoreCase);
+
+    private void ToggleField(DocumentBlockDefinition block, string field, ChangeEventArgs args)
+    {
+        var check = args.Value is bool b && b;
+        block.VisibleFields ??= DocumentBlockFields.For(block.Type).Select(x => x.Field).ToList();
+        if (check && !block.VisibleFields.Contains(field, StringComparer.OrdinalIgnoreCase))
+            block.VisibleFields.Add(field);
+        else if (!check)
+            block.VisibleFields.RemoveAll(x => string.Equals(x, field, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static void SetFontSize(DocumentBlockDefinition block, ChangeEventArgs args)
+        => block.FontSizePt = decimal.TryParse(args.Value?.ToString(), out var v) && v > 0 ? v : null;
+
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static string UnidadLabel(UnidadNegocioOptionDto item) => string.IsNullOrWhiteSpace(item.Descripcion) ? item.Codigo : $"{item.Codigo} - {item.Descripcion}";
     private static string TemplateLabel(DocumentTemplateDto item) => $"{(item.UNegocio is null ? "Global" : item.UNegocio)} · {item.Nombre}{(item.EsSistema ? " (sistema)" : string.Empty)}";

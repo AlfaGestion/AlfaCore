@@ -11,6 +11,7 @@ public sealed class CotizacionDocumentService(
     IDocumentTemplateService templates,
     IDocumentRenderer renderer,
     IDocumentPdfService pdfService,
+    IUsuariosService usuariosService,
     IAppEventService appEvents,
     ILogger<CotizacionDocumentService> logger) : ICotizacionDocumentService
 {
@@ -26,7 +27,10 @@ public sealed class CotizacionDocumentService(
             var template = await templates.ResolveAsync(TiposDocumentoCore.Cotizacion, uNegocio, ct);
             var definition = templates.DeserializeAndValidate(template.TemplateJson);
             var data = await BuildDataAsync(detail, ct);
-            var html = renderer.RenderCotizacion(definition, data, template.CssCustom);
+            data.IncluyePortada = detail.IncluyePortada;
+            data.PortadaBytes = template.TienePortada ? await templates.GetPortadaImageBytesAsync(template.IdTemplate, ct) : null;
+            var theme = await templates.GetGeneralThemeAsync(ct);
+            var html = renderer.RenderCotizacion(definition, data, template.CssCustom, theme);
             logger.LogInformation("Documentos: HTML de cotización {IdVersion}, plantilla {IdTemplate}, UNegocio {UNegocio}.", idVersion, template.IdTemplate, uNegocio ?? "GLOBAL");
             return new DocumentRenderResult { Html = html, IdTemplate = template.IdTemplate, TipoDocumento = template.TipoDocumento, UNegocio = template.UNegocio };
         }
@@ -61,6 +65,11 @@ public sealed class CotizacionDocumentService(
         if (await ExistsAsync(cn, "dbo.TA_LOGOS", ct))
             logo = await cn.QueryFirstOrDefaultAsync<byte[]>(new CommandDefinition("SELECT TOP (1) IMAGEN FROM dbo.TA_LOGOS WHERE IDLOGO = 'LOGOEMPRESA';", cancellationToken: ct));
 
+        byte[]? firma = null;
+        var firmante = (detail.UsuarioAlta ?? string.Empty).Trim();
+        if (firmante.Length > 0)
+            firma = await usuariosService.GetSignatureBytesAsync(firmante, ct);
+
         return new CotizacionDocumentData
         {
             Empresa = new EmpresaDocumentData
@@ -85,7 +94,9 @@ public sealed class CotizacionDocumentService(
                 Precio = x.PrecioUnitario, Descuento = x.PorcentajeDescuento, Total = x.Subtotal, ImpactaTotal = x.ImpactaTotal
             }).ToList(),
             Totales = new TotalesDocumentData { Neto = detail.Subtotal, Descuento = detail.TotalDescuento, Total = detail.Total },
-            Observaciones = detail.Observaciones
+            PropuestaHtml = detail.CuerpoPropuesta,
+            FirmaBytes = firma,
+            FirmanteNombre = firmante
         };
     }
 

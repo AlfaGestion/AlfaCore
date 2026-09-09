@@ -80,6 +80,13 @@ public static class ModuleTopNavPresets
             ("logo", "Logo y Estilo", "/configuracion-general/logo")
         ]);
 
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildDocumentos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("disenador", "Diseñador", "/documentos/disenador"),
+            ("configuracion", "Configuración", "/documentos/configuracion")
+        ]);
+
     private static IReadOnlyList<PageHeaderTopNavItem> Build(
         IRouteContextService routeContext,
         NavigationManager nav,

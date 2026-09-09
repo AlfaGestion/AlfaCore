@@ -1,0 +1,89 @@
+@page "/documentos/configuracion"
+@page "/{idweb}/{idbase:int}/documentos/configuracion"
+@using AlfaCore.Models
+@inject AlfaCore.Services.IDocumentTemplateService TemplateSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Configuración de Documentos | Alfa Gestión</PageTitle>
+
+<div class="page-grid documentoscfg-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="panel-card">
+        <h3 class="panel-card__title">Tema general</h3>
+        <p class="panel-card__subtitle">Paleta de colores aplicada a todos los documentos (cotizaciones y, más adelante, otros comprobantes), sin importar la plantilla elegida en cada uno.</p>
+
+        <div class="documentoscfg-themes">
+            @foreach (var theme in DocumentThemePresets.Todos)
+            {
+                <button type="button" class="documentoscfg-theme @(theme.Key == _selectedTheme ? "is-active" : "")" disabled="@_saving" @onclick="() => SelectThemeAsync(theme.Key)">
+                    <span class="documentoscfg-theme__swatches">
+                        <span class="documentoscfg-theme__swatch" style="background:@theme.ColorPrimario"></span>
+                        <span class="documentoscfg-theme__swatch" style="background:@theme.ColorSecundario"></span>
+                        <span class="documentoscfg-theme__swatch" style="background:@theme.ColorFondoSuave"></span>
+                    </span>
+                    <span class="documentoscfg-theme__name">@theme.Nombre</span>
+                    @if (theme.Key == _selectedTheme)
+                    {
+                        <i class="bi bi-check-circle-fill documentoscfg-theme__check"></i>
+                    }
+                </button>
+            }
+        </div>
+    </section>
+</div>
+
+@code {
+    private string _selectedTheme = DocumentThemePresets.Default;
+    private bool _saving;
+    private AppUiMessage? _feedback;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await UiOps.RunAsync(() => TemplateSvc.GetGeneralThemeAsync(), "No se pudo cargar el tema general.");
+        if (result.Success)
+            _selectedTheme = result.Value ?? DocumentThemePresets.Default;
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Configuración",
+        Breadcrumb = ["Utilidades", "Documentos", "Configuración"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildDocumentos(RouteContext, Nav, "configuracion")
+    });
+
+    private async Task SelectThemeAsync(string key)
+    {
+        if (key == _selectedTheme)
+            return;
+
+        _saving = true;
+        StateHasChanged();
+        var result = await UiOps.RunAsync(async () => { await TemplateSvc.SetGeneralThemeAsync(key); return true; }, "No se pudo guardar el tema general.");
+        _saving = false;
+        if (result.Success)
+        {
+            _selectedTheme = key;
+            _feedback = AppUiMessage.Success("Tema actualizado", "El nuevo tema se aplicará a los próximos documentos generados.");
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
+    }
+}

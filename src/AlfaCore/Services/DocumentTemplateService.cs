@@ -8,6 +8,7 @@ namespace AlfaCore.Services;
 public sealed class DocumentTemplateService(
     IConfiguration configuration,
     IAppEventService appEvents,
+    IAppUserSessionService appUserSession,
     ILogger<DocumentTemplateService> logger) : IDocumentTemplateService
 {
     private const string ModuleName = "Documentos";
@@ -21,7 +22,9 @@ public sealed class DocumentTemplateService(
             await using var cn = new SqlConnection(ConnectionString);
             var items = await cn.QueryAsync<DocumentTemplateDto>(new CommandDefinition("""
                 SELECT IdTemplate, UNegocio, TipoDocumento, Nombre, TemplateJson, CssCustom,
-                       EsSistema, EsPredeterminado, Activo, FechaAlta, FechaModificacion, UsuarioModificacion
+                       EsSistema, EsPredeterminado, Activo,
+                       CAST(CASE WHEN PortadaImagen IS NOT NULL THEN 1 ELSE 0 END AS bit) AS TienePortada,
+                       FechaAlta, FechaModificacion, UsuarioModificacion
                 FROM dbo.CORE_DocumentTemplate
                 WHERE TipoDocumento = @TipoDocumento
                   AND (@UNegocio IS NULL OR UNegocio = @UNegocio OR UNegocio IS NULL)
@@ -44,13 +47,43 @@ public sealed class DocumentTemplateService(
             return (IReadOnlyList<UnidadNegocioOptionDto>)items.AsList();
         }, "No se pudieron cargar las unidades de negocio.", ct);
 
+    public async Task<bool> CanEditSystemTemplatesAsync(CancellationToken ct = default)
+    {
+        if (appUserSession.CurrentUser?.SuperAdmin == true)
+            return true;
+
+        var user = appUserSession.GetCurrentUserName();
+        if (string.IsNullOrWhiteSpace(user))
+            return false;
+
+        return await ExecuteLoggedAsync("CanEditSystemTemplate", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            return await cn.ExecuteScalarAsync<bool>(new CommandDefinition("""
+                IF OBJECT_ID(N'dbo.TA_USUARIOS', N'U') IS NULL
+                   OR COL_LENGTH(N'dbo.TA_USUARIOS', N'Administrador') IS NULL
+                    SELECT CAST(0 AS bit);
+                ELSE
+                    SELECT CAST(CASE WHEN EXISTS
+                    (
+                        SELECT 1
+                        FROM dbo.TA_USUARIOS
+                        WHERE UPPER(LTRIM(RTRIM(ISNULL(NOMBRE, N'')))) = UPPER(LTRIM(RTRIM(@Usuario)))
+                          AND ISNULL(Administrador, 0) = 1
+                    ) THEN 1 ELSE 0 END AS bit);
+                """, new { Usuario = user.Trim() }, cancellationToken: token));
+        }, "No se pudo verificar el permiso para editar plantillas del sistema.", ct);
+    }
+
     public async Task<DocumentTemplateDto?> GetByIdAsync(int idTemplate, CancellationToken ct = default)
         => await ExecuteLoggedAsync("GetById", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
             return await cn.QueryFirstOrDefaultAsync<DocumentTemplateDto>(new CommandDefinition("""
                 SELECT IdTemplate, UNegocio, TipoDocumento, Nombre, TemplateJson, CssCustom,
-                       EsSistema, EsPredeterminado, Activo, FechaAlta, FechaModificacion, UsuarioModificacion
+                       EsSistema, EsPredeterminado, Activo,
+                       CAST(CASE WHEN PortadaImagen IS NOT NULL THEN 1 ELSE 0 END AS bit) AS TienePortada,
+                       FechaAlta, FechaModificacion, UsuarioModificacion
                 FROM dbo.CORE_DocumentTemplate WHERE IdTemplate = @IdTemplate;
                 """, new { IdTemplate = idTemplate }, cancellationToken: token));
         }, "No se pudo cargar la plantilla solicitada.", ct);
@@ -63,7 +96,9 @@ public sealed class DocumentTemplateService(
             await using var cn = new SqlConnection(ConnectionString);
             var result = await cn.QueryFirstOrDefaultAsync<DocumentTemplateDto>(new CommandDefinition("""
                 SELECT TOP (1) IdTemplate, UNegocio, TipoDocumento, Nombre, TemplateJson, CssCustom,
-                       EsSistema, EsPredeterminado, Activo, FechaAlta, FechaModificacion, UsuarioModificacion
+                       EsSistema, EsPredeterminado, Activo,
+                       CAST(CASE WHEN PortadaImagen IS NOT NULL THEN 1 ELSE 0 END AS bit) AS TienePortada,
+                       FechaAlta, FechaModificacion, UsuarioModificacion
                 FROM dbo.CORE_DocumentTemplate
                 WHERE TipoDocumento = @TipoDocumento AND Activo = 1
                   AND ((@UNegocio IS NOT NULL AND UNegocio = @UNegocio) OR UNegocio IS NULL)
@@ -98,17 +133,18 @@ public sealed class DocumentTemplateService(
             try
             {
                 int id;
+                DocumentTemplateDto? actual = null;
                 if (request.IdTemplate is > 0)
                 {
-                    var actual = await cn.QueryFirstOrDefaultAsync<DocumentTemplateDto>(new CommandDefinition("""
+                    actual = await cn.QueryFirstOrDefaultAsync<DocumentTemplateDto>(new CommandDefinition("""
                         SELECT IdTemplate, UNegocio, TipoDocumento, Nombre, TemplateJson, CssCustom, EsSistema,
                                EsPredeterminado, Activo, FechaAlta, FechaModificacion, UsuarioModificacion
                         FROM dbo.CORE_DocumentTemplate WITH (UPDLOCK, HOLDLOCK) WHERE IdTemplate = @IdTemplate;
                         """, new { IdTemplate = request.IdTemplate.Value }, tx, cancellationToken: token));
                     if (actual is null)
                         throw new InvalidOperationException("La plantilla ya no existe.");
-                    if (actual.EsSistema)
-                        throw new InvalidOperationException("Las plantillas del sistema no se modifican directamente. Duplicala antes de editarla.");
+                    if (actual.EsSistema && !await CanEditSystemTemplatesAsync(token))
+                        throw new InvalidOperationException("Solo un administrador puede modificar una plantilla del sistema.");
 
                     var version = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
                         "SELECT ISNULL(MAX(Version), 0) + 1 FROM dbo.CORE_DocumentTemplateVersion WHERE IdTemplate = @IdTemplate;",
@@ -152,6 +188,11 @@ public sealed class DocumentTemplateService(
                 }
 
                 await tx.CommitAsync(token);
+                if (actual?.EsSistema == true)
+                {
+                    await appEvents.LogAuditAsync(ModuleName, "EditSystemTemplate", "CORE_DocumentTemplate", id.ToString(),
+                        "Se modificó una plantilla de sistema.", new { TipoDocumento = tipo, UNegocio = unidad, Usuario = NormalizeUser(request.Usuario) }, token);
+                }
                 logger.LogInformation("Documento: plantilla {IdTemplate} guardada para {TipoDocumento}/{UNegocio}.", id, tipo, unidad ?? "GLOBAL");
                 return (await GetByIdAsync(id, token))!;
             }
@@ -169,6 +210,87 @@ public sealed class DocumentTemplateService(
             EsPredeterminado = false, Activo = true, Usuario = usuario
         }, ct);
     }
+
+    public Task<byte[]?> GetPortadaImageBytesAsync(int idTemplate, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetPortadaImageBytes", async token =>
+        {
+            if (idTemplate <= 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand("SELECT PortadaImagen FROM dbo.CORE_DocumentTemplate WHERE IdTemplate = @Id;", cn);
+            cmd.Parameters.AddWithValue("@Id", idTemplate);
+            await using var reader = await cmd.ExecuteReaderAsync(token);
+            if (await reader.ReadAsync(token) && !await reader.IsDBNullAsync(0, token))
+                return reader.GetFieldValue<byte[]>(0);
+            return null;
+        }, "No se pudo cargar la portada de la plantilla.", ct);
+
+    public Task SavePortadaImageAsync(int idTemplate, byte[] contenido, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SavePortadaImage", async token =>
+        {
+            if (idTemplate <= 0)
+                throw new InvalidOperationException("Guardá la plantilla antes de subirle una portada.");
+            if (contenido is null || contenido.Length == 0)
+                throw new InvalidOperationException("La portada está vacía.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(
+                "UPDATE dbo.CORE_DocumentTemplate SET PortadaImagen = @Imagen, FechaModificacion = SYSDATETIME() WHERE IdTemplate = @Id;", cn);
+            cmd.Parameters.AddWithValue("@Id", idTemplate);
+            cmd.Parameters.AddWithValue("@Imagen", contenido);
+            var affected = await cmd.ExecuteNonQueryAsync(token);
+            if (affected == 0)
+                throw new InvalidOperationException("La plantilla ya no existe.");
+            return true;
+        }, "No se pudo guardar la portada de la plantilla.", ct);
+
+    public Task DeletePortadaImageAsync(int idTemplate, CancellationToken ct = default)
+        => ExecuteLoggedAsync("DeletePortadaImage", async token =>
+        {
+            if (idTemplate <= 0)
+                return true;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(
+                "UPDATE dbo.CORE_DocumentTemplate SET PortadaImagen = NULL, FechaModificacion = SYSDATETIME() WHERE IdTemplate = @Id;", cn);
+            cmd.Parameters.AddWithValue("@Id", idTemplate);
+            await cmd.ExecuteNonQueryAsync(token);
+            return true;
+        }, "No se pudo quitar la portada de la plantilla.", ct);
+
+    public Task<string> GetGeneralThemeAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetGeneralTheme", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var value = await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+                "SELECT TOP (1) VALOR FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'DOCUMENTOS_TEMA_GENERAL';",
+                cancellationToken: token));
+            return DocumentThemePresets.Resolve(value).Key;
+        }, "No se pudo cargar el tema general de documentos.", ct);
+
+    public Task SetGeneralThemeAsync(string themeKey, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SetGeneralTheme", async token =>
+        {
+            var key = DocumentThemePresets.Resolve(themeKey).Key;
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var rows = await cn.ExecuteAsync(new CommandDefinition(
+                "UPDATE dbo.TA_CONFIGURACION SET VALOR = @Valor, FechaHora_Modificacion = GETDATE() WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'DOCUMENTOS_TEMA_GENERAL';",
+                new { Valor = key }, cancellationToken: token));
+            if (rows == 0)
+            {
+                await cn.ExecuteAsync(new CommandDefinition("""
+                    INSERT INTO dbo.TA_CONFIGURACION (CLAVE, VALOR, GRUPO, FechaHora_Grabacion, FechaHora_Modificacion)
+                    VALUES (N'DOCUMENTOS_TEMA_GENERAL', @Valor, N'DOCUMENTOS', GETDATE(), GETDATE());
+                    """, new { Valor = key }, cancellationToken: token));
+            }
+            return true;
+        }, "No se pudo guardar el tema general de documentos.", ct);
 
     public DocumentTemplateDefinition DeserializeAndValidate(string templateJson)
     {
@@ -197,6 +319,16 @@ public sealed class DocumentTemplateService(
         var allowedColumns = new HashSet<string>(["Codigo", "Descripcion", "Cantidad", "Precio", "Descuento", "Total"], StringComparer.OrdinalIgnoreCase);
         if (itemBlock?.Columns.Any(c => !allowedColumns.Contains(c.Field) || c.WidthPercent < 1 || c.WidthPercent > 100) == true) throw new InvalidOperationException("La plantilla contiene columnas de detalle inválidas.");
         if (itemBlock is not null && itemBlock.Columns.Where(x => x.Visible).Sum(x => x.WidthPercent) > 100) throw new InvalidOperationException("El ancho de las columnas visibles no puede superar 100%.");
+
+        foreach (var block in definition.Blocks)
+        {
+            if (block.FontSizePt is < 6 or > 24) throw new InvalidOperationException("El tamaño de letra debe estar entre 6 y 24 puntos.");
+            if (block.VisibleFields is null) continue;
+            var allowedFields = DocumentBlockFields.For(block.Type);
+            if (allowedFields.Count == 0) continue;
+            var allowedNames = allowedFields.Select(x => x.Field).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (block.VisibleFields.Any(f => !allowedNames.Contains(f))) throw new InvalidOperationException($"El bloque '{block.Type}' contiene campos inválidos.");
+        }
     }
 
     private static string NormalizeTipo(string? value) => string.Equals(value?.Trim(), TiposDocumentoCore.Cotizacion, StringComparison.OrdinalIgnoreCase) ? TiposDocumentoCore.Cotizacion : throw new InvalidOperationException("TipoDocumento inválido.");

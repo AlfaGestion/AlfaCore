@@ -11,6 +11,8 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
+using Microsoft.Data.SqlClient;
+using Dapper;
 
 namespace AlfaCore;
 
@@ -188,10 +190,9 @@ public class Program
         builder.Services.AddScoped<ICrmService, CrmService>();
         builder.Services.AddScoped<IArticuloPrecioResolverService, ArticuloPrecioResolverService>();
         builder.Services.AddScoped<ICrmCotizacionService, CrmCotizacionService>();
-        builder.Services.AddScoped<ICotizacionPdfService, CotizacionPdfService>();
         builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
         builder.Services.AddScoped<IDocumentRenderer, DocumentRenderer>();
-        builder.Services.AddScoped<IDocumentPdfService, DocumentPdfService>();
+        builder.Services.AddSingleton<IDocumentPdfService, DocumentPdfService>();
         builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
@@ -464,13 +465,62 @@ public class Program
         app.MapGet("/cotizacion-publica/{idbase:int}/{token}/pdf", async (
             int idbase,
             string token,
-            ICotizacionesService cotizacionesSvc,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            ICotizacionDocumentService documentSvc,
             CancellationToken ct) =>
         {
-            var pdfBytes = await cotizacionesSvc.RenderPublicPdfAsync(idbase, token, ct);
-            return pdfBytes is null
-                ? Results.NotFound("La cotización no existe o el enlace expiró.")
-                : Results.File(pdfBytes, "application/pdf", "cotizacion.pdf");
+            var tk = (token ?? string.Empty).Trim();
+            if (idbase <= 0 || tk.Length == 0)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            var baseInfo = await centralBasesSvc.GetByIdAsync(idbase, ct);
+            if (baseInfo is null)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            // El token resuelve el IdVersion con una conexión explícita (todavía no hay ninguna
+            // sesión activa para este tenant en este request anónimo); recién después de eso se
+            // fuerza esa base como "activa" para que el resto del pipeline (plantillas, logo,
+            // firma) la resuelva igual que si fuera un usuario logueado de esa base.
+            long? idVersion;
+            await using (var cn = new SqlConnection(connectionString))
+            {
+                await cn.OpenAsync(ct);
+                idVersion = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(
+                    "SELECT IdVersion FROM dbo.COT_VERSION WHERE PublicToken = @Token;", new { Token = tk }, cancellationToken: ct));
+            }
+            if (idVersion is null)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            sessionSvc.SetWebhookOverride(new SessionDto
+            {
+                BaseId = baseInfo.IdBase,
+                Nombre = baseInfo.Nombre,
+                Servidor = baseInfo.DbServer,
+                BaseDatos = baseInfo.DbName,
+                Usuario = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            });
+
+            try
+            {
+                var pdfBytes = await documentSvc.GeneratePdfAsync(idVersion.Value, uNegocio: null, ct);
+                return Results.File(pdfBytes, "application/pdf", "cotizacion.pdf");
+            }
+            catch (AppUserFacingException)
+            {
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+            }
         }).AllowAnonymous();
 
         app.MapGet("/api/usuarios/{nombre}/foto", async (
@@ -495,11 +545,12 @@ public class Program
                 : Results.File(bytes, "image/jpeg");
         });
 
-        app.MapGet("/api/cotizaciones/portada", async (
-            ICotizacionesService cotizacionesSvc,
+        app.MapGet("/api/documentos/plantillas/{idTemplate:int}/portada", async (
+            int idTemplate,
+            IDocumentTemplateService templateSvc,
             CancellationToken ct) =>
         {
-            var bytes = await cotizacionesSvc.GetPortadaBytesAsync(ct);
+            var bytes = await templateSvc.GetPortadaImageBytesAsync(idTemplate, ct);
             return bytes is null || bytes.Length == 0
                 ? Results.NotFound()
                 : Results.File(bytes, "image/jpeg");

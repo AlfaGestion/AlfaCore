@@ -82,15 +82,7 @@ public interface ICotizacionesService
     /// versión seguía en BORRADOR, queda marcada ENVIADA.</summary>
     Task SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, CancellationToken ct = default);
 
-    /// <summary>PDF de la versión, para descarga desde el editor (sesión autenticada actual).</summary>
-    Task<byte[]?> GeneratePdfAsync(long idVersion, CancellationToken ct = default);
-
-    /// <summary>PDF de la versión resuelta por token público, mismo alcance que RenderPublicHtmlAsync
-    /// (cruza a la base del cliente vía ICentralBasesService, sin depender de la sesión actual).</summary>
-    Task<byte[]?> RenderPublicPdfAsync(int idBase, string token, CancellationToken ct = default);
-
-    /// <summary>Imagen de portada usada como primera página del PDF (TA_LOGOS, IDLOGO='COT_PORTADA').</summary>
-    Task<byte[]?> GetPortadaBytesAsync(CancellationToken ct = default);
-    Task SavePortadaAsync(byte[] contenido, CancellationToken ct = default);
-    Task DeletePortadaAsync(CancellationToken ct = default);
+    // El PDF (autenticado y público) se genera con ICotizacionDocumentService (plantillas +
+    // Playwright) -- ver Program.cs, endpoint /cotizacion-publica/{idbase}/{token}/pdf. La portada
+    // ahora es parte de cada plantilla (IDocumentTemplateService), no de Cotizaciones.
 }
