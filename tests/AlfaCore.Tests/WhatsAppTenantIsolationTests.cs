@@ -278,6 +278,8 @@ public sealed class WhatsAppTenantIsolationTests
         Assert.Contains("SanitizeWebhookDiagnostic(ex.StackTrace)", programSource, StringComparison.Ordinal);
         Assert.Contains("TryWriteWebhookFailureDiagnostic(correlationId, stage, ex)", programSource, StringComparison.Ordinal);
         Assert.Contains("Path.GetTempPath()", programSource, StringComparison.Ordinal);
+        Assert.Contains("TryWriteGlobalWebhookFailureDiagnostic(context.TraceIdentifier, context.Request.Path, ex)", programSource, StringComparison.Ordinal);
+        Assert.Contains("Path.Combine(AppContext.BaseDirectory, \"diagnostics\")", programSource, StringComparison.Ordinal);
         Assert.Contains("TraceStage = traceStage", programSource, StringComparison.Ordinal);
         Assert.Contains("PHONE_NUMBER_ID_FOUND", serviceSource, StringComparison.Ordinal);
         Assert.Contains("OWNERSHIP_RESOLVED", serviceSource, StringComparison.Ordinal);
