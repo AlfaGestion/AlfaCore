@@ -2053,6 +2053,7 @@ public class Program
             }
             catch (Exception ex)
             {
+                TryWriteWebhookFailureDiagnostic(correlationId, stage, ex);
                 logger.LogError(
                     "WhatsApp tenant webhook failed {CorrelationId} {Stage} {ExceptionType} {ExceptionMessage} {StackTrace}",
                     correlationId,
@@ -2938,6 +2939,34 @@ public class Program
         sanitized = Regex.Replace(sanitized, @"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{48,}(?![A-Za-z0-9_-])", "[REDACTED_IDENTIFIER]");
         sanitized = Regex.Replace(sanitized, @"(?<!\d)\d{8,}(?!\d)", "[REDACTED_NUMBER]");
         return sanitized.Length <= 6000 ? sanitized : sanitized[..6000];
+    }
+
+    // This fallback is intentionally independent from ILogger: ANCM/IIS deployments may not retain request logs.
+    // It is best-effort only and must never change the HTTP result sent back to Meta.
+    private static void TryWriteWebhookFailureDiagnostic(string correlationId, string stage, Exception exception)
+    {
+        try
+        {
+            var directory = Path.Combine(Path.GetTempPath(), "AlfaCore", "webhook-diagnostics");
+            Directory.CreateDirectory(directory);
+            var record = new
+            {
+                TimestampUtc = DateTimeOffset.UtcNow,
+                CorrelationId = correlationId,
+                Stage = stage,
+                ExceptionType = exception.GetType().FullName ?? exception.GetType().Name,
+                ExceptionMessage = SanitizeWebhookDiagnostic(exception.Message),
+                InnerExceptionType = exception.InnerException?.GetType().FullName ?? string.Empty,
+                InnerExceptionMessage = SanitizeWebhookDiagnostic(exception.InnerException?.Message),
+                StackTrace = SanitizeWebhookDiagnostic(exception.StackTrace)
+            };
+            var path = Path.Combine(directory, $"tenant-webhook-failures-{DateTime.UtcNow:yyyyMMdd}.jsonl");
+            File.AppendAllText(path, JsonSerializer.Serialize(record) + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+        catch
+        {
+            // Diagnostics must not mask or alter the original webhook failure.
+        }
     }
 
     internal static string ResolveWhatsAppWebhookAppSecret(
