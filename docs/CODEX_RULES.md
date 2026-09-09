@@ -258,7 +258,8 @@ Los módulos deben construirse sobre una base común y consistente.
 
 Cada nueva pantalla debe integrarse al estilo general del sistema:
 
-- menú lateral
+- shell AlfaDesign con barra superior horizontal para módulos y pantallas nuevas
+- menú lateral solo en módulos legacy que todavía no fueron migrados o cuando se indique expresamente
 - barra superior
 - filtros consistentes
 - diseño uniforme
