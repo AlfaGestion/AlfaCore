@@ -9,6 +9,7 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Extensions.Options;
 
@@ -2021,13 +2022,46 @@ public class Program
             ICentralBasesService basesService,
             IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
             ISessionService sessionService,
+            ILogger<Program> logger,
             CancellationToken ct) =>
         {
             DisableWebhookCaching(response);
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
-                return Results.NotFound();
+            var correlationId = Guid.NewGuid().ToString("N");
+            var stage = "POST_RECEIVED";
 
-            return await HandleWhatsAppMessageAsync(request, configService, svc, embeddedSignupOptions, sessionService, ct);
+            void TraceStage(string nextStage)
+            {
+                stage = nextStage;
+                logger.LogInformation("WhatsApp tenant webhook trace {CorrelationId} {Stage}", correlationId, stage);
+            }
+
+            try
+            {
+                TraceStage(stage);
+                if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+                    return Results.NotFound();
+
+                TraceStage("WEBHOOK_TENANT_RESOLVED");
+                return await HandleWhatsAppMessageAsync(
+                    request,
+                    configService,
+                    svc,
+                    embeddedSignupOptions,
+                    sessionService,
+                    ct,
+                    TraceStage);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(
+                    "WhatsApp tenant webhook failed {CorrelationId} {Stage} {ExceptionType} {ExceptionMessage} {StackTrace}",
+                    correlationId,
+                    stage,
+                    ex.GetType().FullName ?? ex.GetType().Name,
+                    SanitizeWebhookDiagnostic(ex.Message),
+                    SanitizeWebhookDiagnostic(ex.StackTrace));
+                throw;
+            }
         });
 
         app.MapGet("/api/conversaciones/instagram/webhook", HandleInstagramVerifyAsync);
@@ -2846,25 +2880,33 @@ public class Program
         IConversacionesService svc,
         IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
         ISessionService sessionService,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action<string>? traceStage = null)
     {
         var options = await configService.GetWhatsAppConfigAsync(ct);
         var appSecret = ResolveWhatsAppWebhookAppSecret(
             embeddedSignupOptions.Value,
             sessionService.GetActiveSession()?.BaseId ?? 0,
             options.AppSecret);
+        traceStage?.Invoke("OPTIONS_RESOLVED");
 
         using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         var rawPayload = await reader.ReadToEndAsync(ct);
+        traceStage?.Invoke("BODY_READ");
 
         if (string.IsNullOrWhiteSpace(appSecret))
             return Results.Problem("WhatsApp App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
 
         var signature = request.Headers["X-Hub-Signature-256"].ToString();
+        traceStage?.Invoke(string.IsNullOrWhiteSpace(signature)
+            ? "SIGNATURE_HEADER_MISSING"
+            : "SIGNATURE_HEADER_PRESENT");
         if (!IsValidMetaSignature(rawPayload, appSecret, signature))
             return Results.Unauthorized();
+        traceStage?.Invoke("SIGNATURE_VALID");
 
         using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
+        traceStage?.Invoke("JSON_PARSED");
         var headers = request.Headers.ToDictionary(
             pair => pair.Key,
             pair => pair.Value.ToString(),
@@ -2874,10 +2916,28 @@ public class Program
         {
             Payload = payload,
             RawPayload = rawPayload,
-            Headers = headers
+            Headers = headers,
+            TraceStage = traceStage
         }, ct);
 
+        traceStage?.Invoke("COMPLETED");
         return Results.Ok(result);
+    }
+
+    private static string SanitizeWebhookDiagnostic(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var sanitized = value;
+        sanitized = Regex.Replace(sanitized, @"(?i)(bearer\s+)[^\s]+", "$1[REDACTED]");
+        sanitized = Regex.Replace(sanitized, @"(?i)(sha256=)[0-9a-f]+", "$1[REDACTED]");
+        sanitized = Regex.Replace(sanitized, @"(?i)([?&](?:access_token|appsecret|verify_token|webhooktoken)=)[^&\s]+", "$1[REDACTED]");
+        sanitized = Regex.Replace(sanitized, @"(?i)(/(?:webhook)/)[^?\s/]+", "$1[REDACTED]");
+        sanitized = Regex.Replace(sanitized, @"(?<![A-Za-z0-9_-])[A-Fa-f0-9]{32,}(?![A-Za-z0-9_-])", "[REDACTED_IDENTIFIER]");
+        sanitized = Regex.Replace(sanitized, @"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{48,}(?![A-Za-z0-9_-])", "[REDACTED_IDENTIFIER]");
+        sanitized = Regex.Replace(sanitized, @"(?<!\d)\d{8,}(?!\d)", "[REDACTED_NUMBER]");
+        return sanitized.Length <= 6000 ? sanitized : sanitized[..6000];
     }
 
     internal static string ResolveWhatsAppWebhookAppSecret(

@@ -265,6 +265,23 @@ public sealed class WhatsAppTenantIsolationTests
     }
 
     [Fact]
+    public void TenantizedWebhook_FailureTraceCarriesOnlyCorrelationAndStageData()
+    {
+        var programSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
+        var serviceSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+
+        Assert.Contains("var correlationId = Guid.NewGuid().ToString(\"N\")", programSource, StringComparison.Ordinal);
+        Assert.Contains("WhatsApp tenant webhook trace {CorrelationId} {Stage}", programSource, StringComparison.Ordinal);
+        Assert.Contains("SanitizeWebhookDiagnostic(ex.Message)", programSource, StringComparison.Ordinal);
+        Assert.Contains("SanitizeWebhookDiagnostic(ex.StackTrace)", programSource, StringComparison.Ordinal);
+        Assert.Contains("TraceStage = traceStage", programSource, StringComparison.Ordinal);
+        Assert.Contains("PHONE_NUMBER_ID_FOUND", serviceSource, StringComparison.Ordinal);
+        Assert.Contains("OWNERSHIP_RESOLVED", serviceSource, StringComparison.Ordinal);
+        Assert.Contains("BEFORE_WEBHOOK_LOG", serviceSource, StringComparison.Ordinal);
+        Assert.Contains("WEBHOOK_LOG_INSERTED", serviceSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void EmbeddedSignupBase_UsesApplicationSecretInsteadOfLegacyTenantSecret()
     {
         var options = new WhatsAppEmbeddedSignupOptions

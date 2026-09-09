@@ -3540,13 +3540,20 @@ public sealed class ConversacionesService(
             var parsedStatuses = ParseIncomingStatuses(request.Payload.RootElement);
             var currentBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
             var phoneNumberIds = ExtractWhatsAppPhoneNumberIds(request.Payload.RootElement);
+            if (phoneNumberIds.Count > 0)
+                request.TraceStage?.Invoke("PHONE_NUMBER_ID_FOUND");
             await whatsAppWebhookTenantGuard.ValidateAsync(currentBaseId, phoneNumberIds, token);
+            request.TraceStage?.Invoke("OWNERSHIP_RESOLVED");
+            request.TraceStage?.Invoke("TENANT_GUARD_PASSED");
+            request.TraceStage?.Invoke("TENANT_CONNECTION_RESOLVED");
+            request.TraceStage?.Invoke("BEFORE_WEBHOOK_LOG");
             var webhookLogId = await InsertWebhookLogAsync(
                 "META_WHATSAPP",
                 "Webhook",
                 BuildWhatsAppWebhookLogPayload(phoneNumberIds, parsedMessages.Count, parsedStatuses.Count),
                 "{}",
                 token);
+            request.TraceStage?.Invoke("WEBHOOK_LOG_INSERTED");
             var whatsAppConfig = parsedMessages.Any(x => x.Attachments.Count > 0)
                 ? await conversacionesConfigService.GetWhatsAppConfigAsync(token)
                 : null;
@@ -3556,12 +3563,14 @@ public sealed class ConversacionesService(
 
             foreach (var status in parsedStatuses)
             {
+                request.TraceStage?.Invoke("PROCESSING_STATUSES");
                 await UpdateWhatsAppMessageStatusAsync(status, token);
                 processed++;
             }
 
             foreach (var incoming in parsedMessages)
             {
+                request.TraceStage?.Invoke("PROCESSING_MESSAGES");
                 var conversationId = await EnsureConversationAsync(incoming, token);
                 var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
                 var isNewMessage = messageId <= 0;
