@@ -181,32 +181,28 @@ public sealed class WhatsAppSecureVault : IWhatsAppCredentialVault, IWhatsAppPho
         => _connectionString ??= WhatsAppEmbeddedSignupConnection.Resolve(_configuration, _environment);
 
     private IDataProtector GetCredentialProtector()
-        => _credentialProtector ??= DataProtection.CreateProtector("WhatsAppEmbeddedSignup", "Credential", "v1");
+        => _credentialProtector ??= WhatsAppEmbeddedSignupDataProtection.ProtectorFor(
+            DataProtection, WhatsAppEmbeddedSignupDataProtection.CredentialSecretType);
 
     private IDataProtector GetPinProtector()
-        => _pinProtector ??= DataProtection.CreateProtector("WhatsAppEmbeddedSignup", "PhonePin", "v1");
+        => _pinProtector ??= WhatsAppEmbeddedSignupDataProtection.ProtectorFor(
+            DataProtection, WhatsAppEmbeddedSignupDataProtection.PinSecretType);
 
     private IDataProtectionProvider DataProtection
-        => _dataProtection ??= CreateEmbeddedSignupDataProtectionProvider(_options);
+        => _dataProtection ??= WhatsAppEmbeddedSignupDataProtection.Create(
+            _options.DataProtectionKeysPath,
+            _options.DataProtectionKeyProtection,
+            _options.DataProtectionCertificateThumbprint);
 
     private void EnsureDurableKeyRingConfigured()
     {
         if (string.IsNullOrWhiteSpace(_options.DataProtectionKeysPath) || !Path.IsPathRooted(_options.DataProtectionKeysPath))
             throw new InvalidOperationException("El vault está bloqueado: falta configurar una ruta absoluta y persistente para Data Protection Keys.");
-    }
 
-    private static IDataProtectionProvider CreateEmbeddedSignupDataProtectionProvider(WhatsAppEmbeddedSignupOptions options)
-    {
-        if (string.IsNullOrWhiteSpace(options.DataProtectionKeysPath) || !Path.IsPathRooted(options.DataProtectionKeysPath))
-            throw new InvalidOperationException("El vault está bloqueado: falta configurar una ruta absoluta y persistente para Data Protection Keys.");
-
-        var keyDirectory = Directory.CreateDirectory(options.DataProtectionKeysPath);
-        return DataProtectionProvider.Create(keyDirectory, builder =>
-        {
-            builder.SetApplicationName("AlfaCore.WhatsAppEmbeddedSignup");
-            if (OperatingSystem.IsWindows())
-                builder.ProtectKeysWithDpapi();
-        });
+        if (_options.DataProtectionKeyProtection == WhatsAppDataProtectionKeyProtection.Certificate
+            && string.IsNullOrWhiteSpace(_options.DataProtectionCertificateThumbprint))
+            throw new InvalidOperationException(
+                "El vault está bloqueado: DataProtectionKeyProtection=Certificate requiere DataProtectionCertificateThumbprint.");
     }
 
     private static string NormalizeReference(string reference)
