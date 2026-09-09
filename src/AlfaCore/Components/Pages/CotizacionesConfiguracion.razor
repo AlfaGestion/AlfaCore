@@ -1,6 +1,7 @@
 @page "/cotizaciones/configuracion"
 @page "/{idweb}/{idbase:int}/cotizaciones/configuracion"
 @using AlfaCore.Models
+@using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.ICotizacionesService CotizSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IPageHeaderService PageHeader
@@ -19,6 +20,38 @@
         <AlfaCheckbox Value="@_permiteDescuentoLinea" ValueChanged="v => _permiteDescuentoLinea = v == true">
             Permitir descuento por línea
         </AlfaCheckbox>
+    </section>
+
+    <section class="panel-card">
+        <h3 class="panel-card__title">Portada de la propuesta</h3>
+        <p class="panel-card__subtitle">Imagen que se antepone como primera página al generar el PDF de una cotización. Cada versión decide si la incluye o no.</p>
+
+        <div class="cfglogo-uploader">
+            <div class="cfglogo-uploader__preview cfglogo-uploader__preview--portrait">
+                @if (!string.IsNullOrWhiteSpace(_portadaPreviewUrl))
+                {
+                    <img src="@_portadaPreviewUrl" alt="Portada de la propuesta" />
+                }
+                else
+                {
+                    <i class="bi bi-file-earmark-image"></i>
+                }
+            </div>
+            <div class="cfglogo-uploader__content">
+                <strong>@(_tienePortada ? "Portada cargada" : "Sin portada")</strong>
+                <span>JPG o PNG, tamaño A4 vertical recomendado, hasta 5 MB.</span>
+                <div class="cfglogo-uploader__actions">
+                    <div class="cfglogo-picker">
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-upload" Disabled="@_subiendoPortada">@(_tienePortada ? "Cambiar portada" : "Subir portada")</AlfaButton>
+                        <InputFile class="cfglogo-input" OnChange="HandlePortadaSelectedAsync" accept=".jpg,.jpeg,.png,image/jpeg,image/png" disabled="@_subiendoPortada" />
+                    </div>
+                    @if (_tienePortada)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-trash" Disabled="@_subiendoPortada" OnClick="QuitarPortadaAsync">Quitar</AlfaButton>
+                    }
+                </div>
+            </div>
+        </div>
     </section>
 
     <section class="panel-card">
@@ -99,6 +132,9 @@
     private bool _permiteDescuentoLinea;
     private bool _saving;
     private AppUiMessage? _feedback;
+    private bool _tienePortada;
+    private string? _portadaPreviewUrl;
+    private bool _subiendoPortada;
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -119,6 +155,11 @@
         var permiteResult = await UiOps.RunAsync(() => CotizSvc.PermiteDescuentoPorLineaAsync(), "No se pudo cargar la configuración de descuento.");
         if (permiteResult.Success)
             _permiteDescuentoLinea = permiteResult.Value;
+
+        var portadaResult = await UiOps.RunAsync(() => CotizSvc.GetPortadaBytesAsync(), "No se pudo cargar la portada.");
+        _tienePortada = portadaResult.Success && portadaResult.Value is { Length: > 0 };
+        if (_tienePortada)
+            _portadaPreviewUrl = $"/api/cotizaciones/portada?v={Guid.NewGuid():N}";
     }
 
     private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
@@ -138,6 +179,55 @@
         _feedback = saveConfigResult.Success && saveDtoResult.Success
             ? AppUiMessage.Success("Configuración guardada", "Los cambios se guardaron correctamente.")
             : (saveConfigResult.Feedback ?? saveDtoResult.Feedback);
+    }
+
+    private async Task HandlePortadaSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null)
+            return;
+
+        _subiendoPortada = true;
+        try
+        {
+            await using var stream = file.OpenReadStream(5 * 1024 * 1024);
+            await using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+
+            var result = await UiOps.RunAsync(async () => { await CotizSvc.SavePortadaAsync(bytes); return true; }, "No se pudo subir la portada.");
+            if (result.Success)
+            {
+                _tienePortada = true;
+                var mime = string.IsNullOrWhiteSpace(file.ContentType) ? "image/jpeg" : file.ContentType;
+                _portadaPreviewUrl = $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+                _feedback = AppUiMessage.Success("Portada actualizada", "La portada se guardó correctamente.");
+            }
+            else
+            {
+                _feedback = result.Feedback;
+            }
+        }
+        finally
+        {
+            _subiendoPortada = false;
+        }
+    }
+
+    private async Task QuitarPortadaAsync()
+    {
+        _subiendoPortada = true;
+        var result = await UiOps.RunAsync(async () => { await CotizSvc.DeletePortadaAsync(); return true; }, "No se pudo quitar la portada.");
+        _subiendoPortada = false;
+        if (result.Success)
+        {
+            _tienePortada = false;
+            _portadaPreviewUrl = null;
+        }
+        else
+        {
+            _feedback = result.Feedback;
+        }
     }
 
     private static int ParseInt(object? value)

@@ -495,6 +495,27 @@ public class Program
                 : Results.File(bytes, "image/jpeg");
         });
 
+        app.MapGet("/api/cotizaciones/portada", async (
+            ICotizacionesService cotizacionesSvc,
+            CancellationToken ct) =>
+        {
+            var bytes = await cotizacionesSvc.GetPortadaBytesAsync(ct);
+            return bytes is null || bytes.Length == 0
+                ? Results.NotFound()
+                : Results.File(bytes, "image/jpeg");
+        });
+
+        app.MapGet("/api/usuarios/{nombre}/firma", async (
+            string nombre,
+            IUsuariosService usuariosSvc,
+            CancellationToken ct) =>
+        {
+            var bytes = await usuariosSvc.GetSignatureBytesAsync(nombre, ct);
+            return bytes is null || bytes.Length == 0
+                ? Results.NotFound()
+                : Results.File(bytes, "image/png");
+        });
+
         app.MapGet("/api/catalogos/logo-publico/{idweb}", async (
             string idweb,
             int? idbase,

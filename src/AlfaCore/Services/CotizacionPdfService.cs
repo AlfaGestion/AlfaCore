@@ -13,10 +13,26 @@ public sealed class CotizacionPdfService : ICotizacionPdfService
 {
     private static readonly CultureInfo CulturaAr = CultureInfo.GetCultureInfo("es-AR");
 
-    public byte[] GenerarPdf(CotizacionVersionDetailDto detail, string nombreEmpresa, byte[]? logoBytes = null)
+    public byte[] GenerarPdf(
+        CotizacionVersionDetailDto detail,
+        string nombreEmpresa,
+        byte[]? logoBytes = null,
+        byte[]? portadaBytes = null,
+        byte[]? firmaBytes = null,
+        string? firmanteNombre = null)
     {
         var document = Document.Create(doc =>
         {
+            if (detail.IncluyePortada && portadaBytes is { Length: > 0 })
+            {
+                doc.Page(cover =>
+                {
+                    cover.Size(PageSizes.A4);
+                    cover.Margin(0);
+                    cover.Content().Image(portadaBytes).FitArea();
+                });
+            }
+
             doc.Page(page =>
             {
                 page.Size(PageSizes.A4);
@@ -52,6 +68,9 @@ public sealed class CotizacionPdfService : ICotizacionPdfService
 
                     if (!string.IsNullOrWhiteSpace(detail.Observaciones))
                         column.Item().PaddingTop(4).Text(detail.Observaciones).FontSize(8).FontColor(Colors.Grey.Darken1);
+
+                    if (firmaBytes is { Length: > 0 } || !string.IsNullOrWhiteSpace(firmanteNombre))
+                        column.Item().Element(e => ComposeFirma(e, firmaBytes, firmanteNombre));
                 });
 
                 page.Footer().Row(row =>
@@ -163,6 +182,19 @@ public sealed class CotizacionPdfService : ICotizacionPdfService
 
             static IContainer CeldaBase(IContainer c)
                 => c.PaddingVertical(4).PaddingHorizontal(4).BorderBottom(0.5f).BorderColor(Colors.Grey.Lighten3);
+        });
+    }
+
+    private static void ComposeFirma(IContainer container, byte[]? firmaBytes, string? firmanteNombre)
+    {
+        container.PaddingTop(18).Column(col =>
+        {
+            col.Spacing(2);
+            col.Item().Text("Atentamente,").FontSize(9);
+            if (firmaBytes is { Length: > 0 })
+                col.Item().PaddingTop(6).Width(140).Height(60).Image(firmaBytes).FitArea();
+            if (!string.IsNullOrWhiteSpace(firmanteNombre))
+                col.Item().Text(firmanteNombre).FontSize(9).Bold();
         });
     }
 
