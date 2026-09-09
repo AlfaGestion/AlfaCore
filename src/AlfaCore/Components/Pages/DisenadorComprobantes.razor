@@ -1,12 +1,16 @@
 @page "/documentos/disenador"
 @page "/{idweb}/{idbase:int}/documentos/disenador"
 @using Microsoft.AspNetCore.Components.Web
+@using AlfaCore.Models
 @using AlfaCore.Services
 @inject IDocumentTemplateService TemplateSvc
 @inject ICotizacionesService CotizSvc
 @inject ICotizacionDocumentService CotizDocumentSvc
 @inject IAppUserSessionService AppUserSession
 @inject IJSRuntime JS
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@implements IDisposable
 
 <PageTitle>Diseñador de comprobantes | Alfa Gestión</PageTitle>
 
@@ -14,12 +18,7 @@
     <header class="document-designer__header">
         <div>
             <span class="page-kicker">Utilidades</span>
-            <h1>Diseñador de comprobantes</h1>
             <p>Plantillas de Cotización por bloques. La vista previa y el PDF beta usan el mismo renderer HTML.</p>
-        </div>
-        <div class="document-designer__actions">
-            <button class="btn btn--ghost" @onclick="NuevaAsync"><i class="bi bi-plus-lg"></i> Nueva</button>
-            <button class="btn btn--primary" disabled="@_busy" @onclick="GuardarAsync"><i class="bi bi-floppy"></i> Guardar</button>
         </div>
     </header>
 
@@ -126,6 +125,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        UpdatePageHeader();
         _unidades = await TemplateSvc.GetUnidadesNegocioAsync();
         var list = await CotizSvc.GetListAsync(new CotizacionListFiltersDto { PageSize = 20 });
         _cotizaciones = list.Items;
@@ -135,6 +135,55 @@
             _previewVersionId = IdVersion.Value;
             await PreviewAsync();
         }
+    }
+
+    public void Dispose()
+        => PageHeader.Clear();
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(new PageHeaderConfig
+        {
+            Title = "Diseñador de comprobantes",
+            Breadcrumb = ["Utilidades", "Documentos"],
+            State = _busy ? PageHeaderState.Loading : PageHeaderState.Editing,
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems =
+            [
+                new PageHeaderTopNavItem
+                {
+                    Key = "disenador-comprobantes",
+                    Label = "Diseñador",
+                    Url = RouteContext.BuildRoute("/documentos/disenador"),
+                    Icon = "bi-file-earmark-richtext",
+                    Active = true
+                }
+            ],
+            Actions =
+            [
+                new PageHeaderAction
+                {
+                    Key = "nueva",
+                    Label = "Nueva",
+                    Icon = "bi-plus-lg",
+                    Style = PageHeaderActionStyle.Ghost,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = _busy,
+                    OnClick = NuevaAsync
+                },
+                new PageHeaderAction
+                {
+                    Key = "guardar",
+                    Label = "Guardar",
+                    Icon = "bi-floppy",
+                    Style = PageHeaderActionStyle.Primary,
+                    Priority = PageHeaderActionPriority.Essential,
+                    Disabled = _busy,
+                    Busy = _busy,
+                    OnClick = GuardarAsync
+                }
+            ]
+        });
     }
 
     private async Task LoadTemplatesAsync()
@@ -230,8 +279,23 @@
 
     private async Task BusyAsync(Func<Task> operation)
     {
-        _busy = true; _error = null; _message = null;
-        try { await operation(); } catch (Exception ex) { _error = ex.Message; } finally { _busy = false; }
+        _busy = true;
+        _error = null;
+        _message = null;
+        UpdatePageHeader();
+        try
+        {
+            await operation();
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _busy = false;
+            UpdatePageHeader();
+        }
     }
     private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     private static string UnidadLabel(UnidadNegocioOptionDto item) => string.IsNullOrWhiteSpace(item.Descripcion) ? item.Codigo : $"{item.Codigo} - {item.Descripcion}";
