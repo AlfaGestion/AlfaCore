@@ -520,6 +520,50 @@ public sealed class WhatsAppTenantIsolationTests
         Assert.Equal(string.Empty, AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(options, 0, string.Empty));
     }
 
+    [Fact]
+    public void WebhookAppSecretDiagnostic_ExposesEffectiveOptionsBinding_WithoutLeakingTheSecret()
+    {
+        const string appSecret = "0123456789abcdef0123456789abcdef"; // 32 chars
+        var options = new WhatsAppEmbeddedSignupOptions
+        {
+            Enabled = true,
+            AllowedBaseIds = [84],
+            AppSecret = appSecret
+        };
+
+        var snapshot = AlfaCore.Program.BuildWebhookAppSecretDiagnostic(84, 84, options, legacyAppSecret: "  ", environmentName: "Production");
+
+        Assert.Equal(84, snapshot.ResolvedBaseId);
+        Assert.Equal(84, snapshot.WebhookBaseId);
+        Assert.True(snapshot.EmbeddedSignupEnabled);
+        Assert.Equal([84], snapshot.EmbeddedSignupAllowedBaseIds);
+        Assert.True(snapshot.IsAllowedForBase);
+        Assert.True(snapshot.EmbeddedSignupAppSecretPresent);
+        Assert.Equal(32, snapshot.EmbeddedSignupAppSecretLength);
+        Assert.False(snapshot.LegacyAppSecretPresent);
+        Assert.Equal("Production", snapshot.EnvironmentName);
+
+        var json = System.Text.Json.JsonSerializer.Serialize(snapshot);
+        Assert.DoesNotContain(appSecret, json, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WebhookAppSecretDiagnostic_ShowsWhenOptionsBindingNeverSawTheEnvSection()
+    {
+        // Reproduce lo que se sospecha en producción: IOptions cae a appsettings.json
+        // (Enabled=false, sin AllowedBaseIds, sin AppSecret) => el App Secret ES nunca se elige.
+        var options = new WhatsAppEmbeddedSignupOptions();
+
+        var snapshot = AlfaCore.Program.BuildWebhookAppSecretDiagnostic(84, 84, options, legacyAppSecret: null, environmentName: "Production");
+
+        Assert.False(snapshot.EmbeddedSignupEnabled);
+        Assert.Empty(snapshot.EmbeddedSignupAllowedBaseIds);
+        Assert.False(snapshot.IsAllowedForBase);
+        Assert.False(snapshot.EmbeddedSignupAppSecretPresent);
+        Assert.Equal(0, snapshot.EmbeddedSignupAppSecretLength);
+        Assert.False(snapshot.LegacyAppSecretPresent);
+    }
+
     private static WhatsAppRuntimeCredentialResolver CreateResolver(WhatsAppPhoneOwnership? owner, WhatsAppCredentialReference? reference, string secret)
         => new(new OwnershipStore(owner), new Vault(reference, secret), OptionsFor(1));
     private static IOptions<WhatsAppEmbeddedSignupOptions> OptionsFor(params int[] allowedBaseIds)

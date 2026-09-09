@@ -284,6 +284,17 @@ public class Program
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
+        // Orden efectivo de proveedores de configuración (gana el último):
+        //   1. host config (ChainedConfigurationProvider: DOTNET_/ASPNETCORE_ + args)
+        //   2. appsettings.json                    -> WhatsAppEmbeddedSignup:Enabled = false
+        //   3. appsettings.{Environment}.json
+        //   4. user secrets (solo Development)
+        //   5. AddEnvironmentVariables() sin prefijo  <- acá entra el .env (WhatsAppEmbeddedSignup__*)
+        //   6. args de línea de comandos
+        // DotEnvLoader.LoadIfPresent corre ANTES de CreateBuilder (ver Main), así que el .env ya
+        // está en el entorno del proceso cuando el proveedor (5) lo lee: el binding SÍ ve el .env
+        // SIEMPRE QUE la clave no estuviera ya definida en el entorno (DotEnvLoader no pisa una
+        // variable existente) y el nombre use el separador "__" con el prefijo de sección.
         var embeddedSignupSection = builder.Configuration.GetSection(WhatsAppEmbeddedSignupOptions.SectionName);
         var embeddedSignupStartupOptions = embeddedSignupSection.Get<WhatsAppEmbeddedSignupOptions>() ?? new();
         builder.Services.AddOptions<WhatsAppEmbeddedSignupOptions>()
@@ -2049,6 +2060,7 @@ public class Program
             ICentralBasesService basesService,
             IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
             ISessionService sessionService,
+            IHostEnvironment hostEnvironment,
             ILogger<Program> logger,
             CancellationToken ct) =>
         {
@@ -2090,7 +2102,25 @@ public class Program
                         && string.Equals(problem.ProblemDetails.Detail, "WhatsApp App Secret no está configurado.", StringComparison.Ordinal)
                             ? "APP_SECRET_NOT_CONFIGURED"
                             : "UNCLASSIFIED_5XX";
-                    TryWriteWebhookOutcomeDiagnostic(correlationId, stage, returnedStatus, reasonCode);
+
+                    // Solo el camino APP_SECRET_NOT_CONFIGURED: snapshot sanitizado de la config
+                    // efectiva que ve IOptions<WhatsAppEmbeddedSignupOptions> en runtime (no del
+                    // .env físico), para distinguir "el secret no está" de "el binding no lo ve"
+                    // (Enabled=false, AllowedBaseIds vacío, otro working directory, otra fuente que
+                    // pisa las claves). Nunca escribe el secret: solo present/length.
+                    WebhookAppSecretDiagnostic? configSnapshot = null;
+                    if (string.Equals(reasonCode, "APP_SECRET_NOT_CONFIGURED", StringComparison.Ordinal))
+                    {
+                        var legacyAppSecret = (await configService.GetWhatsAppConfigAsync(ct)).AppSecret;
+                        configSnapshot = BuildWebhookAppSecretDiagnostic(
+                            resolvedBaseId,
+                            resolvedBaseId ?? 0,
+                            embeddedSignupOptions.Value,
+                            legacyAppSecret,
+                            hostEnvironment.EnvironmentName);
+                    }
+
+                    TryWriteWebhookOutcomeDiagnostic(correlationId, stage, returnedStatus, reasonCode, configSnapshot);
                     logger.LogError(
                         "WhatsApp tenant webhook returned {StatusCode} {CorrelationId} {Stage} {ReasonCode}",
                         returnedStatus,
@@ -3063,7 +3093,12 @@ public class Program
     // in-process es el directorio físico de la app (C:\inetpub\wwwroot\AlfaCore\diagnostics,
     // verificado como escribible por IIS_IUSRS). No registra body, teléfono, tokens ni firma:
     // solo correlación, etapa y clasificación. Nunca altera la respuesta enviada a Meta.
-    private static void TryWriteWebhookOutcomeDiagnostic(string correlationId, string stage, int statusCode, string reasonCode)
+    private static void TryWriteWebhookOutcomeDiagnostic(
+        string correlationId,
+        string stage,
+        int statusCode,
+        string reasonCode,
+        WebhookAppSecretDiagnostic? config = null)
     {
         try
         {
@@ -3076,7 +3111,8 @@ public class Program
                 Stage = stage,
                 Outcome = "RETURNED_5XX",
                 StatusCode = statusCode,
-                ReasonCode = reasonCode
+                ReasonCode = reasonCode,
+                Config = config
             };
             var path = Path.Combine(directory, $"tenant-webhook-outcome-failures-{DateTime.UtcNow:yyyyMMdd}.jsonl");
             File.AppendAllText(path, JsonSerializer.Serialize(record) + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
@@ -3085,6 +3121,46 @@ public class Program
         {
             // El diagnóstico nunca debe enmascarar ni alterar el resultado original del webhook.
         }
+    }
+
+    // Snapshot sanitizado de la config efectiva de WhatsApp Embedded Signup tal como la ve
+    // IOptions en runtime. Solo se escribe en el camino APP_SECRET_NOT_CONFIGURED. Nunca lleva
+    // secretos: del App Secret solo se reporta presencia y longitud.
+    internal sealed record WebhookAppSecretDiagnostic(
+        int? ResolvedBaseId,
+        int WebhookBaseId,
+        bool EmbeddedSignupEnabled,
+        IReadOnlyList<int> EmbeddedSignupAllowedBaseIds,
+        bool IsAllowedForBase,
+        bool EmbeddedSignupAppSecretPresent,
+        int EmbeddedSignupAppSecretLength,
+        bool LegacyAppSecretPresent,
+        string EnvironmentName,
+        string BaseDirectory,
+        string CurrentDirectory);
+
+    internal static WebhookAppSecretDiagnostic BuildWebhookAppSecretDiagnostic(
+        int? resolvedBaseId,
+        int webhookBaseId,
+        WhatsAppEmbeddedSignupOptions embeddedSignup,
+        string? legacyAppSecret,
+        string environmentName)
+    {
+        ArgumentNullException.ThrowIfNull(embeddedSignup);
+
+        var appSecret = embeddedSignup.AppSecret?.Trim() ?? string.Empty;
+        return new WebhookAppSecretDiagnostic(
+            resolvedBaseId,
+            webhookBaseId,
+            embeddedSignup.Enabled,
+            embeddedSignup.AllowedBaseIds ?? [],
+            embeddedSignup.IsAllowedForBase(webhookBaseId),
+            appSecret.Length > 0,
+            appSecret.Length,
+            !string.IsNullOrWhiteSpace(legacyAppSecret),
+            environmentName,
+            AppContext.BaseDirectory,
+            Directory.GetCurrentDirectory());
     }
 
     internal static string ResolveWhatsAppWebhookAppSecret(
