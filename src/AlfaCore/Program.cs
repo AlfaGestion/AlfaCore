@@ -310,25 +310,6 @@ public class Program
         var app = builder.Build();
 
         // Configure the HTTP request pipeline.
-        app.Use(async (context, next) =>
-        {
-            if (!context.Request.Path.StartsWithSegments("/api/conversaciones/whatsapp/webhook/", StringComparison.OrdinalIgnoreCase))
-            {
-                await next();
-                return;
-            }
-
-            try
-            {
-                await next();
-            }
-            catch (Exception ex)
-            {
-                TryWriteGlobalWebhookFailureDiagnostic(context.TraceIdentifier, context.Request.Path, ex);
-                throw;
-            }
-        });
-
         if (!app.Environment.IsDevelopment())
         {
             app.UseExceptionHandler("/Error");
@@ -2988,32 +2969,6 @@ public class Program
         }
     }
 
-    // This runs before endpoint activation, including delegate DI binding and endpoint filters.
-    private static void TryWriteGlobalWebhookFailureDiagnostic(string traceIdentifier, PathString path, Exception exception)
-    {
-        try
-        {
-            var directory = Path.Combine(AppContext.BaseDirectory, "diagnostics");
-            Directory.CreateDirectory(directory);
-            var record = new
-            {
-                TimestampUtc = DateTimeOffset.UtcNow,
-                TraceIdentifier = traceIdentifier,
-                Path = SanitizeWebhookDiagnostic(path.Value),
-                ExceptionType = exception.GetType().FullName ?? exception.GetType().Name,
-                ExceptionMessage = SanitizeWebhookDiagnostic(exception.Message),
-                InnerExceptionType = exception.InnerException?.GetType().FullName ?? string.Empty,
-                InnerExceptionMessage = SanitizeWebhookDiagnostic(exception.InnerException?.Message),
-                StackTrace = SanitizeWebhookDiagnostic(exception.StackTrace)
-            };
-            var file = Path.Combine(directory, $"tenant-webhook-global-failures-{DateTime.UtcNow:yyyyMMdd}.jsonl");
-            File.AppendAllText(file, JsonSerializer.Serialize(record) + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
-        }
-        catch
-        {
-            // The original exception remains authoritative even if diagnostics cannot be written.
-        }
-    }
 
     internal static string ResolveWhatsAppWebhookAppSecret(
         WhatsAppEmbeddedSignupOptions embeddedSignupOptions,
