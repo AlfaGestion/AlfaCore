@@ -618,6 +618,7 @@
                     </div>
                     <p class="panel-card__subtitle">Cualquiera con este link puede ver esta versión de la cotización, sin necesidad de iniciar sesión.</p>
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-file-earmark-pdf" OnClick="_ => DescargarPdfCompartirAsync()">Descargar PDF</AlfaButton>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-flask" OnClick="_ => AbrirPdfBetaAsync()">Probar PDF beta</AlfaButton>
                 </div>
             }
             else
@@ -1397,6 +1398,13 @@
         if (string.IsNullOrWhiteSpace(_compartirUrl))
             return Task.CompletedTask;
         Nav.NavigateTo(_compartirUrl + "/pdf", forceLoad: true);
+        return Task.CompletedTask;
+    }
+
+    private Task AbrirPdfBetaAsync()
+    {
+        if (_detail is not null)
+            Nav.NavigateTo(RouteContext.BuildRoute($"/documentos/disenador?idVersion={_detail.IdVersion}"));
         return Task.CompletedTask;
     }
 

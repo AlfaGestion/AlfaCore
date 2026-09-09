@@ -1,0 +1,239 @@
+@page "/documentos/disenador"
+@page "/{idweb}/{idbase:int}/documentos/disenador"
+@using Microsoft.AspNetCore.Components.Web
+@using AlfaCore.Services
+@inject IDocumentTemplateService TemplateSvc
+@inject ICotizacionesService CotizSvc
+@inject ICotizacionDocumentService CotizDocumentSvc
+@inject IAppUserSessionService AppUserSession
+@inject IJSRuntime JS
+
+<PageTitle>Diseñador de comprobantes | Alfa Gestión</PageTitle>
+
+<div class="document-designer page-grid">
+    <header class="document-designer__header">
+        <div>
+            <span class="page-kicker">Utilidades</span>
+            <h1>Diseñador de comprobantes</h1>
+            <p>Plantillas de Cotización por bloques. La vista previa y el PDF beta usan el mismo renderer HTML.</p>
+        </div>
+        <div class="document-designer__actions">
+            <button class="btn btn--ghost" @onclick="NuevaAsync"><i class="bi bi-plus-lg"></i> Nueva</button>
+            <button class="btn btn--primary" disabled="@_busy" @onclick="GuardarAsync"><i class="bi bi-floppy"></i> Guardar</button>
+        </div>
+    </header>
+
+    @if (!string.IsNullOrWhiteSpace(_error)) { <div class="document-designer__notice document-designer__notice--error">@_error</div> }
+    @if (!string.IsNullOrWhiteSpace(_message)) { <div class="document-designer__notice">@_message</div> }
+
+    <section class="document-designer__toolbar panel-card">
+        <label>Unidad de negocio
+            <select @bind="_uNegocio" @bind:after="LoadTemplatesAsync">
+                <option value="">Plantilla global</option>
+                @foreach (var option in _unidades) { <option value="@option.Codigo">@UnidadLabel(option)</option> }
+            </select>
+        </label>
+        <label>Tipo de documento
+            <select disabled><option>Cotización</option></select>
+        </label>
+        <label>Plantilla
+            <select value="@_selectedTemplateId" @onchange="TemplateChangedAsync">
+                @foreach (var item in _templates) { <option value="@item.IdTemplate">@TemplateLabel(item)</option> }
+            </select>
+        </label>
+        <button class="btn btn--ghost" disabled="@(_selected is null)" @onclick="DuplicarAsync"><i class="bi bi-copy"></i> Duplicar</button>
+    </section>
+
+    @if (_selected is not null)
+    {
+        <section class="document-designer__layout">
+            <aside class="document-designer__settings panel-card">
+                @if (_selected.EsSistema)
+                {
+                    <div class="document-designer__readonly">Plantilla del sistema. Duplicala para personalizarla.</div>
+                }
+                <label>Nombre <input @bind="_draft.Nombre" disabled="@_selected.EsSistema" maxlength="100" /></label>
+                <label><input type="checkbox" @bind="_draft.EsPredeterminado" disabled="@_selected.EsSistema" /> Predeterminada para esta unidad</label>
+                <label>Tamaño
+                    <select @bind="_draft.Definition.Paper.Size" disabled="@_selected.EsSistema"><option>A4</option><option>A5</option></select>
+                </label>
+                <label>Orientación
+                    <select @bind="_draft.Definition.Paper.Orientation" disabled="@_selected.EsSistema"><option>Portrait</option><option>Landscape</option></select>
+                </label>
+                <div class="document-designer__margins">
+                    <label>Sup. <input type="number" @bind="_draft.Definition.Paper.MarginTopMm" disabled="@_selected.EsSistema" /></label>
+                    <label>Inf. <input type="number" @bind="_draft.Definition.Paper.MarginBottomMm" disabled="@_selected.EsSistema" /></label>
+                    <label>Izq. <input type="number" @bind="_draft.Definition.Paper.MarginLeftMm" disabled="@_selected.EsSistema" /></label>
+                    <label>Der. <input type="number" @bind="_draft.Definition.Paper.MarginRightMm" disabled="@_selected.EsSistema" /></label>
+                </div>
+                @if (LogoBlock is not null)
+                {
+                    <h3>Logo</h3>
+                    <label><input type="checkbox" @bind="LogoBlock.Visible" disabled="@_selected.EsSistema" /> Mostrar logo</label>
+                    <label>Alineación <select @bind="LogoBlock.Align" disabled="@_selected.EsSistema"><option value="left">Izquierda</option><option value="center">Centro</option><option value="right">Derecha</option></select></label>
+                    <label>Ancho (px) <input type="number" @bind="LogoBlock.Width" disabled="@_selected.EsSistema" /></label>
+                }
+                @if (ItemsBlock is not null)
+                {
+                    <h3>Columnas del detalle</h3>
+                    @foreach (var column in ItemsBlock.Columns)
+                    {
+                        <div class="document-designer__column">
+                            <input type="checkbox" @bind="column.Visible" disabled="@_selected.EsSistema" />
+                            <input @bind="column.Title" disabled="@_selected.EsSistema" aria-label="Título @column.Field" />
+                            <input type="number" @bind="column.WidthPercent" disabled="@_selected.EsSistema" aria-label="Ancho @column.Field" />
+                        </div>
+                    }
+                }
+            </aside>
+            <main class="document-designer__preview panel-card">
+                <div class="document-designer__preview-toolbar">
+                    <label>Cotización para probar
+                        <select value="@_previewVersionId" @onchange="PreviewVersionChangedAsync">
+                            <option value="0">Datos demo</option>
+                            @foreach (var quote in _cotizaciones) { <option value="@quote.IdVersion">@quote.CodigoVisible - @quote.EmpresaProspecto</option> }
+                        </select>
+                    </label>
+                    <button class="btn btn--ghost" @onclick="PreviewAsync" disabled="@_busy"><i class="bi bi-eye"></i> Actualizar vista previa</button>
+                    @if (_previewVersionId > 0) { <button class="btn btn--primary" @onclick="PdfAsync" disabled="@_busy"><i class="bi bi-file-earmark-pdf"></i> PDF beta</button> }
+                </div>
+                @if (_previewHtml is null) { <p class="muted">Elegí una cotización para previsualizar el formato con datos reales.</p> }
+                else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa de cotización"></iframe> }
+            </main>
+        </section>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "idVersion")]
+    public long? IdVersion { get; set; }
+
+    private readonly List<DocumentTemplateDto> _templates = [];
+    private IReadOnlyList<UnidadNegocioOptionDto> _unidades = [];
+    private IReadOnlyList<CotizacionListItemDto> _cotizaciones = [];
+    private DocumentTemplateDto? _selected;
+    private DocumentTemplateSaveRequest _draft = new();
+    private string _uNegocio = string.Empty;
+    private int _selectedTemplateId;
+    private long _previewVersionId;
+    private string? _previewHtml;
+    private bool _busy;
+    private string? _error;
+    private string? _message;
+
+    private DocumentBlockDefinition? LogoBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Logo, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? ItemsBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Items, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        _unidades = await TemplateSvc.GetUnidadesNegocioAsync();
+        var list = await CotizSvc.GetListAsync(new CotizacionListFiltersDto { PageSize = 20 });
+        _cotizaciones = list.Items;
+        await LoadTemplatesAsync();
+        if (IdVersion is > 0)
+        {
+            _previewVersionId = IdVersion.Value;
+            await PreviewAsync();
+        }
+    }
+
+    private async Task LoadTemplatesAsync()
+    {
+        _templates.Clear();
+        _templates.AddRange(await TemplateSvc.GetListAsync(TiposDocumentoCore.Cotizacion, _uNegocio));
+        var current = _templates.FirstOrDefault(x => x.IdTemplate == _selectedTemplateId) ?? _templates.FirstOrDefault();
+        if (current is not null) await SelectTemplateAsync(current);
+        else await NuevaAsync();
+    }
+
+    private async Task TemplateChangedAsync(ChangeEventArgs args)
+    {
+        if (int.TryParse(args.Value?.ToString(), out var id) && _templates.FirstOrDefault(x => x.IdTemplate == id) is { } template) await SelectTemplateAsync(template);
+    }
+
+    private Task SelectTemplateAsync(DocumentTemplateDto template)
+    {
+        _selected = template;
+        _selectedTemplateId = template.IdTemplate;
+        _draft = new DocumentTemplateSaveRequest
+        {
+            IdTemplate = template.EsSistema ? null : template.IdTemplate, UNegocio = template.UNegocio, TipoDocumento = template.TipoDocumento,
+            Nombre = template.Nombre, Definition = TemplateSvc.DeserializeAndValidate(template.TemplateJson), CssCustom = template.CssCustom,
+            EsPredeterminado = template.EsPredeterminado, Activo = template.Activo, Usuario = AppUserSession.GetCurrentUserName("Sistema")
+        };
+        _previewHtml = null;
+        return Task.CompletedTask;
+    }
+
+    private Task NuevaAsync()
+    {
+        _selected = new DocumentTemplateDto { IdTemplate = 0, TipoDocumento = TiposDocumentoCore.Cotizacion };
+        _selectedTemplateId = 0;
+        _draft = new DocumentTemplateSaveRequest { UNegocio = NullIfEmpty(_uNegocio), Nombre = "Nueva cotización", Usuario = AppUserSession.GetCurrentUserName("Sistema") };
+        _previewHtml = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task DuplicarAsync()
+    {
+        if (_selected is null || _selected.IdTemplate <= 0) return;
+        await BusyAsync(async () =>
+        {
+            var copy = await TemplateSvc.DuplicateAsync(_selected.IdTemplate, NullIfEmpty(_uNegocio), AppUserSession.GetCurrentUserName("Sistema"));
+            await LoadTemplatesAsync();
+            await SelectTemplateAsync(copy);
+            _message = "Se creó una copia editable de la plantilla.";
+        });
+    }
+
+    private async Task GuardarAsync()
+    {
+        if (_selected?.EsSistema == true) { _error = "Duplicá la plantilla del sistema antes de editarla."; return; }
+        await BusyAsync(async () =>
+        {
+            _draft.UNegocio = NullIfEmpty(_uNegocio);
+            _draft.Usuario = AppUserSession.GetCurrentUserName("Sistema");
+            var saved = await TemplateSvc.SaveAsync(_draft);
+            _message = "Plantilla guardada. Si era una edición, se registró su versión anterior.";
+            await LoadTemplatesAsync();
+            await SelectTemplateAsync(saved);
+        });
+    }
+
+    private Task PreviewVersionChangedAsync(ChangeEventArgs args)
+    {
+        _previewVersionId = long.TryParse(args.Value?.ToString(), out var id) ? id : 0;
+        _previewHtml = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task PreviewAsync()
+    {
+        if (_previewVersionId <= 0) { _error = "Para este MVP elegí una cotización real como datos de prueba."; return; }
+        await BusyAsync(async () =>
+        {
+            var result = await CotizDocumentSvc.RenderAsync(_previewVersionId, NullIfEmpty(_uNegocio));
+            _previewHtml = result.Html;
+            _message = $"Vista previa generada con plantilla #{result.IdTemplate}.";
+        });
+    }
+
+    private async Task PdfAsync()
+    {
+        if (_previewVersionId <= 0) return;
+        await BusyAsync(async () =>
+        {
+            var pdf = await CotizDocumentSvc.GeneratePdfAsync(_previewVersionId, NullIfEmpty(_uNegocio));
+            await JS.InvokeVoidAsync("interfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"cotizacion-beta-{_previewVersionId}.pdf");
+        });
+    }
+
+    private async Task BusyAsync(Func<Task> operation)
+    {
+        _busy = true; _error = null; _message = null;
+        try { await operation(); } catch (Exception ex) { _error = ex.Message; } finally { _busy = false; }
+    }
+    private static string? NullIfEmpty(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+    private static string UnidadLabel(UnidadNegocioOptionDto item) => string.IsNullOrWhiteSpace(item.Descripcion) ? item.Codigo : $"{item.Codigo} - {item.Descripcion}";
+    private static string TemplateLabel(DocumentTemplateDto item) => $"{(item.UNegocio is null ? "Global" : item.UNegocio)} · {item.Nombre}{(item.EsSistema ? " (sistema)" : string.Empty)}";
+}
