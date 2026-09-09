@@ -11,6 +11,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
 
 namespace AlfaCore;
@@ -2061,7 +2062,7 @@ public class Program
                     return Results.NotFound();
 
                 TraceStage("WEBHOOK_TENANT_RESOLVED");
-                return await HandleWhatsAppMessageAsync(
+                var outcome = await HandleWhatsAppMessageAsync(
                     request,
                     configService,
                     svc,
@@ -2069,6 +2070,27 @@ public class Program
                     sessionService,
                     ct,
                     TraceStage);
+
+                // El 500 real de este webhook casi nunca es una excepción: es un Results.Problem(500)
+                // devuelto normalmente (p. ej. App Secret sin resolver para la base ES). Ese camino no
+                // lo ve UseExceptionHandler ni AppExceptionLoggingMiddleware, así que se registra acá,
+                // con la etapa alcanzada. No se persiste body, teléfono, tokens ni firma.
+                if (outcome is IStatusCodeHttpResult { StatusCode: int returnedStatus } && returnedStatus >= 500)
+                {
+                    var reasonCode = outcome is ProblemHttpResult problem
+                        && string.Equals(problem.ProblemDetails.Detail, "WhatsApp App Secret no está configurado.", StringComparison.Ordinal)
+                            ? "APP_SECRET_NOT_CONFIGURED"
+                            : "UNCLASSIFIED_5XX";
+                    TryWriteWebhookOutcomeDiagnostic(correlationId, stage, returnedStatus, reasonCode);
+                    logger.LogError(
+                        "WhatsApp tenant webhook returned {StatusCode} {CorrelationId} {Stage} {ReasonCode}",
+                        returnedStatus,
+                        correlationId,
+                        stage,
+                        reasonCode);
+                }
+
+                return outcome;
             }
             catch (Exception ex)
             {
@@ -3012,6 +3034,35 @@ public class Program
         catch
         {
             // The original exception remains authoritative even if diagnostics cannot be written.
+        }
+    }
+
+    // Registro best-effort para el caso en que el webhook responde 5xx SIN lanzar excepción
+    // (Results.Problem devuelto normalmente). Escribe en {BaseDirectory}/diagnostics, que en IIS
+    // in-process es el directorio físico de la app (C:\inetpub\wwwroot\AlfaCore\diagnostics,
+    // verificado como escribible por IIS_IUSRS). No registra body, teléfono, tokens ni firma:
+    // solo correlación, etapa y clasificación. Nunca altera la respuesta enviada a Meta.
+    private static void TryWriteWebhookOutcomeDiagnostic(string correlationId, string stage, int statusCode, string reasonCode)
+    {
+        try
+        {
+            var directory = Path.Combine(AppContext.BaseDirectory, "diagnostics");
+            Directory.CreateDirectory(directory);
+            var record = new
+            {
+                TimestampUtc = DateTimeOffset.UtcNow,
+                CorrelationId = correlationId,
+                Stage = stage,
+                Outcome = "RETURNED_5XX",
+                StatusCode = statusCode,
+                ReasonCode = reasonCode
+            };
+            var path = Path.Combine(directory, $"tenant-webhook-outcome-failures-{DateTime.UtcNow:yyyyMMdd}.jsonl");
+            File.AppendAllText(path, JsonSerializer.Serialize(record) + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+        catch
+        {
+            // El diagnóstico nunca debe enmascarar ni alterar el resultado original del webhook.
         }
     }
 
