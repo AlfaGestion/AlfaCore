@@ -27,7 +27,14 @@ public sealed class WhatsAppEmbeddedSignupHostedService(
                 var store = scope.ServiceProvider.GetRequiredService<IWhatsAppEmbeddedSignupStore>();
                 var orchestrator = scope.ServiceProvider.GetRequiredService<IWhatsAppEmbeddedSignupOrchestrator>();
                 var now = DateTime.UtcNow;
-                var item = await store.ClaimNextForBasesAsync(_workerId, _options.AllowedBaseIds, now, now.AddMinutes(2), stoppingToken);
+                // AllowAllTenants => procesa onboardings de cualquier base (derivado de datos
+                // centrales). Lista no vacía => sólo esas. Lista vacía sin AllowAllTenants => no se
+                // arrancan onboardings nuevos, pero los assets/onboardings ES existentes no se degradan.
+                var item = _options.AllowAllTenants
+                    ? await store.ClaimNextAsync(_workerId, now, now.AddMinutes(2), stoppingToken)
+                    : _options.AllowedBaseIds.Length > 0
+                        ? await store.ClaimNextForBasesAsync(_workerId, _options.AllowedBaseIds, now, now.AddMinutes(2), stoppingToken)
+                        : null;
                 if (item is not null)
                 {
                     try

@@ -318,7 +318,7 @@
             <section class="wa-api-detail">
                 @if (IsApiIntegrationView)
                 {
-                    @if (IsEmbeddedSignupAllowedForActiveBase)
+                    @if (ShowEmbeddedSignupSection)
                     {
                         @if (!_whatsAppConnectionsLoaded)
                         {
@@ -2467,8 +2467,20 @@
             await InvokeAsync(StateHasChanged);
         });
 
-    private bool IsEmbeddedSignupAllowedForActiveBase
-        => EmbeddedSignupOptions.Value.IsAllowedForBase(SessionSvc.GetActiveSession()?.BaseId ?? 0);
+    // Elegibilidad administrativa para iniciar/nueva conexión (Enabled + AllowAllTenants o lista).
+    private bool CanStartEmbeddedSignupForActiveBase
+        => EmbeddedSignupOptions.Value.CanStartEmbeddedSignup(SessionSvc.GetActiveSession()?.BaseId ?? 0);
+
+    // ¿Esta base ya tiene assets/onboardings ES para ver/gestionar? Data-driven, no depende de la
+    // lista administrativa: una base con números ES sigue viéndolos aunque deshabilitemos "conectar otro".
+    private bool HasEmbeddedSignupPresenceForActiveBase
+        => _embeddedSignupStatus is not null
+           || _embeddedPendingConnections.Any()
+           || _embeddedRecoveryCandidate is not null;
+
+    private bool ShowEmbeddedSignupSection
+        => EmbeddedSignupOptions.Value.Enabled
+           && (CanStartEmbeddedSignupForActiveBase || HasEmbeddedSignupPresenceForActiveBase);
 
     private AlfaCore.Models.WhatsAppEmbeddedConnectionUiState EmbeddedSignupUiState
         => HasEmbeddedSignupInProgress
@@ -2487,7 +2499,7 @@
 
     private AlfaCore.Models.WhatsAppEmbeddedSignupCtaState ResolveEmbeddedSignupCta()
         => AlfaCore.Models.WhatsAppEmbeddedSignupCtaPolicy.Resolve(
-            IsEmbeddedSignupAllowedForActiveBase,
+            CanStartEmbeddedSignupForActiveBase,
             WhatsAppApiNumeros.Count(),
             HasEmbeddedSignupInProgress
                 ? AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Authorized
@@ -3710,7 +3722,10 @@
         _embeddedRecoveryCandidate = null;
         _embeddedPendingConnections = [];
 
-        if (!EmbeddedSignupOptions.Value.IsAllowedForBase(activeBaseId))
+        // Cargar para cualquier base con la feature encendida: los servicios devuelven vacío si la
+        // base no tiene footprint ES, y una base con assets ES debe verlos aunque no pueda iniciar
+        // nuevas conexiones (CanStartEmbeddedSignup=false).
+        if (!EmbeddedSignupOptions.Value.Enabled)
         {
             return;
         }

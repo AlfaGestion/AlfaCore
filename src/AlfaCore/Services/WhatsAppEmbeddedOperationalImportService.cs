@@ -46,8 +46,8 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
 
     public async Task<WhatsAppEmbeddedOperationalImportResult> CompleteForBaseAsync(Guid idOnboarding, int activeBaseId, CancellationToken ct = default)
     {
-        if (!_options.IsAllowedForBase(activeBaseId))
-            throw new UnauthorizedAccessException("Embedded Signup no está habilitado para esta base.");
+        if (!_options.Enabled)
+            throw new InvalidOperationException("Embedded Signup no está habilitado en este proceso.");
         var onboarding = await store.GetAsync(idOnboarding, ct)
             ?? throw new InvalidOperationException("El onboarding no existe.");
         if (activeBaseId <= 0 || onboarding.IdBase != activeBaseId)
@@ -106,7 +106,7 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
     public async Task<IReadOnlyList<WhatsAppEmbeddedPendingConnection>> GetPendingConnectionsAsync(CancellationToken ct = default)
     {
         var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
-        if (!_options.IsAllowedForBase(activeBaseId))
+        if (!_options.Enabled)
             return [];
 
         var operationalPhoneIds = (await conversacionesConfig.GetWhatsAppNumerosAsync(ct))
@@ -181,7 +181,7 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
     public async Task<WhatsAppEmbeddedRecoveryCandidate?> GetRecoveryCandidateAsync(CancellationToken ct = default)
     {
         var activeBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
-        if (!_options.IsAllowedForBase(activeBaseId))
+        if (!_options.Enabled)
             return null;
 
         var onboarding = await store.GetLatestReadyForBaseAsync(activeBaseId, ct);

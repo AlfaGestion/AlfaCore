@@ -3557,7 +3557,7 @@ public sealed class ConversacionesService(
             var whatsAppConfig = parsedMessages.Any(x => x.Attachments.Count > 0)
                 ? await conversacionesConfigService.GetWhatsAppConfigAsync(token)
                 : null;
-            var embeddedSignupWithoutVault = embeddedSignupOptions.Value.IsAllowedForBase(currentBaseId)
+            var embeddedSignupWithoutVault = embeddedSignupOptions.Value.Enabled
                 && !embeddedSignupOptions.Value.HasDataProtectionKeyRingConfiguration();
             var processed = 0;
 

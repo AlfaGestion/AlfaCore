@@ -182,7 +182,7 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         Assert.Empty(options.SystemUserId);
         Assert.Empty(options.EmbeddedSignupConfigId);
         Assert.Empty(options.AllowedBaseIds);
-        Assert.False(options.IsAllowedForBase(84));
+        Assert.False(options.CanStartEmbeddedSignup(84));
         Assert.Equal(WhatsAppEmbeddedSignupCreditMode.CustomerPaysMeta, options.CreditMode);
     }
 

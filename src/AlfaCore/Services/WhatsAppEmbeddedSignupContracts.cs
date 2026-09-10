@@ -33,6 +33,13 @@ public interface IWhatsAppAssetOwnershipStore
     Task<WhatsAppAssetOwnershipDecision> ReservePhoneAsync(string phoneNumberId, string wabaId, int idBase, CancellationToken ct = default);
     Task<WhatsAppWabaOwnership?> GetWabaOwnershipAsync(string wabaId, CancellationToken ct = default);
     Task<WhatsAppPhoneOwnership?> GetPhoneOwnershipAsync(string phoneNumberId, CancellationToken ct = default);
+
+    /// <summary>
+    /// ¿La base tiene "footprint" Embedded Signup en el central: ownership de WABA/phone o un
+    /// onboarding no terminal? Read-only. Se usa para decidir fail-closed vs legacy passthrough
+    /// cuando llega un webhook para un phone_number_id sin ownership.
+    /// </summary>
+    Task<bool> HasEmbeddedSignupFootprintAsync(int idBase, CancellationToken ct = default) => Task.FromResult(false);
 }
 
 public interface IWhatsAppEmbeddedSignupStateProtector

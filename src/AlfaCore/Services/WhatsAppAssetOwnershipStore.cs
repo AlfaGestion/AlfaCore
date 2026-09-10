@@ -43,6 +43,22 @@ public sealed class WhatsAppAssetOwnershipStore(IConfiguration configuration, IH
         return await cn.QuerySingleOrDefaultAsync<WhatsAppPhoneOwnership>(new CommandDefinition(sql, new { PhoneNumberId = NormalizeId(phoneNumberId, nameof(phoneNumberId)) }, cancellationToken: ct));
     }
 
+    public async Task<bool> HasEmbeddedSignupFootprintAsync(int idBase, CancellationToken ct = default)
+    {
+        if (idBase <= 0) return false;
+        const string sql = """
+            SELECT CASE WHEN
+                EXISTS (SELECT 1 FROM dbo.WhatsAppPhoneOwnership WHERE IdBase = @IdBase)
+                OR EXISTS (SELECT 1 FROM dbo.WhatsAppWabaOwnership WHERE IdBase = @IdBase)
+                OR EXISTS (SELECT 1 FROM dbo.WhatsAppEmbeddedOnboarding
+                           WHERE IdBase = @IdBase
+                             AND Estado NOT IN ('CANCELLED','EXPIRED','FAILED_FINAL'))
+            THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        return await cn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { IdBase = idBase }, cancellationToken: ct));
+    }
+
     private async Task<WhatsAppAssetOwnershipDecision> ReserveAsync(string kind, string assetId, string? wabaId, int idBase, string metaBusinessId, CancellationToken ct)
     {
         if (idBase <= 0) throw new ArgumentOutOfRangeException(nameof(idBase));

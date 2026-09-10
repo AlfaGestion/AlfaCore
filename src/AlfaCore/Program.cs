@@ -2089,8 +2089,9 @@ public class Program
             IConversacionesService svc,
             IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
             ISessionService sessionService,
+            IWhatsAppAssetOwnershipStore ownershipStore,
             CancellationToken ct) =>
-            HandleWhatsAppMessageAsync(request, configService, svc, embeddedSignupOptions, sessionService, ct));
+            HandleWhatsAppMessageAsync(request, configService, svc, embeddedSignupOptions, sessionService, ownershipStore, ct));
         app.MapPost("/api/conversaciones/whatsapp/webhook/{token}", async (
             string token,
             HttpRequest request,
@@ -2100,6 +2101,7 @@ public class Program
             ICentralBasesService basesService,
             IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
             ISessionService sessionService,
+            IWhatsAppAssetOwnershipStore ownershipStore,
             ILogger<Program> logger,
             CancellationToken ct) =>
         {
@@ -2127,6 +2129,7 @@ public class Program
                     svc,
                     embeddedSignupOptions,
                     sessionService,
+                    ownershipStore,
                     ct,
                     TraceStage,
                     resolvedBaseId);
@@ -2964,6 +2967,7 @@ public class Program
         IConversacionesService svc,
         IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
         ISessionService sessionService,
+        IWhatsAppAssetOwnershipStore ownershipStore,
         CancellationToken ct,
         Action<string>? traceStage = null,
         int? resolvedBaseId = null)
@@ -2971,22 +2975,51 @@ public class Program
         var options = await configService.GetWhatsAppConfigAsync(ct);
 
         // El tenant lo resuelve autoritativamente TryResolveWebhookTenantAsync desde el token de la
-        // ruta (resolvedBaseId). NO volver a deducirlo desde la sesión: un POST servidor-servidor de
-        // Meta no arrastra sesión Blazor, así que GetActiveSession() puede no ser la base del token
-        // y haría que ResolveWhatsAppWebhookAppSecret caiga al secret legacy (vacío para bases ES) y
-        // devuelva Results.Problem(500) APP_SECRET_NOT_CONFIGURED. Solo la ruta legacy sin token
-        // (sin resolvedBaseId) sigue usando la sesión como antes.
+        // ruta (resolvedBaseId). Sólo la ruta legacy sin token (sin resolvedBaseId) usa la sesión.
         var webhookBaseId = resolvedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0;
-        var appSecret = ResolveWhatsAppWebhookAppSecret(
-            embeddedSignupOptions.Value,
-            webhookBaseId,
-            options.AppSecret);
-        traceStage?.Invoke("OPTIONS_RESOLVED");
 
         using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         var rawPayload = await reader.ReadToEndAsync(ct);
         traceStage?.Invoke("BODY_READ");
 
+        // Selector read-only del secreto: el ownership central del phone_number_id decide ES vs
+        // legacy (NO AllowedBaseIds, NO el payload como autoridad). Sin escrituras, antes del HMAC.
+        var phoneNumberIds = ExtractWhatsAppPhoneNumberIds(rawPayload);
+        var phoneOwnerships = new List<WhatsAppPhoneOwnership>();
+        foreach (var phoneNumberId in phoneNumberIds)
+        {
+            var ownership = await ownershipStore.GetPhoneOwnershipAsync(phoneNumberId, ct);
+            if (ownership is not null)
+                phoneOwnerships.Add(ownership);
+        }
+        var baseHasEsFootprint = webhookBaseId > 0
+            && phoneOwnerships.Count == 0
+            && await ownershipStore.HasEmbeddedSignupFootprintAsync(webhookBaseId, ct);
+
+        var secretResolution = ResolveWhatsAppWebhookAppSecret(
+            embeddedSignupOptions.Value,
+            webhookBaseId,
+            phoneOwnerships,
+            phoneNumberIds.Count > 0,
+            baseHasEsFootprint,
+            options.AppSecret);
+        traceStage?.Invoke("OPTIONS_RESOLVED");
+
+        switch (secretResolution.Outcome)
+        {
+            case WhatsAppWebhookSecretOutcome.RejectCrossTenant:
+                traceStage?.Invoke("REJECTED_CROSS_TENANT");
+                return Results.NotFound();
+            case WhatsAppWebhookSecretOutcome.RejectUnknownPhoneForEsBase:
+                traceStage?.Invoke("REJECTED_UNKNOWN_PHONE");
+                return Results.NotFound();
+            case WhatsAppWebhookSecretOutcome.RejectEmbeddedSignupDisabled:
+                traceStage?.Invoke("REJECTED_ES_DISABLED");
+                return Results.Problem("WhatsApp Embedded Signup está deshabilitado para este número.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var appSecret = secretResolution.Secret;
         if (string.IsNullOrWhiteSpace(appSecret))
             return Results.Problem("WhatsApp App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
 
@@ -3062,17 +3095,91 @@ public class Program
     }
 
 
-    internal static string ResolveWhatsAppWebhookAppSecret(
+    internal enum WhatsAppWebhookSecretOutcome
+    {
+        Legacy,
+        EmbeddedSignup,
+        RejectEmbeddedSignupDisabled,
+        RejectCrossTenant,
+        RejectUnknownPhoneForEsBase
+    }
+
+    internal readonly record struct WhatsAppWebhookSecretResolution(WhatsAppWebhookSecretOutcome Outcome, string Secret);
+
+    /// <summary>
+    /// Elige el App Secret para validar la firma del webhook basándose en el OWNERSHIP central del
+    /// phone_number_id (nunca en AllowedBaseIds ni en el payload como autoridad). El
+    /// <paramref name="phoneOwnerships"/> son las filas de ownership que EXISTEN para los
+    /// phone_number_ids del payload; se cotejan siempre contra la base resuelta del token.
+    /// </summary>
+    internal static WhatsAppWebhookSecretResolution ResolveWhatsAppWebhookAppSecret(
         WhatsAppEmbeddedSignupOptions embeddedSignupOptions,
-        int idBase,
-        string legacyAppSecret)
+        int resolvedBaseId,
+        IReadOnlyCollection<WhatsAppPhoneOwnership> phoneOwnerships,
+        bool anyPhoneNumberIdInPayload,
+        bool baseHasEmbeddedSignupFootprint,
+        string? legacyAppSecret)
     {
         ArgumentNullException.ThrowIfNull(embeddedSignupOptions);
+        ArgumentNullException.ThrowIfNull(phoneOwnerships);
 
-        // ES bases must validate webhooks with the application-level secret, never tenant legacy configuration.
-        return embeddedSignupOptions.IsAllowedForBase(idBase)
-            ? embeddedSignupOptions.AppSecret.Trim()
-            : legacyAppSecret?.Trim() ?? string.Empty;
+        // owned por otra base => cross-tenant, rechazar (no elegir secreto).
+        if (phoneOwnerships.Any(o => o.IdBase != resolvedBaseId))
+            return new(WhatsAppWebhookSecretOutcome.RejectCrossTenant, string.Empty);
+
+        // owned por la base resuelta => asset ES.
+        if (phoneOwnerships.Any(o => o.IdBase == resolvedBaseId))
+            return embeddedSignupOptions.Enabled
+                ? new(WhatsAppWebhookSecretOutcome.EmbeddedSignup, embeddedSignupOptions.AppSecret.Trim())
+                : new(WhatsAppWebhookSecretOutcome.RejectEmbeddedSignupDisabled, string.Empty);
+
+        // sin ownership: base con footprint ES => phone desconocido, fail closed; si no => legacy.
+        if (anyPhoneNumberIdInPayload && embeddedSignupOptions.Enabled && baseHasEmbeddedSignupFootprint)
+            return new(WhatsAppWebhookSecretOutcome.RejectUnknownPhoneForEsBase, string.Empty);
+
+        return new(WhatsAppWebhookSecretOutcome.Legacy, legacyAppSecret?.Trim() ?? string.Empty);
+    }
+
+    // Selector read-only: extrae metadata.phone_number_id del body crudo ANTES de validar la firma.
+    // El payload nunca es autoridad; sólo indica qué ownership central consultar. Sólo devuelve ids
+    // puramente numéricos (los de Meta lo son) para no romper la normalización del ownership store.
+    private static IReadOnlyList<string> ExtractWhatsAppPhoneNumberIds(string rawPayload)
+    {
+        if (string.IsNullOrWhiteSpace(rawPayload))
+            return [];
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawPayload);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("entry", out var entries)
+                || entries.ValueKind != JsonValueKind.Array)
+                return [];
+
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in entries.EnumerateArray())
+            {
+                if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array)
+                    continue;
+                foreach (var change in changes.EnumerateArray())
+                {
+                    if (!change.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Object)
+                        continue;
+                    if (!value.TryGetProperty("metadata", out var metadata) || metadata.ValueKind != JsonValueKind.Object)
+                        continue;
+                    if (!metadata.TryGetProperty("phone_number_id", out var pid) || pid.ValueKind != JsonValueKind.String)
+                        continue;
+                    var id = (pid.GetString() ?? string.Empty).Trim();
+                    if (id.Length > 0 && id.All(static c => c is >= '0' and <= '9'))
+                        ids.Add(id);
+                }
+            }
+            return ids.ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     private static async Task<IResult> HandleInstagramVerifyAsync(

@@ -7,6 +7,20 @@ public sealed class WhatsAppEmbeddedSignupOptions
     public bool Enabled { get; set; }
     public bool WorkerEnabled { get; set; }
     public bool WebhookRoutingEnabled { get; set; }
+
+    /// <summary>
+    /// Si es <c>true</c>, cualquier base autenticada de AlfaCore puede INICIAR un onboarding de
+    /// Embedded Signup sin figurar en <see cref="AllowedBaseIds"/>. Default seguro <c>false</c>:
+    /// borrar la lista por accidente NO habilita las 141 bases. No afecta el runtime de assets ya
+    /// onboardeados (eso lo decide <see cref="Enabled"/> + ownership central).
+    /// </summary>
+    public bool AllowAllTenants { get; set; }
+
+    /// <summary>
+    /// Lista blanca administrativa para iniciar nuevos onboardings cuando
+    /// <see cref="AllowAllTenants"/> es <c>false</c>. No participa en la resolución de credencial de
+    /// un asset ya onboardeado.
+    /// </summary>
     public int[] AllowedBaseIds { get; set; } = [];
     public string AppId { get; set; } = string.Empty;
     public string BusinessPortfolioId { get; set; } = string.Empty;
@@ -44,8 +58,13 @@ public sealed class WhatsAppEmbeddedSignupOptions
     public int MaxRetryCount { get; set; } = 8;
     public WhatsAppEmbeddedSignupCreditMode CreditMode { get; set; } = WhatsAppEmbeddedSignupCreditMode.CustomerPaysMeta;
 
-    public bool IsAllowedForBase(int idBase)
-        => Enabled && idBase > 0 && AllowedBaseIds.Contains(idBase);
+    /// <summary>
+    /// ¿Esta base puede INICIAR un nuevo onboarding de Embedded Signup? Elegibilidad administrativa
+    /// únicamente. NO decide si un asset (WABA/phone) ya existente es ES o legacy: eso es
+    /// <see cref="Enabled"/> + ownership central.
+    /// </summary>
+    public bool CanStartEmbeddedSignup(int idBase)
+        => Enabled && idBase > 0 && (AllowAllTenants || AllowedBaseIds.Contains(idBase));
 
     public bool HasDataProtectionKeyRingConfiguration()
         => !string.IsNullOrWhiteSpace(DataProtectionKeysPath)
@@ -54,8 +73,9 @@ public sealed class WhatsAppEmbeddedSignupOptions
                 || !string.IsNullOrWhiteSpace(DataProtectionCertificateThumbprint));
 
     public bool HasWebhookRuntimeConfiguration()
-        => AllowedBaseIds.Length > 0
-            && AllowedBaseIds.All(static id => id > 0)
+        // AllowedBaseIds YA NO es requisito: Enabled=true + AllowAllTenants=false + lista vacía es
+        // válido y significa "runtime ES existente operativo, nuevos onboardings deshabilitados".
+        => AllowedBaseIds.All(static id => id > 0)
             && AllowedBaseIds.Distinct().Count() == AllowedBaseIds.Length
             && (UseApplicationCentralConnection ^ !string.IsNullOrWhiteSpace(CentralConnectionString))
             && !string.IsNullOrWhiteSpace(AppSecret);
