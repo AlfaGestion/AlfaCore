@@ -27,6 +27,26 @@ public class Program
         // directo si los ve, por eso a veces parecia que "andaba").
         DotEnvLoader.LoadIfPresent(AppContext.BaseDirectory);
 
+        // Modo one-shot de migración del vault de WhatsApp Embedded Signup. Se resuelve ANTES de
+        // CreateBuilder: no arranca Kestrel, no registra ni inicia hosted services, no toca el
+        // webhook. Dry-run por defecto; sólo escribe con --commit. Ver WhatsAppVaultMigrationCommand.
+        if (WhatsAppVaultMigrationCommand.IsRequested(args))
+        {
+            var migrationExitCode = WhatsAppVaultMigrationCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(migrationExitCode);
+            return;
+        }
+
+        if (WhatsAppKeyRingProbeCommand.IsRequested(args))
+        {
+            var probeExitCode = WhatsAppKeyRingProbeCommand.Run(args, Console.Out);
+            Environment.Exit(probeExitCode);
+            return;
+        }
+
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
         var webRootCandidates = new[]
@@ -2057,13 +2077,20 @@ public class Program
             CancellationToken ct) =>
         {
             DisableWebhookCaching(response);
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleWhatsAppVerifyAsync(request, configService, ct);
         });
 
-        app.MapPost("/api/conversaciones/whatsapp/webhook", HandleWhatsAppMessageAsync);
+        app.MapPost("/api/conversaciones/whatsapp/webhook", (
+            HttpRequest request,
+            IConversacionesConfigService configService,
+            IConversacionesService svc,
+            IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
+            ISessionService sessionService,
+            CancellationToken ct) =>
+            HandleWhatsAppMessageAsync(request, configService, svc, embeddedSignupOptions, sessionService, ct));
         app.MapPost("/api/conversaciones/whatsapp/webhook/{token}", async (
             string token,
             HttpRequest request,
@@ -2089,7 +2116,8 @@ public class Program
             try
             {
                 TraceStage(stage);
-                if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+                var resolvedBaseId = await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct);
+                if (resolvedBaseId is null)
                     return Results.NotFound();
 
                 TraceStage("WEBHOOK_TENANT_RESOLVED");
@@ -2100,7 +2128,8 @@ public class Program
                     embeddedSignupOptions,
                     sessionService,
                     ct,
-                    TraceStage);
+                    TraceStage,
+                    resolvedBaseId);
             }
             catch (Exception ex)
             {
@@ -2125,7 +2154,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleInstagramVerifyAsync(request, configService, ct);
@@ -2141,7 +2170,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleInstagramMessageAsync(request, configService, svc, ct);
@@ -2156,7 +2185,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleFacebookVerifyAsync(request, configService, ct);
@@ -2172,7 +2201,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleFacebookMessageAsync(request, configService, svc, ct);
@@ -2187,7 +2216,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleMercadoLibreMessageAsync(request, svc, ct);
@@ -2824,10 +2853,13 @@ public class Program
     /// <summary>
     /// Resuelve a qué base pertenece un token de webhook y, si existe, fuerza esa base como
     /// activa para el resto de este request (ver <see cref="ISessionService.SetWebhookOverride"/>).
-    /// Devuelve <c>false</c> si el token no corresponde a ninguna base — el caller debe responder
-    /// 404 sin exponer si el token "casi" era válido.
+    /// Devuelve el <c>IdBase</c> resuelto autoritativamente desde el token, o <c>null</c> si el
+    /// token no corresponde a ninguna base — el caller debe responder 404 sin exponer si el token
+    /// "casi" era válido. El caller debe usar este IdBase para cualquier decisión tenant-sensitive
+    /// (p. ej. qué App Secret validar): un POST servidor-servidor de Meta no trae sesión Blazor,
+    /// así que <see cref="ISessionService.GetActiveSession"/> no es una fuente confiable acá.
     /// </summary>
-    internal static async Task<bool> TryResolveWebhookTenantAsync(
+    internal static async Task<int?> TryResolveWebhookTenantAsync(
         string token,
         ICentralBasesService basesService,
         ISessionService sessionService,
@@ -2836,7 +2868,7 @@ public class Program
         var baseInfo = await basesService.GetByWebhookTokenAsync(token, ct);
         if (baseInfo is null)
         {
-            return false;
+            return null;
         }
 
         sessionService.SetWebhookOverride(new SessionDto
@@ -2850,7 +2882,7 @@ public class Program
             TrustServerCertificate = true
         });
 
-        return true;
+        return baseInfo.IdBase;
     }
 
     private static void DisableWebhookCaching(HttpResponse response)
@@ -2933,12 +2965,21 @@ public class Program
         IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
         ISessionService sessionService,
         CancellationToken ct,
-        Action<string>? traceStage = null)
+        Action<string>? traceStage = null,
+        int? resolvedBaseId = null)
     {
         var options = await configService.GetWhatsAppConfigAsync(ct);
+
+        // El tenant lo resuelve autoritativamente TryResolveWebhookTenantAsync desde el token de la
+        // ruta (resolvedBaseId). NO volver a deducirlo desde la sesión: un POST servidor-servidor de
+        // Meta no arrastra sesión Blazor, así que GetActiveSession() puede no ser la base del token
+        // y haría que ResolveWhatsAppWebhookAppSecret caiga al secret legacy (vacío para bases ES) y
+        // devuelva Results.Problem(500) APP_SECRET_NOT_CONFIGURED. Solo la ruta legacy sin token
+        // (sin resolvedBaseId) sigue usando la sesión como antes.
+        var webhookBaseId = resolvedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0;
         var appSecret = ResolveWhatsAppWebhookAppSecret(
             embeddedSignupOptions.Value,
-            sessionService.GetActiveSession()?.BaseId ?? 0,
+            webhookBaseId,
             options.AppSecret);
         traceStage?.Invoke("OPTIONS_RESOLVED");
 
