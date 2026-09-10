@@ -175,6 +175,17 @@
                                                     Disabled="@(SavingFirma || !HasFirma)"
                                                     OnClick="_ => RemoveFirmaAsync()">Quitar</AlfaButton>
                                     </div>
+                                    <div class="alfa-field usuarios-edit-photo__firma-nombre">
+                                        <label class="alfa-field__label" for="firma-nombre-mostrar">Texto a mostrar debajo de la firma</label>
+                                        <input id="firma-nombre-mostrar"
+                                               class="alfa-input__control"
+                                               value="@FirmaNombreMostrar"
+                                               placeholder="Ej: Alberto Antúnez"
+                                               maxlength="150"
+                                               disabled="@SavingFirma"
+                                               @onchange="args => SetFirmaNombreMostrarAsync(args.Value?.ToString())" />
+                                    </div>
+                                    <span class="usuarios-edit-photo__hint">Si lo dejás vacío, se muestra el usuario de sistema (@Model.Nombre).</span>
                                 </div>
                             </div>
                         </section>
@@ -291,6 +302,8 @@
     [Parameter] public bool HasFirma { get; set; }
     [Parameter] public int FirmaPickerVersion { get; set; }
     [Parameter] public bool SavingFirma { get; set; }
+    [Parameter] public string FirmaNombreMostrar { get; set; } = string.Empty;
+    [Parameter] public EventCallback<string?> FirmaNombreMostrarChanged { get; set; }
     [Parameter] public EventCallback<InputFileChangeEventArgs> OnFirmaSelected { get; set; }
     [Parameter] public EventCallback OnRemoveFirma { get; set; }
 
@@ -359,6 +372,7 @@
     private Task RemovePhotoAsync() => OnRemovePhoto.InvokeAsync();
     private Task HandleFirmaSelectedAsync(InputFileChangeEventArgs args) => OnFirmaSelected.InvokeAsync(args);
     private Task RemoveFirmaAsync() => OnRemoveFirma.InvokeAsync();
+    private Task SetFirmaNombreMostrarAsync(string? value) => FirmaNombreMostrarChanged.InvokeAsync(value);
     private Task TogglePasswordAsync() => OnTogglePassword.InvokeAsync();
     private static string FormatDate(DateTime? value) => value.HasValue ? value.Value.ToString("dd/MM/yyyy HH:mm") : "—";
 }

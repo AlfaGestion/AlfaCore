@@ -101,6 +101,8 @@
                           HasFirma="@_hasFirma"
                           FirmaPickerVersion="@_firmaPickerVersion"
                           SavingFirma="@_savingFirma"
+                          FirmaNombreMostrar="@_firmaNombreMostrar"
+                          FirmaNombreMostrarChanged="GuardarFirmaNombreMostrarAsync"
                           OnFirmaSelected="HandleFirmaSelectedAsync"
                           OnRemoveFirma="RemoveFirmaAsync" />
     }
@@ -300,6 +302,7 @@
     private string _firmaCacheToken = string.Empty;
     private int _firmaPickerVersion;
     private bool _savingFirma;
+    private string _firmaNombreMostrar = string.Empty;
     private string _draftAgruparPor = UsuariosViewGroupKeys.None;
     private string _viewSettingsUserName = string.Empty;
     private string _bulkAction = BulkActionDeactivate;
@@ -1011,9 +1014,21 @@
 
     private async Task LoadFirmaStateAsync(string nombre)
     {
-        var result = await UiOps.RunAsync(() => UsuariosSvc.GetSignatureBytesAsync(nombre), "No se pudo cargar la firma del usuario.");
-        _hasFirma = result.Success && result.Value is { Length: > 0 };
+        var result = await UiOps.RunAsync(() => UsuariosSvc.GetSignatureAsync(nombre), "No se pudo cargar la firma del usuario.");
+        _hasFirma = result.Success && result.Value?.Imagen is { Length: > 0 };
+        _firmaNombreMostrar = result.Success ? result.Value?.NombreMostrar ?? string.Empty : string.Empty;
         _firmaCacheToken = Guid.NewGuid().ToString("N");
+    }
+
+    private async Task GuardarFirmaNombreMostrarAsync(string? valor)
+    {
+        _firmaNombreMostrar = valor ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_selectedNombre))
+            return;
+
+        var result = await UiOps.RunAsync(async () => { await UsuariosSvc.SaveSignatureDisplayNameAsync(_selectedNombre, _firmaNombreMostrar); return true; }, "No se pudo guardar el nombre a mostrar en la firma.");
+        if (!result.Success)
+            SetFeedback(result.Feedback);
     }
 
     private async Task HandleFirmaSelectedAsync(InputFileChangeEventArgs args)

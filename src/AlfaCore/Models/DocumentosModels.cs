@@ -1,3 +1,5 @@
+using AlfaCore.Services;
+
 namespace AlfaCore.Models;
 
 public static class TiposDocumentoCore
@@ -16,10 +18,11 @@ public static class TiposBloqueDocumento
     public const string Propuesta = "Propuesta";
     public const string Firma = "Firma";
     public const string Portada = "Portada";
+    public const string Pie = "Pie";
 
     public static readonly IReadOnlySet<string> Permitidos = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        Logo, Empresa, Comprobante, Cliente, Items, Totales, Propuesta, Firma, Portada
+        Logo, Empresa, Comprobante, Cliente, Items, Totales, Propuesta, Firma, Portada, Pie
     };
 }
 
@@ -34,7 +37,8 @@ public static class DocumentBlockFields
         [TiposBloqueDocumento.Empresa] = [new("Nombre", "Nombre"), new("Cuit", "CUIT"), new("Domicilio", "Domicilio"), new("Telefono", "Teléfono"), new("Email", "Email")],
         [TiposBloqueDocumento.Comprobante] = [new("Numero", "Número"), new("Fecha", "Fecha"), new("Vencimiento", "Vencimiento"), new("Moneda", "Moneda")],
         [TiposBloqueDocumento.Cliente] = [new("Codigo", "Código"), new("RazonSocial", "Razón social"), new("Cuit", "CUIT"), new("Domicilio", "Domicilio"), new("Telefono", "Teléfono"), new("Email", "Email")],
-        [TiposBloqueDocumento.Totales] = [new("Neto", "Neto"), new("Descuento", "Descuento"), new("Impuestos", "Impuestos"), new("Total", "Total")]
+        [TiposBloqueDocumento.Totales] = [new("Neto", "Neto"), new("Descuento", "Descuento"), new("Impuestos", "Impuestos"), new("Total", "Total")],
+        [TiposBloqueDocumento.Pie] = [new("NumeroPagina", "Número de página"), new("NombreEmpresa", "Nombre de la empresa")]
     };
 
     public static IReadOnlyList<DocumentFieldOption> For(string tipo)
@@ -72,7 +76,8 @@ public sealed class DocumentTemplateDefinition
                 ]
             },
             new() { Id = "totals", Type = TiposBloqueDocumento.Totales, Visible = true },
-            new() { Id = "signature", Type = TiposBloqueDocumento.Firma, Visible = true }
+            new() { Id = "signature", Type = TiposBloqueDocumento.Firma, Visible = true },
+            new() { Id = "footer", Type = TiposBloqueDocumento.Pie, Visible = false }
         ]
     };
 }
@@ -168,7 +173,14 @@ public sealed class ClienteDocumentData { public string Codigo { get; set; } = s
 public sealed class CotizacionDocumentItemData { public string Codigo { get; set; } = string.Empty; public string Descripcion { get; set; } = string.Empty; public decimal Cantidad { get; set; } public decimal Precio { get; set; } public decimal Descuento { get; set; } public decimal Total { get; set; } public bool ImpactaTotal { get; set; } }
 public sealed class TotalesDocumentData { public decimal Neto { get; set; } public decimal Descuento { get; set; } public decimal Impuestos { get; set; } public decimal Total { get; set; } }
 
-public sealed class DocumentRenderResult { public string Html { get; init; } = string.Empty; public int IdTemplate { get; init; } public string TipoDocumento { get; init; } = string.Empty; public string? UNegocio { get; init; } }
+public sealed class DocumentRenderResult
+{
+    public string Html { get; init; } = string.Empty;
+    public int IdTemplate { get; init; }
+    public string TipoDocumento { get; init; } = string.Empty;
+    public string? UNegocio { get; init; }
+    public DocumentPdfFooterOptions? Footer { get; init; }
+}
 
 /// <summary>Tema visual (paleta de colores) aplicado a TODOS los documentos, independiente de la
 /// plantilla elegida -- es una preferencia general de la base, no por plantilla.</summary>

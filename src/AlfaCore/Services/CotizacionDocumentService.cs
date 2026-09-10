@@ -31,8 +31,9 @@ public sealed class CotizacionDocumentService(
             data.PortadaBytes = template.TienePortada ? await templates.GetPortadaImageBytesAsync(template.IdTemplate, ct) : null;
             var theme = await templates.GetGeneralThemeAsync(ct);
             var html = renderer.RenderCotizacion(definition, data, template.CssCustom, theme);
+            var footer = BuildFooterOptions(definition, data.Empresa.Nombre);
             logger.LogInformation("Documentos: HTML de cotización {IdVersion}, plantilla {IdTemplate}, UNegocio {UNegocio}.", idVersion, template.IdTemplate, uNegocio ?? "GLOBAL");
-            return new DocumentRenderResult { Html = html, IdTemplate = template.IdTemplate, TipoDocumento = template.TipoDocumento, UNegocio = template.UNegocio };
+            return new DocumentRenderResult { Html = html, IdTemplate = template.IdTemplate, TipoDocumento = template.TipoDocumento, UNegocio = template.UNegocio, Footer = footer };
         }
         catch (AppUserFacingException) { throw; }
         catch (Exception ex)
@@ -45,7 +46,7 @@ public sealed class CotizacionDocumentService(
     public async Task<byte[]> GeneratePdfAsync(long idVersion, string? uNegocio, CancellationToken ct = default)
     {
         var result = await RenderAsync(idVersion, uNegocio, ct);
-        var pdf = await pdfService.GenerateAsync(result.Html, ct);
+        var pdf = await pdfService.GenerateAsync(result.Html, result.Footer, ct);
         logger.LogInformation("Documentos: PDF beta de cotización {IdVersion}, plantilla {IdTemplate}.", idVersion, result.IdTemplate);
         return pdf;
     }
@@ -67,8 +68,14 @@ public sealed class CotizacionDocumentService(
 
         byte[]? firma = null;
         var firmante = (detail.UsuarioAlta ?? string.Empty).Trim();
+        var firmanteMostrar = firmante;
         if (firmante.Length > 0)
-            firma = await usuariosService.GetSignatureBytesAsync(firmante, ct);
+        {
+            var firmaDto = await usuariosService.GetSignatureAsync(firmante, ct);
+            firma = firmaDto?.Imagen;
+            if (!string.IsNullOrWhiteSpace(firmaDto?.NombreMostrar))
+                firmanteMostrar = firmaDto.NombreMostrar.Trim();
+        }
 
         return new CotizacionDocumentData
         {
@@ -96,8 +103,18 @@ public sealed class CotizacionDocumentService(
             Totales = new TotalesDocumentData { Neto = detail.Subtotal, Descuento = detail.TotalDescuento, Total = detail.Total },
             PropuestaHtml = detail.CuerpoPropuesta,
             FirmaBytes = firma,
-            FirmanteNombre = firmante
+            FirmanteNombre = firmanteMostrar
         };
+    }
+
+    private static DocumentPdfFooterOptions? BuildFooterOptions(DocumentTemplateDefinition definition, string empresaNombre)
+    {
+        var pie = definition.Blocks.FirstOrDefault(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
+        if (pie is null) return null;
+        var campos = pie.VisibleFields;
+        var mostrarPagina = campos is null || campos.Contains("NumeroPagina", StringComparer.OrdinalIgnoreCase);
+        var mostrarEmpresa = campos is null || campos.Contains("NombreEmpresa", StringComparer.OrdinalIgnoreCase);
+        return new DocumentPdfFooterOptions(mostrarPagina, mostrarEmpresa, empresaNombre);
     }
 
     private static string Value(IReadOnlyDictionary<string, string> source, string key) => source.TryGetValue(key, out var value) ? value : string.Empty;

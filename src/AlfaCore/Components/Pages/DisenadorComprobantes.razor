@@ -192,6 +192,23 @@
                         <p class="document-designer__hint">Usa la firma cargada por quien creó la cotización (Usuarios → Firma digital).</p>
                     </section>
                 }
+                @if (PieBlock is not null)
+                {
+                    <section class="document-designer__settings-group">
+                        <div class="document-designer__settings-heading">Pie de página</div>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="PieBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar pie de página en el PDF</span></label>
+                        <div class="document-designer__column-fields">
+                            @foreach (var option in DocumentBlockFields.For(TiposBloqueDocumento.Pie))
+                            {
+                                <label class="document-designer__toggle document-designer__toggle--compact">
+                                    <input type="checkbox" checked="@IsFieldVisible(PieBlock, option.Field)" @onchange="args => ToggleField(PieBlock, option.Field, args)" disabled="@(IsTemplateReadOnly || !PieBlock.Visible)" />
+                                    <span>@option.Label</span>
+                                </label>
+                            }
+                        </div>
+                        <p class="document-designer__hint">Ambos datos son opcionales e independientes entre sí.</p>
+                    </section>
+                }
             </aside>
             <main class="document-designer__preview panel-card">
                 <div class="document-designer__preview-toolbar">
@@ -244,6 +261,7 @@
     private DocumentBlockDefinition? PropuestaBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Propuesta, StringComparison.OrdinalIgnoreCase));
     private DocumentBlockDefinition? FirmaBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Firma, StringComparison.OrdinalIgnoreCase));
     private DocumentBlockDefinition? PortadaBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? PieBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync()
     {

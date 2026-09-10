@@ -17,15 +17,26 @@ public sealed class DocumentRenderer : IDocumentRenderer
         var (coverWidthMm, coverHeightMm) = PageDimensionsMm(paper);
         var theme = DocumentThemePresets.Resolve(themeKey);
         var sb = new StringBuilder();
+        var hasFooter = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
+        // Márgenes reales de página, no padding: el padding de un contenedor que se fragmenta en
+        // varias hojas impresas SOLO se aplica en el primer/último fragmento (no antes de cada
+        // salto de página intermedio) -- por eso la versión anterior de este fix dejaba el texto
+        // pegado al borde justo en los saltos de página del medio del documento. El margen real de
+        // @page sí se repite en cada hoja. Se usan dos páginas CSS con nombre: "cover" (margen 0,
+        // para que la portada ocupe la hoja completa) y "content" (el margen de papel configurado,
+        // más espacio extra abajo si hay pie de página) -- nunca una @page sin nombre, para no
+        // depender de cómo Chromium propaga el nombre de página entre hermanos sin "page" propio.
+        var bottomContentMm = hasFooter ? Math.Max(paper.MarginBottomMm, 14m) : paper.MarginBottomMm;
         sb.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>Cotización ")
             .Append(E(data.Comprobante.Numero)).Append("</title><style>")
-            .Append("@page{size:").Append(paper.Size).Append(' ').Append(paper.Orientation.ToLowerInvariant())
-            .Append(";margin:").Append(Mm(paper.MarginTopMm)).Append(' ').Append(Mm(paper.MarginRightMm)).Append(' ')
-            .Append(Mm(paper.MarginBottomMm)).Append(' ').Append(Mm(paper.MarginLeftMm)).Append(";}*")
-            .Append("{box-sizing:border-box}body{font-family:Arial,sans-serif;color:").Append(theme.ColorTexto).Append(";font-size:10pt;margin:0}.doc{width:100%}")
+            .Append("@page cover{size:").Append(paper.Size).Append(' ').Append(paper.Orientation.ToLowerInvariant()).Append(";margin:0}")
+            .Append("@page content{size:").Append(paper.Size).Append(' ').Append(paper.Orientation.ToLowerInvariant()).Append(";margin:")
+            .Append(Mm(paper.MarginTopMm)).Append(' ').Append(Mm(paper.MarginRightMm)).Append(' ').Append(Mm(bottomContentMm)).Append(' ').Append(Mm(paper.MarginLeftMm)).Append('}')
+            .Append('*').Append("{box-sizing:border-box}html,body{margin:0;padding:0}body{font-family:Arial,sans-serif;color:").Append(theme.ColorTexto).Append(";font-size:10pt}.doc{width:100%}")
+            .Append(".doc-content{page:content}")
             .Append(".header{border-bottom:2px solid ").Append(theme.ColorSecundario).Append(";padding-bottom:5mm;margin-bottom:5mm;display:flex;gap:8mm;align-items:flex-start}")
             .Append(".header--split{border:1px solid #d5dde5;border-bottom:2px solid ").Append(theme.ColorSecundario).Append(";border-radius:2mm;padding:5mm 6mm}")
-            .Append("@page cover-page{margin:0}.cover-page{page:cover-page;break-after:page;width:").Append(Mm(coverWidthMm)).Append(";height:").Append(Mm(coverHeightMm)).Append(";overflow:hidden}.cover-page img{width:100%;height:100%;object-fit:cover;display:block}")
+            .Append(".cover-page{page:cover;break-after:page;width:").Append(Mm(coverWidthMm)).Append(";height:").Append(Mm(coverHeightMm)).Append(";overflow:hidden}.cover-page img{width:100%;height:100%;object-fit:cover;display:block}")
             .Append(".logo{max-height:35mm;object-fit:contain}.company{flex:1}.company h1{font-size:18pt;margin:0 0 2mm}.doc-meta{text-align:right;min-width:45mm}")
             .Append(".header--split .doc-meta{text-align:right}.header--split .logo-side{display:flex;align-items:center}")
             .Append(".card{border:1px solid #d5dde5;background:").Append(theme.ColorFondoSuave).Append(";padding:4mm;margin:0 0 5mm}")
@@ -33,14 +44,28 @@ public sealed class DocumentRenderer : IDocumentRenderer
             .Append(".items td{padding:2.3mm;border-bottom:1px solid #dce3e9;vertical-align:top}.right{text-align:right}.totals{margin-left:auto;width:65mm;margin-top:5mm}")
             .Append(".totals td{padding:1.4mm 0}.total-final{font-size:14pt;font-weight:700;border-top:2px solid ").Append(theme.ColorPrimario).Append("}")
             .Append(".muted{color:#596579;font-size:9pt}.proposal{margin-top:6mm}.proposal img{max-width:100%}.section-title{font-size:11pt;font-weight:700;margin:5mm 0 2mm;color:").Append(theme.ColorPrimario).Append("}")
-            .Append(".signature{margin-top:14mm}.signature img{max-height:22mm;object-fit:contain;display:block;margin:3mm 0}")
+            // La imagen va en un <div> propio, NUNCA <img style="display:block"> directamente: es
+            // un bug real de Chromium confirmado con pruebas aisladas -- un <img> con display:block
+            // dentro de un contenedor con página CSS con nombre (page:content, ver .doc-content
+            // arriba) que tiene al menos un hermano ANTERIOR se manda entero a la hoja siguiente en
+            // blanco, sin importar cuánto espacio sobre en la hoja actual (reproducido con 0mm, 10mm,
+            // 100mm y 200mm de contenido previo: siempre salta). Envolviendo la imagen en un div de
+            // bloque y dejando el <img> en su display inline por defecto, el bug no se dispara.
+            .Append(".signature{margin-top:10mm;break-inside:avoid}.signature-image{margin:3mm 0}.signature-image img{height:20mm;width:55mm;object-fit:contain;object-position:left center}")
             .Append(SafeCss(cssCustom)).Append("</style></head><body><main class=\"doc\">");
 
         var hasCompanyBlock = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Empresa, StringComparison.OrdinalIgnoreCase));
         var logoBlock = template.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Logo, StringComparison.OrdinalIgnoreCase));
         var combinedLogo = logoBlock is { Visible: true, CombineWithCompany: true } ? logoBlock : null;
-        foreach (var block in template.Blocks.Where(x => x.Visible))
+
+        var coverBlock = template.Blocks.FirstOrDefault(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase));
+        if (coverBlock is not null)
+            AppendBlock(sb, coverBlock, data, hasCompanyBlock, combinedLogo, theme);
+
+        sb.Append("<div class=\"doc-content\">");
+        foreach (var block in template.Blocks.Where(x => x.Visible && !x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase)))
             AppendBlock(sb, block, data, hasCompanyBlock, combinedLogo, theme);
+        sb.Append("</div>");
 
         sb.Append("</main></body></html>");
         return sb.ToString();
@@ -107,7 +132,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
             case "FIRMA":
                 sb.Append("<section class=\"signature\">Atentamente,");
                 if (data.FirmaBytes is { Length: > 0 })
-                    sb.Append("<img src=\"data:image/png;base64,").Append(Convert.ToBase64String(data.FirmaBytes)).Append("\" alt=\"Firma\">");
+                    sb.Append("<div class=\"signature-image\"><img src=\"data:image/png;base64,").Append(Convert.ToBase64String(data.FirmaBytes)).Append("\" alt=\"Firma\"></div>");
                 if (!string.IsNullOrWhiteSpace(data.FirmanteNombre))
                     sb.Append("<strong>").Append(E(data.FirmanteNombre)).Append("</strong>");
                 sb.Append("</section>");

@@ -530,6 +530,56 @@ public sealed class UsuariosService(
             await cmd.ExecuteNonQueryAsync(token);
         }, "No se pudo quitar la firma del usuario.", ct);
 
+    public Task<UsuarioFirmaDto?> GetSignatureAsync(string nombre, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetSignature", async token =>
+        {
+            var usuario = (nombre ?? string.Empty).Trim();
+            if (usuario.Length == 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await SignatureTableExistsAsync(cn, token))
+                return null;
+
+            await using var cmd = new SqlCommand("SELECT TOP (1) Imagen, NombreMostrar FROM dbo.MA_FIRMAS_USUARIO WHERE Usuario = @Usuario;", cn);
+            cmd.Parameters.AddWithValue("@Usuario", usuario);
+            await using var reader = await cmd.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token))
+                return null;
+            return new UsuarioFirmaDto
+            {
+                Imagen = await reader.IsDBNullAsync(0, token) ? null : reader.GetFieldValue<byte[]>(0),
+                NombreMostrar = await reader.IsDBNullAsync(1, token) ? null : reader.GetString(1)
+            };
+        }, "No se pudo obtener la firma del usuario.", ct);
+
+    public Task SaveSignatureDisplayNameAsync(string nombre, string? nombreMostrar, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveSignatureDisplayName", async token =>
+        {
+            var usuario = (nombre ?? string.Empty).Trim();
+            if (usuario.Length == 0)
+                throw new InvalidOperationException("Falta indicar el usuario.");
+            var texto = string.IsNullOrWhiteSpace(nombreMostrar) ? null : nombreMostrar.Trim();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            await using var cmdUpd = new SqlCommand(
+                "UPDATE dbo.MA_FIRMAS_USUARIO SET NombreMostrar = @NombreMostrar, FechaHoraModificacion = GETDATE() WHERE Usuario = @Usuario;", cn);
+            cmdUpd.Parameters.AddWithValue("@Usuario", usuario);
+            cmdUpd.Parameters.AddWithValue("@NombreMostrar", (object?)texto ?? DBNull.Value);
+            var updated = await cmdUpd.ExecuteNonQueryAsync(token);
+            if (updated > 0)
+                return;
+
+            await using var cmdIns = new SqlCommand(
+                "INSERT INTO dbo.MA_FIRMAS_USUARIO (Usuario, NombreMostrar) VALUES (@Usuario, @NombreMostrar);", cn);
+            cmdIns.Parameters.AddWithValue("@Usuario", usuario);
+            cmdIns.Parameters.AddWithValue("@NombreMostrar", (object?)texto ?? DBNull.Value);
+            await cmdIns.ExecuteNonQueryAsync(token);
+        }, "No se pudo guardar el nombre a mostrar en la firma.", ct);
+
     private static async Task<bool> SignatureTableExistsAsync(SqlConnection cn, CancellationToken ct)
     {
         await using var cmd = new SqlCommand("SELECT OBJECT_ID(N'dbo.MA_FIRMAS_USUARIO', N'U');", cn);

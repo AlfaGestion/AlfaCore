@@ -13,7 +13,7 @@ public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogge
     private IBrowser? _browser;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
-    public async Task<byte[]> GenerateAsync(string html, CancellationToken ct = default)
+    public async Task<byte[]> GenerateAsync(string html, DocumentPdfFooterOptions? footer = null, CancellationToken ct = default)
     {
         try
         {
@@ -22,7 +22,18 @@ public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogge
             try
             {
                 await page.SetContentAsync(html, new PageSetContentOptions { WaitUntil = WaitUntilState.Load });
-                var pdf = await page.PdfAsync(new PagePdfOptions { Format = "A4", PrintBackground = true, PreferCSSPageSize = true });
+                // El margen real (arriba/abajo/lados, incluido el espacio para el pie) lo define el
+                // CSS @page con nombre en DocumentRenderer -- no el Margin de Playwright, que con
+                // PreferCSSPageSize=true queda ignorado para el layout del contenido y solo termina
+                // confundiendo dónde cree Chromium que va el pie.
+                var options = new PagePdfOptions { Format = "A4", PrintBackground = true, PreferCSSPageSize = true };
+                if (footer is { } f && (f.ShowPageNumber || f.ShowCompanyName))
+                {
+                    options.DisplayHeaderFooter = true;
+                    options.HeaderTemplate = "<span></span>";
+                    options.FooterTemplate = BuildFooterTemplate(f);
+                }
+                var pdf = await page.PdfAsync(options);
                 logger.LogInformation("Documentos: PDF Playwright generado ({Bytes} bytes).", pdf.Length);
                 return pdf;
             }
@@ -35,6 +46,18 @@ public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogge
             var incidentId = await appEvents.LogErrorAsync("Documentos", "GenerarPdfPlaywright", ex, "No se pudo generar el PDF beta con Chromium.", ct: ct);
             throw new AppUserFacingException("No se pudo generar el PDF beta. Verificá la instalación de Chromium en el servidor.", incidentId, ex);
         }
+    }
+
+    private static string BuildFooterTemplate(DocumentPdfFooterOptions f)
+    {
+        var empresa = f.ShowCompanyName && !string.IsNullOrWhiteSpace(f.CompanyName)
+            ? System.Net.WebUtility.HtmlEncode(f.CompanyName)
+            : string.Empty;
+        var paginado = f.ShowPageNumber
+            ? "Página <span class=\"pageNumber\"></span> de <span class=\"totalPages\"></span>"
+            : string.Empty;
+        return "<div style=\"width:100%;font-size:8px;color:#667;padding:0 10mm;display:flex;justify-content:space-between;align-items:center;\">"
+            + $"<span>{empresa}</span><span>{paginado}</span></div>";
     }
 
     private async Task<IBrowser> GetBrowserAsync(CancellationToken ct)
