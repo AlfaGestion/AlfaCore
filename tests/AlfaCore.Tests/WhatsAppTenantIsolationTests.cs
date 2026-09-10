@@ -53,24 +53,34 @@ public sealed class WhatsAppTenantIsolationTests
         => await new WhatsAppWebhookTenantGuard(new OwnershipStore(new("9201", "9101", 1, DateTime.UtcNow)), OptionsFor(1)).ValidateAsync(1, ["9201"]);
 
     [Fact]
-    public async Task AllowedBaseWithUnknownPhone_IsRejectedBeforeAnyTenantWrite()
+    public async Task EsBaseWithFootprint_UnknownPhone_IsRejectedBeforeAnyTenantWrite()
     {
-        var guard = new WhatsAppWebhookTenantGuard(new OwnershipStore(null), OptionsFor(84));
+        var guard = new WhatsAppWebhookTenantGuard(new OwnershipStore(null, hasFootprint: true), OptionsFor(84));
         var error = await Assert.ThrowsAsync<WhatsAppWebhookPhoneOwnershipMissingException>(() => guard.ValidateAsync(84, ["unknown-phone"]));
         Assert.Equal(84, error.CallbackBaseId);
         Assert.Equal("unknown-phone", error.PhoneNumberId);
     }
 
     [Fact]
-    public async Task AllowedBaseWithMissingPhoneNumberId_IsRejectedBeforeAnyTenantWrite()
+    public async Task BaseWithoutEsFootprint_UnknownPhone_PassesThroughToLegacy()
+        // Sin footprint ES, un phone sin ownership NO se rechaza: es un asset legacy.
+        => await new WhatsAppWebhookTenantGuard(new OwnershipStore(null), OptionsFor(84)).ValidateAsync(84, ["unknown-phone"]);
+
+    [Fact]
+    public async Task EsBaseWithFootprint_MissingPhoneNumberId_IsRejectedBeforeAnyTenantWrite()
     {
         var error = await Assert.ThrowsAsync<WhatsAppWebhookPhoneNumberIdMissingException>(() =>
-            new WhatsAppWebhookTenantGuard(new OwnershipStore(null), OptionsFor(84)).ValidateAsync(84, []));
+            new WhatsAppWebhookTenantGuard(new OwnershipStore(null, hasFootprint: true), OptionsFor(84)).ValidateAsync(84, []));
         Assert.Equal(84, error.CallbackBaseId);
     }
 
     [Fact]
-    public async Task AllowedBaseWithOwnedPhone_IsAcceptedForMessagesAndStatuses()
+    public async Task FeatureDisabled_GuardIsInert()
+        => await new WhatsAppWebhookTenantGuard(new OwnershipStore(new("9201", "9101", 106, DateTime.UtcNow)),
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = false })).ValidateAsync(84, ["9201"]);
+
+    [Fact]
+    public async Task OwnedPhone_IsAcceptedForMessagesAndStatuses()
     {
         var guard = new WhatsAppWebhookTenantGuard(new OwnershipStore(new("9201", "9101", 84, DateTime.UtcNow)), OptionsFor(84));
         await guard.ValidateAsync(84, ["9201"]);
@@ -115,9 +125,9 @@ public sealed class WhatsAppTenantIsolationTests
     }
 
     [Fact]
-    public async Task BaseOutsideAllowedList_DoesNotConsultEmbeddedStores()
+    public async Task BaseWithNoOwnershipForPhone_ResolvesLegacyWithoutTouchingVault()
     {
-        var store = new CountingOwnershipStore();
+        var store = new CountingOwnershipStore();   // GetPhoneOwnershipAsync -> null
         var vault = new CountingVault();
         var options = OptionsFor(84);
 
@@ -126,9 +136,8 @@ public sealed class WhatsAppTenantIsolationTests
         var resolver = new WhatsAppRuntimeCredentialResolver(store, vault, options);
         var result = await resolver.ResolveAsync(205, 7, "9201", Legacy());
 
+        // La decisión es por ownership: sin ownership => legacy. El vault nunca se toca.
         Assert.Equal(WhatsAppRuntimeCredentialOrigin.Legacy, result.Origin);
-        Assert.Equal(0, store.SchemaChecks);
-        Assert.Equal(0, store.PhoneLookups);
         Assert.Equal(0, vault.Finds);
         Assert.Equal(0, vault.Reads);
     }
@@ -288,34 +297,70 @@ public sealed class WhatsAppTenantIsolationTests
         Assert.Contains("WEBHOOK_LOG_INSERTED", serviceSource, StringComparison.Ordinal);
     }
 
-    [Fact]
-    public void EmbeddedSignupBase_UsesApplicationSecretInsteadOfLegacyTenantSecret()
+    private static readonly WhatsAppEmbeddedSignupOptions EsAppSecretOptions = new()
     {
-        var options = new WhatsAppEmbeddedSignupOptions
-        {
-            Enabled = true,
-            AllowedBaseIds = [84],
-            AppSecret = "application-secret"
-        };
+        Enabled = true,
+        AllowAllTenants = true,
+        AppSecret = "application-secret"
+    };
 
-        var secret = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(options, 84, "legacy-tenant-secret");
+    private static IReadOnlyCollection<WhatsAppPhoneOwnership> OwnedBy(int idBase)
+        => [new WhatsAppPhoneOwnership("1233329726536711", "9101", idBase, DateTime.UtcNow)];
 
-        Assert.Equal("application-secret", secret);
+    [Fact]
+    public void PhoneOwnedByResolvedBase_UsesApplicationSecret_NotLegacy()
+    {
+        var r = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(
+            EsAppSecretOptions, resolvedBaseId: 84, OwnedBy(84),
+            anyPhoneNumberIdInPayload: true, baseHasEmbeddedSignupFootprint: true, "legacy-tenant-secret");
+
+        Assert.Equal(AlfaCore.Program.WhatsAppWebhookSecretOutcome.EmbeddedSignup, r.Outcome);
+        Assert.Equal("application-secret", r.Secret);
     }
 
     [Fact]
-    public void BaseOutsideEmbeddedSignupAllowlist_PreservesLegacyWebhookSecret()
+    public void PhoneOwnedByAnotherBase_IsCrossTenantReject_NoSecret()
     {
-        var options = new WhatsAppEmbeddedSignupOptions
-        {
-            Enabled = true,
-            AllowedBaseIds = [84],
-            AppSecret = "application-secret"
-        };
+        var r = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(
+            EsAppSecretOptions, resolvedBaseId: 84, OwnedBy(106),
+            anyPhoneNumberIdInPayload: true, baseHasEmbeddedSignupFootprint: true, "legacy-tenant-secret");
 
-        var secret = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(options, 106, "legacy-tenant-secret");
+        Assert.Equal(AlfaCore.Program.WhatsAppWebhookSecretOutcome.RejectCrossTenant, r.Outcome);
+        Assert.Equal(string.Empty, r.Secret);
+    }
 
-        Assert.Equal("legacy-tenant-secret", secret);
+    [Fact]
+    public void PhoneOwnedByResolvedBase_ButFeatureDisabled_RejectsEs_NeverLegacy()
+    {
+        var options = new WhatsAppEmbeddedSignupOptions { Enabled = false, AppSecret = "application-secret" };
+        var r = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(
+            options, resolvedBaseId: 84, OwnedBy(84),
+            anyPhoneNumberIdInPayload: true, baseHasEmbeddedSignupFootprint: true, "legacy-tenant-secret");
+
+        Assert.Equal(AlfaCore.Program.WhatsAppWebhookSecretOutcome.RejectEmbeddedSignupDisabled, r.Outcome);
+        Assert.Equal(string.Empty, r.Secret);
+    }
+
+    [Fact]
+    public void NoOwnership_BaseWithoutFootprint_UsesLegacyTenantSecret()
+    {
+        var r = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(
+            EsAppSecretOptions, resolvedBaseId: 106, phoneOwnerships: [],
+            anyPhoneNumberIdInPayload: true, baseHasEmbeddedSignupFootprint: false, "legacy-tenant-secret");
+
+        Assert.Equal(AlfaCore.Program.WhatsAppWebhookSecretOutcome.Legacy, r.Outcome);
+        Assert.Equal("legacy-tenant-secret", r.Secret);
+    }
+
+    [Fact]
+    public void NoOwnership_BaseWithFootprint_IsUnknownPhoneReject_NoSecret()
+    {
+        var r = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(
+            EsAppSecretOptions, resolvedBaseId: 84, phoneOwnerships: [],
+            anyPhoneNumberIdInPayload: true, baseHasEmbeddedSignupFootprint: true, "legacy-tenant-secret");
+
+        Assert.Equal(AlfaCore.Program.WhatsAppWebhookSecretOutcome.RejectUnknownPhoneForEsBase, r.Outcome);
+        Assert.Equal(string.Empty, r.Secret);
     }
 
     [Fact]
@@ -372,6 +417,7 @@ public sealed class WhatsAppTenantIsolationTests
                 AppSecret = appSecret
             }),
             session,
+            new OwnershipStore(new("1233329726536711", "9101", 84, DateTime.UtcNow)),
             CancellationToken.None,
             stages.Add);
 
@@ -419,6 +465,7 @@ public sealed class WhatsAppTenantIsolationTests
                 AppSecret = esAppSecret
             }),
             session,
+            new OwnershipStore(new("1233329726536711", "9101", 84, DateTime.UtcNow)),
             CancellationToken.None,
             stages.Add,
             resolvedBaseId: 84);
@@ -459,6 +506,7 @@ public sealed class WhatsAppTenantIsolationTests
                 AppSecret = esAppSecret
             }),
             session,
+            new OwnershipStore(new("1233329726536711", "9101", 84, DateTime.UtcNow)),
             CancellationToken.None,
             stages.Add,
             resolvedBaseId: 84);
@@ -468,20 +516,22 @@ public sealed class WhatsAppTenantIsolationTests
     }
 
     [Fact]
-    public async Task TenantizedWebhook_ResolvedBaseOutsideAllowlist_DoesNotBorrowEsAppSecret()
+    public async Task TenantizedWebhook_PhoneOwnedByAnotherBase_IsRejectedCrossTenant()
     {
         const string esAppSecret = "es-application-secret";
         const string phoneNumberId = "1233329726536711";
         var session = new SessionlessWebhookService();
         var config = CreateProxy<IConversacionesConfigService, WebhookConfigProxy>();
-        ((WebhookConfigProxy)(object)config).Config = new ConversacionWhatsAppConfigDto(); // AppSecret legacy vacío
+        ((WebhookConfigProxy)(object)config).Config = new ConversacionWhatsAppConfigDto();
         var service = CreateProxy<IConversacionesService, WebhookServiceProxy>();
+        var serviceProxy = (WebhookServiceProxy)(object)service;
         var stages = new List<string>();
         var body = BuildWebhookPayload("messages", phoneNumberId);
         var requestContext = new DefaultHttpContext();
         requestContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
         requestContext.Request.Headers["X-Hub-Signature-256"] = BuildSignature(esAppSecret, body);
 
+        // El token resuelve base 106, pero el phone_number_id es de la base 84 => cross-tenant.
         var result = await AlfaCore.Program.HandleWhatsAppMessageAsync(
             requestContext.Request,
             config,
@@ -489,36 +539,41 @@ public sealed class WhatsAppTenantIsolationTests
             Options.Create(new WhatsAppEmbeddedSignupOptions
             {
                 Enabled = true,
-                AllowedBaseIds = [84],
-                WorkerEnabled = false,
-                WebhookRoutingEnabled = false,
+                AllowAllTenants = true,
                 UseApplicationCentralConnection = true,
                 AppSecret = esAppSecret
             }),
             session,
+            new OwnershipStore(new("1233329726536711", "9101", 84, DateTime.UtcNow)),
             CancellationToken.None,
             stages.Add,
             resolvedBaseId: 106);
 
-        Assert.Equal(StatusCodes.Status500InternalServerError, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
-        Assert.Contains("BODY_READ", stages);
+        Assert.Equal(StatusCodes.Status404NotFound, Assert.IsAssignableFrom<IStatusCodeHttpResult>(result).StatusCode);
+        Assert.Contains("REJECTED_CROSS_TENANT", stages);
         Assert.DoesNotContain("SIGNATURE_VALID", stages);
+        Assert.Null(serviceProxy.Request);
     }
 
     [Fact]
-    public void ResolvedBaseId_TakesPrecedenceOverSession_ForAppSecretSelection()
+    public void AppSecretSelection_IsAllowlistIndependent_OwnershipDriven()
     {
-        var options = new WhatsAppEmbeddedSignupOptions
-        {
-            Enabled = true,
-            AllowedBaseIds = [84],
-            AppSecret = "application-secret"
-        };
+        // Sin AllowAllTenants ni AllowedBaseIds: un asset con ownership ES para la base resuelta
+        // igual usa el App Secret global (la lista sólo gatea iniciar onboardings, no el runtime).
+        var options = new WhatsAppEmbeddedSignupOptions { Enabled = true, AppSecret = "application-secret" };
 
-        // resolvedBaseId autoritativo del token (84) => secret de aplicación ES, sin mirar la sesión.
-        Assert.Equal("application-secret", AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(options, 84, string.Empty));
-        // base 0 (lo que devolvía GetActiveSession() en producción) => sin secret => 500.
-        Assert.Equal(string.Empty, AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(options, 0, string.Empty));
+        var owned = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(
+            options, resolvedBaseId: 142, OwnedBy(142),
+            anyPhoneNumberIdInPayload: true, baseHasEmbeddedSignupFootprint: true, string.Empty);
+        Assert.Equal(AlfaCore.Program.WhatsAppWebhookSecretOutcome.EmbeddedSignup, owned.Outcome);
+        Assert.Equal("application-secret", owned.Secret);
+
+        // Sin ownership y sin footprint => legacy (vacío aquí).
+        var legacy = AlfaCore.Program.ResolveWhatsAppWebhookAppSecret(
+            options, resolvedBaseId: 142, phoneOwnerships: [],
+            anyPhoneNumberIdInPayload: true, baseHasEmbeddedSignupFootprint: false, string.Empty);
+        Assert.Equal(AlfaCore.Program.WhatsAppWebhookSecretOutcome.Legacy, legacy.Outcome);
+        Assert.Equal(string.Empty, legacy.Secret);
     }
 
     private static WhatsAppRuntimeCredentialResolver CreateResolver(WhatsAppPhoneOwnership? owner, WhatsAppCredentialReference? reference, string secret)
@@ -644,11 +699,12 @@ public sealed class WhatsAppTenantIsolationTests
         }
     }
 
-    private sealed class OwnershipStore(WhatsAppPhoneOwnership? phone, bool schemaAvailable = true) : IWhatsAppAssetOwnershipStore
+    private sealed class OwnershipStore(WhatsAppPhoneOwnership? phone, bool schemaAvailable = true, bool hasFootprint = false) : IWhatsAppAssetOwnershipStore
     {
         public Task<bool> IsSchemaAvailableAsync(CancellationToken ct = default) => Task.FromResult(schemaAvailable);
         public Task<WhatsAppPhoneOwnership?> GetPhoneOwnershipAsync(string id, CancellationToken ct = default) => Task.FromResult(phone);
         public Task<WhatsAppWabaOwnership?> GetWabaOwnershipAsync(string id, CancellationToken ct = default) => Task.FromResult<WhatsAppWabaOwnership?>(null);
+        public Task<bool> HasEmbeddedSignupFootprintAsync(int idBase, CancellationToken ct = default) => Task.FromResult(hasFootprint || phone is not null);
         public Task<WhatsAppAssetOwnershipDecision> ReservePhoneAsync(string a, string b, int c, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WhatsAppAssetOwnershipDecision> ReserveWabaAsync(string a, int b, string c, CancellationToken ct = default) => throw new NotSupportedException();
     }
@@ -656,6 +712,7 @@ public sealed class WhatsAppTenantIsolationTests
     {
         public Task<WhatsAppPhoneOwnership?> GetPhoneOwnershipAsync(string id, CancellationToken ct = default) => Task.FromResult(phones.GetValueOrDefault(id));
         public Task<WhatsAppWabaOwnership?> GetWabaOwnershipAsync(string id, CancellationToken ct = default) => Task.FromResult<WhatsAppWabaOwnership?>(null);
+        public Task<bool> HasEmbeddedSignupFootprintAsync(int idBase, CancellationToken ct = default) => Task.FromResult(phones.Values.Any(p => p.IdBase == idBase));
         public Task<WhatsAppAssetOwnershipDecision> ReservePhoneAsync(string a, string b, int c, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WhatsAppAssetOwnershipDecision> ReserveWabaAsync(string a, int b, string c, CancellationToken ct = default) => throw new NotSupportedException();
     }

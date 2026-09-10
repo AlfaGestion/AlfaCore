@@ -13,27 +13,40 @@ public sealed class WhatsAppWebhookTenantGuard(IWhatsAppAssetOwnershipStore owne
     public async Task ValidateAsync(int currentBaseId, IEnumerable<string> phoneNumberIds, CancellationToken ct = default)
     {
         if (currentBaseId <= 0) throw new InvalidOperationException("El webhook no tiene una base resuelta.");
-        if (!_options.IsAllowedForBase(currentBaseId))
+
+        // Ownership central es la autoridad, NO AllowedBaseIds. Con la feature apagada nada ES
+        // aplica y el flujo legacy maneja todo.
+        if (!_options.Enabled)
             return;
 
         if (!await ownershipStore.IsSchemaAvailableAsync(ct))
-        {
-            if (_options.Enabled) throw new WhatsAppEmbeddedSchemaUnavailableException();
-            return;
-        }
+            throw new WhatsAppEmbeddedSchemaUnavailableException();
+
+        var footprint = await ownershipStore.HasEmbeddedSignupFootprintAsync(currentBaseId, ct);
+
         var normalizedPhoneNumberIds = phoneNumberIds
             .Select(static x => (x ?? string.Empty).Trim())
             .Where(static x => x.Length > 0)
             .Distinct(StringComparer.Ordinal)
             .ToArray();
         if (normalizedPhoneNumberIds.Length == 0)
-            throw new WhatsAppWebhookPhoneNumberIdMissingException(currentBaseId);
+        {
+            if (footprint)
+                throw new WhatsAppWebhookPhoneNumberIdMissingException(currentBaseId);
+            return;
+        }
 
         foreach (var phoneNumberId in normalizedPhoneNumberIds)
         {
             var ownership = await ownershipStore.GetPhoneOwnershipAsync(phoneNumberId, ct);
             if (ownership is null)
-                throw new WhatsAppWebhookPhoneOwnershipMissingException(currentBaseId, phoneNumberId);
+            {
+                // phone sin ownership: si la base tiene footprint ES es un phone desconocido =>
+                // fail closed; si no tiene footprint es un asset legacy => passthrough.
+                if (footprint)
+                    throw new WhatsAppWebhookPhoneOwnershipMissingException(currentBaseId, phoneNumberId);
+                continue;
+            }
             if (ownership.IdBase != currentBaseId)
                 throw new WhatsAppWebhookTenantMismatchException(currentBaseId, ownership.IdBase, phoneNumberId);
         }
@@ -75,18 +88,28 @@ public sealed class WhatsAppRuntimeCredentialResolver(IWhatsAppAssetOwnershipSto
     public async Task<WhatsAppRuntimeCredential> ResolveAsync(int idBase, int? idNumero, string phoneNumberId, ConversacionWhatsAppConfigDto legacyConfig, CancellationToken ct = default)
     {
         var normalizedPhoneId = (phoneNumberId ?? string.Empty).Trim();
-        if (!_options.IsAllowedForBase(idBase))
-            return Legacy(normalizedPhoneId, legacyConfig);
 
+        // La decisión ES-vs-legacy es 100% por ownership central. AllowedBaseIds / AllowAllTenants
+        // NO participan acá (sólo gatean iniciar nuevos onboardings). Un asset con ownership ES
+        // NUNCA hace fallback a legacy: si algo falta, error controlado.
         if (!await ownershipStore.IsSchemaAvailableAsync(ct))
         {
             if (_options.Enabled) throw new WhatsAppEmbeddedSchemaUnavailableException();
             return Legacy(normalizedPhoneId, legacyConfig);
         }
+
         var ownership = normalizedPhoneId.Length == 0 ? null : await ownershipStore.GetPhoneOwnershipAsync(normalizedPhoneId, ct);
+
         if (ownership is null)
-            return Legacy(normalizedPhoneId, legacyConfig);
-        if (ownership.IdBase != idBase) throw new UnauthorizedAccessException("El número de WhatsApp pertenece a otra base.");
+            return Legacy(normalizedPhoneId, legacyConfig);                      // sin ownership => legacy
+
+        if (ownership.IdBase != idBase)
+            throw new UnauthorizedAccessException("El número de WhatsApp pertenece a otra base.");   // CROSS_TENANT, fail closed
+
+        // ownership.IdBase == idBase  => asset ES autoritativo, NUNCA legacy a partir de acá.
+        if (!_options.Enabled)
+            throw new WhatsAppEmbeddedVaultUnavailableException(
+                "Embedded Signup está deshabilitado en este proceso: la credencial ES de este número no puede resolverse.");   // ES_DISABLED
 
         if (!_options.HasDataProtectionKeyRingConfiguration())
             throw new WhatsAppEmbeddedVaultUnavailableException("La credencial segura de WhatsApp Embedded Signup no está disponible en este proceso porque falta configurar Data Protection.");
