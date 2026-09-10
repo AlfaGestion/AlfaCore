@@ -845,6 +845,25 @@ button.cotiz-stat--action.is-active {
     min-height: 22rem;
 }
 
+/* La barra de herramientas queda pegada arriba (como en Word) mientras se hace scroll del
+   contenido de la propuesta -- en el HTML va DESPUÉS de la superficie editable (así el editor
+   la reutiliza sin cambios), así que "order" la reubica arriba visualmente sin tocar el DOM.
+   position:sticky se ancla al contenedor real que scrollea (el shell de la página, no este div),
+   con el mismo offset que ya usa .cotiz-sidebar en este mismo workspace. */
+.cotiz-rich-editor {
+    display: flex;
+    flex-direction: column;
+}
+
+.cotiz-rich-editor .tickets-rich-editor__bar {
+    order: -1;
+    position: sticky;
+    top: var(--alfa-space-16);
+    z-index: 5;
+    background: var(--alfa-bg-surface);
+    box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+}
+
 /* ======================================================================
    Condiciones
    ====================================================================== */

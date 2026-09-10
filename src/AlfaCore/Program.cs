@@ -474,13 +474,62 @@ public class Program
         app.MapGet("/cotizacion-publica/{idbase:int}/{token}", async (
             int idbase,
             string token,
-            ICotizacionesService cotizacionesSvc,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            ICotizacionDocumentService documentSvc,
             CancellationToken ct) =>
         {
-            var html = await cotizacionesSvc.RenderPublicHtmlAsync(idbase, token, ct);
-            return html is null
-                ? Results.NotFound("La cotización no existe o el enlace expiró.")
-                : Results.Content(html, "text/html; charset=utf-8");
+            // Misma plantilla/tema/portada/firma que "Descargar PDF" (ver el endpoint .../pdf más
+            // abajo) -- antes esta vista usaba un HTML aparte (BuildPublicHtml en CotizacionesService)
+            // que no coincidía con el PDF y además mostraba las Observaciones internas en vez de la
+            // propuesta. RenderAsync ya resuelve bien ambas cosas.
+            var tk = (token ?? string.Empty).Trim();
+            if (idbase <= 0 || tk.Length == 0)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            var baseInfo = await centralBasesSvc.GetByIdAsync(idbase, ct);
+            if (baseInfo is null)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            long? idVersion;
+            await using (var cn = new SqlConnection(connectionString))
+            {
+                await cn.OpenAsync(ct);
+                idVersion = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(
+                    "SELECT IdVersion FROM dbo.COT_VERSION WHERE PublicToken = @Token;", new { Token = tk }, cancellationToken: ct));
+            }
+            if (idVersion is null)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            sessionSvc.SetWebhookOverride(new SessionDto
+            {
+                BaseId = baseInfo.IdBase,
+                Nombre = baseInfo.Nombre,
+                Servidor = baseInfo.DbServer,
+                BaseDatos = baseInfo.DbName,
+                Usuario = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            });
+
+            try
+            {
+                var result = await documentSvc.RenderAsync(idVersion.Value, uNegocio: null, ct);
+                return Results.Content(result.Html, "text/html; charset=utf-8");
+            }
+            catch (AppUserFacingException)
+            {
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+            }
         }).AllowAnonymous();
 
         app.MapGet("/cotizacion-publica/{idbase:int}/{token}/pdf", async (

@@ -1,6 +1,7 @@
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 
 namespace AlfaCore.Services;
@@ -9,10 +10,10 @@ public sealed class CotizacionesService(
     IConfiguration configuration,
     ISessionService sessionService,
     IAppEventService appEvents,
-    ICentralBasesService centralBasesService,
     IArticuloPrecioResolverService priceResolver,
     ICrmService crmService,
-    ICrmCotizacionService crmCotizacionService) : ICotizacionesService
+    ICrmCotizacionService crmCotizacionService,
+    IServiceProvider serviceProvider) : ICotizacionesService
 {
     private const string ModuleName = "Cotizaciones";
     private const string DefaultTc = "COT";
@@ -633,7 +634,15 @@ public sealed class CotizacionesService(
             var detail = await LoadVersionDetailAsync(cn, idVersion, null, token)
                          ?? throw new InvalidOperationException("La cotización indicada no existe.");
             var mail = await ResolveMailConfigAsync(cn, token);
-            var html = BuildPublicHtml(detail);
+
+            // El PDF adjunto sale del mismo pipeline que "Descargar PDF" (plantilla del Diseñador
+            // de comprobantes) -- así el cliente ve siempre lo mismo por cualquier canal. No se
+            // puede inyectar ICotizacionDocumentService por constructor: ese servicio depende de
+            // ICotizacionesService, e inyectarlo acá crearía una dependencia circular. Se resuelve
+            // recién en este punto, cuando CotizacionesService ya terminó de construirse.
+            var documentService = serviceProvider.GetRequiredService<ICotizacionDocumentService>();
+            var pdfBytes = await documentService.GeneratePdfAsync(idVersion, uNegocio: null, token);
+            var html = BuildEmailHtml(detail, publicUrl);
 
             using var message = new System.Net.Mail.MailMessage
             {
@@ -643,6 +652,8 @@ public sealed class CotizacionesService(
                 IsBodyHtml = true
             };
             message.To.Add(to);
+            using var pdfStream = new MemoryStream(pdfBytes);
+            message.Attachments.Add(new System.Net.Mail.Attachment(pdfStream, $"{detail.CodigoVisible}.pdf", "application/pdf"));
 
             using var client = new System.Net.Mail.SmtpClient(mail.Server, mail.Port)
             {
@@ -687,38 +698,6 @@ public sealed class CotizacionesService(
         => !string.IsNullOrWhiteSpace(dbValue) ? dbValue : (configuration[key] ?? string.Empty);
 
     private sealed record MailInfo(string Server, int Port, string From, string Password, bool EnableSsl);
-
-    public Task<string?> RenderPublicHtmlAsync(int idBase, string token, CancellationToken ct = default)
-        => ExecuteLoggedAsync("RenderPublic", async innerCt =>
-        {
-            var tk = (token ?? string.Empty).Trim();
-            if (idBase <= 0 || tk.Length == 0)
-                return null;
-
-            var baseInfo = await centralBasesService.GetByIdAsync(idBase, innerCt);
-            if (baseInfo is null)
-                return null;
-
-            var connectionString = new SqlConnectionStringBuilder
-            {
-                DataSource = baseInfo.DbServer,
-                InitialCatalog = baseInfo.DbName,
-                UserID = baseInfo.DbUser,
-                Password = baseInfo.DbPassword,
-                TrustServerCertificate = true
-            }.ConnectionString;
-
-            await using var cn = new SqlConnection(connectionString);
-            await cn.OpenAsync(innerCt);
-
-            var idVersion = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(
-                "SELECT IdVersion FROM dbo.COT_VERSION WHERE PublicToken = @Token;", new { Token = tk }, cancellationToken: innerCt));
-            if (idVersion is null)
-                return null;
-
-            var detail = await LoadVersionDetailAsync(cn, idVersion.Value, null, innerCt);
-            return detail is null ? null : BuildPublicHtml(detail);
-        }, "No se pudo mostrar la cotización.", ct);
 
     public Task<CotizacionAlfaConfigDto> GetAlfaConfigAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("GetAlfaConfig", async token =>
@@ -1040,77 +1019,38 @@ public sealed class CotizacionesService(
         };
     }
 
-    private static string BuildPublicHtml(CotizacionVersionDetailDto d)
+    /// <summary>Cuerpo del email: simple y con soporte de cliente de correo garantizado (nada de
+    /// CSS de impresión, mm, grid, etc. -- eso vive en el PDF adjunto, que sale del mismo pipeline
+    /// que "Descargar PDF"). Antes este método armaba todo el detalle a mano en HTML, con un
+    /// formato distinto al PDF y mostrando además las Observaciones internas -- ahora el email
+    /// solo presenta y adjunta/enlaza el documento real.</summary>
+    private static string BuildEmailHtml(CotizacionVersionDetailDto d, string? publicUrl)
     {
         var ar = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
-        string Money(decimal v) => v.ToString("C0", ar);
         string E(string? s) => System.Net.WebUtility.HtmlEncode(s ?? string.Empty);
 
         var sb = new System.Text.StringBuilder();
-        sb.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">")
-          .Append("<title>Cotización ").Append(E(d.CodigoVisible)).Append("</title></head><body style=\"margin:0;background:#f1f5f9;\">")
-          .Append("<div style=\"max-width:720px;margin:0 auto;padding:24px;font-family:Segoe UI,Arial,sans-serif;color:#0f172a;background:#ffffff;\">")
-          .Append("<div style=\"display:flex;justify-content:space-between;gap:16px;border-bottom:2px solid #2563eb;padding-bottom:12px;margin-bottom:16px;\">")
-          .Append("<div style=\"font-size:16px;font-weight:700;\">Cotización ").Append(E(d.CodigoVisible)).Append(" · v").Append(d.NumeroVersion).Append("</div>")
-          .Append("<div style=\"text-align:right;font-size:12px;color:#64748b;\">").Append(d.Fecha.ToString("dd/MM/yyyy", ar));
-        if (d.FechaVencimiento is { } v)
-            sb.Append("<br/>Válida hasta ").Append(v.ToString("dd/MM/yyyy", ar));
-        sb.Append("</div></div>");
+        sb.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"></head>")
+          .Append("<body style=\"margin:0;background:#f1f5f9;\">")
+          .Append("<div style=\"max-width:600px;margin:0 auto;padding:28px 24px;font-family:Segoe UI,Arial,sans-serif;color:#0f172a;background:#ffffff;border-radius:8px;\">")
+          .Append("<div style=\"font-size:16px;font-weight:700;border-bottom:2px solid #2563eb;padding-bottom:12px;margin-bottom:16px;\">Cotización ")
+          .Append(E(d.CodigoVisible)).Append("</div>");
 
+        sb.Append("<p style=\"font-size:14px;line-height:1.6;margin:0 0 12px;\">Te compartimos la cotización <strong>")
+          .Append(E(d.CodigoVisible)).Append("</strong>");
         if (!string.IsNullOrWhiteSpace(d.EmpresaProspecto))
-            sb.Append("<div style=\"margin-bottom:12px;font-size:14px;\"><strong>Para:</strong> ").Append(E(d.EmpresaProspecto)).Append("</div>");
+            sb.Append(" para <strong>").Append(E(d.EmpresaProspecto)).Append("</strong>");
+        sb.Append(". La encontrás adjunta en PDF");
+        if (!string.IsNullOrWhiteSpace(publicUrl))
+            sb.Append(", y también podés verla online acá: <a href=\"").Append(E(publicUrl)).Append("\">").Append(E(publicUrl)).Append("</a>");
+        sb.Append(".</p>");
 
-        if (!string.IsNullOrWhiteSpace(d.CuerpoPropuesta))
-            sb.Append("<div style=\"font-size:14px;line-height:1.5;margin-bottom:16px;\">").Append(d.CuerpoPropuesta).Append("</div>");
+        if (d.FechaVencimiento is { } vencimiento)
+            sb.Append("<p style=\"font-size:13px;color:#64748b;margin:0 0 12px;\">Válida hasta ").Append(vencimiento.ToString("dd/MM/yyyy", ar)).Append(".</p>");
 
-        foreach (var seccion in d.Secciones.OrderBy(s => s.Orden))
-        {
-            var lineasSeccion = d.Lineas.Where(l => l.IdSeccion == seccion.IdSeccion).OrderBy(l => l.Orden).ToList();
-            if (lineasSeccion.Count == 0)
-                continue;
-            sb.Append("<h3 style=\"font-size:14px;margin:16px 0 6px;\">").Append(E(seccion.Titulo)).Append("</h3>");
-            AppendLineasTable(sb, lineasSeccion, Money, E, ar);
-        }
-
-        var sinSeccion = d.Lineas.Where(l => l.IdSeccion is null).OrderBy(l => l.Orden).ToList();
-        if (sinSeccion.Count > 0)
-            AppendLineasTable(sb, sinSeccion, Money, E, ar);
-
-        sb.Append("<div style=\"text-align:right;font-size:14px;margin-top:12px;\">");
-        if (d.DescuentoGeneralPorcentaje > 0)
-        {
-            sb.Append("<div>Subtotal: ").Append(Money(d.Subtotal)).Append("</div>");
-            sb.Append("<div>Descuento (").Append(d.DescuentoGeneralPorcentaje.ToString("0.##", ar)).Append("%): -").Append(Money(d.TotalDescuento)).Append("</div>");
-        }
-        sb.Append("<div style=\"font-size:18px;margin-top:4px;\">Total: <strong>").Append(Money(d.Total)).Append("</strong></div>");
-        sb.Append("</div>");
-
-        if (!string.IsNullOrWhiteSpace(d.Observaciones))
-            sb.Append("<div style=\"margin-top:16px;font-size:12px;color:#64748b;\">").Append(E(d.Observaciones)).Append("</div>");
-
+        sb.Append("<p style=\"font-size:14px;line-height:1.6;margin:0;\">Ante cualquier consulta, quedamos a disposición.</p>");
         sb.Append("</div></body></html>");
         return sb.ToString();
-    }
-
-    private static void AppendLineasTable(System.Text.StringBuilder sb, List<CotizacionLineaDto> lineas, Func<decimal, string> money, Func<string?, string> encode, IFormatProvider ar)
-    {
-        sb.Append("<table style=\"width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;\"><tbody>");
-        foreach (var l in lineas)
-        {
-            sb.Append("<tr>");
-            sb.Append("<td style=\"padding:5px 8px;border-bottom:1px solid #f1f5f9;\">").Append(encode(l.Descripcion)).Append("</td>");
-            if (l.ImpactaTotal)
-            {
-                sb.Append("<td style=\"padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:right;white-space:nowrap;\">").Append(l.Cantidad.ToString("0.##", ar)).Append("</td>");
-                sb.Append("<td style=\"padding:5px 8px;border-bottom:1px solid #f1f5f9;text-align:right;white-space:nowrap;\">").Append(money(l.Subtotal)).Append("</td>");
-            }
-            else
-            {
-                sb.Append("<td colspan=\"2\"></td>");
-            }
-            sb.Append("</tr>");
-        }
-        sb.Append("</tbody></table>");
     }
 
     private async Task<bool> SqlObjectExistsAsync(SqlConnection cn, string objectName, CancellationToken ct)

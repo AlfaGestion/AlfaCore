@@ -99,6 +99,18 @@
     min-width: 0;
 }
 
+.cotiz-lookup-item__title {
+    display: block;
+    color: var(--alfa-text-primary);
+    font-weight: 600;
+}
+
+.cotiz-lookup-item__meta {
+    display: block;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-caption);
+}
+
 .cotizcfg-save-bar {
     position: sticky;
     bottom: 0;

@@ -42,8 +42,6 @@ public interface ICotizacionesService
 
     Task<CotizacionShareDto> EnsureShareAsync(long idVersion, CancellationToken ct = default);
 
-    Task<string?> RenderPublicHtmlAsync(int idBase, string token, CancellationToken ct = default);
-
     Task<CotizacionAlfaConfigDto> GetAlfaConfigAsync(CancellationToken ct = default);
 
     Task SaveAlfaConfigAsync(CotizacionAlfaConfigDto config, CancellationToken ct = default);
@@ -82,7 +80,8 @@ public interface ICotizacionesService
     /// versión seguía en BORRADOR, queda marcada ENVIADA.</summary>
     Task SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, CancellationToken ct = default);
 
-    // El PDF (autenticado y público) se genera con ICotizacionDocumentService (plantillas +
-    // Playwright) -- ver Program.cs, endpoint /cotizacion-publica/{idbase}/{token}/pdf. La portada
-    // ahora es parte de cada plantilla (IDocumentTemplateService), no de Cotizaciones.
+    // El PDF y la vista pública en HTML (/cotizacion-publica/{idbase}/{token} y su variante
+    // .../pdf en Program.cs) se generan con ICotizacionDocumentService (plantillas + Playwright),
+    // no acá -- así el link que se comparte muestra siempre lo mismo que el PDF. La portada ahora
+    // es parte de cada plantilla (IDocumentTemplateService), no de Cotizaciones.
 }
