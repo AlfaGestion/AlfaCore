@@ -28,6 +28,15 @@ public interface IWhatsAppEmbeddedSignupStore
     Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextForBasesAsync(string workerId, IReadOnlyCollection<int> allowedBaseIds, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct = default)
         => ClaimNextAsync(workerId, nowUtc, claimExpiresAtUtc, ct);
     Task ReleaseClaimAsync(Guid idOnboarding, string workerId, DateTime? nextAttemptUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Transición de dominio automática STARTED → EXPIRED, distinta de HandleCancellationAsync
+    /// (no requiere state/usuario). Atómica: sólo afecta la fila si TODAS se cumplen:
+    /// Estado == STARTED, StateConsumedAtUtc IS NULL, FechaExpiracionUtc &lt;= ahora, IdBase coincide.
+    /// Devuelve true únicamente si esta llamada efectivamente realizó la transición.
+    /// </summary>
+    Task<bool> ExpireStaleStartedAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
+        => Task.FromResult(false);
 }
 
 public interface IWhatsAppAssetOwnershipStore

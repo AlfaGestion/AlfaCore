@@ -247,7 +247,6 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
     [InlineData(WhatsAppEmbeddedOnboardingStatus.Started)]
     [InlineData(WhatsAppEmbeddedOnboardingStatus.Cancelled)]
     [InlineData(WhatsAppEmbeddedOnboardingStatus.FailedRetryable)]
-    [InlineData(WhatsAppEmbeddedOnboardingStatus.Expired)]
     public void NonRecoverableOnboardingWithoutOperationalNumber_AllowsNewConnection(
         WhatsAppEmbeddedOnboardingStatus status)
         => Assert.Equal(
@@ -261,6 +260,16 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         => Assert.Equal(
             WhatsAppEmbeddedConnectionUiState.Failed,
             WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, WhatsAppEmbeddedOnboardingStatus.FailedFinal));
+
+    [Fact]
+    public void ExpiredOnboardingWithoutOperationalNumber_ShowsExpiredState()
+        // EXPIRED es una transición de dominio automática (popup abandonado, sesión Blazor perdida,
+        // servidor reiniciado, callback nunca recibido) y tampoco debe desaparecer en silencio como
+        // "Start": la UI debe mostrar que la autorización venció, con opción de reintentar
+        // (ver WhatsAppEmbeddedConnectionUiState.Expired).
+        => Assert.Equal(
+            WhatsAppEmbeddedConnectionUiState.Expired,
+            WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, WhatsAppEmbeddedOnboardingStatus.Expired));
 
     [Fact]
     public void RecoverableOnboardingWithoutOperationalNumber_RemainsVisible()

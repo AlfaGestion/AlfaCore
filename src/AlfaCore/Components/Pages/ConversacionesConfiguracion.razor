@@ -404,6 +404,17 @@
                                     </div>
                                 </div>
                             }
+                            else if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Expired)
+                            {
+                                <div class="wa-business-block__header">
+                                    <div>
+                                        <h3>La autorización no se completó a tiempo.</h3>
+                                    </div>
+                                    <div class="wa-business-inline-actions">
+                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-clockwise" Loading="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">Reintentar</AlfaButton>
+                                    </div>
+                                </div>
+                            }
                             else if (_embeddedRecoveryCandidate is { IsOperational: false } recovery)
                             {
                                 <div class="wa-business-block__header">
