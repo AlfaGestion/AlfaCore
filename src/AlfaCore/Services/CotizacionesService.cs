@@ -13,7 +13,9 @@ public sealed class CotizacionesService(
     IArticuloPrecioResolverService priceResolver,
     ICrmService crmService,
     ICrmCotizacionService crmCotizacionService,
-    IServiceProvider serviceProvider) : ICotizacionesService
+    IServiceProvider serviceProvider,
+    IUsuariosService usuariosService,
+    IAppUserSessionService appUserSession) : ICotizacionesService
 {
     private const string ModuleName = "Cotizaciones";
     private const string DefaultTc = "COT";
@@ -620,7 +622,7 @@ public sealed class CotizacionesService(
             };
         }, "No se pudo preparar el enlace de la cotización.", ct);
 
-    public Task SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, CancellationToken ct = default)
+    public Task<bool> SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, string? mensaje = null, CancellationToken ct = default)
         => ExecuteLoggedAsync("SendByEmail", async token =>
         {
             var to = (destinatario ?? string.Empty).Trim();
@@ -633,7 +635,27 @@ public sealed class CotizacionesService(
 
             var detail = await LoadVersionDetailAsync(cn, idVersion, null, token)
                          ?? throw new InvalidOperationException("La cotización indicada no existe.");
-            var mail = await ResolveMailConfigAsync(cn, token);
+
+            // Si quien está enviando tiene su propio email configurado (Usuarios → Email propio),
+            // se usa esa cuenta; si no, el correo general de la empresa (Configuración General →
+            // Email); si tampoco está cargado, la cuenta de rescate de AlfaGestión (más abajo). El
+            // puerto/SSL siempre salen del general -- TA_USUARIOS no tiene esas columnas por
+            // usuario, solo servidor/usuario/contraseña/remitente/autenticación.
+            var usuarioActual = appUserSession.GetCurrentUserName(detail.UsuarioAlta ?? string.Empty);
+            var mail = await ResolveEffectiveMailConfigAsync(cn, usuarioActual, token);
+
+            // La cuenta de rescate es compartida por todas las instalaciones -- un tope por mes,
+            // por base, evita que una instalación sin configurar (o un loop/bug) agote la
+            // reputación de esa cuenta para el resto. Se chequea ANTES de gastar tiempo generando
+            // el PDF; si ya está en el límite, ni intenta enviar.
+            if (mail.EsFallback)
+            {
+                var contadorActual = await ObtenerContadorFallbackAsync(cn, token);
+                if (contadorActual >= LimiteMensualCuentaFallback)
+                    throw new InvalidOperationException(
+                        $"Se alcanzó el límite mensual ({LimiteMensualCuentaFallback}) de envíos con la cuenta de correo de AlfaGestión. " +
+                        "Configurá tu propio correo en Utilidades → Configuración General → Email (o en tu usuario) para seguir enviando.");
+            }
 
             // El PDF adjunto sale del mismo pipeline que "Descargar PDF" (plantilla del Diseñador
             // de comprobantes) -- así el cliente ve siempre lo mismo por cualquier canal. No se
@@ -642,11 +664,13 @@ public sealed class CotizacionesService(
             // recién en este punto, cuando CotizacionesService ya terminó de construirse.
             var documentService = serviceProvider.GetRequiredService<ICotizacionDocumentService>();
             var pdfBytes = await documentService.GeneratePdfAsync(idVersion, uNegocio: null, token);
-            var html = BuildEmailHtml(detail, publicUrl);
+            var html = BuildEmailHtml(detail, publicUrl, mensaje);
 
             using var message = new System.Net.Mail.MailMessage
             {
-                From = new System.Net.Mail.MailAddress(mail.From),
+                From = string.IsNullOrWhiteSpace(mail.DisplayName)
+                    ? new System.Net.Mail.MailAddress(mail.From)
+                    : new System.Net.Mail.MailAddress(mail.From, mail.DisplayName),
                 Subject = $"Cotización {detail.CodigoVisible}",
                 Body = html,
                 IsBodyHtml = true
@@ -660,9 +684,12 @@ public sealed class CotizacionesService(
                 EnableSsl = mail.EnableSsl,
                 DeliveryMethod = System.Net.Mail.SmtpDeliveryMethod.Network,
                 UseDefaultCredentials = false,
-                Credentials = new System.Net.NetworkCredential(mail.From, mail.Password)
+                Credentials = mail.RequiresAuth ? new System.Net.NetworkCredential(mail.Login, mail.Password) : null
             };
             await client.SendMailAsync(message, token);
+
+            if (mail.EsFallback)
+                await IncrementarContadorFallbackAsync(cn, token);
 
             if (string.Equals(detail.EstadoVersion, CotizacionEstados.Borrador, StringComparison.OrdinalIgnoreCase))
             {
@@ -673,31 +700,96 @@ public sealed class CotizacionesService(
                     "UPDATE dbo.COT_COTIZACION SET Estado = @Estado, FechaHoraModificacion = GETDATE() WHERE IdCotizacion = @Id;",
                     new { Id = detail.IdCotizacion, Estado = CotizacionEstados.Enviada }, cancellationToken: token));
             }
+
+            return mail.EsFallback;
         }, "No se pudo enviar la cotización por email.", ct);
 
-    private async Task<MailInfo> ResolveMailConfigAsync(SqlConnection cn, CancellationToken ct)
+    /// <summary>Resuelve con qué cuenta enviar, en orden: 1) el email propio del usuario que está
+    /// enviando (TA_USUARIOS.email_*, cargado en Usuarios → Email propio); 2) el correo general de
+    /// la empresa (TA_CONFIGURACION EMAIL_*, cargado en Configuración General → Email); 3) si
+    /// ninguno de los dos está cargado, la cuenta de rescate de AlfaGestión (RegistroPublico:Email*
+    /// en appsettings/.env -- la misma que ya usa el email de verificación de cuenta y "pedidos",
+    /// que sabemos que efectivamente llega). El puerto y SSL siempre salen del general/rescate
+    /// porque TA_USUARIOS no tiene esas columnas por usuario.</summary>
+    private async Task<EffectiveMailConfig> ResolveEffectiveMailConfigAsync(SqlConnection cn, string? usuarioActual, CancellationToken ct)
     {
-        var server = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_SERVER", ct), "EMAIL_SERVER");
-        var port = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_PORT", ct), "EMAIL_PORT");
-        var account = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_CTA", ct), "EMAIL_CTA");
-        var password = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_PASS", ct), "EMAIL_PASS");
-        var ssl = ConfigOrAppSetting(await ReadConfigAsync(cn, "EMAIL_SSL", ct), "EMAIL_SSL");
+        var portRaw = FirstNonEmpty(await ReadConfigAsync(cn, "EMAIL_PORT", ct), configuration["RegistroPublico:EmailPort"]);
+        var sslRaw = FirstNonEmpty(await ReadConfigAsync(cn, "EMAIL_SSL", ct), configuration["RegistroPublico:EmailSsl"]);
+        var enableSsl = sslRaw.Equals("SI", StringComparison.OrdinalIgnoreCase)
+            || sslRaw.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+            || sslRaw.Equals("1", StringComparison.OrdinalIgnoreCase);
+        var port = int.TryParse(portRaw, out var parsedPort) && parsedPort > 0 ? parsedPort : 0;
 
-        if (string.IsNullOrWhiteSpace(server) || string.IsNullOrWhiteSpace(port) || string.IsNullOrWhiteSpace(account) || string.IsNullOrWhiteSpace(password))
-            throw new InvalidOperationException("Falta configurar el correo saliente. Revisá EMAIL_SERVER, EMAIL_PORT, EMAIL_CTA y EMAIL_PASS en Configuración.");
-        if (!int.TryParse(port, out var smtpPort) || smtpPort <= 0)
-            throw new InvalidOperationException("EMAIL_PORT no tiene un valor válido.");
+        if (!string.IsNullOrWhiteSpace(usuarioActual) && port > 0)
+        {
+            var userConfig = await usuariosService.GetEmailConfigAsync(usuarioActual, ct);
+            if (userConfig is { EstaCompleto: true })
+            {
+                var from = string.IsNullOrWhiteSpace(userConfig.De) ? userConfig.Usuario : userConfig.De;
+                return new EffectiveMailConfig(userConfig.Server, port, userConfig.Usuario, from,
+                    NullIfEmpty(userConfig.NombreRemitente), userConfig.Password, userConfig.Autenticacion, enableSsl, EsFallback: false);
+            }
+        }
 
-        var enableSsl = ssl.Equals("SI", StringComparison.OrdinalIgnoreCase)
-            || ssl.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
-            || ssl.Equals("1", StringComparison.OrdinalIgnoreCase);
-        return new MailInfo(server, smtpPort, account, password, enableSsl);
+        // Todo o nada: si falta CUALQUIERA de los 3 campos esenciales (servidor/cuenta/clave) en
+        // la base del cliente, no se usa NADA de ahí -- nunca se mezcla, por ejemplo, un
+        // EMAIL_SERVER con basura vieja (se encontró literalmente el valor "Otro", un resto de
+        // algún combo de proveedores) con la cuenta/clave de rescate: esa mezcla intenta conectar
+        // a un host que no existe y explota con un error de DNS que además el sistema mostraba mal
+        // (ver fix de IsFtpAccessError en AppUiOperationService -- esos códigos de socket no son
+        // exclusivos de FTP, cualquier falla de red los puede tirar).
+        var server = (await ReadConfigAsync(cn, "EMAIL_SERVER", ct)).Trim();
+        var account = (await ReadConfigAsync(cn, "EMAIL_CTA", ct)).Trim();
+        var password = (await ReadConfigAsync(cn, "EMAIL_PASS", ct)).Trim();
+        if (server.Length > 0 && port > 0 && account.Length > 0 && password.Length > 0)
+            return new EffectiveMailConfig(server, port, account, account, null, password, true, enableSsl, EsFallback: false);
+
+        // Cuenta de rescate de AlfaGestión -- también todo o nada, y todos sus campos (incluido
+        // puerto/SSL) salen de RegistroPublico:Email*, nunca mezclados con lo que haya (o falte)
+        // en la base del cliente.
+        var vendorServer = (configuration["RegistroPublico:EmailServer"] ?? string.Empty).Trim();
+        var vendorAccount = (configuration["RegistroPublico:EmailAccount"] ?? string.Empty).Trim();
+        var vendorPassword = (configuration["RegistroPublico:EmailPassword"] ?? string.Empty).Trim();
+        var vendorPortRaw = (configuration["RegistroPublico:EmailPort"] ?? string.Empty).Trim();
+        var vendorSslRaw = (configuration["RegistroPublico:EmailSsl"] ?? string.Empty).Trim();
+        var vendorSsl = vendorSslRaw.Equals("SI", StringComparison.OrdinalIgnoreCase)
+            || vendorSslRaw.Equals("TRUE", StringComparison.OrdinalIgnoreCase)
+            || vendorSslRaw.Equals("1", StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrWhiteSpace(vendorServer) || !int.TryParse(vendorPortRaw, out var vendorPort) || vendorPort <= 0
+            || string.IsNullOrWhiteSpace(vendorAccount) || string.IsNullOrWhiteSpace(vendorPassword))
+            throw new InvalidOperationException("Falta configurar el correo saliente. Revisá Utilidades → Configuración General → Email, o cargá un email propio en tu usuario.");
+        return new EffectiveMailConfig(vendorServer, vendorPort, vendorAccount, vendorAccount, null, vendorPassword, true, vendorSsl, EsFallback: true);
     }
 
-    private string ConfigOrAppSetting(string dbValue, string key)
-        => !string.IsNullOrWhiteSpace(dbValue) ? dbValue : (configuration[key] ?? string.Empty);
+    /// <summary>Primer valor no vacío, recortado. Solo se usa para puerto/SSL -- esos dos no
+    /// forman parte del "todo o nada" servidor/cuenta/clave porque mezclarlos no arma un host
+    /// inválido, como sí pasaba antes cuando un EMAIL_SERVER viejo/incompleto en la base se
+    /// mezclaba con la cuenta de rescate.</summary>
+    private static string FirstNonEmpty(params string?[] values)
+        => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim() ?? string.Empty;
 
-    private sealed record MailInfo(string Server, int Port, string From, string Password, bool EnableSsl);
+    private const int LimiteMensualCuentaFallback = 200;
+    private const string ClaveContadorFallback = "EMAIL_FALLBACK_CONTADOR";
+
+    /// <summary>Envíos ya hechos con la cuenta de rescate en el mes actual (el contador se guarda
+    /// como "yyyyMM:cantidad" en TA_CONFIGURACION y se reinicia solo -- no se resetea a mano, un
+    /// período distinto al actual simplemente se lee como 0).</summary>
+    private async Task<int> ObtenerContadorFallbackAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var raw = await ReadConfigAsync(cn, ClaveContadorFallback, ct);
+        var partes = raw.Split(':', 2);
+        return partes.Length == 2 && partes[0] == DateTime.Now.ToString("yyyyMM") && int.TryParse(partes[1], out var contador)
+            ? contador
+            : 0;
+    }
+
+    private async Task IncrementarContadorFallbackAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var contadorActual = await ObtenerContadorFallbackAsync(cn, ct);
+        await SetConfigAsync(cn, ClaveContadorFallback, $"{DateTime.Now:yyyyMM}:{contadorActual + 1}", null, ct);
+    }
+
+    private sealed record EffectiveMailConfig(string Server, int Port, string Login, string From, string? DisplayName, string Password, bool RequiresAuth, bool EnableSsl, bool EsFallback);
 
     public Task<CotizacionAlfaConfigDto> GetAlfaConfigAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("GetAlfaConfig", async token =>
@@ -915,6 +1007,27 @@ public sealed class CotizacionesService(
     public Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default)
         => crmCotizacionService.GenerateServiceProposalAsync(prompt, clienteNombre, ct);
 
+    public Task<string> GenerateEmailMessageAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default)
+        => crmCotizacionService.GenerateEmailMessageAsync(prompt, clienteNombre, ct);
+
+    private const string ClaveEmailTextoPredeterminado = "COTIZACIONES_EMAIL_TEXTO";
+
+    public Task<string> GetEmailTextoPredeterminadoAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetEmailTextoPredeterminado", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            return await ReadConfigJsonAsync(cn, ClaveEmailTextoPredeterminado, token);
+        }, "No se pudo cargar el texto predeterminado del email.", ct);
+
+    public Task SetEmailTextoPredeterminadoAsync(string texto, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SetEmailTextoPredeterminado", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await SetConfigAsync(cn, ClaveEmailTextoPredeterminado, string.Empty, texto ?? string.Empty, token);
+        }, "No se pudo guardar el texto predeterminado del email.", ct);
+
     // ---- Helpers privados ----
 
     private async Task<bool> PermiteDescuentoPorLineaInternalAsync(SqlConnection cn, CancellationToken ct, SqlTransaction? tx = null)
@@ -1024,7 +1137,10 @@ public sealed class CotizacionesService(
     /// que "Descargar PDF"). Antes este método armaba todo el detalle a mano en HTML, con un
     /// formato distinto al PDF y mostrando además las Observaciones internas -- ahora el email
     /// solo presenta y adjunta/enlaza el documento real.</summary>
-    private static string BuildEmailHtml(CotizacionVersionDetailDto d, string? publicUrl)
+    /// <summary>El "mensaje" es texto plano tipeado por el usuario (o generado por IA) en el
+    /// diálogo de envío -- nunca HTML crudo, por eso se encodea igual que el resto y los saltos de
+    /// línea se preservan con white-space:pre-wrap en vez de reinterpretar como markup.</summary>
+    private static string BuildEmailHtml(CotizacionVersionDetailDto d, string? publicUrl, string? mensaje)
     {
         var ar = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
         string E(string? s) => System.Net.WebUtility.HtmlEncode(s ?? string.Empty);
@@ -1036,19 +1152,28 @@ public sealed class CotizacionesService(
           .Append("<div style=\"font-size:16px;font-weight:700;border-bottom:2px solid #2563eb;padding-bottom:12px;margin-bottom:16px;\">Cotización ")
           .Append(E(d.CodigoVisible)).Append("</div>");
 
-        sb.Append("<p style=\"font-size:14px;line-height:1.6;margin:0 0 12px;\">Te compartimos la cotización <strong>")
-          .Append(E(d.CodigoVisible)).Append("</strong>");
-        if (!string.IsNullOrWhiteSpace(d.EmpresaProspecto))
-            sb.Append(" para <strong>").Append(E(d.EmpresaProspecto)).Append("</strong>");
-        sb.Append(". La encontrás adjunta en PDF");
+        var texto = (mensaje ?? string.Empty).Trim();
+        if (texto.Length > 0)
+        {
+            sb.Append("<div style=\"font-size:14px;line-height:1.6;margin:0 0 16px;white-space:pre-wrap;\">").Append(E(texto)).Append("</div>");
+        }
+        else
+        {
+            sb.Append("<p style=\"font-size:14px;line-height:1.6;margin:0 0 16px;\">Te compartimos la cotización <strong>")
+              .Append(E(d.CodigoVisible)).Append("</strong>");
+            if (!string.IsNullOrWhiteSpace(d.EmpresaProspecto))
+                sb.Append(" para <strong>").Append(E(d.EmpresaProspecto)).Append("</strong>");
+            sb.Append(". Ante cualquier consulta, quedamos a disposición.</p>");
+        }
+
+        sb.Append("<p style=\"font-size:13px;color:#64748b;margin:0 0 12px;\">Se adjunta el PDF de la cotización");
         if (!string.IsNullOrWhiteSpace(publicUrl))
             sb.Append(", y también podés verla online acá: <a href=\"").Append(E(publicUrl)).Append("\">").Append(E(publicUrl)).Append("</a>");
         sb.Append(".</p>");
 
         if (d.FechaVencimiento is { } vencimiento)
-            sb.Append("<p style=\"font-size:13px;color:#64748b;margin:0 0 12px;\">Válida hasta ").Append(vencimiento.ToString("dd/MM/yyyy", ar)).Append(".</p>");
+            sb.Append("<p style=\"font-size:13px;color:#64748b;margin:0;\">Válida hasta ").Append(vencimiento.ToString("dd/MM/yyyy", ar)).Append(".</p>");
 
-        sb.Append("<p style=\"font-size:14px;line-height:1.6;margin:0;\">Ante cualquier consulta, quedamos a disposición.</p>");
         sb.Append("</div></body></html>");
         return sb.ToString();
     }

@@ -1,0 +1,91 @@
+@page "/configuracion-general/email"
+@page "/{idweb}/{idbase:int}/configuracion-general/email"
+@using AlfaCore.Models
+@inject AlfaCore.Services.IConfiguracionGeneralService ConfigSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Email | Alfa Gestión</PageTitle>
+
+<div class="page-grid cfgemail-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="panel-card">
+        <h3 class="panel-card__title">Correo saliente</h3>
+        <p class="panel-card__subtitle">
+            Cuenta SMTP que se usa en toda la empresa para enviar comprobantes y cotizaciones por email.
+            Si un usuario tiene su propio email configurado (Archivos → Seguridad → Usuarios → Email propio),
+            se usa el de ese usuario en su lugar.
+        </p>
+
+        <div class="cfgemail-grid">
+            <div class="field">
+                <label>Servidor SMTP</label>
+                <input class="field-input" placeholder="smtp.servidor.com" @bind="_email.Server" />
+            </div>
+            <div class="field">
+                <label>Puerto</label>
+                <input class="field-input" placeholder="587" @bind="_email.Port" />
+            </div>
+            <div class="field cfgemail-grid__wide">
+                <label>Cuenta</label>
+                <input class="field-input" type="email" placeholder="noreply@empresa.com" @bind="_email.Cuenta" />
+            </div>
+            <div class="field cfgemail-grid__wide">
+                <label>Contraseña</label>
+                <input class="field-input" type="password" placeholder="Contraseña SMTP" @bind="_email.Password" />
+            </div>
+        </div>
+        <AlfaCheckbox Value="@_email.Ssl" ValueChanged="v => _email.Ssl = v == true">
+            Usar SSL
+        </AlfaCheckbox>
+    </section>
+
+    <div class="cfgemail-save-bar">
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar</AlfaButton>
+    </div>
+</div>
+
+@code {
+    private ConfiguracionEmailDto _email = new();
+    private bool _saving;
+    private AppUiMessage? _feedback;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await UiOps.RunAsync(() => ConfigSvc.GetEmailAsync(), "No se pudo cargar la configuración de correo saliente.");
+        if (result.Success && result.Value is not null)
+            _email = result.Value;
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Email",
+        Breadcrumb = ["Configuración General", "Email"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "email")
+    });
+
+    private async Task GuardarAsync()
+    {
+        _saving = true;
+        var result = await UiOps.RunAsync(async () => { await ConfigSvc.SaveEmailAsync(_email); return true; }, "No se pudo guardar la configuración de correo saliente.");
+        _saving = false;
+        _feedback = result.Success
+            ? AppUiMessage.Success("Guardado", "La configuración de correo saliente se guardó correctamente.")
+            : result.Feedback;
+    }
+}

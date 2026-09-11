@@ -75,10 +75,25 @@ public interface ICotizacionesService
     /// pedido en lenguaje natural. Nunca inventa precios/importes. Delega en ICrmCotizacionService.</summary>
     Task<string> GenerateServiceProposalAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default);
 
-    /// <summary>Envía la versión por email (misma cuenta SMTP configurada en TA_CONFIGURACION que
-    /// ya usa el resto de la app -- EMAIL_SERVER/EMAIL_PORT/EMAIL_CTA/EMAIL_PASS/EMAIL_SSL). Si la
-    /// versión seguía en BORRADOR, queda marcada ENVIADA.</summary>
-    Task SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, CancellationToken ct = default);
+    /// <summary>Envía la versión por email: primero intenta el email propio de quien envía
+    /// (Usuarios → Email propio), después el correo general de la empresa (Configuración General →
+    /// Email) y, si ninguno está configurado, la cuenta de rescate de AlfaGestión (limitada a 200
+    /// envíos por mes por instalación). Si la versión seguía en BORRADOR, queda marcada ENVIADA.
+    /// Devuelve true si terminó usando la cuenta de rescate (para que la UI lo avise). "mensaje" es
+    /// el texto que escribe/edita quien envía (arranca precargado con el texto predeterminado de
+    /// Configuración, pero se puede cambiar); si viene vacío, se usa un texto mínimo genérico.</summary>
+    Task<bool> SendByEmailAsync(long idVersion, string destinatario, string? publicUrl = null, string? mensaje = null, CancellationToken ct = default);
+
+    /// <summary>Texto predeterminado para acompañar el envío por email (Cotizaciones → Configuración).
+    /// Se precarga, editable, en el diálogo de "Enviar por email".</summary>
+    Task<string> GetEmailTextoPredeterminadoAsync(CancellationToken ct = default);
+
+    Task SetEmailTextoPredeterminadoAsync(string texto, CancellationToken ct = default);
+
+    /// <summary>Asistente de IA: redacta el texto corto de acompañamiento del email (no la
+    /// propuesta completa). Se usa tanto para el texto predeterminado de Configuración como al
+    /// momento de enviar. Delega en ICrmCotizacionService.</summary>
+    Task<string> GenerateEmailMessageAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default);
 
     // El PDF y la vista pública en HTML (/cotizacion-publica/{idbase}/{token} y su variante
     // .../pdf en Program.cs) se generan con ICotizacionDocumentService (plantillas + Playwright),

@@ -136,7 +136,12 @@ public sealed class UsuariosService(
                     {(hasActivo ? "ISNULL(Activo, 1)" : "CAST(1 AS bit)")},
                     ISNULL(PASSWORD, ''),
                     FechaHora_Grabacion,
-                    FechaHora_Modificacion
+                    FechaHora_Modificacion,
+                    ISNULL(email_server, ''),
+                    ISNULL(email_usuario, ''),
+                    ISNULL(email_password, ''),
+                    ISNULL(email_nombre, ''),
+                    email_autenticacion
                 FROM dbo.TA_USUARIOS
                 WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema
                   AND UPPER(LTRIM(RTRIM(NOMBRE))) = @Nombre
@@ -157,6 +162,11 @@ public sealed class UsuariosService(
             var activo = GetBool(rd, 4);
             var fechaGrabacion = rd.IsDBNull(6) ? (DateTime?)null : rd.GetDateTime(6);
             var fechaModificacion = rd.IsDBNull(7) ? (DateTime?)null : rd.GetDateTime(7);
+            var emailServer = GetString(rd, 8);
+            var emailUsuario = GetString(rd, 9);
+            var emailPassword = GetString(rd, 10);
+            var emailNombre = GetString(rd, 11);
+            var emailAutenticacion = rd.IsDBNull(12) || rd.GetBoolean(12);
             await rd.CloseAsync();
 
             var photoInfo = await TryGetPhotoInfoAsync(canonicalName, token);
@@ -174,7 +184,12 @@ public sealed class UsuariosService(
                 FotoCacheToken = photoInfo.CacheToken,
                 FechaHoraGrabacion = fechaGrabacion,
                 FechaHoraModificacion = fechaModificacion,
-                EsTecnico = esTecnico
+                EsTecnico = esTecnico,
+                EmailServer = emailServer,
+                EmailUsuario = emailUsuario,
+                EmailPassword = emailPassword,
+                EmailNombre = emailNombre,
+                EmailAutenticacion = emailAutenticacion
             };
         }, "No se pudo cargar el usuario seleccionado.", ct);
 
@@ -213,6 +228,11 @@ public sealed class UsuariosService(
                         IDCAJA,
                         UNEGOCIO,
                         email_de,
+                        email_server,
+                        email_usuario,
+                        email_password,
+                        email_nombre,
+                        email_autenticacion,
                         V_ModificaArtLuegoDeCargado,
                         Activo
                     )
@@ -228,6 +248,11 @@ public sealed class UsuariosService(
                         @IdCaja,
                         @UNegocio,
                         @Email,
+                        @EmailServer,
+                        @EmailUsuario,
+                        @EmailPassword,
+                        @EmailNombre,
+                        @EmailAutenticacion,
                         @ModificaArt,
                         1
                     );
@@ -245,6 +270,11 @@ public sealed class UsuariosService(
                         IDCAJA,
                         UNEGOCIO,
                         email_de,
+                        email_server,
+                        email_usuario,
+                        email_password,
+                        email_nombre,
+                        email_autenticacion,
                         V_ModificaArtLuegoDeCargado
                     )
                     VALUES
@@ -259,6 +289,11 @@ public sealed class UsuariosService(
                         @IdCaja,
                         @UNegocio,
                         @Email,
+                        @EmailServer,
+                        @EmailUsuario,
+                        @EmailPassword,
+                        @EmailNombre,
+                        @EmailAutenticacion,
                         @ModificaArt
                     );
                     """;
@@ -280,6 +315,11 @@ public sealed class UsuariosService(
                         IDCAJA = @IdCaja,
                         UNEGOCIO = @UNegocio,
                         email_de = @Email,
+                        email_server = @EmailServer,
+                        email_usuario = @EmailUsuario,
+                        email_password = @EmailPassword,
+                        email_nombre = @EmailNombre,
+                        email_autenticacion = @EmailAutenticacion,
                         V_ModificaArtLuegoDeCargado = @ModificaArt
                     WHERE UPPER(LTRIM(RTRIM(Sistema))) = @Sistema
                       AND UPPER(LTRIM(RTRIM(Nombre))) = @NombreOriginal;
@@ -580,6 +620,38 @@ public sealed class UsuariosService(
             await cmdIns.ExecuteNonQueryAsync(token);
         }, "No se pudo guardar el nombre a mostrar en la firma.", ct);
 
+    public Task<UsuarioEmailConfigDto?> GetEmailConfigAsync(string nombre, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetEmailConfig", async token =>
+        {
+            var usuario = (nombre ?? string.Empty).Trim();
+            if (usuario.Length == 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand("""
+                SELECT ISNULL(email_server,''), ISNULL(email_usuario,''), ISNULL(email_password,''),
+                       ISNULL(email_nombre,''), ISNULL(email_de,''), email_autenticacion
+                FROM dbo.TA_USUARIOS
+                WHERE UPPER(LTRIM(RTRIM(SISTEMA))) = @Sistema AND UPPER(LTRIM(RTRIM(NOMBRE))) = @Nombre;
+                """, cn);
+            cmd.Parameters.AddWithValue("@Sistema", SistemaFijo);
+            cmd.Parameters.AddWithValue("@Nombre", usuario.ToUpperInvariant());
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            if (!await rd.ReadAsync(token))
+                return null;
+
+            return new UsuarioEmailConfigDto
+            {
+                Server = GetString(rd, 0),
+                Usuario = GetString(rd, 1),
+                Password = GetString(rd, 2),
+                NombreRemitente = GetString(rd, 3),
+                De = GetString(rd, 4),
+                Autenticacion = rd.IsDBNull(5) || rd.GetBoolean(5)
+            };
+        }, "No se pudo cargar el email propio del usuario.", ct);
+
     private static async Task<bool> SignatureTableExistsAsync(SqlConnection cn, CancellationToken ct)
     {
         await using var cmd = new SqlCommand("SELECT OBJECT_ID(N'dbo.MA_FIRMAS_USUARIO', N'U');", cn);
@@ -597,6 +669,11 @@ public sealed class UsuariosService(
         cmd.Parameters.AddWithValue("@IdCaja", DefaultCaja);
         cmd.Parameters.AddWithValue("@UNegocio", DefaultUnidadNegocio);
         cmd.Parameters.AddWithValue("@Email", DbNullable(request.Email));
+        cmd.Parameters.AddWithValue("@EmailServer", DbNullable(request.EmailServer));
+        cmd.Parameters.AddWithValue("@EmailUsuario", DbNullable(request.EmailUsuario));
+        cmd.Parameters.AddWithValue("@EmailPassword", DbNullable(request.EmailPassword));
+        cmd.Parameters.AddWithValue("@EmailNombre", DbNullable(request.EmailNombre));
+        cmd.Parameters.AddWithValue("@EmailAutenticacion", request.EmailAutenticacion);
         cmd.Parameters.AddWithValue("@ModificaArt", true);
     }
 
@@ -655,7 +732,12 @@ public sealed class UsuariosService(
             FotoNombreOriginal = request.FotoNombreOriginal ?? string.Empty,
             FotoMimeType = request.FotoMimeType ?? string.Empty,
             QuitarFoto = request.QuitarFoto,
-            EsTecnico = request.EsTecnico
+            EsTecnico = request.EsTecnico,
+            EmailServer = request.EmailServer?.Trim() ?? string.Empty,
+            EmailUsuario = request.EmailUsuario?.Trim() ?? string.Empty,
+            EmailPassword = request.EmailPassword ?? string.Empty,
+            EmailNombre = request.EmailNombre?.Trim() ?? string.Empty,
+            EmailAutenticacion = request.EmailAutenticacion
         };
 
     private async Task<bool> PhotoExistsAsync(string nombre, CancellationToken ct)

@@ -24,4 +24,10 @@ public interface IUsuariosService
     /// sistema) -- usado al armar el PDF.</summary>
     Task<UsuarioFirmaDto?> GetSignatureAsync(string nombre, CancellationToken ct = default);
     Task SaveSignatureDisplayNameAsync(string nombre, string? nombreMostrar, CancellationToken ct = default);
+
+    /// <summary>Email propio del usuario (TA_USUARIOS.email_server/email_usuario/email_password/
+    /// email_nombre/email_autenticacion, más email_de como "De") -- usado por Cotizaciones para
+    /// enviar desde la cuenta del usuario en vez del correo general de la empresa, cuando está
+    /// completo (ver UsuarioEmailConfigDto.EstaCompleto).</summary>
+    Task<UsuarioEmailConfigDto?> GetEmailConfigAsync(string nombre, CancellationToken ct = default);
 }

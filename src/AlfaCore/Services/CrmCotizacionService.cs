@@ -603,6 +603,39 @@ public sealed class CrmCotizacionService(
             return string.IsNullOrWhiteSpace(texto) ? string.Empty : texto.Trim();
         }, "No se pudo generar la propuesta con el asistente de IA.", ct);
 
+    public Task<string> GenerateEmailMessageAsync(string prompt, string? clienteNombre = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GenerateEmailMessage", async token =>
+        {
+            var pedido = (prompt ?? string.Empty).Trim();
+            if (pedido.Length == 0)
+                throw new InvalidOperationException("Contá brevemente qué querés que diga el mensaje.");
+
+            var cliente = string.IsNullOrWhiteSpace(clienteNombre) ? "el cliente" : clienteNombre.Trim();
+            var messages = new object[]
+            {
+                new
+                {
+                    role = "system",
+                    content = """
+                        Sos un asistente comercial que redacta el texto corto de acompañamiento para un email
+                        que envía una cotización adjunta en PDF, en español rioplatense (voseo).
+                        Devolvés SOLO texto plano (sin HTML, sin markdown, sin asteriscos ni títulos): 2 a 4
+                        párrafos cortos, tono profesional y cercano. NO repitas que "se adjunta el PDF" ni
+                        pongas firma/despedida formal (eso ya lo agrega el sistema aparte). NO inventes
+                        precios, plazos ni datos que no te dieron.
+                        """
+                },
+                new
+                {
+                    role = "user",
+                    content = $"Redactá el mensaje para acompañar el envío de una cotización a {cliente}. Contexto: {pedido}"
+                }
+            };
+
+            var texto = await CallOpenAiChatAsync(messages, 0.6, token);
+            return string.IsNullOrWhiteSpace(texto) ? string.Empty : texto.Trim();
+        }, "No se pudo generar el mensaje con el asistente de IA.", ct);
+
     public Task<IReadOnlyList<CrmCotizacionAiLineaSugeridaDto>> SuggestLinesFromPromptAsync(string? clienteCodigo, string prompt, CancellationToken ct = default)
         => ExecuteLoggedAsync("SuggestLinesFromPrompt", async token =>
         {

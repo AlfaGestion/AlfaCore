@@ -26,4 +26,10 @@ public interface IConfiguracionGeneralService
     Task SaveLogoAsync(byte[] contenido, CancellationToken ct = default);
 
     Task DeleteLogoAsync(CancellationToken ct = default);
+
+    /// <summary>Correo saliente general de la empresa (una sola cuenta para toda la instalación,
+    /// salvo que un usuario tenga la suya propia en Usuarios → Email propio).</summary>
+    Task<ConfiguracionEmailDto> GetEmailAsync(CancellationToken ct = default);
+
+    Task SaveEmailAsync(ConfiguracionEmailDto dto, CancellationToken ct = default);
 }

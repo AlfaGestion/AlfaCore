@@ -259,9 +259,13 @@ public sealed class AppUiOperationService : IAppUiOperationService
 
     private static bool IsFtpAccessError(Exception? exception, int? win32Code)
     {
-        if (win32Code is 53 or 64 or 67 or 11001)
-            return true;
-
+        // OJO: acá NO hay que agregar un atajo "if (win32Code is 53 or 64 or 67 or 11001) return
+        // true" como el de IsSharedFolderAccessError. Esos códigos (host no encontrado, timeout,
+        // etc.) los tira CUALQUIER falla de red -- SMTP, HTTP, lo que sea -- no son exclusivos de
+        // FTP. Hubo justo ese bug: un email que no pudo conectar al SMTP se mostraba como "no se
+        // pudo acceder al servidor FTP". ArticuloImagenFtpService (la única FTP real de la app) usa
+        // FtpWebRequest, que SIEMPRE envuelve sus fallas en WebException -- alcanza con el chequeo
+        // de tipo/mensaje de abajo para detectar un error de FTP real, sin adivinar por código.
         var current = exception;
         while (current is not null)
         {

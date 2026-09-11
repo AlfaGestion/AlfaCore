@@ -77,7 +77,8 @@ public static class ModuleTopNavPresets
         => Build(routeContext, nav, activeKey,
         [
             ("empresa", "Empresa", "/configuracion-general"),
-            ("logo", "Logo y Estilo", "/configuracion-general/logo")
+            ("logo", "Logo y Estilo", "/configuracion-general/logo"),
+            ("email", "Email", "/configuracion-general/email")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildDocumentos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
