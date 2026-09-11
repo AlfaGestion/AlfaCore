@@ -36,6 +36,8 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
 
         var now = DateTime.UtcNow;
         var latest = await store.GetLatestForBaseAsync(request.IdBase, ct);
+        if (latest is not null)
+            await ReconcileExpiredAsync(latest, ct);
         if (latest is not null
             && latest.IdBase == request.IdBase
             && latest.ExpiresAtUtc > now
@@ -117,14 +119,38 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
     public async Task<WhatsAppEmbeddedStatusView?> GetStatusAsync(Guid idOnboarding, CancellationToken ct = default)
     {
         var item = await store.GetAsync(idOnboarding, ct);
-        return item is null || !_options.Enabled ? null : WhatsAppEmbeddedSignupProgressMapper.Map(item);
+        if (item is null || !_options.Enabled) return null;
+        await ReconcileExpiredAsync(item, ct);
+        return WhatsAppEmbeddedSignupProgressMapper.Map(item);
     }
 
     public async Task<WhatsAppEmbeddedStatusView?> GetLatestStatusForBaseAsync(int idBase, CancellationToken ct = default)
     {
         if (!_options.Enabled) return null;
         var item = await store.GetLatestForBaseAsync(idBase, ct);
-        return item is null ? null : WhatsAppEmbeddedSignupProgressMapper.Map(item);
+        if (item is null) return null;
+        await ReconcileExpiredAsync(item, ct);
+        return WhatsAppEmbeddedSignupProgressMapper.Map(item);
+    }
+
+    /// <summary>
+    /// Transición de dominio automática STARTED → EXPIRED (distinta de HandleCancellationAsync:
+    /// no requiere state/usuario). Sólo actúa cuando el onboarding sigue STARTED, no fue consumido
+    /// y ya venció. Es la red de seguridad para popups abandonados, sesión Blazor perdida,
+    /// servidor reiniciado o callback nunca recibido. Muta el <paramref name="item"/> en memoria
+    /// únicamente si la transición atómica en el store realmente afectó la fila.
+    /// </summary>
+    private async Task ReconcileExpiredAsync(WhatsAppEmbeddedOnboardingDto item, CancellationToken ct)
+    {
+        if (item.Status != WhatsAppEmbeddedOnboardingStatus.Started
+            || item.StateConsumedAtUtc is not null
+            || item.ExpiresAtUtc > DateTime.UtcNow)
+            return;
+        if (await store.ExpireStaleStartedAsync(item.IdOnboarding, item.IdBase, ct))
+        {
+            item.Status = WhatsAppEmbeddedOnboardingStatus.Expired;
+            item.CurrentStep = "EXPIRED";
+        }
     }
 
     public async Task ProcessNextStepAsync(Guid idOnboarding, CancellationToken ct = default)
@@ -435,6 +461,7 @@ public static class WhatsAppEmbeddedSignupProgressMapper
                 WhatsAppEmbeddedOnboardingStatus.Importing => "Meta está demorando temporalmente la activación. AlfaCore continuará automáticamente en unos minutos. No necesitás hacer nada.",
                 WhatsAppEmbeddedOnboardingStatus.Authorized => "Autorización recibida correctamente. La conexión requiere completar las siguientes etapas.",
                 WhatsAppEmbeddedOnboardingStatus.Cancelled => "Conexión cancelada. Podés intentarlo nuevamente.",
+                WhatsAppEmbeddedOnboardingStatus.Expired => "La autorización no se completó a tiempo.",
                 _ => string.Empty
             },
             IncidentId = item.IncidentId,

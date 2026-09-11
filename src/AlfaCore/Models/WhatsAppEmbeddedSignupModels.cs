@@ -35,7 +35,8 @@ public enum WhatsAppEmbeddedConnectionUiState
     Importing,
     ActionRequired,
     Connected,
-    Failed
+    Failed,
+    Expired
 }
 
 public static class WhatsAppEmbeddedConnectionUiStateResolver
@@ -68,6 +69,12 @@ public static class WhatsAppEmbeddedConnectionUiStateResolver
             // acá mismo y quedaba indistinguible de "nunca se intentó nada").
             WhatsAppEmbeddedOnboardingStatus.FailedFinal
                 => WhatsAppEmbeddedConnectionUiState.Failed,
+            // Autorización nunca completada a tiempo (popup abandonado, sesión Blazor perdida,
+            // servidor reiniciado, callback nunca recibido): expiró automáticamente en el backend
+            // (ver WhatsAppEmbeddedSignupOrchestrator.ReconcileExpiredAsync). No debe mostrarse
+            // como "Configuración en curso".
+            WhatsAppEmbeddedOnboardingStatus.Expired
+                => WhatsAppEmbeddedConnectionUiState.Expired,
             _ => WhatsAppEmbeddedConnectionUiState.Start
         };
     }

@@ -195,6 +195,19 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
         await cn.ExecuteAsync(new CommandDefinition(sql, new { Id = id, WorkerId = workerId, NextAttemptUtc = nextAttemptUtc }, cancellationToken: ct));
     }
 
+    public async Task<bool> ExpireStaleStartedAsync(Guid id, int idBase, CancellationToken ct = default)
+    {
+        const string sql = """
+            UPDATE dbo.WhatsAppEmbeddedOnboarding
+            SET Estado='EXPIRED', PasoActual='EXPIRED', FechaModificacionUtc=SYSUTCDATETIME()
+            WHERE IdOnboarding=@Id AND IdBase=@IdBase AND Estado='STARTED'
+              AND StateConsumedAtUtc IS NULL AND FechaExpiracionUtc<=SYSUTCDATETIME();
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new { Id = id, IdBase = idBase }, cancellationToken: ct));
+        return affected == 1;
+    }
+
     private async Task UpdateFieldsAsync(Guid id, WhatsAppEmbeddedOnboardingStatus status, string step, object values, CancellationToken ct)
     {
         var data = new DynamicParameters();
