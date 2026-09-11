@@ -61,8 +61,7 @@ public sealed class MetaWhatsAppManagementClient(
         var normalizedWabaId = RequiredMetaId(wabaId, nameof(wabaId));
         var routing = await routingProvider.GetAsync(idBase, ct);
         await VerifyCallbackAsync(routing, ct);
-        var subscriptions = await GetPagedAsync(tokenReference, $"{normalizedWabaId}/subscribed_apps", "id,override_callback_uri", item =>
-            new WabaSubscription(RequiredId(item, "aplicación"), GetString(item, "override_callback_uri")), ct);
+        var subscriptions = await GetSubscribedAppsAsync(tokenReference, normalizedWabaId, ct);
         var current = subscriptions.SingleOrDefault(x => string.Equals(x.AppId, _options.AppId.Trim(), StringComparison.Ordinal));
         if (current is null)
         {
@@ -73,10 +72,59 @@ public sealed class MetaWhatsAppManagementClient(
         using var request = await CreateRequestAsync(HttpMethod.Post, $"{normalizedWabaId}/subscribed_apps", tokenReference, ct);
         request.Content = JsonContent.Create(new { override_callback_uri = routing.CallbackUrl, verify_token = routing.VerifyToken });
         await SendSuccessAsync(request, ct);
-        var verified = await GetPagedAsync(tokenReference, $"{normalizedWabaId}/subscribed_apps", "id,override_callback_uri", item =>
-            new WabaSubscription(RequiredId(item, "aplicación"), GetString(item, "override_callback_uri")), ct);
+        var verified = await GetSubscribedAppsAsync(tokenReference, normalizedWabaId, ct);
         if (!verified.Any(x => x.AppId == _options.AppId.Trim() && string.Equals(x.OverrideCallbackUrl.TrimEnd('/'), routing.CallbackUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)))
             throw new MetaWhatsAppManagementException("META_CALLBACK_ROUTING_MISMATCH", false, false, "Meta no confirmó el callback correspondiente a la base.");
+    }
+
+    /// <summary>
+    /// Lectura tolerante de <c>{wabaId}/subscribed_apps</c>: a diferencia de <see cref="GetPagedAsync{T}"/>,
+    /// un ítem individual sin "id" utilizable NO aborta toda la lectura — se descarta y se registra un
+    /// diagnóstico sanitizado (sin token, sin body completo), y se sigue con el resto. Sólo falla
+    /// ("fail controlled") si NINGÚN ítem devuelto resultó utilizable, porque ahí no hay forma segura de
+    /// saber si nuestra app ya está suscripta. Los errores HTTP reales de Meta (permisos, rate limit, etc.)
+    /// no pasan por esta tolerancia: <see cref="SendJsonAsync"/> los sigue lanzando tal cual.
+    /// </summary>
+    private async Task<IReadOnlyList<WabaSubscription>> GetSubscribedAppsAsync(WhatsAppCredentialReference tokenReference, string wabaId, CancellationToken ct)
+    {
+        var result = new List<WabaSubscription>();
+        var rawCount = 0;
+        var malformedCount = 0;
+        string? next = BuildGraphUri($"{wabaId}/subscribed_apps?fields={Uri.EscapeDataString("id,override_callback_uri")}&limit=100").ToString();
+        while (!string.IsNullOrWhiteSpace(next))
+        {
+            using var request = await CreateAbsoluteRequestAsync(HttpMethod.Get, next, tokenReference, ct);
+            using var document = await SendJsonAsync(request, ct);
+            if (document.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+            {
+                var itemIndex = 0;
+                foreach (var item in data.EnumerateArray())
+                {
+                    rawCount++;
+                    if (TryParseMetaId(item, "id", out var id, out var idKind, out var idPresent))
+                    {
+                        result.Add(new WabaSubscription(id, GetString(item, "override_callback_uri")));
+                    }
+                    else
+                    {
+                        malformedCount++;
+                        TryWriteMetaAssetParseDiagnostic("subscribed_apps", wabaId, itemIndex, item, idKind, idPresent);
+                    }
+                    itemIndex++;
+                }
+            }
+            next = document.RootElement.TryGetProperty("paging", out var paging)
+                && paging.TryGetProperty("next", out var nextElement)
+                && nextElement.ValueKind == JsonValueKind.String
+                ? nextElement.GetString()
+                : null;
+        }
+
+        if (result.Count == 0 && rawCount > 0)
+            throw new MetaWhatsAppManagementException("META_SUBSCRIBED_APPS_UNPARSEABLE", false, false,
+                $"No se pudo determinar de forma segura el estado de suscripción del WABA: {malformedCount} de {rawCount} elemento(s) de subscribed_apps sin id utilizable.");
+
+        return result;
     }
 
     private async Task VerifyCallbackAsync(WhatsAppWabaRoutingConfiguration routing, CancellationToken ct)
@@ -214,6 +262,8 @@ public sealed class MetaWhatsAppManagementClient(
     {
         string code = ((int)response.StatusCode).ToString();
         string? subcode = null;
+        string? errorType = null;
+        string? errorMessage = null;
         try
         {
             await using var stream = await response.Content.ReadAsStreamAsync(ct);
@@ -224,6 +274,10 @@ public sealed class MetaWhatsAppManagementClient(
                     code = errorCode.ToString();
                 if (error.TryGetProperty("error_subcode", out var errorSubcode))
                     subcode = errorSubcode.ToString();
+                if (error.TryGetProperty("type", out var typeElement) && typeElement.ValueKind == JsonValueKind.String)
+                    errorType = typeElement.GetString();
+                if (error.TryGetProperty("message", out var messageElement) && messageElement.ValueKind == JsonValueKind.String)
+                    errorMessage = SanitizeMetaMessage(messageElement.GetString());
             }
         }
         catch { }
@@ -233,8 +287,93 @@ public sealed class MetaWhatsAppManagementClient(
         var transient = (int)response.StatusCode >= 500 || response.StatusCode == HttpStatusCode.TooManyRequests
             || retryAfter.HasValue || businessUsage.EstimatedTimeToRegainAccess.HasValue
             || code is "1" or "2" or "4" or "17" or "32" or "613" or "80008";
+        // No ocultamos el error real de Meta: HTTP/code/subcode/type/message (sanitizado) quedan en
+        // la excepción para quien la capture, aunque hoy sólo se persista ErrorCode + step + incidente.
         return new MetaWhatsAppManagementException(code, transient, reauth, "Meta no pudo completar la operación de administración de WhatsApp.",
-            null, subcode, (int)response.StatusCode, retryAfter, businessUsage.HeaderPresent, businessUsage.EstimatedTimeToRegainAccess);
+            null, subcode, (int)response.StatusCode, retryAfter, businessUsage.HeaderPresent, businessUsage.EstimatedTimeToRegainAccess,
+            errorType, errorMessage);
+    }
+
+    private static string? SanitizeMetaMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+            return null;
+        var cleaned = new string(message.Where(static c => !char.IsControl(c)).ToArray()).Trim();
+        return cleaned.Length <= 300 ? cleaned : cleaned[..300];
+    }
+
+    /// <summary>
+    /// Diagnóstico best-effort para un ítem de un listado de Meta (p. ej. subscribed_apps) cuyo "id"
+    /// no se pudo determinar de forma segura. Nunca token, nunca el body completo: sólo el endpoint
+    /// lógico, el WABA (no es secreto), el índice del ítem, los NOMBRES de propiedad presentes (no sus
+    /// valores) y el JsonValueKind de "id". Nunca altera el resultado real de la operación con Meta.
+    /// </summary>
+    private static void TryWriteMetaAssetParseDiagnostic(
+        string endpointLogico, string wabaId, int itemIndex, JsonElement item, JsonValueKind idValueKind, bool idPresent)
+    {
+        try
+        {
+            var directory = Path.Combine(AppContext.BaseDirectory, "diagnostics");
+            Directory.CreateDirectory(directory);
+            var propertyNames = item.ValueKind == JsonValueKind.Object
+                ? item.EnumerateObject().Select(static p => p.Name).ToArray()
+                : Array.Empty<string>();
+            var record = new
+            {
+                TimestampUtc = DateTimeOffset.UtcNow,
+                Endpoint = endpointLogico,
+                WabaId = wabaId,
+                ItemIndex = itemIndex,
+                PropertyNamesPresent = propertyNames,
+                IdValueKind = idValueKind.ToString(),
+                IdPresent = idPresent
+            };
+            var path = Path.Combine(directory, $"meta-asset-parse-failures-{DateTime.UtcNow:yyyyMMdd}.jsonl");
+            File.AppendAllText(path, JsonSerializer.Serialize(record) + Environment.NewLine,
+                new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+        catch
+        {
+            // El diagnóstico nunca debe enmascarar ni alterar el resultado real de la operación con Meta.
+        }
+    }
+
+    /// <summary>
+    /// Parser tolerante del "id" de un ítem de Graph: acepta JSON string numérico (formato histórico)
+    /// O JSON number entero positivo (algunos edges de Graph devuelven ids como número), y normaliza
+    /// ambos a string. Cualquier otra forma (ausente, no numérico, negativo, no entero) se reporta como
+    /// no utilizable — nunca se inventa un id ni se asume éxito.
+    /// </summary>
+    private static bool TryParseMetaId(JsonElement item, string propertyName, out string id, out JsonValueKind valueKind, out bool present)
+    {
+        id = string.Empty;
+        valueKind = JsonValueKind.Undefined;
+        present = item.ValueKind == JsonValueKind.Object && item.TryGetProperty(propertyName, out var value);
+        if (!present)
+            return false;
+
+        value = item.GetProperty(propertyName);
+        valueKind = value.ValueKind;
+        switch (value.ValueKind)
+        {
+            case JsonValueKind.String:
+                var text = (value.GetString() ?? string.Empty).Trim();
+                if (text.Length > 0 && text.All(char.IsDigit))
+                {
+                    id = text;
+                    return true;
+                }
+                return false;
+            case JsonValueKind.Number:
+                if (value.TryGetInt64(out var number) && number > 0)
+                {
+                    id = number.ToString(System.Globalization.CultureInfo.InvariantCulture);
+                    return true;
+                }
+                return false;
+            default:
+                return false;
+        }
     }
 
     private static (bool HeaderPresent, TimeSpan? EstimatedTimeToRegainAccess) TryReadBusinessUseCaseUsage(HttpResponseMessage response)
@@ -305,7 +444,12 @@ public sealed class MetaWhatsAppManagementClient(
     }
 
     private static string RequiredId(JsonElement item, string label)
-        => RequiredMetaId(GetString(item, "id"), label);
+    {
+        // Acepta "id" como JSON string numérico o como JSON number entero positivo (ver TryParseMetaId).
+        if (TryParseMetaId(item, "id", out var id, out _, out _))
+            return id;
+        throw new MetaWhatsAppManagementException("META_INVALID_ASSET", false, false, $"Meta devolvió un identificador inválido para {label}.");
+    }
 
     private static string RequiredMetaId(string? value, string parameterName)
     {

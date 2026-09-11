@@ -137,8 +137,10 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
     public Task ScheduleRetryAsync(Guid id, WhatsAppEmbeddedOnboardingStatus resumeStatus, string resumeStep, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default)
         => UpdateFieldsAsync(id, resumeStatus, resumeStep, new { ErrorCode = errorCode, ErrorSummary = summary, IncidentId = incidentId, NextAttemptUtc = nextAttemptUtc, IncrementRetry = true }, ct);
 
-    public Task MarkFinalFailureAsync(Guid id, string errorCode, string summary, string incidentId, CancellationToken ct = default)
-        => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.FailedFinal, "FAILED", new { ErrorCode = errorCode, ErrorSummary = summary, IncidentId = incidentId }, ct);
+    public Task MarkFinalFailureAsync(Guid id, string errorCode, string summary, string incidentId, string? failedStep = null, CancellationToken ct = default)
+        => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.FailedFinal,
+            string.IsNullOrWhiteSpace(failedStep) ? "FAILED" : failedStep.Trim(),
+            new { ErrorCode = errorCode, ErrorSummary = summary, IncidentId = incidentId }, ct);
 
     public Task MarkReadyAsync(Guid id, CancellationToken ct = default)
         => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.Ready, "READY", new { }, ct);

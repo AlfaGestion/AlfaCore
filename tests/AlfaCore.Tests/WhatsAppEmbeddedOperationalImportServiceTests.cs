@@ -235,7 +235,7 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         public Task MarkAuthorizedAsync(Guid id, string tokenReference, string metaBusinessId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkRetryableFailureAsync(Guid id, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task MarkFinalFailureAsync(Guid id, string errorCode, string summary, string incidentId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task MarkFinalFailureAsync(Guid id, string errorCode, string summary, string incidentId, string? failedStep = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkReadyAsync(Guid id, CancellationToken ct = default) { MarkedReady = id == _item.IdOnboarding; return Task.CompletedTask; }
         public Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string workerId, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct = default) => throw new NotSupportedException();
         public Task ReleaseClaimAsync(Guid id, string workerId, DateTime? nextAttemptUtc, CancellationToken ct = default) => throw new NotSupportedException();

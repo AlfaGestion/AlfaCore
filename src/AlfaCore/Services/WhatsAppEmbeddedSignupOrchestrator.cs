@@ -277,7 +277,7 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
                 await store.MarkRetryableFailureAsync(item.IdOnboarding, ex.ErrorCode, "Meta no pudo completar temporalmente la configuración.", incident,
                     WhatsAppEmbeddedSignupStateMachine.ScheduleRetry(DateTime.UtcNow, item.RetryCount, _options.RetryInitialDelaySeconds, _options.RetryMaxDelaySeconds), ct);
             else
-                await store.MarkFinalFailureAsync(item.IdOnboarding, ex.ErrorCode, "No se pudo completar la configuración con Meta.", incident, ct);
+                await store.MarkFinalFailureAsync(item.IdOnboarding, ex.ErrorCode, "No se pudo completar la configuración con Meta.", incident, item.CurrentStep, ct);
         }
     }
 
@@ -429,13 +429,16 @@ public static class WhatsAppEmbeddedSignupProgressMapper
                 WhatsAppEmbeddedOnboardingStatus.ActionRequired when item.ActionRequiredReason == WhatsAppEmbeddedActionRequiredReason.CustomerPaymentSetupRequired => "Para terminar de activar WhatsApp, agregá un método de pago en tu cuenta de Meta. Los cargos de WhatsApp se pagan directamente a Meta.",
                 WhatsAppEmbeddedOnboardingStatus.ActionRequired => "Necesitamos que completes un paso en tu cuenta Meta para continuar.",
                 WhatsAppEmbeddedOnboardingStatus.FailedRetryable => "No pudimos completar la configuración. Podrás reintentar.",
-                WhatsAppEmbeddedOnboardingStatus.FailedFinal => "No se pudo completar la configuración.",
+                WhatsAppEmbeddedOnboardingStatus.FailedFinal => string.IsNullOrWhiteSpace(item.ErrorSummary)
+                    ? "No se pudo completar la configuración."
+                    : item.ErrorSummary,
                 WhatsAppEmbeddedOnboardingStatus.Importing => "Meta está demorando temporalmente la activación. AlfaCore continuará automáticamente en unos minutos. No necesitás hacer nada.",
                 WhatsAppEmbeddedOnboardingStatus.Authorized => "Autorización recibida correctamente. La conexión requiere completar las siguientes etapas.",
                 WhatsAppEmbeddedOnboardingStatus.Cancelled => "Conexión cancelada. Podés intentarlo nuevamente.",
                 _ => string.Empty
             },
             IncidentId = item.IncidentId,
+            Step = item.CurrentStep,
             Progress = Steps.Select((step, index) => new WhatsAppEmbeddedProgressItem(
                 step.Key,
                 step.Label,
