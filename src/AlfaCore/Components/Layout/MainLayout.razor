@@ -9,8 +9,6 @@
 @inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ILegacyBaseUserSessionService LegacyBaseUserSession
-@inject Microsoft.Extensions.Options.IOptions<AlfaCore.Configuration.AlfaCoreEsLocalOptions> EsLocalOptions
-@inject Microsoft.Extensions.Hosting.IHostEnvironment HostEnvironment
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.ICentralClientesService CentralClientesSvc
 @inject AlfaCore.Services.IMenuService MenuSvc
@@ -789,6 +787,17 @@ else
                             <small>@GetModuleTitle()</small>
                         </span>
                     </a>
+                    <div class="alfa-app-topbar__history" aria-label="Historial de navegación">
+                        <button type="button" class="alfa-app-topbar__global-icon" @onclick="GoToLauncher" title="Ir a Inicio" aria-label="Ir a Inicio">
+                            <i class="bi bi-house"></i>
+                        </button>
+                        <button type="button" class="alfa-app-topbar__global-icon" @onclick="() => HeaderNavigation.GoBack(Nav)" disabled="@(!HeaderNavigation.CanGoBack)" title="Atrás" aria-label="Atrás">
+                            <i class="bi bi-chevron-left"></i>
+                        </button>
+                        <button type="button" class="alfa-app-topbar__global-icon" @onclick="() => HeaderNavigation.GoForward(Nav)" disabled="@(!HeaderNavigation.CanGoForward)" title="Adelante" aria-label="Adelante">
+                            <i class="bi bi-chevron-right"></i>
+                        </button>
+                    </div>
                     <nav class="alfa-app-topbar__nav" aria-label="Navegación principal">
                         @foreach (var item in PageHeader.Current.TopNavigationItems)
                         {
@@ -826,6 +835,12 @@ else
                     </nav>
                 </div>
                 <div class="alfa-app-topbar__global-actions">
+                    @if (string.Equals(_currentModule, "compras", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <button type="button" class="alfa-app-topbar__global-icon no-print" @onclick="ExportCurrentPageToPdfAsync" title="Exportar pantalla actual a PDF" aria-label="Exportar pantalla actual a PDF">
+                            <i class="bi bi-file-earmark-pdf"></i>
+                        </button>
+                    }
                     <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones")" title="Conversaciones" aria-label="Conversaciones">
                         <i class="bi bi-chat-left-text"></i>
                     </a>
@@ -835,9 +850,24 @@ else
                             <i class="bi bi-bell"></i>
                         </button>
                     }
-                    <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
-                        <i class="bi bi-gear"></i>
-                    </a>
+                    @if (!string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "usuarios", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "clientes", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "compras", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "ventas", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "contabilidad", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "caja-bancos", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "stock", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "crm", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "tickets", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "cotizaciones", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "configuracion-general", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "documentos", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
+                            <i class="bi bi-gear"></i>
+                        </a>
+                    }
                     <button type="button" class="alfa-app-topbar__chip alfa-app-topbar__chip--base" @onclick="OpenSqlSessionDrawerAsync" title="Base activa">
                         <i class="bi bi-database"></i>
                         <span>@GetActiveBaseShortLabel()</span>
@@ -855,7 +885,9 @@ else
         }
 
         <CascadingValue Name="AlfaDesignShellActive" Value="IsAlfaDesignShellActive">
-            <MainPageHeader />
+            <CascadingValue Name="SuppressPageHeader" Value="!IsAlfaDesignShellActive">
+                <MainPageHeader />
+            </CascadingValue>
         </CascadingValue>
 
         @if (ShouldShowConversationMobilePwaActions)
@@ -1291,12 +1323,10 @@ else
                  OnClose="CloseLoginOverlayAsync" />
 
 <AppMsgBoxHost />
-<NovedadesPopup Enabled="@(!IsDirectMode && !IsEsLocalMode)" />
+<NovedadesPopup Enabled="@(!IsDirectMode)" />
 
 @code {
     private static readonly string BuildStamp = ResolveBuildStamp();
-    private bool IsEsLocalMode
-        => EsLocalOptions.Value.ShouldDisableUnrelatedHostedServices(HostEnvironment.EnvironmentName);
 
     private static string ResolveBuildStamp()
     {
@@ -1365,7 +1395,12 @@ else
         => string.Equals(_currentModule, "carga-viajes", StringComparison.OrdinalIgnoreCase)
            || string.Equals(_currentModule, "catalogo", StringComparison.OrdinalIgnoreCase)
            || string.Equals(_currentModule, "catalogos", StringComparison.OrdinalIgnoreCase);
-    private bool IsAlfaDesignShellActive => PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+    // !IsLauncherRoute es una salvaguarda además del PageHeader.Clear() de OnLocationChanged (no en
+    // vez de): IsLauncherRoute se recalcula en cada acceso a partir de la URL actual, sin depender de
+    // que el Clear() haya ganado la carrera contra el Dispose() de la página AlfaDesign anterior --
+    // si esa carrera se pierde en algún caso no cubierto, Inicio nunca puede quedar con el topbar
+    // pegado de otra pantalla.
+    private bool IsAlfaDesignShellActive => !IsLauncherRoute && IsCurrentRouteAlfaDesignManaged() && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
     private bool ShowSidebar => !UseTopOnlyNavigation && !IsAlfaDesignShellActive && !IsDirectMode;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
@@ -1435,6 +1470,54 @@ else
             ? "Importante: con 'solo asignadas', si la conversación no tiene técnico asignado no se envía push."
             : string.Empty;
     private IReadOnlyList<ShellMenuSearchItemDto> FilteredMenuSearchResults => GetFilteredMenuSearchResults();
+
+    // Rutas de la familia Conversaciones que configuran su propio PageHeader (AlfaDesignPilot) --
+    // ver el preservado en OnLocationChanged. Cualquier ruta de Conversaciones que NO esté acá cae
+    // a PageHeader.Clear() (shell legacy) en vez de arrastrar el header de la página anterior.
+    private static readonly HashSet<string> AlfaDesignManagedConversacionesPaths = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "conversaciones",
+        "conversaciones/configuracion",
+        "conversaciones/plantillas",
+        "conversaciones/estadisticas",
+        "conversaciones/informes"
+    };
+
+    // Módulos (_currentModule) migrados al shell AlfaDesign que se autogestionan su propio PageHeader
+    // (no dependen del "preservado" por ruta exacta de arriba porque tienen sus propias páginas con
+    // rutas internas -- ej. Clientes: alta/edición vía el mismo componente, sin cambiar de ruta).
+    private static readonly HashSet<string> AlfaDesignManagedModules = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "contactos",
+        "usuarios",
+        "clientes",
+        "compras",
+        "ventas",
+        "contabilidad",
+        "caja-bancos",
+        "stock",
+        "crm",
+        "tickets",
+        "cotizaciones",
+        "documentos",
+        "configuracion-general"
+    };
+
+    // Única fuente de verdad de "esta ruta es una de las que ya migramos a AlfaDesign". Se usa tanto
+    // para decidir si preservar el PageHeader en OnLocationChanged como para decidir si mostrar el
+    // topbar/Context Toolbar de AlfaDesign en IsAlfaDesignShellActive -- así, aunque el
+    // PageHeader.Clear() de una navegación pierda alguna carrera rara, una página no migrada (ej.
+    // /compras) nunca puede terminar mostrando el header pegado de la página anterior: la ruta actual
+    // se vuelve a chequear en cada render, no solo en el momento de navegar.
+    private bool IsCurrentRouteAlfaDesignManaged()
+    {
+        var effectivePath = GetEffectiveCurrentPath().ToLowerInvariant();
+        return AlfaDesignManagedModules.Contains(_currentModule)
+            || AlfaDesignManagedConversacionesPaths.Contains(effectivePath)
+            // Detalle de informe: ruta con parámetro ("conversaciones/informes/detalle/{id}"), no
+            // matchea el HashSet de rutas exactas de arriba.
+            || effectivePath.StartsWith("conversaciones/informes/detalle/", StringComparison.OrdinalIgnoreCase);
+    }
 
     private string _currentModule = string.Empty;
     private string _activeShellModuleKey = string.Empty;
@@ -1582,12 +1665,24 @@ else
     {
         HeaderNavigation.Record(args.Location);
         _mobileSidebarOpen = false;
+        if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
+            _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (IsLauncherRoute)
             _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
-        var preserveContactosPilot = string.Equals(_currentModule, "contactos", StringComparison.OrdinalIgnoreCase)
+        // Páginas que setean su propio PageHeader (AlfaDesignPilot) y navegan internamente vía
+        // query string dentro de la misma ruta (ej. Conversaciones: seleccionar un chat cambia
+        // ?id=X sin cambiar de componente) -- sin este preservado, cada click volvía a mostrar el
+        // sidebar legacy porque este handler corre en CADA cambio de ubicación, incluidos los
+        // internos, y limpiaba el header recién seteado por la propia página.
+        // OJO: se compara por RUTA EXACTA (GetEffectiveCurrentPath), no por _currentModule -- este
+        // último es solo el primer segmento ("conversaciones"), compartido por Plantillas/
+        // Estadísticas/Informes, que NUNCA llaman PageHeader.Set() propio. Preservar por módulo
+        // dejaba el header de Conversaciones pegado al navegar a esas otras páginas (topbar
+        // ausente, contenido tapado, o la pestaña "Configuración" marcada activa sin corresponder).
+        var preserveAlfaDesignPilot = IsCurrentRouteAlfaDesignManaged()
             && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
-        if (!preserveContactosPilot)
+        if (!preserveAlfaDesignPilot)
             PageHeader.Clear();
         if (EnforceDirectMode())
             return;
@@ -1958,9 +2053,6 @@ else
     /// </summary>
     private void QueuePendingUpdatesCheckIfNeeded(SessionDto routeSession)
     {
-        if (EsLocalOptions.Value.ShouldDisableUnrelatedHostedServices(HostEnvironment.EnvironmentName))
-            return;
-
         if (!RouteUpdatesGuard.TryClaim(routeSession.Servidor, routeSession.BaseDatos))
             return;
 
@@ -3732,6 +3824,9 @@ else
         "usuarios" => "Usuarios",
         "seguridad" => "Seguridad",
         "contactos" => "Contactos",
+        "cotizaciones" => "Cotizaciones",
+        "configuracion-general" => "Configuración General",
+        "documentos" => "Diseñador de comprobantes",
         _ => "Inicio"
     };
 

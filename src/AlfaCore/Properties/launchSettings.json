@@ -22,11 +22,10 @@
         "commandName": "Project",
         "dotnetRunMessages": true,
         "launchBrowser": false,
-        "applicationUrl": "https://localhost:7055;http://localhost:5055",
+        "applicationUrl": "https://localhost:5056;http://localhost:5055",
         "environmentVariables": {
           "ASPNETCORE_ENVIRONMENT": "Development",
-          "ServidorWeb__PuertoHttpsDesarrollo": "7055",
-          "WhatsAppEmbeddedSignup__CentralConnectionString": "Server=(localdb)\\MSSQLLocalDB;Initial Catalog=ALFA_CENTRAL_DEV;Integrated Security=True;TrustServerCertificate=True"
+          "ServidorWeb__PuertoHttpsDesarrollo": "5056"
         }
       },
       "IIS Express": {

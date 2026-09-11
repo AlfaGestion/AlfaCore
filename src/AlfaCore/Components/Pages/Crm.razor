@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/crm"
 @using AlfaCore.Models
 @using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.WebUtilities
 @inject AlfaCore.Services.ICrmService CrmSvc
 @inject AlfaCore.Services.ICrmCotizacionService CotizSvc
 @inject AlfaCore.Services.IConversacionesService ConvSvc
@@ -9,6 +10,7 @@
 @inject IConfiguration Config
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime JS
 @implements IDisposable
@@ -815,6 +817,20 @@
 
     private IEnumerable<CrmViewColumnDto> VisibleColumns => _viewSettings.Columnas.Where(x => x.Visible).OrderBy(x => x.Order);
     private string CurrentUserName => AppUserSession.CurrentUser?.UserName ?? Environment.UserName;
+
+    private string BuildCotizacionModuloUrl()
+    {
+        var url = RouteContext.BuildRoute("/cotizaciones");
+        if (_detail is null)
+            return url;
+
+        url = QueryHelpers.AddQueryString(url, "oportunidad", _detail.IdOportunidad.ToString());
+        if (!string.IsNullOrWhiteSpace(_detail.ClienteNombre))
+            url = QueryHelpers.AddQueryString(url, "empresa", _detail.ClienteNombre);
+        if (!string.IsNullOrWhiteSpace(_detail.ContactoNombre))
+            url = QueryHelpers.AddQueryString(url, "contacto", _detail.ContactoNombre);
+        return url;
+    }
     private string? CurrentUserTechId => _lookups.Tecnicos.FirstOrDefault(x =>
         string.Equals(x.UsuarioAsociado, CurrentUserName, StringComparison.OrdinalIgnoreCase)
         || string.Equals(x.IdTecnico, CurrentUserName, StringComparison.OrdinalIgnoreCase))?.IdTecnico;
@@ -841,6 +857,7 @@
                    value="@_filters.Texto"
                    placeholder="Buscar oportunidad, cliente, contacto..."
                    disabled="@_loading"
+                   @onfocus="OpenSearchPanelAsync"
                    @oninput="OnHeaderSearchInputAsync"
                    @onkeydown="HandleSearchKeyDownAsync" />
             <button type="button" class="smart-search__toggle @(_searchPanelOpen ? "is-active" : string.Empty)" @onclick="ToggleSearchPanelAsync" aria-label="Mostrar filtros">
@@ -1146,6 +1163,9 @@
                         <button type="button" class="btn btn--ghost btn--sm" @onclick="() => NuevaCotizacionAsync(CrmCotizacionTipos.Servicio)" disabled="@(_saving || _detail is null)" title="Cotización de servicio con IA">
                             <i class="bi bi-stars"></i> Servicio (IA)
                         </button>
+                        <a class="btn btn--ghost btn--sm" href="@BuildCotizacionModuloUrl()" title="Abrir el módulo general de Cotizaciones, precargado con esta oportunidad">
+                            <i class="bi bi-file-earmark-text"></i> Nueva cotización
+                        </a>
                     </div>
                 </div>
                 @if (_detail is null)
@@ -1212,6 +1232,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+            UpdatePageHeader();
+
         if (_cotizEditorNeedsSync && _showCotizEditor && _cotizEsServicio)
         {
             _cotizEditorNeedsSync = false;
@@ -1388,6 +1411,8 @@
         {
             Title = _showEditor ? (_form.IdOportunidad > 0 ? $"#{_detail?.CodigoVisible} {_form.Titulo}" : "Nueva oportunidad") : "CRM oportunidades",
             Breadcrumb = _showEditor ? ["CRM", "Oportunidades", "Detalle"] : ["CRM", "Oportunidades"],
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCrm(RouteContext, Nav, "oportunidades"),
             State = _loading
                 ? PageHeaderState.Loading
                 : _showEditor
@@ -1446,6 +1471,16 @@
     private Task ToggleSearchPanelAsync()
     {
         _searchPanelOpen = !_searchPanelOpen;
+        UpdatePageHeader();
+        return Task.CompletedTask;
+    }
+
+    private Task OpenSearchPanelAsync()
+    {
+        if (_searchPanelOpen)
+            return Task.CompletedTask;
+
+        _searchPanelOpen = true;
         UpdatePageHeader();
         return Task.CompletedTask;
     }

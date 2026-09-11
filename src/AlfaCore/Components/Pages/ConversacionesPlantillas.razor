@@ -1,6 +1,13 @@
 @page "/conversaciones/plantillas"
 @page "/{idweb}/{idbase:int}/conversaciones/plantillas"
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
+@inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+@using AlfaCore.Models
 
 <PageTitle>Plantillas de WhatsApp | Alfa Gestión</PageTitle>
 
@@ -62,6 +69,15 @@
         <section class="panel-card templates-filters">
             <div class="conversations-filters__fields">
                 <div class="field">
+                    <label for="tpl-whatsapp">WhatsApp</label>
+                    <select id="tpl-whatsapp" value="@_filters.IdNumeroWhatsApp" @onchange="OnWhatsAppNumeroChangedAsync" disabled="@_loading">
+                        @foreach (var numero in TemplateWhatsAppNumeros)
+                        {
+                            <option value="@numero.IdNumero">@GetWhatsAppNumeroLabel(numero)</option>
+                        }
+                    </select>
+                </div>
+                <div class="field">
                     <label for="tpl-search">Buscar</label>
                     <input id="tpl-search" type="search" placeholder="Nombre, identificador Meta o texto..."
                            @bind="_filters.Search" @bind:event="oninput" @onkeydown="HandleSearchEnter" />
@@ -111,7 +127,7 @@
                 }
                 else if (_templates.Count == 0)
                 {
-                    <div class="conversations-empty">No hay plantillas para los filtros seleccionados.</div>
+                    <div class="conversations-empty">No hay plantillas para este WhatsApp.</div>
                 }
                 else
                 {
@@ -214,7 +230,7 @@
                         <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@(!CanSaveDraft)">
                             <i class="bi bi-save-fill"></i> Guardar borrador
                         </button>
-                        <button type="button" class="btn btn--ghost" @onclick="SubmitAsync" disabled="@(_busy || _selectedId <= 0 || IsBodyTooLong)">
+                        <button type="button" class="btn btn--ghost" @onclick="SubmitAsync" disabled="@(!CanSubmitForApproval)">
                             <i class="bi bi-cloud-arrow-up-fill"></i> Enviar a aprobación
                         </button>
                         <button type="button" class="btn btn--ghost" @onclick="SyncAsync" disabled="@(_busy || _selectedId <= 0)">
@@ -224,6 +240,12 @@
                             <i class="bi bi-archive"></i> @(_confirmArchive ? "Confirmar archivo" : "Archivar")
                         </button>
                     </div>
+                    @if (HasBeenSubmittedToMeta)
+                    {
+                        <div class="conversations-inline conversations-inline--ok">
+                            Esta plantilla ya fue enviada a Meta. Sincronizá para consultar su estado actual.
+                        </div>
+                    }
 
                     @if (_feedback is not null)
                     {
@@ -288,6 +310,7 @@
 
 @code {
     private ConversacionPlantillaFilters _filters = new();
+    private IReadOnlyList<ConversacionWhatsAppNumeroDto> _whatsappNumeros = [];
     private List<ConversacionPlantillaDto> _allTemplates = [];
     private List<ConversacionPlantillaDto> _templates = [];
     private ConversacionPlantillaDto _form = NewForm();
@@ -438,8 +461,110 @@
            && !string.IsNullOrWhiteSpace(_form.NombreMeta)
            && !string.IsNullOrWhiteSpace(_form.CuerpoTexto);
 
+    private bool HasBeenSubmittedToMeta
+        => !string.IsNullOrWhiteSpace(_form.MetaTemplateId)
+           || IsSubmittedMetaState(_formEstadoMeta);
+
+    private bool CanSubmitForApproval
+        => !_busy
+           && _selectedId > 0
+           && !IsBodyTooLong
+           && !HasBeenSubmittedToMeta;
+
     protected override async Task OnInitializedAsync()
-        => await LoadTemplatesAsync();
+    {
+        UpdatePageHeader();
+        _whatsappNumeros = await ConfigSvc.GetWhatsAppNumerosAsync();
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+        if (query.TryGetValue("idNumero", out var idNumeroRaw)
+            && int.TryParse(idNumeroRaw.ToString(), out var idNumero)
+            && TemplateWhatsAppNumeros.Any(x => x.IdNumero == idNumero))
+            _filters.IdNumeroWhatsApp = idNumero;
+        else
+            _filters.IdNumeroWhatsApp = TemplateWhatsAppNumeros.FirstOrDefault()?.IdNumero;
+        await LoadTemplatesAsync();
+    }
+
+    private IReadOnlyList<ConversacionWhatsAppNumeroDto> TemplateWhatsAppNumeros
+        => _whatsappNumeros
+            .Where(x => x.Activo && !string.IsNullOrWhiteSpace(x.PhoneNumberId))
+            .Where(x => AppUserSession.CurrentUser?.SuperAdmin == true
+                        || x.Usuarios.Count == 0
+                        || x.Usuarios.Contains(AppUserSession.CurrentUser?.UserName ?? string.Empty, StringComparer.OrdinalIgnoreCase))
+            .OrderBy(x => x.Nombre, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    private static string GetWhatsAppNumeroLabel(ConversacionWhatsAppNumeroDto numero)
+        => string.Join(" · ", new[] { numero.Nombre, numero.WebDisplayName, numero.WebPhoneNumber }
+            .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct(StringComparer.OrdinalIgnoreCase));
+
+    private async Task OnWhatsAppNumeroChangedAsync(ChangeEventArgs args)
+    {
+        if (!int.TryParse(args.Value?.ToString(), out var idNumero)
+            || !TemplateWhatsAppNumeros.Any(x => x.IdNumero == idNumero))
+            return;
+
+        _filters.IdNumeroWhatsApp = idNumero;
+        _selectedId = 0;
+        NuevaPlantilla();
+        await LoadTemplatesAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        // Se reafirma acá (no solo en OnInitializedAsync): si se navega desde otra pantalla
+        // AlfaDesign, el Dispose() de esa página anterior -- que hace PageHeader.Clear() -- puede
+        // correr DESPUÉS del OnInitializedAsync de esta, pisando el header recién seteado.
+        // OnAfterRender corre estrictamente después de ese commit de render, así que volver a
+        // setearlo acá gana esa carrera de forma confiable (mismo patrón que Conversaciones.razor).
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader()
+    {
+        PageHeader.Set(new PageHeaderConfig
+        {
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = BuildTopNavigationItems()
+        });
+    }
+
+    private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
+    {
+        // Contactos/Clientes se sacaron a propósito: son páginas con su propio menú superior
+        // (Contactos, y Clientes vía CuentasComercialesPage -- compartido con Proveedores), y entrar
+        // ahí desde acá pisaba este menú con el suyo, dejando la navegación inconsistente.
+        var items = new List<PageHeaderTopNavItem>
+        {
+            BuildTopNavItem("conversaciones", "Conversaciones", "/conversaciones")
+        };
+
+        items.Add(new() { Key = "plantillas", Label = "Plantillas", Url = RouteContext.BuildRoute("/conversaciones/plantillas"), Active = true });
+        items.Add(BuildTopNavItem("configuracion", "Configuración", "/conversaciones/configuracion"));
+        items.Add(BuildTopNavItem("estadisticas", "Estadísticas", "/conversaciones/estadisticas"));
+        items.Add(BuildTopNavItem("informes", "Informes", "/conversaciones/informes"));
+
+        return items;
+    }
+
+    private PageHeaderTopNavItem BuildTopNavItem(string key, string label, string route)
+    {
+        var url = RouteContext.BuildRoute(route);
+        return new PageHeaderTopNavItem
+        {
+            Key = key,
+            Label = label,
+            Url = url,
+            OnClick = () =>
+            {
+                Nav.NavigateTo(url);
+                return Task.CompletedTask;
+            }
+        };
+    }
 
     private async Task LoadTemplatesAsync()
     {
@@ -472,7 +597,7 @@
 
         _mostrarMenuCrear = false;
         MarcarOpcionCrear(CrearOpciones.Crear);
-        _filters = new ConversacionPlantillaFilters();
+        _filters = new ConversacionPlantillaFilters { IdNumeroWhatsApp = _filters.IdNumeroWhatsApp };
         await LoadTemplatesAsync();
         NuevaPlantilla();
     }
@@ -626,7 +751,7 @@
 
     private async Task ClearTemplateFiltersAsync()
     {
-        _filters = new ConversacionPlantillaFilters();
+        _filters = new ConversacionPlantillaFilters { IdNumeroWhatsApp = _filters.IdNumeroWhatsApp };
         await LoadTemplatesAsync();
     }
 
@@ -738,7 +863,8 @@
 
             await ConversacionesSvc.SubmitTemplateForApprovalAsync(new ConversacionPlantillaSubmitRequest
             {
-                IdPlantilla = savedId
+                IdPlantilla = savedId,
+                IdNumeroWhatsApp = _filters.IdNumeroWhatsApp
             });
 
             _feedback = "Plantilla enviada a aprobación de Meta.";
@@ -759,6 +885,7 @@
         => new()
         {
             IdPlantilla = _selectedId,
+            IdNumeroWhatsApp = _filters.IdNumeroWhatsApp,
             NombreVisible = _form.NombreVisible,
             NombreMeta = _form.NombreMeta,
             Categoria = _form.Categoria,
@@ -780,7 +907,7 @@
         ClearError();
         try
         {
-            await ConversacionesSvc.SyncTemplateStatusAsync(_selectedId);
+            await ConversacionesSvc.SyncTemplateStatusAsync(_selectedId, _filters.IdNumeroWhatsApp);
             _feedback = "Estado sincronizado con Meta.";
             await LoadTemplatesAsync();
             await SelectTemplateAsync(_selectedId);
@@ -813,7 +940,7 @@
         ClearError();
         try
         {
-            await ConversacionesSvc.ArchiveTemplateAsync(_selectedId);
+            await ConversacionesSvc.ArchiveTemplateAsync(_selectedId, _filters.IdNumeroWhatsApp);
             _feedback = "Plantilla archivada.";
             _confirmArchive = false;
             var archivedId = _selectedId;
@@ -926,6 +1053,9 @@
 
     private static string GetMetaErrorMeaning(MetaApiError error)
     {
+        if (error.Code == 100 && error.Subcode == 2388024)
+            return "Esta plantilla ya existe en Meta para este idioma.";
+
         if (!string.IsNullOrWhiteSpace(error.UserMessage))
             return error.UserMessage;
 
@@ -940,6 +1070,9 @@
 
     private static string GetMetaErrorFix(MetaApiError error)
     {
+        if (error.Code == 100 && error.Subcode == 2388024)
+            return "Sincronizá las plantillas para actualizar su estado.";
+
         if (error.Subcode == 2388299)
             return "Agrega texto fijo antes y despues de cada variable que quede al principio o al final del cuerpo. Ejemplo valido: \"La tarea {{1}} fue asignada a {{2}}.\"";
 
@@ -1228,13 +1361,16 @@
         => (value ?? string.Empty).ToUpperInvariant() switch
         {
             "DRAFT" => "Borrador",
-            "PENDING" => "Pendiente",
+            "PENDING" => "Pendiente de revisión por Meta",
             "APPROVED" => "Aprobada",
             "REJECTED" => "Rechazada",
             "PAUSED" => "Pausada",
             "DISABLED" => "Deshabilitada",
             _ => DisplayOrFallback(value)
         };
+
+    private static bool IsSubmittedMetaState(string? estadoMeta)
+        => estadoMeta?.Trim().ToUpperInvariant() is "PENDING" or "APPROVED" or "REJECTED" or "PAUSED" or "DISABLED";
 
     private static string GetCategoryLabel(string value)
         => string.Equals(value, ConversacionPlantillaCategorias.Utility, StringComparison.OrdinalIgnoreCase)

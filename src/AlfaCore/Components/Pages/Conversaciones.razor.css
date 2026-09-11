@@ -1,3 +1,72 @@
+/* CAUSA REAL (encontrada con bordes de diagnóstico): .conversations-page--odoo ya tenía, de antes,
+   position:fixed; inset:0 0 0 <ancho-sidebar>px; z-index:25 (ver app.css, keyed a .shell--collapsed /
+   .shell:not(.shell--collapsed)) -- se ancla al viewport desde top:0 para ocupar toda la pantalla,
+   pensado para el sidebar lateral legacy. Con el nuevo alfa-app-topbar (z-index:1910) arriba, ese
+   position:fixed hace que la fila superior de la página (la barra de herramientas Contexto/
+   Sugerencia IA/etc) quede exactamente debajo del topbar, tapada -- ninguno de los ajustes de
+   display/height/overflow tenía efecto porque position:fixed sale del flujo normal por completo.
+   Bajo el shell AlfaDesign no hace falta: .shell__content (display:flex) ya le da un alto real
+   contenido debajo del topbar, así que se vuelve al flujo normal. */
+.shell.shell--alfa-design .conversations-page {
+    position: static !important;
+    inset: auto !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    bottom: auto !important;
+    z-index: auto !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden;
+}
+
+/* .conversations-page es display:grid con dos filas (auto + 1fr, ver app.css), pero
+   .conversations-core-workspace es su ÚNICO hijo directo y nunca declaró ocupar ambas -- antes no
+   importaba porque .conversations-page no tenía una altura definida (el "1fr" no distribuía nada
+   real). Ahora que le dimos altura arriba, la fila "1fr" queda vacía y .conversations-core-workspace
+   se comprime a su alto mínimo de contenido, tapando la barra de herramientas (Contexto/Sugerencia
+   IA/etc) dentro de él. Lo hacemos ocupar las dos filas explícitamente. */
+.shell.shell--alfa-design .conversations-page > .conversations-core-workspace {
+    grid-row: 1 / -1;
+    grid-column: 1 / -1;
+    min-width: 0;
+}
+
+.conversations-new-whatsapp-modal__card {
+    width: min(560px, calc(100vw - 2rem));
+    max-width: 560px;
+}
+
+.conversations-new-whatsapp-modal__results {
+    display: grid;
+    max-height: min(360px, 42vh);
+    gap: .42rem;
+    overflow-y: auto;
+}
+
+.conversations-new-whatsapp-modal__state {
+    padding: .75rem 0;
+    color: var(--color-muted);
+}
+
+.conversations-template-empty-state {
+    display: grid;
+    gap: .5rem;
+    padding: .85rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-muted);
+}
+
+.conversations-template-empty-state strong {
+    color: var(--color-text);
+}
+
+.conversations-template-empty-state .btn {
+    justify-self: start;
+}
+
 .conversations-list,
 .conversations-chat {
     position: relative;

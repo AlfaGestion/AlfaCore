@@ -40,6 +40,22 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
         return row?.ToDto();
     }
 
+    public async Task<IReadOnlyList<WhatsAppEmbeddedOnboardingDto>> GetPendingForBaseAsync(int idBase, CancellationToken ct = default)
+    {
+        const string sql = """
+            SELECT *
+            FROM dbo.WhatsAppEmbeddedOnboarding
+            WHERE IdBase=@IdBase
+              AND Estado IN ('AUTHORIZED','DISCOVERING_ASSETS','VALIDATING_OWNERSHIP','CONFIGURING_ACCESS','SUBSCRIBING_WABAS',
+                             'CHECKING_CUSTOMER_PAYMENT','DISCOVERING_PHONES','REGISTERING_PHONES','IMPORTING','SYNCING_HISTORY',
+                             'SYNCING_CONTACTS','ACTION_REQUIRED','FAILED_RETRYABLE')
+            ORDER BY FechaInicioUtc;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        var rows = await cn.QueryAsync<OnboardingRow>(new CommandDefinition(sql, new { IdBase = idBase }, cancellationToken: ct));
+        return rows.Select(row => row.ToDto()).ToArray();
+    }
+
     public async Task<WhatsAppEmbeddedOnboardingDto?> GetLatestReadyForBaseAsync(int idBase, CancellationToken ct = default)
     {
         const string sql = "SELECT TOP (1) * FROM dbo.WhatsAppEmbeddedOnboarding WHERE IdBase=@IdBase AND Estado='READY' AND PasoActual='READY' ORDER BY FechaModificacionUtc DESC, FechaInicioUtc DESC";
@@ -118,13 +134,29 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
     public Task MarkRetryableFailureAsync(Guid id, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default)
         => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, "RETRY_SCHEDULED", new { ErrorCode = errorCode, ErrorSummary = summary, IncidentId = incidentId, NextAttemptUtc = nextAttemptUtc, IncrementRetry = true }, ct);
 
-    public Task MarkFinalFailureAsync(Guid id, string errorCode, string summary, string incidentId, CancellationToken ct = default)
-        => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.FailedFinal, "FAILED", new { ErrorCode = errorCode, ErrorSummary = summary, IncidentId = incidentId }, ct);
+    public Task ScheduleRetryAsync(Guid id, WhatsAppEmbeddedOnboardingStatus resumeStatus, string resumeStep, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default)
+        => UpdateFieldsAsync(id, resumeStatus, resumeStep, new { ErrorCode = errorCode, ErrorSummary = summary, IncidentId = incidentId, NextAttemptUtc = nextAttemptUtc, IncrementRetry = true }, ct);
+
+    public Task MarkFinalFailureAsync(Guid id, string errorCode, string summary, string incidentId, string? failedStep = null, CancellationToken ct = default)
+        => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.FailedFinal,
+            string.IsNullOrWhiteSpace(failedStep) ? "FAILED" : failedStep.Trim(),
+            new { ErrorCode = errorCode, ErrorSummary = summary, IncidentId = incidentId }, ct);
 
     public Task MarkReadyAsync(Guid id, CancellationToken ct = default)
         => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.Ready, "READY", new { }, ct);
 
     public async Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string workerId, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct = default)
+        => await ClaimNextInternalAsync(workerId, null, nowUtc, claimExpiresAtUtc, ct);
+
+    public async Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextForBasesAsync(string workerId, IReadOnlyCollection<int> allowedBaseIds, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct = default)
+    {
+        var bases = allowedBaseIds.Where(idBase => idBase > 0).Distinct().ToArray();
+        return bases.Length == 0
+            ? null
+            : await ClaimNextInternalAsync(workerId, bases, nowUtc, claimExpiresAtUtc, ct);
+    }
+
+    private async Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextInternalAsync(string workerId, int[]? allowedBaseIds, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct)
     {
         const string sql = """
             ;WITH next_item AS
@@ -134,14 +166,21 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
                                  'CHECKING_CUSTOMER_PAYMENT','DISCOVERING_PHONES','REGISTERING_PHONES','IMPORTING','SYNCING_HISTORY','SYNCING_CONTACTS','FAILED_RETRYABLE')
                   AND (NextAttemptUtc IS NULL OR NextAttemptUtc <= @NowUtc)
                   AND (ClaimExpiresAtUtc IS NULL OR ClaimExpiresAtUtc <= @NowUtc)
-                  AND FechaExpiracionUtc > @NowUtc
+                  AND (@LimitToBases = 0 OR IdBase IN @AllowedBaseIds)
                 ORDER BY ISNULL(NextAttemptUtc, FechaModificacionUtc), FechaModificacionUtc
             )
             UPDATE next_item SET ClaimedBy=@WorkerId, ClaimExpiresAtUtc=@ClaimExpiresAtUtc, FechaModificacionUtc=@NowUtc
             OUTPUT INSERTED.IdOnboarding;
             """;
         await using var cn = new SqlConnection(ConnectionString);
-        var id = await cn.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition(sql, new { WorkerId = workerId, NowUtc = nowUtc, ClaimExpiresAtUtc = claimExpiresAtUtc }, cancellationToken: ct));
+        var id = await cn.QuerySingleOrDefaultAsync<Guid?>(new CommandDefinition(sql, new
+        {
+            WorkerId = workerId,
+            NowUtc = nowUtc,
+            ClaimExpiresAtUtc = claimExpiresAtUtc,
+            LimitToBases = allowedBaseIds is null ? 0 : 1,
+            AllowedBaseIds = allowedBaseIds ?? [-1]
+        }, cancellationToken: ct));
         return id.HasValue ? await GetInternalAsync(cn, id.Value, null, ct) : null;
     }
 
@@ -154,6 +193,19 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
             """;
         await using var cn = new SqlConnection(ConnectionString);
         await cn.ExecuteAsync(new CommandDefinition(sql, new { Id = id, WorkerId = workerId, NextAttemptUtc = nextAttemptUtc }, cancellationToken: ct));
+    }
+
+    public async Task<bool> ExpireStaleStartedAsync(Guid id, int idBase, CancellationToken ct = default)
+    {
+        const string sql = """
+            UPDATE dbo.WhatsAppEmbeddedOnboarding
+            SET Estado='EXPIRED', PasoActual='EXPIRED', FechaModificacionUtc=SYSUTCDATETIME()
+            WHERE IdOnboarding=@Id AND IdBase=@IdBase AND Estado='STARTED'
+              AND StateConsumedAtUtc IS NULL AND FechaExpiracionUtc<=SYSUTCDATETIME();
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new { Id = id, IdBase = idBase }, cancellationToken: ct));
+        return affected == 1;
     }
 
     private async Task UpdateFieldsAsync(Guid id, WhatsAppEmbeddedOnboardingStatus status, string step, object values, CancellationToken ct)

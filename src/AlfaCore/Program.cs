@@ -9,7 +9,11 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.Extensions.Options;
+using Microsoft.Data.SqlClient;
+using Dapper;
 
 namespace AlfaCore;
 
@@ -22,6 +26,39 @@ public class Program
         // despues, IConfiguration nunca ve esos valores (Environment.GetEnvironmentVariable
         // directo si los ve, por eso a veces parecia que "andaba").
         DotEnvLoader.LoadIfPresent(AppContext.BaseDirectory);
+
+        // Modo one-shot de migración del vault de WhatsApp Embedded Signup. Se resuelve ANTES de
+        // CreateBuilder: no arranca Kestrel, no registra ni inicia hosted services, no toca el
+        // webhook. Dry-run por defecto; sólo escribe con --commit. Ver WhatsAppVaultMigrationCommand.
+        if (WhatsAppVaultMigrationCommand.IsRequested(args))
+        {
+            var migrationExitCode = WhatsAppVaultMigrationCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(migrationExitCode);
+            return;
+        }
+
+        if (WhatsAppKeyRingProbeCommand.IsRequested(args))
+        {
+            var probeExitCode = WhatsAppKeyRingProbeCommand.Run(args, Console.Out);
+            Environment.Exit(probeExitCode);
+            return;
+        }
+
+        // Modo one-shot: invoca el mismo GetLatestStatusForBaseAsync que usa la UI, para verificar
+        // de forma auditable que la reconciliación automática STARTED → EXPIRED corre en el código
+        // real de producción. No es una herramienta recurrente; ver WhatsAppEmbeddedSignupStatusReconcileCommand.
+        if (WhatsAppEmbeddedSignupStatusReconcileCommand.IsRequested(args))
+        {
+            var reconcileExitCode = WhatsAppEmbeddedSignupStatusReconcileCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(reconcileExitCode);
+            return;
+        }
 
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
@@ -162,6 +199,7 @@ public class Program
         builder.Services.AddScoped<IConversacionesService, ConversacionesService>();
         builder.Services.AddScoped<IConversacionesConfigService, ConversacionesConfigService>();
         builder.Services.AddScoped<WhatsAppEmbeddedOperationalImportService>();
+        builder.Services.AddScoped<IWhatsAppEmbeddedOperationalImportService>(provider => provider.GetRequiredService<WhatsAppEmbeddedOperationalImportService>());
         builder.Services.AddScoped<IConversacionesAuthorizationService, ConversacionesAuthorizationService>();
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupStore, WhatsAppEmbeddedSignupStore>();
@@ -184,7 +222,14 @@ public class Program
         builder.Services.AddScoped<ICalendarioService, CalendarioService>();
         builder.Services.AddScoped<IReunionesPublicasService, ReunionesPublicasService>();
         builder.Services.AddScoped<ICrmService, CrmService>();
+        builder.Services.AddScoped<IArticuloPrecioResolverService, ArticuloPrecioResolverService>();
         builder.Services.AddScoped<ICrmCotizacionService, CrmCotizacionService>();
+        builder.Services.AddScoped<IDocumentTemplateService, DocumentTemplateService>();
+        builder.Services.AddScoped<IDocumentRenderer, DocumentRenderer>();
+        builder.Services.AddSingleton<IDocumentPdfService, DocumentPdfService>();
+        builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
+        builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
+        builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
         builder.Services.AddScoped<ITareasService, TareasService>();
@@ -272,40 +317,11 @@ public class Program
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
         builder.Services.Configure<WhatsAppOptions>(builder.Configuration.GetSection(WhatsAppOptions.SectionName));
-        var esLocalOptions = builder.Configuration
-            .GetSection(AlfaCoreEsLocalOptions.SectionName)
-            .Get<AlfaCoreEsLocalOptions>() ?? new();
-        builder.Services.Configure<AlfaCoreEsLocalOptions>(
-            builder.Configuration.GetSection(AlfaCoreEsLocalOptions.SectionName));
         var embeddedSignupSection = builder.Configuration.GetSection(WhatsAppEmbeddedSignupOptions.SectionName);
         var embeddedSignupStartupOptions = embeddedSignupSection.Get<WhatsAppEmbeddedSignupOptions>() ?? new();
-        var dataProtection = builder.Services.AddDataProtection().SetApplicationName("AlfaCore.WhatsAppEmbeddedSignup");
-        if (!string.IsNullOrWhiteSpace(embeddedSignupStartupOptions.DataProtectionKeysPath))
-        {
-            var keyDirectory = new DirectoryInfo(embeddedSignupStartupOptions.DataProtectionKeysPath);
-            dataProtection.PersistKeysToFileSystem(keyDirectory);
-            if (OperatingSystem.IsWindows())
-                dataProtection.ProtectKeysWithDpapi();
-        }
-
         builder.Services.AddOptions<WhatsAppEmbeddedSignupOptions>()
             .Bind(embeddedSignupSection)
-            .Validate(options => !options.Enabled ||
-                (options.AllowedBaseIds.Length > 0
-                 && options.AllowedBaseIds.All(static id => id > 0)
-                 && options.AllowedBaseIds.Distinct().Count() == options.AllowedBaseIds.Length
-                 && !string.IsNullOrWhiteSpace(options.AppId)
-                 && !string.IsNullOrWhiteSpace(options.BusinessPortfolioId)
-                 && !string.IsNullOrWhiteSpace(options.SystemUserId)
-                 && !string.IsNullOrWhiteSpace(options.EmbeddedSignupConfigId)
-                 && !string.IsNullOrWhiteSpace(options.GraphApiVersion)
-                 && Uri.TryCreate(options.GraphBaseUrl, UriKind.Absolute, out var graphBaseUri)
-                 && graphBaseUri.Scheme == Uri.UriSchemeHttps
-                 && !string.IsNullOrWhiteSpace(options.AppSecret)
-                 && !string.IsNullOrWhiteSpace(options.DataProtectionKeysPath)
-                 && Path.IsPathRooted(options.DataProtectionKeysPath)
-                 && options.OnboardingExpirationMinutes > 0
-                 && options.MaxRetryCount >= 0),
+            .Validate(static options => options.IsValidStartupConfiguration(),
                 "La configuración global de WhatsApp Embedded Signup es inválida.")
             .ValidateOnStart();
         builder.Services.Configure<PushNotificationsOptions>(builder.Configuration.GetSection(PushNotificationsOptions.SectionName));
@@ -315,17 +331,14 @@ public class Program
         builder.Services.AddScoped<IProveedorSaldoService, ProveedorSaldoService>();
         builder.Services.AddScoped<IConversacionAsistenteHerramientasService, ConversacionAsistenteHerramientasService>();
         builder.Services.AddHostedService<ServerStartupHostedService>();
-        if (!esLocalOptions.ShouldDisableUnrelatedHostedServices(builder.Environment.EnvironmentName))
-        {
-            builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
-            builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
-            builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
-            builder.Services.AddHostedService<BillingHostedService>();
-            builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
-            builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
-            builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
-            builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
-        }
+        builder.Services.AddHostedService<DatabaseUpdatesHostedService>();
+        builder.Services.AddHostedService<InterfacesCompraIaWorkerHostedService>();
+        builder.Services.AddHostedService<ModuloPruebaRecordatorioHostedService>();
+        builder.Services.AddHostedService<BillingHostedService>();
+        builder.Services.AddHostedService<ConversacionesAutoCierreHostedService>();
+        builder.Services.AddHostedService<ConversacionesProgramadosHostedService>();
+        builder.Services.AddHostedService<ConversacionesBotEsperaHostedService>();
+        builder.Services.AddHostedService<WhatsAppWebInboxHostedService>();
         builder.Services.AddHostedService<WhatsAppEmbeddedSignupHostedService>();
 
         var app = builder.Build();
@@ -471,6 +484,128 @@ public class Program
                 : Results.Content(html, "text/html; charset=utf-8");
         }).AllowAnonymous();
 
+        app.MapGet("/cotizacion-publica/{idbase:int}/{token}", async (
+            int idbase,
+            string token,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            ICotizacionDocumentService documentSvc,
+            CancellationToken ct) =>
+        {
+            // Misma plantilla/tema/portada/firma que "Descargar PDF" (ver el endpoint .../pdf más
+            // abajo) -- antes esta vista usaba un HTML aparte (BuildPublicHtml en CotizacionesService)
+            // que no coincidía con el PDF y además mostraba las Observaciones internas en vez de la
+            // propuesta. RenderAsync ya resuelve bien ambas cosas.
+            var tk = (token ?? string.Empty).Trim();
+            if (idbase <= 0 || tk.Length == 0)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            var baseInfo = await centralBasesSvc.GetByIdAsync(idbase, ct);
+            if (baseInfo is null)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            long? idVersion;
+            await using (var cn = new SqlConnection(connectionString))
+            {
+                await cn.OpenAsync(ct);
+                idVersion = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(
+                    "SELECT IdVersion FROM dbo.COT_VERSION WHERE PublicToken = @Token;", new { Token = tk }, cancellationToken: ct));
+            }
+            if (idVersion is null)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            sessionSvc.SetWebhookOverride(new SessionDto
+            {
+                BaseId = baseInfo.IdBase,
+                Nombre = baseInfo.Nombre,
+                Servidor = baseInfo.DbServer,
+                BaseDatos = baseInfo.DbName,
+                Usuario = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            });
+
+            try
+            {
+                var result = await documentSvc.RenderAsync(idVersion.Value, uNegocio: null, ct);
+                return Results.Content(result.Html, "text/html; charset=utf-8");
+            }
+            catch (AppUserFacingException)
+            {
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+            }
+        }).AllowAnonymous();
+
+        app.MapGet("/cotizacion-publica/{idbase:int}/{token}/pdf", async (
+            int idbase,
+            string token,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            ICotizacionDocumentService documentSvc,
+            CancellationToken ct) =>
+        {
+            var tk = (token ?? string.Empty).Trim();
+            if (idbase <= 0 || tk.Length == 0)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            var baseInfo = await centralBasesSvc.GetByIdAsync(idbase, ct);
+            if (baseInfo is null)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            // El token resuelve el IdVersion con una conexión explícita (todavía no hay ninguna
+            // sesión activa para este tenant en este request anónimo); recién después de eso se
+            // fuerza esa base como "activa" para que el resto del pipeline (plantillas, logo,
+            // firma) la resuelva igual que si fuera un usuario logueado de esa base.
+            long? idVersion;
+            await using (var cn = new SqlConnection(connectionString))
+            {
+                await cn.OpenAsync(ct);
+                idVersion = await cn.ExecuteScalarAsync<long?>(new CommandDefinition(
+                    "SELECT IdVersion FROM dbo.COT_VERSION WHERE PublicToken = @Token;", new { Token = tk }, cancellationToken: ct));
+            }
+            if (idVersion is null)
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+
+            sessionSvc.SetWebhookOverride(new SessionDto
+            {
+                BaseId = baseInfo.IdBase,
+                Nombre = baseInfo.Nombre,
+                Servidor = baseInfo.DbServer,
+                BaseDatos = baseInfo.DbName,
+                Usuario = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            });
+
+            try
+            {
+                var pdfBytes = await documentSvc.GeneratePdfAsync(idVersion.Value, uNegocio: null, ct);
+                return Results.File(pdfBytes, "application/pdf", "cotizacion.pdf");
+            }
+            catch (AppUserFacingException)
+            {
+                return Results.NotFound("La cotización no existe o el enlace expiró.");
+            }
+        }).AllowAnonymous();
+
         app.MapGet("/api/usuarios/{nombre}/foto", async (
             string nombre,
             IUsuariosService usuariosSvc,
@@ -481,6 +616,38 @@ public class Program
                 return Results.NotFound();
 
             return Results.File(photo.RutaCompleta, photo.MimeType, photo.NombreArchivo);
+        });
+
+        app.MapGet("/api/configuracion-general/logo", async (
+            IConfiguracionGeneralService configSvc,
+            CancellationToken ct) =>
+        {
+            var bytes = await configSvc.GetLogoBytesAsync(ct);
+            return bytes is null || bytes.Length == 0
+                ? Results.NotFound()
+                : Results.File(bytes, "image/jpeg");
+        });
+
+        app.MapGet("/api/documentos/plantillas/{idTemplate:int}/portada", async (
+            int idTemplate,
+            IDocumentTemplateService templateSvc,
+            CancellationToken ct) =>
+        {
+            var bytes = await templateSvc.GetPortadaImageBytesAsync(idTemplate, ct);
+            return bytes is null || bytes.Length == 0
+                ? Results.NotFound()
+                : Results.File(bytes, "image/jpeg");
+        });
+
+        app.MapGet("/api/usuarios/{nombre}/firma", async (
+            string nombre,
+            IUsuariosService usuariosSvc,
+            CancellationToken ct) =>
+        {
+            var bytes = await usuariosSvc.GetSignatureBytesAsync(nombre, ct);
+            return bytes is null || bytes.Length == 0
+                ? Results.NotFound()
+                : Results.File(bytes, "image/png");
         });
 
         app.MapGet("/api/catalogos/logo-publico/{idweb}", async (
@@ -1965,31 +2132,82 @@ public class Program
         app.MapGet("/api/conversaciones/whatsapp/webhook/{token}", async (
             string token,
             HttpRequest request,
+            HttpResponse response,
             IConversacionesConfigService configService,
             ICentralBasesService basesService,
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            DisableWebhookCaching(response);
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleWhatsAppVerifyAsync(request, configService, ct);
         });
 
-        app.MapPost("/api/conversaciones/whatsapp/webhook", HandleWhatsAppMessageAsync);
-        app.MapPost("/api/conversaciones/whatsapp/webhook/{token}", async (
-            string token,
+        app.MapPost("/api/conversaciones/whatsapp/webhook", (
             HttpRequest request,
             IConversacionesConfigService configService,
             IConversacionesService svc,
-            ICentralBasesService basesService,
+            IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
             ISessionService sessionService,
+            IWhatsAppAssetOwnershipStore ownershipStore,
+            CancellationToken ct) =>
+            HandleWhatsAppMessageAsync(request, configService, svc, embeddedSignupOptions, sessionService, ownershipStore, ct));
+        app.MapPost("/api/conversaciones/whatsapp/webhook/{token}", async (
+            string token,
+            HttpRequest request,
+            HttpResponse response,
+            IConversacionesConfigService configService,
+            IConversacionesService svc,
+            ICentralBasesService basesService,
+            IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
+            ISessionService sessionService,
+            IWhatsAppAssetOwnershipStore ownershipStore,
+            ILogger<Program> logger,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
-                return Results.NotFound();
+            DisableWebhookCaching(response);
+            var correlationId = Guid.NewGuid().ToString("N");
+            var stage = "POST_RECEIVED";
 
-            return await HandleWhatsAppMessageAsync(request, configService, svc, ct);
+            void TraceStage(string nextStage)
+            {
+                stage = nextStage;
+                logger.LogInformation("WhatsApp tenant webhook trace {CorrelationId} {Stage}", correlationId, stage);
+            }
+
+            try
+            {
+                TraceStage(stage);
+                var resolvedBaseId = await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct);
+                if (resolvedBaseId is null)
+                    return Results.NotFound();
+
+                TraceStage("WEBHOOK_TENANT_RESOLVED");
+                return await HandleWhatsAppMessageAsync(
+                    request,
+                    configService,
+                    svc,
+                    embeddedSignupOptions,
+                    sessionService,
+                    ownershipStore,
+                    ct,
+                    TraceStage,
+                    resolvedBaseId);
+            }
+            catch (Exception ex)
+            {
+                TryWriteWebhookFailureDiagnostic(correlationId, stage, ex);
+                logger.LogError(
+                    "WhatsApp tenant webhook failed {CorrelationId} {Stage} {ExceptionType} {ExceptionMessage} {StackTrace}",
+                    correlationId,
+                    stage,
+                    ex.GetType().FullName ?? ex.GetType().Name,
+                    SanitizeWebhookDiagnostic(ex.Message),
+                    SanitizeWebhookDiagnostic(ex.StackTrace));
+                throw;
+            }
         });
 
         app.MapGet("/api/conversaciones/instagram/webhook", HandleInstagramVerifyAsync);
@@ -2001,7 +2219,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleInstagramVerifyAsync(request, configService, ct);
@@ -2017,7 +2235,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleInstagramMessageAsync(request, configService, svc, ct);
@@ -2032,7 +2250,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleFacebookVerifyAsync(request, configService, ct);
@@ -2048,7 +2266,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleFacebookMessageAsync(request, configService, svc, ct);
@@ -2063,7 +2281,7 @@ public class Program
             ISessionService sessionService,
             CancellationToken ct) =>
         {
-            if (!await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct))
+            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
                 return Results.NotFound();
 
             return await HandleMercadoLibreMessageAsync(request, svc, ct);
@@ -2700,10 +2918,13 @@ public class Program
     /// <summary>
     /// Resuelve a qué base pertenece un token de webhook y, si existe, fuerza esa base como
     /// activa para el resto de este request (ver <see cref="ISessionService.SetWebhookOverride"/>).
-    /// Devuelve <c>false</c> si el token no corresponde a ninguna base — el caller debe responder
-    /// 404 sin exponer si el token "casi" era válido.
+    /// Devuelve el <c>IdBase</c> resuelto autoritativamente desde el token, o <c>null</c> si el
+    /// token no corresponde a ninguna base — el caller debe responder 404 sin exponer si el token
+    /// "casi" era válido. El caller debe usar este IdBase para cualquier decisión tenant-sensitive
+    /// (p. ej. qué App Secret validar): un POST servidor-servidor de Meta no trae sesión Blazor,
+    /// así que <see cref="ISessionService.GetActiveSession"/> no es una fuente confiable acá.
     /// </summary>
-    private static async Task<bool> TryResolveWebhookTenantAsync(
+    internal static async Task<int?> TryResolveWebhookTenantAsync(
         string token,
         ICentralBasesService basesService,
         ISessionService sessionService,
@@ -2712,7 +2933,7 @@ public class Program
         var baseInfo = await basesService.GetByWebhookTokenAsync(token, ct);
         if (baseInfo is null)
         {
-            return false;
+            return null;
         }
 
         sessionService.SetWebhookOverride(new SessionDto
@@ -2726,7 +2947,14 @@ public class Program
             TrustServerCertificate = true
         });
 
-        return true;
+        return baseInfo.IdBase;
+    }
+
+    private static void DisableWebhookCaching(HttpResponse response)
+    {
+        response.Headers.CacheControl = "no-store, no-cache, max-age=0";
+        response.Headers.Pragma = "no-cache";
+        response.Headers.Expires = "0";
     }
 
     /// <summary>
@@ -2795,29 +3023,78 @@ public class Program
             : Results.Unauthorized();
     }
 
-    private static async Task<IResult> HandleWhatsAppMessageAsync(
+    internal static async Task<IResult> HandleWhatsAppMessageAsync(
         HttpRequest request,
         IConversacionesConfigService configService,
         IConversacionesService svc,
-        CancellationToken ct)
+        IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
+        ISessionService sessionService,
+        IWhatsAppAssetOwnershipStore ownershipStore,
+        CancellationToken ct,
+        Action<string>? traceStage = null,
+        int? resolvedBaseId = null)
     {
         var options = await configService.GetWhatsAppConfigAsync(ct);
 
+        // El tenant lo resuelve autoritativamente TryResolveWebhookTenantAsync desde el token de la
+        // ruta (resolvedBaseId). Sólo la ruta legacy sin token (sin resolvedBaseId) usa la sesión.
+        var webhookBaseId = resolvedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0;
+
         using var reader = new StreamReader(request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true);
         var rawPayload = await reader.ReadToEndAsync(ct);
+        traceStage?.Invoke("BODY_READ");
 
-        // A diferencia de Instagram/Facebook, WhatsApp no exigía App Secret hasta ahora — exigirlo
-        // de golpe rompería al cliente que ya está en producción sin haberlo cargado. Se valida
-        // la firma solo si el App Secret está configurado; queda como mejora pendiente pedirlo
-        // siempre una vez que la configuración actual lo tenga cargado.
-        if (!string.IsNullOrWhiteSpace(options.AppSecret))
+        // Selector read-only del secreto: el ownership central del phone_number_id decide ES vs
+        // legacy (NO AllowedBaseIds, NO el payload como autoridad). Sin escrituras, antes del HMAC.
+        var phoneNumberIds = ExtractWhatsAppPhoneNumberIds(rawPayload);
+        var phoneOwnerships = new List<WhatsAppPhoneOwnership>();
+        foreach (var phoneNumberId in phoneNumberIds)
         {
-            var signature = request.Headers["X-Hub-Signature-256"].ToString();
-            if (!IsValidMetaSignature(rawPayload, options.AppSecret, signature))
-                return Results.Unauthorized();
+            var ownership = await ownershipStore.GetPhoneOwnershipAsync(phoneNumberId, ct);
+            if (ownership is not null)
+                phoneOwnerships.Add(ownership);
+        }
+        var baseHasEsFootprint = webhookBaseId > 0
+            && phoneOwnerships.Count == 0
+            && await ownershipStore.HasEmbeddedSignupFootprintAsync(webhookBaseId, ct);
+
+        var secretResolution = ResolveWhatsAppWebhookAppSecret(
+            embeddedSignupOptions.Value,
+            webhookBaseId,
+            phoneOwnerships,
+            phoneNumberIds.Count > 0,
+            baseHasEsFootprint,
+            options.AppSecret);
+        traceStage?.Invoke("OPTIONS_RESOLVED");
+
+        switch (secretResolution.Outcome)
+        {
+            case WhatsAppWebhookSecretOutcome.RejectCrossTenant:
+                traceStage?.Invoke("REJECTED_CROSS_TENANT");
+                return Results.NotFound();
+            case WhatsAppWebhookSecretOutcome.RejectUnknownPhoneForEsBase:
+                traceStage?.Invoke("REJECTED_UNKNOWN_PHONE");
+                return Results.NotFound();
+            case WhatsAppWebhookSecretOutcome.RejectEmbeddedSignupDisabled:
+                traceStage?.Invoke("REJECTED_ES_DISABLED");
+                return Results.Problem("WhatsApp Embedded Signup está deshabilitado para este número.",
+                    statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
+        var appSecret = secretResolution.Secret;
+        if (string.IsNullOrWhiteSpace(appSecret))
+            return Results.Problem("WhatsApp App Secret no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+
+        var signature = request.Headers["X-Hub-Signature-256"].ToString();
+        traceStage?.Invoke(string.IsNullOrWhiteSpace(signature)
+            ? "SIGNATURE_HEADER_MISSING"
+            : "SIGNATURE_HEADER_PRESENT");
+        if (!IsValidMetaSignature(rawPayload, appSecret, signature))
+            return Results.Unauthorized();
+        traceStage?.Invoke("SIGNATURE_VALID");
+
         using var payload = JsonDocument.Parse(string.IsNullOrWhiteSpace(rawPayload) ? "{}" : rawPayload);
+        traceStage?.Invoke("JSON_PARSED");
         var headers = request.Headers.ToDictionary(
             pair => pair.Key,
             pair => pair.Value.ToString(),
@@ -2827,10 +3104,144 @@ public class Program
         {
             Payload = payload,
             RawPayload = rawPayload,
-            Headers = headers
+            Headers = headers,
+            TraceStage = traceStage
         }, ct);
 
+        traceStage?.Invoke("COMPLETED");
         return Results.Ok(result);
+    }
+
+    private static string SanitizeWebhookDiagnostic(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var sanitized = value;
+        sanitized = Regex.Replace(sanitized, @"(?i)(bearer\s+)[^\s]+", "$1[REDACTED]");
+        sanitized = Regex.Replace(sanitized, @"(?i)(sha256=)[0-9a-f]+", "$1[REDACTED]");
+        sanitized = Regex.Replace(sanitized, @"(?i)([?&](?:access_token|appsecret|verify_token|webhooktoken)=)[^&\s]+", "$1[REDACTED]");
+        sanitized = Regex.Replace(sanitized, @"(?i)(/(?:webhook)/)[^?\s/]+", "$1[REDACTED]");
+        sanitized = Regex.Replace(sanitized, @"(?<![A-Za-z0-9_-])[A-Fa-f0-9]{32,}(?![A-Za-z0-9_-])", "[REDACTED_IDENTIFIER]");
+        sanitized = Regex.Replace(sanitized, @"(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{48,}(?![A-Za-z0-9_-])", "[REDACTED_IDENTIFIER]");
+        sanitized = Regex.Replace(sanitized, @"(?<!\d)\d{8,}(?!\d)", "[REDACTED_NUMBER]");
+        return sanitized.Length <= 6000 ? sanitized : sanitized[..6000];
+    }
+
+    // This fallback is intentionally independent from ILogger: ANCM/IIS deployments may not retain request logs.
+    // It is best-effort only and must never change the HTTP result sent back to Meta.
+    private static void TryWriteWebhookFailureDiagnostic(string correlationId, string stage, Exception exception)
+    {
+        try
+        {
+            var directory = Path.Combine(Path.GetTempPath(), "AlfaCore", "webhook-diagnostics");
+            Directory.CreateDirectory(directory);
+            var record = new
+            {
+                TimestampUtc = DateTimeOffset.UtcNow,
+                CorrelationId = correlationId,
+                Stage = stage,
+                ExceptionType = exception.GetType().FullName ?? exception.GetType().Name,
+                ExceptionMessage = SanitizeWebhookDiagnostic(exception.Message),
+                InnerExceptionType = exception.InnerException?.GetType().FullName ?? string.Empty,
+                InnerExceptionMessage = SanitizeWebhookDiagnostic(exception.InnerException?.Message),
+                StackTrace = SanitizeWebhookDiagnostic(exception.StackTrace)
+            };
+            var path = Path.Combine(directory, $"tenant-webhook-failures-{DateTime.UtcNow:yyyyMMdd}.jsonl");
+            File.AppendAllText(path, JsonSerializer.Serialize(record) + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        }
+        catch
+        {
+            // Diagnostics must not mask or alter the original webhook failure.
+        }
+    }
+
+
+    internal enum WhatsAppWebhookSecretOutcome
+    {
+        Legacy,
+        EmbeddedSignup,
+        RejectEmbeddedSignupDisabled,
+        RejectCrossTenant,
+        RejectUnknownPhoneForEsBase
+    }
+
+    internal readonly record struct WhatsAppWebhookSecretResolution(WhatsAppWebhookSecretOutcome Outcome, string Secret);
+
+    /// <summary>
+    /// Elige el App Secret para validar la firma del webhook basándose en el OWNERSHIP central del
+    /// phone_number_id (nunca en AllowedBaseIds ni en el payload como autoridad). El
+    /// <paramref name="phoneOwnerships"/> son las filas de ownership que EXISTEN para los
+    /// phone_number_ids del payload; se cotejan siempre contra la base resuelta del token.
+    /// </summary>
+    internal static WhatsAppWebhookSecretResolution ResolveWhatsAppWebhookAppSecret(
+        WhatsAppEmbeddedSignupOptions embeddedSignupOptions,
+        int resolvedBaseId,
+        IReadOnlyCollection<WhatsAppPhoneOwnership> phoneOwnerships,
+        bool anyPhoneNumberIdInPayload,
+        bool baseHasEmbeddedSignupFootprint,
+        string? legacyAppSecret)
+    {
+        ArgumentNullException.ThrowIfNull(embeddedSignupOptions);
+        ArgumentNullException.ThrowIfNull(phoneOwnerships);
+
+        // owned por otra base => cross-tenant, rechazar (no elegir secreto).
+        if (phoneOwnerships.Any(o => o.IdBase != resolvedBaseId))
+            return new(WhatsAppWebhookSecretOutcome.RejectCrossTenant, string.Empty);
+
+        // owned por la base resuelta => asset ES.
+        if (phoneOwnerships.Any(o => o.IdBase == resolvedBaseId))
+            return embeddedSignupOptions.Enabled
+                ? new(WhatsAppWebhookSecretOutcome.EmbeddedSignup, embeddedSignupOptions.AppSecret.Trim())
+                : new(WhatsAppWebhookSecretOutcome.RejectEmbeddedSignupDisabled, string.Empty);
+
+        // sin ownership: base con footprint ES => phone desconocido, fail closed; si no => legacy.
+        if (anyPhoneNumberIdInPayload && embeddedSignupOptions.Enabled && baseHasEmbeddedSignupFootprint)
+            return new(WhatsAppWebhookSecretOutcome.RejectUnknownPhoneForEsBase, string.Empty);
+
+        return new(WhatsAppWebhookSecretOutcome.Legacy, legacyAppSecret?.Trim() ?? string.Empty);
+    }
+
+    // Selector read-only: extrae metadata.phone_number_id del body crudo ANTES de validar la firma.
+    // El payload nunca es autoridad; sólo indica qué ownership central consultar. Sólo devuelve ids
+    // puramente numéricos (los de Meta lo son) para no romper la normalización del ownership store.
+    private static IReadOnlyList<string> ExtractWhatsAppPhoneNumberIds(string rawPayload)
+    {
+        if (string.IsNullOrWhiteSpace(rawPayload))
+            return [];
+
+        try
+        {
+            using var doc = JsonDocument.Parse(rawPayload);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object
+                || !doc.RootElement.TryGetProperty("entry", out var entries)
+                || entries.ValueKind != JsonValueKind.Array)
+                return [];
+
+            var ids = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var entry in entries.EnumerateArray())
+            {
+                if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array)
+                    continue;
+                foreach (var change in changes.EnumerateArray())
+                {
+                    if (!change.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Object)
+                        continue;
+                    if (!value.TryGetProperty("metadata", out var metadata) || metadata.ValueKind != JsonValueKind.Object)
+                        continue;
+                    if (!metadata.TryGetProperty("phone_number_id", out var pid) || pid.ValueKind != JsonValueKind.String)
+                        continue;
+                    var id = (pid.GetString() ?? string.Empty).Trim();
+                    if (id.Length > 0 && id.All(static c => c is >= '0' and <= '9'))
+                        ids.Add(id);
+                }
+            }
+            return ids.ToArray();
+        }
+        catch (JsonException)
+        {
+            return [];
+        }
     }
 
     private static async Task<IResult> HandleInstagramVerifyAsync(
@@ -2953,7 +3364,7 @@ public class Program
         return Results.Ok(result);
     }
 
-    private static bool IsValidMetaSignature(string rawPayload, string appSecret, string signature)
+    internal static bool IsValidMetaSignature(string rawPayload, string appSecret, string signature)
     {
         const string prefix = "sha256=";
         if (string.IsNullOrWhiteSpace(rawPayload)

@@ -469,6 +469,124 @@ public sealed class UsuariosService(
             };
         }, "No se pudo obtener la imagen del usuario.", ct);
 
+    public Task<byte[]?> GetSignatureBytesAsync(string nombre, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetSignatureBytes", async token =>
+        {
+            var usuario = (nombre ?? string.Empty).Trim();
+            if (usuario.Length == 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await SignatureTableExistsAsync(cn, token))
+                return null;
+
+            await using var cmd = new SqlCommand("SELECT TOP (1) Imagen FROM dbo.MA_FIRMAS_USUARIO WHERE Usuario = @Usuario;", cn);
+            cmd.Parameters.AddWithValue("@Usuario", usuario);
+            await using var reader = await cmd.ExecuteReaderAsync(token);
+            if (await reader.ReadAsync(token) && !await reader.IsDBNullAsync(0, token))
+                return reader.GetFieldValue<byte[]>(0);
+            return null;
+        }, "No se pudo obtener la firma del usuario.", ct);
+
+    public Task SaveSignatureAsync(string nombre, byte[] contenido, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveSignature", async token =>
+        {
+            var usuario = (nombre ?? string.Empty).Trim();
+            if (usuario.Length == 0)
+                throw new InvalidOperationException("Falta indicar el usuario.");
+            if (contenido is null || contenido.Length == 0)
+                throw new InvalidOperationException("La firma está vacía.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            await using var cmdUpd = new SqlCommand(
+                "UPDATE dbo.MA_FIRMAS_USUARIO SET Imagen = @Imagen, FechaHoraModificacion = GETDATE() WHERE Usuario = @Usuario;", cn);
+            cmdUpd.Parameters.AddWithValue("@Usuario", usuario);
+            cmdUpd.Parameters.AddWithValue("@Imagen", contenido);
+            var updated = await cmdUpd.ExecuteNonQueryAsync(token);
+            if (updated > 0)
+                return;
+
+            await using var cmdIns = new SqlCommand(
+                "INSERT INTO dbo.MA_FIRMAS_USUARIO (Usuario, Imagen) VALUES (@Usuario, @Imagen);", cn);
+            cmdIns.Parameters.AddWithValue("@Usuario", usuario);
+            cmdIns.Parameters.AddWithValue("@Imagen", contenido);
+            await cmdIns.ExecuteNonQueryAsync(token);
+        }, "No se pudo guardar la firma del usuario.", ct);
+
+    public Task DeleteSignatureAsync(string nombre, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "DeleteSignature", async token =>
+        {
+            var usuario = (nombre ?? string.Empty).Trim();
+            if (usuario.Length == 0)
+                return;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand("DELETE FROM dbo.MA_FIRMAS_USUARIO WHERE Usuario = @Usuario;", cn);
+            cmd.Parameters.AddWithValue("@Usuario", usuario);
+            await cmd.ExecuteNonQueryAsync(token);
+        }, "No se pudo quitar la firma del usuario.", ct);
+
+    public Task<UsuarioFirmaDto?> GetSignatureAsync(string nombre, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetSignature", async token =>
+        {
+            var usuario = (nombre ?? string.Empty).Trim();
+            if (usuario.Length == 0)
+                return null;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await SignatureTableExistsAsync(cn, token))
+                return null;
+
+            await using var cmd = new SqlCommand("SELECT TOP (1) Imagen, NombreMostrar FROM dbo.MA_FIRMAS_USUARIO WHERE Usuario = @Usuario;", cn);
+            cmd.Parameters.AddWithValue("@Usuario", usuario);
+            await using var reader = await cmd.ExecuteReaderAsync(token);
+            if (!await reader.ReadAsync(token))
+                return null;
+            return new UsuarioFirmaDto
+            {
+                Imagen = await reader.IsDBNullAsync(0, token) ? null : reader.GetFieldValue<byte[]>(0),
+                NombreMostrar = await reader.IsDBNullAsync(1, token) ? null : reader.GetString(1)
+            };
+        }, "No se pudo obtener la firma del usuario.", ct);
+
+    public Task SaveSignatureDisplayNameAsync(string nombre, string? nombreMostrar, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveSignatureDisplayName", async token =>
+        {
+            var usuario = (nombre ?? string.Empty).Trim();
+            if (usuario.Length == 0)
+                throw new InvalidOperationException("Falta indicar el usuario.");
+            var texto = string.IsNullOrWhiteSpace(nombreMostrar) ? null : nombreMostrar.Trim();
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            await using var cmdUpd = new SqlCommand(
+                "UPDATE dbo.MA_FIRMAS_USUARIO SET NombreMostrar = @NombreMostrar, FechaHoraModificacion = GETDATE() WHERE Usuario = @Usuario;", cn);
+            cmdUpd.Parameters.AddWithValue("@Usuario", usuario);
+            cmdUpd.Parameters.AddWithValue("@NombreMostrar", (object?)texto ?? DBNull.Value);
+            var updated = await cmdUpd.ExecuteNonQueryAsync(token);
+            if (updated > 0)
+                return;
+
+            await using var cmdIns = new SqlCommand(
+                "INSERT INTO dbo.MA_FIRMAS_USUARIO (Usuario, NombreMostrar) VALUES (@Usuario, @NombreMostrar);", cn);
+            cmdIns.Parameters.AddWithValue("@Usuario", usuario);
+            cmdIns.Parameters.AddWithValue("@NombreMostrar", (object?)texto ?? DBNull.Value);
+            await cmdIns.ExecuteNonQueryAsync(token);
+        }, "No se pudo guardar el nombre a mostrar en la firma.", ct);
+
+    private static async Task<bool> SignatureTableExistsAsync(SqlConnection cn, CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand("SELECT OBJECT_ID(N'dbo.MA_FIRMAS_USUARIO', N'U');", cn);
+        var result = await cmd.ExecuteScalarAsync(ct);
+        return result is not null && result != DBNull.Value;
+    }
+
     private void FillSaveParameters(SqlCommand cmd, UsuarioSaveRequest request, string newName)
     {
         cmd.Parameters.AddWithValue("@Nombre", newName);

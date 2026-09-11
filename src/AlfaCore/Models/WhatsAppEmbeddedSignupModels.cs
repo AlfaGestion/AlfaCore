@@ -34,7 +34,9 @@ public enum WhatsAppEmbeddedConnectionUiState
     Processing,
     Importing,
     ActionRequired,
-    Connected
+    Connected,
+    Failed,
+    Expired
 }
 
 public static class WhatsAppEmbeddedConnectionUiStateResolver
@@ -63,9 +65,62 @@ public static class WhatsAppEmbeddedConnectionUiStateResolver
                 => WhatsAppEmbeddedConnectionUiState.Importing,
             WhatsAppEmbeddedOnboardingStatus.ActionRequired
                 => WhatsAppEmbeddedConnectionUiState.ActionRequired,
+            // El último onboarding terminó en FAILED_FINAL: no debe desaparecer en silencio (antes caía
+            // acá mismo y quedaba indistinguible de "nunca se intentó nada").
+            WhatsAppEmbeddedOnboardingStatus.FailedFinal
+                => WhatsAppEmbeddedConnectionUiState.Failed,
+            // Autorización nunca completada a tiempo (popup abandonado, sesión Blazor perdida,
+            // servidor reiniciado, callback nunca recibido): expiró automáticamente en el backend
+            // (ver WhatsAppEmbeddedSignupOrchestrator.ReconcileExpiredAsync). No debe mostrarse
+            // como "Configuración en curso".
+            WhatsAppEmbeddedOnboardingStatus.Expired
+                => WhatsAppEmbeddedConnectionUiState.Expired,
             _ => WhatsAppEmbeddedConnectionUiState.Start
         };
     }
+}
+
+public sealed record WhatsAppEmbeddedSignupCtaState(
+    bool IsAllowed,
+    bool ShowPrimaryAction,
+    bool IsBlockedByActiveOnboarding,
+    string PrimaryActionLabel,
+    string EmptyStateTitle);
+
+public static class WhatsAppEmbeddedSignupCtaPolicy
+{
+    public static WhatsAppEmbeddedSignupCtaState Resolve(
+        bool isAllowedForBase,
+        int operationalNumberCount,
+        WhatsAppEmbeddedOnboardingStatus? latestOnboardingStatus)
+    {
+        if (!isAllowedForBase)
+            return new(false, false, false, string.Empty, string.Empty);
+
+        var hasNumbers = operationalNumberCount > 0;
+        var active = IsActiveInProgress(latestOnboardingStatus);
+        return new(
+            true,
+            !active,
+            active,
+            hasNumbers ? "Conectar otro WhatsApp" : "Conectar WhatsApp",
+            hasNumbers ? "WhatsApp conectados" : "Conectá WhatsApp para empezar");
+    }
+
+    public static bool IsActiveInProgress(WhatsAppEmbeddedOnboardingStatus? status)
+        => status is
+            WhatsAppEmbeddedOnboardingStatus.Started or
+            WhatsAppEmbeddedOnboardingStatus.Authorized or
+            WhatsAppEmbeddedOnboardingStatus.DiscoveringAssets or
+            WhatsAppEmbeddedOnboardingStatus.ValidatingOwnership or
+            WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess or
+            WhatsAppEmbeddedOnboardingStatus.SubscribingWabas or
+            WhatsAppEmbeddedOnboardingStatus.CheckingCustomerPayment or
+            WhatsAppEmbeddedOnboardingStatus.DiscoveringPhones or
+            WhatsAppEmbeddedOnboardingStatus.RegisteringPhones or
+            WhatsAppEmbeddedOnboardingStatus.Importing or
+            WhatsAppEmbeddedOnboardingStatus.SyncingHistory or
+            WhatsAppEmbeddedOnboardingStatus.SyncingContacts;
 }
 
 public enum MetaPhoneRegistrationStatus { Unknown, RegistrationRequired, Pending, Registered }
@@ -177,6 +232,8 @@ public sealed class WhatsAppEmbeddedStatusView
     public string Title { get; init; } = string.Empty;
     public string Message { get; init; } = string.Empty;
     public string IncidentId { get; init; } = string.Empty;
+    /// <summary>Último paso persistido (p. ej. "SUBSCRIBING_WABAS"). Útil sobre todo cuando Status es FailedFinal.</summary>
+    public string Step { get; init; } = string.Empty;
     public IReadOnlyList<WhatsAppEmbeddedProgressItem> Progress { get; init; } = [];
 }
 
@@ -199,6 +256,39 @@ public sealed record WhatsAppConnectedNumberMetadata(string PhoneNumberId, Whats
     public string UserFacingConnection => OnboardingMode == WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence
         ? "WhatsApp Business + AlfaCore"
         : "AlfaCore";
+}
+
+public sealed record WhatsAppEmbeddedPendingConnection(
+    Guid IdOnboarding,
+    WhatsAppEmbeddedOnboardingStatus Status,
+    WhatsAppEmbeddedOnboardingMode OnboardingMode,
+    string Nombre,
+    string DisplayPhoneNumber,
+    string PhoneNumberId,
+    WhatsAppEmbeddedActionRequiredReason? ActionRequiredReason)
+{
+    public bool IsInProgress => WhatsAppEmbeddedSignupCtaPolicy.IsActiveInProgress(Status) && Status != WhatsAppEmbeddedOnboardingStatus.Started;
+
+    public string StatusLabel => Status switch
+    {
+        WhatsAppEmbeddedOnboardingStatus.Authorized => "Conexión autorizada",
+        WhatsAppEmbeddedOnboardingStatus.Importing => "Activando...",
+        WhatsAppEmbeddedOnboardingStatus.ActionRequired => "Acción requerida",
+        WhatsAppEmbeddedOnboardingStatus.FailedRetryable => "No pudimos completar la activación",
+        _ => "Activando..."
+    };
+
+    public string Detail => Status switch
+    {
+        WhatsAppEmbeddedOnboardingStatus.ActionRequired when ActionRequiredReason == WhatsAppEmbeddedActionRequiredReason.CustomerPaymentSetupRequired
+            => "Completá el método de pago en Meta para continuar.",
+        WhatsAppEmbeddedOnboardingStatus.ActionRequired
+            => "Hay un paso pendiente en Meta para terminar la activación.",
+        WhatsAppEmbeddedOnboardingStatus.FailedRetryable
+            => "Podés reintentar la activación.",
+        WhatsAppEmbeddedOnboardingStatus.Importing => "Meta está demorando temporalmente la activación. AlfaCore continuará automáticamente en unos minutos.",
+        _ => "AlfaCore está terminando la activación."
+    };
 }
 
 public sealed record WhatsAppSynchronizationEvent(string EventName, string ExternalEventId, string PhoneNumberId);

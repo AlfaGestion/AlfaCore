@@ -65,6 +65,14 @@ public sealed class UsuarioPhotoServeDto
     public string NombreArchivo { get; set; } = string.Empty;
 }
 
+/// <summary>Firma digitalizada de un usuario más el texto a mostrar debajo de ella en los PDF
+/// (ej. "Alberto Antúnez") -- si no se cargó ninguno, se usa el nombre de usuario tal cual.</summary>
+public sealed class UsuarioFirmaDto
+{
+    public byte[]? Imagen { get; set; }
+    public string? NombreMostrar { get; set; }
+}
+
 public sealed class UsuariosViewSettingsDto
 {
     public string AgruparPor { get; set; } = UsuariosViewGroupKeys.None;

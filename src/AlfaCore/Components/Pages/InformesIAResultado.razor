@@ -1,7 +1,11 @@
 @page "/compras/informesia/resultado/{ExecutionId:guid}"
 @page "/{idweb}/{idbase:int}/compras/informesia/resultado/{ExecutionId:guid}"
 @inject AlfaCore.Services.IInformesIaService InformesIaService
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
 @inject IJSRuntime JS
+@implements IDisposable
 
 <PageTitle>Resultado InformesIA | Dashboard de Compras</PageTitle>
 
@@ -119,6 +123,22 @@
 @code {
     [Parameter] public Guid ExecutionId { get; set; }
     private InformeIaResultDto? _result;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "informesia")
+    });
 
     protected override async Task OnInitializedAsync()
     {

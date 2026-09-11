@@ -3,6 +3,10 @@
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.GestionFilterStateService FilterState
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Caja y Bancos | Alfa Gestión</PageTitle>
 
@@ -154,6 +158,22 @@
     private CajaBancosDashboardDto _data = new();
     private CajaBancosDashboardFilters _filters = null!;
     private CajaBancosFilterOptionsDto _options = new();
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCajaBancos(RouteContext, Nav, "resumen")
+    });
 
     protected override async Task OnInitializedAsync()
     {

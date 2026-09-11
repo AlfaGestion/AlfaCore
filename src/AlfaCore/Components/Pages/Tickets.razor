@@ -1142,6 +1142,8 @@
         {
             Title = title,
             Breadcrumb = ["Soporte", "Tickets"],
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildTickets(RouteContext, Nav, "mesadeayuda"),
             State = _saving
                 ? PageHeaderState.Loading
                 : _showEditor
@@ -1263,6 +1265,7 @@
     {
         if (firstRender)
         {
+            UpdatePageHeader();
             _ticketsEditorJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-rich-editor.js?v=20260519i");
             _ticketsKanbanJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-kanban.js?v=20260519a");
             _ticketsListJs = await JS.InvokeAsync<IJSObjectReference>("import", "/js/tickets-list.js?v=20260714b");

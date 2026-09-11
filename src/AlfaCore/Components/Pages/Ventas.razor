@@ -2,7 +2,11 @@
 @page "/{idweb}/{idbase:int}/ventas"
 @inject AlfaCore.Services.IGestionDashboardService GestionSvc
 @inject AlfaCore.Services.GestionFilterStateService FilterState
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject IJSRuntime JS
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Ventas | Alfa Gestión</PageTitle>
 
@@ -124,6 +128,22 @@
     private IReadOnlyList<VentasUnidadNegocioResumenDto> _porUnidad = [];
     private VentasDashboardFilters _filters = null!;
     private VentasFilterOptionsDto _options = new();
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildVentas(RouteContext, Nav, "inicio")
+    });
 
     protected override async Task OnInitializedAsync()
     {

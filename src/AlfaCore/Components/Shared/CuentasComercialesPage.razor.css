@@ -10,13 +10,20 @@
     background: var(--alfa-bg-canvas);
 }
 
+/* Editor de Clientes bajo el shell AlfaDesign: .shell__content es flex + overflow:hidden y esta
+   rama (compartida con el editor legacy de Proveedores) no declaraba altura/scroll propios. */
+.shell.shell--alfa-design .page-grid.cuentas-page-grid--cliente-editor {
+    height: 100%;
+    overflow-y: auto;
+}
+
 .cuentas-list-shell {
     flex: 1 1 auto;
     min-width: 0;
     min-height: 0;
     display: flex;
     flex-direction: column;
-    overflow: auto;
+    overflow: hidden;
     border: 1px solid var(--alfa-border-default);
     border-radius: var(--alfa-radius-md);
     background: var(--alfa-bg-surface);
@@ -32,13 +39,12 @@
 
 .cuentas-list-shell__table-scroll {
     position: relative;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     width: 100%;
     max-width: 100%;
     min-width: 0;
     min-height: 0;
-    overflow-x: auto;
-    overflow-y: visible;
+    overflow: auto;
     overscroll-behavior: contain;
 }
 

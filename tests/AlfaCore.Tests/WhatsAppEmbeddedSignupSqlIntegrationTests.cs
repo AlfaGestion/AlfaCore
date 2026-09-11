@@ -2,7 +2,6 @@ using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Services;
 using Dapper;
-using Microsoft.AspNetCore.DataProtection;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
@@ -234,6 +233,31 @@ public sealed class WhatsAppEmbeddedSignupSqlIntegrationTests
     }
 
     [SqlIntegrationFact]
+    public async Task Claiming_AllowsPostAuthorizationImportAfterOAuthStateExpiration()
+    {
+        var store = new WhatsAppEmbeddedSignupStore(Configuration);
+        var (baseA, _) = await GetTwoBaseIdsAsync();
+        var now = DateTime.UtcNow;
+        var onboarding = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Importing, now.AddMinutes(-1));
+        onboarding.OnboardingMode = WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence;
+        onboarding.CurrentStep = "READY_FOR_IMPORT_APPROVAL";
+        try
+        {
+            await store.CreateAsync(onboarding);
+
+            var claimed = await store.ClaimNextForBasesAsync("worker-post-auth", [baseA], now, now.AddMinutes(1));
+
+            Assert.Equal(onboarding.IdOnboarding, claimed?.IdOnboarding);
+            Assert.Equal("READY_FOR_IMPORT_APPROVAL", claimed?.CurrentStep);
+            await store.ReleaseClaimAsync(onboarding.IdOnboarding, "worker-post-auth", null);
+        }
+        finally
+        {
+            await CleanupOnboardingsAsync([onboarding.IdOnboarding]);
+        }
+    }
+
+    [SqlIntegrationFact]
     public async Task Vault_RoundTripsAfterProviderRecreationAndStoresNoPlaintext()
     {
         var keyPath = Path.Combine(Path.GetTempPath(), "alfacore-es-vault-tests", Guid.NewGuid().ToString("N"));
@@ -245,13 +269,11 @@ public sealed class WhatsAppEmbeddedSignupSqlIntegrationTests
         var createdReferences = new List<string>();
         try
         {
-            var firstProvider = DataProtectionProvider.Create(new DirectoryInfo(keyPath), builder => builder.SetApplicationName("AlfaCore.WhatsAppEmbeddedSignup.Tests"));
-            IWhatsAppCredentialVault firstVault = new WhatsAppSecureVault(Configuration, firstProvider, options);
+            IWhatsAppCredentialVault firstVault = new WhatsAppSecureVault(Configuration, options);
             var reference = await firstVault.StoreAsync(context, secret.AsMemory());
             createdReferences.Add(reference.Value);
 
-            var secondProvider = DataProtectionProvider.Create(new DirectoryInfo(keyPath), builder => builder.SetApplicationName("AlfaCore.WhatsAppEmbeddedSignup.Tests"));
-            IWhatsAppCredentialVault secondVault = new WhatsAppSecureVault(Configuration, secondProvider, options);
+            IWhatsAppCredentialVault secondVault = new WhatsAppSecureVault(Configuration, options);
             Assert.Equal(secret, (await secondVault.GetAsync(reference)).ToString());
 
             await using var cn = new SqlConnection(ConnectionString);
@@ -260,11 +282,10 @@ public sealed class WhatsAppEmbeddedSignupSqlIntegrationTests
             await secondVault.RemoveAsync(reference);
 
             var pinContext = context with { Purpose = "PHONE_REGISTRATION_PIN", PhoneNumberId = "999940000000000001" };
-            IWhatsAppPhonePinVault pinVault = new WhatsAppSecureVault(Configuration, secondProvider, options);
+            IWhatsAppPhonePinVault pinVault = new WhatsAppSecureVault(Configuration, options);
             var pinReference = await pinVault.StoreAsync(pinContext, "123456".AsMemory());
             createdReferences.Add(pinReference.Value);
-            var thirdProvider = DataProtectionProvider.Create(new DirectoryInfo(keyPath), builder => builder.SetApplicationName("AlfaCore.WhatsAppEmbeddedSignup.Tests"));
-            IWhatsAppPhonePinVault recreatedPinVault = new WhatsAppSecureVault(Configuration, thirdProvider, options);
+            IWhatsAppPhonePinVault recreatedPinVault = new WhatsAppSecureVault(Configuration, options);
             Assert.Equal("123456", (await recreatedPinVault.GetAsync(pinReference)).ToString());
             var protectedPin = await cn.QuerySingleAsync<string>("SELECT ProtectedValue FROM dbo.WhatsAppSecureVault WHERE SecretReference=@Reference", new { Reference = pinReference.Value });
             Assert.DoesNotContain("123456", protectedPin, StringComparison.Ordinal);

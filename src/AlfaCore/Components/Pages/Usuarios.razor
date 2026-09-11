@@ -96,7 +96,15 @@
                           OnFieldChanged="HandleEditorFieldChanged"
                           OnPhotoSelected="HandlePhotoSelectedAsync"
                           OnRemovePhoto="QuitarFoto"
-                          OnTogglePassword="TogglePasswordVisibility" />
+                          OnTogglePassword="TogglePasswordVisibility"
+                          CurrentFirmaUrl="@CurrentFirmaUrl"
+                          HasFirma="@_hasFirma"
+                          FirmaPickerVersion="@_firmaPickerVersion"
+                          SavingFirma="@_savingFirma"
+                          FirmaNombreMostrar="@_firmaNombreMostrar"
+                          FirmaNombreMostrarChanged="GuardarFirmaNombreMostrarAsync"
+                          OnFirmaSelected="HandleFirmaSelectedAsync"
+                          OnRemoveFirma="RemoveFirmaAsync" />
     }
     else
     {
@@ -290,6 +298,11 @@
     private string _activoFiltro = "1";
     private string _grupoFiltro = string.Empty;
     private string _existingPhotoCacheToken = string.Empty;
+    private bool _hasFirma;
+    private string _firmaCacheToken = string.Empty;
+    private int _firmaPickerVersion;
+    private bool _savingFirma;
+    private string _firmaNombreMostrar = string.Empty;
     private string _draftAgruparPor = UsuariosViewGroupKeys.None;
     private string _viewSettingsUserName = string.Empty;
     private string _bulkAction = BulkActionDeactivate;
@@ -308,6 +321,11 @@
 
     private bool HasExistingPhoto => !_form.QuitarFoto && !_isNewMode && !string.IsNullOrWhiteSpace(_selectedNombre) && !string.IsNullOrWhiteSpace(_existingPhotoCacheToken);
     private bool HasExistingOrPendingPhoto => _pendingPhoto is not null || HasExistingPhoto;
+
+    private string CurrentFirmaUrl
+        => _hasFirma && !_isNewMode && !string.IsNullOrWhiteSpace(_selectedNombre)
+           ? $"/api/usuarios/{Uri.EscapeDataString(_selectedNombre)}/firma?v={Uri.EscapeDataString(_firmaCacheToken)}"
+           : string.Empty;
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedNames.Contains(item.Nombre));
 
     private static readonly IReadOnlyList<AlfaSelectOption> ViewGroupingOptions =
@@ -672,6 +690,7 @@
         }
 
         MapDetailToForm(result.Value);
+        await LoadFirmaStateAsync(result.Value.Nombre);
     }
 
     private void BeginNew()
@@ -686,6 +705,8 @@
         _selectedModificacion = null;
         _selectedActivo = true;
         _existingPhotoCacheToken = string.Empty;
+        _hasFirma = false;
+        _firmaCacheToken = string.Empty;
         _showPassword = false;
         _editorTab = "information";
         _confirmacionContrasena = string.Empty;
@@ -989,6 +1010,74 @@
         _form.QuitarFoto = HasExistingPhoto;
         ClearFieldError("foto");
         StateHasChanged();
+    }
+
+    private async Task LoadFirmaStateAsync(string nombre)
+    {
+        var result = await UiOps.RunAsync(() => UsuariosSvc.GetSignatureAsync(nombre), "No se pudo cargar la firma del usuario.");
+        _hasFirma = result.Success && result.Value?.Imagen is { Length: > 0 };
+        _firmaNombreMostrar = result.Success ? result.Value?.NombreMostrar ?? string.Empty : string.Empty;
+        _firmaCacheToken = Guid.NewGuid().ToString("N");
+    }
+
+    private async Task GuardarFirmaNombreMostrarAsync(string? valor)
+    {
+        _firmaNombreMostrar = valor ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(_selectedNombre))
+            return;
+
+        var result = await UiOps.RunAsync(async () => { await UsuariosSvc.SaveSignatureDisplayNameAsync(_selectedNombre, _firmaNombreMostrar); return true; }, "No se pudo guardar el nombre a mostrar en la firma.");
+        if (!result.Success)
+            SetFeedback(result.Feedback);
+    }
+
+    private async Task HandleFirmaSelectedAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null || string.IsNullOrWhiteSpace(_selectedNombre))
+            return;
+
+        await using var stream = file.OpenReadStream(2 * 1024 * 1024);
+        await using var ms = new MemoryStream();
+        await stream.CopyToAsync(ms);
+
+        _savingFirma = true;
+        StateHasChanged();
+        var result = await UiOps.RunAsync(async () => { await UsuariosSvc.SaveSignatureAsync(_selectedNombre, ms.ToArray()); return true; }, "No se pudo guardar la firma.");
+        _savingFirma = false;
+        _firmaPickerVersion++;
+
+        if (result.Success)
+        {
+            await LoadFirmaStateAsync(_selectedNombre);
+            SetFeedback(AppUiMessage.Success("Firma guardada", "La firma se actualizó correctamente."));
+        }
+        else
+        {
+            SetFeedback(result.Feedback);
+        }
+    }
+
+    private async Task RemoveFirmaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_selectedNombre))
+            return;
+
+        _savingFirma = true;
+        StateHasChanged();
+        var result = await UiOps.RunAsync(async () => { await UsuariosSvc.DeleteSignatureAsync(_selectedNombre); return true; }, "No se pudo quitar la firma.");
+        _savingFirma = false;
+        _firmaPickerVersion++;
+
+        if (result.Success)
+        {
+            _hasFirma = false;
+            SetFeedback(AppUiMessage.Success("Firma eliminada", "Se quitó la firma del usuario."));
+        }
+        else
+        {
+            SetFeedback(result.Feedback);
+        }
     }
 
     private void TogglePasswordVisibility() => _showPassword = !_showPassword;
@@ -1327,27 +1416,17 @@
             ? "usuarios-page usuarios-page--editor"
             : "usuarios-page usuarios-page--list";
 
+    // Contactos y Configuración se sacaron a pedido: son de otros módulos (Contactos es aparte, y
+    // Configuración ahí apuntaba a la de Conversaciones) -- ninguna pertenece al menú de Usuarios.
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
         =>
         [
-            new()
-            {
-                Key = "contactos",
-                Label = "Contactos",
-                Url = RouteContext.BuildRoute("/contactos")
-            },
             new()
             {
                 Key = "usuarios",
                 Label = "Usuarios",
                 Url = RouteContext.BuildRoute("/usuarios"),
                 Active = true
-            },
-            new()
-            {
-                Key = "configuracion",
-                Label = "Configuración",
-                Url = RouteContext.BuildRoute("/conversaciones/configuracion")
             }
         ];
 

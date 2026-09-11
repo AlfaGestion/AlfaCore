@@ -2,7 +2,11 @@
 @page "/{idweb}/{idbase:int}/compras/reportes"
 @inject AlfaCore.Services.IReporteComprasService ReporteService
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
 @inject IJSRuntime Js
+@implements IDisposable
 
 <PageTitle>Reportes de Compras | Alfa Gestión</PageTitle>
 
@@ -417,6 +421,22 @@
     private decimal TotalNetoDetalle  => _detalleCompras?.Items.Sum(x => x.Neto)  ?? 0;
     private decimal TotalIvaDetalle   => _detalleCompras?.Items.Sum(x => x.Iva)   ?? 0;
     private decimal TotalTotalDetalle => _detalleCompras?.Items.Sum(x => x.Total) ?? 0;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteContext, Nav, "reportes")
+    });
 
     protected override async Task OnInitializedAsync()
     {

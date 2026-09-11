@@ -1,0 +1,218 @@
+@page "/cotizaciones/configuracion"
+@page "/{idweb}/{idbase:int}/cotizaciones/configuracion"
+@using AlfaCore.Models
+@inject AlfaCore.Services.ICotizacionesService CotizSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Configuración de Cotizaciones | Alfa Gestión</PageTitle>
+
+<div class="page-grid cotizcfg-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="panel-card">
+        <h3 class="panel-card__title">Descuentos</h3>
+        <p class="panel-card__subtitle">El descuento general por cotización siempre está disponible. Este toggle habilita, además, un descuento por línea individual.</p>
+        <AlfaCheckbox Value="@_permiteDescuentoLinea" ValueChanged="v => _permiteDescuentoLinea = v == true">
+            Permitir descuento por línea
+        </AlfaCheckbox>
+    </section>
+
+    <section class="panel-card">
+        <h3 class="panel-card__title">Diseño e imagen del PDF</h3>
+        <p class="panel-card__subtitle">
+            La portada, el logo, la firma y el resto del diseño del PDF ahora se configuran por plantilla
+            (cada unidad de negocio puede tener la suya) en
+            <a href="@RouteContext.BuildRoute("/documentos/disenador")">Utilidades → Diseñador de comprobantes</a>.
+        </p>
+    </section>
+
+    <section class="panel-card">
+        <div class="cotizcfg-section-header">
+            <div>
+                <h3 class="panel-card__title">Configurador "Alfa Gestión"</h3>
+                <p class="panel-card__subtitle">Catálogo de módulos y precio de licencia que usa el botón "Configurar Alfa Gestión" dentro de una cotización.</p>
+            </div>
+        </div>
+
+        <div class="cotiz-datos-grid cotizcfg-pricing-grid">
+            <div class="field">
+                <label>Precio base</label>
+                <input class="field-input" type="number" step="0.01" @bind="_config.PrecioBase" />
+            </div>
+            <div class="field">
+                <label>Precio por usuario</label>
+                <input class="field-input" type="number" step="0.01" @bind="_config.PrecioPorUsuario" />
+            </div>
+            <div class="cotizcfg-preview">
+                <span>Ejemplo con 5 usuarios</span>
+                <strong>@(_config.PrecioBase + _config.PrecioPorUsuario * 5).ToString("N2")</strong>
+            </div>
+        </div>
+
+        <h4 class="cotizcfg-subtitle">Módulos <span class="cotizcfg-count">@_config.Modulos.Count</span></h4>
+        <p class="panel-card__subtitle">
+            Lista de módulos que el vendedor va a poder tildar dentro de "Configurar Alfa Gestión" (ej: Ventas, Compras,
+            CRM). Al tildarlos, se agrega una línea informativa "Módulos incluidos: ..." a la cotización (no suma precio
+            por sí sola) y la <strong>cantidad</strong> de módulos tildados es lo que se compara contra "Máx. módulos"
+            de las reglas de abajo.
+        </p>
+        @if (_config.Modulos.Count == 0)
+        {
+            <AlfaEmptyState Title="Todavía no cargaste módulos" Message="Agregá los módulos que se van a poder elegir en el configurador." />
+        }
+        else
+        {
+            <div class="cotizcfg-list">
+                @foreach (var modulo in _config.Modulos)
+                {
+                    <div class="cotizcfg-row">
+                        <i class="bi bi-grid-3x3-gap"></i>
+                        <input value="@modulo.Codigo" @onchange="args => modulo.Codigo = args.Value?.ToString() ?? string.Empty" placeholder="Código" />
+                        <input value="@modulo.Nombre" @onchange="args => modulo.Nombre = args.Value?.ToString() ?? string.Empty" placeholder="Nombre visible" />
+                        <AlfaIconButton Icon="bi bi-trash" Label="Quitar módulo" Size="AlfaSize.Sm" OnClick="_ => _config.Modulos.Remove(modulo)" />
+                    </div>
+                }
+            </div>
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="_ => _config.Modulos.Add(new CotizacionAlfaModuloDto())">Agregar módulo</AlfaButton>
+
+        <h4 class="cotizcfg-subtitle cotizcfg-subtitle--spaced">Reglas de pack de horas recomendado <span class="cotizcfg-count">@_config.Packs.Count</span></h4>
+        <p class="panel-card__subtitle">
+            Al usar "Configurar Alfa Gestión" en una cotización, el sistema recorre estas reglas y elige la primera
+            (de menor a mayor "Máx. usuarios") cuyo <strong>Máx. usuarios</strong> y <strong>Máx. módulos</strong> alcancen
+            para cubrir lo que el cliente eligió, y agrega esa tarea como línea de horas de implementación recomendada.
+            Ej: una regla con Máx. usuarios=5 y Máx. módulos=2 aplica a cualquier cliente de hasta 5 usuarios y hasta 2 módulos.
+            Buscá la tarea por nombre o código (viene de V_TA_Tareas, la misma tabla de "Agregar servicio").
+        </p>
+        @if (_config.Packs.Count == 0)
+        {
+            <AlfaEmptyState Title="Todavía no cargaste reglas de pack" Message="Sin reglas, el configurador no va a recomendar ningún pack de implementación." />
+        }
+        else
+        {
+            <div class="cotizcfg-list">
+                @foreach (var pack in _config.Packs)
+                {
+                    <div class="cotizcfg-row cotizcfg-row--pack">
+                        <i class="bi bi-stopwatch"></i>
+                        <input type="number" value="@pack.MaxUsuarios" @onchange="args => pack.MaxUsuarios = ParseInt(args.Value)" placeholder="Máx. usuarios" />
+                        <input type="number" value="@pack.MaxModulos" @onchange="args => pack.MaxModulos = ParseInt(args.Value)" placeholder="Máx. módulos" />
+                        <AlfaLookup TItem="CotizacionTareaDto" Placeholder="Buscar tarea por nombre o código..." MinimumCharacters="1"
+                                    SearchFunc="(texto, ct) => CotizSvc.SearchTareasAsync(texto, 15, ct)"
+                                    ItemKey="t => t.IdTarea"
+                                    SearchText="@GetPackSearchText(pack)" SearchTextChanged="texto => SetPackSearchText(pack, texto)"
+                                    SelectedItem="null" SelectedItemChanged="tarea => OnPackTareaSeleccionada(pack, tarea)">
+                            <ItemTemplate Context="t">
+                                <span class="cotiz-lookup-item__title">@t.Descripcion</span>
+                                <span class="cotiz-lookup-item__meta">@t.IdTarea · @t.ValorHora.ToString("N2")/hora@(t.HorasEstimadas is > 0 ? $" · {t.HorasEstimadas:N1} h" : string.Empty)</span>
+                            </ItemTemplate>
+                        </AlfaLookup>
+                        <AlfaIconButton Icon="bi bi-trash" Label="Quitar regla" Size="AlfaSize.Sm" OnClick="_ => QuitarPack(pack)" />
+                    </div>
+                }
+            </div>
+        }
+        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-plus-circle" OnClick="_ => _config.Packs.Add(new CotizacionAlfaPackReglaDto())">Agregar regla</AlfaButton>
+    </section>
+
+    <div class="cotizcfg-save-bar">
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar configuración</AlfaButton>
+    </div>
+</div>
+
+@code {
+    private CotizacionAlfaConfigDto _config = new();
+    private bool _permiteDescuentoLinea;
+    private bool _saving;
+    private AppUiMessage? _feedback;
+    private readonly Dictionary<CotizacionAlfaPackReglaDto, string> _packBusquedaTexto = new();
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var configResult = await UiOps.RunAsync(() => CotizSvc.GetAlfaConfigAsync(), "No se pudo cargar la configuración.");
+        if (configResult.Success && configResult.Value is not null)
+            _config = configResult.Value;
+
+        var permiteResult = await UiOps.RunAsync(() => CotizSvc.PermiteDescuentoPorLineaAsync(), "No se pudo cargar la configuración de descuento.");
+        if (permiteResult.Success)
+            _permiteDescuentoLinea = permiteResult.Value;
+
+        await HidratarNombresDePacksAsync();
+    }
+
+    /// <summary>Completa el buscador de cada regla ya guardada con la descripción de su tarea
+    /// (V_TA_Tareas), para no mostrar solo el código IdTarea al abrir la página.</summary>
+    private async Task HidratarNombresDePacksAsync()
+    {
+        foreach (var pack in _config.Packs)
+        {
+            if (string.IsNullOrWhiteSpace(pack.IdTarea))
+                continue;
+            try
+            {
+                var matches = await CotizSvc.SearchTareasAsync(pack.IdTarea, 5);
+                var tarea = matches.FirstOrDefault(t => string.Equals(t.IdTarea, pack.IdTarea, StringComparison.OrdinalIgnoreCase));
+                if (tarea is not null)
+                    _packBusquedaTexto[pack] = tarea.Descripcion;
+            }
+            catch
+            {
+                // Cosmético: si falla, el buscador simplemente muestra el código crudo.
+            }
+        }
+    }
+
+    private string GetPackSearchText(CotizacionAlfaPackReglaDto pack)
+        => _packBusquedaTexto.TryGetValue(pack, out var texto) ? texto : pack.IdTarea;
+
+    private void SetPackSearchText(CotizacionAlfaPackReglaDto pack, string texto)
+        => _packBusquedaTexto[pack] = texto ?? string.Empty;
+
+    private void OnPackTareaSeleccionada(CotizacionAlfaPackReglaDto pack, CotizacionTareaDto? tarea)
+    {
+        pack.IdTarea = tarea?.IdTarea ?? string.Empty;
+        _packBusquedaTexto[pack] = tarea?.Descripcion ?? string.Empty;
+    }
+
+    private void QuitarPack(CotizacionAlfaPackReglaDto pack)
+    {
+        _config.Packs.Remove(pack);
+        _packBusquedaTexto.Remove(pack);
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Configuración",
+        Breadcrumb = ["Cotizaciones", "Configuración"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCotizaciones(RouteContext, Nav, "configuracion")
+    });
+
+    private async Task GuardarAsync()
+    {
+        _saving = true;
+        var saveConfigResult = await UiOps.RunAsync(async () => { await CotizSvc.SaveAlfaConfigAsync(_config); return true; }, "No se pudo guardar la configuración.");
+        var saveDtoResult = await UiOps.RunAsync(async () => { await CotizSvc.SetPermiteDescuentoPorLineaAsync(_permiteDescuentoLinea); return true; }, "No se pudo guardar la configuración de descuento.");
+        _saving = false;
+        _feedback = saveConfigResult.Success && saveDtoResult.Success
+            ? AppUiMessage.Success("Configuración guardada", "Los cambios se guardaron correctamente.")
+            : (saveConfigResult.Feedback ?? saveDtoResult.Feedback);
+    }
+
+    private static int ParseInt(object? value)
+        => int.TryParse(value?.ToString(), out var v) ? v : 0;
+}

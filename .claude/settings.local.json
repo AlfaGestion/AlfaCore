@@ -18,7 +18,24 @@
       "Read(//tmp/**)",
       "Bash(curl -s \"http://localhost:5055/AlfaCore.styles.css?v=20260812-conv-bot-autonomo\" --max-time 15 -o /tmp/bundle2.css)",
       "Bash(sed -n '/catalogo-publico-hero__logo\\\\[/,/^}/p' /tmp/bundle2.css)",
-      "Bash(dotnet publish *)"
+      "Bash(dotnet publish *)",
+      "Bash(git push *)",
+      "Bash(echo \"rc=$?\")",
+      "Bash(git fetch *)",
+      "Bash(git rev-list *)",
+      "Bash(echo \"ahead/behind vs origin: $\\(git rev-list --left-right --count origin/integration/whatsapp-production-reconcile...HEAD\\)\")",
+      "Bash(gh auth *)",
+      "Bash(gh repo *)",
+      "Read(//c/Program Files/GitHub CLI/**)",
+      "Read(//c/Users/Eve/AppData/Local/**)",
+      "Read(//c/Users/Eve/AppData/Local/Programs/**)",
+      "Bash(dotnet test *)",
+      "Bash(git switch *)",
+      "Bash(git pull *)",
+      "Bash(git merge --no-ff integration/whatsapp-production-reconcile -m ' *)",
+      "Bash(grep -viE \"test|//|///\")",
+      "Bash(kill %1)",
+      "Bash(pkill -f \"grep -rn\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\albert\\AppData\\Local\\Temp\\claude\\c--dev-AlfaCore\\03136413-ace2-40ae-a12b-139e0543fe29\\scratchpad"

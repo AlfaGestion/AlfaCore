@@ -222,9 +222,17 @@
 
                 <header class="wa-api-list__header">
                     <h2>WhatsApp conectados</h2>
-                    <span>@WhatsAppApiNumeros.Count()</span>
+                    <span>@(_whatsAppConnectionsLoaded ? GetWhatsAppConnectionSummary() : "Cargando...")</span>
                 </header>
 
+                @if (!_whatsAppConnectionsLoaded)
+                {
+                    <div class="wa-api-number-row is-pending" aria-live="polite">
+                        <strong>Cargando conexiones de WhatsApp...</strong>
+                    </div>
+                }
+                else
+                {
                 @foreach (var numero in WhatsAppApiNumeros)
                 {
                     <button type="button" class="@GetApiNumeroRowClass(numero)" @onclick="() => SelectApiNumero(numero)">
@@ -247,31 +255,100 @@
                     </button>
                 }
 
-                @if (!WhatsAppApiNumeros.Any())
+                @foreach (var pending in _embeddedPendingConnections)
+                {
+                    <div class="wa-api-number-row is-pending" aria-live="polite">
+                        <strong>@pending.Nombre</strong>
+                        @if (!string.IsNullOrWhiteSpace(pending.DisplayPhoneNumber))
+                        {
+                            <span>@pending.DisplayPhoneNumber</span>
+                        }
+                        <span class="wa-api-number-row__meta">
+                            <AlfaTag Tone="@(pending.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.FailedRetryable || pending.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.ActionRequired ? AlfaTagTone.Warning : AlfaTagTone.Accent)">@pending.StatusLabel</AlfaTag>
+                        </span>
+                        <span>@pending.Detail</span>
+                        @if (pending.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.FailedRetryable)
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" Icon="bi bi-arrow-clockwise" Disabled="@_embeddedSignupBusy" OnClick="() => RetryEmbeddedSignupAsync(pending)">Reintentar</AlfaButton>
+                        }
+                    </div>
+                }
+
+                @if (!WhatsAppApiNumeros.Any() && !_embeddedPendingConnections.Any())
                 {
                     <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
                                     Title="Sin WhatsApp conectados"
-                                    Message="Todavía no hay números conectados con AlfaCore." />
+                                    Message="Conectá WhatsApp para empezar." />
+                    @if (EmbeddedSignupCta.ShowPrimaryAction)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Primary"
+                                    Size="AlfaSize.Sm"
+                                    Icon="bi bi-whatsapp"
+                                    Loading="@_embeddedSignupBusy"
+                                    OnClick="OpenWhatsAppOnboardingModeDialog">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
+                    }
+                    else if (EmbeddedSignupCta.IsBlockedByActiveOnboarding)
+                    {
+                        <div class="wa-business-inline-actions">
+                            <AlfaTag Tone="AlfaTagTone.Accent">Configuración en curso</AlfaTag>
+                        </div>
+                    }
                     <AlfaButton Variant="AlfaButtonVariant.Secondary"
                                 Size="AlfaSize.Sm"
                                 Icon="bi bi-plus-circle"
                                 OnClick="StartAddApiNumero">Agregar por Phone Number ID</AlfaButton>
+                }
+                else if (EmbeddedSignupCta.ShowPrimaryAction)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Secondary"
+                                Size="AlfaSize.Sm"
+                                Icon="bi bi-plus-circle"
+                                Disabled="@_embeddedSignupBusy"
+                                OnClick="OpenWhatsAppOnboardingModeDialog">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
+                }
+                else if (EmbeddedSignupCta.IsBlockedByActiveOnboarding)
+                {
+                    <div class="wa-business-inline-actions">
+                        <AlfaTag Tone="AlfaTagTone.Accent">Configuración en curso</AlfaTag>
+                    </div>
+                }
                 }
             </aside>
 
             <section class="wa-api-detail">
                 @if (IsApiIntegrationView)
                 {
-                    @if (IsEmbeddedSignupAllowedForActiveBase)
+                    @if (ShowEmbeddedSignupSection)
                     {
+                        @if (!_whatsAppConnectionsLoaded)
+                        {
+                            <div class="wa-business-block wa-embedded-status">
+                                <div class="wa-business-block__header"><div><h3>Cargando conexiones de WhatsApp...</h3></div></div>
+                            </div>
+                        }
+                        else
+                        {
                         <div class="wa-business-block wa-embedded-status @GetEmbeddedStatusClass()">
                             @if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Processing)
                             {
                                 <div class="wa-business-block__header">
-                                    <div><h3>Estamos configurando tu WhatsApp</h3><p>La conexión con Meta se realizó correctamente. Estamos terminando la configuración en AlfaCore. Esto puede demorar unos minutos.</p></div>
+                                    <div>
+                                        <h3>Estamos configurando tu WhatsApp</h3>
+                                        @if (EmbeddedSignupOptions.Value.WorkerEnabled)
+                                        {
+                                            <p>La conexión con Meta se realizó correctamente. Estamos terminando la configuración en AlfaCore. Esto puede demorar unos minutos.</p>
+                                        }
+                                        else
+                                        {
+                                            <p>La conexión con Meta se realizó correctamente. La siguiente etapa requiere una ejecución supervisada; no continuará automáticamente.</p>
+                                        }
+                                    </div>
                                     <AlfaTag Tone="AlfaTagTone.Accent">Configurando</AlfaTag>
                                 </div>
-                                <div class="wa-embedded-status__progress"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Podés seguir usando AlfaCore mientras completamos el proceso.</span></div>
+                                @if (EmbeddedSignupOptions.Value.WorkerEnabled)
+                                {
+                                    <div class="wa-embedded-status__progress"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span><span>Podés seguir usando AlfaCore mientras completamos el proceso.</span></div>
+                                }
                                 @if (_embeddedSignupStatus is { } processingStatus)
                                 {
                                     <ol class="wa-embedded-steps">
@@ -284,7 +361,16 @@
                             }
                             else if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Connected)
                             {
-                                <div class="wa-business-block__header"><div><h3>WhatsApp conectado</h3><p>Tu WhatsApp ya está listo para usar en AlfaCore.</p></div><AlfaTag Tone="AlfaTagTone.Success">Conectado</AlfaTag></div>
+                                <div class="wa-business-block__header">
+                                    <div><h3>WhatsApp conectado</h3><p>Tu WhatsApp ya está listo para usar en AlfaCore.</p></div>
+                                    <div class="wa-business-inline-actions">
+                                        <AlfaTag Tone="AlfaTagTone.Success">Conectado</AlfaTag>
+                                        @if (EmbeddedSignupCta.ShowPrimaryAction)
+                                        {
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-plus-circle" Disabled="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
+                                        }
+                                    </div>
+                                </div>
                             }
                             else if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Importing)
                             {
@@ -296,6 +382,38 @@
                             else if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.ActionRequired)
                             {
                                 <div class="wa-business-block__header"><div><h3>Falta un paso para terminar</h3><p>@_embeddedSignupStatus?.Message</p></div><AlfaTag Tone="AlfaTagTone.Warning">Acción requerida</AlfaTag></div>
+                            }
+                            else if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Failed)
+                            {
+                                <div class="wa-business-block__header">
+                                    <div>
+                                        <h3>No se pudo completar la conexión</h3>
+                                        <p>@_embeddedSignupStatus?.Message</p>
+                                        @if (!string.IsNullOrWhiteSpace(_embeddedSignupStatus?.Step))
+                                        {
+                                            <p class="wa-field-note">Paso: @_embeddedSignupStatus?.Step</p>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(_embeddedSignupStatus?.IncidentId))
+                                        {
+                                            <p class="wa-field-note">Incidente: @_embeddedSignupStatus?.IncidentId</p>
+                                        }
+                                    </div>
+                                    <div class="wa-business-inline-actions">
+                                        <AlfaTag Tone="AlfaTagTone.Danger">No se pudo conectar</AlfaTag>
+                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-clockwise" Loading="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">Reintentar</AlfaButton>
+                                    </div>
+                                </div>
+                            }
+                            else if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Expired)
+                            {
+                                <div class="wa-business-block__header">
+                                    <div>
+                                        <h3>La autorización no se completó a tiempo.</h3>
+                                    </div>
+                                    <div class="wa-business-inline-actions">
+                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-clockwise" Loading="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">Reintentar</AlfaButton>
+                                    </div>
+                                </div>
                             }
                             else if (_embeddedRecoveryCandidate is { IsOperational: false } recovery)
                             {
@@ -314,8 +432,11 @@
                             else
                             {
                                 <div class="wa-business-block__header">
-                                    <div><h3>Conectá WhatsApp para empezar</h3><p>Usá el WhatsApp Business que ya tenés o configurá uno nuevo.</p></div>
-                                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-whatsapp" Loading="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">Conectar WhatsApp</AlfaButton>
+                                    <div><h3>@EmbeddedSignupCta.EmptyStateTitle</h3><p>Usá el WhatsApp Business que ya tenés o configurá uno nuevo.</p></div>
+                                    @if (EmbeddedSignupCta.ShowPrimaryAction)
+                                    {
+                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-whatsapp" Loading="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
+                                    }
                                 </div>
                             }
                             @if (!string.IsNullOrWhiteSpace(_embeddedSignupMessage))
@@ -323,6 +444,7 @@
                                 <p class="wa-field-note">@_embeddedSignupMessage</p>
                             }
                         </div>
+                        }
                     }
                     @if (_metaConfigDraft is { } metaDraft)
                     {
@@ -365,7 +487,18 @@
                             <summary>Configuración avanzada</summary>
                             <div class="wa-api-technical__body">
                             <div class="wa-api-detail__heading">
-                                <div><h2>Configuración heredada</h2><p>Credenciales, proveedor y webhook para administración y soporte.</p></div>
+                                <div>
+                                    @if (HasOperationalEmbeddedSignupNumber)
+                                    {
+                                        <h2>Configuración administrada por AlfaCore</h2>
+                                        <p>Las credenciales están protegidas y la conexión se resuelve por cada número administrado.</p>
+                                    }
+                                    else
+                                    {
+                                        <h2>Configuración heredada</h2>
+                                        <p>Credenciales, proveedor y webhook para administración y soporte.</p>
+                                    }
+                                </div>
                                 <AlfaTag Tone="AlfaTagTone.Neutral">@GetMetaConfigurationStatus()</AlfaTag>
                             </div>
                             <div class="wa-business-block">
@@ -2072,6 +2205,10 @@
     private string _embeddedSignupMessage = string.Empty;
     private AlfaCore.Models.WhatsAppEmbeddedStatusView? _embeddedSignupStatus;
     private AlfaCore.Services.WhatsAppEmbeddedRecoveryCandidate? _embeddedRecoveryCandidate;
+    private IReadOnlyList<AlfaCore.Models.WhatsAppEmbeddedPendingConnection> _embeddedPendingConnections = [];
+    private CancellationTokenSource? _embeddedSignupPollingCts;
+    private CancellationTokenSource? _embeddedSignupWatchdogCts;
+    private bool _whatsAppConnectionsLoaded;
 
     /// <summary>
     /// Números cuyo QR/código de pairing fue iniciado explícitamente en esta sesión de UI.
@@ -2147,13 +2284,10 @@
         new(ConversacionWhatsAppWebSessionModes.PhoneNumber, "Ingresar número de teléfono")
     ];
 
-    private bool IsDirectMode
-        => Uri.TryCreate(Nav.Uri, UriKind.Absolute, out var uri)
-           && System.Web.HttpUtility.ParseQueryString(uri.Query)["directo"] == "1";
-
     protected override Task OnInitializedAsync()
     {
         Nav.LocationChanged += HandleLocationChanged;
+        SessionSvc.SessionChanged += HandleSessionChanged;
         ApplyStartupQuery();
         if (_activePrimaryTab != "resumen")
             _expandedSettingsCategories.Add(_activePrimaryTab);
@@ -2162,6 +2296,18 @@
         Loading = true;
         _ = CompleteProtectedInitializationAsync();
         return Task.CompletedTask;
+    }
+
+    private void HandleSessionChanged()
+        => _ = InvokeAsync(RefreshEmbeddedSignupStateAfterSessionChangeAsync);
+
+    private async Task RefreshEmbeddedSignupStateAfterSessionChangeAsync()
+    {
+        if (!_navigationReady)
+            return;
+
+        await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task CompleteProtectedInitializationAsync()
@@ -2207,6 +2353,11 @@
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
         => _ = InvokeAsync(() =>
         {
+            // LocationChanged es global: al salir de esta página no puede republicar el
+            // header de Configuración sobre la pantalla de destino.
+            if (!IsConfiguracionRoute(args.Location))
+                return;
+
             if (!_navigationReady)
                 return;
 
@@ -2223,6 +2374,12 @@
             UpdatePageHeader();
             StateHasChanged();
         });
+
+    private bool IsConfiguracionRoute(string uri)
+        => Nav.ToBaseRelativePath(uri)
+            .Split('?', '#')[0]
+            .Trim('/')
+            .EndsWith("conversaciones/configuracion", StringComparison.OrdinalIgnoreCase);
 
     private void ApplyStartupQuery()
     {
@@ -2271,7 +2428,9 @@
     {
         _lifetimeCts.Cancel();
         Nav.LocationChanged -= HandleLocationChanged;
+        SessionSvc.SessionChanged -= HandleSessionChanged;
         StopPolling();
+        StopEmbeddedSignupPolling();
         PageHeader.Clear();
         _lifetimeCts.Dispose();
     }
@@ -2279,6 +2438,7 @@
     public async ValueTask DisposeAsync()
     {
         _embeddedSignupReference?.Dispose();
+        _embeddedSignupWatchdogCts?.Dispose();
         if (_embeddedSignupModule is not null)
             await _embeddedSignupModule.DisposeAsync();
     }
@@ -2319,6 +2479,11 @@
             _ => throw new ArgumentOutOfRangeException(nameof(choice), choice, "La opción de conexión de WhatsApp no es válida.")
         };
 
+    private static string BuildEmbeddedImportMessage(AlfaCore.Services.WhatsAppEmbeddedOperationalImportResult result)
+        => result.Count == 1
+            ? $"WhatsApp conectado. {result.Nombre} ya está listo para usar en AlfaCore."
+            : $"WhatsApp conectado. {result.Count} números ya están listos para usar en AlfaCore.";
+
     private Task ContinueWhatsAppOnboardingAsync()
     {
         var choice = _whatsAppConnectionChoiceSelection.Consume();
@@ -2326,13 +2491,70 @@
         return StartEmbeddedSignupAsync(choice, expectedMode);
     }
 
-    private bool IsEmbeddedSignupAllowedForActiveBase
-        => EmbeddedSignupOptions.Value.IsAllowedForBase(SessionSvc.GetActiveSession()?.BaseId ?? 0);
+    private Task ContinueEmbeddedSignupConfigurationAsync()
+        => RequestNavigationAsync(async () =>
+        {
+            _apiWorkspaceView = "integracion";
+            _apiNumeroDraft = null;
+            _addingApiNumero = false;
+            UpdatePageHeader();
+            await InvokeAsync(StateHasChanged);
+        });
+
+    // Elegibilidad administrativa para iniciar/nueva conexión (Enabled + AllowAllTenants o lista).
+    private bool CanStartEmbeddedSignupForActiveBase
+        => EmbeddedSignupOptions.Value.CanStartEmbeddedSignup(SessionSvc.GetActiveSession()?.BaseId ?? 0);
+
+    // ¿Esta base ya tiene assets/onboardings ES para ver/gestionar? Data-driven, no depende de la
+    // lista administrativa: una base con números ES sigue viéndolos aunque deshabilitemos "conectar otro".
+    private bool HasEmbeddedSignupPresenceForActiveBase
+        => _embeddedSignupStatus is not null
+           || _embeddedPendingConnections.Any()
+           || _embeddedRecoveryCandidate is not null;
+
+    private bool ShowEmbeddedSignupSection
+        => EmbeddedSignupOptions.Value.Enabled
+           && (CanStartEmbeddedSignupForActiveBase || HasEmbeddedSignupPresenceForActiveBase);
 
     private AlfaCore.Models.WhatsAppEmbeddedConnectionUiState EmbeddedSignupUiState
-        => AlfaCore.Models.WhatsAppEmbeddedConnectionUiStateResolver.Resolve(
+        => HasEmbeddedSignupInProgress
+            ? AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Processing
+            : AlfaCore.Models.WhatsAppEmbeddedConnectionUiStateResolver.Resolve(
+                WhatsAppApiNumeros.Count(),
+                _embeddedSignupStatus?.Status);
+
+    private AlfaCore.Models.WhatsAppEmbeddedSignupCtaState EmbeddedSignupCta
+    {
+        get
+        {
+            return ResolveEmbeddedSignupCta();
+        }
+    }
+
+    private AlfaCore.Models.WhatsAppEmbeddedSignupCtaState ResolveEmbeddedSignupCta()
+        => AlfaCore.Models.WhatsAppEmbeddedSignupCtaPolicy.Resolve(
+            CanStartEmbeddedSignupForActiveBase,
             WhatsAppApiNumeros.Count(),
-            _embeddedSignupStatus?.Status);
+            HasEmbeddedSignupInProgress
+                ? AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Authorized
+                : HasOperationalEmbeddedSignupNumber
+                ? AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Ready
+                : _embeddedSignupStatus?.Status);
+
+    private bool HasOperationalEmbeddedSignupNumber
+        => _embeddedRecoveryCandidate is { IsOperational: true };
+
+    private bool HasEmbeddedSignupInProgress
+        => _embeddedPendingConnections.Any(item => item.IsInProgress);
+
+    private string GetWhatsAppConnectionSummary()
+    {
+        var connected = WhatsAppApiNumeros.Count();
+        var activating = _embeddedPendingConnections.Count(item => item.IsInProgress);
+        return activating == 0
+            ? connected.ToString()
+            : $"{connected} conectado{(connected == 1 ? string.Empty : "s")} · {activating} en activación";
+    }
 
     private async Task CompleteEmbeddedOperationalImportAsync()
     {
@@ -2343,10 +2565,9 @@
         {
             await AuthorizationSvc.EnsureCanManageAsync();
             var result = await EmbeddedOperationalImport.CompleteAsync(status.IdOnboarding, _lifetimeCts.Token);
-            await LoadNumerosAsync();
             var activeBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
-            _embeddedSignupStatus = await EmbeddedSignup.GetLatestStatusForBaseAsync(activeBaseId, _lifetimeCts.Token);
-            _embeddedSignupMessage = $"WhatsApp conectado. {result.Nombre} ya está listo para usar en AlfaCore.";
+            await RefreshWhatsAppConnectionsAsync(activeBaseId);
+            _embeddedSignupMessage = BuildEmbeddedImportMessage(result);
         }
         catch (Exception ex)
         {
@@ -2357,6 +2578,33 @@
                 "No se pudo completar el alta operativa de WhatsApp.",
                 new { status.IdOnboarding, IdBase = SessionSvc.GetActiveSession()?.BaseId });
             _embeddedSignupMessage = "No se pudo completar el alta operativa. Revisá el incidente en Auditoría.";
+        }
+        finally
+        {
+            _embeddedSignupBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RetryEmbeddedSignupAsync(AlfaCore.Models.WhatsAppEmbeddedPendingConnection pending)
+    {
+        _embeddedSignupBusy = true;
+        try
+        {
+            await AuthorizationSvc.EnsureCanManageAsync();
+            await EmbeddedSignup.RetryAsync(new(pending.IdOnboarding, AppUserSession.GetCurrentUserName().Trim()), _lifetimeCts.Token);
+            _embeddedSignupMessage = "Reintentando la activación de WhatsApp.";
+            await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
+        }
+        catch (Exception ex)
+        {
+            await AppEvents.LogErrorAsync(
+                "ConversacionesConfiguracion",
+                "RetryEmbeddedSignup",
+                ex,
+                "No se pudo reintentar la activación de WhatsApp.",
+                new { pending.IdOnboarding, IdBase = SessionSvc.GetActiveSession()?.BaseId });
+            _embeddedSignupMessage = "No se pudo reintentar la activación. Revisá el incidente en Auditoría.";
         }
         finally
         {
@@ -2377,9 +2625,12 @@
             var result = await EmbeddedOperationalImport.RecoverAsync(candidate.IdOnboarding, _lifetimeCts.Token);
             await LoadNumerosAsync();
             _embeddedRecoveryCandidate = await EmbeddedOperationalImport.GetRecoveryCandidateAsync(_lifetimeCts.Token);
-            _selectedApiNumeroId = result.IdNumero;
-            _apiWorkspaceView = "numero";
-            _embeddedSignupMessage = $"WhatsApp conectado. {result.Nombre} ya está listo para usar en AlfaCore.";
+            if (result.IdNumero > 0)
+            {
+                _selectedApiNumeroId = result.IdNumero;
+                _apiWorkspaceView = "numero";
+            }
+            _embeddedSignupMessage = BuildEmbeddedImportMessage(result);
         }
         catch (Exception ex)
         {
@@ -2463,6 +2714,7 @@
             await _embeddedSignupModule.InvokeVoidAsync("launch", launchOptions, _embeddedSignupReference);
             _showWhatsAppOnboardingModeDialog = false;
             _whatsAppConnectionChoiceSelection.Clear();
+            StartEmbeddedSignupAuthorizationWatchdog();
         }
         catch (Exception ex)
         {
@@ -2477,9 +2729,48 @@
         }
     }
 
+    // El popup/SDK de Meta debería llamar de vuelta a CompleteEmbeddedSignupAuthorization,
+    // EmbeddedSignupCancelled o EmbeddedSignupFailed. Si ninguno llega (popup bloqueado, usuario lo
+    // cerró sin que el SDK lo detecte, error de JS silencioso), este watchdog corta el spinner
+    // infinito por sí solo. NO marca READY ni avanza el backend: sólo deja de mostrar "cargando" y
+    // cancela (no borra) el onboarding STARTED atascado para que Reintentar pueda crear uno nuevo.
+    private static readonly TimeSpan EmbeddedSignupAuthorizationTimeout = TimeSpan.FromSeconds(90);
+
+    private void StartEmbeddedSignupAuthorizationWatchdog()
+    {
+        _embeddedSignupWatchdogCts?.Cancel();
+        _embeddedSignupWatchdogCts?.Dispose();
+        _embeddedSignupWatchdogCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
+        _ = WatchEmbeddedSignupAuthorizationTimeoutAsync(_embeddedSignupWatchdogCts.Token);
+    }
+
+    private void CancelEmbeddedSignupAuthorizationWatchdog()
+    {
+        _embeddedSignupWatchdogCts?.Cancel();
+        _embeddedSignupWatchdogCts?.Dispose();
+        _embeddedSignupWatchdogCts = null;
+    }
+
+    private async Task WatchEmbeddedSignupAuthorizationTimeoutAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(EmbeddedSignupAuthorizationTimeout, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return; // Llegó un callback real (autorización, cancelación o error del SDK) antes del timeout.
+        }
+
+        _embeddedSignupBusy = false;
+        _embeddedSignupMessage = "No se completó la autorización con Meta a tiempo. Podés intentarlo nuevamente.";
+        await PersistEmbeddedSignupCancellationAsync();
+    }
+
     [JSInvokable]
     public async Task CompleteEmbeddedSignupAuthorization(string code, string state, string wabaId, string phoneNumberId)
     {
+        CancelEmbeddedSignupAuthorizationWatchdog();
         if (_embeddedSignupId is not Guid id || !string.Equals(state, _embeddedSignupState, StringComparison.Ordinal)) return;
         await AuthorizationSvc.EnsureCanManageAsync();
         var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
@@ -2487,7 +2778,10 @@
         try
         {
             await EmbeddedSignup.HandleAuthorizationCallbackAsync(new(id, idBase, state, code, usuario, wabaId, phoneNumberId));
-            _embeddedSignupMessage = "Autorización recibida correctamente. La configuración automática continuará en la próxima etapa.";
+            _embeddedSignupMessage = EmbeddedSignupOptions.Value.WorkerEnabled
+                ? "Autorización recibida correctamente. La configuración automática continuará en la próxima etapa."
+                : "Autorización recibida correctamente. La conexión quedó pendiente de completar de forma supervisada.";
+            await RefreshWhatsAppConnectionsAsync(idBase);
         }
         catch
         {
@@ -2505,6 +2799,7 @@
     [JSInvokable]
     public Task EmbeddedSignupCancelled()
     {
+        CancelEmbeddedSignupAuthorizationWatchdog();
         _embeddedSignupBusy = false;
         _showWhatsAppOnboardingModeDialog = false;
         _whatsAppConnectionChoiceSelection.Clear();
@@ -2526,6 +2821,7 @@
     [JSInvokable]
     public async Task EmbeddedSignupFailed(string errorCode)
     {
+        CancelEmbeddedSignupAuthorizationWatchdog();
         _embeddedSignupBusy = false;
         var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
         var safeCode = string.Equals(errorCode, "META_EMBEDDED_SIGNUP_EVENT_ERROR", StringComparison.Ordinal) ? errorCode : "META_EMBEDDED_SIGNUP_EVENT_ERROR";
@@ -2785,11 +3081,17 @@
             actions = listActions;
         }
 
-        actions = [.. BuildHistoryActions(), .. actions];
-
+        // El Context Toolbar (Title + Actions) se oculta cuando lo único que tendría para mostrar es
+        // "Recargar" solo -- pedido explícito: esa fila no aporta valor ahí y ocupa una línea entera
+        // de pantalla. Se mantiene en todos los casos con acciones reales (Guardar/Cancelar al editar
+        // -- incluida una Regla en Automatización, no solo WhatsApp --, Editar/Reconectar/Conectar
+        // WhatsApp/Cerrar sesión/Quitar de AlfaCore/Agregar por Phone Number ID). Se inspecciona el
+        // resultado ya calculado en vez de re-derivar la condición, para no perder ningún caso.
+        var hasRealContextActions = actions.Count > 1
+            || (actions.Count == 1 && actions[0].Key != "recargar");
         PageHeader.Set(new PageHeaderConfig
         {
-            Title = GetContextToolbarTitle(),
+            Title = hasRealContextActions ? GetContextToolbarTitle() : string.Empty,
             State = CurrentEditorMode switch
             {
                 SettingsEditorMode.Create => PageHeaderState.Creating,
@@ -2800,69 +3102,19 @@
             RecordToolbar = IsWhatsAppBusinessView,
             ShowHistoryNavigation = false,
             TopNavigationItems = BuildTopNavigationItems(),
-            OnBack = HeaderNavigation.CanGoBack
-                ? () => RequestNavigationAsync(() =>
-                {
-                    HeaderNavigation.GoBack(Nav);
-                    return Task.CompletedTask;
-                })
-                : null,
-            OnForward = HeaderNavigation.CanGoForward
-                ? () => RequestNavigationAsync(() =>
-                {
-                    HeaderNavigation.GoForward(Nav);
-                    return Task.CompletedTask;
-                })
-                : null,
-            Actions = actions
+            Actions = hasRealContextActions ? actions : []
         });
     }
 
-    private IReadOnlyList<PageHeaderAction> BuildHistoryActions()
-        =>
-        [
-            new()
-            {
-                Key = "historial-atras",
-                Label = "Atrás",
-                Icon = "bi-arrow-left",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Essential,
-                Disabled = !HeaderNavigation.CanGoBack,
-                OnClick = () => RequestNavigationAsync(() =>
-                {
-                    HeaderNavigation.GoBack(Nav);
-                    return Task.CompletedTask;
-                })
-            },
-            new()
-            {
-                Key = "historial-adelante",
-                Label = "Adelante",
-                Icon = "bi-arrow-right",
-                Style = PageHeaderActionStyle.Ghost,
-                Priority = PageHeaderActionPriority.Essential,
-                Disabled = !HeaderNavigation.CanGoForward,
-                OnClick = () => RequestNavigationAsync(() =>
-                {
-                    HeaderNavigation.GoForward(Nav);
-                    return Task.CompletedTask;
-                })
-            }
-        ];
-
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
+        // Contactos/Clientes se sacaron a propósito: son páginas con su propio menú superior
+        // (Contactos, y Clientes vía CuentasComercialesPage -- compartido con Proveedores), y entrar
+        // ahí desde acá pisaba este menú con el suyo, dejando la navegación inconsistente.
         var items = new List<PageHeaderTopNavItem>
         {
             BuildProtectedTopNavItem("conversaciones", "Conversaciones", "/conversaciones")
         };
-
-        if (!IsDirectMode)
-        {
-            items.Add(BuildProtectedTopNavItem("contactos", "Contactos", "/contactos"));
-            items.Add(BuildProtectedTopNavItem("clientes", "Clientes", "/clientes"));
-        }
 
         items.Add(BuildProtectedTopNavItem("plantillas", "Plantillas", "/conversaciones/plantillas"));
         items.Add(new() { Key = "configuracion", Label = "Configuración", Url = RouteContext.BuildRoute("/conversaciones/configuracion"), Active = true });
@@ -3330,27 +3582,7 @@
             _feedback ??= usuariosResult.Feedback;
         }
 
-        await LoadNumerosAsync();
-
-        var activeBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
-        if (EmbeddedSignupOptions.Value.IsAllowedForBase(activeBaseId))
-        {
-            _embeddedSignupStatus = await EmbeddedSignup.GetLatestStatusForBaseAsync(activeBaseId);
-            try
-            {
-                _embeddedRecoveryCandidate = await EmbeddedOperationalImport.GetRecoveryCandidateAsync();
-            }
-            catch (Exception ex)
-            {
-                await AppEvents.LogErrorAsync(
-                    "ConversacionesConfiguracion",
-                    "LoadEmbeddedWhatsAppRecovery",
-                    ex,
-                    "No se pudo verificar si existe un WhatsApp recuperable.",
-                    new { IdBase = activeBaseId });
-                _embeddedRecoveryCandidate = null;
-            }
-        }
+        await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
 
         var administradoresResult = await UiOps.RunAsync(
             () => ConfigSvc.GetConversacionAdministradoresAsync(),
@@ -3380,6 +3612,7 @@
         {
             _feedback ??= tecnicosResult.Feedback;
         }
+
 
         Loading = false;
         UpdatePageHeader();
@@ -3556,6 +3789,93 @@
         {
             _feedback ??= result.Feedback;
         }
+
+    }
+
+    private async Task LoadEmbeddedSignupStateAsync(int activeBaseId)
+    {
+        _embeddedSignupStatus = null;
+        _embeddedRecoveryCandidate = null;
+        _embeddedPendingConnections = [];
+
+        // Cargar para cualquier base con la feature encendida: los servicios devuelven vacío si la
+        // base no tiene footprint ES, y una base con assets ES debe verlos aunque no pueda iniciar
+        // nuevas conexiones (CanStartEmbeddedSignup=false).
+        if (!EmbeddedSignupOptions.Value.Enabled)
+        {
+            return;
+        }
+
+        _embeddedSignupStatus = await EmbeddedSignup.GetLatestStatusForBaseAsync(activeBaseId, _lifetimeCts.Token);
+        _embeddedPendingConnections = await EmbeddedOperationalImport.GetPendingConnectionsAsync(_lifetimeCts.Token);
+        try
+        {
+            _embeddedRecoveryCandidate = await EmbeddedOperationalImport.GetRecoveryCandidateAsync(_lifetimeCts.Token);
+        }
+        catch (Exception ex)
+        {
+            await AppEvents.LogErrorAsync(
+                "ConversacionesConfiguracion",
+                "LoadEmbeddedWhatsAppRecovery",
+                ex,
+                "No se pudo verificar si existe un WhatsApp recuperable.",
+                new { IdBase = activeBaseId });
+        }
+
+        SyncEmbeddedSignupPolling();
+    }
+
+    private async Task RefreshWhatsAppConnectionsAsync(int activeBaseId)
+    {
+        _whatsAppConnectionsLoaded = false;
+        try
+        {
+            await LoadNumerosAsync();
+            await LoadEmbeddedSignupStateAsync(activeBaseId);
+        }
+        finally
+        {
+            _whatsAppConnectionsLoaded = true;
+        }
+    }
+
+    private void SyncEmbeddedSignupPolling()
+    {
+        if (HasEmbeddedSignupInProgress)
+        {
+            if (_embeddedSignupPollingCts is null)
+            {
+                var cts = new CancellationTokenSource();
+                _embeddedSignupPollingCts = cts;
+                _ = PollEmbeddedSignupStateAsync(cts.Token);
+            }
+            return;
+        }
+
+        StopEmbeddedSignupPolling();
+    }
+
+    private async Task PollEmbeddedSignupStateAsync(CancellationToken token)
+    {
+        try
+        {
+            while (!token.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), token);
+                await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void StopEmbeddedSignupPolling()
+    {
+        _embeddedSignupPollingCts?.Cancel();
+        _embeddedSignupPollingCts?.Dispose();
+        _embeddedSignupPollingCts = null;
     }
 
     private static void ToggleNumeroUsuario(ConversacionWhatsAppNumeroDto numero, string usuario, bool isChecked)
@@ -5468,7 +5788,9 @@
     private string GetStatusLabel(bool ready) => ready ? "Listo" : "Pendiente";
 
     private string GetWhatsAppApiOverallStatus()
-        => _config.IsReadyForMetaSetup ? "Meta Cloud API configurada" : "Meta Cloud API pendiente de configuración";
+        => HasOperationalEmbeddedSignupNumber
+            ? "WhatsApp administrado por AlfaCore"
+            : _config.IsReadyForMetaSetup ? "Meta Cloud API configurada" : "Meta Cloud API pendiente de configuración";
 
     private string GetApiNumeroRowClass(ConversacionWhatsAppNumeroDto numero)
         => !IsApiIntegrationView && _selectedApiNumeroId == numero.IdNumero
@@ -5485,7 +5807,9 @@
         => IsApiIntegrationView ? "wa-api-integration-row is-selected" : "wa-api-integration-row";
 
     private string GetMetaConfigurationStatus()
-        => _config.IsReadyForMetaSetup ? "Configuración cargada" : "Configuración incompleta";
+        => HasOperationalEmbeddedSignupNumber
+            ? "Administrada por AlfaCore"
+            : _config.IsReadyForMetaSetup ? "Configuración cargada" : "Configuración incompleta";
 
     private string GetEmbeddedStatusClass()
         => EmbeddedSignupUiState switch

@@ -10,8 +10,8 @@ public static class WhatsAppEmbeddedSignupStateMachine
             [WhatsAppEmbeddedOnboardingStatus.Started] = [WhatsAppEmbeddedOnboardingStatus.Authorized, WhatsAppEmbeddedOnboardingStatus.Cancelled, WhatsAppEmbeddedOnboardingStatus.Expired, WhatsAppEmbeddedOnboardingStatus.FailedFinal],
             [WhatsAppEmbeddedOnboardingStatus.Authorized] = [WhatsAppEmbeddedOnboardingStatus.DiscoveringAssets, WhatsAppEmbeddedOnboardingStatus.ActionRequired, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, WhatsAppEmbeddedOnboardingStatus.FailedFinal],
             [WhatsAppEmbeddedOnboardingStatus.DiscoveringAssets] = [WhatsAppEmbeddedOnboardingStatus.ValidatingOwnership, WhatsAppEmbeddedOnboardingStatus.ActionRequired, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, WhatsAppEmbeddedOnboardingStatus.FailedFinal],
-            [WhatsAppEmbeddedOnboardingStatus.ValidatingOwnership] = [WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess, WhatsAppEmbeddedOnboardingStatus.ActionRequired, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, WhatsAppEmbeddedOnboardingStatus.FailedFinal],
-            [WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess] = [WhatsAppEmbeddedOnboardingStatus.SubscribingWabas, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, WhatsAppEmbeddedOnboardingStatus.FailedFinal],
+            [WhatsAppEmbeddedOnboardingStatus.ValidatingOwnership] = [WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess, WhatsAppEmbeddedOnboardingStatus.RegisteringPhones, WhatsAppEmbeddedOnboardingStatus.ActionRequired, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, WhatsAppEmbeddedOnboardingStatus.FailedFinal],
+            [WhatsAppEmbeddedOnboardingStatus.ConfiguringAccess] = [WhatsAppEmbeddedOnboardingStatus.SubscribingWabas, WhatsAppEmbeddedOnboardingStatus.CheckingCustomerPayment, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, WhatsAppEmbeddedOnboardingStatus.FailedFinal],
             [WhatsAppEmbeddedOnboardingStatus.SubscribingWabas] = [WhatsAppEmbeddedOnboardingStatus.CheckingCustomerPayment, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, WhatsAppEmbeddedOnboardingStatus.FailedFinal],
             [WhatsAppEmbeddedOnboardingStatus.CheckingCustomerPayment] = [WhatsAppEmbeddedOnboardingStatus.DiscoveringPhones, WhatsAppEmbeddedOnboardingStatus.ActionRequired, WhatsAppEmbeddedOnboardingStatus.FailedRetryable],
             [WhatsAppEmbeddedOnboardingStatus.DiscoveringPhones] = [WhatsAppEmbeddedOnboardingStatus.RegisteringPhones, WhatsAppEmbeddedOnboardingStatus.Importing, WhatsAppEmbeddedOnboardingStatus.ActionRequired, WhatsAppEmbeddedOnboardingStatus.FailedRetryable],
@@ -47,6 +47,16 @@ public static class WhatsAppEmbeddedSignupStateMachine
         var exponent = Math.Clamp(retryCount, 0, 20);
         var seconds = Math.Min(maxDelaySeconds, initialDelaySeconds * Math.Pow(2, exponent));
         return nowUtc.AddSeconds(seconds);
+    }
+
+    public static DateTime ScheduleRateLimitRetry(DateTime nowUtc, int retryCount, TimeSpan? retryAfter, TimeSpan? estimatedTimeToRegainAccess)
+    {
+        var providerDelay = estimatedTimeToRegainAccess ?? retryAfter;
+        if (providerDelay is { } delay && delay > TimeSpan.Zero)
+            return nowUtc.Add(delay);
+
+        var minutes = Math.Min(60, 15 * Math.Pow(2, Math.Clamp(retryCount, 0, 2)));
+        return nowUtc.AddMinutes(minutes);
     }
 }
 

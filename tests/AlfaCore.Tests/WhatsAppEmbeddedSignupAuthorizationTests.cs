@@ -104,7 +104,18 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
     private static Context Create(bool enabled = true, int[]? allowedBaseIds = null)
     {
         var store = new MemoryStore(); var meta = new FakeMetaClient(); var vault = new FakeVault(); var protector = new WhatsAppEmbeddedSignupStateProtector();
-        return new(new(store, protector, meta, vault, Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = enabled, AllowedBaseIds = allowedBaseIds ?? [106], OnboardingExpirationMinutes = 30 })), store, meta, vault, protector);
+        return new(new(store, protector, meta, vault, Options.Create(new WhatsAppEmbeddedSignupOptions
+        {
+            Enabled = enabled,
+            AllowedBaseIds = allowedBaseIds ?? [106],
+            AppId = "test-app-id",
+            BusinessPortfolioId = "test-business-id",
+            SystemUserId = "test-system-user-id",
+            EmbeddedSignupConfigId = "test-config-id",
+            GraphApiVersion = "v26.0",
+            GraphBaseUrl = "https://graph.facebook.com",
+            OnboardingExpirationMinutes = 30
+        })), store, meta, vault, protector);
     }
 
     private static Context CreateWithOnboarding(bool expired = false)
@@ -165,6 +176,6 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
         }
         public Task MarkAuthorizedAsync(Guid id, string reference, string business, CancellationToken ct = default) { if (FailAuthorization) throw new InvalidOperationException("store failure"); Item!.Status = WhatsAppEmbeddedOnboardingStatus.Authorized; Item.TokenReference = reference; return Task.CompletedTask; }
         public Task UpdateStatusAsync(Guid id, WhatsAppEmbeddedOnboardingStatus expected, WhatsAppEmbeddedOnboardingStatus next, string step, CancellationToken ct = default) { if (Item?.Status != expected) throw new InvalidOperationException(); Item.Status = next; Item.CurrentStep = step; return Task.CompletedTask; }
-        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incident, CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkRetryableFailureAsync(Guid id, string code, string summary, string incident, DateTime next, CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkFinalFailureAsync(Guid id, string code, string summary, string incident, CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkReadyAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException(); public Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string worker, DateTime now, DateTime expires, CancellationToken ct = default) => throw new NotSupportedException(); public Task ReleaseClaimAsync(Guid id, string worker, DateTime? next, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incident, CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkRetryableFailureAsync(Guid id, string code, string summary, string incident, DateTime next, CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkFinalFailureAsync(Guid id, string code, string summary, string incident, string? failedStep = null, CancellationToken ct = default) => throw new NotSupportedException(); public Task MarkReadyAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException(); public Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string worker, DateTime now, DateTime expires, CancellationToken ct = default) => throw new NotSupportedException(); public Task ReleaseClaimAsync(Guid id, string worker, DateTime? next, CancellationToken ct = default) => throw new NotSupportedException();
     }
 }

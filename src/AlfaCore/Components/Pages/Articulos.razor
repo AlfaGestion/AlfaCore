@@ -5,7 +5,10 @@
 @inject AlfaCore.Services.IComprasDashboardService DashboardService
 @inject AlfaCore.Services.FilterStateService FilterState
 @inject AlfaCore.Services.IRouteContextService RouteCtx
+@inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject IJSRuntime Js
+@inject NavigationManager Nav
+@implements IDisposable
 
 <PageTitle>Artículos | Dashboard de Compras</PageTitle>
 
@@ -220,6 +223,22 @@
     private ArticuloDetalleDto? _detalle;
     private string _filtroVar = "";
     private string _textoListado = "";
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildCompras(RouteCtx, Nav, "articulos")
+    });
 
     protected override async Task OnInitializedAsync()
     {

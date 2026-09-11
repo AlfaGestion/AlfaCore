@@ -24,10 +24,6 @@
     padding: .75rem 1rem;
 }
 
-.crm-smart-search {
-    min-width: min(640px, 100%);
-}
-
 .crm-smart-panel {
     grid-template-columns: repeat(4, minmax(170px, 1fr));
     gap: 1rem;
