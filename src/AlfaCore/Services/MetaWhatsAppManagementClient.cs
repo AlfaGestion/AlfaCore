@@ -344,7 +344,10 @@ public sealed class MetaWhatsAppManagementClient(
     /// ambos a string. Cualquier otra forma (ausente, no numérico, negativo, no entero) se reporta como
     /// no utilizable — nunca se inventa un id ni se asume éxito.
     /// </summary>
-    private static bool TryParseMetaId(JsonElement item, string propertyName, out string id, out JsonValueKind valueKind, out bool present)
+    // internal (no private) únicamente para poder testear directamente la precisión exacta del
+    // parseo de ids grandes (ver AlfaCore.Tests.MetaWhatsAppManagementClientTests); no forma parte
+    // de la API pública del cliente.
+    internal static bool TryParseMetaId(JsonElement item, string propertyName, out string id, out JsonValueKind valueKind, out bool present)
     {
         id = string.Empty;
         valueKind = JsonValueKind.Undefined;
