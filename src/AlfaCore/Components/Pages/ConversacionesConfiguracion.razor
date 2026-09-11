@@ -16,6 +16,7 @@
 @inject AlfaCore.Services.IWhatsAppEmbeddedSignupOrchestrator EmbeddedSignup
 @inject AlfaCore.Services.WhatsAppEmbeddedOperationalImportService EmbeddedOperationalImport
 @inject AlfaCore.Services.IWhatsAppEmbeddedSignupErrorLogger EmbeddedSignupErrorLogger
+@inject AlfaCore.Services.IWhatsAppCoexistenceSyncStore CoexistenceSyncStore
 @inject AlfaCore.Services.IAppEventService AppEvents
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
@@ -607,6 +608,19 @@
                         <h3>Identificación</h3>
                         <dl class="wa-business-definition"><div><dt>Nombre</dt><dd>@GetNumeroDisplayName(selectedNumero)</dd></div><div><dt>Conexión</dt><dd>AlfaCore</dd></div></dl>
                     </div>
+                    @if (GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.History) is not null
+                        || GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.ContactState) is not null)
+                    {
+                        <div class="wa-business-block">
+                            <h3>WhatsApp Business App</h3>
+                            <dl class="wa-business-definition">
+                                @if (GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.History) is { } coexistenceHistory)
+                                { <div><dt>Historial</dt><dd>@DescribeCoexistenceSyncStatus(coexistenceHistory)</dd></div> }
+                                @if (GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.ContactState) is { } coexistenceContacts)
+                                { <div><dt>Contactos</dt><dd>@DescribeCoexistenceSyncStatus(coexistenceContacts)</dd></div> }
+                            </dl>
+                        </div>
+                    }
                     <div class="wa-business-block">
                         <div class="wa-business-block__header"><h3>Usuarios con acceso</h3><AlfaButton Variant="AlfaButtonVariant.Secondary" Size="AlfaSize.Sm" OnClick="OpenApiAccessDialog">Asignar usuarios</AlfaButton></div>
                         @ApiUsers(selectedNumero)
@@ -2135,6 +2149,7 @@
     private IReadOnlyList<ConversacionClasificacionOptionDto> _clasificaciones = [];
     private IReadOnlyList<UsuarioSistemaDto> _usuariosSistema = [];
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> _numeros = [];
+    private IReadOnlyList<AlfaCore.Models.WhatsAppCoexistenceSyncDto> _coexistenceSyncStatuses = [];
     private Func<Task>? _pendingNavigation;
     private bool _discardChangesDialogOpen;
     private bool _navigationReady;
@@ -3896,6 +3911,28 @@
         return cond.Count == 0 ? string.Empty : " · " + string.Join(" · ", cond);
     }
 
+    private AlfaCore.Models.WhatsAppCoexistenceSyncDto? GetCoexistenceSyncStatus(string phoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType syncType)
+        => string.IsNullOrWhiteSpace(phoneNumberId)
+            ? null
+            : _coexistenceSyncStatuses.FirstOrDefault(x => x.SyncType == syncType && string.Equals(x.PhoneNumberId, phoneNumberId, StringComparison.Ordinal));
+
+    // Sin botón manual todavía: sólo lectura del estado que ya dispararon los sync automáticos al
+    // llegar a READY y que van completando los webhooks de history/smb_app_state_sync.
+    private static string DescribeCoexistenceSyncStatus(AlfaCore.Models.WhatsAppCoexistenceSyncDto sync)
+    {
+        var isHistory = sync.SyncType == AlfaCore.Models.WhatsAppCoexistenceSyncType.History;
+        return sync.Status switch
+        {
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Pending => "Pendiente",
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Requested or AlfaCore.Models.WhatsAppCoexistenceSyncStatus.InProgress => "Sincronizando",
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Completed => isHistory ? "Sincronizado" : "Sincronizados",
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Declined => "No compartido",
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Expired => "Vencido",
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Failed => "Error",
+            _ => "Pendiente"
+        };
+    }
+
     private async Task LoadNumerosAsync()
     {
         var result = await UiOps.RunAsync(
@@ -3943,6 +3980,21 @@
                 "LoadEmbeddedWhatsAppRecovery",
                 ex,
                 "No se pudo verificar si existe un WhatsApp recuperable.",
+                new { IdBase = activeBaseId });
+        }
+
+        try
+        {
+            _coexistenceSyncStatuses = await CoexistenceSyncStore.GetForBaseAsync(activeBaseId, _lifetimeCts.Token);
+        }
+        catch (Exception ex)
+        {
+            _coexistenceSyncStatuses = [];
+            await AppEvents.LogErrorAsync(
+                "ConversacionesConfiguracion",
+                "LoadCoexistenceSyncStatuses",
+                ex,
+                "No se pudo cargar el estado de sync de WhatsApp Business App Coexistence.",
                 new { IdBase = activeBaseId });
         }
 

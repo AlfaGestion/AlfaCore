@@ -30,6 +30,7 @@ public sealed class ConversacionesService(
     IWhatsAppWebhookTenantGuard whatsAppWebhookTenantGuard,
     IWhatsAppRuntimeCredentialResolver whatsAppRuntimeCredentialResolver,
     IMetaWhatsAppManagementClient metaWhatsAppManagementClient,
+    IWhatsAppCoexistenceSyncStore whatsAppCoexistenceSyncStore,
     IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
     IWebHostEnvironment environment,
     ILogger<ConversacionesService> logger) : IConversacionesService
@@ -3701,12 +3702,33 @@ public sealed class ConversacionesService(
                 {
                     // code=2593109: el negocio rechazó compartir historial desde la app. No es un fallo
                     // del webhook ni del número -- se deja constancia sanitizada (sin body) y se sigue.
-                    var declined = historyErrorCode == 2593109;
                     logger.LogInformation(
                         "History sync {Result} para phone_number_id {PhoneNumberId} (code {ErrorCode}).",
-                        declined ? "declinado por el negocio" : "con error",
+                        historyErrorCode == 2593109 ? "declinado por el negocio" : "con error",
                         historySync.PhoneNumberId,
                         historyErrorCode);
+                }
+
+                if (!string.IsNullOrWhiteSpace(historySync.PhoneNumberId))
+                {
+                    switch (ClassifyHistorySyncWebhook(historySync.ErrorCode, historySync.ContextStatus))
+                    {
+                        case WhatsAppHistorySyncWebhookOutcome.Declined:
+                            await whatsAppCoexistenceSyncStore.MarkDeclinedAsync(currentBaseId, historySync.PhoneNumberId,
+                                WhatsAppCoexistenceSyncType.History, historySync.ErrorCode!.Value.ToString(CultureInfo.InvariantCulture), token);
+                            break;
+                        case WhatsAppHistorySyncWebhookOutcome.Completed:
+                            await whatsAppCoexistenceSyncStore.MarkCompletedAsync(currentBaseId, historySync.PhoneNumberId, WhatsAppCoexistenceSyncType.History, DateTime.UtcNow, token);
+                            break;
+                        case WhatsAppHistorySyncWebhookOutcome.InProgress:
+                            await whatsAppCoexistenceSyncStore.MarkInProgressAsync(currentBaseId, historySync.PhoneNumberId, WhatsAppCoexistenceSyncType.History, token);
+                            break;
+                        // Error (código distinto de 2593109): no es un one-shot rechazado ni un chunk de
+                        // progreso -- se deja la fila como estaba (Requested/InProgress) para no inventar
+                        // un estado que Meta no confirmó; ya quedó logueado arriba.
+                        case WhatsAppHistorySyncWebhookOutcome.Error:
+                            break;
+                    }
                 }
             }
 
@@ -3757,6 +3779,13 @@ public sealed class ConversacionesService(
                     // conversación nueva sólo por un evento de contacto, nunca toca MA_CONTACTOS (CRM).
                     await TryFillConversationDisplayNameIfEmptyAsync(contact.PhoneNumber, name, token);
                 }
+
+                // "smb_app_state_sync inicial: recibido -> Completed". No distinguimos acá la primera
+                // entrega de las siguientes actualizaciones de contacto individuales: el store está
+                // guardado (sólo avanza desde un estado no terminal), así que la primera entrega que
+                // llegue gana y las siguientes son no-op -- nunca alteran el estado ya completado.
+                if (!string.IsNullOrWhiteSpace(stateSync.PhoneNumberId))
+                    await whatsAppCoexistenceSyncStore.MarkCompletedAsync(currentBaseId, stateSync.PhoneNumberId, WhatsAppCoexistenceSyncType.ContactState, DateTime.UtcNow, token);
             }
 
             await UpdateWebhookLogAsync(webhookLogId, true, string.Empty, token);
@@ -12307,6 +12336,26 @@ public sealed class ConversacionesService(
     // "messages"/"statuses", sin fijarse en cambios.field). Documentado por Meta, no observado en un
     // payload real todavía: si algún nombre de campo difiere en producción, estos parsers devuelven
     // listas vacías (fail-safe) en vez de lanzar -- nunca deben tumbar el resto del webhook.
+
+    /// <summary>
+    /// Decisión pura (sin I/O) de qué estado le corresponde a un webhook de "history" en
+    /// dbo.WhatsAppEmbeddedCoexistenceSync. Declined SIEMPRE gana sobre cualquier otra señal (code
+    /// 2593109 = el negocio rechazó compartir historial desde la app). Cualquier otro error de Meta no
+    /// se traduce a un estado nuevo (Error): no es un one-shot rechazado ni progreso real, así que la
+    /// fila se deja como estaba en vez de inventar un estado que Meta no confirmó. Sin error: "complete"
+    /// (contains, tolerante -- Meta no confirma el nombre exacto en documentación pública) en
+    /// history_context.status es Completed; cualquier otro chunk es InProgress.
+    /// </summary>
+    internal enum WhatsAppHistorySyncWebhookOutcome { InProgress, Completed, Declined, Error }
+
+    internal static WhatsAppHistorySyncWebhookOutcome ClassifyHistorySyncWebhook(int? errorCode, string? contextStatus)
+    {
+        if (errorCode is int code)
+            return code == 2593109 ? WhatsAppHistorySyncWebhookOutcome.Declined : WhatsAppHistorySyncWebhookOutcome.Error;
+        return !string.IsNullOrWhiteSpace(contextStatus) && contextStatus.Contains("complete", StringComparison.OrdinalIgnoreCase)
+            ? WhatsAppHistorySyncWebhookOutcome.Completed
+            : WhatsAppHistorySyncWebhookOutcome.InProgress;
+    }
 
     /// <summary>
     /// event="history": { id, event:"history", data:{ metadata:{phone_number_id}, history:[ {

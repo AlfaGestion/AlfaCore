@@ -331,5 +331,38 @@ public sealed class WhatsAppCoexistenceSyncParsingTests
         Assert.Contains("555", AlfaCore.Program.ExtractWhatsAppPhoneNumberIds(raw));
     }
 
+    [Fact]
+    public void ClassifyHistorySyncWebhook_FirstChunkWithoutStatus_IsInProgress()
+        => Assert.Equal(
+            ConversacionesService.WhatsAppHistorySyncWebhookOutcome.InProgress,
+            ConversacionesService.ClassifyHistorySyncWebhook(errorCode: null, contextStatus: null));
+
+    [Fact]
+    public void ClassifyHistorySyncWebhook_InProgressStatus_IsInProgress()
+        => Assert.Equal(
+            ConversacionesService.WhatsAppHistorySyncWebhookOutcome.InProgress,
+            ConversacionesService.ClassifyHistorySyncWebhook(errorCode: null, contextStatus: "in_progress"));
+
+    [Theory]
+    [InlineData("complete")]
+    [InlineData("COMPLETE")]
+    [InlineData("history_sync_complete")]
+    public void ClassifyHistorySyncWebhook_CompleteStatus_IsCompleted(string status)
+        => Assert.Equal(
+            ConversacionesService.WhatsAppHistorySyncWebhookOutcome.Completed,
+            ConversacionesService.ClassifyHistorySyncWebhook(errorCode: null, contextStatus: status));
+
+    [Fact]
+    public void ClassifyHistorySyncWebhook_Error2593109_IsDeclined_EvenWithCompleteStatus()
+        => Assert.Equal(
+            ConversacionesService.WhatsAppHistorySyncWebhookOutcome.Declined,
+            ConversacionesService.ClassifyHistorySyncWebhook(errorCode: 2593109, contextStatus: "complete"));
+
+    [Fact]
+    public void ClassifyHistorySyncWebhook_OtherErrorCode_IsErrorNotDeclined()
+        => Assert.Equal(
+            ConversacionesService.WhatsAppHistorySyncWebhookOutcome.Error,
+            ConversacionesService.ClassifyHistorySyncWebhook(errorCode: 1, contextStatus: null));
+
     private static JsonElement Parse(string json) => JsonDocument.Parse(json).RootElement;
 }
