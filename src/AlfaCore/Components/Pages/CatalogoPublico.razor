@@ -1040,22 +1040,33 @@
 
     private async Task RestoreViewModeAsync()
     {
+        string? value = null;
         try
         {
-            var value = await Js.InvokeAsync<string?>("localStorage.getItem", ViewModeStorageKey);
-            if (string.Equals(value, nameof(CatalogoViewMode.Cuadricula), StringComparison.OrdinalIgnoreCase))
-            {
-                _viewMode = CatalogoViewMode.Cuadricula;
-                return;
-            }
+            value = await Js.InvokeAsync<string?>("localStorage.getItem", ViewModeStorageKey);
+        }
+        catch
+        {
+            // Algunos navegadores/webviews de celular (in-app browsers de WhatsApp/Instagram,
+            // Safari en modo privado) bloquean localStorage y tiran excepción acá: eso no debe
+            // impedir que igual detectemos mobile más abajo para elegir el default correcto.
+        }
 
-            if (string.Equals(value, nameof(CatalogoViewMode.Lista), StringComparison.OrdinalIgnoreCase))
-            {
-                _viewMode = CatalogoViewMode.Lista;
-                return;
-            }
+        if (string.Equals(value, nameof(CatalogoViewMode.Cuadricula), StringComparison.OrdinalIgnoreCase))
+        {
+            _viewMode = CatalogoViewMode.Cuadricula;
+            return;
+        }
 
-            // Sin preferencia guardada todavia (primera visita): en mobile arrancamos en Cuadricula.
+        if (string.Equals(value, nameof(CatalogoViewMode.Lista), StringComparison.OrdinalIgnoreCase))
+        {
+            _viewMode = CatalogoViewMode.Lista;
+            return;
+        }
+
+        // Sin preferencia guardada todavia (primera visita): en mobile arrancamos en Cuadricula.
+        try
+        {
             var esMobile = await Js.InvokeAsync<bool>("alfaCoreViewport.isMobile");
             _viewMode = esMobile ? CatalogoViewMode.Cuadricula : CatalogoViewMode.Lista;
         }

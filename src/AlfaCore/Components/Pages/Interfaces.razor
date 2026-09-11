@@ -291,6 +291,14 @@
                                             <i class="bi bi-arrow-repeat"></i> Reintentar
                                         </button>
                                     }
+                                    @if (!string.IsNullOrWhiteSpace(queueAction.LectorError))
+                                    {
+                                        <button type="button"
+                                                class="btn btn--ghost btn--sm"
+                                                @onclick="() => VerErrorCola(queueAction)">
+                                            <i class="bi bi-exclamation-triangle"></i> Ver error
+                                        </button>
+                                    }
                                 }
                                 <button type="button"
                                         class="btn btn--ghost btn--sm"
@@ -485,6 +493,16 @@
                                                             <span>Reintentar</span>
                                                         </button>
                                                     }
+                                                    @if (!string.IsNullOrWhiteSpace(queueAction.LectorError))
+                                                    {
+                                                        <button type="button"
+                                                                class="btn btn--ghost btn--sm"
+                                                                title="Ver detalle del error"
+                                                                @onclick="() => VerErrorCola(queueAction)">
+                                                            <i class="bi bi-exclamation-triangle"></i>
+                                                            <span>Ver error</span>
+                                                        </button>
+                                                    }
                                                 }
                                                 <button type="button"
                                                         class="btn btn--ghost btn--sm interfaces-table__edit"
@@ -632,9 +650,10 @@
                                         }
                                         @if (!string.IsNullOrWhiteSpace(qi.LectorError))
                                         {
-                                            <span class="context-card__label" title="@qi.LectorError">
+                                            <button type="button" class="interfaces-error-btn" title="Ver detalle del error"
+                                                    @onclick="() => VerErrorCola(qi)">
                                                 <i class="bi bi-exclamation-triangle"></i> Error
-                                            </span>
+                                            </button>
                                         }
                                     </td>
                                 </tr>
@@ -762,6 +781,55 @@
         </div>
     }
 
+    @if (_showQueueErrorModal && _queueErrorItem is not null)
+    {
+        <div class="modal-overlay" @onclick="CerrarQueueErrorModal">
+            <section class="modal-card interfaces-detail-modal" role="dialog" aria-modal="true" aria-labelledby="interfaces-queue-error-title" @onclick:stopPropagation="true">
+                <div class="panel-card__header">
+                    <div>
+                        <h3 id="interfaces-queue-error-title" class="panel-card__title">
+                            <i class="bi bi-exclamation-triangle text-danger"></i> Detalle del error
+                        </h3>
+                        <p class="panel-card__subtitle">
+                            @(string.IsNullOrWhiteSpace(_queueErrorItem.ArchivoNombreOriginal) ? "Documento" : _queueErrorItem.ArchivoNombreOriginal)
+                            @(_queueErrorItem.IdComprobanteRecibido.HasValue ? $" · Doc. #{_queueErrorItem.IdComprobanteRecibido}" : "")
+                        </p>
+                    </div>
+                    <button type="button" class="btn btn--ghost btn--sm" @onclick="CerrarQueueErrorModal" aria-label="Cerrar">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+
+                <section class="interfaces-invoice__grid">
+                    <div class="context-card"><span class="context-card__label">Estado</span><strong>@GetQueueProgressLabel(_queueErrorItem)</strong></div>
+                    <div class="context-card"><span class="context-card__label">Intentos</span><strong>@_queueErrorItem.Intentos</strong></div>
+                    <div class="context-card"><span class="context-card__label">Encolado</span><strong>@FormatQueueDate(_queueErrorItem.FechaHoraProceso)</strong></div>
+                    <div class="context-card"><span class="context-card__label">Finalizado</span><strong>@(_queueErrorItem.FechaHoraFin?.ToString("dd/MM/yyyy HH:mm") ?? "—")</strong></div>
+                </section>
+
+                <div class="context-card">
+                    <span class="context-card__label">Mensaje del lector automático</span>
+                    <pre class="interfaces-error-message">@GetQueueDetail(_queueErrorItem)</pre>
+                </div>
+
+                <div class="actions">
+                    @if (CanRetryQueueJob(_queueErrorItem))
+                    {
+                        <button type="button" class="btn btn--primary" @onclick="() => ReintentarColaDesdeErrorAsync(_queueErrorItem.Id)">
+                            <i class="bi bi-arrow-repeat"></i> Reintentar
+                        </button>
+                    }
+                    <button type="button" class="btn btn--ghost" @onclick="CopiarErrorColaAsync">
+                        <i class="bi bi-clipboard"></i> Copiar
+                    </button>
+                    <button type="button" class="btn btn--ghost" @onclick="CerrarQueueErrorModal">
+                        Cerrar
+                    </button>
+                </div>
+            </section>
+        </div>
+    }
+
     @if (_showBulkDeleteConfirm)
     {
         <div class="modal-overlay" @onclick="CloseBulkDeleteConfirm">
@@ -843,6 +911,8 @@
     private bool _showMobileBulkActions;
     private bool _showBulkDeleteConfirm;
     private bool _showCancelQueueConfirm;
+    private bool _showQueueErrorModal;
+    private InterfacesCompraIaResultadoDto? _queueErrorItem;
     private long? _openRowActionsId;
     private int _bulkDeleteConfirmCount;
     private int _cancelQueueConfirmId;
@@ -1125,6 +1195,34 @@
         _detalleLecturaDocumentoId = null;
     }
 
+    private void VerErrorCola(InterfacesCompraIaResultadoDto item)
+    {
+        _queueErrorItem = item;
+        _showQueueErrorModal = true;
+    }
+
+    private void CerrarQueueErrorModal()
+    {
+        _showQueueErrorModal = false;
+        _queueErrorItem = null;
+    }
+
+    private async Task CopiarErrorColaAsync()
+    {
+        var detalle = _queueErrorItem is null ? string.Empty : GetQueueDetail(_queueErrorItem);
+        if (string.IsNullOrWhiteSpace(detalle))
+            return;
+
+        try
+        {
+            await Js.InvokeVoidAsync("navigator.clipboard.writeText", detalle);
+            SetFeedback(AppUiMessage.Success("Copiado", "El detalle del error se copió al portapapeles."));
+        }
+        catch
+        {
+        }
+    }
+
     [Inject] private NavigationManager Navigation { get; set; } = default!;
 
     private async Task CambiarPaginaAsync(int page)
@@ -1325,6 +1423,12 @@
 
         SetFeedback(AppUiMessage.Success("Documento reencolado", "La lectura automática volvió a quedar pendiente para procesarse."));
         await CargarColaAsync();
+    }
+
+    private async Task ReintentarColaDesdeErrorAsync(int id)
+    {
+        CerrarQueueErrorModal();
+        await ReintentarColaAsync(id);
     }
 
     private async Task ProcesarDocumentoAhoraAsync(long idComprobanteRecibido)

@@ -15770,6 +15770,40 @@ html[data-theme="light"] .interfaces-detail-modal {
     border-color: color-mix(in srgb, #ef4444 30%, transparent);
 }
 
+.interfaces-error-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .3rem;
+    font-size: .72rem;
+    font-weight: 700;
+    padding: .18rem .52rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, #ef4444 12%, transparent);
+    color: #b91c1c;
+    border: 1px solid color-mix(in srgb, #ef4444 30%, transparent);
+    cursor: pointer;
+}
+
+.interfaces-error-btn:hover {
+    background: color-mix(in srgb, #ef4444 20%, transparent);
+}
+
+.interfaces-error-message {
+    margin: 0;
+    padding: .75rem .9rem;
+    border-radius: 12px;
+    background: color-mix(in srgb, #ef4444 8%, transparent);
+    border: 1px solid color-mix(in srgb, #ef4444 25%, transparent);
+    color: var(--color-text);
+    font-family: inherit;
+    font-size: .86rem;
+    line-height: 1.45;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 40vh;
+    overflow-y: auto;
+}
+
 .interfaces-table__actions--inline {
     display: flex;
     gap: .25rem;
@@ -27108,11 +27142,16 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     max-width: 100% !important;
     overflow-x: auto !important;
     overflow-y: hidden !important;
-    scrollbar-width: none !important;
+    scrollbar-width: thin !important;
 }
 
 .main-page-header.main-page-header--no-search .main-page-header__view::-webkit-scrollbar {
-    display: none !important;
+    height: 4px !important;
+}
+
+.main-page-header.main-page-header--no-search .main-page-header__view::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, .45) !important;
+    border-radius: 4px !important;
 }
 
 .main-page-header.main-page-header--no-search .main-page-header__actions {
