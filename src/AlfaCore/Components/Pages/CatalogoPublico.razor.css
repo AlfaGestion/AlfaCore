@@ -565,6 +565,12 @@
     .catalogo-publico-table tbody {
         display: block;
         width: 100%;
+        /* app.css pone min-width:max-content en .data-table (para el scroll horizontal de las
+           tablas normales de escritorio) -- acá el mobile la convierte en tarjetas con flex-wrap,
+           así que ese min-width le gana al width:100% y la tabla queda más ancha que la pantalla,
+           empujando el precio (que cae en su propia línea, más abajo) fuera del viewport sin
+           scrollbar visible para volver a verlo. */
+        min-width: 0;
     }
 
     .catalogo-publico-table tr {
