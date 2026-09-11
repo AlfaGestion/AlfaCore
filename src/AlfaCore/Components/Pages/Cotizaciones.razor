@@ -641,7 +641,7 @@
                     <input placeholder="Ej: mensaje corto agradeciendo el interés" value="@_iaMensajePrompt"
                            @oninput="args => _iaMensajePrompt = args.Value?.ToString() ?? string.Empty" @onkeydown="OnIaMensajeKeyDownAsync" />
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-magic" Loading="@_iaMensajeCargando"
-                                Disabled="@string.IsNullOrWhiteSpace(_iaMensajePrompt)" OnClick="_ => GenerarMensajeIaAsync()">Generar</AlfaButton>
+                                OnClick="_ => GenerarMensajeIaAsync()">Generar</AlfaButton>
                 </div>
                 <textarea class="cotiz-compartir-mensaje" rows="5" placeholder="Mensaje para el cliente..." value="@_compartirMensaje"
                           @oninput="args => _compartirMensaje = args.Value?.ToString() ?? string.Empty"></textarea>
@@ -1385,7 +1385,7 @@
 
         _showCompartirDialog = true;
         _compartirUrl = string.Empty;
-        _compartirEmail = string.Empty;
+        _compartirEmail = _detail.ContactoEmail ?? string.Empty;
         _compartirMensaje = string.Empty;
         _iaMensajePrompt = string.Empty;
         StateHasChanged();
@@ -1405,12 +1405,15 @@
 
     private async Task GenerarMensajeIaAsync()
     {
-        if (string.IsNullOrWhiteSpace(_iaMensajePrompt))
-            return;
+        // Sin instrucciones puntuales, igual propone algo razonable con el contexto que ya tiene
+        // la cotización (código, cliente, total) -- no hace falta escribir nada para usarlo.
+        var pedido = string.IsNullOrWhiteSpace(_iaMensajePrompt)
+            ? $"Mensaje corto genérico para acompañar el envío de la cotización {_detail?.CodigoVisible} (sin instrucciones puntuales del vendedor)."
+            : _iaMensajePrompt;
 
         _iaMensajeCargando = true;
         StateHasChanged();
-        var result = await UiOps.RunAsync(() => CotizSvc.GenerateEmailMessageAsync(_iaMensajePrompt, _detail?.EmpresaProspecto), "No se pudo generar el mensaje con el asistente de IA.");
+        var result = await UiOps.RunAsync(() => CotizSvc.GenerateEmailMessageAsync(pedido, _detail?.EmpresaProspecto), "No se pudo generar el mensaje con el asistente de IA.");
         _iaMensajeCargando = false;
 
         if (result.Success && !string.IsNullOrWhiteSpace(result.Value))

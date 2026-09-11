@@ -50,7 +50,7 @@
             <input placeholder="Ej: mensaje corto y cordial, mencionando que quedamos a disposición por dudas" value="@_iaTextoPrompt"
                    @oninput="args => _iaTextoPrompt = args.Value?.ToString() ?? string.Empty" @onkeydown="OnIaTextoKeyDownAsync" />
             <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-magic" Loading="@_iaTextoCargando"
-                        Disabled="@string.IsNullOrWhiteSpace(_iaTextoPrompt)" OnClick="_ => GenerarTextoIaAsync()">Generar</AlfaButton>
+                        OnClick="_ => GenerarTextoIaAsync()">Generar</AlfaButton>
         </div>
         <textarea class="cotizcfg-textarea" rows="6" placeholder="Ej: Te compartimos la cotización solicitada. Ante cualquier consulta, quedamos a disposición."
                   value="@_emailTexto" @oninput="args => _emailTexto = args.Value?.ToString() ?? string.Empty"></textarea>
@@ -189,11 +189,14 @@
 
     private async Task GenerarTextoIaAsync()
     {
-        if (string.IsNullOrWhiteSpace(_iaTextoPrompt))
-            return;
+        // Sin instrucciones puntuales, igual propone un texto genérico razonable -- no hace falta
+        // escribir nada para usarlo.
+        var pedido = string.IsNullOrWhiteSpace(_iaTextoPrompt)
+            ? "Mensaje corto genérico para acompañar el envío de cualquier cotización (sin instrucciones puntuales)."
+            : _iaTextoPrompt;
 
         _iaTextoCargando = true;
-        var result = await UiOps.RunAsync(() => CotizSvc.GenerateEmailMessageAsync(_iaTextoPrompt), "No se pudo generar el mensaje con el asistente de IA.");
+        var result = await UiOps.RunAsync(() => CotizSvc.GenerateEmailMessageAsync(pedido), "No se pudo generar el mensaje con el asistente de IA.");
         _iaTextoCargando = false;
 
         if (result.Success && !string.IsNullOrWhiteSpace(result.Value))
