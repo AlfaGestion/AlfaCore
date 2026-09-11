@@ -18,7 +18,11 @@ public interface IWhatsAppEmbeddedSignupStore
     Task MarkRetryableFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default);
     Task ScheduleRetryAsync(Guid idOnboarding, WhatsAppEmbeddedOnboardingStatus resumeStatus, string resumeStep, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default)
         => MarkRetryableFailureAsync(idOnboarding, errorCode, summary, incidentId, nextAttemptUtc, ct);
-    Task MarkFinalFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, CancellationToken ct = default);
+    /// <summary>
+    /// <paramref name="failedStep"/> es el último paso real alcanzado (p. ej. "SUBSCRIBING_WABAS") para
+    /// que la UI pueda mostrarlo. Si se omite, se conserva el comportamiento histórico (PasoActual="FAILED").
+    /// </summary>
+    Task MarkFinalFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, string? failedStep = null, CancellationToken ct = default);
     Task MarkReadyAsync(Guid idOnboarding, CancellationToken ct = default);
     Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string workerId, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct = default);
     Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextForBasesAsync(string workerId, IReadOnlyCollection<int> allowedBaseIds, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct = default)
@@ -101,7 +105,9 @@ public sealed class MetaWhatsAppManagementException(
     int? httpStatusCode = null,
     TimeSpan? retryAfter = null,
     bool hasBusinessUseCaseUsage = false,
-    TimeSpan? estimatedTimeToRegainAccess = null) : Exception(message, innerException)
+    TimeSpan? estimatedTimeToRegainAccess = null,
+    string? errorType = null,
+    string? metaErrorMessage = null) : Exception(message, innerException)
 {
     public string ErrorCode { get; } = errorCode;
     public bool IsTransient { get; } = isTransient;
@@ -111,6 +117,10 @@ public sealed class MetaWhatsAppManagementException(
     public TimeSpan? RetryAfter { get; } = retryAfter;
     public bool HasBusinessUseCaseUsage { get; } = hasBusinessUseCaseUsage;
     public TimeSpan? EstimatedTimeToRegainAccess { get; } = estimatedTimeToRegainAccess;
+    /// <summary>error.type de Graph (p. ej. "OAuthException"). Null si no vino un error HTTP real de Meta.</summary>
+    public string? ErrorType { get; } = errorType;
+    /// <summary>error.message de Graph, sanitizado (sin caracteres de control, truncado a 300). Nunca un token.</summary>
+    public string? MetaErrorMessage { get; } = metaErrorMessage;
     public bool IsRateLimit => ErrorCode is "80008";
 }
 

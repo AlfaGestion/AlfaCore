@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Services;
@@ -73,6 +74,167 @@ public sealed class MetaWhatsAppManagementClientTests
         correctOverride = false;
         await client.EnsureWabaSubscriptionAsync("9101", 1, token);
         Assert.Equal(2, posts);
+    }
+
+    // --- parser tolerante de "id" en subscribed_apps (Base4264 / META_INVALID_ASSET) --------------
+
+    private static HttpResponseMessage CallbackOrSubscribedApps(HttpRequestMessage request, string subscribedAppsDataJson, int posts)
+    {
+        if (request.RequestUri!.Host == "callback.test")
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            { Content = new StringContent(request.RequestUri.Query.Split("hub.challenge=", StringSplitOptions.None)[1].Split('&')[0]) };
+        if (request.Method == HttpMethod.Post)
+            return Json("{\"success\":true}");
+        return Json($"{{\"data\":[{subscribedAppsDataJson}]}}");
+    }
+
+    [Fact]
+    public async Task SubscribedApps_IdAsJsonString_IsAccepted()
+    {
+        var client = Create(new RoutingHandler(r => CallbackOrSubscribedApps(r,
+            "{\"id\":\"999\",\"override_callback_uri\":\"https://callback.test/webhook/token\"}", 0)));
+
+        await client.EnsureWabaSubscriptionAsync("9101", 1, new("ref"));   // no exception => ya suscripta y confirmada
+    }
+
+    [Fact]
+    public async Task SubscribedApps_IdAsJsonNumber_IsAccepted()
+    {
+        // Meta puede devolver "id" como número JSON en vez de string; debe normalizarse igual.
+        var client = Create(new RoutingHandler(r => CallbackOrSubscribedApps(r,
+            "{\"id\":999,\"override_callback_uri\":\"https://callback.test/webhook/token\"}", 0)));
+
+        await client.EnsureWabaSubscriptionAsync("9101", 1, new("ref"));
+    }
+
+    [Fact]
+    public void TryParseMetaId_LargeJsonNumber_ProducesExactDigitString_NoDoubleRoundTrip()
+    {
+        // Prueba directa y unitaria (no end-to-end) de la precisión exacta pedida: JsonElement
+        // .TryGetInt64 parsea el long directamente del texto UTF8 del token, sin pasar por
+        // double/float, así que un WABA id real de 16 dígitos sale exactamente igual, sin notación
+        // científica ni redondeo.
+        using var document = JsonDocument.Parse("""{"id":2597305014055622,"override_callback_uri":"https://callback.test/webhook/token"}""");
+
+        var ok = AlfaCore.Services.MetaWhatsAppManagementClient.TryParseMetaId(document.RootElement, "id", out var id, out var kind, out var present);
+
+        Assert.True(ok);
+        Assert.True(present);
+        Assert.Equal(JsonValueKind.Number, kind);
+        Assert.Equal("2597305014055622", id);
+    }
+
+    [Fact]
+    public async Task SubscribedApps_IdAsLargeJsonNumber_RoundTripsExactly_NoDoublePrecisionLoss()
+    {
+        // WABA real del incidente Base4264: 2597305014055622. Un long -> double -> string hubiera
+        // podido perder precisión o pasar a notación científica; TryParseMetaId debe usar
+        // JsonElement.TryGetInt64 (exacto) y no GetDouble/GetSingle.
+        const string realWabaAppId = "2597305014055622";
+        var posts = 0;
+        var handler = new RoutingHandler(request =>
+        {
+            if (request.RequestUri!.Host == "callback.test")
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new StringContent(request.RequestUri.Query.Split("hub.challenge=", StringSplitOptions.None)[1].Split('&')[0]) };
+            if (request.Method == HttpMethod.Post) { posts++; return Json("{\"success\":true}"); }
+            // "id" como JSON number sin comillas, exactamente el valor real del incidente.
+            return Json($"{{\"data\":[{{\"id\":{realWabaAppId},\"override_callback_uri\":\"https://callback.test/webhook/token\"}}]}}");
+        });
+        var client = new MetaWhatsAppManagementClient(new SingleClientFactory(new HttpClient(handler)), new FakeVault(), new FakePinVault(), new FakeRoutingProvider(),
+            Options.Create(new WhatsAppEmbeddedSignupOptions { AppId = realWabaAppId, SystemUserId = "998", GraphApiVersion = "v26.0", GraphBaseUrl = "https://graph.facebook.com" }));
+
+        await client.EnsureWabaSubscriptionAsync("2597305014055622", 4264, new("ref"));
+
+        // Si el id se hubiera parseado con pérdida de precisión (double) o notación distinta, la
+        // comparación de strings habría fallado y el código habría re-suscripto innecesariamente.
+        Assert.Equal(0, posts);
+    }
+
+    [Fact]
+    public async Task SubscribedApps_MissingId_FailsControlled_WithSanitizedDiagnostic()
+    {
+        var diagnosticsDir = Path.Combine(AppContext.BaseDirectory, "diagnostics");
+        var diagnosticsFile = Path.Combine(diagnosticsDir, $"meta-asset-parse-failures-{DateTime.UtcNow:yyyyMMdd}.jsonl");
+        var before = File.Exists(diagnosticsFile) ? File.ReadAllText(diagnosticsFile) : string.Empty;
+
+        var client = Create(new RoutingHandler(r => CallbackOrSubscribedApps(r,
+            "{\"override_callback_uri\":\"https://callback.test/webhook/token\"}", 0)));   // sin "id"
+
+        var error = await Assert.ThrowsAsync<MetaWhatsAppManagementException>(
+            () => client.EnsureWabaSubscriptionAsync("9101", 1, new("ref")));
+
+        Assert.Equal("META_SUBSCRIBED_APPS_UNPARSEABLE", error.ErrorCode);
+        Assert.False(error.IsTransient);
+        Assert.False(error.RequiresReauthorization);
+
+        var after = File.ReadAllText(diagnosticsFile);
+        var appended = after[before.Length..];
+        Assert.Contains("\"Endpoint\":\"subscribed_apps\"", appended, StringComparison.Ordinal);
+        Assert.Contains("\"IdPresent\":false", appended, StringComparison.Ordinal);
+        Assert.Contains("\"IdValueKind\":\"Undefined\"", appended, StringComparison.Ordinal);
+        Assert.DoesNotContain("access_token", appended, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ref", appended, StringComparison.Ordinal);   // el token del vault nunca se loguea
+    }
+
+    [Fact]
+    public async Task SubscribedApps_AlphanumericId_FailsControlled()
+    {
+        var client = Create(new RoutingHandler(r => CallbackOrSubscribedApps(r,
+            "{\"id\":\"abc123\",\"override_callback_uri\":\"https://callback.test/webhook/token\"}", 0)));
+
+        var error = await Assert.ThrowsAsync<MetaWhatsAppManagementException>(
+            () => client.EnsureWabaSubscriptionAsync("9101", 1, new("ref")));
+
+        Assert.Equal("META_SUBSCRIBED_APPS_UNPARSEABLE", error.ErrorCode);
+    }
+
+    [Fact]
+    public async Task SubscribedApps_OneMalformedAmongMultiple_IsIgnored_ValidItemDeterminesOutcome()
+    {
+        // El primer ítem no tiene id utilizable; el segundo SÍ es nuestra app, ya suscripta y con el
+        // callback correcto. Debe ignorar el primero y resolver por el segundo sin lanzar.
+        var handler = new RoutingHandler(r => CallbackOrSubscribedApps(r,
+            "{\"note\":\"sin id\"},{\"id\":\"999\",\"override_callback_uri\":\"https://callback.test/webhook/token\"}", 0));
+        var client = Create(handler);
+
+        await client.EnsureWabaSubscriptionAsync("9101", 1, new("ref"));   // no exception
+    }
+
+    [Fact]
+    public async Task SubscribedApps_AllItemsMalformed_FailsControlled()
+    {
+        var client = Create(new RoutingHandler(r => CallbackOrSubscribedApps(r,
+            "{\"id\":\"abc\"},{\"note\":\"tampoco\"}", 0)));
+
+        var error = await Assert.ThrowsAsync<MetaWhatsAppManagementException>(
+            () => client.EnsureWabaSubscriptionAsync("9101", 1, new("ref")));
+
+        Assert.Equal("META_SUBSCRIBED_APPS_UNPARSEABLE", error.ErrorCode);
+    }
+
+    [Fact]
+    public async Task SubscribedApps_EmptyArray_IsNotAnError_MeansNotSubscribedYet()
+    {
+        // Un array vacío es un estado legítimo ("todavía nadie suscribió esta WABA"), distinto de
+        // "vino con ítems pero ninguno se pudo interpretar". No debe fallar: debe suscribir y, tras
+        // el POST, la verificación posterior ya encuentra la suscripción propia con el callback OK.
+        var posts = 0;
+        var handler = new RoutingHandler(request =>
+        {
+            if (request.RequestUri!.Host == "callback.test")
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new StringContent(request.RequestUri.Query.Split("hub.challenge=", StringSplitOptions.None)[1].Split('&')[0]) };
+            if (request.Method == HttpMethod.Post) { posts++; return Json("{\"success\":true}"); }
+            return posts == 0
+                ? Json("{\"data\":[]}")
+                : Json("{\"data\":[{\"id\":\"999\",\"override_callback_uri\":\"https://callback.test/webhook/token\"}]}");
+        });
+        var client = Create(handler);
+
+        await client.EnsureWabaSubscriptionAsync("9101", 1, new("ref"));
+
+        Assert.True(posts >= 1);
     }
 
     [Fact]

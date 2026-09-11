@@ -34,7 +34,8 @@ public enum WhatsAppEmbeddedConnectionUiState
     Processing,
     Importing,
     ActionRequired,
-    Connected
+    Connected,
+    Failed
 }
 
 public static class WhatsAppEmbeddedConnectionUiStateResolver
@@ -63,6 +64,10 @@ public static class WhatsAppEmbeddedConnectionUiStateResolver
                 => WhatsAppEmbeddedConnectionUiState.Importing,
             WhatsAppEmbeddedOnboardingStatus.ActionRequired
                 => WhatsAppEmbeddedConnectionUiState.ActionRequired,
+            // El último onboarding terminó en FAILED_FINAL: no debe desaparecer en silencio (antes caía
+            // acá mismo y quedaba indistinguible de "nunca se intentó nada").
+            WhatsAppEmbeddedOnboardingStatus.FailedFinal
+                => WhatsAppEmbeddedConnectionUiState.Failed,
             _ => WhatsAppEmbeddedConnectionUiState.Start
         };
     }
@@ -220,6 +225,8 @@ public sealed class WhatsAppEmbeddedStatusView
     public string Title { get; init; } = string.Empty;
     public string Message { get; init; } = string.Empty;
     public string IncidentId { get; init; } = string.Empty;
+    /// <summary>Último paso persistido (p. ej. "SUBSCRIBING_WABAS"). Útil sobre todo cuando Status es FailedFinal.</summary>
+    public string Step { get; init; } = string.Empty;
     public IReadOnlyList<WhatsAppEmbeddedProgressItem> Progress { get; init; } = [];
 }
 

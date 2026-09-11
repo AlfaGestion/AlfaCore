@@ -177,7 +177,7 @@ public sealed class WhatsAppEmbeddedSignupHostedService(
                     item.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Importing
                         ? "No se pudo completar el alta operativa."
                         : "No se pudo completar la configuracion automatica.",
-                    incident, ct);
+                    incident, item.CurrentStep, ct);
                 await store.ReleaseClaimAsync(item.IdOnboarding, _workerId, null, ct);
             }
         }

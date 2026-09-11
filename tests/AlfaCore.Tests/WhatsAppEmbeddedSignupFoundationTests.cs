@@ -247,13 +247,20 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
     [InlineData(WhatsAppEmbeddedOnboardingStatus.Started)]
     [InlineData(WhatsAppEmbeddedOnboardingStatus.Cancelled)]
     [InlineData(WhatsAppEmbeddedOnboardingStatus.FailedRetryable)]
-    [InlineData(WhatsAppEmbeddedOnboardingStatus.FailedFinal)]
     [InlineData(WhatsAppEmbeddedOnboardingStatus.Expired)]
     public void NonRecoverableOnboardingWithoutOperationalNumber_AllowsNewConnection(
         WhatsAppEmbeddedOnboardingStatus status)
         => Assert.Equal(
             WhatsAppEmbeddedConnectionUiState.Start,
             WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, status));
+
+    [Fact]
+    public void FailedFinalOnboardingWithoutOperationalNumber_ShowsPersistentFailureState()
+        // A diferencia de los demás estados terminales, FAILED_FINAL NO debe desaparecer en
+        // silencio: la UI tiene que mostrar que algo falló (ver WhatsAppEmbeddedConnectionUiState.Failed).
+        => Assert.Equal(
+            WhatsAppEmbeddedConnectionUiState.Failed,
+            WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, WhatsAppEmbeddedOnboardingStatus.FailedFinal));
 
     [Fact]
     public void RecoverableOnboardingWithoutOperationalNumber_RemainsVisible()
@@ -456,7 +463,7 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         public Task MarkAuthorizedAsync(Guid idOnboarding, string tokenReference, string metaBusinessId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkRetryableFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task MarkFinalFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task MarkFinalFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, string? failedStep = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkReadyAsync(Guid idOnboarding, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string workerId, DateTime nowUtc, DateTime claimExpiresAtUtc, CancellationToken ct = default) => throw new NotSupportedException();
         public Task ReleaseClaimAsync(Guid idOnboarding, string workerId, DateTime? nextAttemptUtc, CancellationToken ct = default) => throw new NotSupportedException();

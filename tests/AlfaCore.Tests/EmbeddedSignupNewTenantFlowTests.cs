@@ -105,6 +105,52 @@ public sealed class EmbeddedSignupNewTenantFlowTests
     }
 
     [Fact]
+    public async Task NewBase142_SubscribingWabasFails_PreservesFailedStepAndOwnership_MarksFailedFinal()
+    {
+        // Reproduce el incidente real de Base4264 (036070C1…): llega hasta SUBSCRIBING_WABAS,
+        // falla con META_INVALID_ASSET (no transitorio), y el store debe quedar en FAILED_FINAL
+        // CONSERVANDO "SUBSCRIBING_WABAS" como paso (antes se pisaba con el literal "FAILED"), sin
+        // tocar el ownership de WABA/phone ya reservado en el paso anterior.
+        var (orchestrator, item, meta, ownership) = Build(webhookRouting: true);
+        meta.ThrowInvalidAssetOnSubscribe = true;
+
+        for (var i = 0; i < 12 && item.Status is not (WhatsAppEmbeddedOnboardingStatus.FailedFinal or WhatsAppEmbeddedOnboardingStatus.Importing); i++)
+            await orchestrator.ProcessNextStepAsync(item.IdOnboarding);
+
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.FailedFinal, item.Status);
+        Assert.Equal("SUBSCRIBING_WABAS", item.CurrentStep);   // NO "FAILED"
+        Assert.Equal("META_INVALID_ASSET", item.ErrorCode);
+        Assert.False(string.IsNullOrWhiteSpace(item.IncidentId));
+
+        // El ownership creado en ValidatingOwnership no se revierte por el fallo posterior.
+        Assert.Contains((NewBase, "waba-142"), ownership.WabaReservations);
+        Assert.Contains((NewBase, "phone-142"), ownership.PhoneReservations);
+    }
+
+    [Fact]
+    public void FailedFinalStatus_MapsToFailedUiState_WithPersistedStepAndErrorSummary()
+    {
+        var item = new WhatsAppEmbeddedOnboardingDto
+        {
+            IdOnboarding = Guid.NewGuid(),
+            IdBase = NewBase,
+            Status = WhatsAppEmbeddedOnboardingStatus.FailedFinal,
+            CurrentStep = "SUBSCRIBING_WABAS",
+            ErrorCode = "META_INVALID_ASSET",
+            ErrorSummary = "No se pudo completar la configuración con Meta.",
+            IncidentId = "WAES-20260910-882C5A8075984D0"
+        };
+
+        var view = WhatsAppEmbeddedSignupProgressMapper.Map(item);
+
+        Assert.Equal("SUBSCRIBING_WABAS", view.Step);
+        Assert.Equal("No se pudo completar la configuración con Meta.", view.Message);
+        Assert.Equal("WAES-20260910-882C5A8075984D0", view.IncidentId);
+        Assert.Equal(AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Failed,
+            AlfaCore.Models.WhatsAppEmbeddedConnectionUiStateResolver.Resolve(0, view.Status));
+    }
+
+    [Fact]
     public async Task NewBase142_WebhookRoutingDisabled_ReachesUpsert_ButWabaNotSubscribed()
     {
         var (orchestrator, item, meta, ownership) = Build(webhookRouting: false);
@@ -123,6 +169,7 @@ public sealed class EmbeddedSignupNewTenantFlowTests
     {
         public List<(int IdBase, string WabaId)> SubscriptionCalls { get; } = [];
         public List<string> SystemUserAssignments { get; } = [];
+        public bool ThrowInvalidAssetOnSubscribe { get; set; }
         public Task<IReadOnlyList<MetaAuthorizedBusiness>> DiscoverAuthorizedBusinessesAsync(WhatsAppCredentialReference t, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<MetaAuthorizedBusiness>>([new("biz-142", "Cliente142")]);
         public Task<IReadOnlyList<MetaWabaAsset>> DiscoverWabasAsync(string businessId, WhatsAppCredentialReference t, CancellationToken ct = default)
@@ -130,7 +177,15 @@ public sealed class EmbeddedSignupNewTenantFlowTests
         public Task EnsureSystemUserAssignmentAsync(string wabaId, WhatsAppCredentialReference t, CancellationToken ct = default)
         { SystemUserAssignments.Add(wabaId); return Task.CompletedTask; }
         public Task EnsureWabaSubscriptionAsync(string wabaId, int idBase, WhatsAppCredentialReference t, CancellationToken ct = default)
-        { SubscriptionCalls.Add((idBase, wabaId)); return Task.CompletedTask; }
+        {
+            SubscriptionCalls.Add((idBase, wabaId));
+            if (ThrowInvalidAssetOnSubscribe)
+                // Reproduce exactamente lo que ocurrió con Base4264: un ítem de subscribed_apps sin
+                // id utilizable, no transitorio, no requiere reautorización.
+                throw new MetaWhatsAppManagementException("META_INVALID_ASSET", false, false,
+                    "Meta devolvió un identificador inválido para aplicación.");
+            return Task.CompletedTask;
+        }
         public Task<IReadOnlyList<MetaPhoneAsset>> DiscoverPhoneNumbersAsync(string wabaId, WhatsAppCredentialReference t, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<MetaPhoneAsset>>([new("phone-142", wabaId, "+54 9 11 0000-0000", "Cliente142", "CONNECTED", "GREEN", MetaPhoneRegistrationStatus.Registered)]);
         public Task<IReadOnlyList<MetaMessageTemplate>> DiscoverTemplatesAsync(string wabaId, WhatsAppCredentialReference t, CancellationToken ct = default)
@@ -166,7 +221,21 @@ public sealed class EmbeddedSignupNewTenantFlowTests
         public Task MarkAuthorizedAsync(Guid id, string r, string m, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason r, string s, string i, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkRetryableFailureAsync(Guid id, string c, string s, string i, DateTime n, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task MarkFinalFailureAsync(Guid id, string c, string s, string i, CancellationToken ct = default) => throw new NotSupportedException();
+        public string? FinalErrorCode { get; private set; }
+        public string? FinalSummary { get; private set; }
+        public string? FinalFailedStep { get; private set; }
+        public Task MarkFinalFailureAsync(Guid id, string errorCode, string summary, string incidentId, string? failedStep = null, CancellationToken ct = default)
+        {
+            FinalErrorCode = errorCode;
+            FinalSummary = summary;
+            FinalFailedStep = failedStep;
+            item.Status = WhatsAppEmbeddedOnboardingStatus.FailedFinal;
+            item.CurrentStep = string.IsNullOrWhiteSpace(failedStep) ? "FAILED" : failedStep;   // misma regla que el store real
+            item.ErrorCode = errorCode;
+            item.ErrorSummary = summary;
+            item.IncidentId = incidentId;
+            return Task.CompletedTask;
+        }
         public Task MarkReadyAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WhatsAppEmbeddedOnboardingDto?> ClaimNextAsync(string w, DateTime n, DateTime e, CancellationToken ct = default) => throw new NotSupportedException();
         public Task ReleaseClaimAsync(Guid id, string w, DateTime? n, CancellationToken ct = default) => throw new NotSupportedException();
@@ -194,6 +263,6 @@ public sealed class EmbeddedSignupNewTenantFlowTests
 
     private sealed class NoopErrorLogger : IWhatsAppEmbeddedSignupErrorLogger
     {
-        public Task<string> LogAsync(Guid id, int b, string s, string c, string? w, string? p, int r, CancellationToken ct = default) => Task.FromResult(string.Empty);
+        public Task<string> LogAsync(Guid id, int b, string s, string c, string? w, string? p, int r, CancellationToken ct = default) => Task.FromResult("WAES-TEST-STUB");
     }
 }

@@ -383,6 +383,27 @@
                             {
                                 <div class="wa-business-block__header"><div><h3>Falta un paso para terminar</h3><p>@_embeddedSignupStatus?.Message</p></div><AlfaTag Tone="AlfaTagTone.Warning">Acción requerida</AlfaTag></div>
                             }
+                            else if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Failed)
+                            {
+                                <div class="wa-business-block__header">
+                                    <div>
+                                        <h3>No se pudo completar la conexión</h3>
+                                        <p>@_embeddedSignupStatus?.Message</p>
+                                        @if (!string.IsNullOrWhiteSpace(_embeddedSignupStatus?.Step))
+                                        {
+                                            <p class="wa-field-note">Paso: @_embeddedSignupStatus?.Step</p>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(_embeddedSignupStatus?.IncidentId))
+                                        {
+                                            <p class="wa-field-note">Incidente: @_embeddedSignupStatus?.IncidentId</p>
+                                        }
+                                    </div>
+                                    <div class="wa-business-inline-actions">
+                                        <AlfaTag Tone="AlfaTagTone.Danger">No se pudo conectar</AlfaTag>
+                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-clockwise" Loading="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">Reintentar</AlfaButton>
+                                    </div>
+                                </div>
+                            }
                             else if (_embeddedRecoveryCandidate is { IsOperational: false } recovery)
                             {
                                 <div class="wa-business-block__header">
@@ -2175,6 +2196,7 @@
     private AlfaCore.Services.WhatsAppEmbeddedRecoveryCandidate? _embeddedRecoveryCandidate;
     private IReadOnlyList<AlfaCore.Models.WhatsAppEmbeddedPendingConnection> _embeddedPendingConnections = [];
     private CancellationTokenSource? _embeddedSignupPollingCts;
+    private CancellationTokenSource? _embeddedSignupWatchdogCts;
     private bool _whatsAppConnectionsLoaded;
 
     /// <summary>
@@ -2405,6 +2427,7 @@
     public async ValueTask DisposeAsync()
     {
         _embeddedSignupReference?.Dispose();
+        _embeddedSignupWatchdogCts?.Dispose();
         if (_embeddedSignupModule is not null)
             await _embeddedSignupModule.DisposeAsync();
     }
@@ -2680,6 +2703,7 @@
             await _embeddedSignupModule.InvokeVoidAsync("launch", launchOptions, _embeddedSignupReference);
             _showWhatsAppOnboardingModeDialog = false;
             _whatsAppConnectionChoiceSelection.Clear();
+            StartEmbeddedSignupAuthorizationWatchdog();
         }
         catch (Exception ex)
         {
@@ -2694,9 +2718,48 @@
         }
     }
 
+    // El popup/SDK de Meta debería llamar de vuelta a CompleteEmbeddedSignupAuthorization,
+    // EmbeddedSignupCancelled o EmbeddedSignupFailed. Si ninguno llega (popup bloqueado, usuario lo
+    // cerró sin que el SDK lo detecte, error de JS silencioso), este watchdog corta el spinner
+    // infinito por sí solo. NO marca READY ni avanza el backend: sólo deja de mostrar "cargando" y
+    // cancela (no borra) el onboarding STARTED atascado para que Reintentar pueda crear uno nuevo.
+    private static readonly TimeSpan EmbeddedSignupAuthorizationTimeout = TimeSpan.FromSeconds(90);
+
+    private void StartEmbeddedSignupAuthorizationWatchdog()
+    {
+        _embeddedSignupWatchdogCts?.Cancel();
+        _embeddedSignupWatchdogCts?.Dispose();
+        _embeddedSignupWatchdogCts = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCts.Token);
+        _ = WatchEmbeddedSignupAuthorizationTimeoutAsync(_embeddedSignupWatchdogCts.Token);
+    }
+
+    private void CancelEmbeddedSignupAuthorizationWatchdog()
+    {
+        _embeddedSignupWatchdogCts?.Cancel();
+        _embeddedSignupWatchdogCts?.Dispose();
+        _embeddedSignupWatchdogCts = null;
+    }
+
+    private async Task WatchEmbeddedSignupAuthorizationTimeoutAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(EmbeddedSignupAuthorizationTimeout, token);
+        }
+        catch (TaskCanceledException)
+        {
+            return; // Llegó un callback real (autorización, cancelación o error del SDK) antes del timeout.
+        }
+
+        _embeddedSignupBusy = false;
+        _embeddedSignupMessage = "No se completó la autorización con Meta a tiempo. Podés intentarlo nuevamente.";
+        await PersistEmbeddedSignupCancellationAsync();
+    }
+
     [JSInvokable]
     public async Task CompleteEmbeddedSignupAuthorization(string code, string state, string wabaId, string phoneNumberId)
     {
+        CancelEmbeddedSignupAuthorizationWatchdog();
         if (_embeddedSignupId is not Guid id || !string.Equals(state, _embeddedSignupState, StringComparison.Ordinal)) return;
         await AuthorizationSvc.EnsureCanManageAsync();
         var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
@@ -2725,6 +2788,7 @@
     [JSInvokable]
     public Task EmbeddedSignupCancelled()
     {
+        CancelEmbeddedSignupAuthorizationWatchdog();
         _embeddedSignupBusy = false;
         _showWhatsAppOnboardingModeDialog = false;
         _whatsAppConnectionChoiceSelection.Clear();
@@ -2746,6 +2810,7 @@
     [JSInvokable]
     public async Task EmbeddedSignupFailed(string errorCode)
     {
+        CancelEmbeddedSignupAuthorizationWatchdog();
         _embeddedSignupBusy = false;
         var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
         var safeCode = string.Equals(errorCode, "META_EMBEDDED_SIGNUP_EVENT_ERROR", StringComparison.Ordinal) ? errorCode : "META_EMBEDDED_SIGNUP_EVENT_ERROR";
