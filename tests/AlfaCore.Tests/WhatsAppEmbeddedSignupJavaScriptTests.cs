@@ -45,8 +45,13 @@ public sealed class WhatsAppEmbeddedSignupJavaScriptTests
         Assert.Contains("captureLoginContract(loginContract, options.developmentDiagnostics)", source, StringComparison.Ordinal);
         Assert.Contains("onboardingMode: coexistence ? \"businessAppCoexistence\" : \"standard\"", source, StringComparison.Ordinal);
         Assert.Contains("FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING", source, StringComparison.Ordinal);
-        Assert.Contains("const expectedEvent = coexistence ? \"FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING\" : \"FINISH\"", source, StringComparison.Ordinal);
-        Assert.Contains("const isExpectedFinish = eventName === expectedEvent", source, StringComparison.Ordinal);
+        // FINISH se acepta siempre (standard Y coexistence -- Meta mandó "FINISH" en coexistence en
+        // el incidente real Base4264); FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING se preserva como
+        // adicional sólo en coexistence. Ver WhatsAppEmbeddedSignupJsExecutionTests para la cobertura
+        // de comportamiento real (ejecutando el módulo), no sólo de texto.
+        Assert.Contains("const isExpectedFinish =", source, StringComparison.Ordinal);
+        Assert.Contains("eventName === \"FINISH\" ||", source, StringComparison.Ordinal);
+        Assert.Contains("(coexistence && eventName === \"FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING\");", source, StringComparison.Ordinal);
 
         var pageSource = File.ReadAllText(FindRepoFile("src", "AlfaCore", "Components", "Pages", "ConversacionesConfiguracion.razor"));
         Assert.Contains("const string moduleVersion = \"es2-coexistence-contract-1\"", pageSource, StringComparison.Ordinal);
@@ -89,7 +94,7 @@ public sealed class WhatsAppEmbeddedSignupJavaScriptTests
         Assert.Contains("console.debug(\"[WAES-DIAG]\", stage, details)", source, StringComparison.Ordinal);
         Assert.Contains("try { payload = JSON.parse(event.data); jsonParseOk = true; } catch { jsonParseOk = false; }", source, StringComparison.Ordinal);
         Assert.Contains("diagLog(\"onMessage\", {", source, StringComparison.Ordinal);
-        foreach (var field in new[] { "postMessageReceived: true", "origin: event.origin", "dataType,", "jsonParseOk,", "payloadType,", "payloadEvent,", "expectedEvent,", "eventAccepted" })
+        foreach (var field in new[] { "postMessageReceived: true", "origin: event.origin", "dataType,", "jsonParseOk,", "payloadType,", "payloadEvent,", "expectedEvents,", "eventAccepted" })
             Assert.Contains(field, source, StringComparison.Ordinal);
 
         // evento inesperado -> eventAccepted=false (isKnownPayload exige type+parse+origin+dataType
