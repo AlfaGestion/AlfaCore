@@ -367,6 +367,18 @@
                             </label>
                         </div>
                     </div>
+                    <div class="col-12">
+                        <div class="field">
+                            <label class="catalogos-toggle">
+                                <input type="checkbox" class="catalogos-toggle__input" @bind="_modificaPrecio" disabled="@IsNuevoCatalogoBloqueado" />
+                                <span class="catalogos-toggle__track" aria-hidden="true"></span>
+                                <span class="catalogos-toggle__label">
+                                    <strong>Convertir precio a pesos</strong>
+                                    <small>Si un artículo tiene su precio en dólares (u otra moneda), lo muestra convertido a pesos con la cotización del día.</small>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
         </section>
 
@@ -715,6 +727,7 @@
     private string _urlPublica = string.Empty;
     private string _urlCarrito = string.Empty;
     private bool _habilitarCarrito;
+    private bool _modificaPrecio;
     private bool _menuHabilitado;
     private bool _menuHabilitadoDraft;
     private CatalogosPublicIdentityDto _publicIdentity = new();
@@ -1377,6 +1390,7 @@
         _urlPublica = string.Empty;
         _urlCarrito = string.Empty;
         _habilitarCarrito = false;
+        _modificaPrecio = false;
         _editingIdInsert = null;
         _editingEsModeloNuevo = false;
         _editingFinalizado = false;
@@ -2298,6 +2312,7 @@
             VigenciaDesde = _vigenciaDesde,
             VigenciaHasta = _vigenciaHasta,
             HabilitarCarrito = _habilitarCarrito,
+            ModificaPrecio = _modificaPrecio,
             Usuario = _catalogosUserName,
             Pc = Environment.MachineName,
             Articulos = _articulosSeleccionados.ToArray()
@@ -2487,6 +2502,7 @@
         _vigenciaDesde = detail.VigenciaDesde;
         _vigenciaHasta = detail.VigenciaHasta;
         _habilitarCarrito = detail.HabilitarCarrito;
+        _modificaPrecio = detail.ModificaPrecio;
         _articulosSeleccionados.Clear();
         _articulosSeleccionados.AddRange(detail.Articulos.Select(x => new CatalogosArticuloCatalogoDto
         {

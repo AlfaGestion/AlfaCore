@@ -150,6 +150,9 @@ public sealed class CatalogosCatalogoItemDto
 
     /// <summary>ModificoImagen='1'/'P' en V_MA_ARTICULOS: la imagen del artículo cambió y el caché local puede estar desactualizado (ver ArticuloImagenFtpService).</summary>
     public bool ImagenModificada { get; set; }
+
+    /// <summary>Moneda de V_MA_ARTICULOS ('1'=pesos, '2'..'5'=otras monedas de TA_COTIZACION). Solo para uso interno del servicio (ver ApplyModificaPrecioAsync); no es de interés para la UI.</summary>
+    public string Moneda { get; set; } = string.Empty;
 }
 
 public sealed class CatalogosCatalogoResumenDto
@@ -210,6 +213,7 @@ public sealed class CatalogosCatalogoDetalleDto
     public bool Anulado { get; set; }
     public bool UsaModeloNuevo { get; set; }
     public bool HabilitarCarrito { get; set; }
+    public bool ModificaPrecio { get; set; }
     public bool Predeterminado { get; set; }
     public IReadOnlyList<CatalogosCatalogoItemDto> Articulos { get; set; } = [];
 }
@@ -225,6 +229,7 @@ public sealed class CatalogosCatalogoSaveRequestDto
     public DateTime? VigenciaDesde { get; set; }
     public DateTime? VigenciaHasta { get; set; }
     public bool HabilitarCarrito { get; set; }
+    public bool ModificaPrecio { get; set; }
     public string Usuario { get; set; } = string.Empty;
     public string Pc { get; set; } = string.Empty;
     public IReadOnlyList<CatalogosArticuloCatalogoDto> Articulos { get; set; } = [];

@@ -2,9 +2,12 @@ using AlfaCore.Models;
 using Dapper;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Data.SqlClient;
+using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace AlfaCore.Services;
 
@@ -16,6 +19,7 @@ public sealed class InterfacesCatalogosService(
     IAppEventService appEvents,
     IArticuloImagenFtpService articuloImagenFtpService,
     IPuntoVentaService puntoVentaService,
+    IHttpClientFactory httpClientFactory,
     CatalogoPedidoProcessingGuard pedidoProcessingGuard) : IInterfacesCatalogosService
 {
     private const string ModuleName = "Interfaces";
@@ -1166,6 +1170,7 @@ public sealed class InterfacesCatalogosService(
                 await tx.CommitAsync(token);
 
                 await SetCarritoHabilitadoAsync(cn, idInsert, request.HabilitarCarrito, token);
+                await SetModificaPrecioAsync(cn, idInsert, request.ModificaPrecio, token);
 
                 var url = BuildPublicUrl(idInsert);
                 await appEvents.LogAuditAsync(
@@ -2164,7 +2169,11 @@ public sealed class InterfacesCatalogosService(
                     continue;
 
                 header.HabilitarCarrito = await GetCarritoHabilitadoAsync(candidateId, token);
+                header.ModificaPrecio = await GetModificaPrecioAsync(candidateId, token);
                 header.Predeterminado = candidateId == predeterminadoId;
+
+                if (soloPublico && header.ModificaPrecio)
+                    await ApplyModificaPrecioAsync(cn, header.Articulos, token);
 
                 await appEvents.LogAuditAsync(
                     ModuleName,
@@ -2250,6 +2259,192 @@ public sealed class InterfacesCatalogosService(
 
     private static string BuildCarritoConfigKey(int idInsert)
         => $"{CarritoHabilitadoConfigKeyPrefix}-{idInsert}".ToUpperInvariant();
+
+    // Formato pedido por el legacy: Cfg("CATALOGO_" & idCatalogo, "MODIFICAPRECIO", "Catalogo") lee
+    // CLAVE=CATALOGO_{id}, GRUPO=catalogo, y el "campo" MODIFICAPRECIO empaquetado como "MODIFICAPRECIO:1"
+    // (o ":0") dentro de la columna aux (VALOR_AUX/VALORAUX) -- a diferencia del resto de los flags de
+    // este servicio (Carrito, Menú, etc.), que usan su propia CLAVE dedicada con "SI"/"NO" en VALOR.
+    private const string ModificaPrecioGrupo = "catalogo";
+    private const string ModificaPrecioCampo = "MODIFICAPRECIO";
+
+    private async Task<bool> GetModificaPrecioAsync(int idInsert, CancellationToken ct)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+
+        if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", ct))
+            return false;
+
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+        var sql = $"""
+            SELECT TOP (1) ISNULL(VALOR, ''), ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+            """;
+
+        // Lee tanto VALOR como el aux: el checkbox graba en el aux (como pidió el usuario), pero una
+        // fila cargada a mano (o algún día por el legacy) puede terminar en VALOR -- no importa en
+        // cuál de las dos haya quedado el "MODIFICAPRECIO:1", tiene que reconocerse igual.
+        var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(
+            sql,
+            new { Clave = BuildModificaPrecioConfigKey(idInsert).ToUpperInvariant() },
+            cancellationToken: ct));
+        return ParseModificaPrecioFlag(row.Valor) || ParseModificaPrecioFlag(row.ValorAux);
+    }
+
+    private static bool ParseModificaPrecioFlag(string? valorAux)
+    {
+        if (string.IsNullOrWhiteSpace(valorAux))
+            return false;
+
+        var idx = valorAux.IndexOf($"{ModificaPrecioCampo}:", StringComparison.OrdinalIgnoreCase);
+        if (idx < 0)
+            return false;
+
+        var resto = valorAux[(idx + ModificaPrecioCampo.Length + 1)..].TrimStart();
+        return resto.Length > 0 && resto[0] == '1';
+    }
+
+    // Si CATALOGO_{id}/catalogo ya trae otros "campo:valor" empaquetados en el aux (patrón Cfg de
+    // varios campos por clave), solo se pisa el dígito de MODIFICAPRECIO:N y se preserva el resto.
+    private static readonly Regex ModificaPrecioFlagPattern =
+        new($@"{ModificaPrecioCampo}:\d+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    private static string BuildModificaPrecioValorAux(string? valorAuxActual, bool activo)
+    {
+        var nuevoPar = $"{ModificaPrecioCampo}:{(activo ? 1 : 0)}";
+        var actual = (valorAuxActual ?? string.Empty).Trim();
+        if (actual.Length == 0)
+            return nuevoPar;
+
+        var match = ModificaPrecioFlagPattern.Match(actual);
+        return match.Success
+            ? string.Concat(actual.AsSpan(0, match.Index), nuevoPar, actual.AsSpan(match.Index + match.Length))
+            : $"{actual};{nuevoPar}";
+    }
+
+    private async Task SetModificaPrecioAsync(SqlConnection cn, int idInsert, bool activo, CancellationToken ct)
+    {
+        if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", ct))
+            return;
+
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+        var clave = BuildModificaPrecioConfigKey(idInsert);
+
+        var currentSql = $"""
+            SELECT TOP (1) ISNULL({detailColumn}, '')
+            FROM dbo.TA_CONFIGURACION
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+            """;
+        var current = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
+            currentSql,
+            new { Clave = clave.ToUpperInvariant() },
+            cancellationToken: ct));
+
+        var valorAux = BuildModificaPrecioValorAux(current, activo);
+
+        var sql = $"""
+            UPDATE dbo.TA_CONFIGURACION
+            SET {detailColumn} = @ValorAux, GRUPO = @Grupo, FechaHora_Modificacion = GETDATE()
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @ClaveNormalizada;
+
+            IF @@ROWCOUNT = 0
+            BEGIN
+                INSERT INTO dbo.TA_CONFIGURACION (CLAVE, {detailColumn}, GRUPO, FechaHora_Grabacion, FechaHora_Modificacion)
+                VALUES (@Clave, @ValorAux, @Grupo, GETDATE(), GETDATE());
+            END;
+            """;
+
+        await cn.ExecuteAsync(new CommandDefinition(
+            sql,
+            new
+            {
+                ClaveNormalizada = clave.ToUpperInvariant(),
+                Clave = clave,
+                ValorAux = valorAux,
+                Grupo = ModificaPrecioGrupo
+            },
+            cancellationToken: ct));
+    }
+
+    private static string BuildModificaPrecioConfigKey(int idInsert)
+        => $"CATALOGO_{idInsert}";
+
+    // Legacy: Cfg("CATALOGO_" & idCatalogo, "MODIFICAPRECIO", "Catalogo") = "S" -- cuando está activo,
+    // los artículos cuya V_MA_ARTICULOS.MONEDA no sea '1' (pesos) se muestran convertidos a pesos con
+    // la cotización del día (misma fórmula que FN_PRECIO_LISTA: precio * TA_COTIZACION.MONEDAn). Solo
+    // se aplica en la vista pública/carrito (soloPublico=true) -- el editor sigue mostrando y guardando
+    // el precio tal cual está en la base, para no ir multiplicando la cotización en cada re-guardado.
+    private async Task ApplyModificaPrecioAsync(SqlConnection cn, IReadOnlyList<CatalogosCatalogoItemDto> items, CancellationToken ct)
+    {
+        if (items.Count == 0 || items.All(i => string.IsNullOrWhiteSpace(i.Moneda) || i.Moneda.Trim() == "1"))
+            return;
+
+        (decimal? Moneda2, decimal? Moneda3, decimal? Moneda4, decimal? Moneda5) cotiz = default;
+        if (await SqlObjectExistsAsync(cn, "TA_COTIZACION", ct))
+        {
+            const string sql = """
+                SELECT TOP (1) MONEDA2, MONEDA3, MONEDA4, MONEDA5
+                FROM dbo.TA_COTIZACION
+                WHERE FECHA_HORA = CONVERT(date, GETDATE());
+                """;
+
+            cotiz = await cn.QuerySingleOrDefaultAsync<(decimal? Moneda2, decimal? Moneda3, decimal? Moneda4, decimal? Moneda5)>(
+                new CommandDefinition(sql, cancellationToken: ct));
+        }
+
+        // "2" = dólar. Si no hay cotización del día cargada en TA_COTIZACION, se busca la del día por
+        // internet (dolarapi.com, oficial) -- el catálogo público siempre tiene que quedar en pesos,
+        // no puede depender de que alguien haya cargado la cotización manualmente ese día.
+        var cotizDolar = cotiz.Moneda2;
+        if (cotizDolar is not > 0 && items.Any(i => i.Moneda.Trim() == "2"))
+            cotizDolar = await FetchCotizacionDolarInternetAsync(ct);
+
+        foreach (var item in items)
+        {
+            var factor = item.Moneda.Trim() switch
+            {
+                "2" => cotizDolar,
+                "3" => cotiz.Moneda3,
+                "4" => cotiz.Moneda4,
+                "5" => cotiz.Moneda5,
+                _ => null
+            };
+
+            if (factor is not > 0)
+                continue;
+
+            item.Precio *= factor;
+            item.PrecioOferta *= factor;
+            item.PrecioOfertaAnterior *= factor;
+            item.PrecioOfertaNuevo *= factor;
+        }
+    }
+
+    private async Task<decimal?> FetchCotizacionDolarInternetAsync(CancellationToken ct)
+    {
+        try
+        {
+            var client = httpClientFactory.CreateClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
+            using var response = await client.GetAsync("https://dolarapi.com/v1/dolares/oficial", ct);
+            if (!response.IsSuccessStatusCode)
+                return null;
+
+            var data = await response.Content.ReadFromJsonAsync<DolarApiCotizacionDto>(cancellationToken: ct);
+            return data?.Venta is > 0 ? data.Venta : null;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
+        {
+            return null;
+        }
+    }
+
+    private sealed class DolarApiCotizacionDto
+    {
+        [JsonPropertyName("venta")]
+        public decimal Venta { get; set; }
+    }
 
     private async Task EnrichOfertaHastaAsync(List<CatalogosCatalogoItemDto> items, string idLista, CancellationToken ct)
     {
@@ -2752,6 +2947,7 @@ public sealed class InterfacesCatalogosService(
                     WHEN UPPER(LTRIM(RTRIM(ISNULL(a.ModificoImagen, '')))) IN ('1', 'P') THEN CAST(1 AS bit)
                     ELSE CAST(0 AS bit)
                 END AS ImagenModificada
+                ,ISNULL(NULLIF(LTRIM(RTRIM(a.MONEDA)), ''), '1') AS Moneda
                 ,CAST(1 AS bit) AS UsaModeloNuevo
             FROM dbo.CATALOGOS_DETALLE d
             INNER JOIN dbo.CATALOGOS c
@@ -2859,6 +3055,7 @@ public sealed class InterfacesCatalogosService(
                 CAST(NULL AS decimal(18, 4)) AS PrecioOfertaNuevo,
                 ISNULL(LTRIM(RTRIM(c.RUBRO)), '') AS Rubro,
                 CASE WHEN UPPER(LTRIM(RTRIM(ISNULL(a.ModificoImagen, '')))) IN ('1', 'P') THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END AS ImagenModificada,
+                ISNULL(NULLIF(LTRIM(RTRIM(a.MONEDA)), ''), '1') AS Moneda,
                 CAST(0 AS bit) AS UsaModeloNuevo
             FROM dbo.V_MV_INSERT c
             LEFT JOIN dbo.V_MA_ARTICULOS a
@@ -3097,6 +3294,7 @@ public sealed class InterfacesCatalogosService(
 
             await tx.CommitAsync(ct);
             await SetCarritoHabilitadoAsync(cn, idInsert, request.HabilitarCarrito, ct);
+            await SetModificaPrecioAsync(cn, idInsert, request.ModificaPrecio, ct);
 
             var url = BuildPublicUrl(idInsert);
             await appEvents.LogAuditAsync(
