@@ -1,6 +1,7 @@
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Xunit;
 
@@ -146,6 +147,38 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
     }
 
     [Fact]
+    public async Task Complete_CoexistenceReady_TriggersInitialSyncsOnceWithOnBizAppPhones()
+    {
+        var idOnboarding = Guid.NewGuid();
+        var context = CreateContext(idOnboarding, activeBaseId: 84, WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+        context.Management.Businesses.Add(new("business-1", "Business 1"));
+        context.Management.WabasByBusiness["business-1"] = [new("waba-1", "business-1", "WABA 1")];
+        context.Management.PhonesByWaba["waba-1"] = [Phone("phone-1", "waba-1", "+54 11 1", "Coexistence", isOnBizApp: true)];
+
+        await context.Service.CompleteAsync(idOnboarding);
+
+        var call = Assert.Single(context.CoexistenceTrigger.Calls);
+        Assert.Equal(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence, call.Onboarding.OnboardingMode);
+        var phone = Assert.Single(call.Phones);
+        Assert.Equal("phone-1", phone.PhoneNumberId);
+        Assert.True(phone.IsOnBizApp);
+    }
+
+    [Fact]
+    public async Task Complete_StandardReady_NeverTriggersCoexistenceSync()
+    {
+        var idOnboarding = Guid.NewGuid();
+        var context = CreateContext(idOnboarding, activeBaseId: 84, WhatsAppEmbeddedOnboardingMode.Standard);
+        context.Management.Businesses.Add(new("business-1", "Business 1"));
+        context.Management.WabasByBusiness["business-1"] = [new("waba-1", "business-1", "WABA 1")];
+        context.Management.PhonesByWaba["waba-1"] = [Phone("phone-1", "waba-1", "+54 11 1", "Ventas")];
+
+        await context.Service.CompleteAsync(idOnboarding);
+
+        Assert.Empty(context.CoexistenceTrigger.Calls);
+    }
+
+    [Fact]
     public async Task Complete_BlocksPhoneOwnedByAnotherBase()
     {
         var idOnboarding = Guid.NewGuid();
@@ -180,6 +213,7 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         var ownership = new MemoryOwnershipStore();
         var config = new MemoryConversacionesConfigService();
         var session = new MemorySessionService(activeBaseId);
+        var coexistenceTrigger = new RecordingCoexistenceSyncTrigger();
         var service = new WhatsAppEmbeddedOperationalImportService(
             store,
             vault,
@@ -187,13 +221,15 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             ownership,
             config,
             session,
-            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [84] }));
+            coexistenceTrigger,
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [84] }),
+            NullLogger<WhatsAppEmbeddedOperationalImportService>.Instance);
 
-        return new(service, store, vault, management, ownership, config, session);
+        return new(service, store, vault, management, ownership, config, session, coexistenceTrigger);
     }
 
-    private static MetaPhoneAsset Phone(string id, string wabaId, string display, string name)
-        => new(id, wabaId, display, name, "CONNECTED", "GREEN", MetaPhoneRegistrationStatus.Registered);
+    private static MetaPhoneAsset Phone(string id, string wabaId, string display, string name, bool isOnBizApp = false)
+        => new(id, wabaId, display, name, "CONNECTED", "GREEN", MetaPhoneRegistrationStatus.Registered, isOnBizApp);
 
     private sealed record TestContext(
         WhatsAppEmbeddedOperationalImportService Service,
@@ -202,7 +238,23 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         MemoryMetaManagementClient Management,
         MemoryOwnershipStore Ownership,
         MemoryConversacionesConfigService Config,
-        MemorySessionService Session);
+        MemorySessionService Session,
+        RecordingCoexistenceSyncTrigger CoexistenceTrigger);
+
+    private sealed class RecordingCoexistenceSyncTrigger : IWhatsAppCoexistenceSyncTrigger
+    {
+        public List<(WhatsAppEmbeddedOnboardingDto Onboarding, IReadOnlyList<WhatsAppCoexistencePhoneCandidate> Phones)> Calls { get; } = [];
+
+        public Task TriggerInitialSyncsAsync(
+            WhatsAppEmbeddedOnboardingDto onboarding,
+            IReadOnlyList<WhatsAppCoexistencePhoneCandidate> phones,
+            WhatsAppCredentialReference tokenReference,
+            CancellationToken ct = default)
+        {
+            Calls.Add((onboarding, phones));
+            return Task.CompletedTask;
+        }
+    }
 
     private sealed class MemoryOnboardingStore(
         Guid idOnboarding,

@@ -205,7 +205,7 @@ public sealed class MetaWhatsAppManagementClient(
     {
         var normalizedWabaId = RequiredMetaId(wabaId, nameof(wabaId));
         return GetPagedAsync(tokenReference, $"{normalizedWabaId}/phone_numbers",
-            "id,display_phone_number,verified_name,quality_rating,platform_type",
+            "id,display_phone_number,verified_name,quality_rating,platform_type,is_on_biz_app",
             item =>
             {
                 var platformType = GetString(item, "platform_type");
@@ -216,7 +216,8 @@ public sealed class MetaWhatsAppManagementClient(
                     GetString(item, "verified_name"),
                     platformType,
                     GetString(item, "quality_rating"),
-                    MapRegistrationStatus(platformType));
+                    MapRegistrationStatus(platformType),
+                    GetBool(item, "is_on_biz_app"));
             }, ct);
     }
 
@@ -252,6 +253,37 @@ public sealed class MetaWhatsAppManagementClient(
 
     public Task<MetaCustomerPaymentReadiness> GetCustomerPaymentReadinessAsync(string wabaId, WhatsAppCredentialReference tokenReference, CancellationToken ct = default)
         => Task.FromResult(MetaCustomerPaymentReadiness.Unknown);
+
+    /// <summary>
+    /// POST /{phoneNumberId}/smb_app_data { messaging_product:"whatsapp", sync_type }. Sólo soporta
+    /// sync_type=history y sync_type=smb_app_state_sync -- cualquier otro valor es un error de
+    /// programación (nunca llega desde Meta). request_id se captura best-effort: si Meta no lo
+    /// devuelve (o lo devuelve en una forma no reconocida), RequestId queda vacío y la llamada NO se
+    /// considera fallida -- SendJsonAsync ya lanzó si el POST no fue exitoso.
+    /// </summary>
+    public async Task<MetaSmbAppDataSyncResult> RequestSmbAppDataSyncAsync(string phoneNumberId, WhatsAppCoexistenceSyncType syncType, WhatsAppCredentialReference tokenReference, CancellationToken ct = default)
+    {
+        var normalizedPhoneId = RequiredMetaId(phoneNumberId, nameof(phoneNumberId));
+        var syncTypeValue = syncType switch
+        {
+            WhatsAppCoexistenceSyncType.History => "history",
+            WhatsAppCoexistenceSyncType.ContactState => "smb_app_state_sync",
+            _ => throw new ArgumentOutOfRangeException(nameof(syncType), syncType, "sync_type no soportado.")
+        };
+
+        using var request = await CreateRequestAsync(HttpMethod.Post, $"{normalizedPhoneId}/smb_app_data", tokenReference, ct);
+        request.Content = JsonContent.Create(new { messaging_product = "whatsapp", sync_type = syncTypeValue });
+        using var document = await SendJsonAsync(request, ct);
+
+        var requestId = GetString(document.RootElement, "request_id");
+        if (requestId.Length == 0
+            && document.RootElement.TryGetProperty("data", out var data)
+            && data.ValueKind == JsonValueKind.Array
+            && data.GetArrayLength() > 0)
+            requestId = GetString(data[0], "request_id");
+
+        return new MetaSmbAppDataSyncResult(requestId);
+    }
 
     private async Task<IReadOnlyList<T>> GetPagedAsync<T>(WhatsAppCredentialReference tokenReference, string path, string fields, Func<JsonElement, T> map, CancellationToken ct, bool allowUnsupportedEdge = false)
     {
@@ -525,4 +557,7 @@ public sealed class MetaWhatsAppManagementClient(
 
     private static string GetString(JsonElement item, string propertyName)
         => item.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()?.Trim() ?? string.Empty : string.Empty;
+
+    private static bool GetBool(JsonElement item, string propertyName)
+        => item.TryGetProperty(propertyName, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False && value.GetBoolean();
 }

@@ -293,6 +293,40 @@ public sealed record WhatsAppEmbeddedPendingConnection(
 
 public sealed record WhatsAppSynchronizationEvent(string EventName, string ExternalEventId, string PhoneNumberId);
 
+/// <summary>
+/// Tipo de sincronización one-shot post-onboarding de Coexistence (POST /{phone_number_id}/smb_app_data).
+/// Sólo estos dos sync_type están soportados: "history" y "smb_app_state_sync".
+/// </summary>
+public enum WhatsAppCoexistenceSyncType { History, ContactState }
+
+/// <summary>
+/// Estado de una solicitud one-shot de sync. Pending: fila reservada, todavía no se llamó a Meta.
+/// Requested: POST aceptado por Meta (con o sin request_id). InProgress/Completed: informado por los
+/// webhooks de history/smb_app_state_sync. Declined: el negocio rechazó compartir historial (code
+/// 2593109). Failed: el POST a Meta falló. Expired: la ventana de 24h venció antes de poder pedirlo.
+/// </summary>
+public enum WhatsAppCoexistenceSyncStatus { Pending, Requested, InProgress, Completed, Declined, Failed, Expired }
+
+public sealed class WhatsAppCoexistenceSyncDto
+{
+    public int IdBase { get; set; }
+    public string PhoneNumberId { get; set; } = string.Empty;
+    public Guid IdOnboarding { get; set; }
+    public WhatsAppCoexistenceSyncType SyncType { get; set; }
+    public WhatsAppCoexistenceSyncStatus Status { get; set; }
+    public string RequestId { get; set; } = string.Empty;
+    public DateTime? RequestedAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public string ErrorCode { get; set; } = string.Empty;
+    public string ErrorSummary { get; set; } = string.Empty;
+    public DateTime ModifiedAtUtc { get; set; }
+}
+
+/// <summary>Candidato a disparo de sync inicial: un PhoneNumberId del onboarding recién READY, con si Meta lo informó "en la app" (is_on_biz_app).</summary>
+public sealed record WhatsAppCoexistencePhoneCandidate(string PhoneNumberId, bool IsOnBizApp);
+
+public sealed record MetaSmbAppDataSyncResult(string RequestId);
+
 public static class WhatsAppEmbeddedPipelinePolicy
 {
     public static bool CanRegisterPhone(WhatsAppEmbeddedOnboardingMode mode)

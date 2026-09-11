@@ -1,5 +1,7 @@
 using AlfaCore.Models;
 using AlfaCore.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
 namespace AlfaCore.Services;
@@ -33,10 +35,25 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
     IWhatsAppAssetOwnershipStore ownershipStore,
     IConversacionesConfigService conversacionesConfig,
     ISessionService sessionService,
-    IOptions<WhatsAppEmbeddedSignupOptions> options) : IWhatsAppEmbeddedOperationalImportService
+    IWhatsAppCoexistenceSyncTrigger coexistenceSyncTrigger,
+    IOptions<WhatsAppEmbeddedSignupOptions> options,
+    ILogger<WhatsAppEmbeddedOperationalImportService> logger) : IWhatsAppEmbeddedOperationalImportService
 {
     private readonly WhatsAppEmbeddedSignupOptions _options = options.Value;
     private readonly Dictionary<Guid, PendingConnectionMetadata> _pendingConnectionMetadata = [];
+
+    public WhatsAppEmbeddedOperationalImportService(
+        IWhatsAppEmbeddedSignupStore store,
+        IWhatsAppCredentialVault credentialVault,
+        IMetaWhatsAppManagementClient managementClient,
+        IWhatsAppAssetOwnershipStore ownershipStore,
+        IConversacionesConfigService conversacionesConfig,
+        ISessionService sessionService,
+        IOptions<WhatsAppEmbeddedSignupOptions> options)
+        : this(store, credentialVault, managementClient, ownershipStore, conversacionesConfig, sessionService,
+              new NoopCoexistenceSyncTrigger(), options, NullLogger<WhatsAppEmbeddedOperationalImportService>.Instance)
+    {
+    }
 
     public async Task<WhatsAppEmbeddedOperationalImportResult> CompleteAsync(Guid idOnboarding, CancellationToken ct = default)
     {
@@ -100,6 +117,26 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
         }
 
         await store.MarkReadyAsync(idOnboarding, ct);
+
+        // Disparo automático de los sync iniciales de Coexistence (contactos + historial). Nunca debe
+        // poder revertir ni retrasar el READY que ya se confirmó arriba -- cualquier excepción acá
+        // (incluida una que escape TriggerInitialSyncsAsync pese a su propio try/catch interno) queda
+        // contenida y sólo se loguea.
+        if (onboarding.OnboardingMode == WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence)
+        {
+            try
+            {
+                var candidates = phones
+                    .Select(phone => new WhatsAppCoexistencePhoneCandidate(phone.PhoneNumberId, phone.IsOnBizApp))
+                    .ToArray();
+                await coexistenceSyncTrigger.TriggerInitialSyncsAsync(onboarding, candidates, tokenReference, ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "No se pudieron disparar los syncs iniciales de Coexistence para el onboarding {IdOnboarding}.", idOnboarding);
+            }
+        }
+
         return new WhatsAppEmbeddedOperationalImportResult(imported);
     }
 
@@ -277,7 +314,8 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
                 phone.PhoneNumberId,
                 phone.DisplayPhoneNumber,
                 phone.VerifiedName,
-                phone.RegistrationStatus)));
+                phone.RegistrationStatus,
+                phone.IsOnBizApp)));
             if (result.Count > 0)
                 return result
                     .GroupBy(phone => phone.PhoneNumberId, StringComparer.Ordinal)
@@ -307,7 +345,8 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
                     phone.PhoneNumberId,
                     phone.DisplayPhoneNumber,
                     phone.VerifiedName,
-                    phone.RegistrationStatus)));
+                    phone.RegistrationStatus,
+                    phone.IsOnBizApp)));
             }
         }
 
@@ -323,10 +362,21 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
         string PhoneNumberId,
         string DisplayPhoneNumber,
         string VerifiedName,
-        MetaPhoneRegistrationStatus RegistrationStatus);
+        MetaPhoneRegistrationStatus RegistrationStatus,
+        bool IsOnBizApp = false);
 
     private sealed record PendingConnectionMetadata(
         string PhoneNumberId,
         string Nombre,
         string DisplayPhoneNumber);
+
+    private sealed class NoopCoexistenceSyncTrigger : IWhatsAppCoexistenceSyncTrigger
+    {
+        public Task TriggerInitialSyncsAsync(
+            WhatsAppEmbeddedOnboardingDto onboarding,
+            IReadOnlyList<WhatsAppCoexistencePhoneCandidate> phones,
+            WhatsAppCredentialReference tokenReference,
+            CancellationToken ct = default)
+            => Task.CompletedTask;
+    }
 }

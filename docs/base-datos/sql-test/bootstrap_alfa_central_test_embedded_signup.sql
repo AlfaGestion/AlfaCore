@@ -186,10 +186,41 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.Whats
     CREATE INDEX IX_WASV_Context ON dbo.WhatsAppSecureVault(IdBase,IdOnboarding,WabaId,PhoneNumberId,SecretType) INCLUDE (ExpiresAtUtc,RevokedAtUtc);
 GO
 
+/* Esquema ES-2: tracking central de sync inicial de Coexistence (mismo diseño que 2026-09-11-001). */
+IF OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.WhatsAppEmbeddedCoexistenceSync
+    (
+        IdBase int NOT NULL,
+        PhoneNumberId varchar(40) NOT NULL,
+        SyncType varchar(30) NOT NULL,
+        IdOnboarding uniqueidentifier NOT NULL,
+        Status varchar(20) NOT NULL CONSTRAINT DF_WAECS_Status DEFAULT ('PENDING'),
+        RequestId varchar(120) NOT NULL CONSTRAINT DF_WAECS_RequestId DEFAULT (''),
+        RequestedAtUtc datetime2(3) NULL,
+        CompletedAtUtc datetime2(3) NULL,
+        ErrorCode varchar(80) NOT NULL CONSTRAINT DF_WAECS_ErrorCode DEFAULT (''),
+        ErrorSummary nvarchar(500) NOT NULL CONSTRAINT DF_WAECS_ErrorSummary DEFAULT (N''),
+        FechaAltaUtc datetime2(3) NOT NULL,
+        FechaModificacionUtc datetime2(3) NOT NULL,
+        CONSTRAINT PK_WhatsAppEmbeddedCoexistenceSync PRIMARY KEY (IdBase, PhoneNumberId, SyncType),
+        CONSTRAINT FK_WAECS_Base FOREIGN KEY (IdBase) REFERENCES dbo.bases(id),
+        CONSTRAINT FK_WAECS_Onboarding FOREIGN KEY (IdOnboarding) REFERENCES dbo.WhatsAppEmbeddedOnboarding(IdOnboarding),
+        CONSTRAINT CK_WAECS_SyncType CHECK (SyncType IN ('HISTORY','SMB_APP_STATE_SYNC')),
+        CONSTRAINT CK_WAECS_Status CHECK (Status IN ('PENDING','REQUESTED','IN_PROGRESS','COMPLETED','DECLINED','FAILED','EXPIRED'))
+    );
+END;
+GO
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync') AND name = N'IX_WAECS_IdBase')
+    CREATE INDEX IX_WAECS_IdBase ON dbo.WhatsAppEmbeddedCoexistenceSync(IdBase);
+GO
+
 SELECT DB_NAME() AS CatalogoValidado,
        (SELECT COUNT(*) FROM dbo.bases WHERE id IN (1900000001, 1900000002)) AS FixturesBase,
        OBJECT_ID(N'dbo.WhatsAppEmbeddedOnboarding', N'U') AS WhatsAppEmbeddedOnboarding,
        OBJECT_ID(N'dbo.WhatsAppWabaOwnership', N'U') AS WhatsAppWabaOwnership,
        OBJECT_ID(N'dbo.WhatsAppPhoneOwnership', N'U') AS WhatsAppPhoneOwnership,
-       OBJECT_ID(N'dbo.WhatsAppSecureVault', N'U') AS WhatsAppSecureVault;
+       OBJECT_ID(N'dbo.WhatsAppSecureVault', N'U') AS WhatsAppSecureVault,
+       OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync', N'U') AS WhatsAppEmbeddedCoexistenceSync;
 GO
