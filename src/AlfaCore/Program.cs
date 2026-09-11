@@ -3217,7 +3217,10 @@ public class Program
     // Selector read-only: extrae metadata.phone_number_id del body crudo ANTES de validar la firma.
     // El payload nunca es autoridad; sólo indica qué ownership central consultar. Sólo devuelve ids
     // puramente numéricos (los de Meta lo son) para no romper la normalización del ownership store.
-    private static IReadOnlyList<string> ExtractWhatsAppPhoneNumberIds(string rawPayload)
+    // Soporta DOS sobres: el clásico entry[].changes[].value.metadata (messages/statuses/
+    // smb_message_echoes -- éste último ya venía cubierto acá porque no se filtraba por field) y el de
+    // Coexistence history/smb_app_state_sync (sin "entry": {event, data:{metadata:{phone_number_id}}}).
+    internal static IReadOnlyList<string> ExtractWhatsAppPhoneNumberIds(string rawPayload)
     {
         if (string.IsNullOrWhiteSpace(rawPayload))
             return [];
@@ -3225,35 +3228,46 @@ public class Program
         try
         {
             using var doc = JsonDocument.Parse(rawPayload);
-            if (doc.RootElement.ValueKind != JsonValueKind.Object
-                || !doc.RootElement.TryGetProperty("entry", out var entries)
-                || entries.ValueKind != JsonValueKind.Array)
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
                 return [];
 
             var ids = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var entry in entries.EnumerateArray())
+
+            if (doc.RootElement.TryGetProperty("entry", out var entries) && entries.ValueKind == JsonValueKind.Array)
             {
-                if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array)
-                    continue;
-                foreach (var change in changes.EnumerateArray())
+                foreach (var entry in entries.EnumerateArray())
                 {
-                    if (!change.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Object)
+                    if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array)
                         continue;
-                    if (!value.TryGetProperty("metadata", out var metadata) || metadata.ValueKind != JsonValueKind.Object)
-                        continue;
-                    if (!metadata.TryGetProperty("phone_number_id", out var pid) || pid.ValueKind != JsonValueKind.String)
-                        continue;
-                    var id = (pid.GetString() ?? string.Empty).Trim();
-                    if (id.Length > 0 && id.All(static c => c is >= '0' and <= '9'))
-                        ids.Add(id);
+                    foreach (var change in changes.EnumerateArray())
+                    {
+                        if (!change.TryGetProperty("value", out var value) || value.ValueKind != JsonValueKind.Object)
+                            continue;
+                        AddPhoneNumberIdFromMetadata(value, ids);
+                    }
                 }
             }
+
+            if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+                AddPhoneNumberIdFromMetadata(data, ids);
+
             return ids.ToArray();
         }
         catch (JsonException)
         {
             return [];
         }
+    }
+
+    private static void AddPhoneNumberIdFromMetadata(JsonElement container, HashSet<string> ids)
+    {
+        if (!container.TryGetProperty("metadata", out var metadata) || metadata.ValueKind != JsonValueKind.Object)
+            return;
+        if (!metadata.TryGetProperty("phone_number_id", out var pid) || pid.ValueKind != JsonValueKind.String)
+            return;
+        var id = (pid.GetString() ?? string.Empty).Trim();
+        if (id.Length > 0 && id.All(static c => c is >= '0' and <= '9'))
+            ids.Add(id);
     }
 
     private static async Task<IResult> HandleInstagramVerifyAsync(

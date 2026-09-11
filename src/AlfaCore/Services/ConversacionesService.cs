@@ -3538,6 +3538,13 @@ public sealed class ConversacionesService(
             ArgumentNullException.ThrowIfNull(request);
             var parsedMessages = ParseIncomingMessages(request.Payload.RootElement);
             var parsedStatuses = ParseIncomingStatuses(request.Payload.RootElement);
+            // Coexistence: history/smb_app_state_sync llegan en un sobre distinto (sin "entry"),
+            // smb_message_echoes en el sobre clásico pero con field="smb_message_echoes" (antes
+            // ignorado por completo). Ver ExtractWhatsAppPhoneNumberIds para que el ownership/tenant
+            // guard también reconozca estos sobres antes de procesar nada.
+            var historySync = ParseIncomingHistorySync(request.Payload.RootElement);
+            var stateSync = ParseIncomingStateSync(request.Payload.RootElement);
+            var echoes = ParseIncomingMessageEchoes(request.Payload.RootElement);
             var currentBaseId = sessionService.GetActiveSession()?.BaseId ?? 0;
             var phoneNumberIds = ExtractWhatsAppPhoneNumberIds(request.Payload.RootElement);
             if (phoneNumberIds.Count > 0)
@@ -3547,10 +3554,24 @@ public sealed class ConversacionesService(
             request.TraceStage?.Invoke("TENANT_GUARD_PASSED");
             request.TraceStage?.Invoke("TENANT_CONNECTION_RESOLVED");
             request.TraceStage?.Invoke("BEFORE_WEBHOOK_LOG");
+            var eventTypes = new List<string>();
+            if (historySync is not null) eventTypes.Add("history");
+            if (stateSync is not null) eventTypes.Add("smb_app_state_sync");
+            if (echoes.Count > 0) eventTypes.Add("smb_message_echoes");
+            var errorCodes = historySync?.ErrorCode is int historyErrorCodeForLog ? new List<int> { historyErrorCodeForLog } : [];
             var webhookLogId = await InsertWebhookLogAsync(
                 "META_WHATSAPP",
                 "Webhook",
-                BuildWhatsAppWebhookLogPayload(phoneNumberIds, parsedMessages.Count, parsedStatuses.Count),
+                BuildWhatsAppWebhookLogPayload(
+                    phoneNumberIds,
+                    parsedMessages.Count,
+                    parsedStatuses.Count,
+                    historySync?.ThreadCount ?? 0,
+                    historySync?.Messages.Count ?? 0,
+                    echoes.Count,
+                    stateSync?.Contacts.Count ?? 0,
+                    eventTypes,
+                    errorCodes),
                 "{}",
                 token);
             request.TraceStage?.Invoke("WEBHOOK_LOG_INSERTED");
@@ -3639,6 +3660,103 @@ public sealed class ConversacionesService(
                     }
                 }
                 processed++;
+            }
+
+            if (historySync is not null)
+            {
+                request.TraceStage?.Invoke("PROCESSING_HISTORY");
+                foreach (var incoming in historySync.Messages)
+                {
+                    var conversationId = await EnsureConversationAsync(incoming, token);
+                    var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
+                    if (messageId > 0)
+                        continue; // idempotencia: misma reentrega/solape de chunk no duplica.
+
+                    var direction = string.IsNullOrEmpty(incoming.Direction) ? "ENTRANTE" : incoming.Direction;
+                    await InsertMessageAsync(new PendingMessageInsert
+                    {
+                        ConversationId = conversationId,
+                        Phone = incoming.Phone,
+                        MessageType = incoming.MessageType,
+                        Direction = direction,
+                        EstadoEnvio = string.Equals(direction, "SALIENTE", StringComparison.Ordinal) ? "ENVIADO" : "RECIBIDO",
+                        Text = incoming.Text,
+                        PayloadJson = incoming.RawJson,
+                        FechaHora = NormalizeIncomingTimestamp(incoming.Timestamp),
+                        UsuarioAutor = string.Empty,
+                        SistemaAutor = string.Empty,
+                        IdTecnicoAutor = string.Empty,
+                        WhatsAppMessageId = incoming.WhatsAppMessageId,
+                        ReplyToMessageId = incoming.WhatsAppReplyToMessageId,
+                        Origen = "HISTORY"
+                    }, token);
+                    // reopenIfClosed:false -- un mensaje histórico nunca debe reabrir una conversación
+                    // que un agente ya cerró; RefreshConversationAsync ya protege FechaHoraUltimoMensaje/
+                    // ResumenUltimoMensaje contra regresiones (chunks fuera de orden no pisan lo más nuevo).
+                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: false);
+                    processed++;
+                }
+
+                if (historySync.ErrorCode is int historyErrorCode)
+                {
+                    // code=2593109: el negocio rechazó compartir historial desde la app. No es un fallo
+                    // del webhook ni del número -- se deja constancia sanitizada (sin body) y se sigue.
+                    var declined = historyErrorCode == 2593109;
+                    logger.LogInformation(
+                        "History sync {Result} para phone_number_id {PhoneNumberId} (code {ErrorCode}).",
+                        declined ? "declinado por el negocio" : "con error",
+                        historySync.PhoneNumberId,
+                        historyErrorCode);
+                }
+            }
+
+            if (echoes.Count > 0)
+            {
+                request.TraceStage?.Invoke("PROCESSING_ECHOES");
+                foreach (var incoming in echoes)
+                {
+                    var conversationId = await EnsureConversationAsync(incoming, token);
+                    var messageId = await GetExistingMessageIdByWhatsAppIdAsync(incoming.WhatsAppMessageId, token);
+                    if (messageId > 0)
+                        continue; // idempotencia por WhatsAppMessageId, igual que mensajes/history.
+
+                    await InsertMessageAsync(new PendingMessageInsert
+                    {
+                        ConversationId = conversationId,
+                        Phone = incoming.Phone,
+                        MessageType = incoming.MessageType,
+                        Direction = "SALIENTE",
+                        EstadoEnvio = "ENVIADO",
+                        Text = incoming.Text,
+                        PayloadJson = incoming.RawJson,
+                        FechaHora = NormalizeIncomingTimestamp(incoming.Timestamp),
+                        UsuarioAutor = string.Empty,
+                        SistemaAutor = string.Empty,
+                        IdTecnicoAutor = string.Empty,
+                        WhatsAppMessageId = incoming.WhatsAppMessageId,
+                        ReplyToMessageId = incoming.WhatsAppReplyToMessageId,
+                        Origen = "WHATSAPP_BUSINESS_APP"
+                    }, token);
+                    // NUNCA se reenvía por Cloud API: esto sólo refleja en AlfaCore un mensaje que la
+                    // app de WhatsApp Business ya envió por su cuenta.
+                    await RefreshConversationAsync(conversationId, NormalizeIncomingTimestamp(incoming.Timestamp), incoming.Text, token, reopenIfClosed: true);
+                    processed++;
+                }
+            }
+
+            if (stateSync is not null)
+            {
+                request.TraceStage?.Invoke("PROCESSING_STATE_SYNC");
+                foreach (var contact in stateSync.Contacts)
+                {
+                    var name = !string.IsNullOrWhiteSpace(contact.FullName) ? contact.FullName : contact.FirstName;
+                    if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(contact.PhoneNumber))
+                        continue;
+                    // Sólo rellena si la conversación YA existe y su NombreVisible está vacío -- nunca
+                    // pisa un nombre existente (manual o de un mensaje anterior), nunca crea una
+                    // conversación nueva sólo por un evento de contacto, nunca toca MA_CONTACTOS (CRM).
+                    await TryFillConversationDisplayNameIfEmptyAsync(contact.PhoneNumber, name, token);
+                }
             }
 
             await UpdateWebhookLogAsync(webhookLogId, true, string.Empty, token);
@@ -8911,6 +9029,7 @@ public sealed class ConversacionesService(
                 UsuarioAutor,
                 SistemaAutor,
                 IdTecnicoAutor,
+                Origen,
                 FechaHora_Grabacion
             )
             VALUES
@@ -8930,6 +9049,7 @@ public sealed class ConversacionesService(
                 @UsuarioAutor,
                 @SistemaAutor,
                 @IdTecnicoAutor,
+                @Origen,
                 GETDATE()
             );
 
@@ -8938,6 +9058,7 @@ public sealed class ConversacionesService(
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        await EnsureMensajeOrigenColumnAsync(cn, ct);
         await using var cmd = new SqlCommand(sql, cn);
         var idTecnicoAutor = await ResolveTechnicianIdOrNullAsync(message.IdTecnicoAutor, ct);
         var author = await ResolveLegacyMessageAuthorAsync(cn, message.UsuarioAutor, message.SistemaAutor, ct);
@@ -8956,8 +9077,29 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@UsuarioAutor", DbNullable(author.Usuario));
         cmd.Parameters.AddWithValue("@SistemaAutor", DbNullable(author.Sistema));
         cmd.Parameters.AddWithValue("@IdTecnicoAutor", DbNullablePreserve(idTecnicoAutor));
+        cmd.Parameters.AddWithValue("@Origen", DbNullable(message.Origen));
         var result = await cmd.ExecuteScalarAsync(ct);
         return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    /// <summary>
+    /// Migración perezosa e idempotente, mismo patrón que EnsureConversationReadStateTableAsync: agrega
+    /// la columna sólo si todavía no existe. Nullable, sin default, sin FK -- no afecta ningún INSERT
+    /// existente que no la use.
+    /// </summary>
+    private static async Task EnsureMensajeOrigenColumnAsync(SqlConnection cn, CancellationToken ct)
+    {
+        const string sql = """
+            IF NOT EXISTS (
+                SELECT 1 FROM sys.columns
+                WHERE object_id = OBJECT_ID(N'dbo.CONV_MENSAJES') AND name = N'Origen'
+            )
+            BEGIN
+                ALTER TABLE dbo.CONV_MENSAJES ADD Origen nvarchar(40) NULL;
+            END;
+            """;
+        await using var cmd = new SqlCommand(sql, cn);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private static async Task<(string Usuario, string Sistema)> ResolveLegacyMessageAuthorAsync(
@@ -9322,6 +9464,29 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@ResumenUltimoMensaje", DbNullable(TrimForSummary(text)));
         cmd.Parameters.AddWithValue("@FechaHora", fechaHora);
         cmd.Parameters.AddWithValue("@Reabrir", reopenIfClosed);
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    /// <summary>
+    /// smb_app_state_sync (coexistence): rellena NombreVisible SÓLO si la conversación ya existe Y
+    /// está vacío -- nunca sobrescribe un nombre existente (manual o ya derivado de un mensaje), nunca
+    /// crea una conversación nueva sólo por este evento, nunca toca MA_CONTACTOS (CRM). Sin regla
+    /// explícita para pisar un nombre no-vacío, esto es deliberadamente lo único que hace hoy.
+    /// </summary>
+    private async Task TryFillConversationDisplayNameIfEmptyAsync(string phone, string fullName, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE dbo.CONV_CONVERSACIONES
+            SET NombreVisible = @FullName, FechaHora_Modificacion = GETDATE()
+            WHERE Canal = N'WHATSAPP'
+              AND TelefonoWhatsApp = @Phone
+              AND (NombreVisible IS NULL OR LTRIM(RTRIM(NombreVisible)) = N'');
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@Phone", NormalizePhone(phone));
+        cmd.Parameters.AddWithValue("@FullName", fullName.Trim());
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
@@ -12022,33 +12187,62 @@ public sealed class ConversacionesService(
         return items;
     }
 
-    private static IReadOnlyList<string> ExtractWhatsAppPhoneNumberIds(JsonElement root)
+    // Igual sobre doble que Program.cs.ExtractWhatsAppPhoneNumberIds: entry[].changes[].value.metadata
+    // (cubre messages/statuses/smb_message_echoes, sin filtrar por field) y el sobre de Coexistence
+    // history/smb_app_state_sync ({event, data:{metadata:{phone_number_id}}}, sin "entry").
+    internal static IReadOnlyList<string> ExtractWhatsAppPhoneNumberIds(JsonElement root)
     {
         var result = new HashSet<string>(StringComparer.Ordinal);
-        if (!root.TryGetProperty("entry", out var entries) || entries.ValueKind != JsonValueKind.Array)
-            return [];
-        foreach (var entry in entries.EnumerateArray())
+
+        if (root.TryGetProperty("entry", out var entries) && entries.ValueKind == JsonValueKind.Array)
         {
-            if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array) continue;
-            foreach (var change in changes.EnumerateArray())
+            foreach (var entry in entries.EnumerateArray())
             {
-                if (!change.TryGetProperty("value", out var value)
-                    || !value.TryGetProperty("metadata", out var metadata)
-                    || !metadata.TryGetProperty("phone_number_id", out var phone)
-                    || phone.ValueKind != JsonValueKind.String) continue;
-                var normalized = (phone.GetString() ?? string.Empty).Trim();
-                if (normalized.Length > 0) result.Add(normalized);
+                if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array) continue;
+                foreach (var change in changes.EnumerateArray())
+                {
+                    if (!change.TryGetProperty("value", out var value)) continue;
+                    AddWhatsAppPhoneNumberIdFromMetadata(value, result);
+                }
             }
         }
+
+        if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
+            AddWhatsAppPhoneNumberIdFromMetadata(data, result);
+
         return result.ToArray();
     }
 
-    private static string BuildWhatsAppWebhookLogPayload(IReadOnlyList<string> phoneNumberIds, int messageCount, int statusCount)
+    private static void AddWhatsAppPhoneNumberIdFromMetadata(JsonElement container, HashSet<string> ids)
+    {
+        if (!container.TryGetProperty("metadata", out var metadata)
+            || !metadata.TryGetProperty("phone_number_id", out var phone)
+            || phone.ValueKind != JsonValueKind.String) return;
+        var normalized = (phone.GetString() ?? string.Empty).Trim();
+        if (normalized.Length > 0) ids.Add(normalized);
+    }
+
+    private static string BuildWhatsAppWebhookLogPayload(
+        IReadOnlyList<string> phoneNumberIds,
+        int messageCount,
+        int statusCount,
+        int historyThreadCount = 0,
+        int historyMessageCount = 0,
+        int echoCount = 0,
+        int stateSyncCount = 0,
+        IReadOnlyList<string>? eventTypes = null,
+        IReadOnlyList<int>? errorCodes = null)
         => JsonSerializer.Serialize(new
         {
             PhoneNumberIds = phoneNumberIds,
             MessageCount = messageCount,
-            StatusCount = statusCount
+            StatusCount = statusCount,
+            EventTypes = eventTypes ?? [],
+            HistoryThreadCount = historyThreadCount,
+            HistoryMessageCount = historyMessageCount,
+            EchoCount = echoCount,
+            StateSyncCount = stateSyncCount,
+            ErrorCodes = errorCodes ?? []
         });
 
     private static string BuildIncomingWhatsAppMessagePayloadJson(JsonElement message, string phoneNumberId, string displayPhoneNumber)
@@ -12103,6 +12297,249 @@ public sealed class ConversacionesService(
 
         return items;
     }
+
+    // ---- Coexistence: history sync, smb_app_state_sync, smb_message_echoes ------------------------
+    //
+    // A diferencia de "messages"/"statuses" (siempre entry[].changes[].value.*), Meta entrega
+    // "history" y "smb_app_state_sync" en un sobre TOTALMENTE distinto -- sin "entry" -- mientras que
+    // "smb_message_echoes" sigue el sobre clásico pero con field="smb_message_echoes" (nunca
+    // reconocido hasta ahora, porque el parser de mensajes normales sólo miraba si "value" tenía
+    // "messages"/"statuses", sin fijarse en cambios.field). Documentado por Meta, no observado en un
+    // payload real todavía: si algún nombre de campo difiere en producción, estos parsers devuelven
+    // listas vacías (fail-safe) en vez de lanzar -- nunca deben tumbar el resto del webhook.
+
+    /// <summary>
+    /// event="history": { id, event:"history", data:{ metadata:{phone_number_id}, history:[ {
+    /// metadata:{phase,chunk_order,progress}, threads:[ {messages:[...]} ] } ], history_context:{status},
+    /// errors:[{code,...}] } }. Dirección de cada mensaje: si trae "to" se interpreta como enviado por
+    /// el negocio (SALIENTE, Phone=to); si no, como recibido (ENTRANTE, Phone=from) -- mismo criterio
+    /// que ya usa el resto del parser (los mensajes entrantes normales nunca traen "to").
+    /// </summary>
+    internal static IncomingWhatsAppHistorySync? ParseIncomingHistorySync(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("event", out var eventProp)
+            || eventProp.ValueKind != JsonValueKind.String
+            || !string.Equals(eventProp.GetString(), "history", StringComparison.OrdinalIgnoreCase)
+            || !root.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var phoneNumberId = ReadNestedString(data, "metadata", "phone_number_id");
+        var messages = new List<IncomingWhatsAppMessage>();
+        var phases = new List<string>();
+        var threadCount = 0;
+
+        if (data.TryGetProperty("history", out var history) && history.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var chunk in history.EnumerateArray())
+            {
+                if (chunk.TryGetProperty("metadata", out var chunkMetadata) && chunkMetadata.ValueKind == JsonValueKind.Object)
+                {
+                    var phase = chunkMetadata.TryGetProperty("phase", out var phaseProp) && phaseProp.ValueKind == JsonValueKind.String
+                        ? phaseProp.GetString() ?? string.Empty
+                        : string.Empty;
+                    if (!string.IsNullOrWhiteSpace(phase))
+                        phases.Add(phase);
+                }
+
+                if (!chunk.TryGetProperty("threads", out var threads) || threads.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                foreach (var thread in threads.EnumerateArray())
+                {
+                    if (!thread.TryGetProperty("messages", out var threadMessages) || threadMessages.ValueKind != JsonValueKind.Array)
+                        continue;
+
+                    threadCount++;
+                    foreach (var message in threadMessages.EnumerateArray())
+                    {
+                        var parsed = TryParseHistoryOrEchoMessage(message, phoneNumberId, string.Empty);
+                        if (parsed is not null)
+                            messages.Add(parsed);
+                    }
+                }
+            }
+        }
+
+        // history_context puede venir dentro de "data" (visto en la documentación de partners) o, si
+        // Meta cambia el sobre, como hermano de "id"/"event" -- se prueban ambas ubicaciones.
+        var contextStatus = ReadNestedString(data, "history_context", "status");
+        if (string.IsNullOrWhiteSpace(contextStatus))
+            contextStatus = ReadNestedString(root, "history_context", "status");
+        contextStatus = string.IsNullOrWhiteSpace(contextStatus) ? null : contextStatus;
+
+        var errorCode = TryReadFirstErrorCode(data) ?? TryReadFirstErrorCode(root);
+
+        return new IncomingWhatsAppHistorySync
+        {
+            PhoneNumberId = phoneNumberId,
+            Messages = messages,
+            ThreadCount = threadCount,
+            Phases = phases,
+            ContextStatus = contextStatus,
+            ErrorCode = errorCode
+        };
+    }
+
+    /// <summary>
+    /// event="smb_app_state_sync": { id, event:"smb_app_state_sync", data:{ metadata:{phone_number_id},
+    /// state_sync:[ {type,action,contact:{full_name,first_name,phone_number},timestamp} ] } }. Nombres
+    /// de contacto tolerados tanto anidados en "contact" como planos en el item (defensivo: no hay
+    /// muestra real confirmada).
+    /// </summary>
+    internal static IncomingWhatsAppStateSync? ParseIncomingStateSync(JsonElement root)
+    {
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("event", out var eventProp)
+            || eventProp.ValueKind != JsonValueKind.String
+            || !string.Equals(eventProp.GetString(), "smb_app_state_sync", StringComparison.OrdinalIgnoreCase)
+            || !root.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var phoneNumberId = ReadNestedString(data, "metadata", "phone_number_id");
+        var contacts = new List<IncomingWhatsAppContactSync>();
+
+        if (data.TryGetProperty("state_sync", out var stateSync) && stateSync.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in stateSync.EnumerateArray())
+            {
+                var type = GetStringOrEmpty(item, "type");
+                if (!string.IsNullOrWhiteSpace(type) && !string.Equals(type, "contact", StringComparison.OrdinalIgnoreCase))
+                    continue; // sólo "contact" está documentado; otros tipos se ignoran (fail-safe), no se descartan por error.
+
+                var contactSource = item.TryGetProperty("contact", out var nestedContact) && nestedContact.ValueKind == JsonValueKind.Object
+                    ? nestedContact
+                    : item;
+                var phoneNumber = GetStringOrEmpty(contactSource, "phone_number");
+                if (string.IsNullOrWhiteSpace(phoneNumber))
+                    continue; // sin teléfono no hay a qué conversación aplicarlo.
+
+                contacts.Add(new IncomingWhatsAppContactSync
+                {
+                    Type = string.IsNullOrWhiteSpace(type) ? "contact" : type,
+                    Action = GetStringOrEmpty(item, "action"),
+                    FullName = GetStringOrEmpty(contactSource, "full_name"),
+                    FirstName = GetStringOrEmpty(contactSource, "first_name"),
+                    PhoneNumber = NormalizePhone(phoneNumber),
+                    Timestamp = item.TryGetProperty("timestamp", out var ts) ? ParseUnixTimestamp(ts.GetString()) : BusinessNow()
+                });
+            }
+        }
+
+        return new IncomingWhatsAppStateSync { PhoneNumberId = phoneNumberId, Contacts = contacts };
+    }
+
+    /// <summary>
+    /// Sobre clásico (entry[].changes[]) con field="smb_message_echoes", value.message_echoes[].
+    /// Cada eco es un mensaje real enviado por el negocio DESDE la app de WhatsApp Business: se
+    /// interpreta siempre SALIENTE, con Phone=to (el cliente) -- si un ítem no trae "to" utilizable se
+    /// descarta (no se adivina la conversación).
+    /// </summary>
+    internal static List<IncomingWhatsAppMessage> ParseIncomingMessageEchoes(JsonElement root)
+    {
+        var items = new List<IncomingWhatsAppMessage>();
+        if (!root.TryGetProperty("entry", out var entries) || entries.ValueKind != JsonValueKind.Array)
+            return items;
+
+        foreach (var entry in entries.EnumerateArray())
+        {
+            if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var change in changes.EnumerateArray())
+            {
+                if (!change.TryGetProperty("field", out var fieldProp)
+                    || fieldProp.ValueKind != JsonValueKind.String
+                    || !string.Equals(fieldProp.GetString(), "smb_message_echoes", StringComparison.OrdinalIgnoreCase)
+                    || !change.TryGetProperty("value", out var value)
+                    || value.ValueKind != JsonValueKind.Object)
+                    continue;
+
+                var phoneNumberId = ReadNestedString(value, "metadata", "phone_number_id");
+                if (!value.TryGetProperty("message_echoes", out var echoes) || echoes.ValueKind != JsonValueKind.Array)
+                    continue;
+
+                foreach (var echo in echoes.EnumerateArray())
+                {
+                    var parsed = TryParseHistoryOrEchoMessage(echo, phoneNumberId, forcedDirection: "SALIENTE");
+                    if (parsed is not null)
+                        items.Add(parsed);
+                }
+            }
+        }
+
+        return items;
+    }
+
+    /// <summary>
+    /// Un ítem de history[].threads[].messages[] o de message_echoes[] tiene la misma forma que un
+    /// mensaje normal de Cloud API (id/type/from/to/timestamp + contenido por tipo) -- reutiliza los
+    /// mismos extractores que ParseIncomingMessages. forcedDirection vacío => se infiere por la
+    /// presencia de "to" (ver comentario de ParseIncomingHistorySync); no vacío => se respeta siempre
+    /// (message_echoes es SALIENTE por definición, nunca depende de "to").
+    /// </summary>
+    private static IncomingWhatsAppMessage? TryParseHistoryOrEchoMessage(JsonElement message, string phoneNumberId, string forcedDirection)
+    {
+        var messageId = GetStringOrEmpty(message, "id");
+        if (string.IsNullOrWhiteSpace(messageId))
+            return null;
+
+        var from = GetStringOrEmpty(message, "from");
+        var to = GetStringOrEmpty(message, "to");
+        var direction = string.IsNullOrEmpty(forcedDirection)
+            ? (string.IsNullOrWhiteSpace(to) ? "ENTRANTE" : "SALIENTE")
+            : forcedDirection;
+        // SALIENTE siempre necesita "to" (el cliente) explícito -- nunca se adivina cayendo a "from"
+        // (que ahí sería nuestro propio número, no una conversación válida). ENTRANTE usa "from".
+        var counterpartPhone = string.Equals(direction, "SALIENTE", StringComparison.Ordinal) ? to : from;
+        if (string.IsNullOrWhiteSpace(counterpartPhone))
+            return null; // sin un teléfono de contraparte utilizable no hay conversación segura a la que aplicarlo.
+
+        var type = GetStringOrEmpty(message, "type");
+        if (string.IsNullOrWhiteSpace(type))
+            type = "unknown";
+        var timestamp = message.TryGetProperty("timestamp", out var tsProp) ? ParseUnixTimestamp(tsProp.GetString()) : BusinessNow();
+
+        return new IncomingWhatsAppMessage
+        {
+            Phone = NormalizePhone(counterpartPhone),
+            PhoneNumberId = phoneNumberId,
+            MessageType = NormalizeMessageType(type),
+            WhatsAppMessageId = messageId,
+            WhatsAppReplyToMessageId = ExtractIncomingReplyToMessageId(message, type),
+            Timestamp = timestamp,
+            Text = ExtractIncomingText(message, type),
+            RawJson = BuildIncomingWhatsAppMessagePayloadJson(message, phoneNumberId, string.Empty),
+            Attachments = ExtractIncomingAttachments(message, type),
+            Direction = direction
+        };
+    }
+
+    private static int? TryReadFirstErrorCode(JsonElement container)
+    {
+        if (container.ValueKind != JsonValueKind.Object)
+            return null;
+        if (container.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Array)
+            foreach (var error in errors.EnumerateArray())
+                if (error.TryGetProperty("code", out var code) && code.ValueKind == JsonValueKind.Number && code.TryGetInt32(out var codeValue))
+                    return codeValue;
+        if (container.TryGetProperty("error", out var single)
+            && single.ValueKind == JsonValueKind.Object
+            && single.TryGetProperty("code", out var singleCode)
+            && singleCode.ValueKind == JsonValueKind.Number
+            && singleCode.TryGetInt32(out var singleCodeValue))
+            return singleCodeValue;
+        return null;
+    }
+
+    private static string GetStringOrEmpty(JsonElement element, string propertyName)
+        => element.ValueKind == JsonValueKind.Object
+            && element.TryGetProperty(propertyName, out var value)
+            && value.ValueKind == JsonValueKind.String
+                ? value.GetString() ?? string.Empty
+                : string.Empty;
 
     private static string NormalizeWhatsAppDeliveryStatus(string status, JsonElement payload)
     {
@@ -13825,6 +14262,16 @@ public sealed class ConversacionesService(
         public string? UsuarioAutor { get; init; }
         public string? SistemaAutor { get; init; }
         public string? IdTecnicoAutor { get; init; }
+
+        /// <summary>
+        /// Marca auditable de origen para mensajes que NO llegaron por el flujo en vivo habitual:
+        /// "HISTORY" (coexistence, history sync) o "WHATSAPP_BUSINESS_APP" (smb_message_echoes).
+        /// Null/vacío para todo lo demás (mensajes en vivo, salientes de AlfaCore, etc. -- sin cambios
+        /// de comportamiento ahí). Deliberadamente NO se reutiliza UsuarioAutor/SistemaAutor: ese par
+        /// tiene un CHECK (ambos NULL o ambos con valor) y una FK contra TA_USUARIOS -- no admite un
+        /// valor inventado como "HISTORY" (ver ResolveLegacyMessageAuthorAsync).
+        /// </summary>
+        public string? Origen { get; init; }
     }
 
     private sealed class ConversationIdentity
@@ -13876,7 +14323,7 @@ public sealed class ConversacionesService(
         public int? IdNumeroWhatsApp { get; init; }
     }
 
-    private sealed class IncomingWhatsAppMessage
+    internal sealed class IncomingWhatsAppMessage
     {
         public string Phone { get; init; } = string.Empty;
         public string PhoneNumberId { get; init; } = string.Empty;
@@ -13889,6 +14336,39 @@ public sealed class ConversacionesService(
         public string Text { get; init; } = string.Empty;
         public string RawJson { get; init; } = string.Empty;
         public List<IncomingWhatsAppAttachment> Attachments { get; init; } = [];
+
+        /// <summary>
+        /// Vacío para mensajes entrantes normales (el llamador ya asume ENTRANTE ahí). Sólo lo llenan
+        /// los parsers de history/echoes, donde la dirección puede ser cualquiera de las dos.
+        /// </summary>
+        public string Direction { get; init; } = string.Empty;
+    }
+
+    /// <summary>Resultado agregado de un evento event="history" completo (puede traer varios chunks).</summary>
+    internal sealed class IncomingWhatsAppHistorySync
+    {
+        public string PhoneNumberId { get; init; } = string.Empty;
+        public List<IncomingWhatsAppMessage> Messages { get; init; } = [];
+        public int ThreadCount { get; init; }
+        public List<string> Phases { get; init; } = [];
+        public string? ContextStatus { get; init; }
+        public int? ErrorCode { get; init; }
+    }
+
+    internal sealed class IncomingWhatsAppStateSync
+    {
+        public string PhoneNumberId { get; init; } = string.Empty;
+        public List<IncomingWhatsAppContactSync> Contacts { get; init; } = [];
+    }
+
+    internal sealed class IncomingWhatsAppContactSync
+    {
+        public string Type { get; init; } = string.Empty;
+        public string Action { get; init; } = string.Empty;
+        public string FullName { get; init; } = string.Empty;
+        public string FirstName { get; init; } = string.Empty;
+        public string PhoneNumber { get; init; } = string.Empty;
+        public DateTime Timestamp { get; init; }
     }
 
     private sealed class IncomingInstagramMessage
@@ -14081,7 +14561,7 @@ public sealed class ConversacionesService(
         public DateTime FechaHora { get; init; }
     }
 
-    private sealed class IncomingWhatsAppAttachment
+    internal sealed class IncomingWhatsAppAttachment
     {
         public string MediaId { get; init; } = string.Empty;
         public string TipoArchivo { get; init; } = string.Empty;
