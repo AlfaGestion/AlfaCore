@@ -126,12 +126,20 @@ export async function launch(options, dotnet) {
         const payloadEvent = payload && typeof payload === "object" && typeof payload.event === "string" ? payload.event : null;
         const eventName = String(payloadEvent || "").toUpperCase();
         const coexistence = options.onboardingMode === "businessAppCoexistence";
-        const expectedEvent = coexistence ? "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING" : "FINISH";
-        const isExpectedFinish = eventName === expectedEvent;
+        // Meta no siempre manda FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING en modo coexistence: el
+        // intento real de Base4264/Alfanet Papelera llegó con eventName="FINISH" incluso en
+        // coexistence (confirmado por [WAES-DIAG]). Aceptamos FINISH siempre, y además el evento
+        // específico de coexistence por si Meta lo manda en otros casos/versiones. No relaja nada de
+        // seguridad: sigue exigiendo payload.type/origin/parse válidos (ver isKnownPayload) y
+        // completeIfReady sigue exigiendo code Y session antes de invocar a .NET.
+        const isExpectedFinish =
+            eventName === "FINISH" ||
+            (coexistence && eventName === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING");
         const isCancel = eventName === "CANCEL";
         const isError = eventName === "ERROR";
         const isKnownPayload = originAllowed && dataType === "string" && jsonParseOk && payloadType === "WA_EMBEDDED_SIGNUP";
         const eventAccepted = isKnownPayload && (isExpectedFinish || isCancel || isError);
+        const expectedEvents = coexistence ? ["FINISH", "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"] : ["FINISH"];
         diagLog("onMessage", {
             postMessageReceived: true,
             origin: event.origin,
@@ -139,13 +147,14 @@ export async function launch(options, dotnet) {
             jsonParseOk,
             payloadType,
             payloadEvent,
-            expectedEvent,
+            expectedEvents,
             eventAccepted
         });
 
         if (!isKnownPayload) return;
         if (isExpectedFinish) {
             session = { wabaId: String(payload.data?.waba_id || ""), phoneNumberId: String(payload.data?.phone_number_id || "") };
+            diagLog("onMessage", { sessionExtracted: true, hasWabaId: !!session.wabaId, hasPhoneNumberId: !!session.phoneNumberId });
             await completeIfReady();
         } else if (isCancel) {
             submitted = true;
