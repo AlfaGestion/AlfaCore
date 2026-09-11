@@ -167,7 +167,12 @@ public sealed class WhatsAppTenantIsolationTests
         var conversation = source.IndexOf("EnsureConversationAsync(incoming", method, StringComparison.Ordinal);
         var messageParser = source.IndexOf("var parsedMessages = ParseIncomingMessages", method, StringComparison.Ordinal);
         var statusParser = source.IndexOf("var parsedStatuses = ParseIncomingStatuses", method, StringComparison.Ordinal);
+        var coexistenceSync = source.IndexOf("whatsAppCoexistenceSyncStore.Mark", method, StringComparison.Ordinal);
         Assert.True(method >= 0 && messageParser > method && statusParser > messageParser && guard > statusParser && log > guard && status > log && conversation > log);
+        // El tracking de sync de Coexistence (history/smb_app_state_sync) usa currentBaseId -- el
+        // mismo valor que ya validó el guard -- y sólo se escribe después de él: cross-tenant queda
+        // bloqueado en el mismo punto que el resto de la persistencia del webhook.
+        Assert.True(coexistenceSync > guard);
         Assert.Contains("SistemaAccion = \"BIENVENIDA\"", source, StringComparison.Ordinal);
         Assert.Contains("await SendMessageAsync(new ConversacionSendMessageRequest", source, StringComparison.Ordinal);
         Assert.Contains("GetTemplatesForConversationAsync", source, StringComparison.Ordinal);
