@@ -47,6 +47,19 @@ public class Program
             return;
         }
 
+        // Modo one-shot: invoca el mismo GetLatestStatusForBaseAsync que usa la UI, para verificar
+        // de forma auditable que la reconciliación automática STARTED → EXPIRED corre en el código
+        // real de producción. No es una herramienta recurrente; ver WhatsAppEmbeddedSignupStatusReconcileCommand.
+        if (WhatsAppEmbeddedSignupStatusReconcileCommand.IsRequested(args))
+        {
+            var reconcileExitCode = WhatsAppEmbeddedSignupStatusReconcileCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(reconcileExitCode);
+            return;
+        }
+
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
         var webRootCandidates = new[]
