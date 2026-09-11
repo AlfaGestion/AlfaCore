@@ -191,6 +191,154 @@ public sealed class PedidosEmailService(
         return false;
     }
 
+    public async Task<bool> EnviarInvitacionPortalAsync(
+        string emailDestino,
+        string nombreDestinatario,
+        string nombreEmpresa,
+        string? logoUrlAbsoluta,
+        string codigoCliente,
+        string razonSocialCliente,
+        bool esContacto,
+        string urlPortal,
+        string urlCambiarClave,
+        CancellationToken ct = default)
+    {
+        var to = (emailDestino ?? string.Empty).Trim();
+        if (to.Length == 0 || string.IsNullOrWhiteSpace(urlPortal) || string.IsNullOrWhiteSpace(urlCambiarClave))
+            return false;
+
+        try
+        {
+            _ = new MailAddress(to);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
+
+        IReadOnlyList<MailInfo> cuentas;
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            cuentas = await ResolveMailAccountsAsync(cn, ct);
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync(
+                ModuleName, "EnviarInvitacionPortal", ex, "No se pudo resolver la configuración de correo saliente.",
+                new { CodigoCliente = codigoCliente, Destinatario = to }, AppEventSeverity.Warning, ct);
+            return false;
+        }
+
+        var html = BuildInvitacionPortalHtml(nombreDestinatario, nombreEmpresa, logoUrlAbsoluta, codigoCliente, razonSocialCliente, esContacto, urlPortal, urlCambiarClave);
+        var asunto = string.IsNullOrWhiteSpace(nombreEmpresa) ? "Acceso al Portal de Clientes" : $"Acceso al Portal de Clientes - {nombreEmpresa.Trim()}";
+
+        Exception? ultimoError = null;
+        foreach (var cuenta in cuentas)
+        {
+            try
+            {
+                using var message = new MailMessage
+                {
+                    From = new MailAddress(cuenta.From, string.IsNullOrWhiteSpace(nombreEmpresa) ? cuenta.From : nombreEmpresa.Trim()),
+                    Subject = asunto,
+                    Body = html,
+                    IsBodyHtml = true
+                };
+                message.To.Add(to);
+
+                using var client = new SmtpClient(cuenta.Server, cuenta.Port)
+                {
+                    EnableSsl = cuenta.EnableSsl,
+                    DeliveryMethod = SmtpDeliveryMethod.Network,
+                    UseDefaultCredentials = false,
+                    Credentials = new NetworkCredential(cuenta.From, cuenta.Password)
+                };
+                await client.SendMailAsync(message, ct);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                ultimoError = ex;
+                await appEvents.LogErrorAsync(
+                    ModuleName, "EnviarInvitacionPortal", ex, $"Fallo el envío con la cuenta {cuenta.From}.",
+                    new { CodigoCliente = codigoCliente, Destinatario = to, Cuenta = cuenta.From }, AppEventSeverity.Warning, ct);
+            }
+        }
+
+        await appEvents.LogErrorAsync(
+            ModuleName, "EnviarInvitacionPortal", ultimoError ?? new InvalidOperationException("Sin cuentas de envío disponibles."),
+            "Fallo el envío de la invitación al Portal Cliente con todas las cuentas configuradas.",
+            new { CodigoCliente = codigoCliente, Destinatario = to }, AppEventSeverity.Error, ct);
+        return false;
+    }
+
+    private static string BuildInvitacionPortalHtml(
+        string nombreDestinatario,
+        string nombreEmpresa,
+        string? logoUrlAbsoluta,
+        string codigoCliente,
+        string razonSocialCliente,
+        bool esContacto,
+        string urlPortal,
+        string urlCambiarClave)
+    {
+        string E(string? s) => WebUtility.HtmlEncode(s ?? string.Empty);
+
+        var sb = new StringBuilder();
+        sb.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Acceso al Portal de Clientes</title></head>");
+        sb.Append("<body style=\"margin:0;padding:24px;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif;color:#0f172a;\">");
+        sb.Append("<div style=\"max-width:600px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e2e8f0;\">");
+
+        sb.Append("<div style=\"padding:22px 24px;background:linear-gradient(135deg,#0f172a,#1e3a8a);color:#ffffff;\">");
+        if (!string.IsNullOrWhiteSpace(logoUrlAbsoluta))
+            sb.Append("<img src=\"").Append(E(logoUrlAbsoluta)).Append("\" alt=\"").Append(E(nombreEmpresa))
+              .Append("\" style=\"max-height:44px;max-width:220px;display:block;margin-bottom:10px;\" />");
+        sb.Append("<div style=\"font-size:20px;font-weight:700;\">Acceso al Portal de Clientes</div>");
+        sb.Append("</div>");
+
+        sb.Append("<div style=\"padding:20px 24px;\">");
+        sb.Append("<p style=\"font-size:14px;line-height:1.5;margin:0 0 12px;\">Hola").Append(string.IsNullOrWhiteSpace(nombreDestinatario) ? "" : $" {E(nombreDestinatario)}").Append(",</p>");
+        sb.Append("<p style=\"font-size:14px;line-height:1.5;margin:0 0 12px;\">Ya tenés disponible el acceso al Portal de Clientes")
+          .Append(string.IsNullOrWhiteSpace(nombreEmpresa) ? "." : $" de {E(nombreEmpresa)}.").Append("</p>");
+
+        if (esContacto)
+        {
+            sb.Append("<p style=\"font-size:13px;line-height:1.5;margin:0 0 12px;color:#475569;\">Este acceso corresponde a la cuenta de <strong>")
+              .Append(E(razonSocialCliente)).Append("</strong> (código ").Append(E(codigoCliente)).Append(").</p>");
+        }
+
+        sb.Append("<p style=\"font-size:14px;line-height:1.5;margin:0 0 8px;\">Desde el portal podés:</p>");
+        sb.Append("<ul style=\"font-size:14px;line-height:1.7;margin:0 0 16px;padding-left:20px;\">");
+        sb.Append("<li>consultar tu cuenta corriente;</li>");
+        sb.Append("<li>ver y descargar tus comprobantes;</li>");
+        sb.Append("<li>consultar tu lista de precios;</li>");
+        sb.Append("<li>acceder a los catálogos;</li>");
+        sb.Append("<li>armar el carrito y realizar pedidos;</li>");
+        sb.Append("<li>consultar los pedidos realizados;</li>");
+        sb.Append("<li>administrar los datos de tu cuenta.</li>");
+        sb.Append("</ul>");
+
+        sb.Append("<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:0 0 20px;\">");
+        sb.Append("<div style=\"font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;\">Datos de acceso</div>");
+        sb.Append("<div style=\"font-size:14px;\">Usuario: <strong>").Append(E(codigoCliente)).Append("</strong></div>");
+        sb.Append("</div>");
+
+        sb.Append("<div style=\"text-align:center;margin:0 0 14px;\">");
+        sb.Append("<a href=\"").Append(E(urlPortal)).Append("\" style=\"display:inline-block;padding:12px 28px;background:#0ea5e9;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:700;font-size:14px;\">Ingresar al Portal</a>");
+        sb.Append("</div>");
+
+        sb.Append("<p style=\"font-size:13px;line-height:1.5;margin:0 0 10px;color:#475569;\">Para definir o cambiar tu contraseña:</p>");
+        sb.Append("<div style=\"text-align:center;margin:0 0 16px;\">");
+        sb.Append("<a href=\"").Append(E(urlCambiarClave)).Append("\" style=\"display:inline-block;padding:10px 24px;background:#ffffff;color:#0ea5e9;text-decoration:none;border-radius:10px;font-weight:700;font-size:13px;border:1px solid #0ea5e9;\">Crear / Cambiar contraseña</a>");
+        sb.Append("</div>");
+
+        sb.Append("<p style=\"font-size:12px;line-height:1.5;color:#64748b;margin:0 0 8px;\">El enlace para crear o cambiar la contraseña vence en 1 hora y solo puede usarse una vez. También podés cambiarla más adelante desde \"Mi cuenta\" dentro del portal.</p>");
+        sb.Append("</div></div></body></html>");
+        return sb.ToString();
+    }
+
     private static string BuildRecuperacionClaveHtml(string nombreCliente, string nombreEmpresa, string? logoUrlAbsoluta, string urlRestablecer)
     {
         string E(string? s) => WebUtility.HtmlEncode(s ?? string.Empty);

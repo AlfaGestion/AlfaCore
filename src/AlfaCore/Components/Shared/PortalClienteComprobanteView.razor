@@ -1,0 +1,221 @@
+@using AlfaCore.Models
+
+<article class="portal-comprobante">
+    <div class="portal-comprobante__titulo">
+        @(string.IsNullOrWhiteSpace(Item.TcDescripcion) ? Item.Tc : Item.TcDescripcion.ToUpperInvariant())
+        @if (!string.IsNullOrWhiteSpace(Item.Letra))
+        {
+            <span class="portal-comprobante__letra">@Item.Letra</span>
+        }
+    </div>
+
+    <header class="portal-comprobante__head">
+        <div class="portal-comprobante__emisor">
+            <img src="@LogoUrl" alt="@LogoAlt" class="portal-comprobante__logo" />
+            <div>
+                <strong>@(string.IsNullOrWhiteSpace(Empresa.Nombre) ? LogoAlt : Empresa.Nombre)</strong>
+                @if (!string.IsNullOrWhiteSpace(Empresa.Cuit))
+                {
+                    <span>CUIT: @Empresa.Cuit</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(BuildEmpresaDomicilio()))
+                {
+                    <span>@BuildEmpresaDomicilio()</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(Empresa.CondicionIva))
+                {
+                    <span>Cond. IVA: @Empresa.CondicionIva</span>
+                }
+            </div>
+        </div>
+
+        <div class="portal-comprobante__doc">
+            @if (!string.IsNullOrWhiteSpace(Item.Sucursal) || !string.IsNullOrWhiteSpace(Item.Numero))
+            {
+                <div><span>Punto de venta</span><strong>@Item.Sucursal</strong></div>
+                <div><span>Número</span><strong>@Item.Numero</strong></div>
+            }
+            else
+            {
+                <div><span>Comprobante</span><strong>@Item.IdComprobanteTexto</strong></div>
+            }
+            <div><span>Fecha</span><strong>@Item.Fecha.ToString("dd/MM/yyyy")</strong></div>
+        </div>
+    </header>
+
+    <section class="portal-comprobante__cliente">
+        <h3 class="portal-comprobante__section-title">Cliente</h3>
+        <div class="portal-comprobante__cliente-grid">
+            <div>
+                <span>Razón social</span>
+                <strong>@Item.RazonSocial</strong>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Item.DocumentoNumero))
+            {
+                <div>
+                    <span>@(string.IsNullOrWhiteSpace(Item.DocumentoTipo) ? "Documento" : Item.DocumentoTipo)</span>
+                    <strong>@Item.DocumentoNumero</strong>
+                </div>
+            }
+            <div>
+                <span>Cuenta</span>
+                <strong>@Item.CodigoCliente</strong>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(Item.Domicilio))
+            {
+                <div>
+                    <span>Domicilio</span>
+                    <strong>@Item.Domicilio@(string.IsNullOrWhiteSpace(Item.Localidad) ? "" : $", {Item.Localidad}")</strong>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Item.CondicionIvaDescripcion))
+            {
+                <div>
+                    <span>Condición IVA</span>
+                    <strong>@Item.CondicionIvaDescripcion</strong>
+                </div>
+            }
+            @if (!string.IsNullOrWhiteSpace(Item.CondicionVentaDescripcion))
+            {
+                <div>
+                    <span>Condición de venta</span>
+                    <strong>@Item.CondicionVentaDescripcion</strong>
+                </div>
+            }
+            @if (Item.Vencimiento is { } vencimiento)
+            {
+                <div>
+                    <span>Vencimiento</span>
+                    <strong>
+                        @vencimiento.ToString("dd/MM/yyyy")
+                        @if (!string.IsNullOrEmpty(GetEstado()))
+                        {
+                            <span class="portal-comprobante__estado portal-comprobante__estado--@GetEstadoModificador()">@GetEstado()</span>
+                        }
+                    </strong>
+                </div>
+            }
+        </div>
+    </section>
+
+    @if (Item.Lineas.Count > 0)
+    {
+        <section class="portal-comprobante__items">
+            <h3 class="portal-comprobante__section-title">Detalle</h3>
+            <div class="portal-comprobante__table-scroll">
+                <table class="portal-comprobante__table">
+                    <thead>
+                        <tr>
+                            <th>Código</th>
+                            <th>Descripción</th>
+                            @if (MostrarUnidad())
+                            {
+                                <th>Unidad</th>
+                            }
+                            <th class="text-end">Cantidad</th>
+                            <th class="text-end">Precio unitario</th>
+                            @if (MostrarBonificacion())
+                            {
+                                <th class="text-end">Bonif.</th>
+                            }
+                            @if (MostrarIva())
+                            {
+                                <th class="text-end">IVA</th>
+                            }
+                            <th class="text-end">Importe</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var linea in Item.Lineas)
+                        {
+                            <tr>
+                                <td>@linea.IdArticulo</td>
+                                <td>@linea.Descripcion</td>
+                                @if (MostrarUnidad())
+                                {
+                                    <td>@linea.Unidad</td>
+                                }
+                                <td class="text-end">@linea.Cantidad.ToString("N2", CultureEsAr)</td>
+                                <td class="text-end">@Money(linea.PrecioUnitario)</td>
+                                @if (MostrarBonificacion())
+                                {
+                                    <td class="text-end">@(linea.Bonificacion != 0 ? Money(linea.Bonificacion) : "—")</td>
+                                }
+                                @if (MostrarIva())
+                                {
+                                    <td class="text-end">@linea.Iva.ToString("0.##", CultureEsAr)%</td>
+                                }
+                                <td class="text-end">@Money(linea.Subtotal)</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    }
+
+    <footer class="portal-comprobante__totales">
+        @if (Item.NetoGravado != 0 || Item.NetoNoGravado != 0)
+        {
+            <div><span>Subtotal</span><strong>@Money(Item.NetoGravado + Item.NetoNoGravado)</strong></div>
+        }
+        @if (Item.Iva != 0)
+        {
+            <div><span>IVA</span><strong>@Money(Item.Iva)</strong></div>
+        }
+        @if (Item.OtrosImpuestos != 0)
+        {
+            <div><span>Otros impuestos</span><strong>@Money(Item.OtrosImpuestos)</strong></div>
+        }
+        <div class="portal-comprobante__total-final"><span>TOTAL</span><strong>@Money(Item.ImporteOriginal)</strong></div>
+    </footer>
+</article>
+
+@code {
+    private static readonly System.Globalization.CultureInfo CultureEsAr = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
+
+    [Parameter, EditorRequired] public PortalClienteComprobantePendienteDetalleDto Item { get; set; } = null!;
+    [Parameter, EditorRequired] public ConfiguracionEmpresaDto Empresa { get; set; } = null!;
+    [Parameter] public string LogoUrl { get; set; } = string.Empty;
+    [Parameter] public string LogoAlt { get; set; } = string.Empty;
+
+    private string BuildEmpresaDomicilio()
+    {
+        var calle = string.Join(" ", new[] { Empresa.Calle, Empresa.Numero }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        return string.Join(" · ", new[] { calle, Empresa.Localidad }.Where(x => !string.IsNullOrWhiteSpace(x)));
+    }
+
+    private bool MostrarUnidad()
+        => Item.Lineas.Any(l => !string.IsNullOrWhiteSpace(l.Unidad));
+
+    private bool MostrarBonificacion()
+        => Item.Lineas.Any(l => l.Bonificacion != 0);
+
+    private bool MostrarIva()
+        => Item.Lineas.Any(l => l.Iva != 0);
+
+    private string GetEstado()
+    {
+        if (Item.SaldoPendiente is not { } saldo)
+            return string.Empty;
+
+        if (saldo == 0)
+            return "Pagado";
+
+        if (Item.Vencimiento is { } vencimiento && vencimiento.Date < DateTime.Today)
+            return "Vencido";
+
+        return "A vencer";
+    }
+
+    private string GetEstadoModificador()
+        => GetEstado() switch
+        {
+            "Vencido" => "vencido",
+            "Pagado" => "pagado",
+            _ => "a-vencer"
+        };
+
+    private static string Money(decimal value)
+        => value.ToString("C2", CultureEsAr);
+}

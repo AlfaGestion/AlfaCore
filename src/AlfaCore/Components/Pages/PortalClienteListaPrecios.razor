@@ -88,38 +88,33 @@ else
                 </div>
             </header>
 
-            <div class="portal-cliente__list-toolbar">
-                <div class="portal-cliente__toolbar-row portal-cliente__toolbar-row--search" @onkeydown="HandleSearchKeyDownAsync">
-                    <AlfaInput Label="Buscar"
-                               Type="search"
-                               Value="@_texto"
-                               ValueChanged="SetTextoAsync"
-                               Placeholder="Código, descripción, marca o rubro"
-                               Class="portal-cliente__toolbar-field portal-cliente__toolbar-field--search" />
-                </div>
-
-                <div class="portal-cliente__toolbar-row portal-cliente__toolbar-row--filters">
-                    <AlfaSelect Label="Agrupar por"
-                                Value="@_agruparPor"
-                                ValueChanged="SetAgruparPorAsync"
-                                Options="@GroupOptions"
-                                Class="portal-cliente__toolbar-field portal-cliente__toolbar-field--group" />
-                    <AlfaInput Label="Margen de ganancia %"
-                               Type="number"
-                               Value="@_margenTexto"
-                               ValueChanged="SetMargenAsync"
-                               Placeholder="0,00"
-                               HelpText="Solo simulación"
-                               Class="portal-cliente__toolbar-field portal-cliente__toolbar-field--margin" />
-                    <div class="portal-cliente__toolbar-actions">
+            <div class="portal-cliente__list-toolbar" @onkeydown="HandleSearchKeyDownAsync">
+                <AlfaInput Label="Buscar"
+                           Type="search"
+                           Value="@_texto"
+                           ValueChanged="SetTextoAsync"
+                           Placeholder="Código, descripción, marca o rubro"
+                           Class="portal-cliente__toolbar-field portal-cliente__toolbar-field--search" />
+                <AlfaSelect Label="Agrupar por"
+                            Value="@_agruparPor"
+                            ValueChanged="SetAgruparPorAsync"
+                            Options="@GroupOptions"
+                            Class="portal-cliente__toolbar-field portal-cliente__toolbar-field--group" />
+                <AlfaInput Label="Margen %"
+                           Type="number"
+                           Value="@_margenTexto"
+                           ValueChanged="SetMargenAsync"
+                           Placeholder="0,00"
+                           Class="portal-cliente__toolbar-field portal-cliente__toolbar-field--margin" />
+                <span class="portal-cliente__toolbar-hint">Solo simulación</span>
+                <div class="portal-cliente__toolbar-actions">
                     <AlfaButton Variant="AlfaButtonVariant.Primary"
                                 Size="AlfaSize.Sm"
                                 Icon="bi bi-search"
                                 Disabled="@_loading"
                                 OnClick="@(_ => BuscarPrimeraPaginaAsync())">
-                            Buscar
-                        </AlfaButton>
-                    </div>
+                        Buscar
+                    </AlfaButton>
                 </div>
             </div>
 
@@ -380,7 +375,7 @@ else
             return string.Empty;
 
         var pagina = _resultado.Pagina;
-        return $"{pagina.Total} artículo(s) · Página {pagina.PageNumber} de {pagina.TotalPages}";
+        return $"{pagina.Items.Count} de {pagina.Total} artículo(s) · Página {pagina.PageNumber} de {pagina.TotalPages}";
     }
 
     private string GetMargenTexto()

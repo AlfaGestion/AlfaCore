@@ -118,6 +118,8 @@ public sealed class ListaPreciosClienteService(
         Marca = r.Marca,
         Familia = r.Familia,
         Rubro = r.Rubro,
+        Categoria = r.Categoria,
+        TasaIva = r.TasaIva,
         Precio = r.Precio
     };
 
@@ -143,6 +145,25 @@ public sealed class ListaPreciosClienteService(
             : string.Empty;
         var familiaSelect = tieneFamilias ? "ISNULL(LTRIM(RTRIM(f.Descripcion)), '')" : "''";
 
+        // Categoría: relación M:N artículo-categoría (V_MA_ArtCatRel), a diferencia de Marca/Familia/Rubro
+        // que son 1:1 en el maestro — se toma una sola categoría por artículo (la de menor IdCategoria)
+        // vía OUTER APPLY para no duplicar filas del listado.
+        var tieneCategorias = await SqlObjectExistsAsync(cn, "V_MA_ArtCatRel", ct)
+            && await SqlObjectExistsAsync(cn, "V_TA_CategoriaArticulo", ct);
+
+        var categoriaJoin = tieneCategorias
+            ? """
+              OUTER APPLY (
+                  SELECT TOP (1) LTRIM(RTRIM(ca.Descripcion)) AS Descripcion
+                  FROM dbo.V_MA_ArtCatRel rel
+                  INNER JOIN dbo.V_TA_CategoriaArticulo ca ON LTRIM(RTRIM(ca.IdCategoria)) = LTRIM(RTRIM(rel.IdCategoria))
+                  WHERE LTRIM(RTRIM(rel.Idarticulo)) = LTRIM(RTRIM(a.IDARTICULO))
+                  ORDER BY rel.IdCategoria
+              ) cat
+              """
+            : string.Empty;
+        var categoriaSelect = tieneCategorias ? "ISNULL(cat.Descripcion, '')" : "''";
+
         var sql = usarLista
             ? $"""
             SELECT
@@ -152,6 +173,8 @@ public sealed class ListaPreciosClienteService(
                 ISNULL(LTRIM(RTRIM(t.Descripcion)), '') AS Marca,
                 {familiaSelect} AS Familia,
                 ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
+                {categoriaSelect} AS Categoria,
+                ISNULL(a.TasaIVA, 0) AS TasaIva,
                 ISNULL(p.Precio{clase}, 0) AS Precio,
                 COUNT(1) OVER() AS TotalRows
             FROM dbo.V_MA_Precios p
@@ -162,6 +185,7 @@ public sealed class ListaPreciosClienteService(
             LEFT JOIN dbo.V_TA_TipoArticulo t
                 ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
             {familiaJoin}
+            {categoriaJoin}
             WHERE UPPER(LTRIM(RTRIM(ISNULL(p.IdLista, '')))) = UPPER(LTRIM(RTRIM(@IdLista)))
               AND UPPER(LTRIM(RTRIM(ISNULL(p.TipoLista, 'V')))) = 'V'
               AND ISNULL(a.Suspendido, 0) <> 1
@@ -185,6 +209,8 @@ public sealed class ListaPreciosClienteService(
                 ISNULL(LTRIM(RTRIM(t.Descripcion)), '') AS Marca,
                 {familiaSelect} AS Familia,
                 ISNULL(LTRIM(RTRIM(r.Descripcion)), '') AS Rubro,
+                {categoriaSelect} AS Categoria,
+                ISNULL(a.TasaIVA, 0) AS TasaIva,
                 ISNULL(a.Precio{clase}, 0) AS Precio,
                 COUNT(1) OVER() AS TotalRows
             FROM dbo.V_MA_ARTICULOS a
@@ -193,6 +219,7 @@ public sealed class ListaPreciosClienteService(
             LEFT JOIN dbo.V_TA_TipoArticulo t
                 ON LTRIM(RTRIM(ISNULL(a.IDTIPO, ''))) = LTRIM(RTRIM(t.IdTipo))
             {familiaJoin}
+            {categoriaJoin}
             WHERE ISNULL(a.Suspendido, 0) <> 1
               AND ISNULL(a.SuspendidoV, 0) <> 1
               AND (
@@ -371,6 +398,8 @@ public sealed class ListaPreciosClienteService(
         public string Marca { get; set; } = string.Empty;
         public string Familia { get; set; } = string.Empty;
         public string Rubro { get; set; } = string.Empty;
+        public string Categoria { get; set; } = string.Empty;
+        public decimal TasaIva { get; set; }
         public decimal Precio { get; set; }
         public int TotalRows { get; set; }
     }

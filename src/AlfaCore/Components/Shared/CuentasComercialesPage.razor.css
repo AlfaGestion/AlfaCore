@@ -605,6 +605,75 @@
     padding: .18rem .55rem;
 }
 
+.cuentas-contacto-item__actions {
+    margin-top: .1rem;
+}
+
+.cuentas-contacto-item__invite {
+    font-size: .78rem;
+}
+
+.cuentas-contacto-item__invite.is-disabled {
+    cursor: not-allowed;
+    opacity: .5;
+    pointer-events: none;
+}
+
+.cuentas-portal-cliente {
+    background: rgba(11, 27, 46, .7);
+    border: 1px solid rgba(83, 124, 172, .36);
+    border-radius: .5rem;
+    display: grid;
+    gap: 1rem;
+    margin-top: 1.5rem;
+    padding: 1rem 1.1rem;
+}
+
+.cuentas-portal-cliente__header h4 {
+    align-items: center;
+    display: flex;
+    gap: .45rem;
+    margin: 0;
+}
+
+.cuentas-portal-cliente__header p {
+    color: var(--text-muted, #8da2bf);
+    margin: .3rem 0 0;
+}
+
+.cuentas-portal-cliente__email {
+    align-items: center;
+    display: flex;
+    gap: .4rem;
+    padding: .5rem 0;
+}
+
+.cuentas-portal-cliente__email--sin-mail {
+    color: #fbbf24;
+}
+
+.cuentas-portal-cliente__clave {
+    align-items: stretch;
+    display: flex;
+    gap: .4rem;
+}
+
+.cuentas-portal-cliente__clave input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.cuentas-portal-cliente__actions {
+    align-items: center;
+    display: flex;
+    flex-wrap: wrap;
+    gap: .6rem;
+}
+
+.cuentas-portal-cliente__hint {
+    color: var(--text-muted, #8da2bf);
+}
+
 .cuentas-contactos-form {
     border-top: 1px solid rgba(83, 124, 172, .24);
     display: grid;

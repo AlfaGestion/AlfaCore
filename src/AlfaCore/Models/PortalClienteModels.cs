@@ -1,5 +1,21 @@
 namespace AlfaCore.Models;
 
+// Invitación al Portal Cliente desde la ficha del cliente (Clientes → Editar). Cuando IdContacto
+// tiene valor, la invitación es para un contacto vinculado (MA_CONTACTOS) en vez de para el
+// cliente; en ambos casos el acceso sigue siendo el mismo CodigoCliente, porque el Portal Cliente
+// hoy no tiene autenticación individual por contacto (ver PortalClienteInvitacionService).
+public sealed class PortalClienteInvitacionRequestDto
+{
+    public string CodigoCliente { get; set; } = string.Empty;
+    public int? IdContacto { get; set; }
+    public string? IdWeb { get; set; }
+    public int? IdBase { get; set; }
+    public string UrlPortal { get; set; } = string.Empty;
+    public string UrlBaseRestablecer { get; set; } = string.Empty;
+    public string NombreEmpresa { get; set; } = string.Empty;
+    public string? LogoUrlAbsoluta { get; set; }
+}
+
 public sealed class PortalClientePedidosFiltroDto
 {
     public string CodigoCliente { get; set; } = string.Empty;

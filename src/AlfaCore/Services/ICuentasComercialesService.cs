@@ -10,6 +10,11 @@ public interface ICuentasComercialesService
     Task<CuentaComercialLookupDataDto> GetLookupDataAsync(CuentaComercialTipo tipo, CancellationToken ct = default);
     Task<string> SaveAsync(CuentaComercialTipo tipo, CuentaComercialSaveRequest request, CancellationToken ct = default);
     Task DeactivateAsync(CuentaComercialTipo tipo, string codigo, CancellationToken ct = default);
+
+    // Clave del Portal Cliente (MA_CUENTASADIC.CLAVE) — acción específica y separada del guardado
+    // general de la ficha: nunca se lee ni se muestra la clave existente, y esta operación es la
+    // única que la modifica. Solo aplica a Clientes (Proveedores no tienen Portal Cliente).
+    Task SetClavePortalClienteAsync(string codigoCliente, string nuevaClave, string usuarioEjecuta, CancellationToken ct = default);
     Task<IReadOnlyList<CuentaComercialContactoDto>> GetContactosAsync(CuentaComercialTipo tipo, string cuentaCodigo, CancellationToken ct = default);
     Task<IReadOnlyList<CuentaComercialContactoCandidateDto>> SearchContactosParaVincularAsync(CuentaComercialTipo tipo, string cuentaCodigo, string texto, CancellationToken ct = default);
     Task<int> CreateContactoAsync(CuentaComercialTipo tipo, CuentaComercialContactoCreateRequest request, CancellationToken ct = default);

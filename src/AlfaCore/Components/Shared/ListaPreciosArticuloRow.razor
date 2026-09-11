@@ -36,13 +36,18 @@
             {
                 <span>@Item.Rubro</span>
             }
+            @if (!string.IsNullOrWhiteSpace(Item.Categoria))
+            {
+                <span>@Item.Categoria</span>
+            }
+            <span>IVA @IvaTexto</span>
         </div>
     </div>
 
     <div class="lista-precios__row-price">
         @if (Item.SinPrecio)
         {
-            <AlfaTag Tone="AlfaTagTone.Warning">Consultar</AlfaTag>
+            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm">Consultar</AlfaButton>
         }
         else
         {
@@ -61,6 +66,9 @@
     [Parameter] public decimal Margen { get; set; }
 
     private bool _imagenFallo;
+
+    private string IvaTexto
+        => Item.TasaIva == 0m ? "Exento" : $"{Item.TasaIva.ToString("0.##", System.Globalization.CultureInfo.GetCultureInfo("es-AR"))}%";
 
     private static string Money(decimal value)
         => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));

@@ -582,7 +582,7 @@ else
             return;
         }
 
-        if (idbase is > 0 && !string.IsNullOrWhiteSpace(idweb))
+        if (idbase is > 0 && !string.IsNullOrWhiteSpace(idweb) && !Embedded)
         {
             await RedirectLegacyPublicRouteAsync();
             return;
@@ -958,13 +958,20 @@ else
     private static string GetLoadingLogoUrl()
         => AlfaCore.Components.Shared.AuthThemeAssets.GetLoginLogo(isDarkTheme: true);
 
+    // Sin logo propio configurado, LogoUrl NO viene vacío (el servicio ya devuelve
+    // DefaultPublicLogoUrl como fallback) — la señal real es TieneLogoPersonalizado.
     private string GetBrandingLogoFrameClass()
-        => _branding.LogoFormato?.Trim().ToLowerInvariant() switch
+    {
+        if (!_branding.TieneLogoPersonalizado)
+            return "carrito-page__logo--square";
+
+        return _branding.LogoFormato?.Trim().ToLowerInvariant() switch
         {
             CatalogosPublicLogoFormatKeys.Square => "carrito-page__logo--square",
             CatalogosPublicLogoFormatKeys.Horizontal => "carrito-page__logo--horizontal",
             _ => "carrito-page__logo--auto"
         };
+    }
 
     private string? GetVigenciaTexto()
     {

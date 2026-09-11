@@ -277,6 +277,118 @@ public sealed class PortalClienteService(
             };
         }, "No pudimos consultar tu cuenta corriente en este momento.", ct);
 
+    // Estado de cuenta (pestaña "Cuenta Corriente" del portal): reutiliza dbo.VE_CPTES_SALDOS_TODOS,
+    // la misma vista que ya usa el sp legacy sp_web_getCuentaCorriente para este listado — incluye
+    // TODOS los movimientos (facturas/notas y cobros, pagados o no), a diferencia de
+    // VE_CPTES_SALDOS_VENTAS que solo trae pendientes. La columna Saldo es el saldo propio de cada
+    // comprobante (0 si ya está cancelado), igual que el sp original — no un saldo corrido de cuenta.
+    public Task<PortalClienteEstadoCuentaDto> GetEstadoCuentaAsync(PortalClienteEstadoCuentaFiltroDto filtro, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetEstadoCuenta", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(filtro);
+
+            var codigo = (filtro.CodigoCliente ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(codigo))
+                throw new InvalidOperationException("No se pudo identificar al cliente. Volvé a iniciar sesión.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var resumen = await ConsultarResumenAsync(cn, codigo, token);
+
+            // VE_CPTES_SALDOS_TODOS es una vista legacy (fuente del sp_web_getCuentaCorriente original);
+            // no todas las bases la tienen actualizada/creada. Si falta, se degrada a "sin movimientos"
+            // en vez de tirar un error de SQL, igual que ListaPreciosClienteService con V_MA_ARTICULOS.
+            if (!await SqlObjectExistsAsync(cn, "VE_CPTES_SALDOS_TODOS", token))
+            {
+                return new PortalClienteEstadoCuentaDto
+                {
+                    SaldoActual = resumen.SaldoTotal,
+                    SaldoPeriodo = 0,
+                    Movimientos = []
+                };
+            }
+
+            var fechaHastaExclusiva = filtro.FechaHasta?.Date.AddDays(1);
+
+            var movimientos = await cn.QueryAsync<MovimientoRow>(new CommandDefinition(
+                """
+                SELECT TOP (500)
+                    a.FECHA AS Fecha,
+                    ISNULL(LTRIM(RTRIM(a.TC)), '') AS Tc,
+                    LTRIM(RTRIM(a.TC)) + ' ' + LTRIM(RTRIM(a.SUCURSAL)) + '-' + LTRIM(RTRIM(a.NUMERO))
+                        + CASE WHEN LTRIM(RTRIM(a.LETRA)) <> '' THEN ' ' + LTRIM(RTRIM(a.LETRA)) ELSE '' END AS Comprobante,
+                    ISNULL(LTRIM(RTRIM(a.DETALLE)), '') AS Detalle,
+                    CONVERT(decimal(15,2), a.IMPORTE) AS Importe,
+                    CONVERT(decimal(15,2), a.SALDO) AS Saldo,
+                    a.VENCIMIENTO AS Vencimiento,
+                    b.ID AS IdComprobante
+                FROM dbo.VE_CPTES_SALDOS_TODOS a
+                LEFT JOIN dbo.V_MV_Cpte b
+                    ON UPPER(LTRIM(RTRIM(b.TC))) = UPPER(LTRIM(RTRIM(a.TC)))
+                   AND LTRIM(RTRIM(b.SUCURSAL)) = LTRIM(RTRIM(a.SUCURSAL))
+                   AND LTRIM(RTRIM(b.NUMERO)) = LTRIM(RTRIM(a.NUMERO))
+                   AND LTRIM(RTRIM(b.LETRA)) = LTRIM(RTRIM(a.LETRA))
+                WHERE UPPER(LTRIM(RTRIM(a.CUENTA))) = UPPER(LTRIM(RTRIM(@CodigoCliente)))
+                  AND a.TipoVista IN ('CL', 'CB', 'CM')
+                  AND ISNULL(b.ANULADA, 0) = 0
+                  AND (@FechaDesde IS NULL OR a.FECHA >= @FechaDesde)
+                  AND (@FechaHastaExclusiva IS NULL OR a.FECHA < @FechaHastaExclusiva)
+                  AND (@OcultarSaldoCero = 0 OR a.SALDO <> 0)
+                ORDER BY a.FECHA ASC, a.TC ASC, a.SUCURSAL ASC, a.NUMERO ASC;
+                """,
+                new
+                {
+                    CodigoCliente = codigo,
+                    filtro.FechaDesde,
+                    FechaHastaExclusiva = fechaHastaExclusiva,
+                    OcultarSaldoCero = filtro.OcultarSaldoCero
+                },
+                cancellationToken: token));
+
+            var saldoPeriodo = await cn.ExecuteScalarAsync<decimal?>(new CommandDefinition(
+                """
+                SELECT SUM(CONVERT(decimal(15,2), a.IMPORTE))
+                FROM dbo.VE_CPTES_SALDOS_TODOS a
+                LEFT JOIN dbo.V_MV_Cpte b
+                    ON UPPER(LTRIM(RTRIM(b.TC))) = UPPER(LTRIM(RTRIM(a.TC)))
+                   AND LTRIM(RTRIM(b.SUCURSAL)) = LTRIM(RTRIM(a.SUCURSAL))
+                   AND LTRIM(RTRIM(b.NUMERO)) = LTRIM(RTRIM(a.NUMERO))
+                   AND LTRIM(RTRIM(b.LETRA)) = LTRIM(RTRIM(a.LETRA))
+                WHERE UPPER(LTRIM(RTRIM(a.CUENTA))) = UPPER(LTRIM(RTRIM(@CodigoCliente)))
+                  AND a.TipoVista IN ('CL', 'CB', 'CM')
+                  AND ISNULL(b.ANULADA, 0) = 0
+                  AND (@FechaDesde IS NULL OR a.FECHA >= @FechaDesde)
+                  AND (@FechaHastaExclusiva IS NULL OR a.FECHA < @FechaHastaExclusiva);
+                """,
+                new { CodigoCliente = codigo, filtro.FechaDesde, FechaHastaExclusiva = fechaHastaExclusiva },
+                cancellationToken: token));
+
+            var hoy = DateTime.Today;
+
+            return new PortalClienteEstadoCuentaDto
+            {
+                SaldoActual = resumen.SaldoTotal,
+                SaldoPeriodo = saldoPeriodo ?? 0,
+                Movimientos = movimientos.Select(m => new PortalClienteEstadoCuentaMovimientoDto
+                {
+                    Fecha = m.Fecha,
+                    Tc = m.Tc,
+                    Comprobante = m.Comprobante,
+                    Detalle = m.Detalle,
+                    Importe = m.Importe,
+                    Saldo = m.Saldo,
+                    Vencimiento = m.Vencimiento,
+                    IdComprobante = m.IdComprobante,
+                    Estado = m.Saldo == 0
+                        ? "Pagado"
+                        : m.Vencimiento is { } vencimiento && vencimiento.Date < hoy
+                            ? "Vencido"
+                            : "A vencer"
+                }).ToList()
+            };
+        }, "No pudimos consultar tu cuenta corriente en este momento.", ct);
+
     public Task<PortalClienteComprobantePendienteDetalleDto?> GetComprobanteClienteDetalleAsync(string codigoCliente, int idComprobante, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetComprobanteClienteDetalle", async token =>
         {
@@ -287,21 +399,47 @@ public sealed class PortalClienteService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
+            // TA_CONDIVA (código→descripción de condición de IVA) es opcional: no todas las bases
+            // lo tienen, igual que V_TA_FAMILIAS en ListaPreciosClienteService.
+            var tieneCondIva = await SqlObjectExistsAsync(cn, "TA_CONDIVA", token);
+            var condIvaJoin = tieneCondIva
+                ? "LEFT JOIN dbo.TA_CONDIVA ci ON UPPER(LTRIM(RTRIM(ci.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(v.CONDICIONIVA, ''))))"
+                : string.Empty;
+            var condIvaSelect = tieneCondIva ? "ISNULL(ci.DESCRIPCION, '')" : "''";
+
             var cabecera = await cn.QuerySingleOrDefaultAsync<ComprobanteCabeceraRow>(new CommandDefinition(
-                """
+                $"""
                 SELECT TOP (1)
                     v.ID AS IdComprobante,
                     ISNULL(LTRIM(RTRIM(v.TC)), '') AS Tc,
                     ISNULL(td.DESCRIPCION, '') AS TcDescripcion,
+                    ISNULL(LTRIM(RTRIM(v.LETRA)), '') AS Letra,
+                    ISNULL(LTRIM(RTRIM(v.SUCURSAL)), '') AS Sucursal,
+                    ISNULL(LTRIM(RTRIM(v.NUMERO)), '') AS Numero,
                     ISNULL(LTRIM(RTRIM(v.IDCOMPROBANTE)), '') AS IdComprobanteTexto,
                     v.FECHA AS Fecha,
                     ISNULL(LTRIM(RTRIM(v.CUENTA)), '') AS CodigoCliente,
                     ISNULL(LTRIM(RTRIM(v.NOMBRE)), '') AS RazonSocial,
+                    ISNULL(LTRIM(RTRIM(v.DOMICILIO)), '') AS Domicilio,
+                    ISNULL(LTRIM(RTRIM(v.LOCALIDAD)), '') AS Localidad,
+                    ISNULL(LTRIM(RTRIM(v.TELEFONO)), '') AS Telefono,
+                    ISNULL(LTRIM(RTRIM(v.DOCUMENTOTIPO)), '') AS DocumentoTipo,
+                    ISNULL(LTRIM(RTRIM(v.DOCUMENTONUMERO)), '') AS DocumentoNumero,
+                    {condIvaSelect} AS CondicionIvaDescripcion,
+                    ISNULL(cv.Descripcion, '') AS CondicionVentaDescripcion,
+                    ISNULL(CONVERT(decimal(15,2), v.NetoGravado), 0) AS NetoGravado,
+                    ISNULL(CONVERT(decimal(15,2), v.NetoNoGravado), 0) AS NetoNoGravado,
+                    ISNULL(CONVERT(decimal(15,2), v.ImporteIva), 0) AS Iva,
+                    ISNULL(CONVERT(decimal(15,2), v.ImporteImpuestosInternos), 0) AS OtrosImpuestos,
+                    ISNULL(CONVERT(decimal(15,2), v.IMPORTE_S_IVA), 0) AS ImporteSinIva,
                     ISNULL(CONVERT(decimal(15,2), v.IMPORTE), 0) AS ImporteOriginal,
                     s.VENCIMIENTO AS Vencimiento,
                     CONVERT(decimal(15,2), s.SALDO) AS SaldoPendiente
                 FROM dbo.V_MV_Cpte v
                 LEFT JOIN dbo.V_TA_Cpte td ON UPPER(LTRIM(RTRIM(td.CODIGO))) = UPPER(LTRIM(RTRIM(v.TC)))
+                LEFT JOIN dbo.V_TA_Cpra_Vta cv
+                    ON UPPER(LTRIM(RTRIM(cv.IDCond_Cpra_Vta))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDCOND_CPRA_VTA, ''))))
+                {condIvaJoin}
                 LEFT JOIN dbo.VE_CPTES_SALDOS_VENTAS s
                     ON UPPER(LTRIM(RTRIM(s.TC))) = UPPER(LTRIM(RTRIM(v.TC)))
                    AND LTRIM(RTRIM(s.SUCURSAL)) = LTRIM(RTRIM(v.SUCURSAL))
@@ -316,13 +454,16 @@ public sealed class PortalClienteService(
             if (cabecera is null || !string.Equals(cabecera.CodigoCliente.Trim(), codigo, StringComparison.OrdinalIgnoreCase))
                 return null;
 
-            var lineas = await cn.QueryAsync<PortalClientePedidoLineaDto>(new CommandDefinition(
+            var lineas = await cn.QueryAsync<PortalClienteComprobanteLineaDto>(new CommandDefinition(
                 """
                 SELECT
                     ISNULL(LTRIM(RTRIM(IDARTICULO)), '') AS IdArticulo,
                     ISNULL(LTRIM(RTRIM(DESCRIPCION)), '') AS Descripcion,
+                    ISNULL(LTRIM(RTRIM(IDUNIDAD)), '') AS Unidad,
                     ISNULL(CONVERT(decimal(15,2), CANTIDAD), 0) AS Cantidad,
                     ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS PrecioUnitario,
+                    ISNULL(CONVERT(decimal(15,2), ImporteDto), 0) AS Bonificacion,
+                    ISNULL(CONVERT(decimal(15,2), AlicIVA), 0) AS Iva,
                     ISNULL(CONVERT(decimal(15,2), TOTAL), 0) AS Subtotal
                 FROM dbo.V_MV_CpteInsumos
                 WHERE UPPER(LTRIM(RTRIM(IDCOMPROBANTE))) = UPPER(LTRIM(RTRIM(@IdComprobanteTexto)))
@@ -337,11 +478,26 @@ public sealed class PortalClienteService(
                 IdComprobante = cabecera.IdComprobante,
                 Tc = cabecera.Tc,
                 TcDescripcion = cabecera.TcDescripcion,
+                Letra = cabecera.Letra,
+                Sucursal = cabecera.Sucursal,
+                Numero = cabecera.Numero,
                 IdComprobanteTexto = cabecera.IdComprobanteTexto,
                 Fecha = cabecera.Fecha,
                 Vencimiento = cabecera.Vencimiento,
                 CodigoCliente = cabecera.CodigoCliente,
                 RazonSocial = cabecera.RazonSocial,
+                Domicilio = cabecera.Domicilio,
+                Localidad = cabecera.Localidad,
+                Telefono = cabecera.Telefono,
+                DocumentoTipo = cabecera.DocumentoTipo,
+                DocumentoNumero = cabecera.DocumentoNumero,
+                CondicionIvaDescripcion = cabecera.CondicionIvaDescripcion,
+                CondicionVentaDescripcion = cabecera.CondicionVentaDescripcion,
+                NetoGravado = cabecera.NetoGravado,
+                NetoNoGravado = cabecera.NetoNoGravado,
+                Iva = cabecera.Iva,
+                OtrosImpuestos = cabecera.OtrosImpuestos,
+                ImporteSinIva = cabecera.ImporteSinIva,
                 ImporteOriginal = cabecera.ImporteOriginal,
                 SaldoPendiente = cabecera.SaldoPendiente,
                 Lineas = lineas.ToList()
@@ -373,7 +529,7 @@ public sealed class PortalClienteService(
                     ISNULL(LTRIM(RTRIM(cli.PISO)), '') AS Piso,
                     ISNULL(LTRIM(RTRIM(cli.DEPARTAMENTO)), '') AS Departamento,
                     ISNULL(LTRIM(RTRIM(cli.LOCALIDAD)), '') AS Localidad,
-                    ISNULL(LTRIM(RTRIM(cli.PROVINCIA)), '') AS Provincia,
+                    ISNULL(LTRIM(RTRIM(prov.DESCRIPCION)), '') AS Provincia,
                     ISNULL(LTRIM(RTRIM(cli.TELEFONO)), '') AS Telefono,
                     ISNULL(LTRIM(RTRIM(cli.MAIL)), '') AS Email,
                     ISNULL(cli.Clase, 0) AS Clase,
@@ -387,6 +543,8 @@ public sealed class PortalClienteService(
                     ON UPPER(LTRIM(RTRIM(cv.IDCond_Cpra_Vta))) = UPPER(LTRIM(RTRIM(ISNULL(cli.idCond_Cpra_Vta, ''))))
                 LEFT JOIN dbo.V_TA_VENDEDORES vd
                     ON UPPER(LTRIM(RTRIM(vd.IdVendedor))) = UPPER(LTRIM(RTRIM(ISNULL(cli.IdVendedor, ''))))
+                LEFT JOIN dbo.TA_ESTADOS prov
+                    ON UPPER(LTRIM(RTRIM(prov.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(cli.PROVINCIA, ''))))
                 WHERE UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(@CodigoCliente)))
                   AND ISNULL(cli.Dada_De_Baja, 0) = 0;
                 """,
@@ -615,15 +773,42 @@ public sealed class PortalClienteService(
         public decimal? ImporteOriginal { get; set; }
     }
 
+    private sealed class MovimientoRow
+    {
+        public DateTime Fecha { get; set; }
+        public string Tc { get; set; } = string.Empty;
+        public string Comprobante { get; set; } = string.Empty;
+        public string Detalle { get; set; } = string.Empty;
+        public decimal Importe { get; set; }
+        public decimal Saldo { get; set; }
+        public DateTime? Vencimiento { get; set; }
+        public int? IdComprobante { get; set; }
+    }
+
     private sealed class ComprobanteCabeceraRow
     {
         public int IdComprobante { get; set; }
         public string Tc { get; set; } = string.Empty;
         public string TcDescripcion { get; set; } = string.Empty;
+        public string Letra { get; set; } = string.Empty;
+        public string Sucursal { get; set; } = string.Empty;
+        public string Numero { get; set; } = string.Empty;
         public string IdComprobanteTexto { get; set; } = string.Empty;
         public DateTime Fecha { get; set; }
         public string CodigoCliente { get; set; } = string.Empty;
         public string RazonSocial { get; set; } = string.Empty;
+        public string Domicilio { get; set; } = string.Empty;
+        public string Localidad { get; set; } = string.Empty;
+        public string Telefono { get; set; } = string.Empty;
+        public string DocumentoTipo { get; set; } = string.Empty;
+        public string DocumentoNumero { get; set; } = string.Empty;
+        public string CondicionIvaDescripcion { get; set; } = string.Empty;
+        public string CondicionVentaDescripcion { get; set; } = string.Empty;
+        public decimal NetoGravado { get; set; }
+        public decimal NetoNoGravado { get; set; }
+        public decimal Iva { get; set; }
+        public decimal OtrosImpuestos { get; set; }
+        public decimal ImporteSinIva { get; set; }
         public decimal ImporteOriginal { get; set; }
         public DateTime? Vencimiento { get; set; }
         public decimal? SaldoPendiente { get; set; }
@@ -670,6 +855,20 @@ public sealed class PortalClienteService(
         public decimal Total { get; set; }
         public bool Anulada { get; set; }
         public string Comentarios { get; set; } = string.Empty;
+    }
+
+    private static async Task<bool> SqlObjectExistsAsync(SqlConnection cn, string objectName, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT CASE
+                WHEN OBJECT_ID(@ObjectName, 'U') IS NOT NULL THEN 1
+                WHEN OBJECT_ID(@ObjectName, 'V') IS NOT NULL THEN 1
+                ELSE 0
+            END;
+            """;
+
+        var exists = await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, new { ObjectName = $"dbo.{objectName}" }, cancellationToken: ct));
+        return exists == 1;
     }
 
     private async Task<T> ExecuteLoggedAsync<T>(

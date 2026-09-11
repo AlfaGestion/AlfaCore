@@ -1124,13 +1124,20 @@
     private string GetLoadingLogoUrl()
         => AlfaCore.Components.Shared.AuthThemeAssets.GetLoginLogo(_isDark);
 
+    // Sin logo propio configurado, LogoUrl NO viene vacío (el servicio ya devuelve
+    // DefaultPublicLogoUrl como fallback) — la señal real es TieneLogoPersonalizado.
     private string GetBrandingLogoFrameClass()
-        => _branding.LogoFormato?.Trim().ToLowerInvariant() switch
+    {
+        if (!_branding.TieneLogoPersonalizado)
+            return "catalogo-publico-hero__logo--square";
+
+        return _branding.LogoFormato?.Trim().ToLowerInvariant() switch
         {
             CatalogosPublicLogoFormatKeys.Square => "catalogo-publico-hero__logo--square",
             CatalogosPublicLogoFormatKeys.Horizontal => "catalogo-publico-hero__logo--horizontal",
             _ => "catalogo-publico-hero__logo--auto"
         };
+    }
 
     private static bool HasValidOffer(CatalogosCatalogoItemDto item)
         => AlfaCore.Services.CatalogosPriceDisplayHelper.HasValidOffer(item);

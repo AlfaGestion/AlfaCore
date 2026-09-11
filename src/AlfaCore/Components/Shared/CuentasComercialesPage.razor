@@ -7,6 +7,9 @@
 @inject IAppUserSessionService AppUserSession
 @inject IRouteContextService RouteContext
 @inject IPageHeaderService PageHeader
+@inject ISessionService SessionSvc
+@inject IInterfacesCatalogosService CatalogosSvc
+@inject IPortalClienteInvitacionService PortalInvitacionSvc
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
@@ -668,6 +671,68 @@ else
                         }
                     </div>
                 </div>
+
+                @if (Tipo == CuentaComercialTipo.Cliente)
+                {
+                    <div class="cuentas-portal-cliente">
+                        <div class="cuentas-portal-cliente__header">
+                            <h4><i class="bi bi-shop-window"></i> Portal Cliente</h4>
+                            <p>Acceso del cliente al Portal Cliente (cuenta corriente, comprobantes, lista de precios, catálogos y pedidos).</p>
+                        </div>
+
+                        <div class="contactos-form__grid">
+                            <div class="field">
+                                <label>Email de acceso</label>
+                                @if (string.IsNullOrWhiteSpace(_form.Mail))
+                                {
+                                    <div class="cuentas-portal-cliente__email cuentas-portal-cliente__email--sin-mail">
+                                        <i class="bi bi-exclamation-triangle"></i>
+                                        Sin email registrado. Completá el campo "Email" de arriba para poder enviar la invitación.
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="cuentas-portal-cliente__email">
+                                        <i class="bi bi-envelope-check"></i>
+                                        @_form.Mail
+                                    </div>
+                                }
+                            </div>
+                            <div class="field">
+                                <label>Clave Portal (nueva)</label>
+                                <div class="cuentas-portal-cliente__clave">
+                                    <input type="@(_mostrarClavePortal ? "text" : "password")"
+                                           maxlength="15"
+                                           placeholder="Dejar vacío para no modificar"
+                                           autocomplete="new-password"
+                                           @bind="_clavePortalNueva"
+                                           disabled="@_saving" />
+                                    <button type="button"
+                                            class="btn btn--ghost btn--sm"
+                                            title="@(_mostrarClavePortal ? "Ocultar" : "Mostrar")"
+                                            @onclick="() => _mostrarClavePortal = !_mostrarClavePortal">
+                                        <i class="bi @(_mostrarClavePortal ? "bi-eye-slash" : "bi-eye")"></i>
+                                    </button>
+                                </div>
+                                <small>Por seguridad, la clave actual no se muestra. Completá este campo solo si querés definir una clave nueva; se guarda junto con el resto de la ficha.</small>
+                            </div>
+                        </div>
+
+                        <div class="actions cuentas-portal-cliente__actions">
+                            <button type="button"
+                                    class="btn btn--primary"
+                                    @onclick="EnviarInvitacionClienteAsync"
+                                    disabled="@(_saving || _enviandoInvitacionCliente || _isNewMode || string.IsNullOrWhiteSpace(_form.Mail))">
+                                <i class="bi bi-send"></i>
+                                @(_enviandoInvitacionCliente ? "Enviando..." : "Enviar invitación al Portal")
+                            </button>
+                            @if (_isNewMode)
+                            {
+                                <small class="cuentas-portal-cliente__hint">@($"Guardá el {SingularLabelLower} para poder enviar la invitación.")</small>
+                            }
+                        </div>
+                    </div>
+                }
                 }
 
                 @if (_activeTab == CuentaComercialTab.Condiciones)
@@ -918,6 +983,20 @@ else
                                                     <span>CuentaRel</span>
                                                 }
                                             </div>
+                                            @if (Tipo == CuentaComercialTipo.Cliente)
+                                            {
+                                                <div class="cuentas-contacto-item__actions">
+                                                    <span role="button"
+                                                          tabindex="0"
+                                                          class="btn btn--ghost btn--sm cuentas-contacto-item__invite @(string.IsNullOrWhiteSpace(contacto.Email) ? "is-disabled" : string.Empty)"
+                                                          title="@(string.IsNullOrWhiteSpace(contacto.Email) ? "Este contacto no tiene email registrado." : "Enviar invitación al Portal Cliente")"
+                                                          @onclick:stopPropagation="true"
+                                                          @onclick="() => EnviarInvitacionContactoAsync(contacto)">
+                                                        <i class="bi bi-send"></i>
+                                                        @(_enviandoInvitacionContactoId == contacto.IdContacto ? "Enviando..." : "Enviar invitación")
+                                                    </span>
+                                                </div>
+                                            }
                                         </div>
                                     </button>
                                 }
@@ -1577,6 +1656,10 @@ else
     private CuentaComercialLookupDataDto _lookups = new();
     private CuentaComercialViewSettingsDto _viewSettings = new();
     private AppUiMessage? _feedback;
+    private string _clavePortalNueva = string.Empty;
+    private bool _mostrarClavePortal;
+    private bool _enviandoInvitacionCliente;
+    private int? _enviandoInvitacionContactoId;
     private DateTime _feedbackSetAtUtc = DateTime.MinValue;
     private bool _scrollFeedbackAfterRender;
     private bool _loadingList;
@@ -2312,6 +2395,7 @@ else
     private async Task BeginNewAsync()
     {
         ClearFieldErrors();
+        ResetClavePortalState();
         _showEditor = true;
         _showViewSettings = false;
         _isNewMode = true;
@@ -2477,6 +2561,21 @@ else
                 await SyncNoteEditorAsync(_notaCuentaEditor);
                 var savedCode = await CuentasSvc.SaveAsync(Tipo, _form);
                 SetFeedback(AppUiMessage.Success($"{SingularLabel} guardado", $"El {SingularLabelLower} {savedCode} se guardó correctamente."));
+
+                if (Tipo == CuentaComercialTipo.Cliente && !string.IsNullOrWhiteSpace(_clavePortalNueva))
+                {
+                    var nuevaClave = _clavePortalNueva;
+                    try
+                    {
+                        await CuentasSvc.SetClavePortalClienteAsync(savedCode, nuevaClave, AppUserSession.GetCurrentUserName(string.Empty));
+                        SetFeedback(AppUiMessage.Success($"{SingularLabel} guardado", $"El {SingularLabelLower} {savedCode} se guardó y la clave del Portal Cliente se actualizó."));
+                    }
+                    catch (Exception claveEx)
+                    {
+                        SetFeedback(UiOps.BuildMessage(claveEx, $"El {SingularLabelLower} se guardó, pero no se pudo actualizar la clave del Portal Cliente."));
+                    }
+                }
+
                 await BuscarAsync();
                 await SeleccionarAsync(savedCode);
             }
@@ -2827,6 +2926,106 @@ else
         _linkingContacto = false;
     }
 
+    private void ResetClavePortalState()
+    {
+        _clavePortalNueva = string.Empty;
+        _mostrarClavePortal = false;
+    }
+
+    private async Task EnviarInvitacionClienteAsync()
+    {
+        if (_enviandoInvitacionCliente || _isNewMode || string.IsNullOrWhiteSpace(_selectedCodigo))
+            return;
+
+        _enviandoInvitacionCliente = true;
+        try
+        {
+            var request = await BuildInvitacionRequestAsync(idContacto: null);
+            var currentUser = AppUserSession.GetCurrentUserName(string.Empty);
+            var email = await PortalInvitacionSvc.EnviarInvitacionAsync(request, currentUser);
+            SetFeedback(AppUiMessage.Success("Invitación enviada", $"Invitación enviada a {email}."));
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(UiOps.BuildMessage(ex, "No pudimos enviar la invitación al portal."));
+        }
+        finally
+        {
+            _enviandoInvitacionCliente = false;
+        }
+    }
+
+    private async Task EnviarInvitacionContactoAsync(CuentaComercialContactoDto contacto)
+    {
+        if (_enviandoInvitacionContactoId is not null || string.IsNullOrWhiteSpace(_selectedCodigo))
+            return;
+
+        if (string.IsNullOrWhiteSpace(contacto.Email))
+        {
+            SetFeedback(new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Sin email registrado",
+                Message = "Este contacto no tiene email registrado."
+            });
+            return;
+        }
+
+        _enviandoInvitacionContactoId = contacto.IdContacto;
+        try
+        {
+            var request = await BuildInvitacionRequestAsync(contacto.IdContacto);
+            var currentUser = AppUserSession.GetCurrentUserName(string.Empty);
+            var email = await PortalInvitacionSvc.EnviarInvitacionAsync(request, currentUser);
+            SetFeedback(AppUiMessage.Success("Invitación enviada", $"Invitación enviada a {email}."));
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(UiOps.BuildMessage(ex, "No pudimos enviar la invitación al portal."));
+        }
+        finally
+        {
+            _enviandoInvitacionContactoId = null;
+        }
+    }
+
+    // Arma el pedido de invitación con la URL pública real del Portal Cliente para esta base SaaS
+    // (IdWeb/IdBase del usuario/sesión activa, nunca hardcodeada) y el branding ya usado por el
+    // propio Portal Cliente (IInterfacesCatalogosService.GetPublicIdentityAsync — mismo mecanismo
+    // que ya reutiliza PortalClienteRecuperarClaveService).
+    private async Task<PortalClienteInvitacionRequestDto> BuildInvitacionRequestAsync(int? idContacto)
+    {
+        var idWeb = AppUserSession.CurrentUser?.IdWeb;
+        var idBase = SessionSvc.GetActiveSession()?.BaseId;
+
+        var relativa = CatalogosUrlHelper.BuildRelativePortalClienteUrl(null, null, null, fallbackIdWeb: idWeb, fallbackIdBase: idBase);
+        var urlPortal = CatalogosUrlHelper.BuildAbsoluteUrl(Nav, relativa);
+        var urlBaseRestablecer = CatalogosUrlHelper.BuildAbsoluteUrl(Nav, $"{relativa.TrimEnd('/')}/restablecer-clave");
+
+        var branding = new CatalogosPublicIdentityDto();
+        try
+        {
+            branding = await CatalogosSvc.GetPublicIdentityAsync(idWeb);
+        }
+        catch
+        {
+            // Si no se puede resolver el branding, se sigue con los valores por defecto del DTO:
+            // el envío de la invitación no debe bloquearse por esto.
+        }
+
+        return new PortalClienteInvitacionRequestDto
+        {
+            CodigoCliente = _selectedCodigo,
+            IdContacto = idContacto,
+            IdWeb = idWeb,
+            IdBase = idBase,
+            UrlPortal = urlPortal,
+            UrlBaseRestablecer = urlBaseRestablecer,
+            NombreEmpresa = string.IsNullOrWhiteSpace(branding.NombreVisible) ? branding.NombreFallback : branding.NombreVisible,
+            LogoUrlAbsoluta = string.IsNullOrWhiteSpace(branding.LogoUrl) ? null : Nav.ToAbsoluteUri(branding.LogoUrl).ToString()
+        };
+    }
+
     private async Task DarDeBajaAsync()
     {
         if (_isNewMode || string.IsNullOrWhiteSpace(_selectedCodigo))
@@ -2951,6 +3150,7 @@ else
     private void MapDetailToForm(CuentaComercialDetailDto detail)
     {
         ClearFieldErrors();
+        ResetClavePortalState();
         _isNewMode = false;
         _showEditor = true;
         _activeTab = CuentaComercialTab.Datos;

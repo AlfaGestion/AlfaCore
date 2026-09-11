@@ -215,13 +215,24 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
             ? "/logos/Logo.png"
             : Branding.LogoUrl.Trim();
 
+    // Sin logo propio configurado, LogoUrl NO viene vacío: el servicio ya devuelve
+    // DefaultPublicLogoUrl (/logos/Logo.png) como fallback — la señal real de "no hay logo
+    // propio" es TieneLogoPersonalizado. Chequear IsNullOrWhiteSpace(LogoUrl) acá siempre daba
+    // false una vez que Branding terminaba de cargar, así que el marco volvía a "auto" (pensado
+    // para logos horizontales) apenas se resolvía la identidad pública — el isotipo por defecto
+    // es cuadrado, por eso se veía bien un instante y "se rompía" después.
     protected string GetBrandingLogoFrameClass()
-        => Branding.LogoFormato?.Trim().ToLowerInvariant() switch
+    {
+        if (!Branding.TieneLogoPersonalizado)
+            return "portal-cliente__logo--square";
+
+        return Branding.LogoFormato?.Trim().ToLowerInvariant() switch
         {
             CatalogosPublicLogoFormatKeys.Square => "portal-cliente__logo--square",
             CatalogosPublicLogoFormatKeys.Horizontal => "portal-cliente__logo--horizontal",
             _ => "portal-cliente__logo--auto"
         };
+    }
 
     protected string BuildPortalRoute(string suffix)
     {

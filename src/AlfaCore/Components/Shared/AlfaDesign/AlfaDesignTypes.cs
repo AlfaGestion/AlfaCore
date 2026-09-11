@@ -18,7 +18,8 @@ public enum AlfaDialogSize
 {
     Sm,
     Md,
-    Lg
+    Lg,
+    Xl
 }
 
 public enum AlfaTagTone

@@ -40,7 +40,7 @@ else if (!IsAuthenticated)
 }
 else
 {
-    <section class="page-grid portal-cliente portal-cliente--detail">
+    <section class="page-grid portal-cliente portal-cliente--detail portal-cliente--ctacte">
         <PortalClienteHeader BrandLogoUrl="@GetBrandingLogoUrl()"
                               BrandName="@GetBrandingName()"
                               LogoFrameClass="@GetBrandingLogoFrameClass()"
@@ -63,6 +63,8 @@ else
             </div>
         }
 
+        <h2 class="portal-cliente__page-heading">Cuenta Corriente</h2>
+
         <section class="portal-cliente__summary-grid" aria-label="Resumen de cuenta corriente">
             <article class="portal-cliente__summary-card">
                 <span>Saldo actual</span>
@@ -77,114 +79,98 @@ else
                 <strong>@Money(_resumen.AVencer)</strong>
             </article>
             <article class="portal-cliente__summary-card">
-                <span>Comprobantes pendientes</span>
+                <span>Pendientes</span>
                 <strong>@_resumen.CantidadPendientes</strong>
             </article>
         </section>
 
         <section class="portal-cliente__section">
-            <header class="portal-cliente__section-head">
-                <div>
-                    <h3 class="portal-cliente__section-title">Comprobantes pendientes</h3>
-                    <p class="portal-cliente__section-subtitle">Movimientos pendientes de tu cuenta.</p>
-                </div>
-            </header>
-
-            <div class="portal-cliente__filters">
-                <div class="portal-cliente__filter-tabs" role="tablist" aria-label="Filtro de comprobantes pendientes">
-                    <button type="button" class="portal-cliente__tab @(_filtro == PortalClienteComprobantesPendientesFiltro.Todos ? "is-active" : "")" @onclick="() => CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro.Todos)">Todos</button>
-                    <button type="button" class="portal-cliente__tab @(_filtro == PortalClienteComprobantesPendientesFiltro.Vencidos ? "is-active" : "")" @onclick="() => CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro.Vencidos)">Vencidos</button>
-                    <button type="button" class="portal-cliente__tab @(_filtro == PortalClienteComprobantesPendientesFiltro.AVencer ? "is-active" : "")" @onclick="() => CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro.AVencer)">A vencer</button>
-                </div>
-
-                <div class="portal-cliente__filters-grid">
-                    <AlfaInput Label="Fecha desde"
-                               Type="date"
-                               Value="@FechaDesdeTexto"
-                               ValueChanged="SetFechaDesdeAsync"
-                               Class="portal-cliente__filter-field portal-cliente__filter-field--date" />
-                    <AlfaInput Label="Fecha hasta"
-                               Type="date"
-                               Value="@FechaHastaTexto"
-                               ValueChanged="SetFechaHastaAsync"
-                               Class="portal-cliente__filter-field portal-cliente__filter-field--date" />
-                </div>
+            <div class="portal-cliente__ctacte-toolbar">
+                <AlfaSelect Label="Rango"
+                            Value="@_rango"
+                            ValueChanged="SetRangoAsync"
+                            Options="@RangoOptions"
+                            Class="portal-cliente__filter-field portal-cliente__ctacte-field" />
+                <AlfaInput Label="Desde"
+                           Type="date"
+                           Value="@EstadoFechaDesdeTexto"
+                           ValueChanged="SetEstadoFechaDesdeAsync"
+                           Class="portal-cliente__filter-field portal-cliente__ctacte-field" />
+                <AlfaInput Label="Hasta"
+                           Type="date"
+                           Value="@EstadoFechaHastaTexto"
+                           ValueChanged="SetEstadoFechaHastaAsync"
+                           Class="portal-cliente__filter-field portal-cliente__ctacte-field" />
+                <AlfaInput Label="Cuenta"
+                           Value="@GetCurrentCodigoCliente()"
+                           Disabled="true"
+                           Class="portal-cliente__filter-field portal-cliente__ctacte-field portal-cliente__ctacte-field--cuenta" />
+                <AlfaCheckbox Value="@_ocultarSaldoCero" ValueChanged="SetOcultarSaldoCeroAsync" Class="portal-cliente__ctacte-checkbox">
+                    Ocultar saldo 0
+                </AlfaCheckbox>
+                <AlfaButton Variant="AlfaButtonVariant.Primary"
+                            Size="AlfaSize.Sm"
+                            Disabled="@_loadingEstado"
+                            OnClick="@(_ => ConsultarEstadoCuentaAsync())"
+                            Class="portal-cliente__ctacte-submit">
+                    Consultar
+                </AlfaButton>
             </div>
 
-            @if (_loading)
+            @if (_loadingEstado)
             {
                 <div class="portal-cliente__loading-state">
                     <p class="text-muted">Cargando cuenta corriente...</p>
                 </div>
             }
-            else if (_pendientes.Count == 0)
+            else if (_estadoCuenta.Movimientos.Count == 0)
             {
                 <div class="portal-cliente__empty-panel">
                     <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
-                                    Title="Tu cuenta no registra comprobantes pendientes."
-                                    Message="Cuando existan movimientos pendientes, van a aparecer en este listado."
+                                    Title="No hay movimientos para el rango seleccionado."
+                                    Message="Probá ajustar el rango de fechas o quitar el filtro de saldo 0."
                                     Class="portal-cliente__empty-state" />
                 </div>
             }
             else
             {
-                <div class="portal-cliente__data-view">
-                    <div class="portal-cliente__data-view-header">
-                        <span>Detalle</span>
-                        <span class="text-end">Importe / acción</span>
-                    </div>
-
-                    <div class="portal-cliente__data-view-body">
-                        @foreach (var item in _pendientes)
-                        {
-                            <PortalClienteComprobantePendienteRow Item="item" DetalleUrlBuilder="@(id => BuildPortalRoute($"cuenta-corriente/{id}"))" />
-                        }
-                    </div>
-
-                    <div class="portal-cliente__data-view-footer">
-                        <span>@_pendientes.Count comprobante(s)</span>
-                        <span>Filtrado según la selección actual</span>
-                    </div>
-                </div>
-            }
-        </section>
-
-        <section class="portal-cliente__section">
-            <header class="portal-cliente__section-head">
-                <div>
-                    <h3 class="portal-cliente__section-title">Últimos pagos / cobranzas</h3>
-                    <p class="portal-cliente__section-subtitle">Pagos recientes registrados en la cuenta.</p>
-                </div>
-            </header>
-
-            @if (_loading)
-            {
-                <div class="portal-cliente__loading-state">
-                    <p class="text-muted">Cargando...</p>
-                </div>
-            }
-            else if (_cobranzas.Count == 0)
-            {
-                <div class="portal-cliente__empty-panel">
-                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
-                                    Title="Todavía no registrás pagos o cobranzas."
-                                    Message="Cuando haya registros de cobranzas, aparecerán en esta sección."
-                                    Class="portal-cliente__empty-state" />
-                </div>
-            }
-            else
-            {
-                <div class="portal-cliente__activity-list">
-                    @foreach (var cobranza in _cobranzas)
-                    {
-                        <article class="portal-cliente__activity-row">
-                            <div class="portal-cliente__activity-row-main">
-                                <strong>@cobranza.Tc @cobranza.IdComprobante</strong>
-                                <span class="portal-cliente__activity-row-date">@cobranza.Fecha.ToString("dd/MM/yyyy")</span>
-                            </div>
-                            <div class="portal-cliente__activity-row-amount">@Money(cobranza.Importe)</div>
-                        </article>
-                    }
+                <div class="table-wrap">
+                    <table class="data-table portal-cliente__ctacte-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Comprobante</th>
+                                <th>Descripción</th>
+                                <th>Vencimiento</th>
+                                <th class="text-end">Importe</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var mov in _estadoCuenta.Movimientos)
+                            {
+                                <tr>
+                                    <td data-label="Fecha">@mov.Fecha.ToString("dd/MM/yyyy")</td>
+                                    <td data-label="Comprobante">@mov.Comprobante</td>
+                                    <td data-label="Descripción">@mov.Detalle</td>
+                                    <td data-label="Vencimiento">@(mov.Vencimiento?.ToString("dd/MM/yyyy") ?? "—")</td>
+                                    <td data-label="Importe" class="text-end">@Money(mov.Importe)</td>
+                                    <td data-label="Estado">
+                                        <AlfaTag Tone="@GetEstadoTono(mov.Estado)">@mov.Estado</AlfaTag>
+                                    </td>
+                                    <td data-label="Acciones">
+                                        @if (mov.IdComprobante is { } idComprobante)
+                                        {
+                                            <a class="btn btn--ghost btn--sm" href="@BuildPortalRoute($"cuenta-corriente/{idComprobante}")">
+                                                <i class="bi bi-eye"></i> Ver comprobante
+                                            </a>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
                 </div>
             }
         </section>
@@ -193,14 +179,26 @@ else
 
 @code {
     private CatalogoClienteLoginPanel? _loginPanel;
-    private bool _loading;
     private string? _feedback;
-    private PortalClienteComprobantesPendientesFiltro _filtro = PortalClienteComprobantesPendientesFiltro.Todos;
-    private DateTime? _fechaDesde;
-    private DateTime? _fechaHasta;
     private PortalClienteCuentaCorrienteResumenDto _resumen = new();
-    private IReadOnlyList<PortalClienteComprobantePendienteDto> _pendientes = [];
-    private IReadOnlyList<PortalClienteCobranzaDto> _cobranzas = [];
+
+    private bool _loadingEstado;
+    private string _rango = "mes-actual";
+    private DateTime? _estadoFechaDesde;
+    private DateTime? _estadoFechaHasta;
+    private bool _ocultarSaldoCero;
+    private PortalClienteEstadoCuentaDto _estadoCuenta = new();
+
+    private static readonly IReadOnlyList<AlfaSelectOption> RangoOptions =
+    [
+        new AlfaSelectOption("mes-actual", "Mes actual"),
+        new AlfaSelectOption("mes-anterior", "Mes anterior"),
+        new AlfaSelectOption("ultimos-30-dias", "Últimos 30 días"),
+        new AlfaSelectOption("ultimos-3-meses", "Últimos 3 meses"),
+        new AlfaSelectOption("anio-actual", "Año actual"),
+        new AlfaSelectOption("todo", "Todo"),
+        new AlfaSelectOption("personalizado", "Personalizado")
+    ];
 
     protected override async Task OnAfterClientSessionRestoredAsync()
     {
@@ -212,71 +210,139 @@ else
 
         if (IsAuthenticated)
         {
-            await CargarAsync();
+            await CargarTodoAsync();
             await InvokeAsync(StateHasChanged);
         }
     }
 
     protected override async Task OnAfterLoginAsync()
-        => await CargarAsync();
+        => await CargarTodoAsync();
 
-    private Task CambiarFiltroAsync(PortalClienteComprobantesPendientesFiltro filtro)
+    private async Task CargarTodoAsync()
     {
-        _filtro = filtro;
-        return CargarAsync();
+        AplicarRango(_rango);
+        await Task.WhenAll(CargarResumenAsync(), ConsultarEstadoCuentaAsync());
     }
 
-    private string FechaDesdeTexto
-        => _fechaDesde?.ToString("yyyy-MM-dd") ?? string.Empty;
-
-    private string FechaHastaTexto
-        => _fechaHasta?.ToString("yyyy-MM-dd") ?? string.Empty;
-
-    private async Task SetFechaDesdeAsync(string? value)
+    private async Task CargarResumenAsync()
     {
-        _fechaDesde = ParseDate(value);
-        await CargarAsync();
+        _feedback = null;
+
+        var result = await UiOps.RunAsync(() => PortalClienteSvc.GetResumenCuentaCorrienteAsync(GetCurrentCodigoCliente()),
+            "No pudimos consultar tu cuenta corriente en este momento.");
+
+        if (result.Success && result.Value is not null)
+            _resumen = result.Value;
+        else
+            _feedback = result.Feedback?.Message ?? "No pudimos consultar tu cuenta corriente en este momento.";
+
+        await InvokeAsync(StateHasChanged);
     }
 
-    private async Task SetFechaHastaAsync(string? value)
+    private string EstadoFechaDesdeTexto
+        => _estadoFechaDesde?.ToString("yyyy-MM-dd") ?? string.Empty;
+
+    private string EstadoFechaHastaTexto
+        => _estadoFechaHasta?.ToString("yyyy-MM-dd") ?? string.Empty;
+
+    private Task SetEstadoFechaDesdeAsync(string? value)
     {
-        _fechaHasta = ParseDate(value);
-        await CargarAsync();
+        _estadoFechaDesde = ParseDate(value);
+        _rango = "personalizado";
+        return Task.CompletedTask;
     }
 
-    private async Task CargarAsync()
+    private Task SetEstadoFechaHastaAsync(string? value)
     {
-        _loading = true;
+        _estadoFechaHasta = ParseDate(value);
+        _rango = "personalizado";
+        return Task.CompletedTask;
+    }
+
+    private Task SetOcultarSaldoCeroAsync(bool? value)
+    {
+        _ocultarSaldoCero = value ?? false;
+        return Task.CompletedTask;
+    }
+
+    private Task SetRangoAsync(string? value)
+    {
+        AplicarRango(value);
+        return ConsultarEstadoCuentaAsync();
+    }
+
+    private void AplicarRango(string? rango)
+    {
+        _rango = string.IsNullOrWhiteSpace(rango) ? "personalizado" : rango;
+        var hoy = DateTime.Today;
+
+        switch (_rango)
+        {
+            case "mes-actual":
+                _estadoFechaDesde = new DateTime(hoy.Year, hoy.Month, 1);
+                _estadoFechaHasta = _estadoFechaDesde.Value.AddMonths(1).AddDays(-1);
+                break;
+            case "mes-anterior":
+                var inicioMesActual = new DateTime(hoy.Year, hoy.Month, 1);
+                _estadoFechaDesde = inicioMesActual.AddMonths(-1);
+                _estadoFechaHasta = inicioMesActual.AddDays(-1);
+                break;
+            case "ultimos-30-dias":
+                _estadoFechaDesde = hoy.AddDays(-29);
+                _estadoFechaHasta = hoy;
+                break;
+            case "ultimos-3-meses":
+                _estadoFechaDesde = hoy.AddMonths(-3).AddDays(1);
+                _estadoFechaHasta = hoy;
+                break;
+            case "anio-actual":
+                _estadoFechaDesde = new DateTime(hoy.Year, 1, 1);
+                _estadoFechaHasta = new DateTime(hoy.Year, 12, 31);
+                break;
+            case "todo":
+                _estadoFechaDesde = null;
+                _estadoFechaHasta = null;
+                break;
+            default:
+                break;
+        }
+    }
+
+    private async Task ConsultarEstadoCuentaAsync()
+    {
+        _loadingEstado = true;
         _feedback = null;
         await InvokeAsync(StateHasChanged);
 
         try
         {
-            var result = await UiOps.RunAsync(() => PortalClienteSvc.GetCuentaCorrienteAsync(new PortalClienteCuentaCorrienteFiltroDto
+            var result = await UiOps.RunAsync(() => PortalClienteSvc.GetEstadoCuentaAsync(new PortalClienteEstadoCuentaFiltroDto
             {
                 CodigoCliente = GetCurrentCodigoCliente(),
-                Filtro = _filtro,
-                FechaDesde = _fechaDesde,
-                FechaHasta = _fechaHasta
+                FechaDesde = _estadoFechaDesde,
+                FechaHasta = _estadoFechaHasta,
+                OcultarSaldoCero = _ocultarSaldoCero
             }), "No pudimos consultar tu cuenta corriente en este momento.");
 
             if (result.Success && result.Value is not null)
-            {
-                _resumen = result.Value.Resumen;
-                _pendientes = result.Value.Pendientes;
-                _cobranzas = result.Value.Cobranzas;
-            }
+                _estadoCuenta = result.Value;
             else
-            {
                 _feedback = result.Feedback?.Message ?? "No pudimos consultar tu cuenta corriente en este momento.";
-            }
         }
         finally
         {
-            _loading = false;
+            _loadingEstado = false;
             await InvokeAsync(StateHasChanged);
         }
     }
+
+    private static AlfaTagTone GetEstadoTono(string estado)
+        => estado switch
+        {
+            "Vencido" => AlfaTagTone.Danger,
+            "Pagado" => AlfaTagTone.Neutral,
+            _ => AlfaTagTone.Warning
+        };
 
     private static string Money(decimal value)
         => value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));

@@ -96,46 +96,7 @@ public sealed class PortalClienteRecuperarClaveService(
             if (!await SqlObjectExistsAsync(cn, "ALFACORE_CLIENTE_RESET_TOKEN", ct))
                 return new PortalClienteRecuperarClaveResultDto { Mensaje = MensajeGenerico };
 
-            var token = GenerarToken();
-            var tokenHash = HashToken(token);
-            var expiracion = DateTime.Now.AddMinutes(ExpiracionMinutos);
-
-            await using (var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct))
-            {
-                // Cualquier token pendiente anterior para este cliente queda inutilizado: un link
-                // viejo (por ejemplo, reenviado por error) no debe seguir sirviendo.
-                await cn.ExecuteAsync(new CommandDefinition(
-                    """
-                    UPDATE dbo.ALFACORE_CLIENTE_RESET_TOKEN
-                    SET Usado = 1, FechaHora_Uso = GETDATE()
-                    WHERE UPPER(LTRIM(RTRIM(CodigoCliente))) = UPPER(LTRIM(RTRIM(@CodigoCliente)))
-                      AND Usado = 0;
-                    """,
-                    new { CodigoCliente = cliente.CodigoCliente },
-                    transaction: tx,
-                    cancellationToken: ct));
-
-                await cn.ExecuteAsync(new CommandDefinition(
-                    """
-                    INSERT INTO dbo.ALFACORE_CLIENTE_RESET_TOKEN
-                        (CodigoCliente, IdWeb, IdBase, TokenHash, FechaHora_Expiracion)
-                    VALUES
-                        (@CodigoCliente, @IdWeb, @IdBase, @TokenHash, @Expiracion);
-                    """,
-                    new
-                    {
-                        CodigoCliente = cliente.CodigoCliente,
-                        IdWeb = string.IsNullOrWhiteSpace(request.IdWeb) ? null : request.IdWeb.Trim(),
-                        request.IdBase,
-                        TokenHash = tokenHash,
-                        Expiracion = expiracion
-                    },
-                    transaction: tx,
-                    cancellationToken: ct));
-
-                await tx.CommitAsync(ct);
-            }
-
+            var token = await IssueResetTokenAsync(cn, cliente.CodigoCliente, request.IdWeb, request.IdBase, ct);
             var urlRestablecer = $"{(request.UrlBaseRestablecer ?? string.Empty).TrimEnd('/')}?token={Uri.EscapeDataString(token)}";
             var nombreEmpresa = await ResolveCompanyNameAsync(cn, request.NombreEmpresa, ct);
             var logoUrlAbsoluta = await ResolveLogoUrlAsync(cn, request.LogoUrlAbsoluta, request.UrlBaseRestablecer, ct);
@@ -292,6 +253,79 @@ public sealed class PortalClienteRecuperarClaveService(
             await appEvents.LogErrorAsync(ModuleName, "Restablecer", ex, "No se pudo restablecer la contraseña.", null, AppEventSeverity.Warning, ct);
             return new PortalClienteRestablecerClaveResultDto { Exito = false, Mensaje = "No pudimos actualizar tu contraseña en este momento. Intentá nuevamente." };
         }
+    }
+
+    // Invitación al Portal Cliente (ficha del cliente en AlfaCore): el código de cliente ya viene
+    // validado por el llamador, así que acá solo hace falta emitir el token y devolver la URL —
+    // sin buscar por identificador ni enviar ningún email (eso lo resuelve PortalClienteInvitacionService,
+    // reutilizando el mismo transporte que ya usa IPedidosEmailService).
+    public async Task<string> GenerarEnlaceInvitacionAsync(PortalClienteGenerarEnlaceRequestDto request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var codigoCliente = (request.CodigoCliente ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(codigoCliente))
+            throw new InvalidOperationException("No se pudo identificar al cliente para generar el enlace de acceso.");
+
+        if (string.IsNullOrWhiteSpace(request.UrlBaseRestablecer))
+            throw new InvalidOperationException("Falta la URL del Portal Cliente para generar el enlace de acceso.");
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+
+        if (!await SqlObjectExistsAsync(cn, "MA_CUENTASADIC", ct))
+            throw new InvalidOperationException("No se pudo generar el enlace de acceso.");
+
+        var token = await IssueResetTokenAsync(cn, codigoCliente, request.IdWeb, request.IdBase, ct);
+        return $"{request.UrlBaseRestablecer.TrimEnd('/')}?token={Uri.EscapeDataString(token)}";
+    }
+
+    // Emite un token de un solo uso para CodigoCliente e invalida cualquier token pendiente
+    // anterior (un link viejo, por ejemplo reenviado por error, no debe seguir sirviendo). Solo se
+    // persiste el hash SHA-256 del token; el valor en claro nunca se guarda.
+    private async Task<string> IssueResetTokenAsync(SqlConnection cn, string codigoCliente, string? idWeb, int? idBase, CancellationToken ct)
+    {
+        await EnsureResetTokenTableAsync(cn, ct);
+
+        var token = GenerarToken();
+        var tokenHash = HashToken(token);
+        var expiracion = DateTime.Now.AddMinutes(ExpiracionMinutos);
+
+        await using (var tx = (SqlTransaction)await cn.BeginTransactionAsync(ct))
+        {
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                UPDATE dbo.ALFACORE_CLIENTE_RESET_TOKEN
+                SET Usado = 1, FechaHora_Uso = GETDATE()
+                WHERE UPPER(LTRIM(RTRIM(CodigoCliente))) = UPPER(LTRIM(RTRIM(@CodigoCliente)))
+                  AND Usado = 0;
+                """,
+                new { CodigoCliente = codigoCliente },
+                transaction: tx,
+                cancellationToken: ct));
+
+            await cn.ExecuteAsync(new CommandDefinition(
+                """
+                INSERT INTO dbo.ALFACORE_CLIENTE_RESET_TOKEN
+                    (CodigoCliente, IdWeb, IdBase, TokenHash, FechaHora_Expiracion)
+                VALUES
+                    (@CodigoCliente, @IdWeb, @IdBase, @TokenHash, @Expiracion);
+                """,
+                new
+                {
+                    CodigoCliente = codigoCliente,
+                    IdWeb = string.IsNullOrWhiteSpace(idWeb) ? null : idWeb.Trim(),
+                    IdBase = idBase,
+                    TokenHash = tokenHash,
+                    Expiracion = expiracion
+                },
+                transaction: tx,
+                cancellationToken: ct));
+
+            await tx.CommitAsync(ct);
+        }
+
+        return token;
     }
 
     private static string GenerarToken()

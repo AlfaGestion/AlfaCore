@@ -733,6 +733,47 @@ public sealed class CuentasComercialesService(
                 token);
         }, $"No se pudo dar de baja el {GetSingularLabel(tipo).ToLowerInvariant()}.", ct);
 
+    // Clave del Portal Cliente: única acción que escribe MA_CUENTASADIC.CLAVE desde el módulo
+    // Clientes. Mismos límites de longitud que usa el propio Portal Cliente para esta columna
+    // (PortalClienteService.CambiarClaveAsync / PortalClienteRecuperarClaveService).
+    private const int ClavePortalLongitudMinima = 4;
+    private const int ClavePortalLongitudMaxima = 15;
+
+    public Task SetClavePortalClienteAsync(string codigoCliente, string nuevaClave, string usuarioEjecuta, CancellationToken ct = default)
+        => ExecuteLoggedAsync(GetModuleLabel(CuentaComercialTipo.Cliente), "SetClavePortal", async token =>
+        {
+            var codigo = (codigoCliente ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(codigo))
+                throw new InvalidOperationException("No se pudo identificar al cliente.");
+
+            var clave = nuevaClave ?? string.Empty;
+            if (clave.Length < ClavePortalLongitudMinima)
+                throw new InvalidOperationException($"La clave del Portal Cliente debe tener al menos {ClavePortalLongitudMinima} caracteres.");
+            if (clave.Length > ClavePortalLongitudMaxima)
+                throw new InvalidOperationException($"La clave del Portal Cliente no puede tener más de {ClavePortalLongitudMaxima} caracteres.");
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var affected = await cn.ExecuteAsync(new CommandDefinition(
+                "UPDATE dbo.MA_CUENTASADIC SET CLAVE = @Clave WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));",
+                new { Clave = clave, Codigo = codigo },
+                cancellationToken: token));
+
+            if (affected == 0)
+                throw new InvalidOperationException("No se encontró el cliente indicado para actualizar la clave del Portal Cliente.");
+
+            // Nunca se registra la clave en claro ni en logs/auditoría, solo quién y cuándo.
+            await appEvents.LogAuditAsync(
+                GetModuleLabel(CuentaComercialTipo.Cliente),
+                "SetClavePortal",
+                "MA_CUENTASADIC",
+                codigo,
+                "Se actualizó la clave del Portal Cliente desde la ficha del cliente.",
+                new { CodigoCliente = codigo, UsuarioEjecuta = usuarioEjecuta },
+                token);
+        }, "No se pudo actualizar la clave del Portal Cliente.", ct);
+
     public Task<IReadOnlyList<CuentaComercialContactoDto>> GetContactosAsync(CuentaComercialTipo tipo, string cuentaCodigo, CancellationToken ct = default)
         => ExecuteLoggedAsync<IReadOnlyList<CuentaComercialContactoDto>>(GetModuleLabel(tipo), "GetContactos", async token =>
         {

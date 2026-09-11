@@ -34,6 +34,8 @@ public sealed class ListaPreciosArticuloDto
     public string Marca { get; set; } = string.Empty;
     public string Familia { get; set; } = string.Empty;
     public string Rubro { get; set; } = string.Empty;
+    public string Categoria { get; set; } = string.Empty;
+    public decimal TasaIva { get; set; }
     public decimal Precio { get; set; }
     public bool SinPrecio => Precio <= 0m;
 }
