@@ -382,7 +382,16 @@
                             }
                             else if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.ActionRequired)
                             {
-                                <div class="wa-business-block__header"><div><h3>Falta un paso para terminar</h3><p>@_embeddedSignupStatus?.Message</p></div><AlfaTag Tone="AlfaTagTone.Warning">Acción requerida</AlfaTag></div>
+                                <div class="wa-business-block__header">
+                                    <div>
+                                        <h3>Falta un paso para terminar</h3>
+                                        <p>@_embeddedSignupStatus?.Message</p>
+                                    </div>
+                                    <div class="wa-business-inline-actions">
+                                        <AlfaTag Tone="AlfaTagTone.Warning">Acción requerida</AlfaTag>
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-x-circle" Disabled="@_embeddedSignupBusy" OnClick="RequestCancelActionRequiredConfigurationAsync">Cancelar configuración</AlfaButton>
+                                    </div>
+                                </div>
                             }
                             else if (EmbeddedSignupUiState == AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Failed)
                             {
@@ -2095,6 +2104,18 @@
                        ErrorMessage="@_apiArchiveError"
                        OnConfirm="ConfirmArchiveApiNumeroAsync"
                        OnCancel="CancelArchiveApiNumero" />
+
+    <AlfaConfirmDialog Open="@(_cancelActionRequiredOnboardingId is not null)"
+                       Title="¿Cancelar esta configuración?"
+                       Message="Podrás volver a conectar WhatsApp después."
+                       SecondaryMessage="Esto no elimina tu cuenta de WhatsApp ni realiza cambios en Meta."
+                       ConfirmLabel="Cancelar configuración"
+                       CancelLabel="Volver"
+                       LoadingLabel="Cancelando..."
+                       Loading="@_cancelActionRequiredBusy"
+                       ErrorMessage="@_cancelActionRequiredError"
+                       OnConfirm="ConfirmCancelActionRequiredConfigurationAsync"
+                       OnCancel="CloseCancelActionRequiredDialog" />
 </section>
 
 @code {
@@ -2214,6 +2235,13 @@
 
     private bool _showWhatsAppOnboardingModeDialog;
     private readonly AlfaCore.Models.WhatsAppConnectionChoiceSelection _whatsAppConnectionChoiceSelection = new();
+
+    // "Cancelar configuración": salida de UX para abandonar un onboarding atascado en ACTION_REQUIRED
+    // (p. ej. la elección de modo de onboarding no correspondía al asset real de Meta). Nunca toca
+    // ownership/Vault/Meta -- ver CancelActionRequiredConfigurationAsync en el orchestrator.
+    private Guid? _cancelActionRequiredOnboardingId;
+    private bool _cancelActionRequiredBusy;
+    private string _cancelActionRequiredError = string.Empty;
     private string _embeddedSignupState = string.Empty;
     private string _embeddedSignupMessage = string.Empty;
     private AlfaCore.Models.WhatsAppEmbeddedStatusView? _embeddedSignupStatus;
@@ -2845,6 +2873,72 @@
         if (idBase > 0)
             await RefreshWhatsAppConnectionsAsync(idBase);
         await InvokeAsync(StateHasChanged);
+    }
+
+    private Task RequestCancelActionRequiredConfigurationAsync()
+    {
+        if (_embeddedSignupStatus is not { Status: AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.ActionRequired } status)
+            return Task.CompletedTask;
+
+        _cancelActionRequiredOnboardingId = status.IdOnboarding;
+        _cancelActionRequiredError = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task CloseCancelActionRequiredDialog()
+    {
+        if (_cancelActionRequiredBusy)
+            return Task.CompletedTask;
+
+        _cancelActionRequiredOnboardingId = null;
+        _cancelActionRequiredError = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ConfirmCancelActionRequiredConfigurationAsync()
+    {
+        if (_cancelActionRequiredOnboardingId is not Guid id)
+            return;
+
+        var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+        if (idBase <= 0)
+            return;
+
+        _cancelActionRequiredBusy = true;
+        _cancelActionRequiredError = string.Empty;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            await AuthorizationSvc.EnsureCanManageAsync();
+            var cancelled = await EmbeddedSignup.CancelActionRequiredConfigurationAsync(id, idBase, _lifetimeCts.Token);
+            if (cancelled)
+            {
+                _cancelActionRequiredOnboardingId = null;
+                // La fila queda CANCELLED (historial); refrescar para que la UI vuelva a mostrar el
+                // CTA normal de "Conectar WhatsApp" en lugar del panel de ACTION_REQUIRED.
+                await RefreshWhatsAppConnectionsAsync(idBase);
+            }
+            else
+            {
+                _cancelActionRequiredError = "No se pudo cancelar la configuración. Puede que ya haya cambiado de estado.";
+            }
+        }
+        catch (Exception ex)
+        {
+            await AppEvents.LogErrorAsync(
+                "ConversacionesConfiguracion",
+                "CancelActionRequiredConfiguration",
+                ex,
+                "No se pudo cancelar la configuración de WhatsApp.",
+                new { IdOnboarding = id, IdBase = idBase });
+            _cancelActionRequiredError = "No se pudo cancelar la configuración. Intentá de nuevo.";
+        }
+        finally
+        {
+            _cancelActionRequiredBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     [JSInvokable]

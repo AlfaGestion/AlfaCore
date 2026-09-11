@@ -37,6 +37,18 @@ public interface IWhatsAppEmbeddedSignupStore
     /// </summary>
     Task<bool> ExpireStaleStartedAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
         => Task.FromResult(false);
+
+    /// <summary>
+    /// Salida segura de UX para abandonar una configuración incompleta atascada en ACTION_REQUIRED
+    /// (p. ej. la elección de modo de onboarding fue incorrecta y no hay forma de continuar). Distinta
+    /// de HandleCancellationAsync (que exige state/usuario/StateHash de un STARTED activo). Atómica:
+    /// sólo afecta la fila si IdOnboarding + IdBase + Estado=ACTION_REQUIRED coinciden exactamente
+    /// (nunca cancela onboardings de otra Base). Nunca toca ownership/Vault/Meta/subscribed_apps/
+    /// callback -- sólo cambia Estado/PasoActual de la fila, que queda preservada como historial.
+    /// Devuelve true únicamente si esta llamada efectivamente realizó la transición.
+    /// </summary>
+    Task<bool> CancelActionRequiredAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
+        => Task.FromResult(false);
 }
 
 public interface IWhatsAppAssetOwnershipStore
@@ -70,6 +82,16 @@ public interface IWhatsAppEmbeddedSignupOrchestrator
     Task<WhatsAppEmbeddedStatusView?> GetLatestStatusForBaseAsync(int idBase, CancellationToken ct = default);
     Task ProcessNextStepAsync(Guid idOnboarding, CancellationToken ct = default);
     Task RetryAsync(WhatsAppEmbeddedRetryRequest request, CancellationToken ct = default);
+
+    /// <summary>
+    /// "Cancelar configuración": abandona explícitamente una configuración incompleta atascada en
+    /// ACTION_REQUIRED para esa Base (p. ej. el modo de onboarding elegido fue incorrecto). Nunca
+    /// toca ownership/Vault/Meta -- sólo transiciona el onboarding a CANCELLED, preservado como
+    /// historial, para que la Base pueda iniciar una configuración nueva. Devuelve true únicamente si
+    /// efectivamente canceló la fila esperada (IdOnboarding + IdBase + Estado=ACTION_REQUIRED).
+    /// </summary>
+    Task<bool> CancelActionRequiredConfigurationAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
+        => Task.FromResult(false);
 }
 
 public interface IMetaOAuthClient
