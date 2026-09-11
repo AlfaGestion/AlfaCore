@@ -21,6 +21,9 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
     [Inject] protected NavigationManager Nav { get; set; } = null!;
     [Inject] protected IJSRuntime Js { get; set; } = null!;
 
+    [Parameter, SupplyParameterFromQuery(Name = "email")]
+    public string? EmailQuery { get; set; }
+
     protected bool NotFound { get; private set; }
     protected bool SessionBusy { get; private set; }
     protected string ClienteCodigo { get; set; } = string.Empty;
@@ -38,6 +41,9 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
 
     protected override async Task OnInitializedAsync()
     {
+        if (!string.IsNullOrWhiteSpace(EmailQuery))
+            ClienteCodigo = EmailQuery.Trim();
+
         CatalogoClienteSession.StateChanged += OnClientSessionStateChanged;
         await EnsureRouteSessionAsync();
         await LoadPublicIdentityAsync();
@@ -45,7 +51,12 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
     }
 
     protected override async Task OnParametersSetAsync()
-        => await EnsureRouteSessionAsync();
+    {
+        if (!string.IsNullOrWhiteSpace(EmailQuery))
+            ClienteCodigo = EmailQuery.Trim();
+
+        await EnsureRouteSessionAsync();
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {

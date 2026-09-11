@@ -11,6 +11,8 @@ namespace AlfaCore.Models;
 public sealed class ConfiguracionEmpresaDto
 {
     public string Nombre { get; set; } = string.Empty;
+    public string EmailWeb { get; set; } = string.Empty;
+    public string SitioWeb { get; set; } = string.Empty;
     public string Calle { get; set; } = string.Empty;
     public string Numero { get; set; } = string.Empty;
     public string Piso { get; set; } = string.Empty;

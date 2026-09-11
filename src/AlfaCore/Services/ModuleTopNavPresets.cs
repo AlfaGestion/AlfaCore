@@ -81,6 +81,15 @@ public static class ModuleTopNavPresets
             ("email", "Email", "/configuracion-general/email")
         ]);
 
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildConfiguracionWebPortal(IRouteContextService routeContext, NavigationManager nav)
+        => Build(routeContext, nav, "identidad",
+        [
+            ("identidad", "Identidad", "/configuracion-web-portal"),
+            ("empresa", "Configuración general", "/configuracion-general"),
+            ("logo", "Logo de impresión", "/configuracion-general/logo"),
+            ("email", "Email saliente", "/configuracion-general/email")
+        ]);
+
     public static IReadOnlyList<PageHeaderTopNavItem> BuildDocumentos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [

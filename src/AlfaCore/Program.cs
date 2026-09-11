@@ -243,6 +243,7 @@ public class Program
         builder.Services.AddSingleton<IDocumentPdfService, DocumentPdfService>();
         builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
+        builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
         builder.Services.AddScoped<ITicketsService, TicketsService>();
         builder.Services.AddScoped<IPartesHorasService, PartesHorasService>();
@@ -640,7 +641,7 @@ public class Program
             var bytes = await configSvc.GetLogoBytesAsync(ct);
             return bytes is null || bytes.Length == 0
                 ? Results.NotFound()
-                : Results.File(bytes, "image/jpeg");
+                : Results.File(bytes, DetectImageMimeType(bytes));
         });
 
         app.MapGet("/api/documentos/plantillas/{idTemplate:int}/portada", async (
@@ -1113,6 +1114,20 @@ public class Program
             return new Uri(baseUri, relativeUrl.TrimStart('/')).ToString();
         }
 
+        static string DetectImageMimeType(byte[] bytes)
+        {
+            if (bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+                return "image/png";
+            if (bytes.Length >= 6 && bytes[0] == 'G' && bytes[1] == 'I' && bytes[2] == 'F')
+                return "image/gif";
+            if (bytes.Length >= 12 && bytes[0] == 'R' && bytes[1] == 'I' && bytes[2] == 'F' && bytes[3] == 'F'
+                && bytes[8] == 'W' && bytes[9] == 'E' && bytes[10] == 'B' && bytes[11] == 'P')
+                return "image/webp";
+            if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xD8)
+                return "image/jpeg";
+            return "application/octet-stream";
+        }
+
         async Task<bool> TryActivateVb6InstallationAsync(
             int idBase,
             string idWeb,
@@ -1162,6 +1177,52 @@ public class Program
 
             return true;
         }
+
+        async Task<bool> TryActivatePublicInstallationAsync(
+            int idBase,
+            string idWeb,
+            ICentralBasesService basesService,
+            ICentralClientesService clientesService,
+            ISessionService sessionService,
+            CancellationToken ct)
+        {
+            var baseInfo = await basesService.GetByIdAsync(idBase, ct);
+            if (baseInfo is null)
+                return false;
+
+            var cliente = await clientesService.GetByIdClienteAsync(baseInfo.IdCliente, ct);
+            if (cliente is null || !string.Equals(cliente.IdWeb?.Trim(), idWeb.Trim(), StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            sessionService.SetWebhookOverride(new SessionDto
+            {
+                BaseId = baseInfo.IdBase,
+                Nombre = baseInfo.Nombre,
+                Servidor = baseInfo.DbServer,
+                BaseDatos = baseInfo.DbName,
+                Usuario = baseInfo.DbUser,
+                Password = baseInfo.DbPassword
+            });
+            return true;
+        }
+
+        app.MapGet("/api/configuracion-web-portal/logo/{idweb}/{idbase:int}", async (
+            string idweb,
+            int idbase,
+            ICentralBasesService basesSvc,
+            ICentralClientesService clientesSvc,
+            ISessionService sessionSvc,
+            IConfiguracionGeneralService configSvc,
+            CancellationToken ct) =>
+        {
+            if (!await TryActivatePublicInstallationAsync(idbase, idweb, basesSvc, clientesSvc, sessionSvc, ct))
+                return Results.NotFound();
+
+            var bytes = await configSvc.GetLogoBytesAsync(ct);
+            return bytes is null || bytes.Length == 0
+                ? Results.NotFound()
+                : Results.File(bytes, DetectImageMimeType(bytes));
+        }).AllowAnonymous();
 
         app.MapGet("/api/public-links/catalogo/{idweb}/{idbase:int}/{idcatalogo:int}", async (
             HttpRequest request,

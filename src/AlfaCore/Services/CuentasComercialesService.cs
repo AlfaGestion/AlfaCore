@@ -226,7 +226,8 @@ public sealed class CuentasComercialesService(
                     ISNULL(base.TipoVista, ''),
                     CASE WHEN ISNULL(base.Dada_De_Baja, 0) = 0 THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END,
                     base.FechaHora_Grabacion,
-                    base.FechaHora_Modificacion
+                    base.FechaHora_Modificacion,
+                    ISNULL(LTRIM(RTRIM(adic.CLAVE)), '')
                 FROM dbo.{descriptor.ViewName} base
                 LEFT JOIN dbo.MA_CUENTAS acc
                     ON UPPER(LTRIM(RTRIM(acc.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(base.CODIGO, ''))))
@@ -285,7 +286,8 @@ public sealed class CuentasComercialesService(
                 TipoVista = GetString(rd, 38),
                 Activo = GetBool(rd, 39),
                 FechaHoraGrabacion = rd.IsDBNull(40) ? null : rd.GetDateTime(40),
-                FechaHoraModificacion = rd.IsDBNull(41) ? null : rd.GetDateTime(41)
+                FechaHoraModificacion = rd.IsDBNull(41) ? null : rd.GetDateTime(41),
+                ClavePortal = GetString(rd, 42)
             };
 
             await rd.CloseAsync();

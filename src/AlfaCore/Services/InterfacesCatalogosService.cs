@@ -20,7 +20,8 @@ public sealed class InterfacesCatalogosService(
     IArticuloImagenFtpService articuloImagenFtpService,
     IPuntoVentaService puntoVentaService,
     IHttpClientFactory httpClientFactory,
-    CatalogoPedidoProcessingGuard pedidoProcessingGuard) : IInterfacesCatalogosService
+    CatalogoPedidoProcessingGuard pedidoProcessingGuard,
+    ICompanyBrandingService companyBrandingService) : IInterfacesCatalogosService
 {
     private const string ModuleName = "Interfaces";
     private const string ConfigGroup = "CATALOGOS";
@@ -1772,12 +1773,19 @@ public sealed class InterfacesCatalogosService(
             var activeBaseId = sessionService.GetActiveSession()?.BaseId;
             var logoFormat = NormalizePublicLogoFormat(ReadFirstConfigValue(values, scopedLogoFormatKey, PublicLogoFormatConfigKey));
             var logoPersonalizadoExiste = await ResolveLogoPersonalizadoExisteAsync(activeBaseId, token);
+            var companyBranding = await companyBrandingService.GetAsync(
+                idWeb: effectiveIdWeb,
+                idBase: activeBaseId,
+                ct: token);
+            var logoUrl = companyBranding.LogoUrl;
+            if (logoPersonalizadoExiste)
+                logoUrl = BuildPublicLogoUrl(effectiveIdWeb, activeBaseId);
 
             return new CatalogosPublicIdentityDto
             {
-                NombreVisible = ResolvePublicName(values.TryGetValue(PublicNameConfigKey, out var rawName) ? rawName : string.Empty, sessionFallback),
-                NombreFallback = string.IsNullOrWhiteSpace(sessionFallback) ? "Catálogos" : sessionFallback,
-                LogoUrl = logoPersonalizadoExiste ? BuildPublicLogoUrl(effectiveIdWeb, activeBaseId) : DefaultPublicLogoUrl,
+                NombreVisible = ResolvePublicName(values.TryGetValue(PublicNameConfigKey, out var rawName) ? rawName : companyBranding.Nombre, sessionFallback),
+                NombreFallback = companyBranding.Nombre,
+                LogoUrl = logoUrl,
                 LogoFormato = logoFormat,
                 TieneLogoPersonalizado = logoPersonalizadoExiste
             };

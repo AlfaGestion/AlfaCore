@@ -1,0 +1,185 @@
+@page "/configuracion-web-portal"
+@page "/{idweb}/{idbase:int}/configuracion-web-portal"
+@using AlfaCore.Models
+@using Microsoft.AspNetCore.Components.Forms
+@inject AlfaCore.Services.IConfiguracionGeneralService ConfigSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Configuración Web / Portal | Alfa Gestión</PageTitle>
+
+<div class="page-grid cfggral-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+    <section class="panel-card">
+        <h3 class="panel-card__title">Configuración Web / Portal</h3>
+        <p class="panel-card__subtitle">Identidad comercial que comparten el Portal Cliente, catálogos, carrito y emails públicos.</p>
+
+        <div class="cfggral-grid">
+            <div class="field cfggral-grid__full">
+                <AlfaInput Label="Nombre de empresa" Value="@_empresa.Nombre" ValueChanged="v => _empresa.Nombre = v ?? string.Empty" MaxLength="100" />
+            </div>
+            <div class="field cfggral-grid__wide">
+                <AlfaInput Label="Dirección" Value="@_empresa.Calle" ValueChanged="v => _empresa.Calle = v ?? string.Empty" MaxLength="100" />
+            </div>
+            <div class="field">
+                <AlfaInput Label="Número" Value="@_empresa.Numero" ValueChanged="v => _empresa.Numero = v ?? string.Empty" MaxLength="15" />
+            </div>
+            <div class="field cfggral-grid__wide">
+                <AlfaInput Label="Teléfono" Value="@_empresa.Telefono" ValueChanged="v => _empresa.Telefono = v ?? string.Empty" MaxLength="100" />
+            </div>
+            <div class="field cfggral-grid__wide">
+                <AlfaInput Label="Email" Type="email" Value="@_empresa.EmailWeb" ValueChanged="v => _empresa.EmailWeb = v ?? string.Empty" MaxLength="150" />
+            </div>
+            <div class="field cfggral-grid__full">
+                <AlfaInput Label="Sitio web" Type="url" Value="@_empresa.SitioWeb" ValueChanged="v => _empresa.SitioWeb = v ?? string.Empty" MaxLength="200" Placeholder="https://www.ejemplo.com" />
+            </div>
+        </div>
+
+        <div class="cfgweb-logo-row">
+            <div>
+                <h4 class="panel-card__title">Logo</h4>
+                <p class="panel-card__subtitle">PNG, JPG, WEBP o GIF de hasta 2 MB. Se guarda en TA_LOGOS como imagen, nunca como ruta física.</p>
+                <InputFile OnChange="SubirLogoAsync" accept=".png,.jpg,.jpeg,.webp,.gif,image/png,image/jpeg,image/webp,image/gif" disabled="@_subiendo" />
+                @if (_tieneLogo)
+                {
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-trash" Disabled="@_subiendo" OnClick="QuitarLogoAsync">Usar fallback</AlfaButton>
+                }
+            </div>
+            <div class="cfgweb-logo-preview">
+                <img src="@_previewUrl" alt="Vista previa del logo" />
+            </div>
+        </div>
+    </section>
+
+    <section class="panel-card cfgweb-preview-card">
+        <h3 class="panel-card__title">Vista previa</h3>
+        <div class="cfgweb-preview">
+            <img src="@_previewUrl" alt="@NombrePreview" />
+            <div>
+                <strong>@NombrePreview</strong>
+                @if (!string.IsNullOrWhiteSpace(DireccionPreview)) { <span>@DireccionPreview</span> }
+                @if (!string.IsNullOrWhiteSpace(_empresa.Telefono)) { <span>@_empresa.Telefono</span> }
+                @if (!string.IsNullOrWhiteSpace(_empresa.EmailWeb)) { <span>@_empresa.EmailWeb</span> }
+                @if (!string.IsNullOrWhiteSpace(_empresa.SitioWeb)) { <span>@_empresa.SitioWeb</span> }
+            </div>
+        </div>
+    </section>
+
+    <div class="cfglogo-save-bar">
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar</AlfaButton>
+    </div>
+</div>
+
+@code {
+    private ConfiguracionEmpresaDto _empresa = new();
+    private bool _saving;
+    private bool _subiendo;
+    private bool _tieneLogo;
+    private string _previewUrl = "/logos/Logo.png";
+    private AppUiMessage? _feedback;
+
+    private string NombrePreview => string.IsNullOrWhiteSpace(_empresa.Nombre) ? "Alfa Gestión" : _empresa.Nombre.Trim();
+    private string DireccionPreview => string.Join(" ", new[] { _empresa.Calle, _empresa.Numero }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()));
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await UiOps.RunAsync(() => ConfigSvc.GetEmpresaAsync(), "No se pudieron cargar los datos de identidad web.");
+        if (result.Success && result.Value is not null)
+            _empresa = result.Value;
+
+        var logo = await UiOps.RunAsync(() => ConfigSvc.GetLogoInfoAsync(), "No se pudo cargar el logo.");
+        if (logo.Success && logo.Value is not null)
+        {
+            _tieneLogo = logo.Value.TieneLogo;
+            if (_tieneLogo)
+                _previewUrl = $"/api/configuracion-general/logo?v={Guid.NewGuid():N}";
+        }
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Configuración Web / Portal",
+        Breadcrumb = ["Utilidades", "Configuración Web / Portal"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionWebPortal(RouteContext, Nav)
+    });
+
+    private async Task GuardarAsync()
+    {
+        var nombre = (_empresa.Nombre ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(nombre))
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Falta el nombre", Message = "Ingresá el nombre de la empresa." };
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(_empresa.EmailWeb))
+        {
+            try { _ = new System.Net.Mail.MailAddress(_empresa.EmailWeb.Trim()); }
+            catch { _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Email inválido", Message = "Revisá el formato del email." }; return; }
+        }
+
+        if (!string.IsNullOrWhiteSpace(_empresa.SitioWeb) &&
+            (!Uri.TryCreate(_empresa.SitioWeb.Trim(), UriKind.Absolute, out var site) || site.Scheme is not ("http" or "https")))
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Sitio web inválido", Message = "Usá una URL completa, por ejemplo https://www.ejemplo.com." };
+            return;
+        }
+
+        _saving = true;
+        _empresa.Nombre = nombre;
+        var usuario = AppUserSession.CurrentUser?.UserName ?? Environment.UserName;
+        var result = await UiOps.RunAsync(() => ConfigSvc.SaveEmpresaAsync(_empresa, usuario), "No se pudieron guardar los datos de identidad web.");
+        _saving = false;
+        _feedback = result.Success
+            ? AppUiMessage.Success("Guardado", "La identidad Web / Portal se actualizó correctamente.")
+            : result.Feedback;
+    }
+
+    private async Task SubirLogoAsync(InputFileChangeEventArgs args)
+    {
+        var file = args.File;
+        if (file is null) return;
+        var allowed = new[] { "image/png", "image/jpeg", "image/webp", "image/gif" };
+        if (!allowed.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
+        {
+            _feedback = new AppUiMessage { Severity = AppUiFeedbackSeverity.Warning, Title = "Formato no válido", Message = "El logo debe ser PNG, JPG, WEBP o GIF." };
+            return;
+        }
+
+        _subiendo = true;
+        try
+        {
+            await using var input = file.OpenReadStream(2 * 1024 * 1024);
+            await using var ms = new MemoryStream();
+            await input.CopyToAsync(ms);
+            var bytes = ms.ToArray();
+            var result = await UiOps.RunAsync(() => ConfigSvc.SaveLogoAsync(bytes), "No se pudo guardar el logo.");
+            if (result.Success)
+            {
+                _tieneLogo = true;
+                _previewUrl = $"data:{file.ContentType};base64,{Convert.ToBase64String(bytes)}";
+                _feedback = AppUiMessage.Success("Logo actualizado", "El logo se guardó correctamente.");
+            }
+            else _feedback = result.Feedback;
+        }
+        finally { _subiendo = false; }
+    }
+
+    private async Task QuitarLogoAsync()
+    {
+        _subiendo = true;
+        var result = await UiOps.RunAsync(() => ConfigSvc.DeleteLogoAsync(), "No se pudo quitar el logo.");
+        _subiendo = false;
+        if (result.Success) { _tieneLogo = false; _previewUrl = "/logos/Logo.png"; _feedback = AppUiMessage.Success("Logo quitado", "Se usará el logo fallback."); }
+        else _feedback = result.Feedback;
+    }
+
+    public void Dispose() => PageHeader.Clear();
+}

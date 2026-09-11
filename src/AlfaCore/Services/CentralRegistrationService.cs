@@ -43,7 +43,8 @@ public sealed class CentralRegistrationService(
     ICentralProvisioningService provisioningService,
     ICentralAdminService centralAdminService,
     IPlanesService planesService,
-    IAppEventService appEvents) : ICentralRegistrationService
+    IAppEventService appEvents,
+    ICompanyBrandingService companyBrandingService) : ICentralRegistrationService
 {
     private const string ModuleName = "RegistroPublico";
     private const string AccountType = "M";
@@ -108,8 +109,7 @@ public sealed class CentralRegistrationService(
             await UpsertPendingAsync(central, normalized, verificationCode, ct);
 
             var verificationUrl = BuildVerificationUrl(normalized.PublicBaseUrl, verificationCode);
-            var companyName = ResolvePublicCompanyName();
-            var logoUrl = ResolvePublicLogoUrl(normalized.PublicBaseUrl);
+            var (companyName, logoUrl) = await ResolveRegistrationBrandingAsync(normalized.PublicBaseUrl, ct);
             await SendVerificationEmailAsync(normalized, companyName, logoUrl, verificationUrl, ct);
 
             await appEvents.LogAuditAsync(
@@ -772,6 +772,21 @@ public sealed class CentralRegistrationService(
 
         companyName = configuration["ServidorWeb:NombreAplicacion"]?.Trim();
         return string.IsNullOrWhiteSpace(companyName) ? "Alfa Gestión" : companyName;
+    }
+
+    private async Task<(string Name, string? LogoUrl)> ResolveRegistrationBrandingAsync(string publicBaseUrl, CancellationToken ct)
+    {
+        try
+        {
+            var branding = await companyBrandingService.GetAsync(publicBaseUrl, ct: ct);
+            return (branding.Nombre, branding.LogoUrl);
+        }
+        catch
+        {
+            // El registro central puede ejecutarse sin una sesión de base activa; en ese caso
+            // conservamos los valores de appsettings como fallback histórico.
+            return (ResolvePublicCompanyName(), ResolvePublicLogoUrl(publicBaseUrl));
+        }
     }
 
     private string? ResolvePublicLogoUrl(string publicBaseUrl)

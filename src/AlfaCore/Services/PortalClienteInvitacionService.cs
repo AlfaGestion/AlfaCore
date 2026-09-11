@@ -5,10 +5,12 @@ using Microsoft.Data.SqlClient;
 namespace AlfaCore.Services;
 
 // Invitación al Portal Cliente desde la ficha del cliente (Clientes → Editar). No duplica
-// infraestructura existente: reutiliza IPortalClienteRecuperarClaveService para el enlace de
+// infraestructura existente: reutiliza IPortalClienteRecuperarClaveService tanto para el enlace de
 // "crear/cambiar contraseña" (mismo token de un solo uso con vencimiento que ya usa el flujo de
-// "¿Olvidaste tu contraseña?") e IPedidosEmailService para el transporte/branding del email (misma
-// configuración SMTP que ya usan pedidos y recuperación de clave). Nunca envía la contraseña
+// "¿Olvidaste tu contraseña?") como para el envío del email en sí — a propósito NO se usa
+// IPedidosEmailService acá: esa clase resuelve el SMTP desde TA_CONFIGURACION (EMAIL_SERVER/
+// EMAIL_CTA), que es una cuenta distinta de la que realmente usa el Portal Cliente
+// (RegistroPublico:Email* del servidor) y puede no estar operativa. Nunca envía la contraseña
 // almacenada del cliente por email.
 //
 // Los contactos (MA_CONTACTOS) hoy NO tienen autenticación individual en el Portal Cliente: el
@@ -21,7 +23,7 @@ public sealed class PortalClienteInvitacionService(
     ISessionService sessionService,
     IAppEventService appEvents,
     IPortalClienteRecuperarClaveService recuperarClaveSvc,
-    IPedidosEmailService pedidosEmailSvc) : IPortalClienteInvitacionService
+    ICompanyBrandingService companyBrandingService) : IPortalClienteInvitacionService
 {
     private const string ModuleName = "PortalClienteInvitacion";
 
@@ -38,6 +40,14 @@ public sealed class PortalClienteInvitacionService(
             var codigoCliente = (request.CodigoCliente ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(codigoCliente))
                 throw new InvalidOperationException("No se pudo identificar al cliente.");
+
+            var idWeb = (request.IdWeb ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(idWeb) || request.IdBase is not > 0)
+                throw new InvalidOperationException("No se pudo identificar la empresa y base del Portal Cliente.");
+
+            if (!Uri.TryCreate(request.UrlPortal, UriKind.Absolute, out var portalUri) ||
+                !Uri.UnescapeDataString(portalUri.AbsolutePath).Contains($"/{idWeb}/{request.IdBase}/portal-cliente", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("El enlace del Portal Cliente está incompleto. Debe incluir idweb e idbase.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -112,17 +122,40 @@ public sealed class PortalClienteInvitacionService(
                 new PortalClienteGenerarEnlaceRequestDto
                 {
                     CodigoCliente = cliente.Codigo,
-                    IdWeb = request.IdWeb,
+                    IdWeb = idWeb,
                     IdBase = request.IdBase,
                     UrlBaseRestablecer = request.UrlBaseRestablecer
                 },
                 token);
 
-            var enviado = await pedidosEmailSvc.EnviarInvitacionPortalAsync(
+            // La invitación se arma desde la ficha de clientes y no debe depender de que la
+            // pantalla haya podido resolver previamente la identidad del catálogo. Se resuelve
+            // nuevamente desde la fuente común, incluyendo la URL pública del logo con idweb/idbase.
+            var nombreEmpresa = request.NombreEmpresa;
+            var logoUrl = request.LogoUrlAbsoluta;
+            try
+            {
+                var branding = await companyBrandingService.GetAsync(
+                    request.UrlPortal,
+                    idWeb,
+                    request.IdBase,
+                    token);
+                if (!string.IsNullOrWhiteSpace(branding.Nombre))
+                    nombreEmpresa = branding.Nombre;
+                if (!string.IsNullOrWhiteSpace(branding.LogoUrl))
+                    logoUrl = branding.LogoUrl;
+            }
+            catch
+            {
+                // El envío conserva el fallback anterior si una instalación antigua no tiene
+                // disponible alguna de las tablas de configuración.
+            }
+
+            var enviado = await recuperarClaveSvc.EnviarInvitacionPortalAsync(
                 emailDestino,
                 nombreDestinatario,
-                request.NombreEmpresa,
-                request.LogoUrlAbsoluta,
+                nombreEmpresa,
+                logoUrl,
                 cliente.Codigo,
                 cliente.RazonSocial,
                 esContacto,

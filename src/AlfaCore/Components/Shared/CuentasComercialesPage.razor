@@ -699,12 +699,12 @@ else
                                 }
                             </div>
                             <div class="field">
-                                <label>Clave Portal (nueva)</label>
+                                <label>Clave Portal</label>
                                 <div class="cuentas-portal-cliente__clave">
                                     <input type="@(_mostrarClavePortal ? "text" : "password")"
                                            maxlength="15"
                                            placeholder="Dejar vacío para no modificar"
-                                           autocomplete="new-password"
+                                           autocomplete="current-password"
                                            @bind="_clavePortalNueva"
                                            disabled="@_saving" />
                                     <button type="button"
@@ -714,7 +714,7 @@ else
                                         <i class="bi @(_mostrarClavePortal ? "bi-eye-slash" : "bi-eye")"></i>
                                     </button>
                                 </div>
-                                <small>Por seguridad, la clave actual no se muestra. Completá este campo solo si querés definir una clave nueva; se guarda junto con el resto de la ficha.</small>
+                                <small>La clave actual se carga al editar el cliente. Podés verla, modificarla o dejarla igual; se guarda junto con el resto de la ficha.</small>
                             </div>
                         </div>
 
@@ -1657,6 +1657,7 @@ else
     private CuentaComercialViewSettingsDto _viewSettings = new();
     private AppUiMessage? _feedback;
     private string _clavePortalNueva = string.Empty;
+    private string _clavePortalOriginal = string.Empty;
     private bool _mostrarClavePortal;
     private bool _enviandoInvitacionCliente;
     private int? _enviandoInvitacionContactoId;
@@ -2929,6 +2930,7 @@ else
     private void ResetClavePortalState()
     {
         _clavePortalNueva = string.Empty;
+        _clavePortalOriginal = string.Empty;
         _mostrarClavePortal = false;
     }
 
@@ -2940,7 +2942,7 @@ else
         _enviandoInvitacionCliente = true;
         try
         {
-            var request = await BuildInvitacionRequestAsync(idContacto: null);
+            var request = await BuildInvitacionRequestAsync(idContacto: null, emailAcceso: _form.Mail);
             var currentUser = AppUserSession.GetCurrentUserName(string.Empty);
             var email = await PortalInvitacionSvc.EnviarInvitacionAsync(request, currentUser);
             SetFeedback(AppUiMessage.Success("Invitación enviada", $"Invitación enviada a {email}."));
@@ -2974,7 +2976,7 @@ else
         _enviandoInvitacionContactoId = contacto.IdContacto;
         try
         {
-            var request = await BuildInvitacionRequestAsync(contacto.IdContacto);
+            var request = await BuildInvitacionRequestAsync(contacto.IdContacto, contacto.Email);
             var currentUser = AppUserSession.GetCurrentUserName(string.Empty);
             var email = await PortalInvitacionSvc.EnviarInvitacionAsync(request, currentUser);
             SetFeedback(AppUiMessage.Success("Invitación enviada", $"Invitación enviada a {email}."));
@@ -2993,13 +2995,26 @@ else
     // (IdWeb/IdBase del usuario/sesión activa, nunca hardcodeada) y el branding ya usado por el
     // propio Portal Cliente (IInterfacesCatalogosService.GetPublicIdentityAsync — mismo mecanismo
     // que ya reutiliza PortalClienteRecuperarClaveService).
-    private async Task<PortalClienteInvitacionRequestDto> BuildInvitacionRequestAsync(int? idContacto)
+    private async Task<PortalClienteInvitacionRequestDto> BuildInvitacionRequestAsync(int? idContacto, string? emailAcceso)
     {
         var idWeb = AppUserSession.CurrentUser?.IdWeb;
         var idBase = SessionSvc.GetActiveSession()?.BaseId;
 
-        var relativa = CatalogosUrlHelper.BuildRelativePortalClienteUrl(null, null, null, fallbackIdWeb: idWeb, fallbackIdBase: idBase);
+        var relativa = CatalogosUrlHelper.BuildRelativePortalClienteUrl(null, null, Nav.Uri, fallbackIdWeb: idWeb, fallbackIdBase: idBase);
+        if (string.IsNullOrWhiteSpace(idWeb))
+        {
+            var segmentos = relativa.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (segmentos.Length >= 3 && int.TryParse(segmentos[1], out _))
+                idWeb = Uri.UnescapeDataString(segmentos[0]);
+        }
         var urlPortal = CatalogosUrlHelper.BuildAbsoluteUrl(Nav, relativa);
+        if (string.IsNullOrWhiteSpace(idWeb) || idBase is not > 0 ||
+            !Uri.TryCreate(urlPortal, UriKind.Absolute, out var portalUri) ||
+            !Uri.UnescapeDataString(portalUri.AbsolutePath).Contains($"/{idWeb}/{idBase}/portal-cliente", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("No se pudo determinar el enlace completo del Portal Cliente (idweb/idbase). Revisá la base activa e intentá nuevamente.");
+
+        if (!string.IsNullOrWhiteSpace(emailAcceso))
+            urlPortal = QueryHelpers.AddQueryString(urlPortal, "email", emailAcceso.Trim());
         var urlBaseRestablecer = CatalogosUrlHelper.BuildAbsoluteUrl(Nav, $"{relativa.TrimEnd('/')}/restablecer-clave");
 
         var branding = new CatalogosPublicIdentityDto();
@@ -3017,7 +3032,7 @@ else
         {
             CodigoCliente = _selectedCodigo,
             IdContacto = idContacto,
-            IdWeb = idWeb,
+            IdWeb = idWeb.Trim(),
             IdBase = idBase,
             UrlPortal = urlPortal,
             UrlBaseRestablecer = urlBaseRestablecer,
@@ -3150,7 +3165,12 @@ else
     private void MapDetailToForm(CuentaComercialDetailDto detail)
     {
         ClearFieldErrors();
-        ResetClavePortalState();
+        // La clave del Portal Cliente se precarga tal como está guardada (el sistema la almacena en
+        // texto plano) para que el operador pueda consultársela al cliente. Se muestra al abrir
+        // una ficha existente y solo se reescribe si el operador la modifica.
+        _clavePortalNueva = detail.ClavePortal;
+        _clavePortalOriginal = detail.ClavePortal;
+        _mostrarClavePortal = true;
         _isNewMode = false;
         _showEditor = true;
         _activeTab = CuentaComercialTab.Datos;

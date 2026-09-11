@@ -17,7 +17,8 @@ namespace AlfaCore.Services;
 public sealed class PortalClienteRecuperarClaveService(
     IConfiguration configuration,
     ISessionService sessionService,
-    IAppEventService appEvents) : IPortalClienteRecuperarClaveService
+    IAppEventService appEvents,
+    ICompanyBrandingService companyBrandingService) : IPortalClienteRecuperarClaveService
 {
     private const string ModuleName = "PortalClienteRecuperarClave";
     private const string MensajeGenerico = "Si los datos ingresados corresponden a una cuenta con email registrado, te enviaremos las instrucciones para recuperar el acceso.";
@@ -98,8 +99,13 @@ public sealed class PortalClienteRecuperarClaveService(
 
             var token = await IssueResetTokenAsync(cn, cliente.CodigoCliente, request.IdWeb, request.IdBase, ct);
             var urlRestablecer = $"{(request.UrlBaseRestablecer ?? string.Empty).TrimEnd('/')}?token={Uri.EscapeDataString(token)}";
-            var nombreEmpresa = await ResolveCompanyNameAsync(cn, request.NombreEmpresa, ct);
-            var logoUrlAbsoluta = await ResolveLogoUrlAsync(cn, request.LogoUrlAbsoluta, request.UrlBaseRestablecer, ct);
+            var branding = await companyBrandingService.GetAsync(
+                request.UrlBaseRestablecer,
+                request.IdWeb,
+                request.IdBase,
+                ct);
+            var nombreEmpresa = string.IsNullOrWhiteSpace(branding.Nombre) ? request.NombreEmpresa : branding.Nombre;
+            var logoUrlAbsoluta = string.IsNullOrWhiteSpace(branding.LogoUrl) ? request.LogoUrlAbsoluta : branding.LogoUrl;
 
             var enviado = await SendRecoveryEmailAsync(
                 cliente.Email,
@@ -270,13 +276,21 @@ public sealed class PortalClienteRecuperarClaveService(
         if (string.IsNullOrWhiteSpace(request.UrlBaseRestablecer))
             throw new InvalidOperationException("Falta la URL del Portal Cliente para generar el enlace de acceso.");
 
+        var idWeb = (request.IdWeb ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(idWeb) || request.IdBase is not > 0)
+            throw new InvalidOperationException("Falta idweb o idbase para generar el enlace de acceso.");
+
+        if (!Uri.TryCreate(request.UrlBaseRestablecer, UriKind.Absolute, out var resetUri) ||
+            !Uri.UnescapeDataString(resetUri.AbsolutePath).Contains($"/{idWeb}/{request.IdBase}/portal-cliente/restablecer-clave", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("El enlace de acceso está incompleto. Debe incluir idweb e idbase.");
+
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
 
         if (!await SqlObjectExistsAsync(cn, "MA_CUENTASADIC", ct))
             throw new InvalidOperationException("No se pudo generar el enlace de acceso.");
 
-        var token = await IssueResetTokenAsync(cn, codigoCliente, request.IdWeb, request.IdBase, ct);
+        var token = await IssueResetTokenAsync(cn, codigoCliente, idWeb, request.IdBase, ct);
         return $"{request.UrlBaseRestablecer.TrimEnd('/')}?token={Uri.EscapeDataString(token)}";
     }
 
@@ -348,12 +362,49 @@ public sealed class PortalClienteRecuperarClaveService(
         return exists == 1;
     }
 
-    private async Task<bool> SendRecoveryEmailAsync(
+    private Task<bool> SendRecoveryEmailAsync(
         string emailDestino,
         string nombreCliente,
         string nombreEmpresa,
         string? logoUrlAbsoluta,
         string urlRestablecer,
+        CancellationToken ct)
+        => SendRegistroPublicoEmailAsync(
+            emailDestino,
+            nombreEmpresa,
+            string.IsNullOrWhiteSpace(nombreEmpresa) ? "Recuperar contraseña" : $"Recuperar contraseña - {nombreEmpresa.Trim()}",
+            BuildRecoveryEmailHtml(nombreCliente, nombreEmpresa, logoUrlAbsoluta, urlRestablecer),
+            ct);
+
+    // Invitación al Portal Cliente (ficha del cliente en AlfaCore). Usa exactamente el mismo
+    // transporte SMTP que ya usa el flujo real de "¿Olvidaste tu contraseña?" — configuración
+    // RegistroPublico:Email* del servidor, NO la de TA_CONFIGURACION (EMAIL_SERVER/EMAIL_CTA), que
+    // es una cuenta distinta y puede tener su propio certificado/config sin validar. Reutilizar acá
+    // otra fuente de configuración de correo haría que la invitación fallara con una cuenta que el
+    // resto del Portal Cliente ni siquiera usa.
+    public Task<bool> EnviarInvitacionPortalAsync(
+        string emailDestino,
+        string nombreDestinatario,
+        string nombreEmpresa,
+        string? logoUrlAbsoluta,
+        string codigoCliente,
+        string razonSocialCliente,
+        bool esContacto,
+        string urlPortal,
+        string urlCambiarClave,
+        CancellationToken ct = default)
+        => SendRegistroPublicoEmailAsync(
+            emailDestino,
+            nombreEmpresa,
+            string.IsNullOrWhiteSpace(nombreEmpresa) ? "Acceso al Portal de Clientes" : $"Acceso al Portal de Clientes - {nombreEmpresa.Trim()}",
+            BuildInvitacionPortalHtml(nombreDestinatario, nombreEmpresa, logoUrlAbsoluta, codigoCliente, razonSocialCliente, esContacto, emailDestino, urlPortal, urlCambiarClave),
+            ct);
+
+    private async Task<bool> SendRegistroPublicoEmailAsync(
+        string emailDestino,
+        string nombreEmpresa,
+        string asunto,
+        string htmlBody,
         CancellationToken ct)
     {
         var smtpServer = ResolveServerConfig("RegistroPublico:EmailServer", "EMAIL_SERVER");
@@ -376,8 +427,8 @@ public sealed class PortalClienteRecuperarClaveService(
         using var message = new MailMessage
         {
             From = new MailAddress(smtpAccount.Trim(), string.IsNullOrWhiteSpace(nombreEmpresa) ? smtpAccount.Trim() : nombreEmpresa.Trim()),
-            Subject = string.IsNullOrWhiteSpace(nombreEmpresa) ? "Recuperar contraseña" : $"Recuperar contraseña - {nombreEmpresa.Trim()}",
-            Body = BuildRecoveryEmailHtml(nombreCliente, nombreEmpresa, logoUrlAbsoluta, urlRestablecer),
+            Subject = asunto,
+            Body = htmlBody,
             IsBodyHtml = true
         };
 
@@ -448,6 +499,68 @@ public sealed class PortalClienteRecuperarClaveService(
         {
             return string.Empty;
         }
+    }
+
+    private static string BuildInvitacionPortalHtml(
+        string nombreDestinatario,
+        string nombreEmpresa,
+        string? logoUrlAbsoluta,
+        string codigoCliente,
+        string razonSocialCliente,
+        bool esContacto,
+        string emailDestino,
+        string urlPortal,
+        string urlCambiarClave)
+    {
+        static string E(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+
+        var sb = new StringBuilder();
+        sb.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Acceso al Portal de Clientes</title></head>");
+        sb.Append("<body style=\"margin:0;padding:24px;background:#f4f7fb;font-family:Segoe UI,Arial,sans-serif;color:#142133;\">");
+        sb.Append("<div style=\"max-width:640px;margin:0 auto;background:#ffffff;border:1px solid #d9e3ef;border-radius:18px;overflow:hidden;\">");
+        sb.Append("<div style=\"padding:24px 28px;background:#0f2138;color:#ffffff;\">");
+        if (!string.IsNullOrWhiteSpace(logoUrlAbsoluta))
+            sb.Append("<img src=\"").Append(E(logoUrlAbsoluta)).Append("\" alt=\"").Append(E(nombreEmpresa))
+              .Append("\" style=\"max-height:44px;max-width:220px;display:block;margin-bottom:10px;\" />");
+        sb.Append("<h1 style=\"margin:0;font-size:26px;\">Acceso al Portal de Clientes</h1>");
+        sb.Append("</div>");
+        sb.Append("<div style=\"padding:28px;\">");
+        sb.Append("<p style=\"margin:0 0 16px;\">Hola").Append(string.IsNullOrWhiteSpace(nombreDestinatario) ? "" : $" {E(nombreDestinatario)}").Append(".</p>");
+        sb.Append("<p style=\"margin:0 0 16px;\">Ya tenés disponible el acceso al Portal de Clientes")
+          .Append(string.IsNullOrWhiteSpace(nombreEmpresa) ? "." : $" de {E(nombreEmpresa)}.").Append("</p>");
+
+        if (esContacto)
+        {
+            sb.Append("<p style=\"margin:0 0 16px;font-size:13px;color:#475569;\">Este acceso corresponde a la cuenta de <strong>")
+              .Append(E(razonSocialCliente)).Append("</strong> (código ").Append(E(codigoCliente)).Append(").</p>");
+        }
+
+        sb.Append("<p style=\"margin:0 0 8px;\">Desde el portal podés:</p>");
+        sb.Append("<ul style=\"margin:0 0 20px;padding-left:20px;\">");
+        sb.Append("<li>consultar tu cuenta corriente;</li>");
+        sb.Append("<li>ver y descargar tus comprobantes;</li>");
+        sb.Append("<li>consultar tu lista de precios;</li>");
+        sb.Append("<li>acceder a los catálogos;</li>");
+        sb.Append("<li>armar el carrito y realizar pedidos;</li>");
+        sb.Append("<li>consultar los pedidos realizados;</li>");
+        sb.Append("<li>administrar los datos de tu cuenta.</li>");
+        sb.Append("</ul>");
+
+        sb.Append("<div style=\"background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:14px 16px;margin:0 0 20px;\">");
+        sb.Append("<div style=\"font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;\">Datos de acceso</div>");
+        sb.Append("<div style=\"font-size:14px;\">Podés ingresar con cualquiera de estas opciones:</div>");
+        sb.Append("<div style=\"font-size:14px;margin-top:6px;\">Código de cliente: <strong>").Append(E(codigoCliente)).Append("</strong></div>");
+        sb.Append("<div style=\"font-size:14px;margin-top:4px;\">Email: <strong>").Append(E(emailDestino)).Append("</strong></div>");
+        sb.Append("</div>");
+
+        sb.Append($"<p style=\"margin:0 0 16px;\"><a href=\"{E(urlPortal)}\" style=\"display:inline-block;padding:12px 20px;background:#0b74c9;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;\">Ingresar al Portal</a></p>");
+
+        sb.Append("<p style=\"margin:0 0 10px;font-size:13px;color:#475569;\">Para definir o cambiar tu contraseña:</p>");
+        sb.Append($"<p style=\"margin:0 0 16px;\"><a href=\"{E(urlCambiarClave)}\" style=\"display:inline-block;padding:10px 18px;background:#ffffff;color:#0b74c9;text-decoration:none;border-radius:10px;font-weight:600;border:1px solid #0b74c9;\">Crear / Cambiar contraseña</a></p>");
+
+        sb.Append("<p style=\"margin:0 0 8px;font-size:12px;color:#64748b;\">Este enlace vence en 1 hora y solo puede usarse una vez. También podés cambiarla más adelante desde \"Mi cuenta\" dentro del portal.</p>");
+        sb.Append("</div></div></body></html>");
+        return sb.ToString();
     }
 
     private static string BuildRecoveryEmailHtml(string nombreCliente, string nombreEmpresa, string? logoUrlAbsoluta, string urlRestablecer)

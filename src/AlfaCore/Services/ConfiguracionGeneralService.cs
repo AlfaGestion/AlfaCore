@@ -41,6 +41,8 @@ public sealed class ConfiguracionGeneralService(
             return new ConfiguracionEmpresaDto
             {
                 Nombre = Get(valores, "NOMBRE"),
+                EmailWeb = GetFirst(valores, "WEB_EMAIL", "EMAIL_DE"),
+                SitioWeb = Get(valores, "WEB_SITE"),
                 Calle = Get(valores, "CALLE"),
                 Numero = Get(valores, "NUMERO"),
                 Piso = Get(valores, "PISO"),
@@ -73,6 +75,8 @@ public sealed class ConfiguracionGeneralService(
             await cn.OpenAsync(token);
 
             await SetConfigAsync(cn, "NOMBRE", dto.Nombre, token);
+            await SetConfigAsync(cn, "WEB_EMAIL", dto.EmailWeb, token);
+            await SetConfigAsync(cn, "WEB_SITE", dto.SitioWeb, token);
             await SetConfigAsync(cn, "CALLE", dto.Calle, token);
             await SetConfigAsync(cn, "NUMERO", dto.Numero, token);
             await SetConfigAsync(cn, "PISO", dto.Piso, token);
@@ -237,7 +241,7 @@ public sealed class ConfiguracionGeneralService(
 
     private static readonly string[] EmpresaClaves =
     [
-        "NOMBRE", "CALLE", "NUMERO", "PISO", "DEPARTAMENTO", "CPOSTAL", "LOCALIDAD", "PROVINCIA",
+        "NOMBRE", "WEB_EMAIL", "EMAIL_DE", "WEB_SITE", "CALLE", "NUMERO", "PISO", "DEPARTAMENTO", "CPOSTAL", "LOCALIDAD", "PROVINCIA",
         "PAIS", "TELEFONO", "CONDIVAEMPRESA", "CUIT", "NROINGRESOSBRUTOS", "AGENTEDERETENCION",
         "AGENTEDERETENCIONGAN", "INICIOACTIVIDADES", "TPV_SUCURSAL", "UNEGOCIO", "NROGANANCIAS",
         "NROIGJ", "SAGPYA", "PAGINA_CONFIGURADA"
@@ -250,6 +254,9 @@ public sealed class ConfiguracionGeneralService(
 
     private static string Get(IReadOnlyDictionary<string, string> valores, string clave)
         => valores.TryGetValue(clave, out var v) ? v : string.Empty;
+
+    private static string GetFirst(IReadOnlyDictionary<string, string> valores, params string[] claves)
+        => claves.Select(clave => Get(valores, clave)).FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
 
     private static async Task<Dictionary<string, string>> ReadConfigMapAsync(SqlConnection cn, IReadOnlyList<string> claves, CancellationToken ct)
     {

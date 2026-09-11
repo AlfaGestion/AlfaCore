@@ -98,6 +98,12 @@ public sealed class CuentaComercialDetailDto : CuentaComercialSaveRequest
     public string TipoVista { get; set; } = string.Empty;
     public DateTime? FechaHoraGrabacion { get; set; }
     public DateTime? FechaHoraModificacion { get; set; }
+
+    // MA_CUENTASADIC.CLAVE tal como está guardada (el sistema la almacena en texto plano). Se
+    // expone solo para la ficha del cliente en AlfaCore; la escritura va por
+    // ICuentasComercialesService.SetClavePortalClienteAsync, no por el guardado general.
+    // Si está vacía, el login del Portal Cliente usa NUMERO_DOCUMENTO como clave.
+    public string ClavePortal { get; set; } = string.Empty;
 }
 
 public sealed class CuentaComercialLookupOptionDto
