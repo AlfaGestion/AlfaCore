@@ -73,7 +73,10 @@ public sealed class MetaWhatsAppManagementClientTests
         subscribed = false;
         correctOverride = false;
         await client.EnsureWabaSubscriptionAsync("9101", 1, token);
-        Assert.Equal(2, posts);
+        // Un único POST (con override_callback_uri + verify_token) cubre tanto "nunca suscripta" como
+        // "suscripta con callback incorrecto" -- ver auditoría Base4264, EnsureWabaSubscriptionAsync
+        // ya no hace un POST "desnudo" previo.
+        Assert.Equal(1, posts);
     }
 
     // --- parser tolerante de "id" en subscribed_apps (Base4264 / META_INVALID_ASSET) --------------
@@ -151,15 +154,33 @@ public sealed class MetaWhatsAppManagementClientTests
         Assert.Equal(0, posts);
     }
 
+    // --- fallback de identidad por callback cuando Meta omite "id" (Base4264, segundo incidente) ---
+
     [Fact]
-    public async Task SubscribedApps_MissingId_FailsControlled_WithSanitizedDiagnostic()
+    public async Task SubscribedApps_MissingIdWithMatchingCallback_IsAcceptedAsEvidence()
     {
+        // Causa raíz confirmada en producción: Meta puede responder un ítem de subscribed_apps SIN
+        // "id" pero con override_callback_uri utilizable. Antes se clasificaba como malformado y
+        // terminaba en META_SUBSCRIBED_APPS_UNPARSEABLE aunque el callback ya fuera exactamente el
+        // nuestro. Ahora cuenta como evidencia válida y confirma en el primer GET (sin reintento).
+        var posts = 0;
+        var client = Create(new RoutingHandler(r => CallbackOrSubscribedApps(r,
+            "{\"override_callback_uri\":\"https://callback.test/webhook/token\"}", posts)));   // sin "id"
+
+        await client.EnsureWabaSubscriptionAsync("9101", 1, new("ref"));   // no exception => confirmado por callback
+    }
+
+    [Fact]
+    public async Task SubscribedApps_MissingIdAndCallback_FailsControlled_WithSanitizedDiagnostic()
+    {
+        // Sin id NI callback utilizable no hay ninguna evidencia posible: sigue siendo fail-controlled,
+        // con diagnóstico sanitizado (nunca token, nunca body completo).
         var diagnosticsDir = Path.Combine(AppContext.BaseDirectory, "diagnostics");
         var diagnosticsFile = Path.Combine(diagnosticsDir, $"meta-asset-parse-failures-{DateTime.UtcNow:yyyyMMdd}.jsonl");
         var before = File.Exists(diagnosticsFile) ? File.ReadAllText(diagnosticsFile) : string.Empty;
 
         var client = Create(new RoutingHandler(r => CallbackOrSubscribedApps(r,
-            "{\"override_callback_uri\":\"https://callback.test/webhook/token\"}", 0)));   // sin "id"
+            "{\"note\":\"ni id ni callback\"}", 0)));
 
         var error = await Assert.ThrowsAsync<MetaWhatsAppManagementException>(
             () => client.EnsureWabaSubscriptionAsync("9101", 1, new("ref")));
@@ -175,6 +196,56 @@ public sealed class MetaWhatsAppManagementClientTests
         Assert.Contains("\"IdValueKind\":\"Undefined\"", appended, StringComparison.Ordinal);
         Assert.DoesNotContain("access_token", appended, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("ref", appended, StringComparison.Ordinal);   // el token del vault nunca se loguea
+    }
+
+    [Fact]
+    public async Task SubscribedApps_ExplicitOtherAppId_IsNeverTreatedAsOurs_EvenWithMatchingCallback()
+    {
+        // Seguridad: un id explícito de OTRA app nunca debe considerarse nuestro, ni siquiera si su
+        // callback coincide exactamente con el esperado -- el fallback de callback sólo aplica cuando
+        // Meta omite el id, no como forma de "pisar" la identidad de otra app. Acá Meta nunca muestra
+        // NUESTRA propia suscripción (ni antes ni después de reparar): debe intentar reparar (POST) y,
+        // como sigue sin poder confirmarse, terminar en fail-controlled -- no en éxito silencioso ni
+        // en "unparseable" (sí hay evidencia utilizable, sólo que es de otra app).
+        var posts = 0;
+        var client = Create(new RoutingHandler(r =>
+        {
+            if (r.RequestUri!.Host == "callback.test")
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new StringContent(r.RequestUri.Query.Split("hub.challenge=", StringSplitOptions.None)[1].Split('&')[0]) };
+            if (r.Method == HttpMethod.Post) { posts++; return Json("{\"success\":true}"); }
+            return Json("{\"data\":[{\"id\":\"777\",\"override_callback_uri\":\"https://callback.test/webhook/token\"}]}");
+        }));
+
+        var error = await Assert.ThrowsAsync<MetaWhatsAppManagementException>(
+            () => client.EnsureWabaSubscriptionAsync("9101", 1, new("ref")));
+
+        Assert.Equal("META_CALLBACK_ROUTING_MISMATCH", error.ErrorCode);
+        // No se consideró confirmado (el único id explícito es de otra app): debió intentar reparar.
+        Assert.True(posts >= 1);
+    }
+
+    [Fact]
+    public async Task SubscribedApps_MissingIdWithWrongCallback_RepairsThenConfirmsViaCallbackOnRetry()
+    {
+        // Primer GET: id ausente y callback distinto al esperado -> no concluyente para confirmar.
+        // Repara con POST (override_callback_uri+verify_token) y el GET posterior ya trae el callback
+        // correcto (todavía sin id) -> confirma por la regla de evidencia secundaria, sin lanzar.
+        var posts = 0;
+        var client = Create(new RoutingHandler(r =>
+        {
+            if (r.RequestUri!.Host == "callback.test")
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                { Content = new StringContent(r.RequestUri.Query.Split("hub.challenge=", StringSplitOptions.None)[1].Split('&')[0]) };
+            if (r.Method == HttpMethod.Post) { posts++; return Json("{\"success\":true}"); }
+            return posts == 0
+                ? Json("{\"data\":[{\"override_callback_uri\":\"https://otra.test/webhook\"}]}")
+                : Json("{\"data\":[{\"override_callback_uri\":\"https://callback.test/webhook/token\"}]}");
+        }));
+
+        await client.EnsureWabaSubscriptionAsync("9101", 1, new("ref"));   // no exception
+
+        Assert.Equal(1, posts);
     }
 
     [Fact]
