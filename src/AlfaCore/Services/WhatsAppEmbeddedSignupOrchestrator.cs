@@ -153,6 +153,20 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         }
     }
 
+    /// <summary>
+    /// "Cancelar configuración": salida explícita de UX para abandonar un onboarding atascado en
+    /// ACTION_REQUIRED (p. ej. el modo elegido no correspondía al asset real de Meta). Atómica por
+    /// IdOnboarding + IdBase + Estado=ACTION_REQUIRED -- nunca cancela onboardings de otra Base, nunca
+    /// toca ownership/Vault/Meta/subscribed_apps/callback. La fila queda preservada como historial
+    /// (Estado=CANCELLED); la Base vuelve a poder iniciar una configuración nueva.
+    /// </summary>
+    public async Task<bool> CancelActionRequiredConfigurationAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
+    {
+        EnsureFeatureEnabled();
+        if (idOnboarding == Guid.Empty || idBase <= 0) return false;
+        return await store.CancelActionRequiredAsync(idOnboarding, idBase, ct);
+    }
+
     public async Task ProcessNextStepAsync(Guid idOnboarding, CancellationToken ct = default)
     {
         var item = await store.GetAsync(idOnboarding, ct)

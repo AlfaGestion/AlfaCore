@@ -208,6 +208,18 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
         return affected == 1;
     }
 
+    public async Task<bool> CancelActionRequiredAsync(Guid id, int idBase, CancellationToken ct = default)
+    {
+        const string sql = """
+            UPDATE dbo.WhatsAppEmbeddedOnboarding
+            SET Estado='CANCELLED', PasoActual='CANCELLED', FechaModificacionUtc=SYSUTCDATETIME()
+            WHERE IdOnboarding=@Id AND IdBase=@IdBase AND Estado='ACTION_REQUIRED';
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        var affected = await cn.ExecuteAsync(new CommandDefinition(sql, new { Id = id, IdBase = idBase }, cancellationToken: ct));
+        return affected == 1;
+    }
+
     private async Task UpdateFieldsAsync(Guid id, WhatsAppEmbeddedOnboardingStatus status, string step, object values, CancellationToken ct)
     {
         var data = new DynamicParameters();
