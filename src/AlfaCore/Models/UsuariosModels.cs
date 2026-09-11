@@ -35,6 +35,15 @@ public sealed class UsuarioDetailDto
     public DateTime? FechaHoraModificacion { get; set; }
     /// <summary>Tiene una fila activa (Baja=0) en dbo.V_TA_Tecnicos asociada a este usuario.</summary>
     public bool EsTecnico { get; set; }
+    /// <summary>Email propio de este usuario (TA_USUARIOS.email_*), opcional. Si se completa,
+    /// "Enviar por email" desde Cotizaciones lo usa en vez del correo general de la empresa
+    /// (Configuración General → Email). El remitente que ve el destinatario sigue siendo Email
+    /// (email_de) -- estos campos son solo el servidor SMTP y las credenciales.</summary>
+    public string EmailServer { get; set; } = string.Empty;
+    public string EmailUsuario { get; set; } = string.Empty;
+    public string EmailPassword { get; set; } = string.Empty;
+    public string EmailNombre { get; set; } = string.Empty;
+    public bool EmailAutenticacion { get; set; } = true;
 }
 
 public sealed class UsuarioSaveRequest
@@ -56,6 +65,27 @@ public sealed class UsuarioSaveRequest
     /// puede tener tickets/mensajes atados).
     /// </summary>
     public bool EsTecnico { get; set; }
+    public string EmailServer { get; set; } = string.Empty;
+    public string EmailUsuario { get; set; } = string.Empty;
+    public string EmailPassword { get; set; } = string.Empty;
+    public string EmailNombre { get; set; } = string.Empty;
+    public bool EmailAutenticacion { get; set; } = true;
+}
+
+/// <summary>Email propio de un usuario (TA_USUARIOS.email_*), para enviar cotizaciones/comprobantes
+/// desde su propia cuenta en vez del correo general de la empresa.</summary>
+public sealed class UsuarioEmailConfigDto
+{
+    public string Server { get; set; } = string.Empty;
+    public string Usuario { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public string NombreRemitente { get; set; } = string.Empty;
+    public string De { get; set; } = string.Empty;
+    public bool Autenticacion { get; set; } = true;
+
+    /// <summary>True cuando hay lo mínimo indispensable para intentar enviar con esta cuenta
+    /// (servidor + usuario + contraseña) -- si falta algo, se usa el correo general.</summary>
+    public bool EstaCompleto => !string.IsNullOrWhiteSpace(Server) && !string.IsNullOrWhiteSpace(Usuario) && !string.IsNullOrWhiteSpace(Password);
 }
 
 public sealed class UsuarioPhotoServeDto

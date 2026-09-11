@@ -199,7 +199,41 @@ public sealed class ConfiguracionGeneralService(
                 "DELETE FROM dbo.TA_LOGOS WHERE IDLOGO = @Id;", new { Id = LogoId }, cancellationToken: token));
         }, "No se pudo quitar el logo.", ct);
 
+    public Task<ConfiguracionEmailDto> GetEmailAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetEmail", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var valores = await ReadConfigMapAsync(cn, EmailClaves, token);
+            return new ConfiguracionEmailDto
+            {
+                Server = Get(valores, "EMAIL_SERVER"),
+                Port = Get(valores, "EMAIL_PORT"),
+                Cuenta = Get(valores, "EMAIL_CTA"),
+                Password = Get(valores, "EMAIL_PASS"),
+                Ssl = ParseBool(Get(valores, "EMAIL_SSL"))
+            };
+        }, "No se pudo cargar la configuración de correo saliente.", ct);
+
+    public Task SaveEmailAsync(ConfiguracionEmailDto dto, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SaveEmail", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(dto);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await SetConfigAsync(cn, "EMAIL_SERVER", (dto.Server ?? string.Empty).Trim(), token);
+            await SetConfigAsync(cn, "EMAIL_PORT", (dto.Port ?? string.Empty).Trim(), token);
+            await SetConfigAsync(cn, "EMAIL_CTA", (dto.Cuenta ?? string.Empty).Trim(), token);
+            await SetConfigAsync(cn, "EMAIL_PASS", (dto.Password ?? string.Empty).Trim(), token);
+            await SetConfigAsync(cn, "EMAIL_SSL", dto.Ssl ? "SI" : string.Empty, token);
+        }, "No se pudo guardar la configuración de correo saliente.", ct);
+
     // ---- Helpers privados ----
+
+    private static readonly string[] EmailClaves =
+    [
+        "EMAIL_SERVER", "EMAIL_PORT", "EMAIL_CTA", "EMAIL_PASS", "EMAIL_SSL"
+    ];
 
     private static readonly string[] EmpresaClaves =
     [

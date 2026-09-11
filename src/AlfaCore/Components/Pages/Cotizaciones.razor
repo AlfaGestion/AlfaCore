@@ -635,9 +635,19 @@
                 <div class="cotiz-compartir-row">
                     <input class="field-input" type="email" placeholder="cliente@correo.com" value="@_compartirEmail"
                            @oninput="args => _compartirEmail = args.Value?.ToString() ?? string.Empty" />
-                    <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-envelope" Loading="@_enviandoEmail"
-                                Disabled="@string.IsNullOrWhiteSpace(_compartirEmail)" OnClick="_ => EnviarEmailAsync()">Enviar</AlfaButton>
                 </div>
+                <div class="cotiz-ia-input">
+                    <i class="bi bi-stars"></i>
+                    <input placeholder="Ej: mensaje corto agradeciendo el interés" value="@_iaMensajePrompt"
+                           @oninput="args => _iaMensajePrompt = args.Value?.ToString() ?? string.Empty" @onkeydown="OnIaMensajeKeyDownAsync" />
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-magic" Loading="@_iaMensajeCargando"
+                                Disabled="@string.IsNullOrWhiteSpace(_iaMensajePrompt)" OnClick="_ => GenerarMensajeIaAsync()">Generar</AlfaButton>
+                </div>
+                <textarea class="cotiz-compartir-mensaje" rows="5" placeholder="Mensaje para el cliente..." value="@_compartirMensaje"
+                          @oninput="args => _compartirMensaje = args.Value?.ToString() ?? string.Empty"></textarea>
+                <p class="cotiz-ia-hint">El PDF de la cotización se adjunta automáticamente.</p>
+                <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-envelope" Loading="@_enviandoEmail"
+                            Disabled="@string.IsNullOrWhiteSpace(_compartirEmail)" OnClick="_ => EnviarEmailAsync()">Enviar</AlfaButton>
             </div>
         </ChildContent>
         <Footer>
@@ -732,6 +742,9 @@
     private bool _showCompartirDialog;
     private string _compartirUrl = string.Empty;
     private string _compartirEmail = string.Empty;
+    private string _compartirMensaje = string.Empty;
+    private string _iaMensajePrompt = string.Empty;
+    private bool _iaMensajeCargando;
     private bool _enviandoEmail;
 
     private ElementReference _richEditorRef;
@@ -1373,6 +1386,8 @@
         _showCompartirDialog = true;
         _compartirUrl = string.Empty;
         _compartirEmail = string.Empty;
+        _compartirMensaje = string.Empty;
+        _iaMensajePrompt = string.Empty;
         StateHasChanged();
 
         var result = await UiOps.RunAsync(() => CotizSvc.EnsureShareAsync(_detail.IdVersion), "No se pudo generar el link para compartir.");
@@ -1381,7 +1396,38 @@
         else if (!result.Success)
             SetFeedback(result.Feedback);
 
+        var textoResult = await UiOps.RunAsync(() => CotizSvc.GetEmailTextoPredeterminadoAsync(), "No se pudo cargar el mensaje predeterminado del email.");
+        if (textoResult.Success)
+            _compartirMensaje = textoResult.Value ?? string.Empty;
+
         StateHasChanged();
+    }
+
+    private async Task GenerarMensajeIaAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_iaMensajePrompt))
+            return;
+
+        _iaMensajeCargando = true;
+        StateHasChanged();
+        var result = await UiOps.RunAsync(() => CotizSvc.GenerateEmailMessageAsync(_iaMensajePrompt, _detail?.EmpresaProspecto), "No se pudo generar el mensaje con el asistente de IA.");
+        _iaMensajeCargando = false;
+
+        if (result.Success && !string.IsNullOrWhiteSpace(result.Value))
+        {
+            _compartirMensaje = result.Value;
+            _iaMensajePrompt = string.Empty;
+        }
+        else if (!result.Success)
+        {
+            SetFeedback(result.Feedback);
+        }
+    }
+
+    private async Task OnIaMensajeKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !string.IsNullOrWhiteSpace(_iaMensajePrompt))
+            await GenerarMensajeIaAsync();
     }
 
     private string BuildPublicBase()
@@ -1415,13 +1461,22 @@
         var destino = _compartirEmail.Trim();
         var idVersion = _detail.IdVersion;
         var urlParaEnviar = string.IsNullOrWhiteSpace(_compartirUrl) ? null : _compartirUrl;
-        var result = await UiOps.RunAsync(async () => { await CotizSvc.SendByEmailAsync(idVersion, destino, urlParaEnviar); return true; }, "No se pudo enviar la cotización por email.");
+        var mensaje = _compartirMensaje;
+        var result = await UiOps.RunAsync(() => CotizSvc.SendByEmailAsync(idVersion, destino, urlParaEnviar, mensaje), "No se pudo enviar la cotización por email.");
         _enviandoEmail = false;
 
         if (result.Success)
         {
             _showCompartirDialog = false;
-            SetFeedback(AppUiMessage.Success("Email enviado", $"La cotización se envió a {destino}."));
+            SetFeedback(result.Value
+                ? new AppUiMessage
+                {
+                    Severity = AppUiFeedbackSeverity.Warning,
+                    Title = "Email enviado con la cuenta de AlfaGestión",
+                    Message = $"Se envió a {destino} usando la cuenta de correo de AlfaGestión porque todavía no configuraste una propia. " +
+                              "Configurala en Utilidades → Configuración General → Email (o en tu usuario) para una mejor entrega."
+                }
+                : AppUiMessage.Success("Email enviado", $"La cotización se envió a {destino}."));
             await AbrirAsync(idVersion, resetTab: false);
         }
         else

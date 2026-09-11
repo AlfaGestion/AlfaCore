@@ -48,3 +48,16 @@ public sealed class ConfiguracionLogoDto
     public bool IncluirEnOtrosComprobantes { get; set; }
     public bool PosicionIzquierda { get; set; }
 }
+
+/// <summary>Correo saliente general de la empresa (TA_CONFIGURACION: EMAIL_SERVER/EMAIL_PORT/
+/// EMAIL_CTA/EMAIL_PASS/EMAIL_SSL) -- una sola cuenta para toda la instalación. Un usuario puede
+/// tener la suya propia en Usuarios → Email propio, que se usa en su lugar cuando está completa
+/// (ver CotizacionesService.ResolveEffectiveMailConfigAsync).</summary>
+public sealed class ConfiguracionEmailDto
+{
+    public string Server { get; set; } = string.Empty;
+    public string Port { get; set; } = string.Empty;
+    public string Cuenta { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public bool Ssl { get; set; }
+}

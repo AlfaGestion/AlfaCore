@@ -61,33 +61,93 @@ public sealed class MetaWhatsAppManagementClient(
         var normalizedWabaId = RequiredMetaId(wabaId, nameof(wabaId));
         var routing = await routingProvider.GetAsync(idBase, ct);
         await VerifyCallbackAsync(routing, ct);
-        var subscriptions = await GetSubscribedAppsAsync(tokenReference, normalizedWabaId, ct);
-        var current = subscriptions.SingleOrDefault(x => string.Equals(x.AppId, _options.AppId.Trim(), StringComparison.Ordinal));
-        if (current is null)
-        {
-            using var subscribe = await CreateRequestAsync(HttpMethod.Post, $"{normalizedWabaId}/subscribed_apps", tokenReference, ct);
-            await SendSuccessAsync(subscribe, ct);
-        }
-        if (string.Equals(current?.OverrideCallbackUrl?.TrimEnd('/'), routing.CallbackUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)) return;
-        using var request = await CreateRequestAsync(HttpMethod.Post, $"{normalizedWabaId}/subscribed_apps", tokenReference, ct);
-        request.Content = JsonContent.Create(new { override_callback_uri = routing.CallbackUrl, verify_token = routing.VerifyToken });
-        await SendSuccessAsync(request, ct);
+        var expectedAppId = _options.AppId.Trim();
+        var expectedCallback = NormalizeCallbackUri(routing.CallbackUrl);
+
+        // No falla antes de intentar reparar sólo porque el primer GET resultó inconcluso (ver
+        // incidente Base4264: Meta puede omitir "id" en subscribed_apps para un ítem que sí es
+        // nuestro). Confirmar → return; si no, (re)suscribir de forma idempotente y volver a
+        // verificar; recién ahí, si sigue sin poder confirmarse, falla controlado.
+        var first = await GetSubscribedAppsAsync(tokenReference, normalizedWabaId, ct);
+        if (IsOurSubscriptionConfirmed(first.Items, expectedAppId, expectedCallback))
+            return;
+
+        using var subscribe = await CreateRequestAsync(HttpMethod.Post, $"{normalizedWabaId}/subscribed_apps", tokenReference, ct);
+        subscribe.Content = JsonContent.Create(new { override_callback_uri = routing.CallbackUrl, verify_token = routing.VerifyToken });
+        await SendSuccessAsync(subscribe, ct);
+
         var verified = await GetSubscribedAppsAsync(tokenReference, normalizedWabaId, ct);
-        if (!verified.Any(x => x.AppId == _options.AppId.Trim() && string.Equals(x.OverrideCallbackUrl.TrimEnd('/'), routing.CallbackUrl.TrimEnd('/'), StringComparison.OrdinalIgnoreCase)))
-            throw new MetaWhatsAppManagementException("META_CALLBACK_ROUTING_MISMATCH", false, false, "Meta no confirmó el callback correspondiente a la base.");
+        if (IsOurSubscriptionConfirmed(verified.Items, expectedAppId, expectedCallback))
+            return;
+
+        if (verified.IsUnparseable)
+            throw new MetaWhatsAppManagementException("META_SUBSCRIBED_APPS_UNPARSEABLE", false, false,
+                $"No se pudo determinar de forma segura el estado de suscripción del WABA tras reparar: {verified.MalformedCount} de {verified.RawCount} elemento(s) de subscribed_apps sin evidencia utilizable.");
+        throw new MetaWhatsAppManagementException("META_CALLBACK_ROUTING_MISMATCH", false, false, "Meta no confirmó el callback correspondiente a la base.");
+    }
+
+    /// <summary>
+    /// ¿Alguno de los ítems constituye evidencia válida de que <paramref name="expectedAppId"/> está
+    /// suscripta con el callback esperado?
+    ///  1. id presente y parseable == expectedAppId, con el callback correcto → sí.
+    ///  2. id presente y parseable pero de OTRA app → nunca cuenta, aunque su callback coincidiera
+    ///     (nunca se usa el callback de un id explícito distinto como evidencia propia).
+    ///  3. id ausente (Meta lo omitió, visto en el incidente Base4264) con override_callback_uri ==
+    ///     al esperado → evidencia secundaria válida.
+    ///  4. cualquier otro caso → no concluyente para este ítem.
+    /// </summary>
+    private static bool IsOurSubscriptionConfirmed(IReadOnlyList<WabaSubscriptionItem> items, string expectedAppId, string expectedCallback)
+    {
+        foreach (var item in items)
+        {
+            if (item.AppId is not null)
+            {
+                if (string.Equals(item.AppId, expectedAppId, StringComparison.Ordinal)
+                    && string.Equals(NormalizeCallbackUri(item.OverrideCallbackUrl), expectedCallback, StringComparison.Ordinal))
+                    return true;
+                continue;
+            }
+            if (string.Equals(NormalizeCallbackUri(item.OverrideCallbackUrl), expectedCallback, StringComparison.Ordinal))
+                return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Normaliza una URI de callback para comparación segura: canonicaliza esquema/host (minúsculas,
+    /// vía System.Uri) y recorta un único trailing slash del path si no es la raíz. Si no es una URI
+    /// absoluta válida, cae a un trim simple — nunca lanza, nunca inventa una URI.
+    /// </summary>
+    private static string NormalizeCallbackUri(string? value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        if (trimmed.Length == 0) return string.Empty;
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+            return trimmed.TrimEnd('/');
+        var path = uri.AbsolutePath.Length > 1 ? uri.AbsolutePath.TrimEnd('/') : uri.AbsolutePath;
+        return uri.GetLeftPart(UriPartial.Authority) + path + uri.Query;
+    }
+
+    private sealed record WabaSubscriptionItem(string? AppId, string OverrideCallbackUrl);
+
+    private readonly record struct SubscribedAppsResult(IReadOnlyList<WabaSubscriptionItem> Items, int RawCount, int MalformedCount)
+    {
+        public bool IsUnparseable => RawCount > 0 && Items.Count == 0;
     }
 
     /// <summary>
     /// Lectura tolerante de <c>{wabaId}/subscribed_apps</c>: a diferencia de <see cref="GetPagedAsync{T}"/>,
-    /// un ítem individual sin "id" utilizable NO aborta toda la lectura — se descarta y se registra un
-    /// diagnóstico sanitizado (sin token, sin body completo), y se sigue con el resto. Sólo falla
-    /// ("fail controlled") si NINGÚN ítem devuelto resultó utilizable, porque ahí no hay forma segura de
-    /// saber si nuestra app ya está suscripta. Los errores HTTP reales de Meta (permisos, rate limit, etc.)
-    /// no pasan por esta tolerancia: <see cref="SendJsonAsync"/> los sigue lanzando tal cual.
+    /// un ítem individual sin "id" utilizable NO aborta toda la lectura ni se descarta automáticamente
+    /// como malformado — si trae <c>override_callback_uri</c> se conserva como evidencia secundaria (ver
+    /// <see cref="IsOurSubscriptionConfirmed"/>; incidente Base4264, Meta omitió "id" en un ítem real).
+    /// Sólo se registra diagnóstico sanitizado (sin token, sin body completo) para ítems sin NINGUNA
+    /// evidencia utilizable (ni id ni callback). Nunca lanza acá — <see cref="EnsureWabaSubscriptionAsync"/>
+    /// decide si falla, después de intentar reparar. Los errores HTTP reales de Meta (permisos, rate
+    /// limit, etc.) no pasan por esta tolerancia: <see cref="SendJsonAsync"/> los sigue lanzando tal cual.
     /// </summary>
-    private async Task<IReadOnlyList<WabaSubscription>> GetSubscribedAppsAsync(WhatsAppCredentialReference tokenReference, string wabaId, CancellationToken ct)
+    private async Task<SubscribedAppsResult> GetSubscribedAppsAsync(WhatsAppCredentialReference tokenReference, string wabaId, CancellationToken ct)
     {
-        var result = new List<WabaSubscription>();
+        var result = new List<WabaSubscriptionItem>();
         var rawCount = 0;
         var malformedCount = 0;
         string? next = BuildGraphUri($"{wabaId}/subscribed_apps?fields={Uri.EscapeDataString("id,override_callback_uri")}&limit=100").ToString();
@@ -101,9 +161,16 @@ public sealed class MetaWhatsAppManagementClient(
                 foreach (var item in data.EnumerateArray())
                 {
                     rawCount++;
+                    var callbackUri = GetString(item, "override_callback_uri");
                     if (TryParseMetaId(item, "id", out var id, out var idKind, out var idPresent))
                     {
-                        result.Add(new WabaSubscription(id, GetString(item, "override_callback_uri")));
+                        result.Add(new WabaSubscriptionItem(id, callbackUri));
+                    }
+                    else if (!idPresent && callbackUri.Length > 0)
+                    {
+                        // "id" ausente (no simplemente no parseable) pero con callback utilizable:
+                        // evidencia secundaria, no un ítem malformado.
+                        result.Add(new WabaSubscriptionItem(null, callbackUri));
                     }
                     else
                     {
@@ -120,11 +187,7 @@ public sealed class MetaWhatsAppManagementClient(
                 : null;
         }
 
-        if (result.Count == 0 && rawCount > 0)
-            throw new MetaWhatsAppManagementException("META_SUBSCRIBED_APPS_UNPARSEABLE", false, false,
-                $"No se pudo determinar de forma segura el estado de suscripción del WABA: {malformedCount} de {rawCount} elemento(s) de subscribed_apps sin id utilizable.");
-
-        return result;
+        return new SubscribedAppsResult(result, rawCount, malformedCount);
     }
 
     private async Task VerifyCallbackAsync(WhatsAppWabaRoutingConfiguration routing, CancellationToken ct)
@@ -137,8 +200,6 @@ public sealed class MetaWhatsAppManagementClient(
         if (!response.IsSuccessStatusCode || !string.Equals(body.Trim(), challenge, StringComparison.Ordinal))
             throw new MetaWhatsAppManagementException("CALLBACK_VERIFICATION_FAILED", false, false, "El callback público de la base no superó la verificación.");
     }
-
-    private sealed record WabaSubscription(string AppId, string OverrideCallbackUrl);
 
     public Task<IReadOnlyList<MetaPhoneAsset>> DiscoverPhoneNumbersAsync(string wabaId, WhatsAppCredentialReference tokenReference, CancellationToken ct = default)
     {

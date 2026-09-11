@@ -571,6 +571,25 @@ button.cotiz-stat--action.is-active {
     margin-top: 1rem;
 }
 
+.cotiz-compartir-mensaje {
+    width: 100%;
+    min-height: 7rem;
+    resize: vertical;
+    background: var(--alfa-bg-input);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    color: var(--alfa-text-primary);
+    padding: .6rem .75rem;
+    font: inherit;
+    line-height: 1.5;
+    margin-bottom: .4rem;
+}
+
+.cotiz-compartir-mensaje:focus {
+    outline: none;
+    border-color: var(--alfa-accent);
+}
+
 /* Asistente de IA (sugerir líneas / redactar propuesta) */
 
 .cotiz-ia-input {

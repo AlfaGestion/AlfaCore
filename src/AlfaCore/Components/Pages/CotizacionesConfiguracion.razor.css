@@ -15,6 +15,51 @@
     margin-bottom: .8rem;
 }
 
+.cotiz-ia-input {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .1rem;
+    margin-bottom: .6rem;
+}
+
+.cotiz-ia-input i {
+    color: var(--alfa-accent);
+}
+
+.cotiz-ia-input input {
+    flex: 1 1 auto;
+    height: var(--alfa-control-md);
+    background: var(--alfa-bg-input);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    color: var(--alfa-text-primary);
+    padding: 0 .7rem;
+}
+
+.cotiz-ia-input input:focus {
+    outline: none;
+    border-color: var(--alfa-accent);
+}
+
+.cotizcfg-textarea {
+    width: 100%;
+    min-height: 9rem;
+    resize: vertical;
+    background: var(--alfa-bg-input);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    color: var(--alfa-text-primary);
+    padding: .6rem .75rem;
+    font: inherit;
+    line-height: 1.5;
+}
+
+.cotizcfg-textarea:focus {
+    outline: none;
+    border-color: var(--alfa-accent);
+}
+
 .cotizcfg-pricing-grid {
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     margin-bottom: 1.1rem;

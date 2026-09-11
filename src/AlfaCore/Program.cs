@@ -60,6 +60,18 @@ public class Program
             return;
         }
 
+        // Modo one-shot 100% READ-ONLY: ownership → credencial vía WhatsAppRuntimeCredentialResolver
+        // (Vault productivo, sin fallback legacy) → un único GET a Graph. Ver WhatsAppPhoneInspectionCommand.
+        if (WhatsAppPhoneInspectionCommand.IsRequested(args))
+        {
+            var inspectExitCode = WhatsAppPhoneInspectionCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(inspectExitCode);
+            return;
+        }
+
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
         var webRootCandidates = new[]

@@ -191,6 +191,47 @@
                         </section>
                     }
 
+                    <section class="usuarios-edit-section">
+                        <div class="usuarios-edit-section__heading">
+                            <h3>Email propio (opcional)</h3>
+                            <p>
+                                Si se completa, "Enviar por email" desde Cotizaciones envía usando esta cuenta en vez del
+                                correo general de la empresa (Utilidades → Configuración General → Email).
+                            </p>
+                        </div>
+                        <div class="usuarios-edit-grid">
+                            <AlfaInput Label="Servidor SMTP"
+                                       Placeholder="smtp.servidor.com"
+                                       MaxLength="150"
+                                       Value="@Model.EmailServer"
+                                       ValueChanged="@(value => SetTextAsync(nameof(Model.EmailServer), value))"
+                                       Disabled="@Saving" />
+                            <AlfaInput Label="Usuario SMTP"
+                                       Placeholder="usuario@empresa.com"
+                                       MaxLength="150"
+                                       Value="@Model.EmailUsuario"
+                                       ValueChanged="@(value => SetTextAsync(nameof(Model.EmailUsuario), value))"
+                                       Disabled="@Saving" />
+                            <AlfaInput Label="Contraseña SMTP"
+                                       Type="password"
+                                       MaxLength="150"
+                                       Value="@Model.EmailPassword"
+                                       ValueChanged="@(value => SetTextAsync(nameof(Model.EmailPassword), value))"
+                                       Disabled="@Saving" />
+                            <AlfaInput Label="Nombre del remitente"
+                                       Placeholder="Ej: Alberto Antúnez"
+                                       MaxLength="150"
+                                       Value="@Model.EmailNombre"
+                                       ValueChanged="@(value => SetTextAsync(nameof(Model.EmailNombre), value))"
+                                       Disabled="@Saving" />
+                        </div>
+                        <AlfaCheckbox Value="@Model.EmailAutenticacion"
+                                      ValueChanged="@(value => SetFlagAsync(nameof(Model.EmailAutenticacion), value))"
+                                      Disabled="@Saving">
+                            Requiere autenticación
+                        </AlfaCheckbox>
+                    </section>
+
                     @if (!CreateMode)
                     {
                         <section class="usuarios-edit-section">
@@ -338,6 +379,18 @@
             case nameof(Model.Contrasena):
                 Model.Contrasena = value ?? string.Empty;
                 break;
+            case nameof(Model.EmailServer):
+                Model.EmailServer = value ?? string.Empty;
+                break;
+            case nameof(Model.EmailUsuario):
+                Model.EmailUsuario = value ?? string.Empty;
+                break;
+            case nameof(Model.EmailPassword):
+                Model.EmailPassword = value ?? string.Empty;
+                break;
+            case nameof(Model.EmailNombre):
+                Model.EmailNombre = value ?? string.Empty;
+                break;
         }
 
         await OnFieldChanged.InvokeAsync(property);
@@ -355,6 +408,9 @@
                 break;
             case nameof(Model.CambiarProximoInicio):
                 Model.CambiarProximoInicio = value is true;
+                break;
+            case nameof(Model.EmailAutenticacion):
+                Model.EmailAutenticacion = value is true;
                 break;
         }
 

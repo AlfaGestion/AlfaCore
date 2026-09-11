@@ -34,6 +34,18 @@ function captureActivation(stage, enabled) {
     return window.alfaEs2Diagnostics?.capture(stage);
 }
 
+// Diagnóstico TEMPORAL de producción para el incidente Base4264 (2026-09-11, ver auditoría de
+// onMessage/FB.login). Sólo booleanos/strings ya sanitizados por el propio llamador — nunca
+// payload.data completo, waba_id, phone_number_id, code, state ni token. Prefijo [WAES-DIAG] para
+// poder identificarlo y quitarlo fácilmente una vez resuelto el diagnóstico.
+function diagLog(stage, details) {
+    try {
+        console.debug("[WAES-DIAG]", stage, details);
+    } catch {
+        // Un logger nunca debe romper el flujo de autorización real.
+    }
+}
+
 function captureLoginContract(contract, enabled) {
     if (!enabled) return;
     const metadata = Object.freeze({ ...contract });
@@ -82,30 +94,73 @@ export async function launch(options, dotnet) {
 
     const cleanup = () => window.removeEventListener("message", onMessage);
     const completeIfReady = async () => {
+        const hasCode = !!code;
+        const hasSession = !!session;
+        diagLog("completeIfReady", { completeIfReadyCalled: true, hasCode, hasSession });
         if (submitted || !code || !session) return;
         submitted = true;
         cleanup();
-        await dotnet.invokeMethodAsync("CompleteEmbeddedSignupAuthorization", code, options.state, session.wabaId || "", session.phoneNumberId || "");
+        try {
+            await dotnet.invokeMethodAsync("CompleteEmbeddedSignupAuthorization", code, options.state, session.wabaId || "", session.phoneNumberId || "");
+            diagLog("completeIfReady", { dotnetCallbackInvoked: true });
+        } catch (error) {
+            diagLog("completeIfReady", {
+                dotnetCallbackInvoked: false,
+                dotnetCallbackError: true,
+                errorType: String(error?.name || "Error"),
+                errorMessage: sanitizeStack(String(error?.message || error || ""))
+            });
+            throw error;
+        }
         code = null;
     };
     const onMessage = async event => {
-        if (!allowedOrigins.has(event.origin) || typeof event.data !== "string") return;
+        const originAllowed = allowedOrigins.has(event.origin);
+        const dataType = typeof event.data;
+        let jsonParseOk = false;
         let payload;
-        try { payload = JSON.parse(event.data); } catch { return; }
-        if (payload?.type !== "WA_EMBEDDED_SIGNUP") return;
-        const eventName = String(payload.event || "").toUpperCase();
+        if (originAllowed && dataType === "string") {
+            try { payload = JSON.parse(event.data); jsonParseOk = true; } catch { jsonParseOk = false; }
+        }
+        const payloadType = payload && typeof payload === "object" && typeof payload.type === "string" ? payload.type : null;
+        const payloadEvent = payload && typeof payload === "object" && typeof payload.event === "string" ? payload.event : null;
+        const eventName = String(payloadEvent || "").toUpperCase();
         const coexistence = options.onboardingMode === "businessAppCoexistence";
-        const isExpectedFinish = coexistence
-            ? eventName === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"
-            : eventName === "FINISH";
+        // Meta no siempre manda FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING en modo coexistence: el
+        // intento real de Base4264/Alfanet Papelera llegó con eventName="FINISH" incluso en
+        // coexistence (confirmado por [WAES-DIAG]). Aceptamos FINISH siempre, y además el evento
+        // específico de coexistence por si Meta lo manda en otros casos/versiones. No relaja nada de
+        // seguridad: sigue exigiendo payload.type/origin/parse válidos (ver isKnownPayload) y
+        // completeIfReady sigue exigiendo code Y session antes de invocar a .NET.
+        const isExpectedFinish =
+            eventName === "FINISH" ||
+            (coexistence && eventName === "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING");
+        const isCancel = eventName === "CANCEL";
+        const isError = eventName === "ERROR";
+        const isKnownPayload = originAllowed && dataType === "string" && jsonParseOk && payloadType === "WA_EMBEDDED_SIGNUP";
+        const eventAccepted = isKnownPayload && (isExpectedFinish || isCancel || isError);
+        const expectedEvents = coexistence ? ["FINISH", "FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING"] : ["FINISH"];
+        diagLog("onMessage", {
+            postMessageReceived: true,
+            origin: event.origin,
+            dataType,
+            jsonParseOk,
+            payloadType,
+            payloadEvent,
+            expectedEvents,
+            eventAccepted
+        });
+
+        if (!isKnownPayload) return;
         if (isExpectedFinish) {
             session = { wabaId: String(payload.data?.waba_id || ""), phoneNumberId: String(payload.data?.phone_number_id || "") };
+            diagLog("onMessage", { sessionExtracted: true, hasWabaId: !!session.wabaId, hasPhoneNumberId: !!session.phoneNumberId });
             await completeIfReady();
-        } else if (eventName === "CANCEL") {
+        } else if (isCancel) {
             submitted = true;
             cleanup();
             await dotnet.invokeMethodAsync("EmbeddedSignupCancelled");
-        } else if (eventName === "ERROR") {
+        } else if (isError) {
             submitted = true;
             cleanup();
             await dotnet.invokeMethodAsync("EmbeddedSignupFailed", "META_EMBEDDED_SIGNUP_EVENT_ERROR");
@@ -113,7 +168,10 @@ export async function launch(options, dotnet) {
     };
 
     async function handleFacebookLoginResponse(loginResponse) {
+        const hasAuthResponse = !!loginResponse?.authResponse;
         const receivedCode = loginResponse?.authResponse?.code;
+        const hasCode = !!receivedCode;
+        diagLog("facebookLoginCallback", { facebookLoginCallbackInvoked: true, hasAuthResponse, hasCode });
         if (!receivedCode) {
             if (!submitted) {
                 submitted = true;

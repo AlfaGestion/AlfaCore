@@ -284,8 +284,9 @@
                         <AlfaButton Variant="AlfaButtonVariant.Primary"
                                     Size="AlfaSize.Sm"
                                     Icon="bi bi-whatsapp"
-                                    Loading="@_embeddedSignupBusy"
-                                    OnClick="OpenWhatsAppOnboardingModeDialog">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
+                                    Loading="@EmbeddedSignupPrimaryCtaLoading"
+                                    Disabled="@_embeddedSignupBusy"
+                                    OnClick="@(() => OpenWhatsAppOnboardingModeDialog(EmbeddedSignupBusyOrigin.PrimaryCta))">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
                     }
                     else if (EmbeddedSignupCta.IsBlockedByActiveOnboarding)
                     {
@@ -304,7 +305,7 @@
                                 Size="AlfaSize.Sm"
                                 Icon="bi bi-plus-circle"
                                 Disabled="@_embeddedSignupBusy"
-                                OnClick="OpenWhatsAppOnboardingModeDialog">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
+                                OnClick="@(() => OpenWhatsAppOnboardingModeDialog())">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
                 }
                 else if (EmbeddedSignupCta.IsBlockedByActiveOnboarding)
                 {
@@ -367,7 +368,7 @@
                                         <AlfaTag Tone="AlfaTagTone.Success">Conectado</AlfaTag>
                                         @if (EmbeddedSignupCta.ShowPrimaryAction)
                                         {
-                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-plus-circle" Disabled="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
+                                            <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-plus-circle" Disabled="@_embeddedSignupBusy" OnClick="@(() => OpenWhatsAppOnboardingModeDialog())">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
                                         }
                                     </div>
                                 </div>
@@ -400,7 +401,7 @@
                                     </div>
                                     <div class="wa-business-inline-actions">
                                         <AlfaTag Tone="AlfaTagTone.Danger">No se pudo conectar</AlfaTag>
-                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-clockwise" Loading="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">Reintentar</AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-clockwise" Loading="@EmbeddedSignupRetryLoading" Disabled="@_embeddedSignupBusy" OnClick="@(() => OpenWhatsAppOnboardingModeDialog(EmbeddedSignupBusyOrigin.Retry))">Reintentar</AlfaButton>
                                     </div>
                                 </div>
                             }
@@ -411,7 +412,7 @@
                                         <h3>La autorización no se completó a tiempo.</h3>
                                     </div>
                                     <div class="wa-business-inline-actions">
-                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-clockwise" Loading="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">Reintentar</AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-clockwise" Loading="@EmbeddedSignupRetryLoading" Disabled="@_embeddedSignupBusy" OnClick="@(() => OpenWhatsAppOnboardingModeDialog(EmbeddedSignupBusyOrigin.Retry))">Reintentar</AlfaButton>
                                     </div>
                                 </div>
                             }
@@ -425,7 +426,7 @@
                                     </div>
                                     <div class="wa-business-inline-actions">
                                         <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-arrow-clockwise" Loading="@_embeddedSignupBusy" OnClick="RecoverEmbeddedWhatsAppAsync">Recuperar WhatsApp</AlfaButton>
-                                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-plus-circle" Disabled="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">Conectar otro WhatsApp</AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Secondary" Icon="bi bi-plus-circle" Disabled="@_embeddedSignupBusy" OnClick="@(() => OpenWhatsAppOnboardingModeDialog())">Conectar otro WhatsApp</AlfaButton>
                                     </div>
                                 </div>
                             }
@@ -435,7 +436,7 @@
                                     <div><h3>@EmbeddedSignupCta.EmptyStateTitle</h3><p>Usá el WhatsApp Business que ya tenés o configurá uno nuevo.</p></div>
                                     @if (EmbeddedSignupCta.ShowPrimaryAction)
                                     {
-                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-whatsapp" Loading="@_embeddedSignupBusy" OnClick="OpenWhatsAppOnboardingModeDialog">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-whatsapp" Loading="@EmbeddedSignupPrimaryCtaLoading" Disabled="@_embeddedSignupBusy" OnClick="@(() => OpenWhatsAppOnboardingModeDialog(EmbeddedSignupBusyOrigin.PrimaryCta))">@EmbeddedSignupCta.PrimaryActionLabel</AlfaButton>
                                     }
                                 </div>
                             }
@@ -2199,6 +2200,18 @@
     private DotNetObjectReference<ConversacionesConfiguracion>? _embeddedSignupReference;
     private Guid? _embeddedSignupId;
     private bool _embeddedSignupBusy;
+
+    // Qué botón disparó el _embeddedSignupBusy actual: antes, el CTA principal (lista de WhatsApp) y
+    // el "Reintentar" del panel de estado (Failed/Expired) compartían el mismo _embeddedSignupBusy
+    // para Loading, así que ambos "latían" juntos aunque el usuario sólo hubiera tocado uno (ver
+    // auditoría Base4264). Este origen deja que cada botón anime su propio spinner únicamente cuando
+    // fue el que efectivamente se tocó; _embeddedSignupBusy sigue siendo la única fuente de verdad
+    // para Disabled en todos lados (sigue bloqueando cualquier otra acción mientras hay una en curso).
+    private enum EmbeddedSignupBusyOrigin { None, PrimaryCta, Retry }
+    private EmbeddedSignupBusyOrigin _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
+    private bool EmbeddedSignupPrimaryCtaLoading => _embeddedSignupBusy && _embeddedSignupBusyOrigin == EmbeddedSignupBusyOrigin.PrimaryCta;
+    private bool EmbeddedSignupRetryLoading => _embeddedSignupBusy && _embeddedSignupBusyOrigin == EmbeddedSignupBusyOrigin.Retry;
+
     private bool _showWhatsAppOnboardingModeDialog;
     private readonly AlfaCore.Models.WhatsAppConnectionChoiceSelection _whatsAppConnectionChoiceSelection = new();
     private string _embeddedSignupState = string.Empty;
@@ -2443,8 +2456,9 @@
             await _embeddedSignupModule.DisposeAsync();
     }
 
-    private Task OpenWhatsAppOnboardingModeDialog()
+    private Task OpenWhatsAppOnboardingModeDialog(EmbeddedSignupBusyOrigin origin = EmbeddedSignupBusyOrigin.PrimaryCta)
     {
+        _embeddedSignupBusyOrigin = origin;
         _whatsAppConnectionChoiceSelection.Begin();
         _showWhatsAppOnboardingModeDialog = true;
         return InvokeAsync(StateHasChanged);
@@ -2455,6 +2469,7 @@
         if (_embeddedSignupBusy)
             return Task.CompletedTask;
 
+        _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         _showWhatsAppOnboardingModeDialog = false;
         _whatsAppConnectionChoiceSelection.Clear();
         return InvokeAsync(StateHasChanged);
@@ -2561,6 +2576,7 @@
         if (_embeddedSignupStatus is not { Status: AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Importing } status)
             return;
         _embeddedSignupBusy = true;
+        _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         try
         {
             await AuthorizationSvc.EnsureCanManageAsync();
@@ -2589,6 +2605,7 @@
     private async Task RetryEmbeddedSignupAsync(AlfaCore.Models.WhatsAppEmbeddedPendingConnection pending)
     {
         _embeddedSignupBusy = true;
+        _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         try
         {
             await AuthorizationSvc.EnsureCanManageAsync();
@@ -2619,6 +2636,7 @@
             return;
 
         _embeddedSignupBusy = true;
+        _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         try
         {
             await AuthorizationSvc.EnsureCanManageAsync();
@@ -2679,6 +2697,7 @@
                     new { CorrelationId = correlationId, UiChoice = choice.ToString(), ExpectedMode = expectedMode.ToString(), StartAsyncInputMode = expectedMode.ToString(), PersistedMode = start.OnboardingMode.ToString(), IdOnboarding = start.IdOnboarding });
                 _embeddedSignupMessage = "No se abrió Meta porque la opción confirmada no coincide con el modo preparado.";
                 _embeddedSignupBusy = false;
+                _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
                 _showWhatsAppOnboardingModeDialog = false;
                 return;
             }
@@ -2726,6 +2745,7 @@
                 new { IdBase = idBase });
             _embeddedSignupMessage = "No se pudo iniciar la conexión con Meta. Revisá la configuración técnica.";
             _embeddedSignupBusy = false;
+            _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         }
     }
 
@@ -2763,6 +2783,7 @@
         }
 
         _embeddedSignupBusy = false;
+        _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         _embeddedSignupMessage = "No se completó la autorización con Meta a tiempo. Podés intentarlo nuevamente.";
         await PersistEmbeddedSignupCancellationAsync();
     }
@@ -2790,6 +2811,7 @@
         finally
         {
             _embeddedSignupBusy = false;
+            _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
             _showWhatsAppOnboardingModeDialog = false;
             _whatsAppConnectionChoiceSelection.Clear();
             await InvokeAsync(StateHasChanged);
@@ -2801,6 +2823,7 @@
     {
         CancelEmbeddedSignupAuthorizationWatchdog();
         _embeddedSignupBusy = false;
+        _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         _showWhatsAppOnboardingModeDialog = false;
         _whatsAppConnectionChoiceSelection.Clear();
         _embeddedSignupMessage = "Conexión cancelada. Podés intentarlo nuevamente.";
@@ -2809,12 +2832,18 @@
 
     private async Task PersistEmbeddedSignupCancellationAsync()
     {
+        var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
         if (_embeddedSignupId is Guid id)
         {
-            var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
             var usuario = AppUserSession.GetCurrentUserName().Trim();
             try { await EmbeddedSignup.HandleCancellationAsync(id, idBase, _embeddedSignupState, usuario); } catch { }
         }
+        // Sin este refresh, _embeddedSignupStatus queda congelado con el snapshot de la carga de
+        // página anterior a este intento (p. ej. el mensaje EXPIRED de un onboarding viejo), porque
+        // ni el watchdog ni la cancelación explícita del SDK re-piden el estado (ver auditoría Base4264:
+        // sólo CompleteEmbeddedSignupAuthorization, el camino de éxito, lo hacía).
+        if (idBase > 0)
+            await RefreshWhatsAppConnectionsAsync(idBase);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -2823,6 +2852,7 @@
     {
         CancelEmbeddedSignupAuthorizationWatchdog();
         _embeddedSignupBusy = false;
+        _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
         var safeCode = string.Equals(errorCode, "META_EMBEDDED_SIGNUP_EVENT_ERROR", StringComparison.Ordinal) ? errorCode : "META_EMBEDDED_SIGNUP_EVENT_ERROR";
         var incident = _embeddedSignupId is Guid id && idBase > 0
