@@ -1667,22 +1667,24 @@
         return $"{name} · Logo {(_hasCustomPublicLogo ? "personalizado" : "predeterminado")}";
     }
 
+    // Shell AlfaDesign: barra superior global (alfa-app-topbar) en vez del sidebar lateral legacy,
+    // mismo mecanismo que Conversaciones.razor. Las pestañas de sección (Catálogos / Catálogo
+    // predeterminado / Menú / Configuración) ahora viven en TopNavigationItems, ahí arriba, no en el
+    // MainPageHeader clásico -- así que ese header clásico solo hace falta mientras se edita un
+    // catálogo (Guardar borrador / Publicar / Volver / Limpiar no tienen otro lugar en la pantalla).
+    // Fuera de esa sección se deja Title/Actions vacíos y AlwaysVisible=false a propósito, igual que
+    // Conversaciones: así MainPageHeader.HasHeader da false y no queda una barra extra vacía debajo
+    // del topbar.
     private void UpdatePageHeader()
     {
+        var showEditorActions = ShouldShowEditorHeaderActions();
         PageHeader.Set(new PageHeaderConfig
         {
-            Title = GetHeaderTitle(),
-            Breadcrumb = [],
+            ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+            TopNavigationItems = BuildTopNavigationItems(),
+            Title = showEditorActions ? GetHeaderTitle() : string.Empty,
             Actions = BuildHeaderActions(),
-            ViewButtons = BuildHeaderViewButtons(),
-            InlineViewButtons = true,
-            ActionsBelowViewButtons = ShouldShowEditorHeaderActions(),
-            ShowHistoryNavigation = true,
-            ShowHomeNavigation = true,
-            HomeUrl = RouteContext.BuildRoute("/"),
-            HomeTitle = "Volver a Inicio",
-            HomeLogoSrc = "/logos/Logo.png",
-            AlwaysVisible = true
+            AlwaysVisible = showEditorActions
         });
     }
 
@@ -1764,25 +1766,26 @@
         return actions;
     }
 
-    private IReadOnlyList<PageHeaderViewButton> BuildHeaderViewButtons()
+    // Reemplaza a las viejas ViewButtons de MainPageHeader: con ShellMode=AlfaDesignPilot estas
+    // pestañas se pintan en la barra superior global (alfa-app-topbar), igual que Conversaciones /
+    // Plantillas / Configuración en Conversaciones.razor.
+    private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
-        var buttons = new List<PageHeaderViewButton>
+        var items = new List<PageHeaderTopNavItem>
         {
             new()
             {
                 Key = SectionCatalogos,
                 Label = "Catálogos",
-                Title = "Catálogos",
-                Icon = "bi-collection",
-                Active = IsCatalogosSection,
+                Url = BuildSectionRoute(SectionCatalogos),
+                Active = IsCatalogosSection || IsNuevoSection,
                 OnClick = ShowCatalogosAsync
             },
             new()
             {
                 Key = SectionPredeterminado,
                 Label = "Catálogo predeterminado",
-                Title = "Catálogo predeterminado",
-                Icon = "bi-star-fill",
+                Url = BuildSectionRoute(SectionPredeterminado),
                 Active = IsPredeterminadoSection,
                 OnClick = ShowCatalogoPredeterminadoAsync
             }
@@ -1790,28 +1793,26 @@
 
         if (_menuHabilitado)
         {
-            buttons.Add(new PageHeaderViewButton
+            items.Add(new PageHeaderTopNavItem
             {
                 Key = SectionMenu,
                 Label = "Menú",
-                Title = "Menú",
-                Icon = "bi-list-ul",
+                Url = BuildSectionRoute(SectionMenu),
                 Active = IsMenuSection,
                 OnClick = ShowMenuAsync
             });
         }
 
-        buttons.Add(new PageHeaderViewButton
+        items.Add(new PageHeaderTopNavItem
         {
             Key = SectionConfiguracion,
             Label = "Configuración",
-            Title = "Configuración",
-            Icon = "bi-gear",
+            Url = BuildSectionRoute(SectionConfiguracion),
             Active = IsConfiguracionSection,
             OnClick = ShowConfiguracionAsync
         });
 
-        return buttons;
+        return items;
     }
 
     // Un catálogo no puede mezclar artículos de dos listas (ni Maestro + Lista a la vez): si ya

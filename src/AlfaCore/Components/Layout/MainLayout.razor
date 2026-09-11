@@ -862,7 +862,9 @@ else
                         && !string.Equals(_currentModule, "tickets", StringComparison.OrdinalIgnoreCase)
                         && !string.Equals(_currentModule, "cotizaciones", StringComparison.OrdinalIgnoreCase)
                         && !string.Equals(_currentModule, "configuracion-general", StringComparison.OrdinalIgnoreCase)
-                        && !string.Equals(_currentModule, "documentos", StringComparison.OrdinalIgnoreCase))
+                        && !string.Equals(_currentModule, "documentos", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "catalogo", StringComparison.OrdinalIgnoreCase)
+                        && !string.Equals(_currentModule, "catalogos", StringComparison.OrdinalIgnoreCase))
                     {
                         <a class="alfa-app-topbar__global-icon" href="@RouteContext.BuildRoute("/conversaciones/configuracion")" title="Configuración" aria-label="Configuración">
                             <i class="bi bi-gear"></i>
@@ -885,7 +887,7 @@ else
         }
 
         <CascadingValue Name="AlfaDesignShellActive" Value="IsAlfaDesignShellActive">
-            <CascadingValue Name="SuppressPageHeader" Value="!IsAlfaDesignShellActive">
+            <CascadingValue Name="SuppressPageHeader" Value="ShouldSuppressPageHeader">
                 <MainPageHeader />
             </CascadingValue>
         </CascadingValue>
@@ -1401,6 +1403,15 @@ else
     // si esa carrera se pierde en algún caso no cubierto, Inicio nunca puede quedar con el topbar
     // pegado de otra pantalla.
     private bool IsAlfaDesignShellActive => !IsLauncherRoute && IsCurrentRouteAlfaDesignManaged() && PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot;
+    // OJO: esto NO es "!IsAlfaDesignShellActive". Esa versión suprimía el header en TODA página en
+    // modo Legacy (el default), incluidas las que sí llaman PageHeader.Set() propio -- ej. Catálogos
+    // y Carga de viajes, que usan MainPageHeader/ViewButtons pero nunca se migraron al shell AlfaDesign
+    // ni tocan ShellMode. El único caso real a tapar es el de la stale AlfaDesignPilot: el topbar de
+    // una página migrada (Conversaciones, Contactos, etc.) quedando pegado al navegar a una ruta no
+    // migrada, antes de que el PageHeader.Clear() de OnLocationChanged gane esa carrera.
+    private bool ShouldSuppressPageHeader
+        => IsLauncherRoute
+           || (PageHeader.Current.ShellMode == PageHeaderShellMode.AlfaDesignPilot && !IsCurrentRouteAlfaDesignManaged());
     private bool ShowSidebar => !UseTopOnlyNavigation && !IsAlfaDesignShellActive && !IsDirectMode;
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
@@ -1500,7 +1511,9 @@ else
         "tickets",
         "cotizaciones",
         "documentos",
-        "configuracion-general"
+        "configuracion-general",
+        "catalogo",
+        "catalogos"
     };
 
     // Única fuente de verdad de "esta ruta es una de las que ya migramos a AlfaDesign". Se usa tanto
