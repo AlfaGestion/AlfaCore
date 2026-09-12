@@ -26,6 +26,7 @@ public interface IPortalClienteRecuperarClaveService
         string codigoCliente,
         string razonSocialCliente,
         bool esContacto,
+        string? emailAcceso,
         string urlPortal,
         string urlCambiarClave,
         CancellationToken ct = default);

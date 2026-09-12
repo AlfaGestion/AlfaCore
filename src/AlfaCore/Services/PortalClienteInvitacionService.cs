@@ -70,6 +70,9 @@ public sealed class PortalClienteInvitacionService(
             if (cliente is null)
                 throw new InvalidOperationException("No se encontró el cliente indicado.");
 
+            if (string.IsNullOrWhiteSpace(cliente.Email))
+                throw new InvalidOperationException("El cliente no tiene un email registrado para ingresar al portal.");
+
             string emailDestino;
             string nombreDestinatario;
             var esContacto = request.IdContacto is > 0;
@@ -79,8 +82,6 @@ public sealed class PortalClienteInvitacionService(
                 emailDestino = cliente.Email;
                 nombreDestinatario = cliente.RazonSocial;
 
-                if (string.IsNullOrWhiteSpace(emailDestino))
-                    throw new InvalidOperationException("El cliente no tiene un email registrado.");
             }
             else
             {
@@ -159,9 +160,10 @@ public sealed class PortalClienteInvitacionService(
                 cliente.Codigo,
                 cliente.RazonSocial,
                 esContacto,
+                cliente.Email,
                 request.UrlPortal,
                 urlCambiarClave,
-                token);
+                ct: token);
 
             if (!enviado)
                 throw new InvalidOperationException("No pudimos enviar la invitación. Intentá nuevamente en unos minutos.");
