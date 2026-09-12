@@ -63,3 +63,17 @@ public sealed class ConfiguracionEmailDto
     public string Password { get; set; } = string.Empty;
     public bool Ssl { get; set; }
 }
+
+/// <summary>Secciones habilitadas del Portal Cliente (Configuración General → Ventas → Portal del
+/// Cliente, TA_CONFIGURACION claves PORTALCLIENTE_MUESTRA_*). Inicio y Mi cuenta son fijas -- no
+/// están acá porque siempre se muestran. Todo en true por defecto: una instalación que nunca tocó
+/// esta pantalla sigue viendo el Portal Cliente exactamente como antes de que existiera esta
+/// configuración.</summary>
+public sealed class ConfiguracionVentasPortalClienteDto
+{
+    public bool CuentaCorriente { get; set; } = true;
+    public bool ListaPrecios { get; set; } = true;
+    public bool Catalogos { get; set; } = true;
+    public bool Carrito { get; set; } = true;
+    public bool Pedidos { get; set; } = true;
+}

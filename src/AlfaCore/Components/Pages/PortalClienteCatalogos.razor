@@ -51,7 +51,8 @@ else
                               RouteCatalogos="@BuildPortalRoute("catalogos")"
                               RouteCarrito="@BuildPortalRoute("carrito")"
                               RoutePedidos="@BuildPortalRoute("pedidos")"
-                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
+                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")"
+                              SeccionesHabilitadas="@PortalSecciones" />
 
         <CatalogoPublico idweb="@idweb"
                          idbase="@idbase"
@@ -61,6 +62,8 @@ else
 }
 
 @code {
+    protected override string? RequiredSectionKey => "catalogos";
+
     private CatalogoClienteLoginPanel? _loginPanel;
 
     protected override async Task OnAfterClientSessionRestoredAsync()

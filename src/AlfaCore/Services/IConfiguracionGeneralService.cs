@@ -32,4 +32,11 @@ public interface IConfiguracionGeneralService
     Task<ConfiguracionEmailDto> GetEmailAsync(CancellationToken ct = default);
 
     Task SaveEmailAsync(ConfiguracionEmailDto dto, CancellationToken ct = default);
+
+    /// <summary>Qué secciones del Portal Cliente están habilitadas (Inicio y Mi cuenta son fijas,
+    /// no se leen acá). Se lee tanto desde la administración (Configuración General → Ventas)
+    /// como, de forma anónima vía SetWebhookOverride, desde el propio Portal Cliente público.</summary>
+    Task<ConfiguracionVentasPortalClienteDto> GetVentasPortalClienteAsync(CancellationToken ct = default);
+
+    Task SaveVentasPortalClienteAsync(ConfiguracionVentasPortalClienteDto dto, CancellationToken ct = default);
 }

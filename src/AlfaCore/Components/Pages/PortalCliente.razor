@@ -53,76 +53,95 @@ else
                               RouteCatalogos="@BuildPortalRoute("catalogos")"
                               RouteCarrito="@BuildPortalRoute("carrito")"
                               RoutePedidos="@BuildPortalRoute("pedidos")"
-                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
+                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")"
+                              SeccionesHabilitadas="@PortalSecciones" />
 
         <section class="portal-cliente__cards">
-            <a class="portal-cliente__card" href="@BuildPortalRoute("cuenta-corriente")" aria-label="Abrir Cuenta corriente">
-                <span class="portal-cliente__card-icon"><i class="bi bi-cash-stack"></i></span>
-                <span>Cuenta corriente</span>
-                @if (_resumenCuentaCorriente is not null)
-                {
-                    <small class="portal-cliente__card__hint">
-                        Saldo pendiente @MoneyResumen(_resumenCuentaCorriente.SaldoTotal)
-                        @if (_resumenCuentaCorriente.CantidadPendientes > 0)
-                        {
-                            <text> · @_resumenCuentaCorriente.CantidadPendientes comprobante(s) pendiente(s)</text>
-                        }
-                    </small>
-                }
-            </a>
-            <a class="portal-cliente__card" href="@BuildPortalRoute("lista-precios")" aria-label="Abrir Lista de precios">
-                <span class="portal-cliente__card-icon"><i class="bi bi-tags"></i></span>
-                <span>Lista de precios</span>
-                <small class="portal-cliente__card__hint">Consultá tus precios actuales</small>
-            </a>
-            <a class="portal-cliente__card" href="@BuildPortalRoute("catalogos")" aria-label="Abrir Catálogos">
-                <span class="portal-cliente__card-icon"><i class="bi bi-book"></i></span>
-                <span>Catálogos</span>
-            </a>
-            <a class="portal-cliente__card" href="@BuildPortalRoute("carrito")" aria-label="Abrir Carrito de compra">
-                <span class="portal-cliente__card-icon"><i class="bi bi-cart3"></i></span>
-                <span>Carrito de compra</span>
-            </a>
-            <a class="portal-cliente__card" href="@BuildPortalRoute("pedidos")" aria-label="Abrir Pedidos">
-                <span class="portal-cliente__card-icon"><i class="bi bi-receipt"></i></span>
-                <span>Pedidos</span>
-            </a>
+            @if (PortalSecciones.CuentaCorriente)
+            {
+                <a class="portal-cliente__card" href="@BuildPortalRoute("cuenta-corriente")" aria-label="Abrir Cuenta corriente">
+                    <span class="portal-cliente__card-icon"><i class="bi bi-cash-stack"></i></span>
+                    <span>Cuenta corriente</span>
+                    @if (_resumenCuentaCorriente is not null)
+                    {
+                        <small class="portal-cliente__card__hint">
+                            Saldo pendiente @MoneyResumen(_resumenCuentaCorriente.SaldoTotal)
+                            @if (_resumenCuentaCorriente.CantidadPendientes > 0)
+                            {
+                                <text> · @_resumenCuentaCorriente.CantidadPendientes comprobante(s) pendiente(s)</text>
+                            }
+                        </small>
+                    }
+                </a>
+            }
+            @if (PortalSecciones.ListaPrecios)
+            {
+                <a class="portal-cliente__card" href="@BuildPortalRoute("lista-precios")" aria-label="Abrir Lista de precios">
+                    <span class="portal-cliente__card-icon"><i class="bi bi-tags"></i></span>
+                    <span>Lista de precios</span>
+                    <small class="portal-cliente__card__hint">Consultá tus precios actuales</small>
+                </a>
+            }
+            @if (PortalSecciones.Catalogos)
+            {
+                <a class="portal-cliente__card" href="@BuildPortalRoute("catalogos")" aria-label="Abrir Catálogos">
+                    <span class="portal-cliente__card-icon"><i class="bi bi-book"></i></span>
+                    <span>Catálogos</span>
+                </a>
+            }
+            @if (PortalSecciones.Carrito)
+            {
+                <a class="portal-cliente__card" href="@BuildPortalRoute("carrito")" aria-label="Abrir Carrito de compra">
+                    <span class="portal-cliente__card-icon"><i class="bi bi-cart3"></i></span>
+                    <span>Carrito de compra</span>
+                </a>
+            }
+            @if (PortalSecciones.Pedidos)
+            {
+                <a class="portal-cliente__card" href="@BuildPortalRoute("pedidos")" aria-label="Abrir Pedidos">
+                    <span class="portal-cliente__card-icon"><i class="bi bi-receipt"></i></span>
+                    <span>Pedidos</span>
+                </a>
+            }
             <a class="portal-cliente__card" href="@BuildPortalRoute("mi-cuenta")" aria-label="Abrir Mi cuenta">
                 <span class="portal-cliente__card-icon"><i class="bi bi-person-circle"></i></span>
                 <span>Mi cuenta</span>
             </a>
         </section>
 
-        <section class="panel-card">
-            <div class="panel-card__header portal-cliente__recent-header">
-                <h3 class="panel-card__title">Pedidos recientes</h3>
-                <a class="btn btn--ghost btn--sm" href="@BuildPortalRoute("pedidos")">
-                    Ver todos <i class="bi bi-arrow-right"></i>
-                </a>
-            </div>
-
-            @if (_loadingPedidos)
-            {
-                <p class="text-muted">Cargando pedidos...</p>
-            }
-            else if (_pedidosRecientes.Count == 0)
-            {
-                <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
-                                Title="Todavía no tenés pedidos registrados."
-                                Message="Tus pedidos recientes van a aparecer acá cuando hagas operaciones desde el portal."
-                                Class="portal-cliente__empty-state" />
-            }
-            else
-            {
-                <div class="portal-cliente__pedidos-list">
-                    @foreach (var pedido in _pedidosRecientes)
-                    {
-                        <PortalClientePedidoRow Pedido="pedido" DetalleUrl="@BuildPortalRoute($"pedidos/{pedido.IdComprobante}")" />
-                    }
+        @if (PortalSecciones.Pedidos)
+        {
+            <section class="panel-card">
+                <div class="panel-card__header portal-cliente__recent-header">
+                    <h3 class="panel-card__title">Pedidos recientes</h3>
+                    <a class="btn btn--ghost btn--sm" href="@BuildPortalRoute("pedidos")">
+                        Ver todos <i class="bi bi-arrow-right"></i>
+                    </a>
                 </div>
 
-            }
-        </section>
+                @if (_loadingPedidos)
+                {
+                    <p class="text-muted">Cargando pedidos...</p>
+                }
+                else if (_pedidosRecientes.Count == 0)
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Todavía no tenés pedidos registrados."
+                                    Message="Tus pedidos recientes van a aparecer acá cuando hagas operaciones desde el portal."
+                                    Class="portal-cliente__empty-state" />
+                }
+                else
+                {
+                    <div class="portal-cliente__pedidos-list">
+                        @foreach (var pedido in _pedidosRecientes)
+                        {
+                            <PortalClientePedidoRow Pedido="pedido" DetalleUrl="@BuildPortalRoute($"pedidos/{pedido.IdComprobante}")" />
+                        }
+                    </div>
+
+                }
+            </section>
+        }
     </section>
 }
 

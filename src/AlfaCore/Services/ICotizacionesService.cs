@@ -56,6 +56,15 @@ public interface ICotizacionesService
     /// versiones y la pestaña Historial.</summary>
     Task<IReadOnlyList<CotizacionVersionSummaryDto>> GetVersionesAsync(long idCotizacion, CancellationToken ct = default);
 
+    /// <summary>Cada envío por email de cualquier versión de la cotización (más nuevo primero),
+    /// para la pestaña Historial -- a quién, cuándo, con qué cuenta y si se detectó apertura.</summary>
+    Task<IReadOnlyList<CotizacionEmailEnvioDto>> GetEmailEnviosAsync(long idCotizacion, CancellationToken ct = default);
+
+    /// <summary>Registra la apertura de un email a partir del token del píxel de seguimiento
+    /// (no falla nunca visiblemente: si el token no existe más, no hace nada). Ver el aviso de
+    /// confiabilidad en CotizacionEmailEnvioDto.</summary>
+    Task RegistrarAperturaEmailAsync(string trackingToken, CancellationToken ct = default);
+
     /// <summary>Búsqueda de clientes (VT_CLIENTES) por código/razón social, para el selector de cliente.</summary>
     Task<IReadOnlyList<CotizacionClienteOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default);
 

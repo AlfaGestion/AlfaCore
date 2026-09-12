@@ -25,7 +25,7 @@ public sealed class CotizacionDocumentService(
             var detail = await cotizacionesService.GetVersionDetailAsync(idVersion, ct)
                 ?? throw new InvalidOperationException("La cotización indicada no existe.");
             var template = await templates.ResolveAsync(TiposDocumentoCore.Cotizacion, uNegocio, ct);
-            var definition = templates.DeserializeAndValidate(template.TemplateJson);
+            var definition = templates.DeserializeAndValidate(template.TemplateJson, TiposDocumentoCore.Cotizacion);
             var data = await BuildDataAsync(detail, ct);
             data.IncluyePortada = detail.IncluyePortada;
             data.PortadaBytes = template.TienePortada ? await templates.GetPortadaImageBytesAsync(template.IdTemplate, ct) : null;

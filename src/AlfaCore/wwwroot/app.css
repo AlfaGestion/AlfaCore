@@ -28498,6 +28498,29 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     white-space: nowrap;
 }
 
+.portal-cliente__ctacte-table-head {
+    margin-bottom: -0.2rem;
+}
+
+.portal-cliente__th-sort {
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+}
+
+.portal-cliente__th-sort:hover {
+    color: var(--alfa-accent);
+}
+
+.portal-cliente__th-sort.is-active {
+    color: var(--alfa-accent);
+}
+
+.portal-cliente__th-sort i {
+    margin-left: 0.25rem;
+    font-size: 0.75em;
+}
+
 .portal-cliente__ctacte-table td[data-label="Detalle"] {
     white-space: normal;
     min-width: 11rem;

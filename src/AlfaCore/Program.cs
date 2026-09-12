@@ -242,6 +242,7 @@ public class Program
         builder.Services.AddScoped<IDocumentRenderer, DocumentRenderer>();
         builder.Services.AddSingleton<IDocumentPdfService, DocumentPdfService>();
         builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
+        builder.Services.AddScoped<IFacturaDocumentService, FacturaDocumentService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
@@ -282,6 +283,7 @@ public class Program
         builder.Services.AddScoped<IAppUserSessionService, AppUserSessionService>();
         builder.Services.AddSingleton<CatalogosClienteSessionStore>();
         builder.Services.AddScoped<ICatalogosClienteSessionService, CatalogosClienteSessionService>();
+        builder.Services.AddScoped<IPortalClienteSeccionesCache, PortalClienteSeccionesCache>();
         builder.Services.AddSingleton<CatalogoPedidoProcessingGuard>();
         builder.Services.AddSingleton<UsuariosPasswordCodec>();
         builder.Services.AddSingleton<Vb6BridgeTicketStore>();
@@ -296,6 +298,7 @@ public class Program
         builder.Services.AddScoped<IListaPreciosClienteService, ListaPreciosClienteService>();
         builder.Services.AddSingleton<ListaPreciosClienteExcelExporter>();
         builder.Services.AddScoped<IListaPreciosClientePdfService, ListaPreciosClientePdfService>();
+        builder.Services.AddSingleton<PortalClienteCuentaCorrienteExcelExporter>();
         builder.Services.AddScoped<IPuntoVentaCartStateService, PuntoVentaCartStateService>();
         builder.Services.AddScoped<IPuntoVentaConfigService, PuntoVentaConfigService>();
         builder.Services.AddScoped<IPuntoVentaConfigValidator, PuntoVentaConfigValidator>();
@@ -620,6 +623,45 @@ public class Program
             {
                 return Results.NotFound("La cotización no existe o el enlace expiró.");
             }
+        }).AllowAnonymous();
+
+        // Píxel de 1x1 embebido en el email (CotizacionesService.BuildEmailHtml) para "abierto
+        // (aprox.)" en la pestaña Historial -- NUNCA debe fallar de forma visible: si la base no
+        // existe más, o el token ya no está, igual devuelve la imagen (un ícono roto en el email
+        // del cliente sería peor que perder ese dato de seguimiento puntual).
+        var trackingPixelGif = Convert.FromBase64String("R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==");
+        app.MapGet("/cotizacion-email-track/{idbase:int}/{token}", async (
+            int idbase,
+            string token,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            ICotizacionesService cotizacionesSvc,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                var baseInfo = await centralBasesSvc.GetByIdAsync(idbase, ct);
+                if (baseInfo is not null)
+                {
+                    sessionSvc.SetWebhookOverride(new SessionDto
+                    {
+                        BaseId = baseInfo.IdBase,
+                        Nombre = baseInfo.Nombre,
+                        Servidor = baseInfo.DbServer,
+                        BaseDatos = baseInfo.DbName,
+                        Usuario = baseInfo.DbUser,
+                        Password = baseInfo.DbPassword,
+                        TrustServerCertificate = true
+                    });
+                    await cotizacionesSvc.RegistrarAperturaEmailAsync(token, ct);
+                }
+            }
+            catch
+            {
+                // Silencioso a propósito -- ver comentario arriba.
+            }
+
+            return Results.File(trackingPixelGif, "image/gif");
         }).AllowAnonymous();
 
         app.MapGet("/api/usuarios/{nombre}/foto", async (
@@ -958,6 +1000,38 @@ public class Program
 
             var pdfBytes = pdfSvc.GenerarPdf(resultado.Articulos, resultado.Resolucion, contexto.LogoBytes, contexto.NombreEmpresa, contexto.NombreCliente, agrupar, resultado.Truncado);
             return Results.File(pdfBytes, "application/pdf", "lista-precios.pdf");
+        }).AllowAnonymous();
+
+        app.MapGet("/api/portal-cliente/cuenta-corriente/excel", async (
+            HttpRequest request,
+            CatalogosClienteSessionStore clienteSessionStore,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            IInterfacesCatalogosService catalogosSvc,
+            IPortalClienteService portalClienteSvc,
+            PortalClienteCuentaCorrienteExcelExporter exporter,
+            CancellationToken ct) =>
+        {
+            var contexto = await ResolvePortalClienteExportContextAsync(request, clienteSessionStore, centralBasesSvc, sessionSvc, catalogosSvc, ct);
+            if (!contexto.Ok)
+                return contexto.Error!;
+
+            var fechaDesde = DateTime.TryParse(request.Query["desde"], out var desdeParsed) ? desdeParsed.Date : (DateTime?)null;
+            var fechaHasta = DateTime.TryParse(request.Query["hasta"], out var hastaParsed) ? hastaParsed.Date : (DateTime?)null;
+            var ocultarSaldoCero = string.Equals(request.Query["ocultarSaldoCero"], "true", StringComparison.OrdinalIgnoreCase);
+            var sortBy = request.Query["sortBy"].ToString();
+            var sortDescending = !string.Equals(request.Query["sortDesc"], "false", StringComparison.OrdinalIgnoreCase);
+
+            var estado = await portalClienteSvc.GetEstadoCuentaAsync(new PortalClienteEstadoCuentaFiltroDto
+            {
+                CodigoCliente = contexto.CodigoCliente,
+                FechaDesde = fechaDesde,
+                FechaHasta = fechaHasta,
+                OcultarSaldoCero = ocultarSaldoCero
+            }, ct);
+
+            var bytes = exporter.Exportar(estado.Movimientos, contexto.NombreEmpresa, contexto.NombreCliente, fechaDesde, fechaHasta, sortBy, sortDescending);
+            return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", PortalClienteCuentaCorrienteExcelExporter.NombreArchivo());
         }).AllowAnonymous();
 
         static int? ResolveSqlSessionBaseId(string? sessionIdCookie)

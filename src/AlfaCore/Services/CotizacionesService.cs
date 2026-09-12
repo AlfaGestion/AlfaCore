@@ -628,7 +628,15 @@ public sealed class CotizacionesService(
             var to = (destinatario ?? string.Empty).Trim();
             if (to.Length == 0)
                 throw new InvalidOperationException("Ingresá un email de destino.");
-            _ = new System.Net.Mail.MailAddress(to);
+            // Soporta más de una dirección separadas por ";" (estilo Outlook, común en datos
+            // viejos del cliente) o "," -- System.Net.Mail.MailAddress solo entiende UNA dirección
+            // a la vez, así que se validan/agregan por separado más abajo (ver comentario ahí).
+            var direccionesDestino = to
+                .Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (direccionesDestino.Count == 0)
+                throw new InvalidOperationException("Ingresá un email de destino.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -664,7 +672,17 @@ public sealed class CotizacionesService(
             // recién en este punto, cuando CotizacionesService ya terminó de construirse.
             var documentService = serviceProvider.GetRequiredService<ICotizacionDocumentService>();
             var pdfBytes = await documentService.GeneratePdfAsync(idVersion, uNegocio: null, token);
-            var html = BuildEmailHtml(detail, publicUrl, mensaje);
+
+            // Píxel de seguimiento (ver aviso de confiabilidad en CotizacionEmailEnvioDto): cada
+            // envío tiene su propio token, así que "abierto" se puede atar al envío puntual (no
+            // solo a la versión) incluso si se reenvía varias veces a distintas direcciones.
+            var trackingToken = Guid.NewGuid().ToString("N");
+            var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+            var publicBase = configuration["ServidorWeb:UrlBasePublica"];
+            var trackingUrl = string.IsNullOrWhiteSpace(publicBase) || idBase <= 0
+                ? null
+                : $"{publicBase.TrimEnd('/')}/cotizacion-email-track/{idBase}/{trackingToken}";
+            var html = BuildEmailHtml(detail, publicUrl, mensaje, trackingUrl);
 
             using var message = new System.Net.Mail.MailMessage
             {
@@ -675,7 +693,13 @@ public sealed class CotizacionesService(
                 Body = html,
                 IsBodyHtml = true
             };
-            message.To.Add(to);
+            foreach (var direccion in direccionesDestino)
+            {
+                try { message.To.Add(new System.Net.Mail.MailAddress(direccion)); }
+                catch (FormatException) { /* dirección puntual inválida, se ignora */ }
+            }
+            if (message.To.Count == 0)
+                throw new InvalidOperationException("El email de destino no es válido.");
             using var pdfStream = new MemoryStream(pdfBytes);
             message.Attachments.Add(new System.Net.Mail.Attachment(pdfStream, $"{detail.CodigoVisible}.pdf", "application/pdf"));
 
@@ -687,6 +711,18 @@ public sealed class CotizacionesService(
                 Credentials = mail.RequiresAuth ? new System.Net.NetworkCredential(mail.Login, mail.Password) : null
             };
             await client.SendMailAsync(message, token);
+
+            await cn.ExecuteAsync(new CommandDefinition("""
+                INSERT INTO dbo.COT_EMAIL_ENVIO (IdVersion, Destinatario, UsuarioEnvio, UsoCuentaFallback, TrackingToken)
+                VALUES (@IdVersion, @Destinatario, @UsuarioEnvio, @UsoCuentaFallback, @TrackingToken);
+                """, new
+            {
+                IdVersion = idVersion,
+                Destinatario = to,
+                UsuarioEnvio = string.IsNullOrWhiteSpace(usuarioActual) ? null : usuarioActual,
+                UsoCuentaFallback = mail.EsFallback,
+                TrackingToken = trackingUrl is null ? null : trackingToken
+            }, cancellationToken: token));
 
             if (mail.EsFallback)
                 await IncrementarContadorFallbackAsync(cn, token);
@@ -934,6 +970,46 @@ public sealed class CotizacionesService(
             return (IReadOnlyList<CotizacionVersionSummaryDto>)rows;
         }, "No se pudo cargar el historial de versiones.", ct);
 
+    public Task<IReadOnlyList<CotizacionEmailEnvioDto>> GetEmailEnviosAsync(long idCotizacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetEmailEnvios", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await SqlObjectExistsAsync(cn, "dbo.COT_EMAIL_ENVIO", token))
+                return (IReadOnlyList<CotizacionEmailEnvioDto>)Array.Empty<CotizacionEmailEnvioDto>();
+
+            var rows = (await cn.QueryAsync<CotizacionEmailEnvioDto>(new CommandDefinition("""
+                SELECT e.IdEnvio, e.IdVersion, e.Destinatario, e.FechaHoraEnvio, e.UsuarioEnvio,
+                       e.UsoCuentaFallback, e.FechaHoraLectura, e.UltimaFechaHoraLectura, e.CantidadLecturas
+                FROM dbo.COT_EMAIL_ENVIO e
+                INNER JOIN dbo.COT_VERSION v ON v.IdVersion = e.IdVersion
+                WHERE v.IdCotizacion = @Id
+                ORDER BY e.FechaHoraEnvio DESC;
+                """, new { Id = idCotizacion }, cancellationToken: token))).AsList();
+            return (IReadOnlyList<CotizacionEmailEnvioDto>)rows;
+        }, "No se pudo cargar el historial de envíos por email.", ct);
+
+    public Task RegistrarAperturaEmailAsync(string trackingToken, CancellationToken ct = default)
+        => ExecuteLoggedAsync("RegistrarAperturaEmail", async token =>
+        {
+            var tk = (trackingToken ?? string.Empty).Trim();
+            if (tk.Length == 0)
+                return;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await SqlObjectExistsAsync(cn, "dbo.COT_EMAIL_ENVIO", token))
+                return;
+
+            await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.COT_EMAIL_ENVIO
+                SET FechaHoraLectura = ISNULL(FechaHoraLectura, GETDATE()),
+                    UltimaFechaHoraLectura = GETDATE(),
+                    CantidadLecturas = CantidadLecturas + 1
+                WHERE TrackingToken = @Token;
+                """, new { Token = tk }, cancellationToken: token));
+        }, "No se pudo registrar la apertura del email.", ct);
+
     public Task<IReadOnlyList<CotizacionClienteOptionDto>> SearchClientesAsync(string texto, CancellationToken ct = default)
         => ExecuteLoggedAsync("SearchClientes", async token =>
         {
@@ -1136,11 +1212,12 @@ public sealed class CotizacionesService(
     /// CSS de impresión, mm, grid, etc. -- eso vive en el PDF adjunto, que sale del mismo pipeline
     /// que "Descargar PDF"). Antes este método armaba todo el detalle a mano en HTML, con un
     /// formato distinto al PDF y mostrando además las Observaciones internas -- ahora el email
-    /// solo presenta y adjunta/enlaza el documento real.</summary>
-    /// <summary>El "mensaje" es texto plano tipeado por el usuario (o generado por IA) en el
-    /// diálogo de envío -- nunca HTML crudo, por eso se encodea igual que el resto y los saltos de
-    /// línea se preservan con white-space:pre-wrap en vez de reinterpretar como markup.</summary>
-    private static string BuildEmailHtml(CotizacionVersionDetailDto d, string? publicUrl, string? mensaje)
+    /// solo presenta y adjunta/enlaza el documento real. El "mensaje" es texto plano tipeado por el
+    /// usuario (o generado por IA) -- nunca HTML crudo, por eso se encodea igual que el resto y los
+    /// saltos de línea se preservan con white-space:pre-wrap en vez de reinterpretar como markup.
+    /// "trackingUrl", si viene, es el píxel de 1x1 para "abierto (aprox.)" -- ver el aviso de
+    /// confiabilidad en CotizacionEmailEnvioDto.</summary>
+    private static string BuildEmailHtml(CotizacionVersionDetailDto d, string? publicUrl, string? mensaje, string? trackingUrl)
     {
         var ar = System.Globalization.CultureInfo.GetCultureInfo("es-AR");
         string E(string? s) => System.Net.WebUtility.HtmlEncode(s ?? string.Empty);
@@ -1174,7 +1251,10 @@ public sealed class CotizacionesService(
         if (d.FechaVencimiento is { } vencimiento)
             sb.Append("<p style=\"font-size:13px;color:#64748b;margin:0;\">Válida hasta ").Append(vencimiento.ToString("dd/MM/yyyy", ar)).Append(".</p>");
 
-        sb.Append("</div></body></html>");
+        sb.Append("</div>");
+        if (!string.IsNullOrWhiteSpace(trackingUrl))
+            sb.Append("<img src=\"").Append(E(trackingUrl)).Append("\" width=\"1\" height=\"1\" alt=\"\" style=\"display:none;width:1px;height:1px;\" />");
+        sb.Append("</body></html>");
         return sb.ToString();
     }
 

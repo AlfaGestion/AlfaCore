@@ -6,6 +6,7 @@
 @using AlfaCore.Components.Shared
 @inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
 @inject AlfaCore.Services.IConfiguracionGeneralService ConfiguracionSvc
+@inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
 
 <PageTitle>Comprobante | Portal Cliente</PageTitle>
 
@@ -55,7 +56,8 @@ else
                                   RouteCatalogos="@BuildPortalRoute("catalogos")"
                                   RouteCarrito="@BuildPortalRoute("carrito")"
                                   RoutePedidos="@BuildPortalRoute("pedidos")"
-                                  RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
+                                  RouteMiCuenta="@BuildPortalRoute("mi-cuenta")"
+                                  SeccionesHabilitadas="@PortalSecciones" />
         </div>
 
         <div class="portal-comprobante-actions no-print">
@@ -64,11 +66,21 @@ else
             </a>
             @if (_comprobante is not null)
             {
+                <button type="button" class="btn btn--primary btn--sm" @onclick="VerPdfFacturaAsync" disabled="@_generandoPdf">
+                    <i class="bi bi-file-earmark-pdf"></i> Ver factura en PDF
+                </button>
                 <button type="button" class="btn btn--ghost btn--sm" @onclick="ImprimirAsync">
                     <i class="bi bi-printer"></i> Imprimir
                 </button>
             }
         </div>
+
+        @if (_pdfError is not null)
+        {
+            <div class="editor-msg editor-msg--warning no-print portal-cliente__feedback">
+                <div><p>@_pdfError</p></div>
+            </div>
+        }
 
         @if (_loading)
         {
@@ -93,10 +105,14 @@ else
 }
 
 @code {
+    protected override string? RequiredSectionKey => "cuenta-corriente";
+
     [Parameter] public int IdComprobante { get; set; }
 
     private CatalogoClienteLoginPanel? _loginPanel;
     private bool _loading;
+    private bool _generandoPdf;
+    private string? _pdfError;
     private PortalClienteComprobantePendienteDetalleDto? _comprobante;
     private ConfiguracionEmpresaDto _empresa = new();
 
@@ -147,4 +163,33 @@ else
 
     private Task ImprimirAsync()
         => Js.InvokeVoidAsync("print").AsTask();
+
+    private async Task VerPdfFacturaAsync()
+    {
+        _pdfError = null;
+        _generandoPdf = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => FacturaDocumentSvc.GeneratePdfParaClienteAsync(GetCurrentCodigoCliente(), IdComprobante),
+                "No pudimos generar el PDF de este comprobante en este momento.");
+
+            if (!result.Success || result.Value is not { Length: > 0 } pdf)
+            {
+                _pdfError = result.Success
+                    ? "Este comprobante no tiene una Factura en PDF disponible. Usá \"Imprimir\" para verlo en pantalla."
+                    : result.Feedback?.Message ?? "No pudimos generar el PDF de este comprobante en este momento.";
+                return;
+            }
+
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"factura-{IdComprobante}.pdf");
+        }
+        finally
+        {
+            _generandoPdf = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
 }

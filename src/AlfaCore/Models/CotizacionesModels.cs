@@ -226,6 +226,23 @@ public sealed class CotizacionVersionSummaryDto
     public bool EsActual { get; set; }
 }
 
+/// <summary>Un envío puntual por email (COT_EMAIL_ENVIO), para la pestaña Historial: a quién, cuándo,
+/// con qué cuenta, y si se detectó apertura. "Abierto (aprox.)" -- NO es un dato confiable: Apple
+/// Mail precarga las imágenes de todos los emails apenas llegan, los haya abierto o no el
+/// destinatario, así que a esos destinatarios siempre les figura "abierto" al toque.</summary>
+public sealed class CotizacionEmailEnvioDto
+{
+    public long IdEnvio { get; set; }
+    public long IdVersion { get; set; }
+    public string Destinatario { get; set; } = string.Empty;
+    public DateTime FechaHoraEnvio { get; set; }
+    public string? UsuarioEnvio { get; set; }
+    public bool UsoCuentaFallback { get; set; }
+    public DateTime? FechaHoraLectura { get; set; }
+    public DateTime? UltimaFechaHoraLectura { get; set; }
+    public int CantidadLecturas { get; set; }
+}
+
 /// <summary>Resultado de búsqueda de clientes (VT_CLIENTES) para el selector de cliente (§8).</summary>
 public sealed class CotizacionClienteOptionDto
 {

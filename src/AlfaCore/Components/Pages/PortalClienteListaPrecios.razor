@@ -55,7 +55,8 @@ else
                               RouteCatalogos="@BuildPortalRoute("catalogos")"
                               RouteCarrito="@BuildPortalRoute("carrito")"
                               RoutePedidos="@BuildPortalRoute("pedidos")"
-                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
+                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")"
+                              SeccionesHabilitadas="@PortalSecciones" />
 
         <section class="portal-cliente__section portal-cliente__list-section">
             <header class="portal-cliente__section-head portal-cliente__list-head">
@@ -219,6 +220,8 @@ else
 }
 
 @code {
+    protected override string? RequiredSectionKey => "lista-precios";
+
     private CatalogoClienteLoginPanel? _loginPanel;
     private bool _loading;
     private string _texto = string.Empty;

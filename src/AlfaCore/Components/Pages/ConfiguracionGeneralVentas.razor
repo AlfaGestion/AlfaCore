@@ -1,0 +1,86 @@
+@page "/configuracion-general/ventas"
+@page "/{idweb}/{idbase:int}/configuracion-general/ventas"
+@using AlfaCore.Models
+@inject AlfaCore.Services.IConfiguracionGeneralService ConfigSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.IPageHeaderService PageHeader
+@inject AlfaCore.Services.IRouteContextService RouteContext
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Ventas | Alfa Gestión</PageTitle>
+
+<div class="page-grid cfgventas-page">
+    <AlfaNotification Message="@_feedback" OnDismiss="() => _feedback = null" />
+
+    <section class="panel-card">
+        <h3 class="panel-card__title">Portal del Cliente</h3>
+        <p class="panel-card__subtitle">
+            Elegí qué secciones puede ver el cliente en su Portal. <strong>Inicio</strong> y <strong>Mi cuenta</strong>
+            siempre están disponibles; el resto se puede ocultar.
+        </p>
+
+        <div class="cfgventas-checks">
+            <AlfaCheckbox Value="@_portal.CuentaCorriente" ValueChanged="v => _portal.CuentaCorriente = v == true">
+                <i class="bi bi-cash-stack"></i> Cuenta corriente
+            </AlfaCheckbox>
+            <AlfaCheckbox Value="@_portal.ListaPrecios" ValueChanged="v => _portal.ListaPrecios = v == true">
+                <i class="bi bi-tags"></i> Lista de precios
+            </AlfaCheckbox>
+            <AlfaCheckbox Value="@_portal.Catalogos" ValueChanged="v => _portal.Catalogos = v == true">
+                <i class="bi bi-book"></i> Catálogos
+            </AlfaCheckbox>
+            <AlfaCheckbox Value="@_portal.Carrito" ValueChanged="v => _portal.Carrito = v == true">
+                <i class="bi bi-cart3"></i> Carrito de compra
+            </AlfaCheckbox>
+            <AlfaCheckbox Value="@_portal.Pedidos" ValueChanged="v => _portal.Pedidos = v == true">
+                <i class="bi bi-receipt"></i> Pedidos
+            </AlfaCheckbox>
+        </div>
+    </section>
+
+    <div class="cfgventas-save-bar">
+        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar</AlfaButton>
+    </div>
+</div>
+
+@code {
+    private ConfiguracionVentasPortalClienteDto _portal = new();
+    private bool _saving;
+    private AppUiMessage? _feedback;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await UiOps.RunAsync(() => ConfigSvc.GetVentasPortalClienteAsync(), "No se pudo cargar la configuración del Portal Cliente.");
+        if (result.Success && result.Value is not null)
+            _portal = result.Value;
+    }
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Ventas",
+        Breadcrumb = ["Configuración General", "Ventas"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "ventas")
+    });
+
+    private async Task GuardarAsync()
+    {
+        _saving = true;
+        var result = await UiOps.RunAsync(async () => { await ConfigSvc.SaveVentasPortalClienteAsync(_portal); return true; }, "No se pudo guardar la configuración del Portal Cliente.");
+        _saving = false;
+        _feedback = result.Success
+            ? AppUiMessage.Success("Guardado", "La configuración del Portal Cliente se guardó correctamente.")
+            : result.Feedback;
+    }
+}
