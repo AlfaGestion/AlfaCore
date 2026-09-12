@@ -622,6 +622,45 @@ public class Program
             }
         }).AllowAnonymous();
 
+        // Píxel de 1x1 embebido en el email (CotizacionesService.BuildEmailHtml) para "abierto
+        // (aprox.)" en la pestaña Historial -- NUNCA debe fallar de forma visible: si la base no
+        // existe más, o el token ya no está, igual devuelve la imagen (un ícono roto en el email
+        // del cliente sería peor que perder ese dato de seguimiento puntual).
+        var trackingPixelGif = Convert.FromBase64String("R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==");
+        app.MapGet("/cotizacion-email-track/{idbase:int}/{token}", async (
+            int idbase,
+            string token,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            ICotizacionesService cotizacionesSvc,
+            CancellationToken ct) =>
+        {
+            try
+            {
+                var baseInfo = await centralBasesSvc.GetByIdAsync(idbase, ct);
+                if (baseInfo is not null)
+                {
+                    sessionSvc.SetWebhookOverride(new SessionDto
+                    {
+                        BaseId = baseInfo.IdBase,
+                        Nombre = baseInfo.Nombre,
+                        Servidor = baseInfo.DbServer,
+                        BaseDatos = baseInfo.DbName,
+                        Usuario = baseInfo.DbUser,
+                        Password = baseInfo.DbPassword,
+                        TrustServerCertificate = true
+                    });
+                    await cotizacionesSvc.RegistrarAperturaEmailAsync(token, ct);
+                }
+            }
+            catch
+            {
+                // Silencioso a propósito -- ver comentario arriba.
+            }
+
+            return Results.File(trackingPixelGif, "image/gif");
+        }).AllowAnonymous();
+
         app.MapGet("/api/usuarios/{nombre}/foto", async (
             string nombre,
             IUsuariosService usuariosSvc,

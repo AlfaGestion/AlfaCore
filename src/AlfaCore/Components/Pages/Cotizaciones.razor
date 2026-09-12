@@ -336,6 +336,28 @@
                                                 <span class="cotiz-timeline__extra"><i class="bi bi-send"></i> Enviada el @envio.ToString("dd/MM/yyyy HH:mm")</span>
                                             }
                                             <AlfaTag Tone="@EstadoTono(v.EstadoVersion)">@EstadoLabel(v.EstadoVersion)</AlfaTag>
+                                            @if (_emailEnvios.TryGetValue(v.IdVersion, out var envios) && envios.Count > 0)
+                                            {
+                                                <ul class="cotiz-timeline__envios">
+                                                    @foreach (var e in envios)
+                                                    {
+                                                        <li>
+                                                            <i class="bi bi-envelope"></i>
+                                                            <span>@e.Destinatario</span>
+                                                            <span class="cotiz-timeline__meta">@e.FechaHoraEnvio.ToString("dd/MM/yyyy HH:mm")@(string.IsNullOrWhiteSpace(e.UsuarioEnvio) ? "" : $" · {e.UsuarioEnvio}")</span>
+                                                            @if (e.FechaHoraLectura is { } lectura)
+                                                            {
+                                                                <span title="@GetAperturaTitle(e)"><AlfaTag Tone="AlfaTagTone.Success">Abierto (aprox.) @lectura.ToString("dd/MM HH:mm")</AlfaTag></span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <AlfaTag Tone="AlfaTagTone.Neutral">Sin apertura detectada</AlfaTag>
+                                                            }
+                                                        </li>
+                                                    }
+                                                </ul>
+                                                <p class="cotiz-timeline__hint">"Abierto (aprox.)" no es 100% confiable: algunos clientes de correo (ej. Apple Mail) precargan imágenes aunque el destinatario no haya abierto el email.</p>
+                                            }
                                         </div>
                                     </div>
                                 }
@@ -732,6 +754,7 @@
     private string _activeTab = "productos";
     private bool _permiteDescuentoLinea;
     private List<CotizacionVersionSummaryDto> _versiones = [];
+    private Dictionary<long, List<CotizacionEmailEnvioDto>> _emailEnvios = [];
     private bool _showVersionMenu;
     private CotizacionClienteInfoDto? _clienteInfo;
     private bool _showClienteDialog;
@@ -1182,6 +1205,11 @@
 
         var versionesResult = await UiOps.RunAsync(() => CotizSvc.GetVersionesAsync(_detail.IdCotizacion), "No se pudo cargar el historial de versiones.");
         _versiones = versionesResult.Success && versionesResult.Value is not null ? versionesResult.Value.ToList() : [];
+
+        var enviosResult = await UiOps.RunAsync(() => CotizSvc.GetEmailEnviosAsync(_detail.IdCotizacion), "No se pudo cargar el historial de envíos por email.");
+        _emailEnvios = enviosResult.Success && enviosResult.Value is not null
+            ? enviosResult.Value.GroupBy(x => x.IdVersion).ToDictionary(g => g.Key, g => g.ToList())
+            : [];
 
         if (!string.IsNullOrWhiteSpace(_detail.CodigoCliente))
         {
@@ -1848,6 +1876,15 @@
         CotizacionEstados.Anulada => "Anulada",
         _ => estado
     };
+
+    private static string GetAperturaTitle(CotizacionEmailEnvioDto envio)
+    {
+        var detalle = envio.CantidadLecturas > 1 && envio.UltimaFechaHoraLectura is { } ultima
+            ? $" ({envio.CantidadLecturas} veces, última el {ultima:dd/MM/yyyy HH:mm})"
+            : string.Empty;
+        return $"Se detectó carga de imágenes del email{detalle}. No es garantía de lectura real -- " +
+               "algunos clientes de correo (ej. Apple Mail) las precargan automáticamente sin que el destinatario haya abierto el mensaje.";
+    }
 
     private static string OrigenPrecioLabel(string origen) => origen switch
     {
