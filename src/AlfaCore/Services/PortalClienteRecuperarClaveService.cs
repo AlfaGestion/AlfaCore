@@ -432,7 +432,21 @@ public sealed class PortalClienteRecuperarClaveService(
             IsBodyHtml = true
         };
 
-        message.To.Add(emailDestino.Trim());
+        // VT_CLIENTES.MAIL a veces trae más de una dirección separadas por ";" (estilo Outlook) o
+        // "," -- message.To.Add(string) de System.Net.Mail solo entiende comas, así que un email
+        // con ";" rompía TODO el envío con un FormatException genérico. Se parsean por separado y
+        // se ignora silenciosamente cualquier dirección puntual que no sea válida (basura vieja),
+        // en vez de abortar el envío a las demás direcciones que sí están bien.
+        var direcciones = (emailDestino ?? string.Empty)
+            .Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
+        foreach (var direccion in direcciones)
+        {
+            try { message.To.Add(new MailAddress(direccion)); }
+            catch (FormatException) { /* dirección puntual inválida, se ignora */ }
+        }
+        if (message.To.Count == 0)
+            throw new InvalidOperationException("El email de destino no es válido.");
 
         using var client = new SmtpClient(smtpServer.Trim(), port)
         {

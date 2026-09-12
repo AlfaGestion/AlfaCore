@@ -108,12 +108,19 @@ public sealed class DocumentTemplateService(
             if (result is not null)
                 return result;
 
-            // El fallback embebido mantiene operativo el beta si todavía no se aplicó el script.
+            // El fallback embebido mantiene operativo el beta si todavía no se aplicó el script de
+            // seed -- antes solo devolvía el layout de Cotización sin mirar "tipo", así que pedir el
+            // fallback de una Factura A/B/C sin fila en CORE_DocumentTemplate todavía devolvía por
+            // error una plantilla de Cotización.
+            var letra = TiposDocumentoCore.LetraDe(tipo);
             return new DocumentTemplateDto
             {
-                IdTemplate = 0, TipoDocumento = tipo, Nombre = "Cotización estándar (fallback)",
+                IdTemplate = 0, TipoDocumento = tipo,
+                Nombre = letra is not null ? $"Factura {letra} estándar (fallback)" : "Cotización estándar (fallback)",
                 EsSistema = true, EsPredeterminado = true, Activo = true,
-                TemplateJson = JsonSerializer.Serialize(DocumentTemplateDefinition.CrearCotizacionEstandar(), JsonOptions)
+                TemplateJson = JsonSerializer.Serialize(
+                    letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : DocumentTemplateDefinition.CrearCotizacionEstandar(),
+                    JsonOptions)
             };
         }, "No se pudo resolver la plantilla de documento.", ct);
 
@@ -202,7 +209,7 @@ public sealed class DocumentTemplateService(
     public async Task<DocumentTemplateDto> DuplicateAsync(int idTemplate, string? uNegocio, string? usuario, CancellationToken ct = default)
     {
         var original = await GetByIdAsync(idTemplate, ct) ?? throw new InvalidOperationException("La plantilla indicada no existe.");
-        var definition = DeserializeAndValidate(original.TemplateJson);
+        var definition = DeserializeAndValidate(original.TemplateJson, original.TipoDocumento);
         return await SaveAsync(new DocumentTemplateSaveRequest
         {
             UNegocio = uNegocio ?? original.UNegocio, TipoDocumento = original.TipoDocumento,
@@ -292,13 +299,13 @@ public sealed class DocumentTemplateService(
             return true;
         }, "No se pudo guardar el tema general de documentos.", ct);
 
-    public DocumentTemplateDefinition DeserializeAndValidate(string templateJson)
+    public DocumentTemplateDefinition DeserializeAndValidate(string templateJson, string tipoDocumento)
     {
         try
         {
             var definition = JsonSerializer.Deserialize<DocumentTemplateDefinition>(templateJson, JsonOptions)
                 ?? throw new InvalidOperationException("El JSON no representa una definición de documento.");
-            ValidateDefinition(definition, TiposDocumentoCore.Cotizacion, null);
+            ValidateDefinition(definition, NormalizeTipo(tipoDocumento), null);
             return definition;
         }
         catch (JsonException ex) { throw new InvalidOperationException("El JSON de la plantilla no es válido.", ex); }
@@ -307,7 +314,7 @@ public sealed class DocumentTemplateService(
     private static void ValidateDefinition(DocumentTemplateDefinition definition, string tipoDocumento, string? uNegocio)
     {
         if (definition.SchemaVersion != 1) throw new InvalidOperationException("SchemaVersion no soportado.");
-        if (tipoDocumento != TiposDocumentoCore.Cotizacion) throw new InvalidOperationException("Tipo de documento no soportado.");
+        if (!TiposDocumentoCore.Todos.Contains(tipoDocumento)) throw new InvalidOperationException("Tipo de documento no soportado.");
         if (uNegocio?.Length > 4) throw new InvalidOperationException("UNegocio no puede superar cuatro caracteres.");
         if (definition.Paper.Size is not ("A4" or "A5")) throw new InvalidOperationException("El tamaño de papel debe ser A4 o A5.");
         if (definition.Paper.Orientation is not ("Portrait" or "Landscape")) throw new InvalidOperationException("La orientación debe ser Portrait o Landscape.");
@@ -316,7 +323,9 @@ public sealed class DocumentTemplateService(
         if (definition.Blocks.Count == 0 || definition.Blocks.Any(x => string.IsNullOrWhiteSpace(x.Id) || !TiposBloqueDocumento.Permitidos.Contains(x.Type))) throw new InvalidOperationException("La plantilla contiene bloques inválidos.");
         if (definition.Blocks.Select(x => x.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != definition.Blocks.Count) throw new InvalidOperationException("Los identificadores de bloque deben ser únicos.");
         var itemBlock = definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Items, StringComparison.OrdinalIgnoreCase));
-        var allowedColumns = new HashSet<string>(["Codigo", "Descripcion", "Cantidad", "Precio", "Descuento", "Total"], StringComparer.OrdinalIgnoreCase);
+        var allowedColumns = TiposDocumentoCore.EsFactura(tipoDocumento)
+            ? new HashSet<string>(["Codigo", "Descripcion", "Unidad", "Cantidad", "Precio", "Descuento", "Iva", "Total"], StringComparer.OrdinalIgnoreCase)
+            : new HashSet<string>(["Codigo", "Descripcion", "Cantidad", "Precio", "Descuento", "Total"], StringComparer.OrdinalIgnoreCase);
         if (itemBlock?.Columns.Any(c => !allowedColumns.Contains(c.Field) || c.WidthPercent < 1 || c.WidthPercent > 100) == true) throw new InvalidOperationException("La plantilla contiene columnas de detalle inválidas.");
         if (itemBlock is not null && itemBlock.Columns.Where(x => x.Visible).Sum(x => x.WidthPercent) > 100) throw new InvalidOperationException("El ancho de las columnas visibles no puede superar 100%.");
 
@@ -331,7 +340,12 @@ public sealed class DocumentTemplateService(
         }
     }
 
-    private static string NormalizeTipo(string? value) => string.Equals(value?.Trim(), TiposDocumentoCore.Cotizacion, StringComparison.OrdinalIgnoreCase) ? TiposDocumentoCore.Cotizacion : throw new InvalidOperationException("TipoDocumento inválido.");
+    private static string NormalizeTipo(string? value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        return TiposDocumentoCore.Todos.FirstOrDefault(t => string.Equals(t, trimmed, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException("TipoDocumento inválido.");
+    }
     private static string? NormalizeUNegocio(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim() is { Length: <= 4 } normalized ? normalized : throw new InvalidOperationException("UNegocio no puede superar cuatro caracteres.");
     private static string Required(string? value, string name, int maxLength) => !string.IsNullOrWhiteSpace(value) && value.Trim().Length <= maxLength ? value.Trim() : throw new InvalidOperationException($"{name} es obligatorio y no puede superar {maxLength} caracteres.");
     private static string NormalizeUser(string? value) => string.IsNullOrWhiteSpace(value) ? "Sistema" : value.Trim()[..Math.Min(50, value.Trim().Length)];

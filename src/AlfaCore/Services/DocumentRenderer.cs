@@ -14,7 +14,6 @@ public sealed class DocumentRenderer : IDocumentRenderer
         ArgumentNullException.ThrowIfNull(template);
         ArgumentNullException.ThrowIfNull(data);
         var paper = template.Paper;
-        var (coverWidthMm, coverHeightMm) = PageDimensionsMm(paper);
         var theme = DocumentThemePresets.Resolve(themeKey);
         var sb = new StringBuilder();
         var hasFooter = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
@@ -26,9 +25,63 @@ public sealed class DocumentRenderer : IDocumentRenderer
         // para que la portada ocupe la hoja completa) y "content" (el margen de papel configurado,
         // más espacio extra abajo si hay pie de página) -- nunca una @page sin nombre, para no
         // depender de cómo Chromium propaga el nombre de página entre hermanos sin "page" propio.
+        AppendDocumentHead(sb, "Cotización " + data.Comprobante.Numero, paper, theme, hasFooter, cssCustom, string.Empty);
+
+        var hasCompanyBlock = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Empresa, StringComparison.OrdinalIgnoreCase));
+        var logoBlock = template.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Logo, StringComparison.OrdinalIgnoreCase));
+        var combinedLogo = logoBlock is { Visible: true, CombineWithCompany: true } ? logoBlock : null;
+
+        var coverBlock = template.Blocks.FirstOrDefault(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase));
+        if (coverBlock is not null)
+            AppendBlock(sb, coverBlock, data, hasCompanyBlock, combinedLogo, theme);
+
+        sb.Append("<div class=\"doc-content\">");
+        foreach (var block in template.Blocks.Where(x => x.Visible && !x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase)))
+            AppendBlock(sb, block, data, hasCompanyBlock, combinedLogo, theme);
+        sb.Append("</div>");
+
+        sb.Append("</main></body></html>");
+        return sb.ToString();
+    }
+
+    public string RenderFactura(DocumentTemplateDefinition template, FacturaDocumentData data, string? cssCustom = null, string? themeKey = null)
+    {
+        ArgumentNullException.ThrowIfNull(template);
+        ArgumentNullException.ThrowIfNull(data);
+        var paper = template.Paper;
+        var theme = DocumentThemePresets.Resolve(themeKey);
+        var sb = new StringBuilder();
+        var hasFooter = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
+        var titulo = $"Factura {data.Comprobante.Letra} {data.Comprobante.PuntoVenta}-{data.Comprobante.Numero}";
+        AppendDocumentHead(sb, titulo, paper, theme, hasFooter, cssCustom, FacturaExtraCss(theme));
+
+        var hasCompanyBlock = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Empresa, StringComparison.OrdinalIgnoreCase));
+        var logoBlock = template.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Logo, StringComparison.OrdinalIgnoreCase));
+        var combinedLogo = logoBlock is { Visible: true, CombineWithCompany: true } ? logoBlock : null;
+        var recuadroBlock = template.Blocks.FirstOrDefault(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.RecuadroTipo, StringComparison.OrdinalIgnoreCase));
+
+        if (data.Cae is { Resultado.Length: > 0 } cae && !string.Equals(cae.Resultado, "A", StringComparison.OrdinalIgnoreCase))
+            sb.Append("<div class=\"afip-warning\">Comprobante con observaciones de AFIP")
+              .Append(string.IsNullOrWhiteSpace(cae.Motivo) ? string.Empty : ": " + E(cae.Motivo))
+              .Append("</div>");
+
+        sb.Append("<div class=\"doc-content\">");
+        foreach (var block in template.Blocks.Where(x => x.Visible))
+            AppendBlockFactura(sb, block, data, hasCompanyBlock, combinedLogo, recuadroBlock);
+        sb.Append("</div>");
+
+        sb.Append("</main></body></html>");
+        return sb.ToString();
+    }
+
+    /// <summary>CSS base compartida entre Cotización y Factura (@page, header, card, items, totals).
+    /// Cada Render* agrega su propio título y CSS extra (extraCss) antes de cssCustom.</summary>
+    private static void AppendDocumentHead(StringBuilder sb, string titulo, DocumentPaperDefinition paper, DocumentThemePreset theme, bool hasFooter, string? cssCustom, string extraCss)
+    {
+        var (coverWidthMm, coverHeightMm) = PageDimensionsMm(paper);
         var bottomContentMm = hasFooter ? Math.Max(paper.MarginBottomMm, 14m) : paper.MarginBottomMm;
-        sb.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>Cotización ")
-            .Append(E(data.Comprobante.Numero)).Append("</title><style>")
+        sb.Append("<!doctype html><html lang=\"es\"><head><meta charset=\"utf-8\"><title>")
+            .Append(E(titulo)).Append("</title><style>")
             .Append("@page cover{size:").Append(paper.Size).Append(' ').Append(paper.Orientation.ToLowerInvariant()).Append(";margin:0}")
             .Append("@page content{size:").Append(paper.Size).Append(' ').Append(paper.Orientation.ToLowerInvariant()).Append(";margin:")
             .Append(Mm(paper.MarginTopMm)).Append(' ').Append(Mm(paper.MarginRightMm)).Append(' ').Append(Mm(bottomContentMm)).Append(' ').Append(Mm(paper.MarginLeftMm)).Append('}')
@@ -52,24 +105,19 @@ public sealed class DocumentRenderer : IDocumentRenderer
             // 100mm y 200mm de contenido previo: siempre salta). Envolviendo la imagen en un div de
             // bloque y dejando el <img> en su display inline por defecto, el bug no se dispara.
             .Append(".signature{margin-top:10mm;break-inside:avoid}.signature-image{margin:3mm 0}.signature-image img{height:20mm;width:55mm;object-fit:contain;object-position:left center}")
+            .Append(extraCss)
             .Append(SafeCss(cssCustom)).Append("</style></head><body><main class=\"doc\">");
-
-        var hasCompanyBlock = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Empresa, StringComparison.OrdinalIgnoreCase));
-        var logoBlock = template.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Logo, StringComparison.OrdinalIgnoreCase));
-        var combinedLogo = logoBlock is { Visible: true, CombineWithCompany: true } ? logoBlock : null;
-
-        var coverBlock = template.Blocks.FirstOrDefault(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase));
-        if (coverBlock is not null)
-            AppendBlock(sb, coverBlock, data, hasCompanyBlock, combinedLogo, theme);
-
-        sb.Append("<div class=\"doc-content\">");
-        foreach (var block in template.Blocks.Where(x => x.Visible && !x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase)))
-            AppendBlock(sb, block, data, hasCompanyBlock, combinedLogo, theme);
-        sb.Append("</div>");
-
-        sb.Append("</main></body></html>");
-        return sb.ToString();
     }
+
+    private static string FacturaExtraCss(DocumentThemePreset theme)
+        => ".afip-warning{background:#fef3c7;color:#92400e;border:1px solid #f59e0b;border-radius:2mm;padding:2.5mm 4mm;margin-bottom:4mm;font-size:9pt;font-weight:700}"
+         + ".afip-box{border:1.5pt solid #172033;text-align:center;width:22mm;margin:0 4mm}"
+         + ".afip-box .letra{font-size:22pt;font-weight:700;line-height:1.1;padding:1mm 0}"
+         + ".afip-box .codigo{border-top:1pt solid #172033;font-size:8pt;padding:0.8mm 0}"
+         + ".header--afip{align-items:flex-start}"
+         + ".cae-box{border:1px solid #d5dde5;background:" + theme.ColorFondoSuave + ";padding:3mm 4mm;margin-top:4mm;font-size:9pt}"
+         + ".qr-box{margin-top:3mm}.qr-box img{width:28mm;height:28mm}"
+         + ".totals td.iva-label{color:#596579}";
 
     private static void AppendBlock(StringBuilder sb, DocumentBlockDefinition block, CotizacionDocumentData data, bool hasCompanyBlock, DocumentBlockDefinition? combinedLogo, DocumentThemePreset theme)
     {
@@ -227,4 +275,158 @@ public sealed class DocumentRenderer : IDocumentRenderer
     /// sanea tags/atributos al guardar -- acá solo se corta cualquier intento de cerrar prematuramente
     /// el contenedor, igual criterio que SafeCss.</summary>
     private static string SafeInnerHtml(string html) => html.Replace("</main", string.Empty, StringComparison.OrdinalIgnoreCase);
+
+    // ---- Factura A/B/C -----------------------------------------------------------------------
+
+    private static void AppendBlockFactura(StringBuilder sb, DocumentBlockDefinition block, FacturaDocumentData data, bool hasCompanyBlock, DocumentBlockDefinition? combinedLogo, DocumentBlockDefinition? recuadroBlock)
+    {
+        var fields = block.VisibleFields;
+        var style = FontStyle(block.FontSizePt);
+        switch (block.Type.ToUpperInvariant())
+        {
+            case "RECUADROTIPO":
+                // Se dibuja adentro de EMPRESA (ver más abajo), junto al resto del encabezado --
+                // igual criterio que el Logo combinado de Cotización.
+                break;
+            case "LOGO":
+                if (block.CombineWithCompany) break;
+                if (data.Empresa.Logo is { Length: > 0 })
+                    sb.Append("<div style=\"text-align:").Append(Align(block.Align)).Append(";margin-bottom:4mm\"><img class=\"logo\" style=\"max-width:").Append(block.Width is > 0 ? block.Width.Value.ToString("0", CultureInfo.InvariantCulture) : "120").Append("px\" src=\"data:image/png;base64,").Append(Convert.ToBase64String(data.Empresa.Logo)).Append("\" alt=\"Logo\"></div>");
+                break;
+            case "EMPRESA":
+                var logoOnRight = combinedLogo is not null && Align(combinedLogo.Align) == "right";
+                sb.Append("<section class=\"header header--afip").Append(combinedLogo is not null ? " header--split" : string.Empty).Append('"').Append(style).Append('>');
+                if (combinedLogo is not null && !logoOnRight) AppendLogoSide(sb, combinedLogo, data.Empresa.Logo);
+                sb.Append("<div class=\"company\">");
+                if (Shows(fields, "Nombre")) sb.Append("<h1>").Append(E(data.Empresa.Nombre)).Append("</h1>");
+                var empresaValues = new List<string>();
+                if (Shows(fields, "Cuit") && !string.IsNullOrWhiteSpace(data.Empresa.Cuit)) empresaValues.Add("CUIT: " + data.Empresa.Cuit);
+                if (Shows(fields, "Domicilio")) AddIf(empresaValues, data.Empresa.Domicilio);
+                if (Shows(fields, "Telefono")) AddIf(empresaValues, data.Empresa.Telefono);
+                if (!string.IsNullOrWhiteSpace(data.CondicionIvaEmisor)) AddIf(empresaValues, data.CondicionIvaEmisor);
+                if (!string.IsNullOrWhiteSpace(data.IngresosBrutosEmisor)) empresaValues.Add("Ingresos Brutos: " + data.IngresosBrutosEmisor);
+                if (data.InicioActividadesEmisor is { } inicio) empresaValues.Add("Inicio de Actividades: " + inicio.ToString("dd/MM/yyyy", CulturaAr));
+                AppendMuted(sb, empresaValues);
+                sb.Append("</div>");
+                if (recuadroBlock is not null) AppendRecuadroTipo(sb, recuadroBlock, data.Comprobante);
+                AppendDocumentMetaFactura(sb, data.Comprobante, hasCompanyBlock ? fields : null);
+                if (combinedLogo is not null && logoOnRight) AppendLogoSide(sb, combinedLogo, data.Empresa.Logo);
+                sb.Append("</section>");
+                break;
+            case "COMPROBANTE":
+                if (!hasCompanyBlock) AppendDocumentMetaFactura(sb, data.Comprobante, fields);
+                break;
+            case "CLIENTE":
+                sb.Append("<section class=\"card\"").Append(style).Append("><strong>Cliente</strong><br>");
+                if (Shows(fields, "RazonSocial")) sb.Append("<b>").Append(E(data.Cliente.RazonSocial)).Append("</b>");
+                if (Shows(fields, "Codigo") && !string.IsNullOrWhiteSpace(data.Cliente.Codigo)) sb.Append(" <span class=\"muted\">(").Append(E(data.Cliente.Codigo)).Append(")</span>");
+                var clienteValues = new List<string>();
+                if (Shows(fields, "Cuit") && !string.IsNullOrWhiteSpace(data.Cliente.DocumentoNumero))
+                    clienteValues.Add((string.IsNullOrWhiteSpace(data.Cliente.DocumentoTipoDescripcion) ? "Documento" : data.Cliente.DocumentoTipoDescripcion) + ": " + data.Cliente.DocumentoNumero);
+                if (Shows(fields, "CondicionIva")) AddIf(clienteValues, data.Cliente.CondicionIvaDescripcion);
+                if (Shows(fields, "Domicilio")) AddIf(clienteValues, string.Join(", ", new[] { data.Cliente.Domicilio, data.Cliente.Localidad }.Where(x => !string.IsNullOrWhiteSpace(x))));
+                if (Shows(fields, "Telefono")) AddIf(clienteValues, data.Cliente.Telefono);
+                if (Shows(fields, "Email")) AddIf(clienteValues, data.Cliente.Email);
+                AppendMuted(sb, clienteValues);
+                sb.Append("</section>");
+                break;
+            case "ITEMS": AppendItemsFactura(sb, block, data.Items); break;
+            case "TOTALES": AppendTotalsFactura(sb, data.Totales, data.Comprobante.Letra, fields, style); break;
+            case "CAE": AppendCaeBlock(sb, data.Cae, style); break;
+            case "QRAFIP": AppendQrAfipBlock(sb, data.QrBytes, block.Align); break;
+        }
+    }
+
+    private static void AppendRecuadroTipo(StringBuilder sb, DocumentBlockDefinition block, FacturaComprobanteDocumentData comprobante)
+    {
+        var fields = block.VisibleFields;
+        sb.Append("<div class=\"afip-box\">");
+        if (Shows(fields, "Letra")) sb.Append("<div class=\"letra\">").Append(E(comprobante.Letra)).Append("</div>");
+        if (Shows(fields, "CodigoAfip") && !string.IsNullOrWhiteSpace(comprobante.CodigoAfip)) sb.Append("<div class=\"codigo\">COD. ").Append(E(comprobante.CodigoAfip)).Append("</div>");
+        sb.Append("</div>");
+    }
+
+    private static void AppendDocumentMetaFactura(StringBuilder sb, FacturaComprobanteDocumentData comprobante, List<string>? fields)
+    {
+        sb.Append("<div class=\"doc-meta\">");
+        sb.Append("<b>FACTURA ").Append(E(comprobante.PuntoVenta)).Append('-').Append(E(comprobante.Numero)).Append("</b><br>");
+        sb.Append("<span class=\"muted\">Fecha: ").Append(comprobante.Fecha.ToString("dd/MM/yyyy", CulturaAr)).Append("</span>");
+        if (!string.IsNullOrWhiteSpace(comprobante.CondicionVenta)) sb.Append("<br><span class=\"muted\">Cond. venta: ").Append(E(comprobante.CondicionVenta)).Append("</span>");
+        sb.Append("</div>");
+    }
+
+    private static void AppendItemsFactura(StringBuilder sb, DocumentBlockDefinition block, IReadOnlyList<FacturaDocumentItemData> items)
+    {
+        var columns = block.Columns.Where(x => x.Visible).ToList();
+        if (columns.Count == 0) return;
+        sb.Append("<table class=\"items\"").Append(FontStyle(block.FontSizePt)).Append("><colgroup>");
+        foreach (var column in columns) sb.Append("<col style=\"width:").Append(column.WidthPercent.ToString("0.##", CultureInfo.InvariantCulture)).Append("%\">");
+        sb.Append("</colgroup><thead><tr>");
+        foreach (var column in columns) sb.Append("<th class=\"").Append(AlignClass(column.Align)).Append("\">").Append(E(column.Title)).Append("</th>");
+        sb.Append("</tr></thead><tbody>");
+        foreach (var item in items)
+        {
+            sb.Append("<tr>");
+            foreach (var column in columns) sb.Append("<td class=\"").Append(AlignClass(column.Align)).Append("\">").Append(ItemValueFactura(item, column.Field)).Append("</td>");
+            sb.Append("</tr>");
+        }
+        sb.Append("</tbody></table>");
+    }
+
+    private static string ItemValueFactura(FacturaDocumentItemData item, string field) => field.ToUpperInvariant() switch
+    {
+        "CODIGO" => E(item.Codigo),
+        "DESCRIPCION" => E(item.Descripcion),
+        "UNIDAD" => E(item.Unidad),
+        "CANTIDAD" => item.Cantidad.ToString("N2", CulturaAr),
+        "PRECIO" => item.PrecioUnitario.ToString("N2", CulturaAr),
+        "DESCUENTO" => item.Bonificacion != 0 ? item.Bonificacion.ToString("N2", CulturaAr) : string.Empty,
+        "IVA" => item.AlicuotaIva != 0 ? item.AlicuotaIva.ToString("0.##", CulturaAr) + "%" : string.Empty,
+        "TOTAL" => item.Subtotal.ToString("N2", CulturaAr),
+        _ => string.Empty
+    };
+
+    /// <summary>A discrimina IVA por alícuota en el cuerpo; B/C muestran el total con IVA incluido
+    /// sin desglosar (el dato viaja igual en Totales.LineasIva, simplemente no se imprime acá).
+    /// Descuentos y percepciones se muestran siempre que existan, sea cual sea la letra.</summary>
+    private static void AppendTotalsFactura(StringBuilder sb, FacturaTotalesDocumentData totals, string letra, List<string>? fields, string style)
+    {
+        var mostrarIva = string.Equals(letra, "A", StringComparison.OrdinalIgnoreCase);
+        sb.Append("<table class=\"totals\"").Append(style).Append("><tbody>");
+        if (Shows(fields, "Neto"))
+        {
+            var neto = totals.NetoGravado + totals.NetoNoGravado + totals.ImporteExento;
+            sb.Append("<tr><td>Subtotal</td><td class=\"right\">").Append(Money(neto, totals.Moneda)).Append("</td></tr>");
+        }
+        if (Shows(fields, "Descuento"))
+            foreach (var descuento in totals.LineasDescuento.Where(x => x.Importe != 0))
+                sb.Append("<tr><td class=\"iva-label\">Descuento ").Append(descuento.Porcentaje.ToString("0.##", CulturaAr)).Append("%</td><td class=\"right\">-").Append(Money(descuento.Importe, totals.Moneda)).Append("</td></tr>");
+        if (mostrarIva && Shows(fields, "Impuestos"))
+        {
+            foreach (var iva in totals.LineasIva.Where(x => x.Importe != 0))
+                sb.Append("<tr><td class=\"iva-label\">IVA ").Append(iva.Alicuota.ToString("0.##", CulturaAr)).Append("%</td><td class=\"right\">").Append(Money(iva.Importe, totals.Moneda)).Append("</td></tr>");
+            if (totals.ImporteImpuestosInternos != 0)
+                sb.Append("<tr><td class=\"iva-label\">Impuestos internos</td><td class=\"right\">").Append(Money(totals.ImporteImpuestosInternos, totals.Moneda)).Append("</td></tr>");
+        }
+        if (Shows(fields, "Impuestos"))
+            foreach (var percepcion in totals.LineasPercepcion.Where(x => x.Importe != 0))
+                sb.Append("<tr><td class=\"iva-label\">").Append(E(percepcion.Descripcion)).Append("</td><td class=\"right\">").Append(Money(percepcion.Importe, totals.Moneda)).Append("</td></tr>");
+        if (Shows(fields, "Total")) sb.Append("<tr class=\"total-final\"><td>Total</td><td class=\"right\">").Append(Money(totals.Total, totals.Moneda)).Append("</td></tr>");
+        sb.Append("</tbody></table>");
+    }
+
+    private static void AppendCaeBlock(StringBuilder sb, FacturaCaeDocumentData? cae, string style)
+    {
+        if (cae is null || string.IsNullOrWhiteSpace(cae.Cae)) return;
+        sb.Append("<div class=\"cae-box\"").Append(style).Append('>');
+        sb.Append("<b>CAE:</b> ").Append(E(cae.Cae));
+        sb.Append(" &nbsp; <b>Vto. CAE:</b> ").Append(cae.VencimientoCae.ToString("dd/MM/yyyy", CulturaAr));
+        sb.Append("</div>");
+    }
+
+    private static void AppendQrAfipBlock(StringBuilder sb, byte[]? qrBytes, string align)
+    {
+        if (qrBytes is not { Length: > 0 }) return;
+        sb.Append("<div class=\"qr-box\" style=\"text-align:").Append(Align(align)).Append("\"><img src=\"data:image/png;base64,").Append(Convert.ToBase64String(qrBytes)).Append("\" alt=\"QR AFIP\"></div>");
+    }
 }

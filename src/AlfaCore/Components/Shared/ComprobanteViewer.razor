@@ -1,5 +1,6 @@
 @using AlfaCore.Models
 @inject AlfaCore.Services.IComprobanteViewerService ComprobanteViewerSvc
+@inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject NavigationManager Navigation
 @inject IJSRuntime Js
@@ -35,6 +36,10 @@
                     <i class="bi bi-box-arrow-up-right"></i>
                     <span>Abrir en otra pestaña</span>
                 </a>
+                <button type="button" class="btn btn--primary" @onclick="VerPdfFacturaAsync" disabled="@(_loading || _generandoPdf)">
+                    <i class="bi bi-file-earmark-pdf"></i>
+                    <span>Ver PDF</span>
+                </button>
             }
         </div>
     </section>
@@ -227,6 +232,7 @@
     private ComprobanteViewerDto? _dto;
     private AppUiMessage? _feedback;
     private bool _loading;
+    private bool _generandoPdf;
     private string _activeTab = "resumen";
     private string _routeKey = string.Empty;
 
@@ -281,6 +287,34 @@
     private async Task OpenRelacionadoAsync(string tc, string idComprobante, int idComplemento)
     {
         await LoadAsync(tc, idComprobante, idComplemento, true);
+    }
+
+    private async Task VerPdfFacturaAsync()
+    {
+        if (_dto?.Cabecera is not { } c)
+            return;
+
+        _generandoPdf = true;
+        StateHasChanged();
+        try
+        {
+            var result = await UiOps.RunAsync(
+                () => FacturaDocumentSvc.GeneratePdfAsync(c.Tc, c.IdComprobante, null),
+                "Este comprobante no tiene una Factura A/B/C generable (¿es una nota de crédito, recibo u otro tipo?).");
+
+            if (!result.Success || result.Value is not { Length: > 0 } pdf)
+            {
+                _feedback = result.Feedback;
+                return;
+            }
+
+            await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"factura-{c.IdComprobante}.pdf");
+        }
+        finally
+        {
+            _generandoPdf = false;
+            StateHasChanged();
+        }
     }
 
     private async Task CopyCurrentAsync()

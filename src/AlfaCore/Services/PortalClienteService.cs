@@ -335,7 +335,7 @@ public sealed class PortalClienteService(
                   AND (@FechaDesde IS NULL OR a.FECHA >= @FechaDesde)
                   AND (@FechaHastaExclusiva IS NULL OR a.FECHA < @FechaHastaExclusiva)
                   AND (@OcultarSaldoCero = 0 OR a.SALDO <> 0)
-                ORDER BY a.FECHA ASC, a.TC ASC, a.SUCURSAL ASC, a.NUMERO ASC;
+                ORDER BY a.FECHA DESC, a.TC DESC, a.SUCURSAL DESC, a.NUMERO DESC;
                 """,
                 new
                 {

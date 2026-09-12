@@ -11,7 +11,7 @@ public interface IDocumentTemplateService
     Task<DocumentTemplateDto> ResolveAsync(string tipoDocumento, string? uNegocio, CancellationToken ct = default);
     Task<DocumentTemplateDto> SaveAsync(DocumentTemplateSaveRequest request, CancellationToken ct = default);
     Task<DocumentTemplateDto> DuplicateAsync(int idTemplate, string? uNegocio, string? usuario, CancellationToken ct = default);
-    DocumentTemplateDefinition DeserializeAndValidate(string templateJson);
+    DocumentTemplateDefinition DeserializeAndValidate(string templateJson, string tipoDocumento);
 
     /// <summary>Imagen de portada de ESTA plantilla puntual (CORE_DocumentTemplate.PortadaImagen) --
     /// ya no es una imagen global de Cotizaciones, cada plantilla (por unidad de negocio) tiene la suya.</summary>

@@ -1,0 +1,26 @@
+.cfgventas-page {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-16);
+    padding: var(--alfa-space-16) var(--alfa-space-16) 3rem;
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.cfgventas-checks {
+    display: flex;
+    flex-direction: column;
+    gap: .6rem;
+    margin-top: .6rem;
+}
+
+.cfgventas-checks i {
+    color: var(--alfa-text-secondary);
+    margin-right: .3rem;
+}
+
+.cfgventas-save-bar {
+    position: sticky;
+    bottom: 0;
+    padding-top: .5rem;
+}

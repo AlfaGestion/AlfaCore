@@ -232,11 +232,54 @@ public sealed class ConfiguracionGeneralService(
             await SetConfigAsync(cn, "EMAIL_SSL", dto.Ssl ? "SI" : string.Empty, token);
         }, "No se pudo guardar la configuración de correo saliente.", ct);
 
+    public Task<ConfiguracionVentasPortalClienteDto> GetVentasPortalClienteAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync("GetVentasPortalCliente", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var valores = await ReadConfigMapAsync(cn, PortalClienteSeccionesClaves, token);
+            return new ConfiguracionVentasPortalClienteDto
+            {
+                CuentaCorriente = MuestraSeccion(valores, "PORTALCLIENTE_MUESTRA_CTACTE"),
+                ListaPrecios = MuestraSeccion(valores, "PORTALCLIENTE_MUESTRA_LISTAPRECIOS"),
+                Catalogos = MuestraSeccion(valores, "PORTALCLIENTE_MUESTRA_CATALOGOS"),
+                Carrito = MuestraSeccion(valores, "PORTALCLIENTE_MUESTRA_CARRITO"),
+                Pedidos = MuestraSeccion(valores, "PORTALCLIENTE_MUESTRA_PEDIDOS")
+            };
+        }, "No se pudo cargar la configuración del Portal Cliente.", ct);
+
+    public Task SaveVentasPortalClienteAsync(ConfiguracionVentasPortalClienteDto dto, CancellationToken ct = default)
+        => ExecuteLoggedAsync("SaveVentasPortalCliente", async token =>
+        {
+            ArgumentNullException.ThrowIfNull(dto);
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await SetConfigAsync(cn, "PORTALCLIENTE_MUESTRA_CTACTE", dto.CuentaCorriente ? "SI" : "NO", token);
+            await SetConfigAsync(cn, "PORTALCLIENTE_MUESTRA_LISTAPRECIOS", dto.ListaPrecios ? "SI" : "NO", token);
+            await SetConfigAsync(cn, "PORTALCLIENTE_MUESTRA_CATALOGOS", dto.Catalogos ? "SI" : "NO", token);
+            await SetConfigAsync(cn, "PORTALCLIENTE_MUESTRA_CARRITO", dto.Carrito ? "SI" : "NO", token);
+            await SetConfigAsync(cn, "PORTALCLIENTE_MUESTRA_PEDIDOS", dto.Pedidos ? "SI" : "NO", token);
+        }, "No se pudo guardar la configuración del Portal Cliente.", ct);
+
+    /// <summary>Sin configurar (clave inexistente/vacía) se interpreta "mostrar" -- así una
+    /// instalación que nunca tocó esta pantalla no pierde secciones del Portal Cliente de golpe.</summary>
+    private static bool MuestraSeccion(IReadOnlyDictionary<string, string> valores, string clave)
+    {
+        var raw = Get(valores, clave);
+        return string.IsNullOrWhiteSpace(raw) || ParseBool(raw);
+    }
+
     // ---- Helpers privados ----
 
     private static readonly string[] EmailClaves =
     [
         "EMAIL_SERVER", "EMAIL_PORT", "EMAIL_CTA", "EMAIL_PASS", "EMAIL_SSL"
+    ];
+
+    private static readonly string[] PortalClienteSeccionesClaves =
+    [
+        "PORTALCLIENTE_MUESTRA_CTACTE", "PORTALCLIENTE_MUESTRA_LISTAPRECIOS", "PORTALCLIENTE_MUESTRA_CATALOGOS",
+        "PORTALCLIENTE_MUESTRA_CARRITO", "PORTALCLIENTE_MUESTRA_PEDIDOS"
     ];
 
     private static readonly string[] EmpresaClaves =

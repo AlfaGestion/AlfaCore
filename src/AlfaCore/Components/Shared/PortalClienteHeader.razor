@@ -34,21 +34,36 @@
     <a class="portal-cliente__tab @(ActiveTab == "inicio" ? "is-active" : "")" href="@RouteInicio" aria-current="@(ActiveTab == "inicio" ? "page" : null)">
         <i class="bi bi-house"></i> Inicio
     </a>
-    <a class="portal-cliente__tab @(ActiveTab == "cuenta-corriente" ? "is-active" : "")" href="@RouteCuentaCorriente" aria-current="@(ActiveTab == "cuenta-corriente" ? "page" : null)">
-        <i class="bi bi-cash-stack"></i> Cuenta corriente
-    </a>
-    <a class="portal-cliente__tab @(ActiveTab == "lista-precios" ? "is-active" : "")" href="@RouteListaPrecios" aria-current="@(ActiveTab == "lista-precios" ? "page" : null)">
-        <i class="bi bi-tags"></i> Lista de precios
-    </a>
-    <a class="portal-cliente__tab @(ActiveTab == "catalogos" ? "is-active" : "")" href="@RouteCatalogos" aria-current="@(ActiveTab == "catalogos" ? "page" : null)">
-        <i class="bi bi-book"></i> Catálogos
-    </a>
-    <a class="portal-cliente__tab @(ActiveTab == "carrito" ? "is-active" : "")" href="@RouteCarrito" aria-current="@(ActiveTab == "carrito" ? "page" : null)">
-        <i class="bi bi-cart3"></i> Carrito de compra
-    </a>
-    <a class="portal-cliente__tab @(ActiveTab == "pedidos" ? "is-active" : "")" href="@RoutePedidos" aria-current="@(ActiveTab == "pedidos" ? "page" : null)">
-        <i class="bi bi-receipt"></i> Pedidos
-    </a>
+    @if (SeccionesHabilitadas.CuentaCorriente)
+    {
+        <a class="portal-cliente__tab @(ActiveTab == "cuenta-corriente" ? "is-active" : "")" href="@RouteCuentaCorriente" aria-current="@(ActiveTab == "cuenta-corriente" ? "page" : null)">
+            <i class="bi bi-cash-stack"></i> Cuenta corriente
+        </a>
+    }
+    @if (SeccionesHabilitadas.ListaPrecios)
+    {
+        <a class="portal-cliente__tab @(ActiveTab == "lista-precios" ? "is-active" : "")" href="@RouteListaPrecios" aria-current="@(ActiveTab == "lista-precios" ? "page" : null)">
+            <i class="bi bi-tags"></i> Lista de precios
+        </a>
+    }
+    @if (SeccionesHabilitadas.Catalogos)
+    {
+        <a class="portal-cliente__tab @(ActiveTab == "catalogos" ? "is-active" : "")" href="@RouteCatalogos" aria-current="@(ActiveTab == "catalogos" ? "page" : null)">
+            <i class="bi bi-book"></i> Catálogos
+        </a>
+    }
+    @if (SeccionesHabilitadas.Carrito)
+    {
+        <a class="portal-cliente__tab @(ActiveTab == "carrito" ? "is-active" : "")" href="@RouteCarrito" aria-current="@(ActiveTab == "carrito" ? "page" : null)">
+            <i class="bi bi-cart3"></i> Carrito de compra
+        </a>
+    }
+    @if (SeccionesHabilitadas.Pedidos)
+    {
+        <a class="portal-cliente__tab @(ActiveTab == "pedidos" ? "is-active" : "")" href="@RoutePedidos" aria-current="@(ActiveTab == "pedidos" ? "page" : null)">
+            <i class="bi bi-receipt"></i> Pedidos
+        </a>
+    }
     <a class="portal-cliente__tab @(ActiveTab == "mi-cuenta" ? "is-active" : "")" href="@RouteMiCuenta" aria-current="@(ActiveTab == "mi-cuenta" ? "page" : null)">
         <i class="bi bi-person-circle"></i> Mi cuenta
     </a>
@@ -69,6 +84,7 @@
     [Parameter, EditorRequired] public string RouteCarrito { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string RoutePedidos { get; set; } = string.Empty;
     [Parameter, EditorRequired] public string RouteMiCuenta { get; set; } = string.Empty;
+    [Parameter] public AlfaCore.Models.ConfiguracionVentasPortalClienteDto SeccionesHabilitadas { get; set; } = new();
 
     private bool _isDark = true;
     private DotNetObjectReference<PortalClienteHeader>? _themeRef;

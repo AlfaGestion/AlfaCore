@@ -628,7 +628,15 @@ public sealed class CotizacionesService(
             var to = (destinatario ?? string.Empty).Trim();
             if (to.Length == 0)
                 throw new InvalidOperationException("Ingresá un email de destino.");
-            _ = new System.Net.Mail.MailAddress(to);
+            // Soporta más de una dirección separadas por ";" (estilo Outlook, común en datos
+            // viejos del cliente) o "," -- System.Net.Mail.MailAddress solo entiende UNA dirección
+            // a la vez, así que se validan/agregan por separado más abajo (ver comentario ahí).
+            var direccionesDestino = to
+                .Split([';', ','], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            if (direccionesDestino.Count == 0)
+                throw new InvalidOperationException("Ingresá un email de destino.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -685,7 +693,13 @@ public sealed class CotizacionesService(
                 Body = html,
                 IsBodyHtml = true
             };
-            message.To.Add(to);
+            foreach (var direccion in direccionesDestino)
+            {
+                try { message.To.Add(new System.Net.Mail.MailAddress(direccion)); }
+                catch (FormatException) { /* dirección puntual inválida, se ignora */ }
+            }
+            if (message.To.Count == 0)
+                throw new InvalidOperationException("El email de destino no es válido.");
             using var pdfStream = new MemoryStream(pdfBytes);
             message.Attachments.Add(new System.Net.Mail.Attachment(pdfStream, $"{detail.CodigoVisible}.pdf", "application/pdf"));
 

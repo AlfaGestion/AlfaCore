@@ -13,6 +13,7 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
     private const string ClientTokenStorageKey = "alfacore_catalogo_cliente_token";
 
     [Inject] protected IInterfacesCatalogosService CatalogosSvc { get; set; } = null!;
+    [Inject] protected IConfiguracionGeneralService ConfigGeneralSvc { get; set; } = null!;
     [Inject] protected ICatalogosClienteSessionService CatalogoClienteSession { get; set; } = null!;
     [Inject] protected ICentralBasesService CentralBasesSvc { get; set; } = null!;
     [Inject] protected IAppUiOperationService UiOps { get; set; } = null!;
@@ -20,6 +21,7 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
     [Inject] protected ISessionService SessionSvc { get; set; } = null!;
     [Inject] protected NavigationManager Nav { get; set; } = null!;
     [Inject] protected IJSRuntime Js { get; set; } = null!;
+    [Inject] protected IPortalClienteSeccionesCache SeccionesCache { get; set; } = null!;
 
     [Parameter, SupplyParameterFromQuery(Name = "email")]
     public string? EmailQuery { get; set; }
@@ -32,6 +34,29 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
     protected AppUiMessage? LoginFeedback { get; private set; }
     protected CatalogosPublicIdentityDto Branding { get; private set; } = new();
 
+    // Placeholder deliberadamente restrictivo (todo en false) hasta que LoadPortalSeccionesAsync
+    // resuelva la config real: Blazor Server renderiza una vez con el estado de campos que haya en
+    // el momento en que OnInitializedAsync pega su primer await real, antes de que la lectura a
+    // TA_CONFIGURACION vuelva. Si el default fuera "todo true" (como el de
+    // ConfiguracionVentasPortalClienteDto, pensado para "sin configurar = mostrar todo" en el
+    // service), cada navegación a una página nueva del Portal mostraría un parpadeo de TODAS las
+    // pestañas — incluidas las que el admin deshabilitó — antes de ocultarse solas.
+    protected ConfiguracionVentasPortalClienteDto PortalSecciones { get; private set; } = new()
+    {
+        CuentaCorriente = false,
+        ListaPrecios = false,
+        Catalogos = false,
+        Carrito = false,
+        Pedidos = false
+    };
+
+    /// <summary>Clave de la sección que exige esta página puntual ("cuenta-corriente",
+    /// "lista-precios", "catalogos", "carrito", "pedidos") -- null si es una sección fija (Inicio,
+    /// Mi cuenta) que no se puede deshabilitar. Si la sección está deshabilitada por configuración,
+    /// la página redirige a Inicio en vez de mostrarse (evita que alguien la abra por URL directa
+    /// aunque el tab esté oculto).</summary>
+    protected virtual string? RequiredSectionKey => null;
+
     private bool _restoreAttempted;
 
     protected bool IsAuthenticated
@@ -41,12 +66,24 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
 
     protected override async Task OnInitializedAsync()
     {
+        // Sin esto, CADA navegación entre páginas del Portal (son componentes distintos: Blazor
+        // crea una instancia nueva por cada una) repetía la consulta a TA_CONFIGURACION y el tab
+        // bar parpadeaba -- se pintaba con el placeholder (todo oculto) apenas arrancaba el método,
+        // y recién mostraba las pestañas reales cuando la consulta volvía. SeccionesCache vive en un
+        // servicio Scoped (uno por circuito, sobrevive entre navegaciones), así que si otra página
+        // ya cargó la config en esta misma sesión del navegador, se usa ese valor ANTES de cualquier
+        // await real: el primer render ya sale correcto, sin esperar una vuelta a la base.
+        if (SeccionesCache.Cached is { } seccionesCacheadas)
+            PortalSecciones = seccionesCacheadas;
+
         if (!string.IsNullOrWhiteSpace(EmailQuery))
             ClienteCodigo = EmailQuery.Trim();
 
         CatalogoClienteSession.StateChanged += OnClientSessionStateChanged;
         await EnsureRouteSessionAsync();
         await LoadPublicIdentityAsync();
+        await LoadPortalSeccionesAsync();
+        EnforceSectionEnabled();
         await OnPortalInitializedAsync();
     }
 
@@ -136,6 +173,47 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
         {
             Branding = new CatalogosPublicIdentityDto();
         }
+    }
+
+    private async Task LoadPortalSeccionesAsync()
+    {
+        try
+        {
+            // EnsureRouteSessionAsync ya dejó activa (vía SetWebhookOverride) la base de este
+            // idweb/idbase, así que ConfigGeneralSvc resuelve la instalación correcta aunque nadie
+            // haya iniciado sesión de AlfaCore acá (el Portal Cliente es público/anónimo). Siempre
+            // se revalida contra la base (no se confía solo en el cache) por si el admin cambió la
+            // config mientras el cliente navegaba; SeccionesCache solo evita el parpadeo del primer
+            // render, no reemplaza esta lectura.
+            PortalSecciones = await ConfigGeneralSvc.GetVentasPortalClienteAsync();
+            SeccionesCache.Set(PortalSecciones);
+        }
+        catch
+        {
+            // Si falla la lectura, se sigue mostrando todo (comportamiento de siempre) en vez de
+            // esconder secciones por un problema de configuración ajeno al cliente -- salvo que ya
+            // hubiera algo cacheado de una página anterior en este circuito, en cuyo caso se
+            // mantiene ese valor conocido en vez de pisarlo con el default "todo visible".
+            if (SeccionesCache.Cached is null)
+                PortalSecciones = new ConfiguracionVentasPortalClienteDto();
+        }
+    }
+
+    /// <summary>Si esta página requiere una sección deshabilitada por configuración, redirige a
+    /// Inicio -- evita que se pueda entrar por URL directa aunque el tab esté oculto.</summary>
+    private void EnforceSectionEnabled()
+    {
+        var habilitada = RequiredSectionKey switch
+        {
+            "cuenta-corriente" => PortalSecciones.CuentaCorriente,
+            "lista-precios" => PortalSecciones.ListaPrecios,
+            "catalogos" => PortalSecciones.Catalogos,
+            "carrito" => PortalSecciones.Carrito,
+            "pedidos" => PortalSecciones.Pedidos,
+            _ => true
+        };
+        if (!habilitada)
+            Nav.NavigateTo(BuildPortalRoute(""), replace: true);
     }
 
     private async Task RestoreClientSessionAsync()

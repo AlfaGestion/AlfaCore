@@ -7,6 +7,7 @@
 @inject IDocumentTemplateService TemplateSvc
 @inject ICotizacionesService CotizSvc
 @inject ICotizacionDocumentService CotizDocumentSvc
+@inject IFacturaDocumentService FacturaDocumentSvc
 @inject IAppUserSessionService AppUserSession
 @inject IJSRuntime JS
 @inject IPageHeaderService PageHeader
@@ -35,7 +36,12 @@
             </select>
         </label>
         <label>Tipo de documento
-            <select disabled><option>Cotización</option></select>
+            <select @bind="_tipoDocumento" @bind:after="TipoDocumentoChangedAsync">
+                <option value="@TiposDocumentoCore.Cotizacion">Cotización</option>
+                <option value="@TiposDocumentoCore.FacturaA">Factura A</option>
+                <option value="@TiposDocumentoCore.FacturaB">Factura B</option>
+                <option value="@TiposDocumentoCore.FacturaC">Factura C</option>
+            </select>
         </label>
         <label>Plantilla
             <select value="@_selectedTemplateId" @onchange="TemplateChangedAsync">
@@ -147,6 +153,10 @@
                 {
                     @RenderFieldBlockSettings("Datos de la empresa", EmpresaBlock, TiposBloqueDocumento.Empresa)
                 }
+                @if (RecuadroTipoBlock is not null)
+                {
+                    @RenderFieldBlockSettings("Recuadro de tipo (letra + código AFIP)", RecuadroTipoBlock, TiposBloqueDocumento.RecuadroTipo)
+                }
                 @if (ComprobanteBlock is not null)
                 {
                     @RenderFieldBlockSettings("Condiciones", ComprobanteBlock, TiposBloqueDocumento.Comprobante)
@@ -192,6 +202,29 @@
                         <p class="document-designer__hint">Usa la firma cargada por quien creó la cotización (Usuarios → Firma digital).</p>
                     </section>
                 }
+                @if (CaeBlock is not null)
+                {
+                    <section class="document-designer__settings-group">
+                        <div class="document-designer__settings-heading">CAE (AFIP)</div>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="CaeBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar CAE y vencimiento</span></label>
+                        <p class="document-designer__hint">Se omite solo si el comprobante todavía no tiene CAE (pendiente de AFIP) -- no bloquea el PDF.</p>
+                    </section>
+                }
+                @if (QrAfipBlock is not null)
+                {
+                    <section class="document-designer__settings-group">
+                        <div class="document-designer__settings-heading">QR de AFIP</div>
+                        <label class="document-designer__toggle"><input type="checkbox" @bind="QrAfipBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar QR</span></label>
+                        <label>Alineación
+                            <select @bind="QrAfipBlock.Align" disabled="@IsTemplateReadOnly">
+                                <option value="left">Izquierda</option>
+                                <option value="center">Centro</option>
+                                <option value="right">Derecha</option>
+                            </select>
+                        </label>
+                        <p class="document-designer__hint">El QR ya viene generado por el sistema de facturación electrónica -- se omite si todavía no existe para este comprobante.</p>
+                    </section>
+                }
                 @if (PieBlock is not null)
                 {
                     <section class="document-designer__settings-group">
@@ -211,18 +244,36 @@
                 }
             </aside>
             <main class="document-designer__preview panel-card">
-                <div class="document-designer__preview-toolbar">
-                    <label>Cotización para probar
-                        <select value="@_previewVersionId" @onchange="PreviewVersionChangedAsync">
-                            <option value="0">Datos demo</option>
-                            @foreach (var quote in _cotizaciones) { <option value="@quote.IdVersion">@quote.CodigoVisible - @quote.EmpresaProspecto</option> }
-                        </select>
-                    </label>
-                    <button class="btn btn--ghost" @onclick="PreviewAsync" disabled="@_busy"><i class="bi bi-eye"></i> Actualizar vista previa</button>
-                    @if (_previewVersionId > 0) { <button class="btn btn--primary" @onclick="PdfAsync" disabled="@_busy"><i class="bi bi-file-earmark-pdf"></i> PDF beta</button> }
-                </div>
-                @if (_previewHtml is null) { <p class="muted">Elegí una cotización para previsualizar el formato con datos reales.</p> }
-                else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa de cotización"></iframe> }
+                @if (EsFactura)
+                {
+                    <div class="document-designer__preview-toolbar">
+                        <label>Factura real para probar
+                            <select value="@_previewFacturaKey" @onchange="PreviewFacturaChangedAsync">
+                                <option value="">Elegí un comprobante</option>
+                                @foreach (var factura in _facturasRecientes) { <option value="@FacturaKey(factura)">@factura.Numero - @factura.Cliente</option> }
+                            </select>
+                        </label>
+                        <button class="btn btn--ghost" @onclick="PreviewFacturaAsync" disabled="@_busy"><i class="bi bi-eye"></i> Actualizar vista previa</button>
+                        @if (!string.IsNullOrWhiteSpace(_previewFacturaKey)) { <button class="btn btn--primary" @onclick="PdfFacturaAsync" disabled="@_busy"><i class="bi bi-file-earmark-pdf"></i> PDF beta</button> }
+                    </div>
+                    @if (_previewHtml is null) { <p class="muted">Elegí un comprobante real para previsualizar el formato (CAE, QR y desglose de IVA incluidos).</p> }
+                    else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa de factura"></iframe> }
+                }
+                else
+                {
+                    <div class="document-designer__preview-toolbar">
+                        <label>Cotización para probar
+                            <select value="@_previewVersionId" @onchange="PreviewVersionChangedAsync">
+                                <option value="0">Datos demo</option>
+                                @foreach (var quote in _cotizaciones) { <option value="@quote.IdVersion">@quote.CodigoVisible - @quote.EmpresaProspecto</option> }
+                            </select>
+                        </label>
+                        <button class="btn btn--ghost" @onclick="PreviewAsync" disabled="@_busy"><i class="bi bi-eye"></i> Actualizar vista previa</button>
+                        @if (_previewVersionId > 0) { <button class="btn btn--primary" @onclick="PdfAsync" disabled="@_busy"><i class="bi bi-file-earmark-pdf"></i> PDF beta</button> }
+                    </div>
+                    @if (_previewHtml is null) { <p class="muted">Elegí una cotización para previsualizar el formato con datos reales.</p> }
+                    else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa de cotización"></iframe> }
+                }
             </main>
         </section>
     }
@@ -235,11 +286,14 @@
     private readonly List<DocumentTemplateDto> _templates = [];
     private IReadOnlyList<UnidadNegocioOptionDto> _unidades = [];
     private IReadOnlyList<CotizacionListItemDto> _cotizaciones = [];
+    private IReadOnlyList<FacturaResumenDto> _facturasRecientes = [];
     private DocumentTemplateDto? _selected;
     private DocumentTemplateSaveRequest _draft = new();
     private string _uNegocio = string.Empty;
+    private string _tipoDocumento = TiposDocumentoCore.Cotizacion;
     private int _selectedTemplateId;
     private long _previewVersionId;
+    private string _previewFacturaKey = string.Empty;
     private string? _previewHtml;
     private bool _busy;
     private bool _canEditSystemTemplate;
@@ -262,6 +316,11 @@
     private DocumentBlockDefinition? FirmaBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Firma, StringComparison.OrdinalIgnoreCase));
     private DocumentBlockDefinition? PortadaBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase));
     private DocumentBlockDefinition? PieBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? RecuadroTipoBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.RecuadroTipo, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? CaeBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Cae, StringComparison.OrdinalIgnoreCase));
+    private DocumentBlockDefinition? QrAfipBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.QrAfip, StringComparison.OrdinalIgnoreCase));
+
+    private bool EsFactura => TiposDocumentoCore.EsFactura(_tipoDocumento);
 
     protected override async Task OnInitializedAsync()
     {
@@ -337,10 +396,22 @@
     private async Task LoadTemplatesAsync()
     {
         _templates.Clear();
-        _templates.AddRange(await TemplateSvc.GetListAsync(TiposDocumentoCore.Cotizacion, _uNegocio));
+        _templates.AddRange(await TemplateSvc.GetListAsync(_tipoDocumento, _uNegocio));
         var current = _templates.FirstOrDefault(x => x.IdTemplate == _selectedTemplateId) ?? _templates.FirstOrDefault();
         if (current is not null) await SelectTemplateAsync(current);
         else await NuevaAsync();
+    }
+
+    private async Task TipoDocumentoChangedAsync()
+    {
+        _selectedTemplateId = 0;
+        _previewHtml = null;
+        _previewVersionId = 0;
+        _previewFacturaKey = string.Empty;
+        _facturasRecientes = [];
+        await LoadTemplatesAsync();
+        if (TiposDocumentoCore.LetraDe(_tipoDocumento) is { } letra)
+            _facturasRecientes = await FacturaDocumentSvc.SearchRecientesAsync(letra);
     }
 
     private async Task TemplateChangedAsync(ChangeEventArgs args)
@@ -356,7 +427,7 @@
         _draft = new DocumentTemplateSaveRequest
         {
             IdTemplate = template.EsSistema ? null : template.IdTemplate, UNegocio = template.UNegocio, TipoDocumento = template.TipoDocumento,
-            Nombre = template.Nombre, Definition = TemplateSvc.DeserializeAndValidate(template.TemplateJson), CssCustom = template.CssCustom,
+            Nombre = template.Nombre, Definition = TemplateSvc.DeserializeAndValidate(template.TemplateJson, template.TipoDocumento), CssCustom = template.CssCustom,
             EsPredeterminado = template.EsPredeterminado, Activo = template.Activo, Usuario = AppUserSession.GetCurrentUserName("Sistema")
         };
         _previewHtml = null;
@@ -368,10 +439,18 @@
 
     private Task NuevaAsync()
     {
-        _selected = new DocumentTemplateDto { IdTemplate = 0, TipoDocumento = TiposDocumentoCore.Cotizacion };
+        _selected = new DocumentTemplateDto { IdTemplate = 0, TipoDocumento = _tipoDocumento };
         _systemTemplateEditingEnabled = false;
         _selectedTemplateId = 0;
-        _draft = new DocumentTemplateSaveRequest { UNegocio = NullIfEmpty(_uNegocio), Nombre = "Nueva cotización", Usuario = AppUserSession.GetCurrentUserName("Sistema") };
+        var letra = TiposDocumentoCore.LetraDe(_tipoDocumento);
+        _draft = new DocumentTemplateSaveRequest
+        {
+            UNegocio = NullIfEmpty(_uNegocio),
+            TipoDocumento = _tipoDocumento,
+            Nombre = letra is not null ? $"Nueva factura {letra}" : "Nueva cotización",
+            Definition = letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : DocumentTemplateDefinition.CrearCotizacionEstandar(),
+            Usuario = AppUserSession.GetCurrentUserName("Sistema")
+        };
         _previewHtml = null;
         _tienePortada = false;
         _portadaPreviewUrl = null;
@@ -507,6 +586,45 @@
             var pdf = await CotizDocumentSvc.GeneratePdfAsync(_previewVersionId, NullIfEmpty(_uNegocio));
             await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"cotizacion-beta-{_previewVersionId}.pdf");
         });
+    }
+
+    private static string FacturaKey(FacturaResumenDto factura) => $"{factura.Tc}|{factura.IdComprobante}";
+
+    private Task PreviewFacturaChangedAsync(ChangeEventArgs args)
+    {
+        _previewFacturaKey = args.Value?.ToString() ?? string.Empty;
+        _previewHtml = null;
+        return Task.CompletedTask;
+    }
+
+    private async Task PreviewFacturaAsync()
+    {
+        if (!TryParseFacturaKey(out var tc, out var idComprobante)) { _error = "Elegí un comprobante real como datos de prueba."; return; }
+        await BusyAsync(async () =>
+        {
+            var result = await FacturaDocumentSvc.RenderAsync(tc, idComprobante, NullIfEmpty(_uNegocio));
+            _previewHtml = result.Html;
+            _message = $"Vista previa generada con plantilla #{result.IdTemplate}.";
+        });
+    }
+
+    private async Task PdfFacturaAsync()
+    {
+        if (!TryParseFacturaKey(out var tc, out var idComprobante)) return;
+        await BusyAsync(async () =>
+        {
+            var pdf = await FacturaDocumentSvc.GeneratePdfAsync(tc, idComprobante, NullIfEmpty(_uNegocio));
+            await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"factura-beta-{idComprobante}.pdf");
+        });
+    }
+
+    private bool TryParseFacturaKey(out string tc, out string idComprobante)
+    {
+        tc = string.Empty; idComprobante = string.Empty;
+        var parts = _previewFacturaKey.Split('|', 2);
+        if (parts.Length != 2 || parts[0].Length == 0 || parts[1].Length == 0) return false;
+        tc = parts[0]; idComprobante = parts[1];
+        return true;
     }
 
     private async Task BusyAsync(Func<Task> operation)

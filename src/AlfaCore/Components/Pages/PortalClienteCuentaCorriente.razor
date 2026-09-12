@@ -54,7 +54,8 @@ else
                               RouteCatalogos="@BuildPortalRoute("catalogos")"
                               RouteCarrito="@BuildPortalRoute("carrito")"
                               RoutePedidos="@BuildPortalRoute("pedidos")"
-                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")" />
+                              RouteMiCuenta="@BuildPortalRoute("mi-cuenta")"
+                              SeccionesHabilitadas="@PortalSecciones" />
 
         @if (_feedback is not null)
         {
@@ -134,21 +135,32 @@ else
             }
             else
             {
+                <div class="portal-cliente__section-head portal-cliente__ctacte-table-head">
+                    <h3 class="portal-cliente__section-title">Movimientos</h3>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                Size="AlfaSize.Sm"
+                                Icon="bi bi-file-earmark-excel"
+                                OnClick="@(_ => ExportarExcelAsync())"
+                                Class="portal-cliente__ctacte-export">
+                        Exportar Excel
+                    </AlfaButton>
+                </div>
+
                 <div class="table-wrap">
                     <table class="data-table portal-cliente__ctacte-table">
                         <thead>
                             <tr>
-                                <th>Fecha</th>
-                                <th>Comprobante</th>
-                                <th>Descripción</th>
-                                <th>Vencimiento</th>
-                                <th class="text-end">Importe</th>
-                                <th>Estado</th>
+                                <th class="@ThClass("Fecha")" @onclick='() => SetSort("Fecha")'>Fecha @SortIcon("Fecha")</th>
+                                <th class="@ThClass("Comprobante")" @onclick='() => SetSort("Comprobante")'>Comprobante @SortIcon("Comprobante")</th>
+                                <th class="@ThClass("Detalle")" @onclick='() => SetSort("Detalle")'>Descripción @SortIcon("Detalle")</th>
+                                <th class="@ThClass("Vencimiento")" @onclick='() => SetSort("Vencimiento")'>Vencimiento @SortIcon("Vencimiento")</th>
+                                <th class="text-end @ThClass("Importe")" @onclick='() => SetSort("Importe")'>Importe @SortIcon("Importe")</th>
+                                <th class="@ThClass("Estado")" @onclick='() => SetSort("Estado")'>Estado @SortIcon("Estado")</th>
                                 <th>Acciones</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var mov in _estadoCuenta.Movimientos)
+                            @foreach (var mov in MovimientosOrdenados)
                             {
                                 <tr>
                                     <td data-label="Fecha">@mov.Fecha.ToString("dd/MM/yyyy")</td>
@@ -178,16 +190,20 @@ else
 }
 
 @code {
+    protected override string? RequiredSectionKey => "cuenta-corriente";
+
     private CatalogoClienteLoginPanel? _loginPanel;
     private string? _feedback;
     private PortalClienteCuentaCorrienteResumenDto _resumen = new();
 
     private bool _loadingEstado;
-    private string _rango = "mes-actual";
+    private string _rango = "ultimos-30-dias";
     private DateTime? _estadoFechaDesde;
     private DateTime? _estadoFechaHasta;
     private bool _ocultarSaldoCero;
     private PortalClienteEstadoCuentaDto _estadoCuenta = new();
+    private string _sortColumn = "Fecha";
+    private bool _sortDescending = true;
 
     private static readonly IReadOnlyList<AlfaSelectOption> RangoOptions =
     [
@@ -334,6 +350,85 @@ else
             _loadingEstado = false;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    private IEnumerable<PortalClienteEstadoCuentaMovimientoDto> MovimientosOrdenados
+        => OrdenarMovimientos(_estadoCuenta.Movimientos, _sortColumn, _sortDescending);
+
+    private static IEnumerable<PortalClienteEstadoCuentaMovimientoDto> OrdenarMovimientos(
+        IReadOnlyList<PortalClienteEstadoCuentaMovimientoDto> movimientos, string columna, bool descendente)
+        => columna switch
+        {
+            "Comprobante" => descendente
+                ? movimientos.OrderByDescending(m => m.Comprobante, StringComparer.OrdinalIgnoreCase)
+                : movimientos.OrderBy(m => m.Comprobante, StringComparer.OrdinalIgnoreCase),
+            "Detalle" => descendente
+                ? movimientos.OrderByDescending(m => m.Detalle, StringComparer.OrdinalIgnoreCase)
+                : movimientos.OrderBy(m => m.Detalle, StringComparer.OrdinalIgnoreCase),
+            "Vencimiento" => descendente
+                ? movimientos.OrderByDescending(m => m.Vencimiento)
+                : movimientos.OrderBy(m => m.Vencimiento),
+            "Importe" => descendente
+                ? movimientos.OrderByDescending(m => m.Importe)
+                : movimientos.OrderBy(m => m.Importe),
+            "Estado" => descendente
+                ? movimientos.OrderByDescending(m => m.Estado, StringComparer.OrdinalIgnoreCase)
+                : movimientos.OrderBy(m => m.Estado, StringComparer.OrdinalIgnoreCase),
+            _ => descendente
+                ? movimientos.OrderByDescending(m => m.Fecha)
+                : movimientos.OrderBy(m => m.Fecha)
+        };
+
+    private void SetSort(string columna)
+    {
+        if (_sortColumn == columna)
+        {
+            _sortDescending = !_sortDescending;
+            return;
+        }
+
+        _sortColumn = columna;
+        // Fecha/Vencimiento/Importe: lo más reciente/grande primero al elegir la columna por
+        // primera vez; texto (Comprobante/Detalle/Estado): alfabético A-Z.
+        _sortDescending = columna is "Fecha" or "Vencimiento" or "Importe";
+    }
+
+    private string ThClass(string columna)
+        => _sortColumn == columna ? "portal-cliente__th-sort is-active" : "portal-cliente__th-sort";
+
+    private RenderFragment SortIcon(string columna) => builder =>
+    {
+        if (_sortColumn != columna)
+            return;
+
+        builder.OpenElement(0, "i");
+        builder.AddAttribute(1, "class", _sortDescending ? "bi bi-sort-down" : "bi bi-sort-up");
+        builder.CloseElement();
+    };
+
+    private string BuildExportUrl()
+    {
+        var query = $"?token={Uri.EscapeDataString(CatalogoClienteSession.CurrentToken ?? string.Empty)}";
+
+        if (!string.IsNullOrWhiteSpace(idweb))
+            query += $"&idweb={Uri.EscapeDataString(idweb)}";
+        if (idbase is > 0)
+            query += $"&idbase={idbase.Value}";
+        if (_estadoFechaDesde is { } desde)
+            query += $"&desde={desde:yyyy-MM-dd}";
+        if (_estadoFechaHasta is { } hasta)
+            query += $"&hasta={hasta:yyyy-MM-dd}";
+        query += $"&ocultarSaldoCero={(_ocultarSaldoCero ? "true" : "false")}";
+        query += $"&sortBy={Uri.EscapeDataString(_sortColumn)}";
+        query += $"&sortDesc={(_sortDescending ? "true" : "false")}";
+
+        return "/api/portal-cliente/cuenta-corriente/excel" + query;
+    }
+
+    private Task ExportarExcelAsync()
+    {
+        Nav.NavigateTo(BuildExportUrl(), forceLoad: true);
+        return Task.CompletedTask;
     }
 
     private static AlfaTagTone GetEstadoTono(string estado)
