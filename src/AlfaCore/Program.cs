@@ -330,6 +330,7 @@ public class Program
         builder.Services.AddScoped<FilterStateService>();
         builder.Services.AddScoped<GestionFilterStateService>();
         builder.Services.AddHttpClient();
+        builder.Services.AddSingleton<IIaBackendProxyService, IaBackendProxyService>();
         builder.Services.AddHttpClient("MetaEmbeddedSignupOAuth").RemoveAllLoggers();
         builder.Services.AddHttpClient("MetaEmbeddedSignupManagement").RemoveAllLoggers();
         builder.Services.AddHttpContextAccessor();
@@ -1000,6 +1001,41 @@ public class Program
 
             var pdfBytes = pdfSvc.GenerarPdf(resultado.Articulos, resultado.Resolucion, contexto.LogoBytes, contexto.NombreEmpresa, contexto.NombreCliente, agrupar, resultado.Truncado);
             return Results.File(pdfBytes, "application/pdf", "lista-precios.pdf");
+        }).AllowAnonymous();
+
+        app.MapPost("/v1/process", async (HttpRequest request, IIaBackendProxyService iaBackendSvc, CancellationToken ct) =>
+        {
+            using var reader = new StreamReader(request.Body);
+            var body = await reader.ReadToEndAsync(ct);
+            var outcome = await iaBackendSvc.ProcessAsync(
+                body,
+                request.Headers["X-IA-Client-Id"].ToString(),
+                request.Headers["X-IA-Timestamp"].ToString(),
+                request.Headers["X-IA-Nonce"].ToString(),
+                request.Headers["X-IA-Signature"].ToString(),
+                ct);
+            return Results.Json(outcome.Body, statusCode: outcome.StatusCode);
+        }).AllowAnonymous();
+
+        app.MapPost("/v1/credentials", async (HttpRequest request, IIaBackendProxyService iaBackendSvc, CancellationToken ct) =>
+        {
+            using var reader = new StreamReader(request.Body);
+            var body = await reader.ReadToEndAsync(ct);
+            string licencia;
+            try
+            {
+                using var doc = JsonDocument.Parse(body);
+                licencia = doc.RootElement.TryGetProperty("licenciaPrincipal", out var el) && el.ValueKind == JsonValueKind.String
+                    ? el.GetString() ?? string.Empty
+                    : string.Empty;
+            }
+            catch (JsonException)
+            {
+                return Results.Json(new { ok = false, error = "invalid_json_body" }, statusCode: 400);
+            }
+
+            var outcome = await iaBackendSvc.ResolveCredentialsAsync(licencia, ct);
+            return Results.Json(outcome.Body, statusCode: outcome.StatusCode);
         }).AllowAnonymous();
 
         app.MapGet("/api/portal-cliente/cuenta-corriente/excel", async (
