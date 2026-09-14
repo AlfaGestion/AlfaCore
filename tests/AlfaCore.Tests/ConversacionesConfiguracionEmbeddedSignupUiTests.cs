@@ -5,16 +5,18 @@ namespace AlfaCore.Tests;
 
 /// <summary>
 /// ConversacionesConfiguracion.razor es una página Blazor con ~20 servicios inyectados y sin arnés de
-/// componentes (no hay bUnit en el repo); instrumentar uno sólo para estos dos fixes puntuales sería
+/// componentes (no hay bUnit en el repo); instrumentar uno sólo para estos fixes puntuales sería
 /// desproporcionado. Sigue el mismo patrón ya establecido en WhatsAppEmbeddedSignupJavaScriptTests.cs /
-/// EmbeddedSignupMultiTenantTests.cs: verificar el CONTRATO por texto fuente. Cubre los dos bugs de UI
-/// confirmados en la auditoría Base4264: (1) _embeddedSignupStatus congelado tras timeout/cancelación,
-/// (2) _embeddedSignupBusy compartido causando dos spinners simultáneos.
+/// EmbeddedSignupMultiTenantTests.cs: verificar el CONTRATO por texto fuente. Cubre los bugs de UI
+/// confirmados en las auditorías Base4264: (1) _embeddedSignupStatus congelado tras timeout/cancelación,
+/// (2) _embeddedSignupBusy compartido causando dos spinners simultáneos, (3) 2026-09-14, IdOnboarding
+/// d23ddd26-393b-4334-a0b9-87b1bb6e2098: el watchdog visual de 90s cancelaba en el servidor y podía
+/// ganarle la carrera a un callback real de autorización que llegaba alrededor de ese mismo instante.
 /// </summary>
 public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
 {
     [Fact]
-    public void CancellationPath_RefreshesEmbeddedSignupStatus_InsteadOfStayingStale()
+    public void ExplicitCancellationPath_RefreshesEmbeddedSignupStatus_InsteadOfStayingStale()
     {
         var source = File.ReadAllText(FindPagePath());
 
@@ -30,10 +32,37 @@ public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
         Assert.Contains("await RefreshWhatsAppConnectionsAsync(idBase)", methodBody, StringComparison.Ordinal);
         Assert.Contains("await InvokeAsync(StateHasChanged)", methodBody, StringComparison.Ordinal);
 
-        // Tanto el watchdog de 90s como la cancelación explícita del SDK pasan por este único método
-        // (es la corrección mínima: un solo lugar arreglado, sin duplicar la lógica de refresh).
-        Assert.Contains("await PersistEmbeddedSignupCancellationAsync();", source, StringComparison.Ordinal);
+        // Sólo la cancelación explícita del SDK de Meta (usuario cerró el popup, Meta lo detectó)
+        // sigue pasando por este método -- el watchdog visual ya NO (ver test de abajo).
         Assert.Contains("return PersistEmbeddedSignupCancellationAsync();", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VisualWatchdogTimeout_NeverCancelsOnServer_OnlyRefreshes()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        // REGRESIÓN Base4264 (2026-09-14, IdOnboarding d23ddd26-393b-4334-a0b9-87b1bb6e2098): el
+        // watchdog visual de 90s llamaba a PersistEmbeddedSignupCancellationAsync() al vencer, que
+        // escribe CANCELLED en el servidor -- un timer del browser no tiene forma de saber si Meta
+        // está por terminar de verdad (~90.273s en el caso real). Si el callback real llegaba
+        // alrededor de ese mismo instante, competía por el mismo StateHash de un solo uso contra este
+        // timeout puramente visual, y si el timeout ganaba la autorización real quedaba CANCELLED sin
+        // ningún error visible. El watchdog ahora es puramente informativo: nunca debe llamar
+        // PersistEmbeddedSignupCancellationAsync ni HandleCancellationAsync -- sólo refresca el estado
+        // real (que ya expira solo por FechaExpiracionUtc, el dominio, no por este timer de UI).
+        var methodStart = source.IndexOf("private async Task WatchEmbeddedSignupAuthorizationTimeoutAsync(CancellationToken token)", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "No se encontró WatchEmbeddedSignupAuthorizationTimeoutAsync.");
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        Assert.DoesNotContain("PersistEmbeddedSignupCancellationAsync", methodBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("HandleCancellationAsync", methodBody, StringComparison.Ordinal);
+        Assert.Contains("await RefreshWhatsAppConnectionsAsync(idBase)", methodBody, StringComparison.Ordinal);
+
+        // "await PersistEmbeddedSignupCancellationAsync();" (con await, la forma que usaba el
+        // watchdog) ya no debe existir en NINGÚN lado del archivo -- sólo queda la forma
+        // "return PersistEmbeddedSignupCancellationAsync();" de la cancelación explícita del SDK.
+        Assert.DoesNotContain("await PersistEmbeddedSignupCancellationAsync();", source, StringComparison.Ordinal);
     }
 
     [Fact]

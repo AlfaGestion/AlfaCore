@@ -76,6 +76,64 @@ public sealed class WhatsAppEmbeddedSignupSqlIntegrationTests
     }
 
     [SqlIntegrationFact]
+    public async Task CancelStartedIfNotConsumed_NeverWinsAgainstAnAlreadyConsumedState()
+    {
+        // Regresión real Base4264 (2026-09-14, IdOnboarding d23ddd26-393b-4334-a0b9-87b1bb6e2098): un
+        // watchdog visual de 90s en el browser llamaba a la cancelación en el servidor, que consumía
+        // el StateHash en un paso separado de UpdateStatusAsync -- si un callback real de autorización
+        // llegaba justo en ese mismo instante, ambos caminos competían por el mismo StateHash de un
+        // solo uso y cualquiera podía ganar. CancelStartedIfNotConsumedAsync es ahora UN SOLO UPDATE
+        // atómico: acá se prueba explícitamente que, sin importar el orden real de llegada a SQL, una
+        // cancelación NUNCA puede pisar un state que ConsumeStateAsync ya haya consumido.
+        var store = new WhatsAppEmbeddedSignupStore(Configuration);
+        var (baseA, _) = await GetTwoBaseIdsAsync();
+        var now = DateTime.UtcNow;
+        var authorizedFirst = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddMinutes(10));
+        var cancelFirst = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddMinutes(10));
+        try
+        {
+            await store.CreateAsync(authorizedFirst);
+            await store.CreateAsync(cancelFirst);
+
+            // Orden 1: el callback real (ConsumeStateAsync) llega primero -- la cancelación posterior
+            // sobre el mismo state debe ser un no-op silencioso (false), nunca CANCELLED.
+            Assert.NotNull(await store.ConsumeStateAsync(authorizedFirst.StateHash, baseA, authorizedFirst.UsuarioIniciador, now));
+            var cancelAfterConsume = await store.CancelStartedIfNotConsumedAsync(authorizedFirst.IdOnboarding, baseA, authorizedFirst.StateHash, now.AddSeconds(1));
+            Assert.False(cancelAfterConsume);
+            Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Started, (await store.GetAsync(authorizedFirst.IdOnboarding))!.Status); // sigue STARTED -- listo para MarkAuthorizedAsync, nunca CANCELLED.
+
+            // Orden 2: la cancelación (watchdog) llega primero -- consume el state y cancela en un solo
+            // paso; el ConsumeStateAsync del callback real que llega después debe fallar (null), nunca
+            // reconsumir ni revertir el CANCELLED.
+            var cancelWon = await store.CancelStartedIfNotConsumedAsync(cancelFirst.IdOnboarding, baseA, cancelFirst.StateHash, now);
+            Assert.True(cancelWon);
+            Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Cancelled, (await store.GetAsync(cancelFirst.IdOnboarding))!.Status);
+            Assert.Null(await store.ConsumeStateAsync(cancelFirst.StateHash, baseA, cancelFirst.UsuarioIniciador, now.AddSeconds(1)));
+
+            // Concurrencia real: dos llamadas simultáneas por el mismo StateHash -- exactamente una gana.
+            var concurrent = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddMinutes(10));
+            await store.CreateAsync(concurrent);
+            try
+            {
+                var consumeTask = store.ConsumeStateAsync(concurrent.StateHash, baseA, concurrent.UsuarioIniciador, DateTime.UtcNow);
+                var cancelTask = store.CancelStartedIfNotConsumedAsync(concurrent.IdOnboarding, baseA, concurrent.StateHash, DateTime.UtcNow);
+                await Task.WhenAll(consumeTask, cancelTask);
+                var consumeWon = (await consumeTask) is not null;
+                var cancelWonConcurrently = await cancelTask;
+                Assert.True(consumeWon ^ cancelWonConcurrently, "Exactamente uno de los dos caminos debe ganar la carrera, nunca ambos ni ninguno.");
+            }
+            finally
+            {
+                await CleanupOnboardingsAsync([concurrent.IdOnboarding]);
+            }
+        }
+        finally
+        {
+            await CleanupOnboardingsAsync([authorizedFirst.IdOnboarding, cancelFirst.IdOnboarding]);
+        }
+    }
+
+    [SqlIntegrationFact]
     public async Task CoexistenceSync_TryReserveIsOneShotPerOnboardingAndNeverRegressesFromATerminalStatus()
     {
         var onboardingStore = new WhatsAppEmbeddedSignupStore(Configuration);
