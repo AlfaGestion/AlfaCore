@@ -217,25 +217,35 @@ END;
 GO
 
 -- Self-heal para un ALFA_CENTRAL_TEST bootstrapeado ANTES de esta corrección: si la tabla ya existe
--- con la PK vieja (IdBase, PhoneNumberId, SyncType) y está vacía, se corrige acá mismo.
+-- con la PK vieja (IdBase, PhoneNumberId, SyncType) y está vacía, se corrige acá mismo. Sin
+-- STRING_AGG/WITHIN GROUP (compatible con compatibility_level 100, igual que el script de fix
+-- productivo 2026-09-14-001) -- comparación por key_ordinal exacto sobre una tabla variable.
 IF OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync', N'U') IS NOT NULL
 BEGIN
-    DECLARE @WaecsPkColumns nvarchar(400);
-    SELECT @WaecsPkColumns = STRING_AGG(c.name, ',') WITHIN GROUP (ORDER BY ic.key_ordinal)
+    DECLARE @WaecsTableId int = OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync');
+    DECLARE @WaecsPkCols TABLE (KeyOrdinal int NOT NULL PRIMARY KEY, ColumnName sysname NOT NULL);
+    INSERT INTO @WaecsPkCols (KeyOrdinal, ColumnName)
+    SELECT ic.key_ordinal, c.name
     FROM sys.key_constraints kc
     JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
     JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
-    WHERE kc.parent_object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync') AND kc.type = 'PK';
+    WHERE kc.parent_object_id = @WaecsTableId AND kc.type = 'PK';
 
-    IF @WaecsPkColumns = N'IdBase,PhoneNumberId,SyncType' AND (SELECT COUNT(*) FROM dbo.WhatsAppEmbeddedCoexistenceSync) = 0
+    DECLARE @WaecsIsOldPk bit = CASE WHEN (SELECT COUNT(*) FROM @WaecsPkCols) = 3
+        AND EXISTS (SELECT 1 FROM @WaecsPkCols WHERE KeyOrdinal = 1 AND ColumnName = N'IdBase')
+        AND EXISTS (SELECT 1 FROM @WaecsPkCols WHERE KeyOrdinal = 2 AND ColumnName = N'PhoneNumberId')
+        AND EXISTS (SELECT 1 FROM @WaecsPkCols WHERE KeyOrdinal = 3 AND ColumnName = N'SyncType')
+        THEN 1 ELSE 0 END;
+
+    IF @WaecsIsOldPk = 1 AND (SELECT COUNT(*) FROM dbo.WhatsAppEmbeddedCoexistenceSync) = 0
     BEGIN
         DECLARE @WaecsPkName sysname = (SELECT kc.name FROM sys.key_constraints kc
-            WHERE kc.parent_object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync') AND kc.type = 'PK');
+            WHERE kc.parent_object_id = @WaecsTableId AND kc.type = 'PK');
         EXEC(N'ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync DROP CONSTRAINT ' + QUOTENAME(@WaecsPkName) + N';');
         ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync
             WITH CHECK ADD CONSTRAINT PK_WhatsAppEmbeddedCoexistenceSync
             PRIMARY KEY (IdBase, IdOnboarding, PhoneNumberId, SyncType);
-        IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync') AND name = N'IX_WAECS_IdBase')
+        IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = @WaecsTableId AND name = N'IX_WAECS_IdBase')
             DROP INDEX IX_WAECS_IdBase ON dbo.WhatsAppEmbeddedCoexistenceSync;
     END;
 END;
