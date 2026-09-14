@@ -612,7 +612,10 @@
             return;
         }
 
-        if (idbase is > 0 && !string.IsNullOrWhiteSpace(idweb))
+        // Dentro del Portal Cliente la página ya está renderizada como componente embebido.
+        // No convertir esa instancia a la ruta pública independiente, porque eso quita el
+        // encabezado y las pestañas del Portal Cliente.
+        if (idbase is > 0 && !string.IsNullOrWhiteSpace(idweb) && !Embedded)
         {
             await RedirectLegacyPublicRouteAsync();
             return;
