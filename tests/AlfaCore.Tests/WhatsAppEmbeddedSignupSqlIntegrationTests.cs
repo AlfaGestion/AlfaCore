@@ -76,44 +76,72 @@ public sealed class WhatsAppEmbeddedSignupSqlIntegrationTests
     }
 
     [SqlIntegrationFact]
-    public async Task CoexistenceSync_TryReserveIsOneShotAndNeverRegressesFromATerminalStatus()
+    public async Task CoexistenceSync_TryReserveIsOneShotPerOnboardingAndNeverRegressesFromATerminalStatus()
     {
         var onboardingStore = new WhatsAppEmbeddedSignupStore(Configuration);
         var syncStore = new WhatsAppCoexistenceSyncStore(Configuration);
         var (baseA, _) = await GetTwoBaseIdsAsync();
         var now = DateTime.UtcNow;
-        var onboarding = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddMinutes(10));
-        onboarding.OnboardingMode = WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence;
+        var onboardingA = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddMinutes(10));
+        onboardingA.OnboardingMode = WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence;
         var suffix = DateTime.UtcNow.Ticks.ToString()[^14..];
         var phone = "99994" + suffix;
+        WhatsAppEmbeddedOnboardingDto? onboardingB = null;
         try
         {
-            await onboardingStore.CreateAsync(onboarding);
+            await onboardingStore.CreateAsync(onboardingA);
 
-            // Sólo la primera TryReserveAsync inserta -- reinicio/reprocesamiento nunca duplica.
-            Assert.True(await syncStore.TryReserveAsync(baseA, phone, onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.History, WhatsAppCoexistenceSyncStatus.Pending, now));
-            Assert.False(await syncStore.TryReserveAsync(baseA, phone, onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.History, WhatsAppCoexistenceSyncStatus.Pending, now));
+            // Sólo la primera TryReserveAsync inserta -- reinicio/reprocesamiento del MISMO onboarding
+            // nunca duplica (identidad = IdBase + IdOnboarding + PhoneNumberId + SyncType).
+            Assert.True(await syncStore.TryReserveAsync(baseA, phone, onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.History, WhatsAppCoexistenceSyncStatus.Pending, now));
+            Assert.False(await syncStore.TryReserveAsync(baseA, phone, onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.History, WhatsAppCoexistenceSyncStatus.Pending, now));
 
-            await syncStore.MarkRequestedAsync(baseA, phone, WhatsAppCoexistenceSyncType.History, "req-1", now);
-            Assert.Equal(WhatsAppCoexistenceSyncStatus.Requested, (await syncStore.GetAsync(baseA, phone, WhatsAppCoexistenceSyncType.History))!.Status);
+            await syncStore.MarkRequestedAsync(baseA, phone, onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.History, "req-1", now);
+            Assert.Equal(WhatsAppCoexistenceSyncStatus.Requested, (await syncStore.GetAsync(baseA, phone, onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.History))!.Status);
 
+            // Los webhooks (Meta no manda IdOnboarding) actualizan la fila MÁS RECIENTE por número/tipo.
             await syncStore.MarkCompletedAsync(baseA, phone, WhatsAppCoexistenceSyncType.History, now);
-            Assert.Equal(WhatsAppCoexistenceSyncStatus.Completed, (await syncStore.GetAsync(baseA, phone, WhatsAppCoexistenceSyncType.History))!.Status);
+            Assert.Equal(WhatsAppCoexistenceSyncStatus.Completed, (await syncStore.GetAsync(baseA, phone, onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.History))!.Status);
 
             // Guardado: un chunk reentregado tras Completed (redelivery) nunca regresa el estado.
             await syncStore.MarkInProgressAsync(baseA, phone, WhatsAppCoexistenceSyncType.History);
-            Assert.Equal(WhatsAppCoexistenceSyncStatus.Completed, (await syncStore.GetAsync(baseA, phone, WhatsAppCoexistenceSyncType.History))!.Status);
+            Assert.Equal(WhatsAppCoexistenceSyncStatus.Completed, (await syncStore.GetAsync(baseA, phone, onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.History))!.Status);
 
-            // history y smb_app_state_sync son filas independientes para el mismo número.
-            Assert.True(await syncStore.TryReserveAsync(baseA, phone, onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.ContactState, WhatsAppCoexistenceSyncStatus.Pending, now));
-            var forBase = await syncStore.GetForBaseAsync(baseA);
-            Assert.Equal(2, forBase.Count(x => x.PhoneNumberId == phone));
+            // history y smb_app_state_sync son filas independientes para el mismo número/onboarding.
+            Assert.True(await syncStore.TryReserveAsync(baseA, phone, onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.ContactState, WhatsAppCoexistenceSyncStatus.Pending, now));
+            var forBaseAfterA = await syncStore.GetForBaseAsync(baseA);
+            Assert.Equal(2, forBaseAfterA.Count(x => x.PhoneNumberId == phone));
+
+            // --- Offboard real de onboardingA + nuevo Embedded Signup Coexistence (onboardingB), MISMO
+            // número: Meta permite un history sync nuevo tras un nuevo consentimiento. El one-shot NO
+            // debe seguir bloqueando para siempre por número -- sólo dentro del mismo intento.
+            onboardingB = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.Started, now.AddMinutes(10));
+            onboardingB.OnboardingMode = WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence;
+            await onboardingStore.CreateAsync(onboardingB);
+
+            var laterNow = now.AddMinutes(1);
+            Assert.True(await syncStore.TryReserveAsync(baseA, phone, onboardingB.IdOnboarding, WhatsAppCoexistenceSyncType.History, WhatsAppCoexistenceSyncStatus.Pending, laterNow));
+
+            // La fila de onboardingA (ya Completed) se conserva intacta como historial -- nunca se borra ni se pisa.
+            var rowA = await syncStore.GetAsync(baseA, phone, onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.History);
+            Assert.Equal(WhatsAppCoexistenceSyncStatus.Completed, rowA!.Status);
+            var rowB = await syncStore.GetAsync(baseA, phone, onboardingB.IdOnboarding, WhatsAppCoexistenceSyncType.History);
+            Assert.Equal(WhatsAppCoexistenceSyncStatus.Pending, rowB!.Status);
+
+            // Un webhook posterior a la creación de B (sin IdOnboarding) debe afectar la fila más
+            // reciente (B), nunca la vieja fila ya terminal de A.
+            await syncStore.MarkInProgressAsync(baseA, phone, WhatsAppCoexistenceSyncType.History);
+            Assert.Equal(WhatsAppCoexistenceSyncStatus.InProgress, (await syncStore.GetAsync(baseA, phone, onboardingB.IdOnboarding, WhatsAppCoexistenceSyncType.History))!.Status);
+            Assert.Equal(WhatsAppCoexistenceSyncStatus.Completed, (await syncStore.GetAsync(baseA, phone, onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.History))!.Status);
+
+            var forBaseAfterB = await syncStore.GetForBaseAsync(baseA);
+            Assert.Equal(3, forBaseAfterB.Count(x => x.PhoneNumberId == phone)); // A/History, A/ContactState, B/History -- nada se elimina.
         }
         finally
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.ExecuteAsync("DELETE FROM dbo.WhatsAppEmbeddedCoexistenceSync WHERE PhoneNumberId=@Phone", new { Phone = phone });
-            await CleanupOnboardingsAsync([onboarding.IdOnboarding]);
+            await CleanupOnboardingsAsync([onboardingA.IdOnboarding, onboardingB?.IdOnboarding ?? Guid.Empty]);
         }
     }
 

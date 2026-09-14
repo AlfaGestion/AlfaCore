@@ -3911,10 +3911,17 @@
         return cond.Count == 0 ? string.Empty : " · " + string.Join(" · ", cond);
     }
 
+    // _coexistenceSyncStatuses trae el historial COMPLETO de la base (todos los onboardings, nunca se
+    // borra nada -- ver WhatsAppCoexistenceSyncStore). Para el número puede haber más de una fila por
+    // (PhoneNumberId, SyncType) si hubo un offboard real + re-onboarding: el estado "actual" a mostrar
+    // es siempre el del intento más reciente (mayor CreatedAtUtc).
     private AlfaCore.Models.WhatsAppCoexistenceSyncDto? GetCoexistenceSyncStatus(string phoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType syncType)
         => string.IsNullOrWhiteSpace(phoneNumberId)
             ? null
-            : _coexistenceSyncStatuses.FirstOrDefault(x => x.SyncType == syncType && string.Equals(x.PhoneNumberId, phoneNumberId, StringComparison.Ordinal));
+            : _coexistenceSyncStatuses
+                .Where(x => x.SyncType == syncType && string.Equals(x.PhoneNumberId, phoneNumberId, StringComparison.Ordinal))
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .FirstOrDefault();
 
     // Sin botón manual todavía: sólo lectura del estado que ya dispararon los sync automáticos al
     // llegar a READY y que van completando los webhooks de history/smb_app_state_sync.
