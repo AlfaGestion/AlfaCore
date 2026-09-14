@@ -13,6 +13,20 @@ public interface IWhatsAppEmbeddedSignupStore
         => Task.FromResult<WhatsAppEmbeddedOnboardingDto?>(null);
     Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string stateHash, int idBase, string usuario, DateTime nowUtc, CancellationToken ct = default);
     Task UpdateStatusAsync(Guid idOnboarding, WhatsAppEmbeddedOnboardingStatus expectedStatus, WhatsAppEmbeddedOnboardingStatus nextStatus, string currentStep, CancellationToken ct = default);
+
+    /// <summary>
+    /// Cancelación atómica de un onboarding STARTED en UN SOLO UPDATE guardado -- reemplaza la
+    /// secuencia histórica ConsumeStateAsync + UpdateStatusAsync, que dejaba una ventana entre esos
+    /// dos pasos donde otra llamada (típicamente el callback real de autorización, corriendo
+    /// concurrentemente) podía intercalarse. Sólo cancela si, en el mismo instante:
+    /// Estado='STARTED' AND StateConsumedAtUtc IS NULL AND StateHash coincide AND no venció. Si
+    /// cualquiera de esas condiciones ya no se cumple -- en particular, si un callback real ya
+    /// consumió el state un instante antes -- esto es un no-op silencioso: NUNCA pisa una
+    /// autorización que ya está en curso o ya se completó. Devuelve true únicamente si esta llamada
+    /// efectivamente canceló la fila.
+    /// </summary>
+    Task<bool> CancelStartedIfNotConsumedAsync(Guid idOnboarding, int idBase, string expectedStateHash, DateTime nowUtc, CancellationToken ct = default)
+        => Task.FromResult(false);
     Task MarkAuthorizedAsync(Guid idOnboarding, string tokenReference, string metaBusinessId, CancellationToken ct = default);
     Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default);
     Task MarkRetryableFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default);

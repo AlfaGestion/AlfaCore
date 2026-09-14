@@ -105,15 +105,25 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         }
     }
 
+    /// <summary>
+    /// Cancelación explícita de un onboarding STARTED (p. ej. el usuario cierra el popup de Meta y el
+    /// propio SDK notifica la cancelación). Regresión Base4264 (2026-09-14, IdOnboarding
+    /// d23ddd26-393b-4334-a0b9-87b1bb6e2098): esto SOLÍA hacer ConsumeStateAsync + UpdateStatusAsync en
+    /// dos pasos separados -- si un callback real de autorización llegaba concurrentemente (p. ej.
+    /// disparado por el watchdog visual del browser al mismo tiempo que Meta terminaba de verdad, ~90s
+    /// después de iniciar), ambos caminos competían por consumir el MISMO state de un solo uso, y
+    /// cualquiera de los dos podía ganar -- si ganaba éste, la autorización real quedaba CANCELLED sin
+    /// ningún ErrorCode/ErrorSummary que lo explicara. Ahora es un único UPDATE atómico
+    /// (CancelStartedIfNotConsumedAsync): si el state ya fue consumido por otra vía (en curso o
+    /// completada), esto es un no-op silencioso -- nunca pisa una autorización real.
+    /// </summary>
     public async Task HandleCancellationAsync(Guid idOnboarding, int idBase, string state, string usuario, CancellationToken ct = default)
     {
         EnsureFeatureEnabled();
         var item = await store.GetAsync(idOnboarding, ct) ?? throw new UnauthorizedAccessException("La sesión de autorización no existe.");
         if (item.IdBase != idBase || !string.Equals(item.UsuarioIniciador.Trim(), usuario.Trim(), StringComparison.OrdinalIgnoreCase) || !string.Equals(item.StateHash, stateProtector.Hash(state), StringComparison.Ordinal))
             throw new UnauthorizedAccessException("La sesión de autorización no pertenece a esta base o usuario.");
-        var consumed = await store.ConsumeStateAsync(item.StateHash, idBase, usuario.Trim(), DateTime.UtcNow, ct);
-        if (consumed is null) return;
-        await store.UpdateStatusAsync(idOnboarding, WhatsAppEmbeddedOnboardingStatus.Started, WhatsAppEmbeddedOnboardingStatus.Cancelled, "CANCELLED", ct);
+        await store.CancelStartedIfNotConsumedAsync(idOnboarding, idBase, item.StateHash, DateTime.UtcNow, ct);
     }
 
     public async Task<WhatsAppEmbeddedStatusView?> GetStatusAsync(Guid idOnboarding, CancellationToken ct = default)

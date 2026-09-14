@@ -82,6 +82,29 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
         return id.HasValue ? await GetInternalAsync(cn, id.Value, null, ct) : null;
     }
 
+    public async Task<bool> CancelStartedIfNotConsumedAsync(Guid idOnboarding, int idBase, string expectedStateHash, DateTime nowUtc, CancellationToken ct = default)
+    {
+        // UN SOLO UPDATE guardado -- nunca dos pasos separados (consumir el state y después cambiar
+        // Estado) -- para que no exista ninguna ventana en la que un callback real de autorización,
+        // corriendo concurrentemente, pueda intercalarse entre ambos. WITH (UPDLOCK, ROWLOCK) mismo
+        // patrón que ConsumeStateAsync: si otra transacción ya tiene la fila bloqueada consumiéndola,
+        // ésta espera y después su propio WHERE (StateConsumedAtUtc IS NULL) ya no matchea -- 0 filas,
+        // no-op real, nunca una carrera de "quién escribe último gana".
+        const string sql = """
+            UPDATE dbo.WhatsAppEmbeddedOnboarding WITH (UPDLOCK, ROWLOCK)
+            SET Estado = 'CANCELLED', PasoActual = 'CANCELLED', StateConsumedAtUtc = @NowUtc, FechaModificacionUtc = @NowUtc
+            WHERE IdOnboarding = @Id
+              AND IdBase = @IdBase
+              AND StateHash = @StateHash
+              AND Estado = 'STARTED'
+              AND StateConsumedAtUtc IS NULL
+              AND FechaExpiracionUtc > @NowUtc;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        var rows = await cn.ExecuteAsync(new CommandDefinition(sql, new { Id = idOnboarding, IdBase = idBase, StateHash = expectedStateHash, NowUtc = nowUtc }, cancellationToken: ct));
+        return rows == 1;
+    }
+
     public async Task UpdateStatusAsync(Guid id, WhatsAppEmbeddedOnboardingStatus expected, WhatsAppEmbeddedOnboardingStatus next, string step, CancellationToken ct = default)
     {
         WhatsAppEmbeddedSignupStateMachine.EnsureTransition(expected, next);
