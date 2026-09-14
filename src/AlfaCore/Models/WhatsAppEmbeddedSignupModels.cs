@@ -319,6 +319,8 @@ public sealed class WhatsAppCoexistenceSyncDto
     public DateTime? CompletedAtUtc { get; set; }
     public string ErrorCode { get; set; } = string.Empty;
     public string ErrorSummary { get; set; } = string.Empty;
+    /// <summary>Cuándo se insertó este intento (este IdOnboarding). Para "estado actual" de un número, quedarse con la fila de mayor CreatedAtUtc por (PhoneNumberId, SyncType) -- distingue el intento vigente de intentos de onboardings anteriores para el mismo número, que se conservan como historial.</summary>
+    public DateTime CreatedAtUtc { get; set; }
     public DateTime ModifiedAtUtc { get; set; }
 }
 
