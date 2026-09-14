@@ -81,8 +81,11 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
 
         CatalogoClienteSession.StateChanged += OnClientSessionStateChanged;
         await EnsureRouteSessionAsync();
-        await LoadPublicIdentityAsync();
-        await LoadPortalSeccionesAsync();
+        // La identidad y las secciones son lecturas independientes una vez activada la base.
+        // Cargarlas en paralelo evita sumar el tiempo de ambas conexiones al primer render.
+        await Task.WhenAll(
+            LoadPublicIdentityAsync(),
+            LoadPortalSeccionesAsync());
         EnforceSectionEnabled();
         await OnPortalInitializedAsync();
     }
@@ -123,6 +126,9 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
     protected int? GetEffectiveIdBase() => _effectiveIdBase;
 
     private int? _effectiveIdBase;
+    private bool _routeSessionReady;
+    private string? _routeSessionIdWeb;
+    private int? _routeSessionBaseId;
 
     private async Task EnsureRouteSessionAsync()
     {
@@ -140,10 +146,16 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
             return;
 
         var routeBaseId = idbase.Value;
+        if (_routeSessionReady
+            && _routeSessionBaseId == routeBaseId
+            && string.Equals(_routeSessionIdWeb, idweb, StringComparison.OrdinalIgnoreCase))
+            return;
+
         var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
         if (routeBase is null)
         {
             NotFound = true;
+            _routeSessionReady = false;
             return;
         }
 
@@ -161,6 +173,10 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
             TrustServerCertificate = true,
             Activa = true
         });
+
+        _routeSessionBaseId = routeBaseId;
+        _routeSessionIdWeb = idweb;
+        _routeSessionReady = true;
     }
 
     private async Task LoadPublicIdentityAsync()
