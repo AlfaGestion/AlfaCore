@@ -116,7 +116,7 @@ public sealed class DocumentTemplateService(
             return new DocumentTemplateDto
             {
                 IdTemplate = 0, TipoDocumento = tipo,
-                Nombre = letra is not null ? $"Factura {letra} estándar (fallback)" : "Cotización estándar (fallback)",
+                Nombre = letra is not null ? $"{TiposDocumentoCore.NombreDe(tipo)} estándar (fallback)" : "Cotización estándar (fallback)",
                 EsSistema = true, EsPredeterminado = true, Activo = true,
                 TemplateJson = JsonSerializer.Serialize(
                     letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : DocumentTemplateDefinition.CrearCotizacionEstandar(),
@@ -316,14 +316,18 @@ public sealed class DocumentTemplateService(
         if (definition.SchemaVersion != 1) throw new InvalidOperationException("SchemaVersion no soportado.");
         if (!TiposDocumentoCore.Todos.Contains(tipoDocumento)) throw new InvalidOperationException("Tipo de documento no soportado.");
         if (uNegocio?.Length > 4) throw new InvalidOperationException("UNegocio no puede superar cuatro caracteres.");
-        if (definition.Paper.Size is not ("A4" or "A5")) throw new InvalidOperationException("El tamaño de papel debe ser A4 o A5.");
+        if (definition.Paper.Size is not ("A4" or "A5" or "Ticket80")) throw new InvalidOperationException("El tamaño de papel debe ser A4, A5 o Ticket de 80 mm.");
+        if (definition.Paper.Size == "Ticket80" && definition.Paper.Orientation != "Portrait")
+            throw new InvalidOperationException("El ticket de 80 mm utiliza orientación vertical.");
+        if (definition.Paper.Size == "Ticket80" && definition.Paper.MarginLeftMm + definition.Paper.MarginRightMm > 20)
+            throw new InvalidOperationException("Los márgenes laterales del ticket no pueden sumar más de 20 mm.");
         if (definition.Paper.Orientation is not ("Portrait" or "Landscape")) throw new InvalidOperationException("La orientación debe ser Portrait o Landscape.");
         var margins = new[] { definition.Paper.MarginTopMm, definition.Paper.MarginBottomMm, definition.Paper.MarginLeftMm, definition.Paper.MarginRightMm };
         if (margins.Any(x => x < 0 || x > 50)) throw new InvalidOperationException("Los márgenes deben estar entre 0 y 50 mm.");
         if (definition.Blocks.Count == 0 || definition.Blocks.Any(x => string.IsNullOrWhiteSpace(x.Id) || !TiposBloqueDocumento.Permitidos.Contains(x.Type))) throw new InvalidOperationException("La plantilla contiene bloques inválidos.");
         if (definition.Blocks.Select(x => x.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != definition.Blocks.Count) throw new InvalidOperationException("Los identificadores de bloque deben ser únicos.");
         var itemBlock = definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Items, StringComparison.OrdinalIgnoreCase));
-        var allowedColumns = TiposDocumentoCore.EsFactura(tipoDocumento)
+        var allowedColumns = TiposDocumentoCore.EsFiscal(tipoDocumento)
             ? new HashSet<string>(["Codigo", "Descripcion", "Unidad", "Cantidad", "Precio", "Descuento", "Iva", "Total"], StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(["Codigo", "Descripcion", "Cantidad", "Precio", "Descuento", "Total"], StringComparer.OrdinalIgnoreCase);
         if (itemBlock?.Columns.Any(c => !allowedColumns.Contains(c.Field) || c.WidthPercent < 1 || c.WidthPercent > 100) == true) throw new InvalidOperationException("La plantilla contiene columnas de detalle inválidas.");
@@ -331,6 +335,9 @@ public sealed class DocumentTemplateService(
 
         foreach (var block in definition.Blocks)
         {
+            if (block.Type.Equals(TiposBloqueDocumento.QrAfip, StringComparison.OrdinalIgnoreCase)
+                && block.Width is < 20 or > 60)
+                throw new InvalidOperationException("El tamaño del QR debe estar entre 20 y 60 mm.");
             if (block.FontSizePt is < 6 or > 24) throw new InvalidOperationException("El tamaño de letra debe estar entre 6 y 24 puntos.");
             if (block.VisibleFields is null) continue;
             var allowedFields = DocumentBlockFields.For(block.Type);

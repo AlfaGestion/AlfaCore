@@ -23,6 +23,8 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Docs\manual_usuario.md" />
+    <EmbeddedResource Include="Services\CierreCajaSql\*.sql" />
+    <EmbeddedResource Include="Services\DocumentPagination.js" LogicalName="AlfaCore.DocumentPagination.js" />
     <EmbeddedResource Include="Docs\manual_consultas.md" />
   </ItemGroup>
 

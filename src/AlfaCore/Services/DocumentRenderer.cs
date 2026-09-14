@@ -36,12 +36,19 @@ public sealed class DocumentRenderer : IDocumentRenderer
             AppendBlock(sb, coverBlock, data, hasCompanyBlock, combinedLogo, theme);
 
         sb.Append("<div class=\"doc-content\">");
+        var closing = false;
         foreach (var block in template.Blocks.Where(x => x.Visible && !x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase)))
+        {
+            if (template.TotalesAlPiePagina && !closing && block.Type.Equals(TiposBloqueDocumento.Totales, StringComparison.OrdinalIgnoreCase))
+            { sb.Append("<div class=\"document-closing\">"); closing = true; }
             AppendBlock(sb, block, data, hasCompanyBlock, combinedLogo, theme);
+        }
+        if (closing) sb.Append("</div>");
         sb.Append("</div>");
 
         sb.Append("</main></body></html>");
-        return sb.ToString();
+        return paper.Size == "Ticket80" ? DocumentTicketLayout.Apply(sb.ToString(), template, data.Empresa.Nombre)
+            : closing ? DocumentPagination.Apply(sb.ToString(), paper, hasFooter) : sb.ToString();
     }
 
     public string RenderFactura(DocumentTemplateDefinition template, FacturaDocumentData data, string? cssCustom = null, string? themeKey = null)
@@ -52,7 +59,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
         var theme = DocumentThemePresets.Resolve(themeKey);
         var sb = new StringBuilder();
         var hasFooter = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
-        var titulo = $"Factura {data.Comprobante.Letra} {data.Comprobante.PuntoVenta}-{data.Comprobante.Numero}";
+        var titulo = $"{data.Comprobante.Denominacion} {data.Comprobante.Letra} {data.Comprobante.PuntoVenta}-{data.Comprobante.Numero}";
         AppendDocumentHead(sb, titulo, paper, theme, hasFooter, cssCustom, FacturaExtraCss(theme));
 
         var hasCompanyBlock = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Empresa, StringComparison.OrdinalIgnoreCase));
@@ -66,12 +73,21 @@ public sealed class DocumentRenderer : IDocumentRenderer
               .Append("</div>");
 
         sb.Append("<div class=\"doc-content\">");
+        if (data.Cae is { Cae.Length: > 0 } && data.QrBytes is not { Length: > 0 })
+            sb.Append("<div class=\"afip-warning\">QR fiscal no disponible. Revisá el comprobante en el sistema de facturación electrónica antes de entregarlo.</div>");
+        var closing = false;
         foreach (var block in template.Blocks.Where(x => x.Visible))
+        {
+            if (template.TotalesAlPiePagina && !closing && block.Type.Equals(TiposBloqueDocumento.Totales, StringComparison.OrdinalIgnoreCase))
+            { sb.Append("<div class=\"document-closing\">"); closing = true; }
             AppendBlockFactura(sb, block, data, hasCompanyBlock, combinedLogo, recuadroBlock);
+        }
+        if (closing) sb.Append("</div>");
         sb.Append("</div>");
 
         sb.Append("</main></body></html>");
-        return sb.ToString();
+        return paper.Size == "Ticket80" ? DocumentTicketLayout.Apply(sb.ToString(), template, data.Empresa.Nombre)
+            : closing ? DocumentPagination.Apply(sb.ToString(), paper, hasFooter) : sb.ToString();
     }
 
     /// <summary>CSS base compartida entre Cotización y Factura (@page, header, card, items, totals).
@@ -116,7 +132,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
          + ".afip-box .codigo{border-top:1pt solid #172033;font-size:8pt;padding:0.8mm 0}"
          + ".header--afip{align-items:flex-start}"
          + ".cae-box{border:1px solid #d5dde5;background:" + theme.ColorFondoSuave + ";padding:3mm 4mm;margin-top:4mm;font-size:9pt}"
-         + ".qr-box{margin-top:3mm}.qr-box img{width:28mm;height:28mm}"
+         + ".qr-box{margin-top:3mm;break-inside:avoid}.qr-box img{object-fit:contain}"
          + ".totals td.iva-label{color:#596579}";
 
     private static void AppendBlock(StringBuilder sb, DocumentBlockDefinition block, CotizacionDocumentData data, bool hasCompanyBlock, DocumentBlockDefinition? combinedLogo, DocumentThemePreset theme)
@@ -226,7 +242,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
         foreach (var item in items)
         {
             sb.Append("<tr>");
-            foreach (var column in columns) sb.Append("<td class=\"").Append(AlignClass(column.Align)).Append("\">").Append(ItemValue(item, column.Field)).Append("</td>");
+            foreach (var column in columns) sb.Append("<td data-label=\"").Append(E(column.Title)).Append("\" data-field=\"").Append(E(column.Field)).Append("\" class=\"").Append(AlignClass(column.Align)).Append("\">").Append(ItemValue(item, column.Field)).Append("</td>");
             sb.Append("</tr>");
         }
         sb.Append("</tbody></table>");
@@ -333,7 +349,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
             case "ITEMS": AppendItemsFactura(sb, block, data.Items); break;
             case "TOTALES": AppendTotalsFactura(sb, data.Totales, data.Comprobante.Letra, fields, style); break;
             case "CAE": AppendCaeBlock(sb, data.Cae, style); break;
-            case "QRAFIP": AppendQrAfipBlock(sb, data.QrBytes, block.Align); break;
+            case "QRAFIP": AppendQrAfipBlock(sb, data.QrBytes, block); break;
         }
     }
 
@@ -349,7 +365,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
     private static void AppendDocumentMetaFactura(StringBuilder sb, FacturaComprobanteDocumentData comprobante, List<string>? fields)
     {
         sb.Append("<div class=\"doc-meta\">");
-        sb.Append("<b>FACTURA ").Append(E(comprobante.PuntoVenta)).Append('-').Append(E(comprobante.Numero)).Append("</b><br>");
+        sb.Append("<b>").Append(E(comprobante.Denominacion.ToUpperInvariant())).Append(" ").Append(E(comprobante.PuntoVenta)).Append('-').Append(E(comprobante.Numero)).Append("</b><br>");
         sb.Append("<span class=\"muted\">Fecha: ").Append(comprobante.Fecha.ToString("dd/MM/yyyy", CulturaAr)).Append("</span>");
         if (!string.IsNullOrWhiteSpace(comprobante.CondicionVenta)) sb.Append("<br><span class=\"muted\">Cond. venta: ").Append(E(comprobante.CondicionVenta)).Append("</span>");
         sb.Append("</div>");
@@ -367,7 +383,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
         foreach (var item in items)
         {
             sb.Append("<tr>");
-            foreach (var column in columns) sb.Append("<td class=\"").Append(AlignClass(column.Align)).Append("\">").Append(ItemValueFactura(item, column.Field)).Append("</td>");
+            foreach (var column in columns) sb.Append("<td data-label=\"").Append(E(column.Title)).Append("\" data-field=\"").Append(E(column.Field)).Append("\" class=\"").Append(AlignClass(column.Align)).Append("\">").Append(ItemValueFactura(item, column.Field)).Append("</td>");
             sb.Append("</tr>");
         }
         sb.Append("</tbody></table>");
@@ -424,9 +440,13 @@ public sealed class DocumentRenderer : IDocumentRenderer
         sb.Append("</div>");
     }
 
-    private static void AppendQrAfipBlock(StringBuilder sb, byte[]? qrBytes, string align)
+    private static void AppendQrAfipBlock(StringBuilder sb, byte[]? qrBytes, DocumentBlockDefinition block)
     {
         if (qrBytes is not { Length: > 0 }) return;
-        sb.Append("<div class=\"qr-box\" style=\"text-align:").Append(Align(align)).Append("\"><img src=\"data:image/png;base64,").Append(Convert.ToBase64String(qrBytes)).Append("\" alt=\"QR AFIP\"></div>");
+        var size = Mm(Math.Clamp(block.Width ?? 30m, 20m, 60m));
+        sb.Append("<div class=\"qr-box\" style=\"text-align:").Append(Align(block.Align))
+            .Append("\"><img style=\"width:").Append(size).Append(";height:").Append(size)
+            .Append("\" src=\"data:image/png;base64,").Append(Convert.ToBase64String(qrBytes))
+            .Append("\" alt=\"QR fiscal ARCA\"></div>");
     }
 }

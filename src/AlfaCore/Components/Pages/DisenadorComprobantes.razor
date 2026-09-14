@@ -21,7 +21,7 @@
     <header class="document-designer__header">
         <div>
             <span class="page-kicker">Utilidades</span>
-            <p>Plantillas de Cotización por bloques. La vista previa y el PDF beta usan el mismo renderer HTML.</p>
+            <p>Plantillas de cotizaciones y comprobantes fiscales por bloques. La vista previa y el PDF comparten el mismo diseño.</p>
         </div>
     </header>
 
@@ -38,9 +38,10 @@
         <label>Tipo de documento
             <select @bind="_tipoDocumento" @bind:after="TipoDocumentoChangedAsync">
                 <option value="@TiposDocumentoCore.Cotizacion">Cotización</option>
-                <option value="@TiposDocumentoCore.FacturaA">Factura A</option>
-                <option value="@TiposDocumentoCore.FacturaB">Factura B</option>
-                <option value="@TiposDocumentoCore.FacturaC">Factura C</option>
+                @foreach (var tipo in TiposDocumentoCore.Fiscales)
+                {
+                    <option value="@tipo.Tipo">@TiposDocumentoCore.NombreDe(tipo.Tipo)</option>
+                }
             </select>
         </label>
         <label>Plantilla
@@ -74,10 +75,10 @@
                     <label class="document-designer__toggle"><input type="checkbox" @bind="_draft.EsPredeterminado" disabled="@IsTemplateReadOnly" /><span>Predeterminada para esta unidad</span></label>
                     <div class="document-designer__settings-grid">
                         <label>Tamaño
-                            <select @bind="_draft.Definition.Paper.Size" disabled="@IsTemplateReadOnly"><option>A4</option><option>A5</option></select>
+                            <select @bind="_draft.Definition.Paper.Size" @bind:after="PaperSizeChanged" disabled="@IsTemplateReadOnly"><option>A4</option><option>A5</option><option value="Ticket80">Ticket de 80 mm</option></select>
                         </label>
                         <label>Orientación
-                            <select @bind="_draft.Definition.Paper.Orientation" disabled="@IsTemplateReadOnly"><option>Portrait</option><option>Landscape</option></select>
+                            <select @bind="_draft.Definition.Paper.Orientation" disabled="@(IsTemplateReadOnly || EsTicket)"><option value="Portrait">Vertical</option><option value="Landscape">Horizontal</option></select>
                         </label>
                     </div>
                     <div class="document-designer__settings-heading document-designer__settings-heading--subtle">Márgenes (mm)</div>
@@ -88,7 +89,7 @@
                         <label>Der. <input type="number" @bind="_draft.Definition.Paper.MarginRightMm" disabled="@IsTemplateReadOnly" /></label>
                     </div>
                 </section>
-                @if (PortadaBlock is not null)
+                @if (PortadaBlock is not null && !EsTicket)
                 {
                     <section class="document-designer__settings-group">
                         <div class="document-designer__settings-heading">Portada</div>
@@ -169,12 +170,13 @@
                 {
                     <section class="document-designer__settings-group">
                         <div class="document-designer__settings-heading">Columnas del detalle</div>
+                        @if (EsTicket) { <p class="document-designer__hint">Los campos visibles se acomodan por artículo; el ancho de columnas se aplica a hojas A4/A5.</p> }
                         @foreach (var column in ItemsBlock.Columns)
                         {
                             <div class="document-designer__column">
                                 <input type="checkbox" @bind="column.Visible" disabled="@IsTemplateReadOnly" aria-label="Mostrar @column.Field" />
                                 <input @bind="column.Title" disabled="@IsTemplateReadOnly" aria-label="Título @column.Field" />
-                                <input type="number" @bind="column.WidthPercent" disabled="@IsTemplateReadOnly" aria-label="Ancho @column.Field" />
+                                <input type="number" @bind="column.WidthPercent" disabled="@(IsTemplateReadOnly || EsTicket)" aria-label="Ancho @column.Field" />
                             </div>
                         }
                         <label>Tamaño de letra (pt)
@@ -185,6 +187,8 @@
                 @if (TotalesBlock is not null)
                 {
                     @RenderFieldBlockSettings("Totales", TotalesBlock, TiposBloqueDocumento.Totales)
+                    <label class="document-designer__toggle"><input type="checkbox" @bind="_draft.Definition.TotalesAlPiePagina" disabled="@(IsTemplateReadOnly || EsTicket)" /><span>Totales al pie de página</span></label>
+                    <p class="document-designer__hint">@(EsTicket ? "En ticket de 80 mm la altura se ajusta al contenido y los totales cierran el detalle." : "Ubica el cierre al pie de la última hoja, junto con la firma o los datos fiscales que siguen a los totales.")</p>
                 }
                 @if (PropuestaBlock is not null)
                 {
@@ -213,7 +217,7 @@
                 @if (QrAfipBlock is not null)
                 {
                     <section class="document-designer__settings-group">
-                        <div class="document-designer__settings-heading">QR de AFIP</div>
+                        <div class="document-designer__settings-heading">QR fiscal ARCA</div>
                         <label class="document-designer__toggle"><input type="checkbox" @bind="QrAfipBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar QR</span></label>
                         <label>Alineación
                             <select @bind="QrAfipBlock.Align" disabled="@IsTemplateReadOnly">
@@ -222,7 +226,8 @@
                                 <option value="right">Derecha</option>
                             </select>
                         </label>
-                        <p class="document-designer__hint">El QR ya viene generado por el sistema de facturación electrónica -- se omite si todavía no existe para este comprobante.</p>
+                        <label>Tamaño (mm) <input type="number" min="20" max="60" placeholder="30" @bind="QrAfipBlock.Width" disabled="@IsTemplateReadOnly" /></label>
+                        <p class="document-designer__hint">El QR se genera al solicitar la vista previa o el PDF con los datos de autorización del comprobante. El contenido fiscal no es editable.</p>
                     </section>
                 }
                 @if (PieBlock is not null)
@@ -247,7 +252,7 @@
                 @if (EsFactura)
                 {
                     <div class="document-designer__preview-toolbar">
-                        <label>Factura real para probar
+                        <label>Comprobante real para probar
                             <select value="@_previewFacturaKey" @onchange="PreviewFacturaChangedAsync">
                                 <option value="">Elegí un comprobante</option>
                                 @foreach (var factura in _facturasRecientes) { <option value="@FacturaKey(factura)">@factura.Numero - @factura.Cliente</option> }
@@ -257,7 +262,7 @@
                         @if (!string.IsNullOrWhiteSpace(_previewFacturaKey)) { <button class="btn btn--primary" @onclick="PdfFacturaAsync" disabled="@_busy"><i class="bi bi-file-earmark-pdf"></i> PDF beta</button> }
                     </div>
                     @if (_previewHtml is null) { <p class="muted">Elegí un comprobante real para previsualizar el formato (CAE, QR y desglose de IVA incluidos).</p> }
-                    else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa de factura"></iframe> }
+                    else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa del comprobante"></iframe> }
                 }
                 else
                 {
@@ -320,7 +325,7 @@
     private DocumentBlockDefinition? CaeBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Cae, StringComparison.OrdinalIgnoreCase));
     private DocumentBlockDefinition? QrAfipBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.QrAfip, StringComparison.OrdinalIgnoreCase));
 
-    private bool EsFactura => TiposDocumentoCore.EsFactura(_tipoDocumento);
+    private bool EsFactura => TiposDocumentoCore.EsFiscal(_tipoDocumento);
 
     protected override async Task OnInitializedAsync()
     {
@@ -411,7 +416,7 @@
         _facturasRecientes = [];
         await LoadTemplatesAsync();
         if (TiposDocumentoCore.LetraDe(_tipoDocumento) is { } letra)
-            _facturasRecientes = await FacturaDocumentSvc.SearchRecientesAsync(letra);
+            _facturasRecientes = await FacturaDocumentSvc.SearchRecientesAsync(_tipoDocumento);
     }
 
     private async Task TemplateChangedAsync(ChangeEventArgs args)
@@ -422,6 +427,7 @@
     private Task SelectTemplateAsync(DocumentTemplateDto template)
     {
         _selected = template;
+        _paperBeforeTicket = null;
         _systemTemplateEditingEnabled = false;
         _selectedTemplateId = template.IdTemplate;
         _draft = new DocumentTemplateSaveRequest
@@ -439,6 +445,7 @@
 
     private Task NuevaAsync()
     {
+        _paperBeforeTicket = null;
         _selected = new DocumentTemplateDto { IdTemplate = 0, TipoDocumento = _tipoDocumento };
         _systemTemplateEditingEnabled = false;
         _selectedTemplateId = 0;
@@ -447,7 +454,7 @@
         {
             UNegocio = NullIfEmpty(_uNegocio),
             TipoDocumento = _tipoDocumento,
-            Nombre = letra is not null ? $"Nueva factura {letra}" : "Nueva cotización",
+            Nombre = letra is not null ? $"{TiposDocumentoCore.NombreDe(_tipoDocumento)} nueva" : "Nueva cotización",
             Definition = letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : DocumentTemplateDefinition.CrearCotizacionEstandar(),
             Usuario = AppUserSession.GetCurrentUserName("Sistema")
         };
@@ -560,6 +567,40 @@
         }
     }
 
+    private bool EsTicket => _draft.Definition.Paper.Size == "Ticket80";
+    private DocumentPaperDefinition? _paperBeforeTicket;
+    private void PaperSizeChanged()
+    {
+        var paper = _draft.Definition.Paper;
+        if (EsTicket)
+        {
+            _paperBeforeTicket = new DocumentPaperDefinition
+            {
+                Orientation = paper.Orientation, MarginTopMm = paper.MarginTopMm,
+                MarginBottomMm = paper.MarginBottomMm, MarginLeftMm = paper.MarginLeftMm, MarginRightMm = paper.MarginRightMm
+            };
+            paper.Orientation = "Portrait";
+            paper.MarginTopMm = paper.MarginBottomMm = paper.MarginLeftMm = paper.MarginRightMm = 3;
+        }
+        else if (_paperBeforeTicket is not null)
+        {
+            var previous = _paperBeforeTicket ?? new DocumentPaperDefinition();
+            paper.Orientation = previous.Orientation;
+            paper.MarginTopMm = previous.MarginTopMm; paper.MarginBottomMm = previous.MarginBottomMm;
+            paper.MarginLeftMm = previous.MarginLeftMm; paper.MarginRightMm = previous.MarginRightMm;
+            _paperBeforeTicket = null;
+        }
+        _previewHtml = null;
+    }
+
+    private DocumentTemplateDto BuildPreviewTemplate() => new()
+    {
+        IdTemplate = _selected?.IdTemplate ?? 0,
+        TipoDocumento = _draft.TipoDocumento, UNegocio = _draft.UNegocio,
+        TemplateJson = System.Text.Json.JsonSerializer.Serialize(_draft.Definition),
+        CssCustom = _draft.CssCustom, TienePortada = _tienePortada
+    };
+
     private Task PreviewVersionChangedAsync(ChangeEventArgs args)
     {
         _previewVersionId = long.TryParse(args.Value?.ToString(), out var id) ? id : 0;
@@ -572,9 +613,9 @@
         if (_previewVersionId <= 0) { _error = "Para este MVP elegí una cotización real como datos de prueba."; return; }
         await BusyAsync(async () =>
         {
-            var result = await CotizDocumentSvc.RenderAsync(_previewVersionId, NullIfEmpty(_uNegocio));
+            var result = await CotizDocumentSvc.RenderAsync(_previewVersionId, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate());
             _previewHtml = result.Html;
-            _message = $"Vista previa generada con plantilla #{result.IdTemplate}.";
+            _message = "Vista previa generada con los cambios actuales.";
         });
     }
 
@@ -583,7 +624,7 @@
         if (_previewVersionId <= 0) return;
         await BusyAsync(async () =>
         {
-            var pdf = await CotizDocumentSvc.GeneratePdfAsync(_previewVersionId, NullIfEmpty(_uNegocio));
+            var pdf = await CotizDocumentSvc.GeneratePdfAsync(_previewVersionId, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate());
             await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"cotizacion-beta-{_previewVersionId}.pdf");
         });
     }
@@ -602,9 +643,9 @@
         if (!TryParseFacturaKey(out var tc, out var idComprobante)) { _error = "Elegí un comprobante real como datos de prueba."; return; }
         await BusyAsync(async () =>
         {
-            var result = await FacturaDocumentSvc.RenderAsync(tc, idComprobante, NullIfEmpty(_uNegocio));
+            var result = await FacturaDocumentSvc.RenderAsync(tc, idComprobante, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate());
             _previewHtml = result.Html;
-            _message = $"Vista previa generada con plantilla #{result.IdTemplate}.";
+            _message = "Vista previa generada con los cambios actuales.";
         });
     }
 
@@ -613,8 +654,8 @@
         if (!TryParseFacturaKey(out var tc, out var idComprobante)) return;
         await BusyAsync(async () =>
         {
-            var pdf = await FacturaDocumentSvc.GeneratePdfAsync(tc, idComprobante, NullIfEmpty(_uNegocio));
-            await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"factura-beta-{idComprobante}.pdf");
+            var pdf = await FacturaDocumentSvc.GeneratePdfAsync(tc, idComprobante, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate());
+            await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"{_tipoDocumento.ToLowerInvariant()}-{idComprobante}.pdf");
         });
     }
 

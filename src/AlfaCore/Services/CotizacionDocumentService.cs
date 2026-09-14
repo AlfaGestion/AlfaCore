@@ -18,19 +18,22 @@ public sealed class CotizacionDocumentService(
     private string ConnectionString => configuration.GetConnectionString("AlfaGestion")
         ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
-    public async Task<DocumentRenderResult> RenderAsync(long idVersion, string? uNegocio, CancellationToken ct = default)
+    public async Task<DocumentRenderResult> RenderAsync(long idVersion, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
     {
         try
         {
             var detail = await cotizacionesService.GetVersionDetailAsync(idVersion, ct)
                 ?? throw new InvalidOperationException("La cotización indicada no existe.");
-            var template = await templates.ResolveAsync(TiposDocumentoCore.Cotizacion, uNegocio, ct);
+            var template = previewTemplate ?? await templates.ResolveAsync(TiposDocumentoCore.Cotizacion, uNegocio, ct);
+            if (!string.Equals(template.TipoDocumento, TiposDocumentoCore.Cotizacion, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("La plantilla no corresponde al tipo de comprobante seleccionado.");
             var definition = templates.DeserializeAndValidate(template.TemplateJson, TiposDocumentoCore.Cotizacion);
             var data = await BuildDataAsync(detail, ct);
             data.IncluyePortada = detail.IncluyePortada;
             data.PortadaBytes = template.TienePortada ? await templates.GetPortadaImageBytesAsync(template.IdTemplate, ct) : null;
             var theme = await templates.GetGeneralThemeAsync(ct);
             var html = renderer.RenderCotizacion(definition, data, template.CssCustom, theme);
+            if (definition.TotalesAlPiePagina || definition.Paper.Size == "Ticket80") html = await pdfService.PrepareHtmlAsync(html, ct);
             var footer = BuildFooterOptions(definition, data.Empresa.Nombre);
             logger.LogInformation("Documentos: HTML de cotización {IdVersion}, plantilla {IdTemplate}, UNegocio {UNegocio}.", idVersion, template.IdTemplate, uNegocio ?? "GLOBAL");
             return new DocumentRenderResult { Html = html, IdTemplate = template.IdTemplate, TipoDocumento = template.TipoDocumento, UNegocio = template.UNegocio, Footer = footer };
@@ -43,9 +46,9 @@ public sealed class CotizacionDocumentService(
         }
     }
 
-    public async Task<byte[]> GeneratePdfAsync(long idVersion, string? uNegocio, CancellationToken ct = default)
+    public async Task<byte[]> GeneratePdfAsync(long idVersion, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
     {
-        var result = await RenderAsync(idVersion, uNegocio, ct);
+        var result = await RenderAsync(idVersion, uNegocio, ct, previewTemplate);
         var pdf = await pdfService.GenerateAsync(result.Html, result.Footer, ct);
         logger.LogInformation("Documentos: PDF beta de cotización {IdVersion}, plantilla {IdTemplate}.", idVersion, result.IdTemplate);
         return pdf;

@@ -7,5 +7,6 @@ public sealed record DocumentPdfFooterOptions(bool ShowPageNumber, bool ShowComp
 
 public interface IDocumentPdfService
 {
+    Task<string> PrepareHtmlAsync(string html, CancellationToken ct = default);
     Task<byte[]> GenerateAsync(string html, DocumentPdfFooterOptions? footer = null, CancellationToken ct = default);
 }

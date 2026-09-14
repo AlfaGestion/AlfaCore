@@ -4,9 +4,9 @@ using Microsoft.Data.SqlClient;
 
 namespace AlfaCore.Services;
 
-/// <summary>Arma el PDF de una Factura A/B/C YA EMITIDA y aprobada por AFIP -- el sistema legacy ya
-/// hizo el WSFE y guardó CAE/QR en la base (V_MV_CPTE_ELECTRONICOS/Aux_MV_CpteQR); este servicio
-/// solo LEE esos datos, nunca llama a AFIP. Espejo de CotizacionDocumentService, pero la fuente de
+/// <summary>Arma el PDF de una factura o nota de crédito/débito A/B/C YA EMITIDA y aprobada por AFIP -- el sistema legacy ya
+/// hizo el WSFE y guardó el CAE en V_MV_CPTE_ELECTRONICOS. Genera el QR al solicitar el reporte;
+/// solo lee datos fiscales, nunca llama a AFIP. Espejo de CotizacionDocumentService, pero la fuente de
 /// datos es completamente distinta (tablas transaccionales de venta, no un módulo propio con
 /// estado editable).</summary>
 public sealed class FacturaDocumentService(
@@ -14,33 +14,29 @@ public sealed class FacturaDocumentService(
     IDocumentTemplateService templates,
     IDocumentRenderer renderer,
     IDocumentPdfService pdfService,
+    IArcaQrService arcaQr,
     IAppEventService appEvents,
     ILogger<FacturaDocumentService> logger) : IFacturaDocumentService
 {
     private const string ModuleName = "Documentos";
 
-    // Solo Factura -- Tipo_Cpte de Nota de Crédito/Débito (2/3/7/8/12/13...) se rechaza.
-    private static readonly IReadOnlyDictionary<int, (string Letra, string Codigo)> CodigoPorTipoCpte = new Dictionary<int, (string, string)>
-    {
-        [1] = ("A", "001"),
-        [6] = ("B", "006"),
-        [11] = ("C", "011")
-    };
-
     private string ConnectionString => configuration.GetConnectionString("AlfaGestion")
         ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
-    public async Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default)
+    public async Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
     {
         try
         {
             var data = await BuildDataAsync(tc, idComprobante, ct)
-                ?? throw new InvalidOperationException("El comprobante indicado no existe o no es una Factura A/B/C.");
-            var tipoDocumento = TiposDocumentoCore.ParaLetra(data.Comprobante.Letra);
-            var template = await templates.ResolveAsync(tipoDocumento, uNegocio, ct);
+                ?? throw new ComprobanteNoSoportadoException();
+            var tipoDocumento = data.Comprobante.TipoDocumento;
+            var template = previewTemplate ?? await templates.ResolveAsync(tipoDocumento, uNegocio, ct);
+            if (!string.Equals(template.TipoDocumento, tipoDocumento, StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("La plantilla no corresponde al tipo de comprobante seleccionado.");
             var definition = templates.DeserializeAndValidate(template.TemplateJson, tipoDocumento);
             var theme = await templates.GetGeneralThemeAsync(ct);
             var html = renderer.RenderFactura(definition, data, template.CssCustom, theme);
+            if (definition.TotalesAlPiePagina || definition.Paper.Size == "Ticket80") html = await pdfService.PrepareHtmlAsync(html, ct);
             var footer = BuildFooterOptions(definition, data.Empresa.Nombre);
             logger.LogInformation("Documentos: HTML de factura {Tc}/{IdComprobante}, plantilla {IdTemplate}, UNegocio {UNegocio}.", tc, idComprobante, template.IdTemplate, uNegocio ?? "GLOBAL");
             return new DocumentRenderResult { Html = html, IdTemplate = template.IdTemplate, TipoDocumento = template.TipoDocumento, UNegocio = template.UNegocio, Footer = footer };
@@ -54,15 +50,36 @@ public sealed class FacturaDocumentService(
         }
     }
 
-    public async Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default)
+    public async Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
     {
-        var result = await RenderAsync(tc, idComprobante, uNegocio, ct);
+        var result = await RenderAsync(tc, idComprobante, uNegocio, ct, previewTemplate);
         var pdf = await pdfService.GenerateAsync(result.Html, result.Footer, ct);
         logger.LogInformation("Documentos: PDF de factura {Tc}/{IdComprobante}, plantilla {IdTemplate}.", tc, idComprobante, result.IdTemplate);
         return pdf;
     }
 
     public async Task<byte[]?> GeneratePdfParaClienteAsync(string codigoCliente, int idComprobante, CancellationToken ct = default)
+    {
+        var result = await RenderParaClienteAsync(codigoCliente, idComprobante, ct);
+        return result is null ? null : await pdfService.GenerateAsync(result.Html, result.Footer, ct);
+    }
+
+    public async Task<DocumentRenderResult?> RenderParaClienteAsync(string codigoCliente, int idComprobante, CancellationToken ct = default)
+    {
+        try
+        {
+            return await RenderParaClienteCoreAsync(codigoCliente, idComprobante, ct);
+        }
+        catch (AppUserFacingException) { throw; }
+        catch (Exception ex)
+        {
+            var incidentId = await appEvents.LogErrorAsync(ModuleName, "RenderComprobantePortal", ex,
+                "No se pudo generar la vista previa del comprobante.", new { IdComprobante = idComprobante }, ct: ct);
+            throw new AppUserFacingException("No se pudo generar la vista previa del comprobante.", incidentId, ex);
+        }
+    }
+
+    private async Task<DocumentRenderResult?> RenderParaClienteCoreAsync(string codigoCliente, int idComprobante, CancellationToken ct)
     {
         var codigo = (codigoCliente ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(codigo) || idComprobante <= 0)
@@ -73,28 +90,39 @@ public sealed class FacturaDocumentService(
         // Resuelve Tc/IdComprobante desde el ID interno y valida pertenencia ANTES de armar nada --
         // mismo chequeo que PortalClienteService.GetComprobanteClienteDetalleAsync (nunca distingue
         // "no existe" de "es de otro cliente", ambos casos devuelven null).
-        var row = await cn.QuerySingleOrDefaultAsync<(string Tc, string IdComprobanteTexto, string Cuenta)>(new CommandDefinition(
-            "SELECT ISNULL(LTRIM(RTRIM(TC)), '') AS Tc, ISNULL(LTRIM(RTRIM(IDCOMPROBANTE)), '') AS IdComprobanteTexto, ISNULL(LTRIM(RTRIM(CUENTA)), '') AS Cuenta FROM dbo.V_MV_Cpte WHERE ID = @Id;",
+        var row = await cn.QuerySingleOrDefaultAsync<ComprobanteClienteRow>(new CommandDefinition(
+            "SELECT ISNULL(LTRIM(RTRIM(TC)), '') AS Tc, ISNULL(LTRIM(RTRIM(IDCOMPROBANTE)), '') AS IdComprobanteTexto, ISNULL(LTRIM(RTRIM(CUENTA)), '') AS Cuenta, LTRIM(RTRIM(UNEGOCIO)) AS UNegocio FROM dbo.V_MV_Cpte WHERE ID = @Id;",
             new { Id = idComprobante }, cancellationToken: ct));
 
-        if (row.Tc.Length == 0 || !string.Equals(row.Cuenta, codigo, StringComparison.OrdinalIgnoreCase))
+        if (row is null || row.Tc.Length == 0 || !string.Equals(row.Cuenta, codigo, StringComparison.OrdinalIgnoreCase))
             return null;
 
         try
         {
-            return await GeneratePdfAsync(row.Tc, row.IdComprobanteTexto, null, ct);
+            return await RenderAsync(row.Tc, row.IdComprobanteTexto, row.UNegocio, ct);
         }
-        catch (InvalidOperationException)
+        catch (ComprobanteNoSoportadoException)
         {
-            // No es Factura A/B/C (ej. nota de crédito, recibo) -- Portal Cliente no tiene nada
+            // No es un comprobante fiscal soportado (ej. recibo) -- Portal Cliente no tiene nada
             // más que ofrecer para este comprobante, se degrada a "no disponible" en vez de error.
             return null;
         }
     }
 
-    public async Task<IReadOnlyList<FacturaResumenDto>> SearchRecientesAsync(string letra, int top = 20, CancellationToken ct = default)
+    private sealed class ComprobanteClienteRow
     {
-        var tipoCpte = CodigoPorTipoCpte.FirstOrDefault(x => string.Equals(x.Value.Letra, letra, StringComparison.OrdinalIgnoreCase)).Key;
+        public string Tc { get; set; } = string.Empty;
+        public string IdComprobanteTexto { get; set; } = string.Empty;
+        public string Cuenta { get; set; } = string.Empty;
+        public string? UNegocio { get; set; }
+    }
+
+    private sealed class ComprobanteNoSoportadoException() : InvalidOperationException(
+        "El comprobante indicado no existe o no es una factura, nota de crédito o débito A/B/C.");
+
+    public async Task<IReadOnlyList<FacturaResumenDto>> SearchRecientesAsync(string tipoDocumento, int top = 20, CancellationToken ct = default)
+    {
+        var tipoCpte = TiposDocumentoCore.Fiscal(tipoDocumento)?.CodigoArca ?? 0;
         if (tipoCpte == 0)
             return [];
 
@@ -112,7 +140,7 @@ public sealed class FacturaDocumentService(
             JOIN dbo.V_MV_Cpte v ON v.TC = e.TC AND v.IDCOMPROBANTE = e.IdComprobante
             WHERE e.Tipo_Cpte = @TipoCpte
             ORDER BY e.Fecha_Cpte DESC;
-            """, new { Top = top, TipoCpte = tipoCpte }, cancellationToken: ct));
+            """, new { Top = Math.Clamp(top, 1, 200), TipoCpte = tipoCpte }, cancellationToken: ct));
         return rows.AsList();
     }
 
@@ -133,12 +161,8 @@ public sealed class FacturaDocumentService(
         var tieneElectronico = await ExistsAsync(cn, "dbo.V_MV_CPTE_ELECTRONICOS", ct);
         var electronicoJoin = tieneElectronico ? "LEFT JOIN dbo.V_MV_CPTE_ELECTRONICOS e ON e.TC = v.TC AND e.IdComprobante = v.IDCOMPROBANTE" : string.Empty;
         var electronicoSelect = tieneElectronico
-            ? "e.Tipo_Cpte AS TipoCpte, e.CAE AS Cae, e.VtoCAE AS VtoCae, e.CodigoBarraCAE AS CodigoBarraCae, e.Resultado AS Resultado, ISNULL(CAST(e.Motivo AS nvarchar(500)), '') AS Motivo"
+            ? "e.Tipo_Cpte AS TipoCpte, e.CAE AS Cae, e.VtoCAE AS VtoCae, e.CodigoBarraCAE AS CodigoBarraCae, e.Resultado AS Resultado, ISNULL(CAST(e.Motivo AS nvarchar(500)), '') AS Motivo, e.Fecha_Cpte AS FechaElectronica, e.Punto_Vta AS PuntoVentaElectronico, e.Cpte_Desde AS NumeroElectronico, CAST(e.Imp_Total AS decimal(15,2)) AS TotalElectronico, e.Tipo_Doc AS TipoDocElectronico, e.Nro_Doc AS NumeroDocElectronico"
             : "CAST(NULL AS int) AS TipoCpte, CAST(NULL AS nvarchar(20)) AS Cae, CAST(NULL AS datetime) AS VtoCae, CAST(NULL AS nvarchar(60)) AS CodigoBarraCae, CAST(NULL AS nvarchar(4)) AS Resultado, '' AS Motivo";
-
-        var tieneQr = await ExistsAsync(cn, "dbo.Aux_MV_CpteQR", ct);
-        var qrJoin = tieneQr ? "LEFT JOIN dbo.Aux_MV_CpteQR q ON q.TC = v.TC AND q.IDCOMPROBANTE = v.IDCOMPROBANTE" : string.Empty;
-        var qrSelect = tieneQr ? "q.QR_AFIP AS QrAfip" : "CAST(NULL AS varbinary(max)) AS QrAfip";
 
         var tienePercepcion = await ExistsAsync(cn, "dbo.V_TA_PERCEPCION", ct);
         var percepcionJoin = tienePercepcion
@@ -157,6 +181,7 @@ public sealed class FacturaDocumentService(
                 ISNULL(LTRIM(RTRIM(v.TC)), '') AS Tc, ISNULL(LTRIM(RTRIM(v.LETRA)), '') AS Letra,
                 ISNULL(LTRIM(RTRIM(v.SUCURSAL)), '') AS Sucursal, ISNULL(LTRIM(RTRIM(v.NUMERO)), '') AS Numero,
                 v.FECHA AS Fecha,
+                LTRIM(RTRIM(v.Moneda)) AS Moneda, LTRIM(RTRIM(v.UNEGOCIO)) AS UNegocio,
                 ISNULL(LTRIM(RTRIM(v.CUENTA)), '') AS CodigoCliente, ISNULL(LTRIM(RTRIM(v.NOMBRE)), '') AS RazonSocial,
                 ISNULL(LTRIM(RTRIM(v.DOMICILIO)), '') AS Domicilio, ISNULL(LTRIM(RTRIM(v.LOCALIDAD)), '') AS Localidad,
                 ISNULL(LTRIM(RTRIM(v.TELEFONO)), '') AS Telefono,
@@ -180,14 +205,13 @@ public sealed class FacturaDocumentService(
                 ISNULL(CONVERT(decimal(15,2), v.RETIVA_BaseImponible), 0) AS RetIvaBase, ISNULL(CONVERT(decimal(9,4), v.RETIVA_ALICUOTA), 0) AS RetIvaAlicuota, ISNULL(CONVERT(decimal(15,2), v.RETIVA_Importe), 0) AS RetIvaImporte,
                 ISNULL(CONVERT(decimal(15,2), v.RETGAN_Importe), 0) AS RetGanImporte, ISNULL(CONVERT(decimal(15,2), v.RETSUSS_Importe), 0) AS RetSussImporte,
                 {percepcionSelect},
-                {electronicoSelect}, {qrSelect}
+                {electronicoSelect}
             FROM dbo.V_MV_Cpte v
             LEFT JOIN dbo.TA_TIPODOCUMENTO td ON UPPER(LTRIM(RTRIM(td.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(v.DOCUMENTOTIPO, ''))))
             LEFT JOIN dbo.V_TA_Cpra_Vta cv ON UPPER(LTRIM(RTRIM(cv.IDCond_Cpra_Vta))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDCOND_CPRA_VTA, ''))))
             {condIvaJoin}
             {percepcionJoin}
             {electronicoJoin}
-            {qrJoin}
             WHERE v.TC = @Tc AND v.IDCOMPROBANTE = @IdComprobante;
             """,
             new { Tc = tcTrim, IdComprobante = idTrim },
@@ -196,7 +220,7 @@ public sealed class FacturaDocumentService(
         if (header is null)
             return null;
 
-        var (letra, codigoAfip) = ResolveLetraYCodigo(header);
+        var (letra, codigoAfip) = ResolveLetraYCodigo(header.TipoCpte, header.Letra);
         if (letra is null)
             return null;
 
@@ -215,7 +239,7 @@ public sealed class FacturaDocumentService(
             new { Tc = tcTrim, IdComprobante = idTrim },
             cancellationToken: ct));
 
-        var empresa = await BuildEmpresaAsync(cn, ct);
+        var empresa = await BuildEmpresaAsync(cn, header.UNegocio, ct);
 
         return new FacturaDocumentData
         {
@@ -226,6 +250,7 @@ public sealed class FacturaDocumentService(
             Comprobante = new FacturaComprobanteDocumentData
             {
                 Tc = header.Tc, Letra = letra, CodigoAfip = codigoAfip,
+                TipoDocumento = TiposDocumentoCore.Fiscal(int.Parse(codigoAfip))!.Tipo,
                 PuntoVenta = header.Sucursal, Numero = header.Numero, Fecha = header.Fecha,
                 CondicionVenta = header.CondicionVenta
             },
@@ -250,18 +275,60 @@ public sealed class FacturaDocumentService(
                     Motivo = header.Motivo
                 }
                 : null,
-            QrBytes = header.QrAfip
+            QrBytes = await GenerateQrAsync(cn, header, empresa.CuitQr, ct)
         };
     }
 
-    private static (string? Letra, string Codigo) ResolveLetraYCodigo(FacturaCabeceraRow header)
+    private async Task<byte[]?> GenerateQrAsync(SqlConnection cn, FacturaCabeceraRow header, string cuit, CancellationToken ct)
     {
-        if (header.TipoCpte is { } tipoCpte && CodigoPorTipoCpte.TryGetValue(tipoCpte, out var mapped))
-            return (mapped.Letra, mapped.Codigo);
+        if (string.IsNullOrWhiteSpace(header.Cae)) return null;
+        if (!string.Equals(header.Resultado?.Trim(), "A", StringComparison.OrdinalIgnoreCase)) return null;
+
+        var moneda = ResolveMonedaQr(header.Moneda);
+        decimal cotizacion = 1;
+        if (moneda != "PES")
+        {
+            // La rutina de impresión VB6 toma la última cotización del día del comprobante.
+            var rate = await cn.QuerySingleOrDefaultAsync<decimal?>(new CommandDefinition("""
+                SELECT TOP (1) CASE WHEN @Moneda = 'DOL' THEN MONEDA2 ELSE MONEDA3 END
+                FROM dbo.TA_COTIZACION
+                WHERE FECHA_HORA >= @Fecha AND FECHA_HORA < DATEADD(day, 1, @Fecha)
+                ORDER BY ID DESC;
+                """, new { Moneda = moneda, Fecha = header.Fecha.Date }, cancellationToken: ct));
+            cotizacion = rate ?? throw new ArgumentException("No existe cotización histórica para generar el QR del comprobante.");
+        }
+        if (header.FechaElectronica is null || header.PuntoVentaElectronico is null || header.TipoCpte is null
+            || header.TotalElectronico is null || header.TipoDocElectronico is null
+            || !long.TryParse(header.NumeroElectronico?.Trim(), out var numero))
+            throw new ArgumentException("Faltan datos de autorización electrónica para generar el QR del comprobante.");
+
+        var result = arcaQr.GeneratePng(new ArcaQrData(header.FechaElectronica.Value, cuit ?? "",
+            header.PuntoVentaElectronico.Value, header.TipoCpte.Value, numero, header.TotalElectronico.Value,
+            moneda, cotizacion, header.TipoDocElectronico, header.NumeroDocElectronico, "E", header.Cae.Trim()));
+        logger.LogInformation("Documentos: QR fiscal generado en memoria para {Tc}/{Numero}, tipo {TipoCpte}.", header.Tc, header.NumeroElectronico, header.TipoCpte);
+        return result;
+    }
+
+    internal static string ResolveMonedaQr(string? codigo) => codigo?.Trim().ToUpperInvariant() switch
+    {
+        null or "" or "0" or "1" or "PES" => "PES",
+        "2" or "DOL" => "DOL",
+        "3" or "EUR" => "EUR",
+        _ => throw new ArgumentException("La moneda del comprobante no tiene equivalencia ARCA soportada.")
+    };
+
+    internal static (string? Letra, string Codigo) ResolveLetraYCodigo(int? tipoCpte, string letraCabecera)
+    {
+        // Un tipo electrónico informado es autoritativo: cada documento conserva su
+        // denominación fiscal aunque comparta la letra de la cabecera.
+        if (tipoCpte.HasValue)
+            return TiposDocumentoCore.Fiscal(tipoCpte.Value) is { } mapped
+                ? (mapped.Letra, mapped.CodigoArca.ToString("D3"))
+                : (null, string.Empty);
 
         // Sin fila en V_MV_CPTE_ELECTRONICOS (comprobante viejo o sin electrónica todavía): se cae
         // a la letra directa de la cabecera, mapeando el código AFIP de 3 dígitos estándar.
-        var letra = header.Letra.Trim().ToUpperInvariant();
+        var letra = letraCabecera.Trim().ToUpperInvariant();
         return letra switch
         {
             "A" => ("A", "001"),
@@ -303,15 +370,25 @@ public sealed class FacturaDocumentService(
         };
     }
 
-    private static async Task<(EmpresaDocumentData Empresa, string CondicionIva, string IngresosBrutos, DateTime? InicioActividades)> BuildEmpresaAsync(SqlConnection cn, CancellationToken ct)
+    private static async Task<(EmpresaDocumentData Empresa, string CondicionIva, string IngresosBrutos, DateTime? InicioActividades, string CuitQr)> BuildEmpresaAsync(SqlConnection cn, string? uNegocio, CancellationToken ct)
     {
         var config = (await cn.QueryAsync<ConfiguracionRow>(new CommandDefinition("""
             SELECT UPPER(LTRIM(RTRIM(CLAVE))) AS Clave,
                    CASE WHEN ISNULL(LTRIM(RTRIM(VALOR)), '') <> '' THEN LTRIM(RTRIM(VALOR))
                         ELSE ISNULL(CAST(ValorAux AS nvarchar(max)), '') END AS Valor
             FROM dbo.TA_CONFIGURACION
-            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (N'NOMBRE', N'CUIT', N'DOMICILIO', N'DIRECCION', N'TELEFONO', N'TEL', N'EMAIL', N'MAIL', N'CONDIVAEMPRESA', N'NROINGRESOSBRUTOS', N'INICIOACTIVIDADES');
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (N'NOMBRE', N'CUIT', N'WSFE_CUIT', N'DOMICILIO', N'DIRECCION', N'TELEFONO', N'TEL', N'EMAIL', N'MAIL', N'CONDIVAEMPRESA', N'NROINGRESOSBRUTOS', N'INICIOACTIVIDADES');
             """, cancellationToken: ct))).ToDictionary(x => x.Clave, x => x.Valor ?? string.Empty, StringComparer.OrdinalIgnoreCase);
+
+        var unidad = string.IsNullOrWhiteSpace(uNegocio) ? null
+            : await cn.QuerySingleOrDefaultAsync<UnidadEmisorRow>(new CommandDefinition("""
+                SELECT ISNULL(USAEFC, 0) AS UsaEfc, LTRIM(RTRIM(RAZON_SOCIAL)) AS RazonSocial,
+                       LTRIM(RTRIM(CUIT)) AS Cuit
+                FROM dbo.V_TA_UnidadNegocio
+                WHERE LTRIM(RTRIM(Codigo)) = @UNegocio;
+                """, new { UNegocio = uNegocio.Trim() }, cancellationToken: ct));
+        var emisor = ResolveEmisor(unidad?.UsaEfc == true, unidad?.RazonSocial, unidad?.Cuit,
+            Value(config, "NOMBRE"), Value(config, "CUIT"), Value(config, "WSFE_CUIT"));
 
         byte[]? logo = null;
         if (await ExistsAsync(cn, "dbo.TA_LOGOS", ct))
@@ -330,11 +407,29 @@ public sealed class FacturaDocumentService(
 
         var empresa = new EmpresaDocumentData
         {
-            Nombre = Value(config, "NOMBRE"), Cuit = Value(config, "CUIT"),
+            Nombre = emisor.Nombre, Cuit = emisor.Cuit,
             Domicilio = First(config, "DOMICILIO", "DIRECCION"), Telefono = First(config, "TELEFONO", "TEL"),
             Email = First(config, "EMAIL", "MAIL"), Logo = logo
         };
-        return (empresa, condicionIva, Value(config, "NROINGRESOSBRUTOS"), inicioActividades);
+        return (empresa, condicionIva, Value(config, "NROINGRESOSBRUTOS"), inicioActividades, emisor.CuitQr);
+    }
+
+    // Una sola decisión para encabezado/pie y QR; la unidad proviene de V_MV_Cpte.
+    internal static (string Nombre, string Cuit, string CuitQr) ResolveEmisor(
+        bool usaEfc, string? razonSocialUnidad, string? cuitUnidad,
+        string nombreGeneral, string cuitGeneral, string cuitWsfe)
+    {
+        if (!usaEfc) return (nombreGeneral.Trim(), cuitGeneral.Trim(), cuitWsfe.Trim());
+        if (string.IsNullOrWhiteSpace(razonSocialUnidad) || string.IsNullOrWhiteSpace(cuitUnidad))
+            throw new ArgumentException("La unidad de negocio usa factura electrónica pero le falta razón social o CUIT.");
+        return (razonSocialUnidad.Trim(), cuitUnidad.Trim(), cuitUnidad.Trim());
+    }
+
+    private sealed class UnidadEmisorRow
+    {
+        public bool UsaEfc { get; set; }
+        public string? RazonSocial { get; set; }
+        public string? Cuit { get; set; }
     }
 
     private static DocumentPdfFooterOptions? BuildFooterOptions(DocumentTemplateDefinition definition, string empresaNombre)
@@ -417,6 +512,13 @@ public sealed class FacturaDocumentService(
         public string? CodigoBarraCae { get; set; }
         public string? Resultado { get; set; }
         public string? Motivo { get; set; }
-        public byte[]? QrAfip { get; set; }
+        public string? Moneda { get; set; }
+        public string? UNegocio { get; set; }
+        public DateTime? FechaElectronica { get; set; }
+        public int? PuntoVentaElectronico { get; set; }
+        public string? NumeroElectronico { get; set; }
+        public decimal? TotalElectronico { get; set; }
+        public int? TipoDocElectronico { get; set; }
+        public string? NumeroDocElectronico { get; set; }
     }
 }

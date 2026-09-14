@@ -1,0 +1,91 @@
+@using AlfaCore.Models
+@using AlfaCore.Services
+@using System.Globalization
+@inject ICierreCajaService Service
+@inject IAppUiOperationService UiOps
+@implements IDisposable
+
+<section class="panel-card cierre-tabla" aria-busy="@_busy">
+    <div class="panel-card__header">
+        <h3 class="panel-card__title">@Seccion.Nombre</h3>
+    </div>
+    @if (_busy)
+    {
+        <div class="cierre-leyendo" role="status" aria-live="polite">
+            <span class="cierre-spinner" aria-hidden="true"></span>
+            <div><strong>Leyendo @Seccion.Nombre.ToLowerInvariant()…</strong><span>La consulta está en curso. Los resultados aparecerán al finalizar.</span></div>
+        </div>
+    }
+    @if (Seccion.Clave is "rubros" or "productos")
+    {
+        <p class="text-muted">@(Filtros.UnidadNegocio.Length == 0 ? "Ventas de todas las unidades" : $"Ventas de la unidad {Filtros.UnidadNegocio}") · Todas las cajas de la fecha operativa.</p>
+    }
+    @if (_error is not null)
+    {
+        <div role="alert" class="editor-msg editor-msg--warning">@_error</div>
+        <button class="btn btn--ghost" disabled="@_busy" @onclick="() => LoadAsync(_pagina)">Reintentar</button>
+    }
+    @if (_data is not null && !_busy)
+    {
+        <div class="cierre-tabla-scroll" tabindex="0" aria-label="@Seccion.Nombre">
+            <table>
+                <thead><tr>@foreach (var c in Seccion.Columnas) { <th class="@(c.Numero ? "numero" : "")">@c.Nombre</th> }</tr></thead>
+                <tbody>
+                    @foreach (var row in _data.Filas)
+                    {
+                        <tr>@foreach (var c in Seccion.Columnas) { <td class="@(c.Numero ? "numero" : "")">@Format(row, c)</td> }</tr>
+                    }
+                    @if (_data.TotalCount == 0)
+                    {
+                        <tr><td colspan="@Seccion.Columnas.Count">Sin movimientos para esta consulta.</td></tr>
+                    }
+                </tbody>
+                @if (Seccion.Columnas.Any(c => c.Totaliza))
+                {
+                    <tfoot><tr>@foreach (var c in Seccion.Columnas) { <td class="@(c.Numero ? "numero" : "")">@(c.Totaliza ? Format(_data.Totales, c) : c == Seccion.Columnas[0] ? "Total general" : "")</td> }</tr></tfoot>
+                }
+            </table>
+        </div>
+        <div class="cierre-paginacion">
+            <span>@_data.TotalCount registros · Página @_pagina de @Paginas</span>
+            <button class="btn btn--ghost btn--sm" disabled="@(_busy || _pagina <= 1)" @onclick="() => LoadAsync(_pagina - 1)">Anterior</button>
+            <button class="btn btn--ghost btn--sm" disabled="@(_busy || _pagina >= Paginas)" @onclick="() => LoadAsync(_pagina + 1)">Siguiente</button>
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter, EditorRequired] public CierreCajaSeccion Seccion { get; set; } = null!;
+    [Parameter, EditorRequired] public CierreCajaFiltros Filtros { get; set; } = null!;
+    private CierreCajaPagina? _data;
+    private string? _error;
+    private bool _busy;
+    private int _pagina = 1;
+    private readonly CancellationTokenSource _cts = new();
+    private int Paginas => Math.Max(1, (int)Math.Ceiling((_data?.TotalCount ?? 0) / 50d));
+    private static readonly CultureInfo Cultura = CultureInfo.GetCultureInfo("es-AR");
+
+    protected override Task OnInitializedAsync() => LoadAsync(1);
+    private async Task LoadAsync(int page)
+    {
+        _busy = true;
+        _error = null;
+        var result = await UiOps.RunAsync(() => Service.ConsultarAsync(Filtros, Seccion.Clave, page, ct: _cts.Token),
+            "No se pudo cargar esta sección del cierre.");
+        if (_cts.IsCancellationRequested) return;
+        _busy = false;
+        if (result.Success && result.Value is not null) { _data = result.Value; _pagina = page; }
+        else _error = result.Feedback?.Message ?? "No se pudo cargar esta sección del cierre.";
+    }
+
+    private static string Format(IReadOnlyDictionary<string, object?> row, CierreCajaColumna column)
+    {
+        if (!row.TryGetValue(column.Campo, out var value) || value is null or DBNull) return string.Empty;
+        if (value is DateTime date) return date.ToString("dd/MM/yyyy", Cultura);
+        if (column.Numero && decimal.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Number,
+            CultureInfo.InvariantCulture, out var number)) return number.ToString("N2", Cultura);
+        return Convert.ToString(value, Cultura)?.Trim() ?? string.Empty;
+    }
+
+    public void Dispose() { _cts.Cancel(); _cts.Dispose(); }
+}

@@ -1,0 +1,298 @@
+@page "/caja-bancos/cierre"
+@page "/{idweb}/{idbase:int}/caja-bancos/cierre"
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject ICierreCajaService Service
+@inject IAppUiOperationService UiOps
+@inject IPageHeaderService PageHeader
+@inject IRouteContextService RouteContext
+@inject NavigationManager Nav
+@inject CierreCajaExportService ExportService
+@inject IConversacionesService Conversaciones
+@inject IAppUserSessionService AppUser
+@inject IAppEventService Events
+@inject IJSRuntime JS
+@using AlfaCore.Components.Shared.AlfaDesign
+@implements IDisposable
+
+<PageTitle>Cierre de caja | AlfaCore</PageTitle>
+
+<section class="page-grid">
+    @if (_ocupado)
+    {
+        <p class="cierre-carga" role="status"><span class="spinner-border spinner-border-sm"></span> @_estado</p>
+    }
+    @if (!string.IsNullOrEmpty(_feedback))
+    {
+        <p class="editor-msg editor-msg--warning" role="status">@_feedback</p>
+    }
+    @if (_consulta is not null)
+    {
+        <div @key="_version" class="cierre-resultados">
+            <p>Fecha operativa: <strong>@_consulta.Fecha.ToString("dd/MM/yyyy")</strong> · <strong>@_unidadConsultada</strong> · @(_consulta.Caja.Length == 0 ? "Todas las cajas" : $"Caja {_consulta.Caja}")</p>
+            @foreach (var seccion in CierreCajaSecciones.Activas(_consulta))
+            {
+                <AlfaCore.Components.Shared.CierreCajaTabla @key="seccion.Clave" Seccion="seccion" Filtros="_consulta" />
+            }
+        </div>
+    }
+    else
+    {
+        <p class="text-muted">Seleccioná la fecha, la caja y las opciones, y presioná Cargar.</p>
+    }
+</section>
+
+<AlfaDialog Open="@(_dialogo.Length > 0)" Title="@(_dialogo == "email" ? "Enviar cierre por email" : "Enviar cierre por WhatsApp")" OnClose="CerrarDialogo" Disabled="@_ocupado">
+    <ChildContent>
+        <p>Se adjuntará <strong>@_archivo?.Nombre</strong>, con todas las filas y los filtros del informe cargado.</p>
+        @if (_dialogo == "email")
+        {
+            <div class="field"><label for="cierre-email">Email del destinatario</label><input id="cierre-email" type="email" @bind="_destinatario" disabled="@_ocupado" /></div>
+        }
+        else
+        {
+            <div class="field"><label for="cierre-buscar">Buscar conversación por nombre o teléfono</label><input id="cierre-buscar" @bind="_busqueda" disabled="@_ocupado" /></div>
+            <button class="btn btn--secondary" @onclick="BuscarConversaciones" disabled="@_ocupado">Buscar</button>
+            <div class="field"><label for="cierre-conversacion">Destinatario de WhatsApp</label>
+                <select id="cierre-conversacion" @bind="_conversacion" disabled="@_ocupado">
+                    <option value="0">Seleccioná una conversación</option>
+                    @foreach (var item in _conversaciones)
+                    { <option value="@item.IdConversacion">@item.NombreVisible · @item.TelefonoWhatsApp</option> }
+                </select>
+            </div>
+            <p>Se muestran hasta 50 coincidencias. Refiná la búsqueda si no encontrás el destinatario.</p>
+        }
+        @if (_ocupado) { <p class="cierre-carga" role="status">@_estado</p> }
+        @if (_feedback.Length > 0) { <p role="alert">@_feedback</p> }
+    </ChildContent>
+    <Footer>
+        <button class="btn btn--secondary" disabled="@_ocupado" @onclick="CerrarDialogo">Cancelar</button>
+        <button class="btn btn--primary" disabled="@(_ocupado || (_dialogo == "email" ? string.IsNullOrWhiteSpace(_destinatario) : _conversacion == 0))" @onclick="Enviar">Enviar Excel</button>
+    </Footer>
+</AlfaDialog>
+
+@code {
+    private bool _mostrarFiltros = true;
+    private bool _ocupado;
+    private string _estado = "", _feedback = "", _dialogo = "", _destinatario = "", _busqueda = "";
+    private long _conversacion;
+    private CierreCajaArchivo? _archivo;
+    private IReadOnlyList<ConversacionInboxItemDto> _conversaciones = [];
+
+    private RenderFragment RenderFiltros() => @<div class="smart-search cierre-search" @onclick:stopPropagation>
+        <div class="smart-search__bar">
+            <button class="smart-search__filter-button is-active" title="Filtros del cierre" aria-expanded="@_mostrarFiltros" @onclick="ToggleFiltros"><i class="bi bi-funnel-fill"></i></button>
+            <button class="smart-search__active-filter" @onclick="ToggleFiltros">@_filtros.Fecha.ToString("dd/MM/yyyy")</button>
+            <button class="smart-search__active-filter" @onclick="ToggleFiltros">@(_filtros.UnidadNegocio.Length == 0 ? "Todas las unidades" : $"Unidad {_filtros.UnidadNegocio}")</button>
+            <button class="smart-search__active-filter" @onclick="ToggleFiltros">@(_filtros.Caja.Length == 0 ? "Todas las cajas" : $"Caja {_filtros.Caja}")</button>
+            <button class="smart-search__toggle" title="Filtros y opciones" @onclick="ToggleFiltros"><i class="bi bi-caret-down-fill"></i></button>
+        </div>
+        @if (_mostrarFiltros)
+        {
+            <div class="smart-search__panel cierre-filter-panel">
+        <div class="cierre-filtros">
+            <div class="field">
+                <label for="cierre-fecha">Fecha operativa</label>
+                <InputDate id="cierre-fecha" @bind-Value="_filtros.Fecha" @bind-Value:after="CargarCajasAsync" />
+            </div>
+            <div class="field">
+                <label for="cierre-unidad">Unidad de negocio</label>
+                <select id="cierre-unidad" @bind="_filtros.UnidadNegocio" @bind:after="CargarCajasAsync" disabled="@_cargandoUnidades">
+                    <option value="">Todas las unidades</option>
+                    @foreach (var unidad in _unidades)
+                    {
+                        <option value="@unidad.Codigo">@unidad.Codigo - @unidad.Descripcion</option>
+                    }
+                </select>
+            </div>
+            <div class="field">
+                <label for="cierre-caja">Caja</label>
+                <select id="cierre-caja" @bind="_filtros.Caja" @bind:after="UpdateHeader" disabled="@_cargandoCajas">
+                    <option value="">Todas las cajas</option>
+                    @foreach (var caja in _cajas)
+                    {
+                        <option value="@caja.Codigo">@caja.Codigo - @caja.Descripcion</option>
+                    }
+                </select>
+            </div>
+            <div class="cierre-opciones">
+                <label><input type="checkbox" @bind="_filtros.SaldoInicial" @bind:after="UpdateHeader" /> Incluir saldo inicial</label>
+                <label><input type="checkbox" @bind="_filtros.Diario" @bind:after="UpdateHeader" /> Diario</label>
+                <label><input type="checkbox" @bind="_filtros.Mensual" @bind:after="UpdateHeader" /> Mensual</label>
+                <label><input type="checkbox" @bind="_filtros.Cancelados" @bind:after="UpdateHeader" /> Ver comprobantes cancelados</label>
+            </div>
+            <div class="cierre-opciones">
+                <label><input type="checkbox" @bind="_filtros.Productos" @bind:after="UpdateHeader" /> Venta por productos</label>
+                <label><input type="checkbox" @bind="_filtros.Rubros" @bind:after="UpdateHeader" /> Detalle por rubro</label>
+                <label><input type="checkbox" @bind="_filtros.Ventas" @bind:after="UpdateHeader" /> Detalle de ventas</label>
+                <label><input type="checkbox" @bind="_filtros.Cobranzas" @bind:after="UpdateHeader" /> Detalle de cobranzas</label>
+            </div>
+        </div>
+        @if (_cargandoCajas || _cargandoUnidades)
+        {
+            <p class="cierre-carga" role="status">Leyendo opciones disponibles… Esperá un momento.</p>
+        }
+        @if (_error is not null || _errorUnidades is not null)
+        {
+            <p class="editor-msg editor-msg--warning" role="alert">@(_errorUnidades ?? _error)</p>
+        }
+        @if (!_cargandoCajas && _cajas.Count == 0 && _error is null)
+        {
+            <p class="text-muted">No hay cajas con movimientos en la fecha seleccionada.</p>
+        }
+
+                <button class="btn btn--primary" disabled="@(_cargandoCajas || _cargandoUnidades || _ocupado)" @onclick="Cargar">Aplicar filtros</button>
+            </div>
+        }
+    </div>;
+
+    private void ToggleFiltros() { _mostrarFiltros = !_mostrarFiltros; UpdateHeader(); }
+    private void CerrarDialogo() { if (_ocupado) return; _dialogo = ""; _archivo = null; }
+
+    private async Task Preparar(string destino)
+    {
+        if (_consulta is null || _ocupado) return;
+        _ocupado = true; _feedback = ""; _estado = "Preparando Excel completo… Esperá un momento."; UpdateHeader(); StateHasChanged();
+        try
+        {
+            var filtros = _consulta with { };
+            var result = await UiOps.RunAsync(() => ExportService.PrepararAsync(filtros, _unidadConsultada, _cts.Token), "No se pudo preparar el Excel.");
+            if (!result.Success || result.Value is null) { _feedback = result.Feedback?.Message ?? "No se pudo preparar el Excel."; return; }
+            _archivo = result.Value;
+            if (destino == "excel")
+                await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(_archivo.Contenido), CierreCajaArchivo.Mime, _archivo.Nombre);
+            else { _dialogo = destino; _conversacion = 0; _conversaciones = []; }
+        }
+        catch (JSException ex)
+        {
+            await Events.LogErrorAsync("Cierre de caja", "DescargarExcel", ex, "No se pudo descargar el Excel.", ct: _cts.Token);
+            _feedback = "No se pudo descargar el Excel. Intentá nuevamente.";
+        }
+        finally { _ocupado = false; if (!_cts.IsCancellationRequested) { UpdateHeader(); StateHasChanged(); } }
+    }
+
+    private async Task BuscarConversaciones()
+    {
+        _ocupado = true; _estado = "Buscando conversaciones…"; _feedback = ""; _conversacion = 0; UpdateHeader(); StateHasChanged();
+        try
+        {
+            var result = await UiOps.RunAsync(() => Conversaciones.GetInboxAsync(new ConversacionesInboxFilters
+            { Modo = "todas", Canal = ConversacionCanales.WhatsApp, Search = _busqueda, Limit = 50,
+                UsuarioActual = AppUser.CurrentUser?.UserName, SistemaActual = AppUser.CurrentUser?.SystemCode, ExpectedBaseId = idbase }, _cts.Token), "No se pudieron buscar las conversaciones.");
+            _conversaciones = result.Value ?? [];
+            if (!result.Success) _feedback = result.Feedback?.Message ?? "No se pudieron buscar las conversaciones.";
+            else if (_conversaciones.Count == 0) _feedback = "No hay conversaciones disponibles para esta búsqueda.";
+        }
+        finally { _ocupado = false; UpdateHeader(); }
+    }
+
+    private async Task Enviar()
+    {
+        if (_ocupado || _archivo is null) return;
+        _ocupado = true; _estado = "Enviando Excel…"; _feedback = ""; UpdateHeader(); StateHasChanged();
+        try
+        {
+            if (_dialogo == "email")
+            {
+                var result = await UiOps.RunAsync(() => ExportService.EnviarEmailAsync(_archivo, _destinatario, _cts.Token), "No se pudo enviar el email.");
+                if (!result.Success) { _feedback = result.Feedback?.Message ?? "No se pudo enviar el email."; return; }
+                _feedback = "Email enviado con el Excel adjunto.";
+            }
+            else
+            {
+                if (!_conversaciones.Any(c => c.IdConversacion == _conversacion)) return;
+                using var contenido = new MemoryStream(_archivo.Contenido);
+                var result = await UiOps.RunAsync(() => Conversaciones.UploadAttachmentAsync(new ConversacionUploadAdjuntoRequest
+                { IdConversacion = _conversacion, NombreArchivo = _archivo.Nombre, MimeType = CierreCajaArchivo.Mime,
+                    TipoArchivo = "DOCUMENT", Contenido = contenido, TamanoBytes = contenido.Length,
+                    UsuarioAccion = AppUser.CurrentUser?.UserName, SistemaAccion = AppUser.CurrentUser?.SystemCode }, _cts.Token), "No se pudo adjuntar el Excel a WhatsApp.");
+                if (!result.Success) { _feedback = result.Feedback?.Message ?? "No se pudo adjuntar el Excel."; return; }
+                _feedback = "Excel adjuntado a la conversación de WhatsApp. Revisá allí el estado del envío.";
+            }
+            _dialogo = ""; _archivo = null;
+        }
+        finally { _ocupado = false; UpdateHeader(); }
+    }
+
+    private CierreCajaFiltros _filtros = new();
+    private CierreCajaFiltros? _consulta;
+    private IReadOnlyList<CierreCajaOpcion> _cajas = [];
+    private IReadOnlyList<CierreCajaOpcion> _unidades = [];
+    private string _unidadConsultada = "Todas las unidades";
+    private bool _cargandoUnidades;
+    private string? _errorUnidades;
+    private int _cajasVersion;
+    private bool _cargandoCajas;
+    private string? _error;
+    private int _version;
+    private readonly CancellationTokenSource _cts = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        UpdateHeader();
+        _cargandoUnidades = true;
+        var unidades = await UiOps.RunAsync(() => Service.GetUnidadesAsync(_cts.Token), "No se pudieron cargar las unidades de negocio.");
+        _cargandoUnidades = false;
+        if (unidades.Success && unidades.Value is not null) _unidades = unidades.Value;
+        else _errorUnidades = unidades.Feedback?.Message ?? "No se pudieron cargar las unidades de negocio.";
+        await CargarCajasAsync();
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) UpdateHeader();
+    }
+
+    private void UpdateHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        SearchContent = RenderFiltros(),
+        Actions = [
+            new() { Key = "cargar", Label = "Cargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Primary, Disabled = _ocupado || _cargandoCajas || _cargandoUnidades, OnClick = () => { Cargar(); StateHasChanged(); return Task.CompletedTask; } },
+            new() { Key = "excel", Label = "Excel", Icon = "bi-file-earmark-excel", Disabled = _consulta is null || _ocupado, OnClick = () => Preparar("excel") },
+            new() { Key = "email", Label = "Email", Icon = "bi-envelope", Disabled = _consulta is null || _ocupado, OnClick = () => Preparar("email") },
+            new() { Key = "whatsapp", Label = "WhatsApp", Icon = "bi-whatsapp", Disabled = _consulta is null || _ocupado, OnClick = () => Preparar("whatsapp") }
+        ],
+        Title = "Cierre de caja", ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = [new() { Key = "cierre", Label = "Cierre de caja", Active = true,
+            Url = RouteContext.BuildRoute("/caja-bancos/cierre") }]
+    });
+
+    private async Task CargarCajasAsync()
+    {
+        var fecha = _filtros.Fecha;
+        var unidad = _filtros.UnidadNegocio;
+        var version = ++_cajasVersion;
+        _cargandoCajas = true;
+        UpdateHeader();
+        _error = null;
+        var result = await UiOps.RunAsync(() => Service.GetCajasAsync(fecha, _cts.Token, unidad), "No se pudieron cargar las cajas.");
+        if (version != _cajasVersion || _cts.IsCancellationRequested) return;
+        _cargandoCajas = false;
+        if (result.Success && result.Value is not null)
+        {
+            _cajas = result.Value;
+            if (!_cajas.Any(c => c.Codigo == _filtros.Caja)) _filtros.Caja = string.Empty;
+        }
+        else _error = result.Feedback?.Message ?? "No se pudieron cargar las cajas.";
+        UpdateHeader();
+    }
+
+    private void Cargar()
+    {
+        if (_ocupado || _cargandoCajas || _cargandoUnidades) return;
+        _consulta = _filtros with { };
+        var unidad = _unidades.FirstOrDefault(u => u.Codigo == _consulta.UnidadNegocio);
+        _unidadConsultada = unidad is null ? "Todas las unidades" : $"{unidad.Codigo} - {unidad.Descripcion}";
+        _version++;
+        _mostrarFiltros = false;
+        UpdateHeader();
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+        PageHeader.Clear();
+    }
+}

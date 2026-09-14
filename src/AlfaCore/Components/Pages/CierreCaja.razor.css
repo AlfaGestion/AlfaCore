@@ -1,0 +1,12 @@
+.cierre-filtros { display: grid; grid-template-columns: minmax(145px,.8fr) minmax(180px,1fr) minmax(160px,1fr) 1.3fr 1fr; gap: 1rem; align-items: start; }
+.cierre-carga { padding: 1rem; margin-top: 1rem; background: #fff3cd; color: #664d03; border: 1px solid #e6aa20; border-radius: 8px; font-weight: 600; }
+.cierre-opciones { display: grid; gap: .6rem; }
+.cierre-opciones label { display: flex; align-items: center; gap: .5rem; }
+.cierre-resultados { display: grid; gap: 1rem; min-width: 0; }
+@media(max-width: 1200px) { .cierre-filtros { grid-template-columns: 1fr 1fr; } }
+@media(max-width: 550px) { .cierre-filtros { grid-template-columns: 1fr; } }
+
+.cierre-search { width: 100%; }
+.cierre-search.smart-search .cierre-filter-panel { display: block; width: min(850px, calc(100vw - 40px)); right: 0; left: auto; padding: 1rem; max-height: 70vh; overflow: auto; }
+.cierre-filter-panel .cierre-filtros { grid-template-columns: repeat(3, minmax(0,1fr)); margin-bottom: 1rem; }
+@media(max-width: 650px) { .cierre-filter-panel .cierre-filtros { grid-template-columns: 1fr; } }

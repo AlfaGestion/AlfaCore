@@ -13,6 +13,34 @@ public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogge
     private IBrowser? _browser;
     private readonly SemaphoreSlim _gate = new(1, 1);
 
+    public async Task<string> PrepareHtmlAsync(string html, CancellationToken ct = default)
+    {
+        try
+        {
+            var browser = await GetBrowserAsync(ct);
+            var page = await browser.NewPageAsync();
+            try
+            {
+                await page.SetContentAsync(html, new PageSetContentOptions { WaitUntil = WaitUntilState.Load });
+                await page.EvaluateAsync("async () => { if (window.alfaDocumentReady) await window.alfaDocumentReady; }");
+                await PrepareTicketAsync(page);
+                // La vista previa recibe páginas estáticas ya medidas. Los errores del paginador
+                // pasan por AUX_ERR, igual que la exportación, y no quedan solo en el navegador.
+                await page.EvaluateAsync("() => document.querySelectorAll('script').forEach(s => s.remove())");
+                return await page.ContentAsync();
+            }
+            finally { await page.CloseAsync(); }
+        }
+        catch (Exception ex)
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var appEvents = scope.ServiceProvider.GetRequiredService<IAppEventService>();
+            var incidentId = await appEvents.LogErrorAsync("Documentos", "PaginarDocumento", ex,
+                "No se pudo acomodar el cierre del documento en la última página.", ct: ct);
+            throw new AppUserFacingException("No se pudo paginar el documento. Revisá el tamaño de los bloques o desactivá Totales al pie de página.", incidentId, ex);
+        }
+    }
+
     public async Task<byte[]> GenerateAsync(string html, DocumentPdfFooterOptions? footer = null, CancellationToken ct = default)
     {
         try
@@ -22,12 +50,14 @@ public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogge
             try
             {
                 await page.SetContentAsync(html, new PageSetContentOptions { WaitUntil = WaitUntilState.Load });
+                await page.EvaluateAsync("async () => { if (window.alfaDocumentReady) await window.alfaDocumentReady; }");
+                var ticket = await PrepareTicketAsync(page);
                 // El margen real (arriba/abajo/lados, incluido el espacio para el pie) lo define el
                 // CSS @page con nombre en DocumentRenderer -- no el Margin de Playwright, que con
                 // PreferCSSPageSize=true queda ignorado para el layout del contenido y solo termina
                 // confundiendo dónde cree Chromium que va el pie.
                 var options = new PagePdfOptions { Format = "A4", PrintBackground = true, PreferCSSPageSize = true };
-                if (footer is { } f && (f.ShowPageNumber || f.ShowCompanyName))
+                if (!ticket && footer is { } f && (f.ShowPageNumber || f.ShowCompanyName))
                 {
                     options.DisplayHeaderFooter = true;
                     options.HeaderTemplate = "<span></span>";
@@ -47,6 +77,20 @@ public sealed class DocumentPdfService(IServiceScopeFactory scopeFactory, ILogge
             throw new AppUserFacingException("No se pudo generar el PDF beta. Verificá la instalación de Chromium en el servidor.", incidentId, ex);
         }
     }
+
+    private static Task<bool> PrepareTicketAsync(IPage page) => page.EvaluateAsync<bool>("""
+        async () => {
+            if (!document.querySelector('meta[name="alfa-paper"][content="Ticket80"]')) return false;
+            await document.fonts.ready;
+            await Promise.all(Array.from(document.images, image => image.decode().catch(() => {})));
+            const height = Math.ceil(document.querySelector('main.doc').getBoundingClientRect().height * 25.4 / 96) + 1;
+            if (height > 5000) throw new Error('El ticket supera el largo máximo de 5 metros. Utilizá A4.');
+            let style = document.getElementById('ticket-page-size');
+            if (!style) { style = document.createElement('style'); style.id = 'ticket-page-size'; document.head.append(style); }
+            style.textContent = '@page ticket{size:80mm ' + Math.max(20, height) + 'mm;margin:0}';
+            return true;
+        }
+        """);
 
     private static string BuildFooterTemplate(DocumentPdfFooterOptions f)
     {

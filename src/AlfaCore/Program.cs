@@ -203,6 +203,8 @@ public class Program
         builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
         builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
+        builder.Services.AddScoped<ICierreCajaService, CierreCajaService>();
+        builder.Services.AddScoped<CierreCajaExportService>();
         builder.Services.AddScoped<IInformesIaService, InformesIaService>();
         builder.Services.AddScoped<IInformesService, InformesService>();
         builder.Services.AddScoped<INovedadesService, NovedadesService>();
@@ -243,6 +245,7 @@ public class Program
         builder.Services.AddSingleton<IDocumentPdfService, DocumentPdfService>();
         builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
         builder.Services.AddScoped<IFacturaDocumentService, FacturaDocumentService>();
+        builder.Services.AddSingleton<IArcaQrService, ArcaQrService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();

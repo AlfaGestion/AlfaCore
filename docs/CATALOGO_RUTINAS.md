@@ -624,3 +624,19 @@ No se identificaron stored procedures invocados directamente desde el código ac
 - Propósito: construye el árbol dinámico de navegación web reutilizando `TA_MENU`, permisos y mapeos de `ALFACORE_MENU_WEB`.
 - Datos que usa: `TA_MENU`, `TA_TAREAS`, `ALFACORE_MENU_WEB`, `IActualizacionesService`, `IPermissionService`
 - Observaciones: intenta auto-reparar el shell web ejecutando actualizaciones pendientes si faltan tablas o mapeos; centraliza módulos, secciones, nodos y búsqueda del menú.
+
+### CierreCajaService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CierreCajaService.cs`
+- Propósito: consulta propia del cierre de caja por fecha, caja y opciones, con paginación SQL y totales generales por sección.
+- Datos que usa: `MV_ASIENTOS`, `V_Ta_Cajas`, `V_MV_CierreCaja`, `MV_APLICACION`, vistas de consolidado, transferencias, cobranzas y ventas.
+- Observaciones: no llama a AlfaWeb/wsAlfa ni modifica estadísticas; documentado en `docs/modulos/CIERRE_CAJA.md`.
+
+### CierreCajaExportService
+
+- Tipo: Service
+- Ubicación: `src/AlfaCore/Services/CierreCajaExportService.cs`
+- Propósito: genera el cierre de caja completo en Excel y lo adjunta a envíos de email.
+- Datos que usa: `ICierreCajaService`, `IConfiguracionGeneralService`, `IAppEventService`, ClosedXML.
+- Observaciones: conserva filtros y totales sin paginación; WhatsApp reutiliza `IConversacionesService.UploadAttachmentAsync` desde la pantalla.

@@ -1,0 +1,14 @@
+.cierre-tabla { min-width: 0; }
+.cierre-leyendo { display: flex; align-items: center; gap: 1rem; min-height: 90px; padding: 1.1rem; margin: .5rem 0 1rem; border: 1px solid #e6aa20; border-left: 5px solid #d18b00; border-radius: 8px; background: #fff3cd; color: #664d03; }
+.cierre-leyendo strong, .cierre-leyendo div > span { display: block; }
+.cierre-leyendo strong { font-size: 1rem; margin-bottom: .25rem; }
+.cierre-spinner { flex: 0 0 26px; width: 26px; height: 26px; border: 3px solid #e8c96d; border-top-color: #805500; border-radius: 50%; animation: cierre-giro 1s linear infinite; }
+@keyframes cierre-giro { to { transform: rotate(360deg); } }
+@media(prefers-reduced-motion: reduce) { .cierre-spinner { animation: none; } }
+.cierre-tabla-scroll { overflow: auto; max-height: 650px; }
+table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+th,td { padding: .65rem; text-align: left; border-bottom: 1px solid var(--color-border,#ccd5df); }
+th { white-space: nowrap; }
+.numero { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+tfoot { font-weight: 600; }
+.cierre-paginacion { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: .6rem; margin-top: .8rem; }

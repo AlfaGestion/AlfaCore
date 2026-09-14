@@ -8,10 +8,27 @@ public static class TiposDocumentoCore
     public const string FacturaA = "FACTURA_A";
     public const string FacturaB = "FACTURA_B";
     public const string FacturaC = "FACTURA_C";
+    public const string CreditoA = "CREDITO_A";
+    public const string CreditoB = "CREDITO_B";
+    public const string CreditoC = "CREDITO_C";
+    public const string DebitoA = "DEBITO_A";
+    public const string DebitoB = "DEBITO_B";
+    public const string DebitoC = "DEBITO_C";
+
+    public static readonly IReadOnlyList<TipoFiscalDocumento> Fiscales =
+    [
+        new(FacturaA, "Factura", "A", 1), new(FacturaB, "Factura", "B", 6), new(FacturaC, "Factura", "C", 11),
+        new(CreditoA, "Nota de crédito", "A", 3), new(CreditoB, "Nota de crédito", "B", 8), new(CreditoC, "Nota de crédito", "C", 13),
+        new(DebitoA, "Nota de débito", "A", 2), new(DebitoB, "Nota de débito", "B", 7), new(DebitoC, "Nota de débito", "C", 12)
+    ];
+    public static TipoFiscalDocumento? Fiscal(string tipo) => Fiscales.FirstOrDefault(x => x.Tipo.Equals(tipo, StringComparison.OrdinalIgnoreCase));
+    public static TipoFiscalDocumento? Fiscal(int codigo) => Fiscales.FirstOrDefault(x => x.CodigoArca == codigo);
+    public static bool EsFiscal(string tipo) => Fiscal(tipo) is not null;
+    public static string NombreDe(string tipo) => Fiscal(tipo) is { } fiscal ? $"{fiscal.Nombre} {fiscal.Letra}" : "Cotización";
 
     public static readonly IReadOnlySet<string> Todos = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        Cotizacion, FacturaA, FacturaB, FacturaC
+        Cotizacion, FacturaA, FacturaB, FacturaC, CreditoA, CreditoB, CreditoC, DebitoA, DebitoB, DebitoC
     };
 
     private static readonly IReadOnlyDictionary<string, string> LetraPorTipo = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -25,7 +42,7 @@ public static class TiposDocumentoCore
         => LetraPorTipo.ContainsKey(tipoDocumento ?? string.Empty);
 
     public static string? LetraDe(string tipoDocumento)
-        => LetraPorTipo.TryGetValue(tipoDocumento ?? string.Empty, out var letra) ? letra : null;
+        => Fiscal(tipoDocumento)?.Letra;
 
     public static string ParaLetra(string letra) => letra?.Trim().ToUpperInvariant() switch
     {
@@ -35,6 +52,8 @@ public static class TiposDocumentoCore
         _ => throw new InvalidOperationException($"Letra de comprobante no soportada: '{letra}'.")
     };
 }
+
+public sealed record TipoFiscalDocumento(string Tipo, string Nombre, string Letra, int CodigoArca);
 
 public static class TiposBloqueDocumento
 {
@@ -85,6 +104,7 @@ public sealed class DocumentTemplateDefinition
 {
     public int SchemaVersion { get; set; } = 1;
     public DocumentPaperDefinition Paper { get; set; } = new();
+    public bool TotalesAlPiePagina { get; set; }
     public List<DocumentBlockDefinition> Blocks { get; set; } = [];
 
     public static DocumentTemplateDefinition CrearCotizacionEstandar() => new()
@@ -176,6 +196,7 @@ public sealed class DocumentBlockDefinition
     public string Type { get; set; } = string.Empty;
     public bool Visible { get; set; } = true;
     public string Align { get; set; } = "left";
+    /// <summary>Ancho del logo en píxeles; lado del QR fiscal en milímetros (null = 30 mm).</summary>
     public decimal? Width { get; set; }
     /// <summary>Tamaño de letra del bloque en puntos. Null = usa el tamaño por defecto del tema.</summary>
     public decimal? FontSizePt { get; set; }
@@ -253,7 +274,7 @@ public sealed class TotalesDocumentData { public decimal Neto { get; set; } publ
 
 /// <summary>Datos resueltos de una Factura A/B/C ya emitida (comprobante real, no un borrador) para
 /// el Diseñador de comprobantes. A diferencia de CotizacionDocumentData, viene de tablas
-/// transaccionales de venta (V_MV_Cpte/V_MV_CpteInsumos/V_MV_CPTE_ELECTRONICOS/Aux_MV_CpteQR), no de
+/// transaccionales de venta (V_MV_Cpte/V_MV_CpteInsumos/V_MV_CPTE_ELECTRONICOS), no de
 /// un módulo propio con estado editable.</summary>
 public sealed class FacturaDocumentData
 {
@@ -271,12 +292,14 @@ public sealed class FacturaDocumentData
     /// <summary>Null = todavía no hay CAE (comprobante pre-electrónico o pendiente de AFIP) -- el
     /// renderer omite el bloque en vez de mostrarlo vacío.</summary>
     public FacturaCaeDocumentData? Cae { get; set; }
-    /// <summary>Bytes del QR de AFIP ya generado (Aux_MV_CpteQR.QR_AFIP). Null si todavía no existe.</summary>
+    /// <summary>QR fiscal generado en memoria al solicitar el reporte. Null sin autorización aprobada.</summary>
     public byte[]? QrBytes { get; set; }
 }
 
 public sealed class FacturaComprobanteDocumentData
 {
+    public string TipoDocumento { get; set; } = TiposDocumentoCore.FacturaA;
+    public string Denominacion => TiposDocumentoCore.Fiscal(TipoDocumento)?.Nombre ?? "Factura";
     public string Tc { get; set; } = string.Empty;
     /// <summary>"A" | "B" | "C" -- determina si Totales discrimina IVA por alícuota en el cuerpo.</summary>
     public string Letra { get; set; } = string.Empty;
