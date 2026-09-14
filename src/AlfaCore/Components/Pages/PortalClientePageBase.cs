@@ -184,6 +184,14 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
         try
         {
             Branding = await CatalogosSvc.GetPublicIdentityAsync(idweb);
+            var logo = await ConfigGeneralSvc.GetLogoInfoAsync();
+            if (logo.TieneLogo && idbase is > 0 && !string.IsNullOrWhiteSpace(idweb))
+            {
+                // La configuración general es la fuente única para Portal, catálogo, carrito y
+                // documentos. La identidad del catálogo queda únicamente como fallback histórico.
+                Branding.LogoUrl = $"/api/configuracion-web-portal/logo/{Uri.EscapeDataString(idweb.Trim())}/{idbase.Value}";
+                Branding.TieneLogoPersonalizado = true;
+            }
         }
         catch
         {

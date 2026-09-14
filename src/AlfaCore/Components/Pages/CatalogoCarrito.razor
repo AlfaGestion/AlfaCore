@@ -310,7 +310,9 @@ else
 
 @if (_showConfirmModal && _catalogo is not null)
 {
-    <div class="carrito-overlay" @onclick="HandleConfirmOverlayClick">
+    @* La confirmación no se cierra al hacer click fuera: al seleccionar el email el mouse puede
+       salir del modal y el click de cierre del overlay cancelaba accidentalmente la pantalla. *@
+    <div class="carrito-overlay">
         <div class="carrito-drawer" @onclick:stopPropagation="true">
             @if (_pedidoResultado is not null)
             {
@@ -1381,20 +1383,6 @@ else
         }
 
         await EnviarEmailPedidoAsync(email);
-    }
-
-    private void HandleConfirmOverlayClick()
-    {
-        if (_confirmandoPedido)
-            return;
-
-        if (_pedidoResultado is not null)
-        {
-            CerrarConfirmacionExitosa();
-            return;
-        }
-
-        _showConfirmModal = false;
     }
 
     private void CerrarConfirmacionExitosa()

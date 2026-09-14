@@ -9,12 +9,13 @@ public sealed class DocumentRenderer : IDocumentRenderer
 {
     private static readonly CultureInfo CulturaAr = CultureInfo.GetCultureInfo("es-AR");
 
-    public string RenderCotizacion(DocumentTemplateDefinition template, CotizacionDocumentData data, string? cssCustom = null, string? themeKey = null)
+    public string RenderCotizacion(DocumentTemplateDefinition template, CotizacionDocumentData data, string? cssCustom = null, string? themeKey = null, string? tituloDocumento = null)
     {
         ArgumentNullException.ThrowIfNull(template);
         ArgumentNullException.ThrowIfNull(data);
         var paper = template.Paper;
         var theme = DocumentThemePresets.Resolve(themeKey);
+        var tipoTitulo = string.IsNullOrWhiteSpace(tituloDocumento) ? "COTIZACIÓN" : tituloDocumento.Trim().ToUpperInvariant();
         var sb = new StringBuilder();
         var hasFooter = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
         // Márgenes reales de página, no padding: el padding de un contenedor que se fragmenta en
@@ -25,7 +26,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
         // para que la portada ocupe la hoja completa) y "content" (el margen de papel configurado,
         // más espacio extra abajo si hay pie de página) -- nunca una @page sin nombre, para no
         // depender de cómo Chromium propaga el nombre de página entre hermanos sin "page" propio.
-        AppendDocumentHead(sb, "Cotización " + data.Comprobante.Numero, paper, theme, hasFooter, cssCustom, string.Empty);
+        AppendDocumentHead(sb, (string.IsNullOrWhiteSpace(tituloDocumento) ? "Cotización" : tituloDocumento.Trim()) + " " + data.Comprobante.Numero, paper, theme, hasFooter, cssCustom, string.Empty);
 
         var hasCompanyBlock = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Empresa, StringComparison.OrdinalIgnoreCase));
         var logoBlock = template.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Logo, StringComparison.OrdinalIgnoreCase));
@@ -33,18 +34,18 @@ public sealed class DocumentRenderer : IDocumentRenderer
 
         var coverBlock = template.Blocks.FirstOrDefault(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase));
         if (coverBlock is not null)
-            AppendBlock(sb, coverBlock, data, hasCompanyBlock, combinedLogo, theme);
+            AppendBlock(sb, coverBlock, data, hasCompanyBlock, combinedLogo, theme, tipoTitulo);
 
         sb.Append("<div class=\"doc-content\">");
         foreach (var block in template.Blocks.Where(x => x.Visible && !x.Type.Equals(TiposBloqueDocumento.Portada, StringComparison.OrdinalIgnoreCase)))
-            AppendBlock(sb, block, data, hasCompanyBlock, combinedLogo, theme);
+            AppendBlock(sb, block, data, hasCompanyBlock, combinedLogo, theme, tipoTitulo);
         sb.Append("</div>");
 
         sb.Append("</main></body></html>");
         return sb.ToString();
     }
 
-    public string RenderFactura(DocumentTemplateDefinition template, FacturaDocumentData data, string? cssCustom = null, string? themeKey = null)
+    public string RenderFactura(DocumentTemplateDefinition template, FacturaDocumentData data, string? cssCustom = null, string? themeKey = null, string? tituloDocumento = null)
     {
         ArgumentNullException.ThrowIfNull(template);
         ArgumentNullException.ThrowIfNull(data);
@@ -52,7 +53,8 @@ public sealed class DocumentRenderer : IDocumentRenderer
         var theme = DocumentThemePresets.Resolve(themeKey);
         var sb = new StringBuilder();
         var hasFooter = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Pie, StringComparison.OrdinalIgnoreCase));
-        var titulo = $"Factura {data.Comprobante.Letra} {data.Comprobante.PuntoVenta}-{data.Comprobante.Numero}";
+        var nombre = string.IsNullOrWhiteSpace(tituloDocumento) ? "Factura" : tituloDocumento.Trim();
+        var titulo = $"{nombre} {data.Comprobante.PuntoVenta}-{data.Comprobante.Numero}";
         AppendDocumentHead(sb, titulo, paper, theme, hasFooter, cssCustom, FacturaExtraCss(theme));
 
         var hasCompanyBlock = template.Blocks.Any(x => x.Visible && x.Type.Equals(TiposBloqueDocumento.Empresa, StringComparison.OrdinalIgnoreCase));
@@ -67,7 +69,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
 
         sb.Append("<div class=\"doc-content\">");
         foreach (var block in template.Blocks.Where(x => x.Visible))
-            AppendBlockFactura(sb, block, data, hasCompanyBlock, combinedLogo, recuadroBlock);
+            AppendBlockFactura(sb, block, data, hasCompanyBlock, combinedLogo, recuadroBlock, nombre);
         sb.Append("</div>");
 
         sb.Append("</main></body></html>");
@@ -90,7 +92,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
             .Append(".header{border-bottom:2px solid ").Append(theme.ColorSecundario).Append(";padding-bottom:5mm;margin-bottom:5mm;display:flex;gap:8mm;align-items:flex-start}")
             .Append(".header--split{border:1px solid #d5dde5;border-bottom:2px solid ").Append(theme.ColorSecundario).Append(";border-radius:2mm;padding:5mm 6mm}")
             .Append(".cover-page{page:cover;break-after:page;width:").Append(Mm(coverWidthMm)).Append(";height:").Append(Mm(coverHeightMm)).Append(";overflow:hidden}.cover-page img{width:100%;height:100%;object-fit:cover;display:block}")
-            .Append(".logo{max-height:35mm;object-fit:contain}.company{flex:1}.company h1{font-size:18pt;margin:0 0 2mm}.doc-meta{text-align:right;min-width:45mm}")
+            .Append(".logo{max-height:35mm;object-fit:contain;max-width:100%}.company{flex:1;min-width:0}.company h1{font-size:18pt;margin:0 0 2mm;overflow-wrap:anywhere}.doc-meta{text-align:right;min-width:45mm;overflow-wrap:anywhere}")
             .Append(".header--split .doc-meta{text-align:right}.header--split .logo-side{display:flex;align-items:center}")
             .Append(".card{border:1px solid #d5dde5;background:").Append(theme.ColorFondoSuave).Append(";padding:4mm;margin:0 0 5mm}")
             .Append(".items{width:100%;border-collapse:collapse;margin:4mm 0}.items th{background:").Append(theme.ColorPrimario).Append(";color:white;padding:2.5mm;text-align:left}")
@@ -105,6 +107,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
             // 100mm y 200mm de contenido previo: siempre salta). Envolviendo la imagen en un div de
             // bloque y dejando el <img> en su display inline por defecto, el bug no se dispara.
             .Append(".signature{margin-top:10mm;break-inside:avoid}.signature-image{margin:3mm 0}.signature-image img{height:20mm;width:55mm;object-fit:contain;object-position:left center}")
+            .Append("@media screen and (max-width:640px){body{font-size:8pt;overflow-x:hidden}.header,.header--split{gap:3mm;flex-wrap:wrap;padding:3mm}.header .logo{max-height:24mm}.company{flex:1 1 45%}.company h1{font-size:12pt}.doc-meta{flex:1 1 45%;min-width:0;text-align:right;font-size:8pt}.card{padding:2.5mm;margin-bottom:3mm}.items{font-size:7pt;table-layout:fixed}.items th,.items td{padding:1.5mm;overflow-wrap:anywhere;word-break:break-word}.totals{width:100%;font-size:8pt}.proposal{overflow-wrap:anywhere}.proposal img{height:auto!important;max-width:100%!important}}")
             .Append(extraCss)
             .Append(SafeCss(cssCustom)).Append("</style></head><body><main class=\"doc\">");
     }
@@ -119,7 +122,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
          + ".qr-box{margin-top:3mm}.qr-box img{width:28mm;height:28mm}"
          + ".totals td.iva-label{color:#596579}";
 
-    private static void AppendBlock(StringBuilder sb, DocumentBlockDefinition block, CotizacionDocumentData data, bool hasCompanyBlock, DocumentBlockDefinition? combinedLogo, DocumentThemePreset theme)
+    private static void AppendBlock(StringBuilder sb, DocumentBlockDefinition block, CotizacionDocumentData data, bool hasCompanyBlock, DocumentBlockDefinition? combinedLogo, DocumentThemePreset theme, string tipoTitulo)
     {
         var fields = block.VisibleFields;
         var style = FontStyle(block.FontSizePt);
@@ -151,13 +154,13 @@ public sealed class DocumentRenderer : IDocumentRenderer
                 if (Shows(fields, "Email")) AddIf(empresaValues, data.Empresa.Email);
                 AppendMuted(sb, empresaValues);
                 sb.Append("</div>");
-                AppendDocumentMeta(sb, data.Comprobante, hasCompanyBlock ? fields : null);
+                AppendDocumentMeta(sb, data.Comprobante, hasCompanyBlock ? fields : null, tipoTitulo);
                 if (combinedLogo is not null && logoOnRight) AppendLogoSide(sb, combinedLogo, data.Empresa.Logo);
                 sb.Append("</section>");
                 break;
             case "COMPROBANTE":
                 // Ya forma parte del encabezado para evitar duplicar información en el formato estándar.
-                if (!hasCompanyBlock) AppendDocumentMeta(sb, data.Comprobante, fields);
+                if (!hasCompanyBlock) AppendDocumentMeta(sb, data.Comprobante, fields, tipoTitulo);
                 break;
             case "CLIENTE":
                 sb.Append("<section class=\"card\"").Append(style).Append("><strong>Cliente</strong><br>");
@@ -194,10 +197,10 @@ public sealed class DocumentRenderer : IDocumentRenderer
         sb.Append("<div class=\"logo-side\"><img class=\"logo\" style=\"max-width:").Append(logoBlock.Width is > 0 ? logoBlock.Width.Value.ToString("0", CultureInfo.InvariantCulture) : "120").Append("px\" src=\"data:image/png;base64,").Append(Convert.ToBase64String(logo)).Append("\" alt=\"Logo\"></div>");
     }
 
-    private static void AppendDocumentMeta(StringBuilder sb, ComprobanteDocumentData document, List<string>? fields)
+    private static void AppendDocumentMeta(StringBuilder sb, ComprobanteDocumentData document, List<string>? fields, string tipoTitulo)
     {
         sb.Append("<div class=\"doc-meta\">");
-        if (Shows(fields, "Numero")) sb.Append("<b>COTIZACIÓN ").Append(E(document.Numero)).Append("</b><br>");
+        if (Shows(fields, "Numero")) sb.Append("<b>").Append(E(tipoTitulo)).Append(' ').Append(E(document.Numero)).Append("</b><br>");
         if (Shows(fields, "Fecha")) sb.Append("<span class=\"muted\">Fecha: ").Append(document.Fecha.ToString("dd/MM/yyyy", CulturaAr)).Append("</span>");
         if (Shows(fields, "Vencimiento") && document.FechaVencimiento is { } due) sb.Append("<br><span class=\"muted\">Vence: ").Append(due.ToString("dd/MM/yyyy", CulturaAr)).Append("</span>");
         if (Shows(fields, "Moneda") && !string.IsNullOrWhiteSpace(document.Moneda)) sb.Append("<br><span class=\"muted\">Moneda: ").Append(E(document.Moneda)).Append("</span>");
@@ -278,7 +281,7 @@ public sealed class DocumentRenderer : IDocumentRenderer
 
     // ---- Factura A/B/C -----------------------------------------------------------------------
 
-    private static void AppendBlockFactura(StringBuilder sb, DocumentBlockDefinition block, FacturaDocumentData data, bool hasCompanyBlock, DocumentBlockDefinition? combinedLogo, DocumentBlockDefinition? recuadroBlock)
+    private static void AppendBlockFactura(StringBuilder sb, DocumentBlockDefinition block, FacturaDocumentData data, bool hasCompanyBlock, DocumentBlockDefinition? combinedLogo, DocumentBlockDefinition? recuadroBlock, string nombreDocumento)
     {
         var fields = block.VisibleFields;
         var style = FontStyle(block.FontSizePt);
@@ -309,12 +312,12 @@ public sealed class DocumentRenderer : IDocumentRenderer
                 AppendMuted(sb, empresaValues);
                 sb.Append("</div>");
                 if (recuadroBlock is not null) AppendRecuadroTipo(sb, recuadroBlock, data.Comprobante);
-                AppendDocumentMetaFactura(sb, data.Comprobante, hasCompanyBlock ? fields : null);
+                AppendDocumentMetaFactura(sb, data.Comprobante, hasCompanyBlock ? fields : null, nombreDocumento);
                 if (combinedLogo is not null && logoOnRight) AppendLogoSide(sb, combinedLogo, data.Empresa.Logo);
                 sb.Append("</section>");
                 break;
             case "COMPROBANTE":
-                if (!hasCompanyBlock) AppendDocumentMetaFactura(sb, data.Comprobante, fields);
+                if (!hasCompanyBlock) AppendDocumentMetaFactura(sb, data.Comprobante, fields, nombreDocumento);
                 break;
             case "CLIENTE":
                 sb.Append("<section class=\"card\"").Append(style).Append("><strong>Cliente</strong><br>");
@@ -346,10 +349,10 @@ public sealed class DocumentRenderer : IDocumentRenderer
         sb.Append("</div>");
     }
 
-    private static void AppendDocumentMetaFactura(StringBuilder sb, FacturaComprobanteDocumentData comprobante, List<string>? fields)
+    private static void AppendDocumentMetaFactura(StringBuilder sb, FacturaComprobanteDocumentData comprobante, List<string>? fields, string nombreDocumento)
     {
         sb.Append("<div class=\"doc-meta\">");
-        sb.Append("<b>FACTURA ").Append(E(comprobante.PuntoVenta)).Append('-').Append(E(comprobante.Numero)).Append("</b><br>");
+        sb.Append("<b>").Append(E(nombreDocumento.ToUpperInvariant())).Append(' ').Append(E(comprobante.PuntoVenta)).Append('-').Append(E(comprobante.Numero)).Append("</b><br>");
         sb.Append("<span class=\"muted\">Fecha: ").Append(comprobante.Fecha.ToString("dd/MM/yyyy", CulturaAr)).Append("</span>");
         if (!string.IsNullOrWhiteSpace(comprobante.CondicionVenta)) sb.Append("<br><span class=\"muted\">Cond. venta: ").Append(E(comprobante.CondicionVenta)).Append("</span>");
         sb.Append("</div>");

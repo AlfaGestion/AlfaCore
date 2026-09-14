@@ -7,6 +7,8 @@
 @inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
 @inject AlfaCore.Services.IConfiguracionGeneralService ConfiguracionSvc
 @inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
+@inject AlfaCore.Services.IDocumentTemplateService TemplateSvc
+@inject AlfaCore.Services.IDocumentRenderer DocumentRenderer
 
 <PageTitle>Comprobante | Portal Cliente</PageTitle>
 
@@ -98,7 +100,14 @@ else
         else
         {
             <div class="portal-comprobante-wrap">
-                <PortalClienteComprobanteView Item="_comprobante" Empresa="_empresa" LogoUrl="@GetBrandingLogoUrl()" LogoAlt="@GetBrandingName()" />
+                @if (!string.IsNullOrWhiteSpace(_documentoHtml))
+                {
+                    <iframe class="portal-comprobante-document-frame" style="display:block;width:100%;max-width:820px;height:1120px;margin:0 auto;border:1px solid #d5dde5;border-radius:14px;background:#fff;" srcdoc="@_documentoHtml" title="Comprobante"></iframe>
+                }
+                else
+                {
+                    <PortalClienteComprobanteView Item="_comprobante" Empresa="_empresa" LogoUrl="@GetBrandingLogoUrl()" LogoAlt="@GetBrandingName()" />
+                }
             </div>
         }
     </section>
@@ -115,6 +124,7 @@ else
     private string? _pdfError;
     private PortalClienteComprobantePendienteDetalleDto? _comprobante;
     private ConfiguracionEmpresaDto _empresa = new();
+    private string? _documentoHtml;
 
     protected override async Task OnAfterClientSessionRestoredAsync()
     {
@@ -152,6 +162,51 @@ else
             {
                 try { _empresa = await ConfiguracionSvc.GetEmpresaAsync(); }
                 catch { _empresa = new ConfiguracionEmpresaDto(); }
+                try
+                {
+                    var tipo = TiposDocumentoCore.TipoParaComprobante(_comprobante.Tc, _comprobante.Letra);
+                    var template = await TemplateSvc.ResolveAsync(tipo, null);
+                    var definition = TemplateSvc.DeserializeAndValidate(template.TemplateJson, tipo);
+                    var empresaLogo = await ConfigGeneralSvc.GetLogoBytesAsync();
+                    var data = new FacturaDocumentData
+                    {
+                        Empresa = new EmpresaDocumentData
+                        {
+                            Nombre = _empresa.Nombre, Cuit = _empresa.Cuit,
+                            Domicilio = string.Join(" ", new[] { _empresa.Calle, _empresa.Numero, _empresa.Piso, _empresa.Departamento }.Where(x => !string.IsNullOrWhiteSpace(x))),
+                            Telefono = _empresa.Telefono, Email = _empresa.EmailWeb, Logo = empresaLogo
+                        },
+                        Comprobante = new FacturaComprobanteDocumentData
+                        {
+                            Tc = _comprobante.Tc, Letra = _comprobante.Letra, PuntoVenta = _comprobante.Sucursal,
+                            Numero = _comprobante.Numero, Fecha = _comprobante.Fecha,
+                            CondicionVenta = _comprobante.CondicionVentaDescripcion
+                        },
+                        Cliente = new FacturaClienteDocumentData
+                        {
+                            Codigo = _comprobante.CodigoCliente, RazonSocial = _comprobante.RazonSocial,
+                            DocumentoTipoDescripcion = _comprobante.DocumentoTipo, DocumentoNumero = _comprobante.DocumentoNumero,
+                            CondicionIvaDescripcion = _comprobante.CondicionIvaDescripcion, Domicilio = _comprobante.Domicilio,
+                            Localidad = _comprobante.Localidad, Telefono = _comprobante.Telefono
+                        },
+                        Items = _comprobante.Lineas.Select(x => new FacturaDocumentItemData
+                        {
+                            Codigo = x.IdArticulo, Descripcion = x.Descripcion, Unidad = x.Unidad,
+                            Cantidad = x.Cantidad, PrecioUnitario = x.PrecioUnitario, Bonificacion = x.Bonificacion,
+                            AlicuotaIva = x.Iva, Subtotal = x.Subtotal
+                        }).ToList(),
+                        Totales = new FacturaTotalesDocumentData
+                        {
+                            NetoGravado = _comprobante.NetoGravado, NetoNoGravado = _comprobante.NetoNoGravado,
+                            Total = _comprobante.ImporteOriginal
+                        }
+                    };
+                    _documentoHtml = DocumentRenderer.RenderFactura(data: data, template: definition, cssCustom: template.CssCustom, themeKey: await TemplateSvc.GetGeneralThemeAsync(), tituloDocumento: template.Nombre);
+                }
+                catch
+                {
+                    _documentoHtml = null;
+                }
             }
         }
         finally

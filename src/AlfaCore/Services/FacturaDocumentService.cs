@@ -15,7 +15,8 @@ public sealed class FacturaDocumentService(
     IDocumentRenderer renderer,
     IDocumentPdfService pdfService,
     IAppEventService appEvents,
-    ILogger<FacturaDocumentService> logger) : IFacturaDocumentService
+    ILogger<FacturaDocumentService> logger,
+    ISessionService sessionService) : IFacturaDocumentService
 {
     private const string ModuleName = "Documentos";
 
@@ -27,20 +28,31 @@ public sealed class FacturaDocumentService(
         [11] = ("C", "011")
     };
 
-    private string ConnectionString => configuration.GetConnectionString("AlfaGestion")
+    private string ConnectionString => sessionService.GetConnectionString().Length > 0
+        ? sessionService.GetConnectionString()
+        : configuration.GetConnectionString("AlfaGestion")
         ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     public async Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default)
     {
+        var data = await BuildDataAsync(tc, idComprobante, ct)
+            ?? throw new InvalidOperationException("El comprobante indicado no existe o no es compatible.");
+        var tipo = TiposDocumentoCore.ParaLetra(data.Comprobante.Letra);
+        return await RenderAsync(tc, idComprobante, uNegocio, tipo, ct);
+    }
+
+    public async Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, string tipoDocumento, CancellationToken ct = default)
+    {
         try
         {
+            if (!TiposDocumentoCore.EsDocumentoConLetra(tipoDocumento))
+                throw new InvalidOperationException("El tipo de documento no tiene una letra válida.");
             var data = await BuildDataAsync(tc, idComprobante, ct)
                 ?? throw new InvalidOperationException("El comprobante indicado no existe o no es una Factura A/B/C.");
-            var tipoDocumento = TiposDocumentoCore.ParaLetra(data.Comprobante.Letra);
             var template = await templates.ResolveAsync(tipoDocumento, uNegocio, ct);
             var definition = templates.DeserializeAndValidate(template.TemplateJson, tipoDocumento);
             var theme = await templates.GetGeneralThemeAsync(ct);
-            var html = renderer.RenderFactura(definition, data, template.CssCustom, theme);
+            var html = renderer.RenderFactura(definition, data, template.CssCustom, theme, template.Nombre);
             var footer = BuildFooterOptions(definition, data.Empresa.Nombre);
             logger.LogInformation("Documentos: HTML de factura {Tc}/{IdComprobante}, plantilla {IdTemplate}, UNegocio {UNegocio}.", tc, idComprobante, template.IdTemplate, uNegocio ?? "GLOBAL");
             return new DocumentRenderResult { Html = html, IdTemplate = template.IdTemplate, TipoDocumento = template.TipoDocumento, UNegocio = template.UNegocio, Footer = footer };
@@ -56,7 +68,14 @@ public sealed class FacturaDocumentService(
 
     public async Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default)
     {
-        var result = await RenderAsync(tc, idComprobante, uNegocio, ct);
+        var data = await BuildDataAsync(tc, idComprobante, ct)
+            ?? throw new InvalidOperationException("El comprobante indicado no existe o no es compatible.");
+        return await GeneratePdfAsync(tc, idComprobante, uNegocio, TiposDocumentoCore.ParaLetra(data.Comprobante.Letra), ct);
+    }
+
+    public async Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, string tipoDocumento, CancellationToken ct = default)
+    {
+        var result = await RenderAsync(tc, idComprobante, uNegocio, tipoDocumento, ct);
         var pdf = await pdfService.GenerateAsync(result.Html, result.Footer, ct);
         logger.LogInformation("Documentos: PDF de factura {Tc}/{IdComprobante}, plantilla {IdTemplate}.", tc, idComprobante, result.IdTemplate);
         return pdf;
@@ -262,6 +281,8 @@ public sealed class FacturaDocumentService(
         // Sin fila en V_MV_CPTE_ELECTRONICOS (comprobante viejo o sin electrónica todavía): se cae
         // a la letra directa de la cabecera, mapeando el código AFIP de 3 dígitos estándar.
         var letra = header.Letra.Trim().ToUpperInvariant();
+        if (string.Equals(header.Tc.Trim(), "CBCT", StringComparison.OrdinalIgnoreCase))
+            return ("X", string.Empty);
         return letra switch
         {
             "A" => ("A", "001"),
