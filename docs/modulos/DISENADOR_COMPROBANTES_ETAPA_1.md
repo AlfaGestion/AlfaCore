@@ -246,3 +246,7 @@ Archivos: `PortalClienteComprobanteDetalle.razor` y sus archivos CSS/JS, `IFactu
 y `FacturaDocumentService.cs`. No requiere cambios SQL. Validación manual pendiente con sesión real:
 comparar un comprobante en portal y diseñador con la misma plantilla guardada, descargar su PDF,
 imprimir y comprobar que un ID de otra cuenta no muestre contenido.
+
+### Integración con pedidos, remitos y cobranzas
+
+La sincronización del 14/09/2026 conserva las opciones de pedidos, remitos y cobranzas incorporadas en el remoto. Las identificaciones CREDITO_/DEBITO_ y NOTA_CREDITO_/NOTA_DEBITO_ se consideran equivalentes al listar, resolver y marcar plantillas predeterminadas; no se eliminan plantillas existentes. La vista previa fiscal del portal conserva la validación de pertenencia y la generación de QR al consultar. Los servicios de documentos toman la conexión de la sesión activa.

@@ -29,7 +29,7 @@ public sealed class DocumentTicketTests
             Cae = new() { Cae = "70417054367476", Resultado = "A", VencimientoCae = new DateTime(2026, 9, 24) },
             QrBytes = new ArcaQrService().GeneratePng(new(new DateTime(2026, 9, 14), "30000000007", 1, 2, 1, 2000000 * items, "PES", 1, 99, "0", "E", "70417054367476"))
         };
-        var definitions = new DocumentTemplateService(null!, null!, null!, null!);
+        var definitions = new DocumentTemplateService(null!, null!, null!, null!, null!);
         definitions.DeserializeAndValidate(JsonSerializer.Serialize(template), TiposDocumentoCore.DebitoA);
         using var provider = new ServiceCollection().BuildServiceProvider();
         await using var service = new DocumentPdfService(provider.GetRequiredService<IServiceScopeFactory>(), NullLogger<DocumentPdfService>.Instance);
@@ -66,7 +66,7 @@ public sealed class DocumentTicketTests
         Assert.Equal("Portrait", template.Paper.Orientation);
         template.Paper.Size = "Ticket80";
         template.Paper.Orientation = "Landscape";
-        var service = new DocumentTemplateService(null!, null!, null!, null!);
+        var service = new DocumentTemplateService(null!, null!, null!, null!, null!);
         Assert.Throws<InvalidOperationException>(() => service.DeserializeAndValidate(JsonSerializer.Serialize(template), TiposDocumentoCore.FacturaA));
     }
 }

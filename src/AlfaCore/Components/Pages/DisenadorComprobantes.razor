@@ -38,6 +38,14 @@
         <label>Tipo de documento
             <select @bind="_tipoDocumento" @bind:after="TipoDocumentoChangedAsync">
                 <option value="@TiposDocumentoCore.Cotizacion">Cotización</option>
+                <option value="@TiposDocumentoCore.NotaPedido">Nota de pedido</option>
+                <option value="@TiposDocumentoCore.RemitoR">Remito R</option>
+                <option value="@TiposDocumentoCore.RemitoX">Remito X</option>
+                <option value="@TiposDocumentoCore.CobranzaA">Cobranza A</option>
+                <option value="@TiposDocumentoCore.CobranzaB">Cobranza B</option>
+                <option value="@TiposDocumentoCore.CobranzaC">Cobranza C</option>
+                <option value="@TiposDocumentoCore.CobranzaProforma">Cobranza Proforma</option>
+                <option value="@TiposDocumentoCore.CobranzaContado">Cobranza contado (CBCT)</option>
                 @foreach (var tipo in TiposDocumentoCore.Fiscales)
                 {
                     <option value="@tipo.Tipo">@TiposDocumentoCore.NombreDe(tipo.Tipo)</option>
@@ -267,17 +275,29 @@
                 else
                 {
                     <div class="document-designer__preview-toolbar">
-                        <label>Cotización para probar
-                            <select value="@_previewVersionId" @onchange="PreviewVersionChangedAsync">
-                                <option value="0">Datos demo</option>
-                                @foreach (var quote in _cotizaciones) { <option value="@quote.IdVersion">@quote.CodigoVisible - @quote.EmpresaProspecto</option> }
-                            </select>
-                        </label>
+                        @if (EsNotaPedido)
+                        {
+                            <label>Nota de pedido para probar
+                                <select value="@_previewNotaPedidoId" @onchange="PreviewNotaPedidoChangedAsync">
+                                    <option value="0">Elegí una nota de pedido</option>
+                                    @foreach (var pedido in _notasPedido) { <option value="@pedido.IdComprobante">@pedido.IdComprobanteTexto - @pedido.Cliente</option> }
+                                </select>
+                            </label>
+                        }
+                        else
+                        {
+                            <label>Cotización para probar
+                                <select value="@_previewVersionId" @onchange="PreviewVersionChangedAsync">
+                                    <option value="0">Datos demo</option>
+                                    @foreach (var quote in _cotizaciones) { <option value="@quote.IdVersion">@quote.CodigoVisible - @quote.EmpresaProspecto</option> }
+                                </select>
+                            </label>
+                        }
                         <button class="btn btn--ghost" @onclick="PreviewAsync" disabled="@_busy"><i class="bi bi-eye"></i> Actualizar vista previa</button>
                         @if (_previewVersionId > 0) { <button class="btn btn--primary" @onclick="PdfAsync" disabled="@_busy"><i class="bi bi-file-earmark-pdf"></i> PDF beta</button> }
                     </div>
-                    @if (_previewHtml is null) { <p class="muted">Elegí una cotización para previsualizar el formato con datos reales.</p> }
-                    else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa de cotización"></iframe> }
+                    @if (_previewHtml is null) { <p class="muted">Elegí datos de prueba para previsualizar el formato.</p> }
+                    else { <iframe class="document-designer__frame" srcdoc="@_previewHtml" title="Vista previa de documento"></iframe> }
                 }
             </main>
         </section>
@@ -292,12 +312,14 @@
     private IReadOnlyList<UnidadNegocioOptionDto> _unidades = [];
     private IReadOnlyList<CotizacionListItemDto> _cotizaciones = [];
     private IReadOnlyList<FacturaResumenDto> _facturasRecientes = [];
+    private IReadOnlyList<NotaPedidoResumenDto> _notasPedido = [];
     private DocumentTemplateDto? _selected;
     private DocumentTemplateSaveRequest _draft = new();
     private string _uNegocio = string.Empty;
     private string _tipoDocumento = TiposDocumentoCore.Cotizacion;
     private int _selectedTemplateId;
     private long _previewVersionId;
+    private int _previewNotaPedidoId;
     private string _previewFacturaKey = string.Empty;
     private string? _previewHtml;
     private bool _busy;
@@ -325,7 +347,8 @@
     private DocumentBlockDefinition? CaeBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Cae, StringComparison.OrdinalIgnoreCase));
     private DocumentBlockDefinition? QrAfipBlock => _draft.Definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.QrAfip, StringComparison.OrdinalIgnoreCase));
 
-    private bool EsFactura => TiposDocumentoCore.EsFiscal(_tipoDocumento);
+    private bool EsFactura => TiposDocumentoCore.EsFactura(_tipoDocumento);
+    private bool EsNotaPedido => TiposDocumentoCore.EsNotaPedido(_tipoDocumento);
 
     protected override async Task OnInitializedAsync()
     {
@@ -414,9 +437,12 @@
         _previewVersionId = 0;
         _previewFacturaKey = string.Empty;
         _facturasRecientes = [];
+        _notasPedido = [];
         await LoadTemplatesAsync();
         if (TiposDocumentoCore.LetraDe(_tipoDocumento) is { } letra)
             _facturasRecientes = await FacturaDocumentSvc.SearchRecientesAsync(_tipoDocumento);
+        else if (EsNotaPedido)
+            _notasPedido = await CotizDocumentSvc.SearchNotasPedidoRecientesAsync();
     }
 
     private async Task TemplateChangedAsync(ChangeEventArgs args)
@@ -454,8 +480,8 @@
         {
             UNegocio = NullIfEmpty(_uNegocio),
             TipoDocumento = _tipoDocumento,
-            Nombre = letra is not null ? $"{TiposDocumentoCore.NombreDe(_tipoDocumento)} nueva" : "Nueva cotización",
-            Definition = letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : DocumentTemplateDefinition.CrearCotizacionEstandar(),
+            Nombre = TiposDocumentoCore.NombrePredeterminado(_tipoDocumento),
+            Definition = letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : EsNotaPedido ? DocumentTemplateDefinition.CrearNotaPedidoEstandar() : DocumentTemplateDefinition.CrearCotizacionEstandar(),
             Usuario = AppUserSession.GetCurrentUserName("Sistema")
         };
         _previewHtml = null;
@@ -610,13 +636,34 @@
 
     private async Task PreviewAsync()
     {
-        if (_previewVersionId <= 0) { _error = "Para este MVP elegí una cotización real como datos de prueba."; return; }
+        if (EsNotaPedido)
+        {
+            if (_previewNotaPedidoId <= 0) { _error = "Elegí una nota de pedido real como datos de prueba."; return; }
+            await BusyAsync(async () =>
+            {
+                var result = await CotizDocumentSvc.RenderNotaPedidoAsync(_previewNotaPedidoId, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate());
+                _previewHtml = result.Html;
+                _message = $"Vista previa generada con plantilla #{result.IdTemplate}.";
+            });
+            return;
+        }
+        var versionId = _previewVersionId > 0
+            ? _previewVersionId
+            : _cotizaciones.FirstOrDefault()?.IdVersion ?? 0;
+        if (versionId <= 0) { _error = "No hay datos de prueba disponibles para previsualizar este documento."; return; }
         await BusyAsync(async () =>
         {
-            var result = await CotizDocumentSvc.RenderAsync(_previewVersionId, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate());
+            var result = await CotizDocumentSvc.RenderAsync(versionId, NullIfEmpty(_uNegocio), _tipoDocumento, previewTemplate: BuildPreviewTemplate());
             _previewHtml = result.Html;
             _message = "Vista previa generada con los cambios actuales.";
         });
+    }
+
+    private Task PreviewNotaPedidoChangedAsync(ChangeEventArgs args)
+    {
+        _previewNotaPedidoId = int.TryParse(args.Value?.ToString(), out var id) ? id : 0;
+        _previewHtml = null;
+        return Task.CompletedTask;
     }
 
     private async Task PdfAsync()
@@ -624,7 +671,7 @@
         if (_previewVersionId <= 0) return;
         await BusyAsync(async () =>
         {
-            var pdf = await CotizDocumentSvc.GeneratePdfAsync(_previewVersionId, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate());
+            var pdf = await CotizDocumentSvc.GeneratePdfAsync(_previewVersionId, NullIfEmpty(_uNegocio), _tipoDocumento, previewTemplate: BuildPreviewTemplate());
             await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"cotizacion-beta-{_previewVersionId}.pdf");
         });
     }
@@ -643,7 +690,7 @@
         if (!TryParseFacturaKey(out var tc, out var idComprobante)) { _error = "Elegí un comprobante real como datos de prueba."; return; }
         await BusyAsync(async () =>
         {
-            var result = await FacturaDocumentSvc.RenderAsync(tc, idComprobante, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate());
+            var result = await FacturaDocumentSvc.RenderAsync(tc, idComprobante, NullIfEmpty(_uNegocio), _tipoDocumento, previewTemplate: BuildPreviewTemplate());
             _previewHtml = result.Html;
             _message = "Vista previa generada con los cambios actuales.";
         });
@@ -654,7 +701,7 @@
         if (!TryParseFacturaKey(out var tc, out var idComprobante)) return;
         await BusyAsync(async () =>
         {
-            var pdf = await FacturaDocumentSvc.GeneratePdfAsync(tc, idComprobante, NullIfEmpty(_uNegocio), previewTemplate: BuildPreviewTemplate());
+            var pdf = await FacturaDocumentSvc.GeneratePdfAsync(tc, idComprobante, NullIfEmpty(_uNegocio), _tipoDocumento, previewTemplate: BuildPreviewTemplate());
             await JS.InvokeVoidAsync("alfaCoreInterfacesUpload.downloadBlob", Convert.ToBase64String(pdf), "application/pdf", $"{_tipoDocumento.ToLowerInvariant()}-{idComprobante}.pdf");
         });
     }

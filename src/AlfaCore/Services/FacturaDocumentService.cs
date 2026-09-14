@@ -16,26 +16,37 @@ public sealed class FacturaDocumentService(
     IDocumentPdfService pdfService,
     IArcaQrService arcaQr,
     IAppEventService appEvents,
-    ILogger<FacturaDocumentService> logger) : IFacturaDocumentService
+    ILogger<FacturaDocumentService> logger,
+    ISessionService sessionService) : IFacturaDocumentService
 {
     private const string ModuleName = "Documentos";
 
-    private string ConnectionString => configuration.GetConnectionString("AlfaGestion")
+    private string ConnectionString => sessionService.GetConnectionString().Length > 0
+        ? sessionService.GetConnectionString()
+        : configuration.GetConnectionString("AlfaGestion")
         ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
-    public async Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
+    public Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
+        => RenderCoreAsync(tc, idComprobante, uNegocio, null, ct, previewTemplate);
+
+    public Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, string tipoDocumento, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
+        => RenderCoreAsync(tc, idComprobante, uNegocio, tipoDocumento, ct, previewTemplate);
+
+    private async Task<DocumentRenderResult> RenderCoreAsync(string tc, string idComprobante, string? uNegocio, string? tipoSolicitado, CancellationToken ct, DocumentTemplateDto? previewTemplate)
     {
         try
         {
             var data = await BuildDataAsync(tc, idComprobante, ct)
                 ?? throw new ComprobanteNoSoportadoException();
-            var tipoDocumento = data.Comprobante.TipoDocumento;
+            var tipoDocumento = tipoSolicitado ?? data.Comprobante.TipoDocumento;
+            if (!string.Equals(TiposDocumentoCore.NormalizarFiscal(tipoDocumento), TiposDocumentoCore.NormalizarFiscal(data.Comprobante.TipoDocumento), StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("El tipo seleccionado no corresponde al comprobante.");
             var template = previewTemplate ?? await templates.ResolveAsync(tipoDocumento, uNegocio, ct);
-            if (!string.Equals(template.TipoDocumento, tipoDocumento, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(TiposDocumentoCore.NormalizarFiscal(template.TipoDocumento), TiposDocumentoCore.NormalizarFiscal(tipoDocumento), StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("La plantilla no corresponde al tipo de comprobante seleccionado.");
             var definition = templates.DeserializeAndValidate(template.TemplateJson, tipoDocumento);
             var theme = await templates.GetGeneralThemeAsync(ct);
-            var html = renderer.RenderFactura(definition, data, template.CssCustom, theme);
+            var html = renderer.RenderFactura(definition, data, template.CssCustom, theme, TiposDocumentoCore.EsFiscal(tipoDocumento) ? null : TiposDocumentoCore.NombrePredeterminado(tipoDocumento));
             if (definition.TotalesAlPiePagina || definition.Paper.Size == "Ticket80") html = await pdfService.PrepareHtmlAsync(html, ct);
             var footer = BuildFooterOptions(definition, data.Empresa.Nombre);
             logger.LogInformation("Documentos: HTML de factura {Tc}/{IdComprobante}, plantilla {IdTemplate}, UNegocio {UNegocio}.", tc, idComprobante, template.IdTemplate, uNegocio ?? "GLOBAL");
@@ -53,6 +64,12 @@ public sealed class FacturaDocumentService(
     public async Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
     {
         var result = await RenderAsync(tc, idComprobante, uNegocio, ct, previewTemplate);
+        return await pdfService.GenerateAsync(result.Html, result.Footer, ct);
+    }
+
+    public async Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, string tipoDocumento, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
+    {
+        var result = await RenderAsync(tc, idComprobante, uNegocio, tipoDocumento, ct, previewTemplate);
         var pdf = await pdfService.GenerateAsync(result.Html, result.Footer, ct);
         logger.LogInformation("Documentos: PDF de factura {Tc}/{IdComprobante}, plantilla {IdTemplate}.", tc, idComprobante, result.IdTemplate);
         return pdf;
@@ -123,11 +140,29 @@ public sealed class FacturaDocumentService(
     public async Task<IReadOnlyList<FacturaResumenDto>> SearchRecientesAsync(string tipoDocumento, int top = 20, CancellationToken ct = default)
     {
         var tipoCpte = TiposDocumentoCore.Fiscal(tipoDocumento)?.CodigoArca ?? 0;
-        if (tipoCpte == 0)
-            return [];
-
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
+        if (tipoCpte == 0)
+        {
+            var tc = tipoDocumento switch
+            {
+                TiposDocumentoCore.RemitoR or TiposDocumentoCore.RemitoX => "RM",
+                TiposDocumentoCore.CobranzaContado => "CBCT",
+                TiposDocumentoCore.CobranzaA or TiposDocumentoCore.CobranzaB or TiposDocumentoCore.CobranzaC or TiposDocumentoCore.CobranzaProforma => "CB",
+                _ => string.Empty
+            };
+            if (tc.Length == 0) return [];
+            var otros = await cn.QueryAsync<FacturaResumenDto>(new CommandDefinition("""
+                SELECT TOP (@Top) LTRIM(RTRIM(TC)) AS Tc, LTRIM(RTRIM(IDCOMPROBANTE)) AS IdComprobante,
+                    LTRIM(RTRIM(SUCURSAL)) + '-' + LTRIM(RTRIM(NUMERO)) AS Numero,
+                    FECHA AS Fecha, ISNULL(LTRIM(RTRIM(NOMBRE)), '') AS Cliente
+                FROM dbo.V_MV_Cpte
+                WHERE UPPER(LTRIM(RTRIM(TC))) = @Tc
+                  AND (@Tc = 'CBCT' OR UPPER(LTRIM(RTRIM(LETRA))) = @Letra)
+                ORDER BY FECHA DESC, ID DESC;
+                """, new { Top = Math.Clamp(top, 1, 200), Tc = tc, Letra = TiposDocumentoCore.LetraDe(tipoDocumento) }, cancellationToken: ct));
+            return otros.AsList();
+        }
         if (!await ExistsAsync(cn, "dbo.V_MV_CPTE_ELECTRONICOS", ct))
             return [];
 
@@ -221,6 +256,12 @@ public sealed class FacturaDocumentService(
             return null;
 
         var (letra, codigoAfip) = ResolveLetraYCodigo(header.TipoCpte, header.Letra);
+        var tipoCabecera = TiposDocumentoCore.TipoParaComprobante(header.Tc, header.Letra);
+        if (!header.TipoCpte.HasValue && header.Tc.Trim().ToUpperInvariant() is "RM" or "CB" or "CBCT")
+        {
+            letra = TiposDocumentoCore.LetraDe(tipoCabecera);
+            codigoAfip = string.Empty;
+        }
         if (letra is null)
             return null;
 
@@ -250,7 +291,7 @@ public sealed class FacturaDocumentService(
             Comprobante = new FacturaComprobanteDocumentData
             {
                 Tc = header.Tc, Letra = letra, CodigoAfip = codigoAfip,
-                TipoDocumento = TiposDocumentoCore.Fiscal(int.Parse(codigoAfip))!.Tipo,
+                TipoDocumento = header.TipoCpte.HasValue ? TiposDocumentoCore.Fiscal(header.TipoCpte.Value)!.Tipo : tipoCabecera,
                 PuntoVenta = header.Sucursal, Numero = header.Numero, Fecha = header.Fecha,
                 CondicionVenta = header.CondicionVenta
             },

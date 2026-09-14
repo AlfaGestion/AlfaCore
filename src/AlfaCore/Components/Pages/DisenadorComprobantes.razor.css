@@ -122,10 +122,27 @@
     min-width: 0;
     min-height: 2.25rem;
     padding: .35rem .55rem;
-    border: 1px solid var(--alfa-border, #cbd5e1);
+    border: 1px solid var(--alfa-border-default, var(--alfa-border, #333640));
     border-radius: var(--alfa-radius-sm, .45rem);
-    background: var(--alfa-surface, #fff);
-    color: inherit;
+    background: var(--alfa-bg-input, #252830);
+    color: var(--alfa-text-primary, #f5f5f7);
+    color-scheme: dark;
+}
+
+.document-designer input:not([type="checkbox"]):focus,
+.document-designer input:not([type="checkbox"]):focus-visible,
+.document-designer select:focus,
+.document-designer select:focus-visible {
+    border-color: var(--alfa-accent, #4f9efa);
+    outline: 2px solid color-mix(in srgb, var(--alfa-accent, #4f9efa) 30%, transparent);
+    outline-offset: 1px;
+}
+
+.document-designer input:not([type="checkbox"]):disabled,
+.document-designer select:disabled {
+    background: color-mix(in srgb, var(--alfa-bg-input, #252830) 70%, var(--alfa-bg-surface, #16181d));
+    color: var(--alfa-text-disabled, #666b75);
+    opacity: 1;
 }
 
 .document-designer input[type="checkbox"] {

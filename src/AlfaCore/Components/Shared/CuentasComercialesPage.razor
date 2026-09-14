@@ -2976,7 +2976,10 @@ else
         _enviandoInvitacionContactoId = contacto.IdContacto;
         try
         {
-            var request = await BuildInvitacionRequestAsync(contacto.IdContacto, contacto.Email);
+            // El contacto recibe el mensaje, pero el usuario de acceso siempre es el email
+            // original del cliente (_form.Mail), porque un mismo contacto puede estar asociado
+            // a varias cuentas.
+            var request = await BuildInvitacionRequestAsync(contacto.IdContacto, _form.Mail);
             var currentUser = AppUserSession.GetCurrentUserName(string.Empty);
             var email = await PortalInvitacionSvc.EnviarInvitacionAsync(request, currentUser);
             SetFeedback(AppUiMessage.Success("Invitación enviada", $"Invitación enviada a {email}."));

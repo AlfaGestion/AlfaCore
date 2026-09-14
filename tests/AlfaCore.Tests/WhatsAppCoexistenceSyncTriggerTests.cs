@@ -23,8 +23,8 @@ public sealed class WhatsAppCoexistenceSyncTriggerTests
         Assert.Equal(
             [(WhatsAppCoexistenceSyncType.ContactState, "phone-1"), (WhatsAppCoexistenceSyncType.History, "phone-1")],
             management.Requests);
-        var contacts = await store.GetAsync(onboarding.IdBase, "phone-1", WhatsAppCoexistenceSyncType.ContactState);
-        var history = await store.GetAsync(onboarding.IdBase, "phone-1", WhatsAppCoexistenceSyncType.History);
+        var contacts = await store.GetAsync(onboarding.IdBase, "phone-1", onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.ContactState);
+        var history = await store.GetAsync(onboarding.IdBase, "phone-1", onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.History);
         Assert.Equal(WhatsAppCoexistenceSyncStatus.Requested, contacts!.Status);
         Assert.Equal(WhatsAppCoexistenceSyncStatus.Requested, history!.Status);
         Assert.Equal("req-1", contacts.RequestId);
@@ -93,8 +93,8 @@ public sealed class WhatsAppCoexistenceSyncTriggerTests
             [new WhatsAppCoexistencePhoneCandidate("phone-1", IsOnBizApp: true)],
             new WhatsAppCredentialReference("token-ref"));
 
-        var contacts = await store.GetAsync(onboarding.IdBase, "phone-1", WhatsAppCoexistenceSyncType.ContactState);
-        var history = await store.GetAsync(onboarding.IdBase, "phone-1", WhatsAppCoexistenceSyncType.History);
+        var contacts = await store.GetAsync(onboarding.IdBase, "phone-1", onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.ContactState);
+        var history = await store.GetAsync(onboarding.IdBase, "phone-1", onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.History);
         Assert.Equal(WhatsAppCoexistenceSyncStatus.Failed, contacts!.Status);
         Assert.Equal(WhatsAppCoexistenceSyncStatus.Requested, history!.Status);
     }
@@ -113,7 +113,7 @@ public sealed class WhatsAppCoexistenceSyncTriggerTests
             new WhatsAppCredentialReference("token-ref")));
 
         Assert.Null(exception);
-        var history = await store.GetAsync(onboarding.IdBase, "phone-1", WhatsAppCoexistenceSyncType.History);
+        var history = await store.GetAsync(onboarding.IdBase, "phone-1", onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.History);
         Assert.Equal(WhatsAppCoexistenceSyncStatus.Failed, history!.Status);
     }
 
@@ -131,8 +131,8 @@ public sealed class WhatsAppCoexistenceSyncTriggerTests
             new WhatsAppCredentialReference("token-ref"));
 
         Assert.Empty(management.Requests);
-        var contacts = await store.GetAsync(onboarding.IdBase, "phone-1", WhatsAppCoexistenceSyncType.ContactState);
-        var history = await store.GetAsync(onboarding.IdBase, "phone-1", WhatsAppCoexistenceSyncType.History);
+        var contacts = await store.GetAsync(onboarding.IdBase, "phone-1", onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.ContactState);
+        var history = await store.GetAsync(onboarding.IdBase, "phone-1", onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.History);
         Assert.Equal(WhatsAppCoexistenceSyncStatus.Expired, contacts!.Status);
         Assert.Equal(WhatsAppCoexistenceSyncStatus.Expired, history!.Status);
     }
@@ -154,8 +154,39 @@ public sealed class WhatsAppCoexistenceSyncTriggerTests
             new WhatsAppCredentialReference("token-ref"));
 
         Assert.Equal(4, management.Requests.Count);
-        Assert.NotNull(await store.GetAsync(onboarding.IdBase, "phone-1", WhatsAppCoexistenceSyncType.History));
-        Assert.NotNull(await store.GetAsync(onboarding.IdBase, "phone-2", WhatsAppCoexistenceSyncType.History));
+        Assert.NotNull(await store.GetAsync(onboarding.IdBase, "phone-1", onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.History));
+        Assert.NotNull(await store.GetAsync(onboarding.IdBase, "phone-2", onboarding.IdOnboarding, WhatsAppCoexistenceSyncType.History));
+    }
+
+    [Fact]
+    public async Task ReOnboard_SamePhone_AfterRealOffboard_RequestsHistoryAgain()
+    {
+        // Escenario del pedido de corrección: onboarding A completa su history sync one-shot para el
+        // número X; después de un offboard real y un nuevo consentimiento, onboarding B (mismo IdBase,
+        // mismo PhoneNumberId, IdOnboarding NUEVO) debe poder volver a pedir history -- el one-shot es
+        // por intento de onboarding, no para siempre por número.
+        var store = new MemorySyncStore();
+        var management = new MemoryManagementClient();
+        var trigger = new WhatsAppCoexistenceSyncTrigger(store, management, NullLogger<WhatsAppCoexistenceSyncTrigger>.Instance);
+        var onboardingA = CreateOnboarding(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+        var candidates = new[] { new WhatsAppCoexistencePhoneCandidate("phone-1", IsOnBizApp: true) };
+
+        await trigger.TriggerInitialSyncsAsync(onboardingA, candidates, new WhatsAppCredentialReference("token-ref"));
+        Assert.Equal(2, management.Requests.Count); // contacts + history de A.
+
+        // offboard real (fuera del alcance de este trigger) + nuevo Embedded Signup Coexistence => B.
+        var onboardingB = CreateOnboarding(WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+        Assert.NotEqual(onboardingA.IdOnboarding, onboardingB.IdOnboarding);
+
+        await trigger.TriggerInitialSyncsAsync(onboardingB, candidates, new WhatsAppCredentialReference("token-ref"));
+
+        Assert.Equal(4, management.Requests.Count); // contacts + history de A, y de nuevo contacts + history de B.
+        var rowA = await store.GetAsync(onboardingA.IdBase, "phone-1", onboardingA.IdOnboarding, WhatsAppCoexistenceSyncType.History);
+        var rowB = await store.GetAsync(onboardingB.IdBase, "phone-1", onboardingB.IdOnboarding, WhatsAppCoexistenceSyncType.History);
+        Assert.NotNull(rowA); // la fila de A se conserva como historial, no se borra ni se pisa.
+        Assert.NotNull(rowB);
+        Assert.Equal(WhatsAppCoexistenceSyncStatus.Requested, rowA!.Status);
+        Assert.Equal(WhatsAppCoexistenceSyncStatus.Requested, rowB!.Status);
     }
 
     private static WhatsAppEmbeddedOnboardingDto CreateOnboarding(WhatsAppEmbeddedOnboardingMode mode, DateTime? startedAtUtc = null)
@@ -170,11 +201,12 @@ public sealed class WhatsAppCoexistenceSyncTriggerTests
 
     private sealed class MemorySyncStore : IWhatsAppCoexistenceSyncStore
     {
-        public Dictionary<(int IdBase, string PhoneNumberId, WhatsAppCoexistenceSyncType SyncType), WhatsAppCoexistenceSyncDto> Rows { get; } = [];
+        // Misma identidad que el store real: one-shot por (IdBase, IdOnboarding, PhoneNumberId, SyncType).
+        public Dictionary<(int IdBase, Guid IdOnboarding, string PhoneNumberId, WhatsAppCoexistenceSyncType SyncType), WhatsAppCoexistenceSyncDto> Rows { get; } = [];
 
         public Task<bool> TryReserveAsync(int idBase, string phoneNumberId, Guid idOnboarding, WhatsAppCoexistenceSyncType syncType, WhatsAppCoexistenceSyncStatus initialStatus, DateTime nowUtc, CancellationToken ct = default)
         {
-            var key = (idBase, phoneNumberId, syncType);
+            var key = (idBase, idOnboarding, phoneNumberId, syncType);
             if (Rows.ContainsKey(key)) return Task.FromResult(false);
             Rows[key] = new WhatsAppCoexistenceSyncDto
             {
@@ -183,14 +215,15 @@ public sealed class WhatsAppCoexistenceSyncTriggerTests
                 IdOnboarding = idOnboarding,
                 SyncType = syncType,
                 Status = initialStatus,
+                CreatedAtUtc = nowUtc,
                 ModifiedAtUtc = nowUtc
             };
             return Task.FromResult(true);
         }
 
-        public Task MarkRequestedAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, string requestId, DateTime requestedAtUtc, CancellationToken ct = default)
+        public Task MarkRequestedAsync(int idBase, string phoneNumberId, Guid idOnboarding, WhatsAppCoexistenceSyncType syncType, string requestId, DateTime requestedAtUtc, CancellationToken ct = default)
         {
-            var key = (idBase, phoneNumberId, syncType);
+            var key = (idBase, idOnboarding, phoneNumberId, syncType);
             if (Rows.TryGetValue(key, out var row) && row.Status == WhatsAppCoexistenceSyncStatus.Pending)
             {
                 row.Status = WhatsAppCoexistenceSyncStatus.Requested;
@@ -200,9 +233,9 @@ public sealed class WhatsAppCoexistenceSyncTriggerTests
             return Task.CompletedTask;
         }
 
-        public Task MarkFailedAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, string errorCode, string errorSummary, CancellationToken ct = default)
+        public Task MarkFailedAsync(int idBase, string phoneNumberId, Guid idOnboarding, WhatsAppCoexistenceSyncType syncType, string errorCode, string errorSummary, CancellationToken ct = default)
         {
-            var key = (idBase, phoneNumberId, syncType);
+            var key = (idBase, idOnboarding, phoneNumberId, syncType);
             if (Rows.TryGetValue(key, out var row) && row.Status == WhatsAppCoexistenceSyncStatus.Pending)
             {
                 row.Status = WhatsAppCoexistenceSyncStatus.Failed;
@@ -216,8 +249,8 @@ public sealed class WhatsAppCoexistenceSyncTriggerTests
         public Task MarkCompletedAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, DateTime completedAtUtc, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkDeclinedAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, string errorCode, CancellationToken ct = default) => throw new NotSupportedException();
 
-        public Task<WhatsAppCoexistenceSyncDto?> GetAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, CancellationToken ct = default)
-            => Task.FromResult(Rows.GetValueOrDefault((idBase, phoneNumberId, syncType)));
+        public Task<WhatsAppCoexistenceSyncDto?> GetAsync(int idBase, string phoneNumberId, Guid idOnboarding, WhatsAppCoexistenceSyncType syncType, CancellationToken ct = default)
+            => Task.FromResult(Rows.GetValueOrDefault((idBase, idOnboarding, phoneNumberId, syncType)));
 
         public Task<IReadOnlyList<WhatsAppCoexistenceSyncDto>> GetForBaseAsync(int idBase, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<WhatsAppCoexistenceSyncDto>>(Rows.Values.Where(x => x.IdBase == idBase).ToArray());

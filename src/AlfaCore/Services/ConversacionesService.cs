@@ -62,6 +62,7 @@ public sealed class ConversacionesService(
     private const int MaxAutomaticMediaRecoveryRequestsPerWindow = 20;
     private static readonly TimeSpan DefaultAutomaticMediaRecoveryMaxAge = TimeSpan.FromDays(30);
     private static readonly TimeSpan AutomaticMediaRecoveryRateWindow = TimeSpan.FromHours(1);
+    private static readonly TimeSpan WhatsAppMediaRequestTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan TypingTtl = TimeSpan.FromSeconds(8);
     private static readonly object AutomaticMediaRecoveryRateLock = new();
     private static readonly Queue<DateTime> AutomaticMediaRecoveryRequestTimesUtc = new();
@@ -3618,13 +3619,27 @@ public sealed class ConversacionesService(
 
                 if (incoming.Attachments.Count > 0 && whatsAppConfig is not null && !embeddedSignupWithoutVault)
                 {
-                    var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
-                        currentBaseId, null, incoming.PhoneNumberId, whatsAppConfig, token);
-                    whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
-                    whatsAppConfig.BusinessAccountId = runtimeCredential.WabaId;
-                    whatsAppConfig.ApiVersion = runtimeCredential.GraphVersion;
-                    whatsAppConfig.AccessToken = runtimeCredential.AccessToken;
-                    await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
+                    try
+                    {
+                        var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+                            currentBaseId, null, incoming.PhoneNumberId, whatsAppConfig, token);
+                        whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
+                        whatsAppConfig.BusinessAccountId = runtimeCredential.WabaId;
+                        whatsAppConfig.ApiVersion = runtimeCredential.GraphVersion;
+                        whatsAppConfig.AccessToken = runtimeCredential.AccessToken;
+                        await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
+                    }
+                    catch (Exception ex)
+                    {
+                        // El mensaje ya quedó persistido. La descarga no debe hacer que Meta
+                        // reintente todo el webhook ni retrasar la actualización del inbox;
+                        // RecoverConversationAttachmentsAsync intentará completar el archivo
+                        // cuando el operador abra la conversación.
+                        logger.LogWarning(
+                            ex,
+                            "Se recibió el mensaje {WhatsAppMessageId}, pero la descarga de su adjunto quedó pendiente.",
+                            incoming.WhatsAppMessageId);
+                    }
                 }
                 else if (incoming.Attachments.Count > 0 && embeddedSignupWithoutVault)
                 {
@@ -3711,7 +3726,7 @@ public sealed class ConversacionesService(
 
                 if (!string.IsNullOrWhiteSpace(historySync.PhoneNumberId))
                 {
-                    switch (ClassifyHistorySyncWebhook(historySync.ErrorCode, historySync.ContextStatus))
+                    switch (ClassifyHistorySyncWebhook(historySync.ErrorCode, historySync.Progress))
                     {
                         case WhatsAppHistorySyncWebhookOutcome.Declined:
                             await whatsAppCoexistenceSyncStore.MarkDeclinedAsync(currentBaseId, historySync.PhoneNumberId,
@@ -10073,7 +10088,8 @@ public sealed class ConversacionesService(
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
         var client = httpClientFactory.CreateClient();
-        using var response = await client.SendAsync(request, ct);
+        client.Timeout = WhatsAppMediaRequestTimeout;
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
@@ -10099,7 +10115,8 @@ public sealed class ConversacionesService(
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
         var client = httpClientFactory.CreateClient();
-        using var response = await client.SendAsync(request, ct);
+        client.Timeout = WhatsAppMediaRequestTimeout;
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct);
@@ -12329,68 +12346,165 @@ public sealed class ConversacionesService(
 
     // ---- Coexistence: history sync, smb_app_state_sync, smb_message_echoes ------------------------
     //
-    // A diferencia de "messages"/"statuses" (siempre entry[].changes[].value.*), Meta entrega
-    // "history" y "smb_app_state_sync" en un sobre TOTALMENTE distinto -- sin "entry" -- mientras que
-    // "smb_message_echoes" sigue el sobre clásico pero con field="smb_message_echoes" (nunca
-    // reconocido hasta ahora, porque el parser de mensajes normales sólo miraba si "value" tenía
-    // "messages"/"statuses", sin fijarse en cambios.field). Documentado por Meta, no observado en un
-    // payload real todavía: si algún nombre de campo difiere en producción, estos parsers devuelven
-    // listas vacías (fail-safe) en vez de lanzar -- nunca deben tumbar el resto del webhook.
+    // Confirmado por Meta (developers.facebook.com) y por dos partners independientes (360dialog,
+    // Gupshup), 2026-09: "history" y "smb_app_state_sync" pueden llegar en CUALQUIERA de dos sobres --
+    // Meta documenta ambos, no es que uno haya reemplazado al otro -- así que se aceptan los dos (ver
+    // CollectEnvelopeValues), nunca se elige uno solo:
+    //   A) { id, event:"history"|"smb_app_state_sync", data:{...} }                       -- sin "entry"
+    //   B) { object, entry:[{ changes:[{ field:"history"|"smb_app_state_sync", value:{...} }] }] } -- sobre clásico
+    // "smb_message_echoes" sólo documenta el sobre clásico (B) con field="smb_message_echoes" (antes
+    // nunca reconocido, porque el parser de mensajes normales sólo miraba si "value" tenía
+    // "messages"/"statuses", sin fijarse en changes.field). Si algún nombre de campo difiere en
+    // producción, estos parsers devuelven listas vacías (fail-safe) en vez de lanzar -- nunca deben
+    // tumbar el resto del webhook.
 
     /// <summary>
     /// Decisión pura (sin I/O) de qué estado le corresponde a un webhook de "history" en
     /// dbo.WhatsAppEmbeddedCoexistenceSync. Declined SIEMPRE gana sobre cualquier otra señal (code
     /// 2593109 = el negocio rechazó compartir historial desde la app). Cualquier otro error de Meta no
     /// se traduce a un estado nuevo (Error): no es un one-shot rechazado ni progreso real, así que la
-    /// fila se deja como estaba en vez de inventar un estado que Meta no confirmó. Sin error: "complete"
-    /// (contains, tolerante -- Meta no confirma el nombre exacto en documentación pública) en
-    /// history_context.status es Completed; cualquier otro chunk es InProgress.
+    /// fila se deja como estaba en vez de inventar un estado que Meta no confirmó. Sin error: Completed
+    /// SÓLO cuando progress==100 (confirmado por Meta: "A value of 100 indicates that synchronization
+    /// is complete") -- nunca por history_context.status, que es el estado de un mensaje puntual, no
+    /// del sync completo. Cualquier otro progress (o ausente) es InProgress.
     /// </summary>
     internal enum WhatsAppHistorySyncWebhookOutcome { InProgress, Completed, Declined, Error }
 
-    internal static WhatsAppHistorySyncWebhookOutcome ClassifyHistorySyncWebhook(int? errorCode, string? contextStatus)
+    internal static WhatsAppHistorySyncWebhookOutcome ClassifyHistorySyncWebhook(int? errorCode, int? progress)
     {
         if (errorCode is int code)
             return code == 2593109 ? WhatsAppHistorySyncWebhookOutcome.Declined : WhatsAppHistorySyncWebhookOutcome.Error;
-        return !string.IsNullOrWhiteSpace(contextStatus) && contextStatus.Contains("complete", StringComparison.OrdinalIgnoreCase)
+        return progress == 100
             ? WhatsAppHistorySyncWebhookOutcome.Completed
             : WhatsAppHistorySyncWebhookOutcome.InProgress;
     }
 
     /// <summary>
-    /// event="history": { id, event:"history", data:{ metadata:{phone_number_id}, history:[ {
-    /// metadata:{phase,chunk_order,progress}, threads:[ {messages:[...]} ] } ], history_context:{status},
-    /// errors:[{code,...}] } }. Dirección de cada mensaje: si trae "to" se interpreta como enviado por
-    /// el negocio (SALIENTE, Phone=to); si no, como recibido (ENTRANTE, Phone=from) -- mismo criterio
-    /// que ya usa el resto del parser (los mensajes entrantes normales nunca traen "to").
+    /// Meta documenta DOS sobres válidos para "history" y "smb_app_state_sync" (confirmado por
+    /// developers.facebook.com + partners 360dialog/Gupshup, 2026-09):
+    ///   A) { id, event:"history"|"smb_app_state_sync", data:{...} }                      -- sin "entry"
+    ///   B) { object, entry:[{ changes:[{ field:"history"|"smb_app_state_sync", value:{...} }] }] } -- sobre clásico
+    /// Devuelve el/los objeto(s) interno(s) ("data" o "value") que realmente contienen metadata/history/
+    /// state_sync, sin importar cuál de los dos sobres llegó. Nunca lanza: sobre desconocido -> lista vacía.
+    /// </summary>
+    private static List<JsonElement> CollectEnvelopeValues(JsonElement root, string eventOrFieldName)
+    {
+        var values = new List<JsonElement>();
+        if (root.ValueKind != JsonValueKind.Object)
+            return values;
+
+        // Sobre A: { event, data }.
+        if (root.TryGetProperty("event", out var eventProp)
+            && eventProp.ValueKind == JsonValueKind.String
+            && string.Equals(eventProp.GetString(), eventOrFieldName, StringComparison.OrdinalIgnoreCase)
+            && root.TryGetProperty("data", out var data)
+            && data.ValueKind == JsonValueKind.Object)
+        {
+            values.Add(data);
+        }
+
+        // Sobre B: entry[].changes[].field + value (mismo patrón que messages/statuses/smb_message_echoes).
+        if (root.TryGetProperty("entry", out var entries) && entries.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var entry in entries.EnumerateArray())
+            {
+                if (!entry.TryGetProperty("changes", out var changes) || changes.ValueKind != JsonValueKind.Array)
+                    continue;
+                foreach (var change in changes.EnumerateArray())
+                {
+                    if (change.TryGetProperty("field", out var fieldProp)
+                        && fieldProp.ValueKind == JsonValueKind.String
+                        && string.Equals(fieldProp.GetString(), eventOrFieldName, StringComparison.OrdinalIgnoreCase)
+                        && change.TryGetProperty("value", out var value)
+                        && value.ValueKind == JsonValueKind.Object)
+                    {
+                        values.Add(value);
+                    }
+                }
+            }
+        }
+
+        return values;
+    }
+
+    /// <summary>
+    /// history[].metadata.phase: documentado por Meta como número (0/1/2), pero se acepta también como
+    /// string por si algún partner lo serializa distinto -- nunca se descarta el chunk por esto.
+    /// </summary>
+    private static string ReadPhaseAsString(JsonElement metadata)
+    {
+        if (!metadata.TryGetProperty("phase", out var phase))
+            return string.Empty;
+        return phase.ValueKind switch
+        {
+            JsonValueKind.String => phase.GetString() ?? string.Empty,
+            JsonValueKind.Number => phase.TryGetInt64(out var number) ? number.ToString(CultureInfo.InvariantCulture) : string.Empty,
+            _ => string.Empty
+        };
+    }
+
+    /// <summary>Lee un entero tolerando tanto JSON number como JSON string numérico (defensivo -- Meta documenta number).</summary>
+    private static int? ReadIntFlexible(JsonElement container, string propertyName)
+    {
+        if (container.ValueKind != JsonValueKind.Object || !container.TryGetProperty(propertyName, out var value))
+            return null;
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number when value.TryGetInt32(out var number) => number,
+            JsonValueKind.String when int.TryParse(value.GetString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed) => parsed,
+            _ => null
+        };
+    }
+
+    /// <summary>
+    /// Acepta ambos sobres de Meta (ver <see cref="CollectEnvelopeValues"/>). Dirección de cada mensaje:
+    /// si trae "to" se interpreta como enviado por el negocio (SALIENTE, Phone=to); si no, como recibido
+    /// (ENTRANTE, Phone=from) -- mismo criterio que ya usa el resto del parser. Progress/errors se leen
+    /// de history[].metadata / history[].errors[] (confirmado por Meta: hermanos de "threads" dentro de
+    /// CADA chunk de history[], no a nivel de "data"/"value"). NUNCA se usa history_context.status --
+    /// ese campo, cuando existe, vive dentro de threads[].messages[].history_context y describe el
+    /// estado de UN mensaje puntual (read/delivered/pending), no del sync completo.
     /// </summary>
     internal static IncomingWhatsAppHistorySync? ParseIncomingHistorySync(JsonElement root)
     {
-        if (root.ValueKind != JsonValueKind.Object
-            || !root.TryGetProperty("event", out var eventProp)
-            || eventProp.ValueKind != JsonValueKind.String
-            || !string.Equals(eventProp.GetString(), "history", StringComparison.OrdinalIgnoreCase)
-            || !root.TryGetProperty("data", out var data)
-            || data.ValueKind != JsonValueKind.Object)
+        var values = CollectEnvelopeValues(root, "history");
+        if (values.Count == 0)
             return null;
 
-        var phoneNumberId = ReadNestedString(data, "metadata", "phone_number_id");
+        var phoneNumberId = string.Empty;
         var messages = new List<IncomingWhatsAppMessage>();
         var phases = new List<string>();
         var threadCount = 0;
+        int? maxProgress = null;
+        int? errorCode = null;
 
-        if (data.TryGetProperty("history", out var history) && history.ValueKind == JsonValueKind.Array)
+        foreach (var value in values)
         {
+            var valuePhoneNumberId = ReadNestedString(value, "metadata", "phone_number_id");
+            if (phoneNumberId.Length == 0 && valuePhoneNumberId.Length > 0)
+                phoneNumberId = valuePhoneNumberId;
+            var effectivePhoneNumberId = phoneNumberId.Length > 0 ? phoneNumberId : valuePhoneNumberId;
+
+            if (!value.TryGetProperty("history", out var history) || history.ValueKind != JsonValueKind.Array)
+                continue;
+
             foreach (var chunk in history.EnumerateArray())
             {
                 if (chunk.TryGetProperty("metadata", out var chunkMetadata) && chunkMetadata.ValueKind == JsonValueKind.Object)
                 {
-                    var phase = chunkMetadata.TryGetProperty("phase", out var phaseProp) && phaseProp.ValueKind == JsonValueKind.String
-                        ? phaseProp.GetString() ?? string.Empty
-                        : string.Empty;
+                    var phase = ReadPhaseAsString(chunkMetadata);
                     if (!string.IsNullOrWhiteSpace(phase))
                         phases.Add(phase);
+
+                    var progress = ReadIntFlexible(chunkMetadata, "progress");
+                    if (progress is int progressValue && (maxProgress is null || progressValue > maxProgress))
+                        maxProgress = progressValue;
                 }
+
+                // errors[] es hermano de "metadata"/"threads" DENTRO de cada chunk de history[]
+                // (confirmado por Meta) -- no a nivel de "data"/"value".
+                if (errorCode is null)
+                    errorCode = TryReadFirstErrorCode(chunk);
 
                 if (!chunk.TryGetProperty("threads", out var threads) || threads.ValueKind != JsonValueKind.Array)
                     continue;
@@ -12403,22 +12517,17 @@ public sealed class ConversacionesService(
                     threadCount++;
                     foreach (var message in threadMessages.EnumerateArray())
                     {
-                        var parsed = TryParseHistoryOrEchoMessage(message, phoneNumberId, string.Empty);
+                        var parsed = TryParseHistoryOrEchoMessage(message, effectivePhoneNumberId, string.Empty);
                         if (parsed is not null)
                             messages.Add(parsed);
                     }
                 }
             }
+
+            // Tolerancia extra: si algún payload trajera "errors" a nivel de "data"/"value" en vez de
+            // dentro de history[] (no confirmado por Meta, pero no cuesta nada tolerarlo -- fail-safe).
+            errorCode ??= TryReadFirstErrorCode(value);
         }
-
-        // history_context puede venir dentro de "data" (visto en la documentación de partners) o, si
-        // Meta cambia el sobre, como hermano de "id"/"event" -- se prueban ambas ubicaciones.
-        var contextStatus = ReadNestedString(data, "history_context", "status");
-        if (string.IsNullOrWhiteSpace(contextStatus))
-            contextStatus = ReadNestedString(root, "history_context", "status");
-        contextStatus = string.IsNullOrWhiteSpace(contextStatus) ? null : contextStatus;
-
-        var errorCode = TryReadFirstErrorCode(data) ?? TryReadFirstErrorCode(root);
 
         return new IncomingWhatsAppHistorySync
         {
@@ -12426,32 +12535,33 @@ public sealed class ConversacionesService(
             Messages = messages,
             ThreadCount = threadCount,
             Phases = phases,
-            ContextStatus = contextStatus,
+            Progress = maxProgress,
             ErrorCode = errorCode
         };
     }
 
     /// <summary>
-    /// event="smb_app_state_sync": { id, event:"smb_app_state_sync", data:{ metadata:{phone_number_id},
-    /// state_sync:[ {type,action,contact:{full_name,first_name,phone_number},timestamp} ] } }. Nombres
-    /// de contacto tolerados tanto anidados en "contact" como planos en el item (defensivo: no hay
-    /// muestra real confirmada).
+    /// Acepta ambos sobres de Meta (ver <see cref="CollectEnvelopeValues"/>). Nombres de contacto
+    /// tolerados tanto anidados en "contact" como planos en el item.
     /// </summary>
     internal static IncomingWhatsAppStateSync? ParseIncomingStateSync(JsonElement root)
     {
-        if (root.ValueKind != JsonValueKind.Object
-            || !root.TryGetProperty("event", out var eventProp)
-            || eventProp.ValueKind != JsonValueKind.String
-            || !string.Equals(eventProp.GetString(), "smb_app_state_sync", StringComparison.OrdinalIgnoreCase)
-            || !root.TryGetProperty("data", out var data)
-            || data.ValueKind != JsonValueKind.Object)
+        var values = CollectEnvelopeValues(root, "smb_app_state_sync");
+        if (values.Count == 0)
             return null;
 
-        var phoneNumberId = ReadNestedString(data, "metadata", "phone_number_id");
+        var phoneNumberId = string.Empty;
         var contacts = new List<IncomingWhatsAppContactSync>();
 
-        if (data.TryGetProperty("state_sync", out var stateSync) && stateSync.ValueKind == JsonValueKind.Array)
+        foreach (var value in values)
         {
+            var valuePhoneNumberId = ReadNestedString(value, "metadata", "phone_number_id");
+            if (phoneNumberId.Length == 0 && valuePhoneNumberId.Length > 0)
+                phoneNumberId = valuePhoneNumberId;
+
+            if (!value.TryGetProperty("state_sync", out var stateSync) || stateSync.ValueKind != JsonValueKind.Array)
+                continue;
+
             foreach (var item in stateSync.EnumerateArray())
             {
                 var type = GetStringOrEmpty(item, "type");
@@ -12472,7 +12582,9 @@ public sealed class ConversacionesService(
                     FullName = GetStringOrEmpty(contactSource, "full_name"),
                     FirstName = GetStringOrEmpty(contactSource, "first_name"),
                     PhoneNumber = NormalizePhone(phoneNumber),
-                    Timestamp = item.TryGetProperty("timestamp", out var ts) ? ParseUnixTimestamp(ts.GetString()) : BusinessNow()
+                    // Confirmado por Meta: el timestamp va anidado en item.metadata.timestamp -- se
+                    // tolera también item.timestamp plano por si algún partner lo aplana.
+                    Timestamp = ReadNestedTimestamp(item)
                 });
             }
         }
@@ -12589,6 +12701,15 @@ public sealed class ConversacionesService(
             && value.ValueKind == JsonValueKind.String
                 ? value.GetString() ?? string.Empty
                 : string.Empty;
+
+    /// <summary>Un ítem de state_sync[] trae su timestamp en item.metadata.timestamp (confirmado por Meta); se tolera también item.timestamp plano.</summary>
+    private static DateTime ReadNestedTimestamp(JsonElement item)
+    {
+        if (item.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object
+            && metadata.TryGetProperty("timestamp", out var nested))
+            return ParseUnixTimestamp(nested.GetString());
+        return item.TryGetProperty("timestamp", out var flat) ? ParseUnixTimestamp(flat.GetString()) : BusinessNow();
+    }
 
     private static string NormalizeWhatsAppDeliveryStatus(string status, JsonElement payload)
     {
@@ -14393,14 +14514,20 @@ public sealed class ConversacionesService(
         public string Direction { get; init; } = string.Empty;
     }
 
-    /// <summary>Resultado agregado de un evento event="history" completo (puede traer varios chunks).</summary>
+    /// <summary>Resultado agregado de un webhook "history" completo (puede traer varios chunks, en cualquiera de los dos sobres).</summary>
     internal sealed class IncomingWhatsAppHistorySync
     {
         public string PhoneNumberId { get; init; } = string.Empty;
         public List<IncomingWhatsAppMessage> Messages { get; init; } = [];
         public int ThreadCount { get; init; }
         public List<string> Phases { get; init; } = [];
-        public string? ContextStatus { get; init; }
+        /// <summary>
+        /// history[].metadata.progress, 0-100, el mayor visto entre todos los chunks de este webhook.
+        /// Confirmado por Meta: "A value of 100 indicates that synchronization is complete." -- ÚNICA
+        /// señal válida para Completed. NUNCA history_context.status (eso es el estado de UN mensaje
+        /// puntual dentro de threads[].messages[], no del sync completo).
+        /// </summary>
+        public int? Progress { get; init; }
         public int? ErrorCode { get; init; }
     }
 

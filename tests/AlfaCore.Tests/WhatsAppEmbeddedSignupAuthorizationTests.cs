@@ -64,6 +64,39 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
     }
 
     [Fact]
+    public async Task LateCallback_WellPastVisualWatchdogButWithinDomainWindow_IsAccepted()
+    {
+        // El watchdog visual de 90s es un concepto exclusivo del browser -- el orchestrator nunca lo
+        // conoce ni lo consulta. La única ventana que le importa es la del dominio (ExpiresAtUtc, ~30
+        // minutos server-side). Este onboarding "empezó" hace 29 minutos y todavía tiene margen: un
+        // callback real que hubiera tardado mucho más de 90s en llegar se acepta igual.
+        var c = CreateWithOnboarding();
+        c.Item!.StartedAtUtc = DateTime.UtcNow.AddMinutes(-29);
+        c.Item.ExpiresAtUtc = DateTime.UtcNow.AddMinutes(1);
+
+        await c.Orchestrator.HandleAuthorizationCallbackAsync(Callback(c.Item.IdOnboarding, 106, c.State!, "Eve"));
+
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Authorized, c.Item.Status);
+        Assert.NotNull(c.Item.StateConsumedAtUtc);
+    }
+
+    [Fact]
+    public async Task CancellationAttempt_AfterStateAlreadyConsumedByAuthorization_IsNoOp()
+    {
+        // Regla funcional pedida explícitamente: si StateConsumedAtUtc ya quedó establecido (acá, por
+        // una autorización real que ya ganó la carrera), un intento de cancelación posterior sobre el
+        // MISMO state nunca debe pisar el resultado -- debe ser no-op silencioso, no una excepción ni
+        // un cambio de estado.
+        var c = CreateWithOnboarding();
+        await c.Orchestrator.HandleAuthorizationCallbackAsync(Callback(c.Item!.IdOnboarding, 106, c.State!, "Eve"));
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Authorized, c.Item.Status);
+
+        await c.Orchestrator.HandleCancellationAsync(c.Item.IdOnboarding, 106, c.State!, "Eve");
+
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Authorized, c.Item.Status); // nunca CANCELLED.
+    }
+
+    [Fact]
     public async Task RealMetaClient_SimulatedExchangeSendsTokenDirectlyToVault()
     {
         var vault = new CapturingVault();
@@ -173,6 +206,19 @@ public sealed class WhatsAppEmbeddedSignupAuthorizationTests
         {
             if (Item is null || Item.IdBase != idBase || !string.Equals(Item.UsuarioIniciador, user, StringComparison.OrdinalIgnoreCase) || Item.StateHash != hash || Item.StateConsumedAtUtc is not null || Item.ExpiresAtUtc <= now || Item.Status != WhatsAppEmbeddedOnboardingStatus.Started) return Task.FromResult<WhatsAppEmbeddedOnboardingDto?>(null);
             Item.StateConsumedAtUtc = now; return Task.FromResult<WhatsAppEmbeddedOnboardingDto?>(Item);
+        }
+        public Task<bool> CancelStartedIfNotConsumedAsync(Guid id, int idBase, string expectedStateHash, DateTime now, CancellationToken ct = default)
+        {
+            // Mismo guard atómico que la fila real: sólo cancela si Estado=STARTED Y
+            // StateConsumedAtUtc IS NULL en este mismo instante -- si otra vía (p. ej. un callback de
+            // autorización real) ya consumió el state, esto es un no-op silencioso.
+            if (Item is null || Item.IdOnboarding != id || Item.IdBase != idBase || Item.StateHash != expectedStateHash
+                || Item.Status != WhatsAppEmbeddedOnboardingStatus.Started || Item.StateConsumedAtUtc is not null || Item.ExpiresAtUtc <= now)
+                return Task.FromResult(false);
+            Item.Status = WhatsAppEmbeddedOnboardingStatus.Cancelled;
+            Item.CurrentStep = "CANCELLED";
+            Item.StateConsumedAtUtc = now;
+            return Task.FromResult(true);
         }
         public Task MarkAuthorizedAsync(Guid id, string reference, string business, CancellationToken ct = default) { if (FailAuthorization) throw new InvalidOperationException("store failure"); Item!.Status = WhatsAppEmbeddedOnboardingStatus.Authorized; Item.TokenReference = reference; return Task.CompletedTask; }
         public Task UpdateStatusAsync(Guid id, WhatsAppEmbeddedOnboardingStatus expected, WhatsAppEmbeddedOnboardingStatus next, string step, CancellationToken ct = default) { if (Item?.Status != expected) throw new InvalidOperationException(); Item.Status = next; Item.CurrentStep = step; return Task.CompletedTask; }

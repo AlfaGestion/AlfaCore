@@ -5,6 +5,20 @@ namespace AlfaCore.Models;
 public static class TiposDocumentoCore
 {
     public const string Cotizacion = "COTIZACION";
+    public const string NotaPedido = "NOTA_PEDIDO";
+    public const string RemitoR = "REMITO_R";
+    public const string RemitoX = "REMITO_X";
+    public const string CobranzaA = "COBRANZA_A";
+    public const string CobranzaB = "COBRANZA_B";
+    public const string CobranzaC = "COBRANZA_C";
+    public const string CobranzaProforma = "COBRANZA_X";
+    public const string CobranzaContado = "COBRANZA_CONTADO";
+    public const string NotaDebitoA = "NOTA_DEBITO_A";
+    public const string NotaDebitoB = "NOTA_DEBITO_B";
+    public const string NotaDebitoC = "NOTA_DEBITO_C";
+    public const string NotaCreditoA = "NOTA_CREDITO_A";
+    public const string NotaCreditoB = "NOTA_CREDITO_B";
+    public const string NotaCreditoC = "NOTA_CREDITO_C";
     public const string FacturaA = "FACTURA_A";
     public const string FacturaB = "FACTURA_B";
     public const string FacturaC = "FACTURA_C";
@@ -21,28 +35,91 @@ public static class TiposDocumentoCore
         new(CreditoA, "Nota de crédito", "A", 3), new(CreditoB, "Nota de crédito", "B", 8), new(CreditoC, "Nota de crédito", "C", 13),
         new(DebitoA, "Nota de débito", "A", 2), new(DebitoB, "Nota de débito", "B", 7), new(DebitoC, "Nota de débito", "C", 12)
     ];
-    public static TipoFiscalDocumento? Fiscal(string tipo) => Fiscales.FirstOrDefault(x => x.Tipo.Equals(tipo, StringComparison.OrdinalIgnoreCase));
+    public static string NormalizarFiscal(string tipo) => tipo.ToUpperInvariant() switch
+    {
+        NotaCreditoA => CreditoA, NotaCreditoB => CreditoB, NotaCreditoC => CreditoC,
+        NotaDebitoA => DebitoA, NotaDebitoB => DebitoB, NotaDebitoC => DebitoC,
+        _ => tipo
+    };
+    public static string[] TiposEquivalentes(string tipo) => Todos.Where(x => string.Equals(NormalizarFiscal(x), NormalizarFiscal(tipo), StringComparison.OrdinalIgnoreCase)).ToArray();
+    public static TipoFiscalDocumento? Fiscal(string tipo) => Fiscales.FirstOrDefault(x => x.Tipo.Equals(NormalizarFiscal(tipo), StringComparison.OrdinalIgnoreCase));
     public static TipoFiscalDocumento? Fiscal(int codigo) => Fiscales.FirstOrDefault(x => x.CodigoArca == codigo);
     public static bool EsFiscal(string tipo) => Fiscal(tipo) is not null;
     public static string NombreDe(string tipo) => Fiscal(tipo) is { } fiscal ? $"{fiscal.Nombre} {fiscal.Letra}" : "Cotización";
 
     public static readonly IReadOnlySet<string> Todos = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        Cotizacion, FacturaA, FacturaB, FacturaC, CreditoA, CreditoB, CreditoC, DebitoA, DebitoB, DebitoC
+        Cotizacion, NotaPedido, RemitoR, RemitoX, CobranzaA, CobranzaB, CobranzaC, CobranzaProforma, CobranzaContado,
+        NotaDebitoA, NotaDebitoB, NotaDebitoC, NotaCreditoA, NotaCreditoB, NotaCreditoC,
+        FacturaA, FacturaB, FacturaC,
+        CreditoA, CreditoB, CreditoC, DebitoA, DebitoB, DebitoC
     };
 
     private static readonly IReadOnlyDictionary<string, string> LetraPorTipo = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         [FacturaA] = "A",
         [FacturaB] = "B",
-        [FacturaC] = "C"
+        [FacturaC] = "C", [RemitoR] = "R", [RemitoX] = "X",
+        [CobranzaA] = "A", [CobranzaB] = "B", [CobranzaC] = "C", [CobranzaProforma] = "X", [CobranzaContado] = "X",
+        [NotaDebitoA] = "A", [NotaDebitoB] = "B", [NotaDebitoC] = "C",
+        [NotaCreditoA] = "A", [NotaCreditoB] = "B", [NotaCreditoC] = "C"
     };
 
     public static bool EsFactura(string tipoDocumento)
-        => LetraPorTipo.ContainsKey(tipoDocumento ?? string.Empty);
+        => LetraPorTipo.ContainsKey(tipoDocumento ?? string.Empty) || EsFiscal(tipoDocumento ?? string.Empty);
+
+    public static bool EsNotaPedido(string tipoDocumento)
+        => string.Equals(tipoDocumento, NotaPedido, StringComparison.OrdinalIgnoreCase);
+
+    public static bool EsDocumentoConLetra(string tipoDocumento)
+        => LetraPorTipo.ContainsKey(tipoDocumento ?? string.Empty) || EsFiscal(tipoDocumento ?? string.Empty);
+
+    public static string NombrePredeterminado(string tipoDocumento)
+        => tipoDocumento?.Trim().ToUpperInvariant() switch
+        {
+            NotaPedido => "Nota de pedido",
+            RemitoR => "Remito R",
+            RemitoX => "Remito X",
+            CobranzaA => "Cobranza A",
+            CobranzaB => "Cobranza B",
+            CobranzaC => "Cobranza C",
+            CobranzaProforma => "Cobranza Proforma",
+            CobranzaContado => "Cobranza contado",
+            NotaDebitoA => "Nota de débito A",
+            NotaDebitoB => "Nota de débito B",
+            NotaDebitoC => "Nota de débito C",
+            NotaCreditoA => "Nota de crédito A",
+            NotaCreditoB => "Nota de crédito B",
+            NotaCreditoC => "Nota de crédito C",
+            FacturaA => "Factura A",
+            FacturaB => "Factura B",
+            FacturaC => "Factura C",
+            _ => NombreDe(tipoDocumento ?? string.Empty)
+        };
+
+    public static string TipoParaComprobante(string tc, string letra)
+    {
+        var codigo = (tc ?? string.Empty).Trim().ToUpperInvariant();
+        var l = (letra ?? string.Empty).Trim().ToUpperInvariant();
+        if (l.Length == 0)
+        {
+            if (codigo is "FA" or "FVA") return FacturaA;
+            if (codigo is "FB" or "FVB") return FacturaB;
+            if (codigo is "FC" or "FVC") return FacturaC;
+        }
+        return codigo switch
+        {
+            "RM" => l == "X" ? RemitoX : RemitoR,
+            "CBCT" => CobranzaContado,
+            "CB" => l == "X" ? CobranzaProforma : l == "B" ? CobranzaB : l == "C" ? CobranzaC : CobranzaA,
+            "ND" => l == "B" ? NotaDebitoB : l == "C" ? NotaDebitoC : NotaDebitoA,
+            "NC" => l == "B" ? NotaCreditoB : l == "C" ? NotaCreditoC : NotaCreditoA,
+            _ => l == "B" ? FacturaB : l == "C" ? FacturaC : FacturaA
+        };
+    }
 
     public static string? LetraDe(string tipoDocumento)
-        => Fiscal(tipoDocumento)?.Letra;
+        => Fiscal(tipoDocumento)?.Letra ?? (LetraPorTipo.TryGetValue(tipoDocumento, out var letra) ? letra : null);
 
     public static string ParaLetra(string letra) => letra?.Trim().ToUpperInvariant() switch
     {
@@ -135,6 +212,9 @@ public sealed class DocumentTemplateDefinition
             new() { Id = "footer", Type = TiposBloqueDocumento.Pie, Visible = false }
         ]
     };
+
+    public static DocumentTemplateDefinition CrearNotaPedidoEstandar()
+        => CrearCotizacionEstandar();
 
     /// <summary>Plantilla base para Factura A/B/C -- la letra sólo cambia el default de la columna
     /// "Iva" (A discrimina IVA por línea en el cuerpo, B/C no) y el bloque RecuadroTipo (letra +
@@ -364,6 +444,7 @@ public sealed record FacturaPercepcionLineaData(string Descripcion, decimal Base
 /// <summary>Fila liviana para el combo de preview del Diseñador (buscar un comprobante real de una
 /// letra puntual) -- no trae el detalle completo, solo lo necesario para identificarlo en una lista.</summary>
 public sealed record FacturaResumenDto(string Tc, string IdComprobante, string Numero, DateTime Fecha, string Cliente);
+public sealed record NotaPedidoResumenDto(int IdComprobante, string IdComprobanteTexto, DateTime Fecha, string Cliente);
 
 public sealed class FacturaCaeDocumentData
 {

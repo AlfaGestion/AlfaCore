@@ -13,26 +13,38 @@ public sealed class CotizacionDocumentService(
     IDocumentPdfService pdfService,
     IUsuariosService usuariosService,
     IAppEventService appEvents,
-    ILogger<CotizacionDocumentService> logger) : ICotizacionDocumentService
+    ILogger<CotizacionDocumentService> logger,
+    ISessionService sessionService) : ICotizacionDocumentService
 {
-    private string ConnectionString => configuration.GetConnectionString("AlfaGestion")
+    private string ConnectionString => sessionService.GetConnectionString().Length > 0
+        ? sessionService.GetConnectionString()
+        : configuration.GetConnectionString("AlfaGestion")
         ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     public async Task<DocumentRenderResult> RenderAsync(long idVersion, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
+        => await RenderAsync(idVersion, uNegocio, TiposDocumentoCore.Cotizacion, ct, previewTemplate);
+
+    public async Task<DocumentRenderResult> RenderAsync(long idVersion, string? uNegocio, string tipoDocumento, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
     {
         try
         {
+            if (!TiposDocumentoCore.Todos.Contains(tipoDocumento) || TiposDocumentoCore.EsFactura(tipoDocumento))
+                throw new InvalidOperationException("El tipo de documento no es compatible con este flujo.");
+
             var detail = await cotizacionesService.GetVersionDetailAsync(idVersion, ct)
                 ?? throw new InvalidOperationException("La cotización indicada no existe.");
-            var template = previewTemplate ?? await templates.ResolveAsync(TiposDocumentoCore.Cotizacion, uNegocio, ct);
-            if (!string.Equals(template.TipoDocumento, TiposDocumentoCore.Cotizacion, StringComparison.OrdinalIgnoreCase))
+            var template = previewTemplate ?? await templates.ResolveAsync(tipoDocumento, uNegocio, ct);
+            if (!string.Equals(template.TipoDocumento, tipoDocumento, StringComparison.OrdinalIgnoreCase))
                 throw new ArgumentException("La plantilla no corresponde al tipo de comprobante seleccionado.");
-            var definition = templates.DeserializeAndValidate(template.TemplateJson, TiposDocumentoCore.Cotizacion);
+            var definition = templates.DeserializeAndValidate(template.TemplateJson, tipoDocumento);
             var data = await BuildDataAsync(detail, ct);
             data.IncluyePortada = detail.IncluyePortada;
             data.PortadaBytes = template.TienePortada ? await templates.GetPortadaImageBytesAsync(template.IdTemplate, ct) : null;
             var theme = await templates.GetGeneralThemeAsync(ct);
-            var html = renderer.RenderCotizacion(definition, data, template.CssCustom, theme);
+            var titulo = string.IsNullOrWhiteSpace(template.Nombre)
+                ? (TiposDocumentoCore.EsNotaPedido(tipoDocumento) ? "Nota de pedido" : "Cotización")
+                : template.Nombre;
+            var html = renderer.RenderCotizacion(definition, data, template.CssCustom, theme, titulo);
             if (definition.TotalesAlPiePagina || definition.Paper.Size == "Ticket80") html = await pdfService.PrepareHtmlAsync(html, ct);
             var footer = BuildFooterOptions(definition, data.Empresa.Nombre);
             logger.LogInformation("Documentos: HTML de cotización {IdVersion}, plantilla {IdTemplate}, UNegocio {UNegocio}.", idVersion, template.IdTemplate, uNegocio ?? "GLOBAL");
@@ -47,11 +59,69 @@ public sealed class CotizacionDocumentService(
     }
 
     public async Task<byte[]> GeneratePdfAsync(long idVersion, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
+        => await GeneratePdfAsync(idVersion, uNegocio, TiposDocumentoCore.Cotizacion, ct, previewTemplate);
+
+    public async Task<byte[]> GeneratePdfAsync(long idVersion, string? uNegocio, string tipoDocumento, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
     {
-        var result = await RenderAsync(idVersion, uNegocio, ct, previewTemplate);
+        var result = await RenderAsync(idVersion, uNegocio, tipoDocumento, ct, previewTemplate);
         var pdf = await pdfService.GenerateAsync(result.Html, result.Footer, ct);
         logger.LogInformation("Documentos: PDF beta de cotización {IdVersion}, plantilla {IdTemplate}.", idVersion, result.IdTemplate);
         return pdf;
+    }
+
+    public async Task<IReadOnlyList<NotaPedidoResumenDto>> SearchNotasPedidoRecientesAsync(int top = 20, CancellationToken ct = default)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        var rows = await cn.QueryAsync<NotaPedidoResumenDto>(new CommandDefinition($"""
+            SELECT TOP (@Top) ID AS IdComprobante, ISNULL(LTRIM(RTRIM(IDCOMPROBANTE)), '') AS IdComprobanteTexto,
+                   FECHA AS Fecha, ISNULL(LTRIM(RTRIM(NOMBRE)), '') AS Cliente
+            FROM dbo.V_MV_Cpte
+            WHERE UPPER(LTRIM(RTRIM(TC))) = N'NP'
+            ORDER BY FECHA DESC, ID DESC;
+            """, new { Top = Math.Clamp(top, 1, 100) }, cancellationToken: ct));
+        return rows.AsList();
+    }
+
+    public async Task<DocumentRenderResult> RenderNotaPedidoAsync(int idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        var header = await cn.QuerySingleOrDefaultAsync<dynamic>(new CommandDefinition("""
+            SELECT TOP (1) ID AS IdComprobante, IDCOMPROBANTE AS IdComprobanteTexto, FECHA AS Fecha,
+                   CUENTA AS CodigoCliente, NOMBRE AS EmpresaProspecto, IMPORTE AS Total
+            FROM dbo.V_MV_Cpte WHERE ID = @Id AND UPPER(LTRIM(RTRIM(TC))) = N'NP';
+            """, new { Id = idComprobante }, cancellationToken: ct));
+        if (header is null) throw new InvalidOperationException("La nota de pedido indicada no existe.");
+
+        var detail = new CotizacionVersionDetailDto
+        {
+            CodigoCliente = header.CodigoCliente,
+            Fecha = header.Fecha,
+            EmpresaProspecto = header.EmpresaProspecto,
+            Numero = idComprobante,
+            TC = "NP",
+            Total = header.Total,
+            Subtotal = header.Total,
+            Lineas = (await cn.QueryAsync<CotizacionLineaDto>(new CommandDefinition("""
+                SELECT ROW_NUMBER() OVER (ORDER BY ISNULL(SECUENCIA, 0), ISNULL(ID, 0)) AS Orden,
+                       ISNULL(LTRIM(RTRIM(IDARTICULO)), '') AS CodigoRef,
+                       ISNULL(DESCRIPCION, '') AS Descripcion,
+                       ISNULL(CONVERT(decimal(15,2), CANTIDAD), 0) AS Cantidad,
+                       ISNULL(CONVERT(decimal(15,2), IMPORTE), 0) AS PrecioUnitario,
+                       ISNULL(CONVERT(decimal(15,2), TOTAL), 0) AS Subtotal
+                FROM dbo.V_MV_CpteInsumos
+                WHERE UPPER(LTRIM(RTRIM(TC))) = N'NP'
+                  AND UPPER(LTRIM(RTRIM(IDCOMPROBANTE))) = UPPER(LTRIM(RTRIM(@Numero)))
+                ORDER BY ISNULL(SECUENCIA, 0), ISNULL(ID, 0);
+                """, new { Numero = (string)header.IdComprobanteTexto }, cancellationToken: ct))).AsList()
+        };
+        var template = previewTemplate ?? await templates.ResolveAsync(TiposDocumentoCore.NotaPedido, uNegocio, ct);
+        var definition = templates.DeserializeAndValidate(template.TemplateJson, TiposDocumentoCore.NotaPedido);
+        var data = await BuildDataAsync(detail, ct);
+        var html = renderer.RenderCotizacion(definition, data, template.CssCustom, await templates.GetGeneralThemeAsync(ct), template.Nombre);
+        if (definition.TotalesAlPiePagina || definition.Paper.Size == "Ticket80") html = await pdfService.PrepareHtmlAsync(html, ct);
+        return new DocumentRenderResult { Html = html, IdTemplate = template.IdTemplate, TipoDocumento = template.TipoDocumento, UNegocio = template.UNegocio };
     }
 
     private async Task<CotizacionDocumentData> BuildDataAsync(CotizacionVersionDetailDto detail, CancellationToken ct)

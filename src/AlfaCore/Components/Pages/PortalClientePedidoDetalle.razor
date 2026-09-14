@@ -6,6 +6,8 @@
 @using AlfaCore.Components.Shared
 @using AlfaCore.Components.Shared.AlfaDesign
 @inject AlfaCore.Services.IPortalClienteService PortalClienteSvc
+@inject AlfaCore.Services.IConfiguracionGeneralService ConfiguracionSvc
+@inject AlfaCore.Services.ICotizacionDocumentService DocumentoSvc
 
 <PageTitle>Pedido | Portal Cliente</PageTitle>
 
@@ -83,71 +85,34 @@ else
         }
         else
         {
-            <section class="portal-cliente__section">
-                <header class="portal-cliente__section-head">
-                    <div>
-                        <h3 class="portal-cliente__section-title">@_pedido.Tc @_pedido.IdComprobanteTexto</h3>
-                        <p class="portal-cliente__section-subtitle">@_pedido.Fecha.ToString("dd/MM/yyyy")</p>
-                    </div>
-                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrow-left" OnClick="VolverAPedidos">
-                        Volver
-                    </AlfaButton>
-                </header>
+            <div class="portal-comprobante-actions no-print">
+                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-arrow-left" OnClick="VolverAPedidos">
+                    Volver a pedidos
+                </AlfaButton>
+                <button type="button" class="btn btn--ghost btn--sm" @onclick="ImprimirAsync">
+                    <i class="bi bi-printer"></i> Imprimir
+                </button>
+            </div>
 
-                <div class="portal-cliente__detalle-meta">
-                    <div><span>Cliente</span><strong>@_pedido.RazonSocial</strong></div>
-                    <div><span>Total</span><strong>@Money(_pedido.Total)</strong></div>
-                    @if (_pedido.Anulada || _pedido.EsPedidoWeb)
-                    {
-                        <div>
-                            <span>Origen</span>
-                            <div class="portal-cliente__detalle-meta-tags">
-                                @if (_pedido.EsPedidoWeb)
-                                {
-                                    <AlfaTag Tone="AlfaTagTone.Accent">Pedido Web</AlfaTag>
-                                }
-                                @if (_pedido.EsPedidoWeb && _pedido.IdCatalogoWeb is { } idCat)
-                                {
-                                    <AlfaTag Tone="AlfaTagTone.Neutral">Catálogo #@idCat</AlfaTag>
-                                }
-                                @if (_pedido.Anulada)
-                                {
-                                    <AlfaTag Tone="AlfaTagTone.Danger">Anulado</AlfaTag>
-                                }
-                            </div>
-                        </div>
-                    }
+            <div class="portal-comprobante-wrap">
+                @if (!string.IsNullOrWhiteSpace(_documentoHtml))
+                {
+                    <iframe class="portal-comprobante-document-frame" style="display:block;width:100%;max-width:820px;height:1120px;margin:0 auto;border:1px solid #d5dde5;border-radius:14px;background:#fff;" srcdoc="@_documentoHtml" title="Nota de pedido"></iframe>
+                }
+                else
+                {
+                    <PortalClienteComprobanteView Item="_comprobante" Empresa="_empresa" LogoUrl="@GetBrandingLogoUrl()" LogoAlt="@GetBrandingName()" />
+                }
+            </div>
+            @* La tarjeta es la misma que se usa para comprobantes de Cuenta Corriente/Cobranza. *@
+            @if (_pedido.Anulada || _pedido.EsPedidoWeb)
+            {
+                <div class="no-print portal-cliente__detalle-meta-tags">
+                    @if (_pedido.EsPedidoWeb) { <AlfaTag Tone="AlfaTagTone.Accent">Pedido Web</AlfaTag> }
+                    @if (_pedido.EsPedidoWeb && _pedido.IdCatalogoWeb is { } idCat) { <AlfaTag Tone="AlfaTagTone.Neutral">Catálogo #@idCat</AlfaTag> }
+                    @if (_pedido.Anulada) { <AlfaTag Tone="AlfaTagTone.Danger">Anulado</AlfaTag> }
                 </div>
-            </section>
-
-            <section class="portal-cliente__section">
-                <h3 class="portal-cliente__section-title">Artículos</h3>
-                <div class="table-wrap">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Código</th>
-                                <th>Descripción</th>
-                                <th class="text-end">Cantidad</th>
-                                <th class="text-end">Precio</th>
-                                <th class="text-end">Subtotal</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var linea in _pedido.Lineas)
-                            {
-                                <tr>
-                                    <td>@linea.IdArticulo</td>
-                                    <td>@linea.Descripcion</td>
-                                    <td class="text-end">@linea.Cantidad.ToString("N2", CultureEsAr)</td>
-                                    <td class="text-end">@Money(linea.PrecioUnitario)</td>
-                                    <td class="text-end">@Money(linea.Subtotal)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            </section>
+            }
         }
     </section>
 }
@@ -162,6 +127,9 @@ else
     private CatalogoClienteLoginPanel? _loginPanel;
     private bool _loading;
     private PortalClientePedidoDetalleDto? _pedido;
+    private ConfiguracionEmpresaDto _empresa = new();
+    private PortalClienteComprobantePendienteDetalleDto _comprobante = new();
+    private string? _documentoHtml;
 
     protected override async Task OnAfterClientSessionRestoredAsync()
     {
@@ -197,6 +165,39 @@ else
                 "No se pudo cargar el pedido.");
 
             _pedido = result.Success ? result.Value : null;
+            if (_pedido is not null)
+            {
+                try { _empresa = await ConfiguracionSvc.GetEmpresaAsync(); }
+                catch { _empresa = new ConfiguracionEmpresaDto(); }
+                _comprobante = new PortalClienteComprobantePendienteDetalleDto
+                {
+                    IdComprobante = _pedido.IdComprobante,
+                    Tc = _pedido.Tc,
+                    TcDescripcion = "Nota de pedido",
+                    IdComprobanteTexto = _pedido.IdComprobanteTexto,
+                    Fecha = _pedido.Fecha,
+                    CodigoCliente = _pedido.CodigoCliente,
+                    RazonSocial = _pedido.RazonSocial,
+                    ImporteOriginal = _pedido.Total,
+                    ImporteSinIva = _pedido.Total,
+                    Lineas = _pedido.Lineas.Select(x => new PortalClienteComprobanteLineaDto
+                    {
+                        IdArticulo = x.IdArticulo, Descripcion = x.Descripcion, Cantidad = x.Cantidad,
+                        PrecioUnitario = x.PrecioUnitario, Subtotal = x.Subtotal
+                    }).ToList()
+                };
+                try
+                {
+                    var documento = await DocumentoSvc.RenderNotaPedidoAsync(_pedido.IdComprobante, null);
+                    _documentoHtml = documento.Html;
+                }
+                catch
+                {
+                    // Si una instalación todavía no tiene plantilla de NP, se conserva la vista
+                    // segura anterior como fallback.
+                    _documentoHtml = null;
+                }
+            }
         }
         finally
         {
@@ -207,4 +208,7 @@ else
 
     private static string Money(decimal value)
         => value.ToString("C2", CultureEsAr);
+
+    private Task ImprimirAsync()
+        => Js.InvokeVoidAsync("print").AsTask();
 }

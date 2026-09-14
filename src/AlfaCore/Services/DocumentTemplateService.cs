@@ -9,11 +9,14 @@ public sealed class DocumentTemplateService(
     IConfiguration configuration,
     IAppEventService appEvents,
     IAppUserSessionService appUserSession,
-    ILogger<DocumentTemplateService> logger) : IDocumentTemplateService
+    ILogger<DocumentTemplateService> logger,
+    ISessionService sessionService) : IDocumentTemplateService
 {
     private const string ModuleName = "Documentos";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = false };
-    private string ConnectionString => configuration.GetConnectionString("AlfaGestion")
+    private string ConnectionString => sessionService.GetConnectionString().Length > 0
+        ? sessionService.GetConnectionString()
+        : configuration.GetConnectionString("AlfaGestion")
         ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     public async Task<IReadOnlyList<DocumentTemplateDto>> GetListAsync(string tipoDocumento, string? uNegocio, CancellationToken ct = default)
@@ -26,11 +29,11 @@ public sealed class DocumentTemplateService(
                        CAST(CASE WHEN PortadaImagen IS NOT NULL THEN 1 ELSE 0 END AS bit) AS TienePortada,
                        FechaAlta, FechaModificacion, UsuarioModificacion
                 FROM dbo.CORE_DocumentTemplate
-                WHERE TipoDocumento = @TipoDocumento
+                WHERE TipoDocumento IN @TiposDocumento
                   AND (@UNegocio IS NULL OR UNegocio = @UNegocio OR UNegocio IS NULL)
                 ORDER BY CASE WHEN UNegocio = @UNegocio THEN 0 WHEN UNegocio IS NULL THEN 1 ELSE 2 END,
                          EsSistema DESC, Nombre;
-                """, new { TipoDocumento = NormalizeTipo(tipoDocumento), UNegocio = NormalizeUNegocio(uNegocio) }, cancellationToken: token));
+                """, new { TiposDocumento = TiposDocumentoCore.TiposEquivalentes(NormalizeTipo(tipoDocumento)), UNegocio = NormalizeUNegocio(uNegocio) }, cancellationToken: token));
             return (IReadOnlyList<DocumentTemplateDto>)items.AsList();
         }, "No se pudieron cargar las plantillas de documentos.", ct);
 
@@ -100,11 +103,11 @@ public sealed class DocumentTemplateService(
                        CAST(CASE WHEN PortadaImagen IS NOT NULL THEN 1 ELSE 0 END AS bit) AS TienePortada,
                        FechaAlta, FechaModificacion, UsuarioModificacion
                 FROM dbo.CORE_DocumentTemplate
-                WHERE TipoDocumento = @TipoDocumento AND Activo = 1
+                WHERE TipoDocumento IN @TiposDocumento AND Activo = 1
                   AND ((@UNegocio IS NOT NULL AND UNegocio = @UNegocio) OR UNegocio IS NULL)
                 ORDER BY CASE WHEN UNegocio = @UNegocio THEN 0 ELSE 1 END,
                          EsPredeterminado DESC, EsSistema DESC, IdTemplate DESC;
-                """, new { TipoDocumento = tipo, UNegocio = unidad }, cancellationToken: token));
+                """, new { TiposDocumento = TiposDocumentoCore.TiposEquivalentes(tipo), UNegocio = unidad }, cancellationToken: token));
             if (result is not null)
                 return result;
 
@@ -113,13 +116,14 @@ public sealed class DocumentTemplateService(
             // fallback de una Factura A/B/C sin fila en CORE_DocumentTemplate todavía devolvía por
             // error una plantilla de Cotización.
             var letra = TiposDocumentoCore.LetraDe(tipo);
+            var esConLetra = TiposDocumentoCore.EsDocumentoConLetra(tipo);
             return new DocumentTemplateDto
             {
                 IdTemplate = 0, TipoDocumento = tipo,
-                Nombre = letra is not null ? $"{TiposDocumentoCore.NombreDe(tipo)} estándar (fallback)" : "Cotización estándar (fallback)",
+                Nombre = $"{TiposDocumentoCore.NombrePredeterminado(tipo)} estándar (fallback)",
                 EsSistema = true, EsPredeterminado = true, Activo = true,
                 TemplateJson = JsonSerializer.Serialize(
-                    letra is not null ? DocumentTemplateDefinition.CrearFacturaEstandar(letra) : DocumentTemplateDefinition.CrearCotizacionEstandar(),
+                    esConLetra ? DocumentTemplateDefinition.CrearFacturaEstandar(letra!) : TiposDocumentoCore.EsNotaPedido(tipo) ? DocumentTemplateDefinition.CrearNotaPedidoEstandar() : DocumentTemplateDefinition.CrearCotizacionEstandar(),
                     JsonOptions)
             };
         }, "No se pudo resolver la plantilla de documento.", ct);
@@ -189,9 +193,9 @@ public sealed class DocumentTemplateService(
                 {
                     await cn.ExecuteAsync(new CommandDefinition("""
                         UPDATE dbo.CORE_DocumentTemplate SET EsPredeterminado = 0
-                        WHERE IdTemplate <> @IdTemplate AND TipoDocumento = @TipoDocumento AND Activo = 1
+                        WHERE IdTemplate <> @IdTemplate AND TipoDocumento IN @TiposDocumento AND Activo = 1
                           AND ((UNegocio = @UNegocio) OR (UNegocio IS NULL AND @UNegocio IS NULL));
-                        """, new { IdTemplate = id, TipoDocumento = tipo, UNegocio = unidad }, tx, cancellationToken: token));
+                        """, new { IdTemplate = id, TiposDocumento = TiposDocumentoCore.TiposEquivalentes(tipo), UNegocio = unidad }, tx, cancellationToken: token));
                 }
 
                 await tx.CommitAsync(token);
@@ -327,7 +331,7 @@ public sealed class DocumentTemplateService(
         if (definition.Blocks.Count == 0 || definition.Blocks.Any(x => string.IsNullOrWhiteSpace(x.Id) || !TiposBloqueDocumento.Permitidos.Contains(x.Type))) throw new InvalidOperationException("La plantilla contiene bloques inválidos.");
         if (definition.Blocks.Select(x => x.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count() != definition.Blocks.Count) throw new InvalidOperationException("Los identificadores de bloque deben ser únicos.");
         var itemBlock = definition.Blocks.FirstOrDefault(x => x.Type.Equals(TiposBloqueDocumento.Items, StringComparison.OrdinalIgnoreCase));
-        var allowedColumns = TiposDocumentoCore.EsFiscal(tipoDocumento)
+        var allowedColumns = TiposDocumentoCore.EsDocumentoConLetra(tipoDocumento)
             ? new HashSet<string>(["Codigo", "Descripcion", "Unidad", "Cantidad", "Precio", "Descuento", "Iva", "Total"], StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(["Codigo", "Descripcion", "Cantidad", "Precio", "Descuento", "Total"], StringComparer.OrdinalIgnoreCase);
         if (itemBlock?.Columns.Any(c => !allowedColumns.Contains(c.Field) || c.WidthPercent < 1 || c.WidthPercent > 100) == true) throw new InvalidOperationException("La plantilla contiene columnas de detalle inválidas.");

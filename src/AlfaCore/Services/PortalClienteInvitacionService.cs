@@ -1,6 +1,7 @@
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace AlfaCore.Services;
 
@@ -70,6 +71,9 @@ public sealed class PortalClienteInvitacionService(
             if (cliente is null)
                 throw new InvalidOperationException("No se encontró el cliente indicado.");
 
+            if (string.IsNullOrWhiteSpace(cliente.Email))
+                throw new InvalidOperationException("El cliente no tiene un email registrado para ingresar al portal.");
+
             string emailDestino;
             string nombreDestinatario;
             var esContacto = request.IdContacto is > 0;
@@ -79,8 +83,6 @@ public sealed class PortalClienteInvitacionService(
                 emailDestino = cliente.Email;
                 nombreDestinatario = cliente.RazonSocial;
 
-                if (string.IsNullOrWhiteSpace(emailDestino))
-                    throw new InvalidOperationException("El cliente no tiene un email registrado.");
             }
             else
             {
@@ -151,6 +153,11 @@ public sealed class PortalClienteInvitacionService(
                 // disponible alguna de las tablas de configuración.
             }
 
+            // La URL puede venir de una invitación anterior o de una pantalla que tenía cargado
+            // el email del contacto. La identidad de acceso se fija siempre en servidor con el
+            // email de VT_CLIENTES, nunca con el destinatario del mensaje.
+            var urlPortalAcceso = ReemplazarEmailDeAcceso(request.UrlPortal, cliente.Email);
+
             var enviado = await recuperarClaveSvc.EnviarInvitacionPortalAsync(
                 emailDestino,
                 nombreDestinatario,
@@ -159,9 +166,10 @@ public sealed class PortalClienteInvitacionService(
                 cliente.Codigo,
                 cliente.RazonSocial,
                 esContacto,
-                request.UrlPortal,
+                cliente.Email,
+                urlPortalAcceso,
                 urlCambiarClave,
-                token);
+                ct: token);
 
             if (!enviado)
                 throw new InvalidOperationException("No pudimos enviar la invitación. Intentá nuevamente en unos minutos.");
@@ -221,5 +229,25 @@ public sealed class PortalClienteInvitacionService(
             var incidentId = await appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
             throw new AppUserFacingException(userMessage, incidentId, ex);
         }
+    }
+
+    private static string ReemplazarEmailDeAcceso(string url, string emailCliente)
+    {
+        var uri = new Uri(url, UriKind.Absolute);
+        var parametros = new List<KeyValuePair<string, string?>>();
+        foreach (var parametro in QueryHelpers.ParseQuery(uri.Query))
+        {
+            if (string.Equals(parametro.Key, "email", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            foreach (var valor in parametro.Value)
+                parametros.Add(new KeyValuePair<string, string?>(parametro.Key, valor));
+        }
+
+        var urlSinEmail = uri.GetLeftPart(UriPartial.Path);
+        if (parametros.Count > 0)
+            urlSinEmail = QueryHelpers.AddQueryString(urlSinEmail, parametros);
+
+        return QueryHelpers.AddQueryString(urlSinEmail, "email", emailCliente.Trim());
     }
 }

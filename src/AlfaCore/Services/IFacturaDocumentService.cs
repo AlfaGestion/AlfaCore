@@ -9,6 +9,8 @@ public interface IFacturaDocumentService
     /// (V_MV_Cpte.IDCOMPROBANTE), no el ID numérico interno.</summary>
     Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null);
     Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null);
+    Task<DocumentRenderResult> RenderAsync(string tc, string idComprobante, string? uNegocio, string tipoDocumento, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null);
+    Task<byte[]> GeneratePdfAsync(string tc, string idComprobante, string? uNegocio, string tipoDocumento, CancellationToken ct = default, DocumentTemplateDto? previewTemplate = null);
 
     /// <summary>Para Portal Cliente: resuelve el comprobante a partir del ID interno
     /// (V_MV_Cpte.ID) y valida que pertenezca a codigoCliente antes de generar el PDF -- nunca

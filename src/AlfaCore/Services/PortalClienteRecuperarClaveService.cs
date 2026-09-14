@@ -390,6 +390,7 @@ public sealed class PortalClienteRecuperarClaveService(
         string codigoCliente,
         string razonSocialCliente,
         bool esContacto,
+        string? emailAcceso,
         string urlPortal,
         string urlCambiarClave,
         CancellationToken ct = default)
@@ -397,7 +398,7 @@ public sealed class PortalClienteRecuperarClaveService(
             emailDestino,
             nombreEmpresa,
             string.IsNullOrWhiteSpace(nombreEmpresa) ? "Acceso al Portal de Clientes" : $"Acceso al Portal de Clientes - {nombreEmpresa.Trim()}",
-            BuildInvitacionPortalHtml(nombreDestinatario, nombreEmpresa, logoUrlAbsoluta, codigoCliente, razonSocialCliente, esContacto, emailDestino, urlPortal, urlCambiarClave),
+            BuildInvitacionPortalHtml(nombreDestinatario, nombreEmpresa, logoUrlAbsoluta, codigoCliente, razonSocialCliente, esContacto, emailAcceso, urlPortal, urlCambiarClave),
             ct);
 
     private async Task<bool> SendRegistroPublicoEmailAsync(
@@ -522,7 +523,7 @@ public sealed class PortalClienteRecuperarClaveService(
         string codigoCliente,
         string razonSocialCliente,
         bool esContacto,
-        string emailDestino,
+        string? emailAcceso,
         string urlPortal,
         string urlCambiarClave)
     {
@@ -564,7 +565,7 @@ public sealed class PortalClienteRecuperarClaveService(
         sb.Append("<div style=\"font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px;\">Datos de acceso</div>");
         sb.Append("<div style=\"font-size:14px;\">Podés ingresar con cualquiera de estas opciones:</div>");
         sb.Append("<div style=\"font-size:14px;margin-top:6px;\">Código de cliente: <strong>").Append(E(codigoCliente)).Append("</strong></div>");
-        sb.Append("<div style=\"font-size:14px;margin-top:4px;\">Email: <strong>").Append(E(emailDestino)).Append("</strong></div>");
+        sb.Append("<div style=\"font-size:14px;margin-top:4px;\">Email: <strong>").Append(E(emailAcceso)).Append("</strong></div>");
         sb.Append("</div>");
 
         sb.Append($"<p style=\"margin:0 0 16px;\"><a href=\"{E(urlPortal)}\" style=\"display:inline-block;padding:12px 20px;background:#0b74c9;color:#ffffff;text-decoration:none;border-radius:10px;font-weight:600;\">Ingresar al Portal</a></p>");

@@ -8,6 +8,31 @@ namespace AlfaCore.Tests;
 public sealed class DocumentosFiscalTests
 {
     [Theory]
+    [InlineData(TiposDocumentoCore.NotaCreditoA, TiposDocumentoCore.CreditoA, "A", 3)]
+    [InlineData(TiposDocumentoCore.NotaCreditoB, TiposDocumentoCore.CreditoB, "B", 8)]
+    [InlineData(TiposDocumentoCore.NotaDebitoC, TiposDocumentoCore.DebitoC, "C", 12)]
+    public void PlantillasDeAmbasRamasConservanLaMismaIdentidadFiscal(string remoto, string local, string letra, int codigo)
+    {
+        Assert.Equal(TiposDocumentoCore.Fiscal(local), TiposDocumentoCore.Fiscal(remoto));
+        Assert.Equal(codigo, TiposDocumentoCore.Fiscal(remoto)!.CodigoArca);
+        Assert.Equal(letra, TiposDocumentoCore.LetraDe(remoto));
+        Assert.Contains(remoto, TiposDocumentoCore.TiposEquivalentes(local));
+        Assert.Contains(local, TiposDocumentoCore.TiposEquivalentes(remoto));
+    }
+
+    [Theory]
+    [InlineData(TiposDocumentoCore.RemitoR, "R")]
+    [InlineData(TiposDocumentoCore.RemitoX, "X")]
+    [InlineData(TiposDocumentoCore.CobranzaContado, "X")]
+    public void DocumentosNoFiscalesDelRemotoConservanSuLetra(string tipo, string letra)
+    {
+        Assert.Equal(letra, TiposDocumentoCore.LetraDe(tipo));
+        Assert.True(TiposDocumentoCore.EsDocumentoConLetra(tipo));
+        Assert.False(TiposDocumentoCore.EsFiscal(tipo));
+        Assert.Single(TiposDocumentoCore.TiposEquivalentes(tipo));
+    }
+
+    [Theory]
     [InlineData(1, "B", "A", "001")]
     [InlineData(6, "A", "B", "006")]
     [InlineData(11, "A", "C", "011")]
@@ -79,7 +104,7 @@ public sealed class DocumentosFiscalTests
     {
         var template = DocumentTemplateDefinition.CrearFacturaEstandar("A");
         template.Blocks.Single(x => x.Type == TiposBloqueDocumento.QrAfip).Width = width;
-        var service = new DocumentTemplateService(null!, null!, null!, null!);
+        var service = new DocumentTemplateService(null!, null!, null!, null!, null!);
         Assert.Throws<InvalidOperationException>(() => service.DeserializeAndValidate(
             JsonSerializer.Serialize(template), TiposDocumentoCore.FacturaA));
     }
@@ -89,7 +114,7 @@ public sealed class DocumentosFiscalTests
     {
         var template = DocumentTemplateDefinition.CrearFacturaEstandar("A");
         template.Blocks.Single(x => x.Type == TiposBloqueDocumento.QrAfip).Width = null;
-        var service = new DocumentTemplateService(null!, null!, null!, null!);
+        var service = new DocumentTemplateService(null!, null!, null!, null!, null!);
         var validated = service.DeserializeAndValidate(JsonSerializer.Serialize(template), TiposDocumentoCore.FacturaA);
         var html = new DocumentRenderer().RenderFactura(validated, new FacturaDocumentData { QrBytes = [1] });
         Assert.Contains("width:30mm;height:30mm", html);

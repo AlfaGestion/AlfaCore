@@ -72,6 +72,20 @@ public class Program
             return;
         }
 
+        // Modo one-shot 100% READ-ONLY: diagnóstico de inbound/outbound real para un número (ownership
+        // → credencial → base tenant vía dbo.bases → SELECT-only en CONV_WHATSAPP_NUMEROS/CONV_MENSAJES/
+        // CONV_WEBHOOK_LOG → GET a Graph). Nunca escribe SQL, nunca llama a Meta salvo el mismo GET que
+        // --inspect-whatsapp-phone. Ver WhatsAppRuntimeInspectionCommand.
+        if (WhatsAppRuntimeInspectionCommand.IsRequested(args))
+        {
+            var runtimeInspectExitCode = WhatsAppRuntimeInspectionCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(runtimeInspectExitCode);
+            return;
+        }
+
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
         var webRootCandidates = new[]
@@ -302,6 +316,7 @@ public class Program
         builder.Services.AddSingleton<ListaPreciosClienteExcelExporter>();
         builder.Services.AddScoped<IListaPreciosClientePdfService, ListaPreciosClientePdfService>();
         builder.Services.AddSingleton<PortalClienteCuentaCorrienteExcelExporter>();
+        builder.Services.AddSingleton<PortalClientePedidosExcelExporter>();
         builder.Services.AddScoped<IPuntoVentaCartStateService, PuntoVentaCartStateService>();
         builder.Services.AddScoped<IPuntoVentaConfigService, PuntoVentaConfigService>();
         builder.Services.AddScoped<IPuntoVentaConfigValidator, PuntoVentaConfigValidator>();
@@ -1071,6 +1086,37 @@ public class Program
 
             var bytes = exporter.Exportar(estado.Movimientos, contexto.NombreEmpresa, contexto.NombreCliente, fechaDesde, fechaHasta, sortBy, sortDescending);
             return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", PortalClienteCuentaCorrienteExcelExporter.NombreArchivo());
+        }).AllowAnonymous();
+
+        app.MapGet("/api/portal-cliente/pedidos/excel", async (
+            HttpRequest request,
+            CatalogosClienteSessionStore clienteSessionStore,
+            ICentralBasesService centralBasesSvc,
+            ISessionService sessionSvc,
+            IInterfacesCatalogosService catalogosSvc,
+            IPortalClienteService portalClienteSvc,
+            PortalClientePedidosExcelExporter exporter,
+            CancellationToken ct) =>
+        {
+            var contexto = await ResolvePortalClienteExportContextAsync(request, clienteSessionStore, centralBasesSvc, sessionSvc, catalogosSvc, ct);
+            if (!contexto.Ok) return contexto.Error!;
+            DateTime? desde = DateTime.TryParse(request.Query["desde"], out var d) ? d.Date : null;
+            DateTime? hasta = DateTime.TryParse(request.Query["hasta"], out var h) ? h.Date : null;
+            var pedidos = new List<PortalClientePedidoResumenDto>();
+            var pagina = 1;
+            PagedResult<PortalClientePedidoResumenDto> page;
+            do
+            {
+                page = await portalClienteSvc.GetPedidosClienteAsync(new PortalClientePedidosFiltroDto
+                {
+                    CodigoCliente = contexto.CodigoCliente, FechaDesde = desde, FechaHasta = hasta,
+                    Numero = request.Query["numero"].ToString(), PageNumber = pagina++, PageSize = 50
+                }, ct);
+                pedidos.AddRange(page.Items);
+            }
+            while (page.HasNext);
+            var bytes = exporter.Exportar(pedidos, contexto.NombreEmpresa, contexto.NombreCliente, desde, hasta);
+            return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", PortalClientePedidosExcelExporter.NombreArchivo());
         }).AllowAnonymous();
 
         static int? ResolveSqlSessionBaseId(string? sessionIdCookie)

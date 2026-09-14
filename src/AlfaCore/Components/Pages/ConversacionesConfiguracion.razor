@@ -2795,8 +2795,23 @@
     // El popup/SDK de Meta debería llamar de vuelta a CompleteEmbeddedSignupAuthorization,
     // EmbeddedSignupCancelled o EmbeddedSignupFailed. Si ninguno llega (popup bloqueado, usuario lo
     // cerró sin que el SDK lo detecte, error de JS silencioso), este watchdog corta el spinner
-    // infinito por sí solo. NO marca READY ni avanza el backend: sólo deja de mostrar "cargando" y
-    // cancela (no borra) el onboarding STARTED atascado para que Reintentar pueda crear uno nuevo.
+    // infinito por sí solo.
+    //
+    // REGRESIÓN Base4264 (2026-09-14, IdOnboarding d23ddd26-393b-4334-a0b9-87b1bb6e2098): este
+    // watchdog ANTES llamaba a PersistEmbeddedSignupCancellationAsync() al vencer, escribiendo
+    // CANCELLED en el servidor -- un timer puramente visual del browser NO tiene forma de saber si el
+    // usuario ya terminó de verdad en su celular (WhatsApp/Meta puede tardar bastante más de 90s). Si
+    // el callback real de Meta llegaba justo alrededor de esos 90s (caso real: ~90.273s), competía con
+    // este watchdog por consumir el mismo StateHash de un solo uso -- si el watchdog ganaba esa
+    // carrera, la autorización real quedaba CANCELLED sin ningún error visible que lo explicara.
+    //
+    // Ahora es PURAMENTE VISUAL: deja de mostrar "cargando" y avisa que está demorando, pero NUNCA
+    // escribe nada en el servidor. La única expiración autoritativa es el dominio
+    // (FechaExpiracionUtc, ~30 minutos) vía WhatsAppEmbeddedSignupOrchestrator.ReconcileExpiredAsync,
+    // que ya corre solo cada vez que se consulta el estado (ver RefreshWhatsAppConnectionsAsync más
+    // abajo) -- por eso alcanza con refrescar, nunca cancelar. La cancelación real (CANCELLED) queda
+    // reservada para EmbeddedSignupCancelled() -- notificación explícita del SDK de Meta -- y para
+    // "Cancelar configuración" en ACTION_REQUIRED.
     private static readonly TimeSpan EmbeddedSignupAuthorizationTimeout = TimeSpan.FromSeconds(90);
 
     private void StartEmbeddedSignupAuthorizationWatchdog()
@@ -2825,10 +2840,18 @@
             return; // Llegó un callback real (autorización, cancelación o error del SDK) antes del timeout.
         }
 
+        // Puramente visual -- ver comentario de EmbeddedSignupAuthorizationTimeout. Nunca cancela en
+        // el servidor: si el callback real de Meta está en vuelo (o ya llegó y todavía no se refleja
+        // en la UI), un refresh alcanza; si de verdad no llega nunca, el dominio expira solo a los
+        // ~30 minutos (FechaExpiracionUtc), no a los 90 segundos.
         _embeddedSignupBusy = false;
         _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
-        _embeddedSignupMessage = "No se completó la autorización con Meta a tiempo. Podés intentarlo nuevamente.";
-        await PersistEmbeddedSignupCancellationAsync();
+        _embeddedSignupMessage = "La autorización con Meta está demorando. Si ya la completaste en tu celular, puede tardar unos segundos más en reflejarse acá.";
+        await InvokeAsync(StateHasChanged);
+
+        var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+        if (idBase > 0)
+            await RefreshWhatsAppConnectionsAsync(idBase);
     }
 
     [JSInvokable]
@@ -3911,10 +3934,17 @@
         return cond.Count == 0 ? string.Empty : " · " + string.Join(" · ", cond);
     }
 
+    // _coexistenceSyncStatuses trae el historial COMPLETO de la base (todos los onboardings, nunca se
+    // borra nada -- ver WhatsAppCoexistenceSyncStore). Para el número puede haber más de una fila por
+    // (PhoneNumberId, SyncType) si hubo un offboard real + re-onboarding: el estado "actual" a mostrar
+    // es siempre el del intento más reciente (mayor CreatedAtUtc).
     private AlfaCore.Models.WhatsAppCoexistenceSyncDto? GetCoexistenceSyncStatus(string phoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType syncType)
         => string.IsNullOrWhiteSpace(phoneNumberId)
             ? null
-            : _coexistenceSyncStatuses.FirstOrDefault(x => x.SyncType == syncType && string.Equals(x.PhoneNumberId, phoneNumberId, StringComparison.Ordinal));
+            : _coexistenceSyncStatuses
+                .Where(x => x.SyncType == syncType && string.Equals(x.PhoneNumberId, phoneNumberId, StringComparison.Ordinal))
+                .OrderByDescending(x => x.CreatedAtUtc)
+                .FirstOrDefault();
 
     // Sin botón manual todavía: sólo lectura del estado que ya dispararon los sync automáticos al
     // llegar a READY y que van completando los webhooks de history/smb_app_state_sync.
