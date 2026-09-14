@@ -4,11 +4,16 @@
   Script idempotente. NO es ejecutado automáticamente por AlfaCore.
 
   Compatible explícitamente con SQL Server 2016 SP1 / compatibility_level 100 (confirmado en
-  producción, 2026-09-14): SIN STRING_AGG ni WITHIN GROUP (STRING_AGG exige compatibility_level >= 130;
-  el intento anterior de este script falló en preflight con "'STRING_AGG' no es un nombre de función
-  integrada reconocido" -- no llegó a ejecutar ningún DDL). La detección de PK se hizo con
-  COUNT/EXISTS sobre sys.key_constraints/sys.index_columns/sys.columns, comparando cada columna por su
-  key_ordinal exacto en vez de concatenar nombres.
+  producción, 2026-09-14), corregido en dos rondas sobre errores REALES de ejecución en preflight
+  (ningún intento llegó a ejecutar DDL):
+    1) SIN STRING_AGG ni WITHIN GROUP (exige compatibility_level >= 130; falló con "'STRING_AGG' no es
+       un nombre de función integrada reconocido"). La detección de PK se hizo con COUNT/EXISTS sobre
+       sys.key_constraints/sys.index_columns/sys.columns, comparando cada columna por su key_ordinal
+       exacto en vez de concatenar nombres.
+    2) SIN llamar a QUOTENAME() directamente dentro de EXEC(expresión) (falló con "Msg 102, Sintaxis
+       incorrecta cerca de 'QUOTENAME'" -- la forma EXEC(expresión) no acepta una función dentro de la
+       concatenación). El SQL dinámico ahora se arma primero en una variable con SET y se ejecuta con
+       EXEC sp_executesql.
 
   Problema original: 2026-09-11-001 creó la tabla con PK (IdBase, PhoneNumberId, SyncType) -- one-shot
   PARA SIEMPRE por número. Meta permite un history sync nuevo después de un offboard real + un nuevo
@@ -86,14 +91,22 @@ BEGIN
             WHERE kc.parent_object_id = @TableId AND kc.type = 'PK';
 
             -- Defensivo, no debería poder pasar acá con @IsOldPk ya validado arriba -- pero si @PkName
-            -- igual saliera NULL por alguna razón, mejor un THROW explícito que un EXEC(NULL).
+            -- igual saliera NULL por alguna razón, mejor un THROW explícito que armar un
+            -- sp_executesql con SQL dinámico NULL/corrupto.
             IF @PkName IS NULL
                 THROW 51102, 'No se pudo resolver el nombre de la restricción PK existente -- abortando sin tocar nada.', 1;
+
+            -- EXEC('...' + QUOTENAME(@x) + '...') falla en SQL Server 2016 SP1 / compat 100 con
+            -- "Msg 102, Sintaxis incorrecta cerca de 'QUOTENAME'" -- la forma EXEC(expresión) no acepta
+            -- una llamada a función dentro de la concatenación. Se materializa el SQL dinámico en una
+            -- variable primero (SET, sin funciones dentro del propio EXEC) y se ejecuta con sp_executesql.
+            DECLARE @DropPkSql nvarchar(1000);
+            SET @DropPkSql = N'ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync DROP CONSTRAINT ' + QUOTENAME(@PkName) + N';';
 
             BEGIN TRY
                 BEGIN TRANSACTION;
 
-                EXEC(N'ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync DROP CONSTRAINT ' + QUOTENAME(@PkName) + N';');
+                EXEC sp_executesql @DropPkSql;
 
                 ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync
                     WITH CHECK ADD CONSTRAINT PK_WhatsAppEmbeddedCoexistenceSync

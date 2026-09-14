@@ -241,7 +241,10 @@ BEGIN
     BEGIN
         DECLARE @WaecsPkName sysname = (SELECT kc.name FROM sys.key_constraints kc
             WHERE kc.parent_object_id = @WaecsTableId AND kc.type = 'PK');
-        EXEC(N'ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync DROP CONSTRAINT ' + QUOTENAME(@WaecsPkName) + N';');
+        -- EXEC('...' + QUOTENAME(@x) + '...') falla en SQL Server 2016 SP1 / compat 100 (Msg 102) --
+        -- se materializa el SQL dinámico en una variable primero y se ejecuta con sp_executesql.
+        DECLARE @WaecsDropPkSql nvarchar(1000) = N'ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync DROP CONSTRAINT ' + QUOTENAME(@WaecsPkName) + N';';
+        EXEC sp_executesql @WaecsDropPkSql;
         ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync
             WITH CHECK ADD CONSTRAINT PK_WhatsAppEmbeddedCoexistenceSync
             PRIMARY KEY (IdBase, IdOnboarding, PhoneNumberId, SyncType);
