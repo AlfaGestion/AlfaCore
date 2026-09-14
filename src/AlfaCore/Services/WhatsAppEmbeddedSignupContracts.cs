@@ -218,27 +218,40 @@ public interface IWhatsAppEmbeddedOperationalImportService
 public interface IWhatsAppCoexistenceSyncStore
 {
     /// <summary>
-    /// Inserta atómicamente la fila si TODAVÍA NO existe para (IdBase, PhoneNumberId, SyncType).
-    /// Devuelve true únicamente si esta llamada insertó la fila (es decir: es la única autorizada a
-    /// proceder con el POST a Meta). <paramref name="initialStatus"/> es Pending (se va a pedir ahora)
-    /// o Expired (la ventana de 24h ya venció -- se registra sin llamar nunca a Meta).
+    /// Inserta atómicamente la fila si TODAVÍA NO existe para (IdBase, IdOnboarding, PhoneNumberId,
+    /// SyncType) -- el one-shot es POR INTENTO DE ONBOARDING, no para siempre por número: Meta permite
+    /// un nuevo history sync después de un offboard real + nuevo consentimiento en un onboarding
+    /// posterior sobre el mismo número. Devuelve true únicamente si esta llamada insertó la fila (es
+    /// decir: es la única autorizada a proceder con el POST a Meta). <paramref name="initialStatus"/>
+    /// es Pending (se va a pedir ahora) o Expired (la ventana de 24h ya venció -- se registra sin
+    /// llamar nunca a Meta). Las filas de onboardings anteriores para el mismo número NUNCA se tocan
+    /// ni se eliminan -- quedan como historial.
     /// </summary>
     Task<bool> TryReserveAsync(int idBase, string phoneNumberId, Guid idOnboarding, WhatsAppCoexistenceSyncType syncType,
         WhatsAppCoexistenceSyncStatus initialStatus, DateTime nowUtc, CancellationToken ct = default);
 
-    Task MarkRequestedAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, string requestId, DateTime requestedAtUtc, CancellationToken ct = default);
-    Task MarkFailedAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, string errorCode, string errorSummary, CancellationToken ct = default);
+    Task MarkRequestedAsync(int idBase, string phoneNumberId, Guid idOnboarding, WhatsAppCoexistenceSyncType syncType, string requestId, DateTime requestedAtUtc, CancellationToken ct = default);
+    Task MarkFailedAsync(int idBase, string phoneNumberId, Guid idOnboarding, WhatsAppCoexistenceSyncType syncType, string errorCode, string errorSummary, CancellationToken ct = default);
 
-    /// <summary>Webhook: primer chunk de historial recibido. Guardado: sólo avanza desde Pending/Requested (nunca regresa desde un estado terminal).</summary>
+    /// <summary>
+    /// Webhook: primer chunk de historial recibido. Meta NO manda un id de onboarding en el webhook,
+    /// así que esto actualiza la fila MÁS RECIENTE (mayor FechaAltaUtc) para (IdBase, PhoneNumberId,
+    /// SyncType) -- es decir, la del intento de onboarding vigente. Guardado: sólo avanza desde
+    /// Pending/Requested de esa fila más reciente (nunca regresa desde un estado terminal, y nunca
+    /// toca filas de onboardings anteriores).
+    /// </summary>
     Task MarkInProgressAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, CancellationToken ct = default);
 
-    /// <summary>Webhook: history_context.status=complete, o primera entrega de smb_app_state_sync. Guardado: sólo avanza desde un estado no terminal (Completed→Completed es no-op, nunca regresa).</summary>
+    /// <summary>Webhook: history_context.status=complete, o primera entrega de smb_app_state_sync. Misma semántica "fila más reciente" que <see cref="MarkInProgressAsync"/>; sólo avanza desde un estado no terminal (Completed→Completed es no-op, nunca regresa).</summary>
     Task MarkCompletedAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, DateTime completedAtUtc, CancellationToken ct = default);
 
-    /// <summary>Webhook: error code=2593109 (el negocio rechazó compartir historial desde la app). Guardado: sólo desde un estado no terminal.</summary>
+    /// <summary>Webhook: error code=2593109 (el negocio rechazó compartir historial desde la app). Misma semántica "fila más reciente" que <see cref="MarkInProgressAsync"/>; sólo desde un estado no terminal.</summary>
     Task MarkDeclinedAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, string errorCode, CancellationToken ct = default);
 
-    Task<WhatsAppCoexistenceSyncDto?> GetAsync(int idBase, string phoneNumberId, WhatsAppCoexistenceSyncType syncType, CancellationToken ct = default);
+    /// <summary>Fila exacta de un intento de onboarding puntual.</summary>
+    Task<WhatsAppCoexistenceSyncDto?> GetAsync(int idBase, string phoneNumberId, Guid idOnboarding, WhatsAppCoexistenceSyncType syncType, CancellationToken ct = default);
+
+    /// <summary>Historial COMPLETO (todos los onboardings) de la base -- nunca se borra nada. Para "estado actual" de un número, el llamador debe quedarse con la fila de mayor CreatedAtUtc por (PhoneNumberId, SyncType).</summary>
     Task<IReadOnlyList<WhatsAppCoexistenceSyncDto>> GetForBaseAsync(int idBase, CancellationToken ct = default);
 }
 

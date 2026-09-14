@@ -186,15 +186,19 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.Whats
     CREATE INDEX IX_WASV_Context ON dbo.WhatsAppSecureVault(IdBase,IdOnboarding,WabaId,PhoneNumberId,SecretType) INCLUDE (ExpiresAtUtc,RevokedAtUtc);
 GO
 
-/* Esquema ES-2: tracking central de sync inicial de Coexistence (mismo diseño que 2026-09-11-001). */
+/*
+  Esquema ES-2: tracking central de sync inicial de Coexistence (mismo diseño que 2026-09-11-001).
+  PK (IdBase, IdOnboarding, PhoneNumberId, SyncType) -- one-shot POR INTENTO DE ONBOARDING, no para
+  siempre por número (ver corrección 2026-09-14-001__alfa_central_whatsapp_coexistence_sync_pk_fix.sql).
+*/
 IF OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync', N'U') IS NULL
 BEGIN
     CREATE TABLE dbo.WhatsAppEmbeddedCoexistenceSync
     (
         IdBase int NOT NULL,
+        IdOnboarding uniqueidentifier NOT NULL,
         PhoneNumberId varchar(40) NOT NULL,
         SyncType varchar(30) NOT NULL,
-        IdOnboarding uniqueidentifier NOT NULL,
         Status varchar(20) NOT NULL CONSTRAINT DF_WAECS_Status DEFAULT ('PENDING'),
         RequestId varchar(120) NOT NULL CONSTRAINT DF_WAECS_RequestId DEFAULT (''),
         RequestedAtUtc datetime2(3) NULL,
@@ -203,7 +207,7 @@ BEGIN
         ErrorSummary nvarchar(500) NOT NULL CONSTRAINT DF_WAECS_ErrorSummary DEFAULT (N''),
         FechaAltaUtc datetime2(3) NOT NULL,
         FechaModificacionUtc datetime2(3) NOT NULL,
-        CONSTRAINT PK_WhatsAppEmbeddedCoexistenceSync PRIMARY KEY (IdBase, PhoneNumberId, SyncType),
+        CONSTRAINT PK_WhatsAppEmbeddedCoexistenceSync PRIMARY KEY (IdBase, IdOnboarding, PhoneNumberId, SyncType),
         CONSTRAINT FK_WAECS_Base FOREIGN KEY (IdBase) REFERENCES dbo.bases(id),
         CONSTRAINT FK_WAECS_Onboarding FOREIGN KEY (IdOnboarding) REFERENCES dbo.WhatsAppEmbeddedOnboarding(IdOnboarding),
         CONSTRAINT CK_WAECS_SyncType CHECK (SyncType IN ('HISTORY','SMB_APP_STATE_SYNC')),
@@ -212,8 +216,29 @@ BEGIN
 END;
 GO
 
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync') AND name = N'IX_WAECS_IdBase')
-    CREATE INDEX IX_WAECS_IdBase ON dbo.WhatsAppEmbeddedCoexistenceSync(IdBase);
+-- Self-heal para un ALFA_CENTRAL_TEST bootstrapeado ANTES de esta corrección: si la tabla ya existe
+-- con la PK vieja (IdBase, PhoneNumberId, SyncType) y está vacía, se corrige acá mismo.
+IF OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync', N'U') IS NOT NULL
+BEGIN
+    DECLARE @WaecsPkColumns nvarchar(400);
+    SELECT @WaecsPkColumns = STRING_AGG(c.name, ',') WITHIN GROUP (ORDER BY ic.key_ordinal)
+    FROM sys.key_constraints kc
+    JOIN sys.index_columns ic ON ic.object_id = kc.parent_object_id AND ic.index_id = kc.unique_index_id
+    JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
+    WHERE kc.parent_object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync') AND kc.type = 'PK';
+
+    IF @WaecsPkColumns = N'IdBase,PhoneNumberId,SyncType' AND (SELECT COUNT(*) FROM dbo.WhatsAppEmbeddedCoexistenceSync) = 0
+    BEGIN
+        DECLARE @WaecsPkName sysname = (SELECT kc.name FROM sys.key_constraints kc
+            WHERE kc.parent_object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync') AND kc.type = 'PK');
+        EXEC(N'ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync DROP CONSTRAINT ' + QUOTENAME(@WaecsPkName) + N';');
+        ALTER TABLE dbo.WhatsAppEmbeddedCoexistenceSync
+            WITH CHECK ADD CONSTRAINT PK_WhatsAppEmbeddedCoexistenceSync
+            PRIMARY KEY (IdBase, IdOnboarding, PhoneNumberId, SyncType);
+        IF EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID(N'dbo.WhatsAppEmbeddedCoexistenceSync') AND name = N'IX_WAECS_IdBase')
+            DROP INDEX IX_WAECS_IdBase ON dbo.WhatsAppEmbeddedCoexistenceSync;
+    END;
+END;
 GO
 
 SELECT DB_NAME() AS CatalogoValidado,

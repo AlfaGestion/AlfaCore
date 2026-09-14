@@ -82,12 +82,12 @@ public sealed class WhatsAppCoexistenceSyncTrigger(
         try
         {
             var result = await managementClient.RequestSmbAppDataSyncAsync(phoneNumberId, syncType, tokenReference, ct);
-            await syncStore.MarkRequestedAsync(onboarding.IdBase, phoneNumberId, syncType, result.RequestId, DateTime.UtcNow, ct);
+            await syncStore.MarkRequestedAsync(onboarding.IdBase, phoneNumberId, onboarding.IdOnboarding, syncType, result.RequestId, DateTime.UtcNow, ct);
         }
         catch (Exception ex)
         {
             var errorCode = (ex as MetaWhatsAppManagementException)?.ErrorCode ?? "SMB_APP_DATA_REQUEST_FAILED";
-            await syncStore.MarkFailedAsync(onboarding.IdBase, phoneNumberId, syncType, errorCode, "No se pudo solicitar el sync inicial con Meta.", ct);
+            await syncStore.MarkFailedAsync(onboarding.IdBase, phoneNumberId, onboarding.IdOnboarding, syncType, errorCode, "No se pudo solicitar el sync inicial con Meta.", ct);
             throw;
         }
     }
