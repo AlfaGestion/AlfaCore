@@ -72,6 +72,20 @@ public class Program
             return;
         }
 
+        // Modo one-shot 100% READ-ONLY: diagnóstico de inbound/outbound real para un número (ownership
+        // → credencial → base tenant vía dbo.bases → SELECT-only en CONV_WHATSAPP_NUMEROS/CONV_MENSAJES/
+        // CONV_WEBHOOK_LOG → GET a Graph). Nunca escribe SQL, nunca llama a Meta salvo el mismo GET que
+        // --inspect-whatsapp-phone. Ver WhatsAppRuntimeInspectionCommand.
+        if (WhatsAppRuntimeInspectionCommand.IsRequested(args))
+        {
+            var runtimeInspectExitCode = WhatsAppRuntimeInspectionCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(runtimeInspectExitCode);
+            return;
+        }
+
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
         var webRootCandidates = new[]
