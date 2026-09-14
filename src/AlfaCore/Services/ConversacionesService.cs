@@ -62,6 +62,7 @@ public sealed class ConversacionesService(
     private const int MaxAutomaticMediaRecoveryRequestsPerWindow = 20;
     private static readonly TimeSpan DefaultAutomaticMediaRecoveryMaxAge = TimeSpan.FromDays(30);
     private static readonly TimeSpan AutomaticMediaRecoveryRateWindow = TimeSpan.FromHours(1);
+    private static readonly TimeSpan WhatsAppMediaRequestTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan TypingTtl = TimeSpan.FromSeconds(8);
     private static readonly object AutomaticMediaRecoveryRateLock = new();
     private static readonly Queue<DateTime> AutomaticMediaRecoveryRequestTimesUtc = new();
@@ -3618,13 +3619,27 @@ public sealed class ConversacionesService(
 
                 if (incoming.Attachments.Count > 0 && whatsAppConfig is not null && !embeddedSignupWithoutVault)
                 {
-                    var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
-                        currentBaseId, null, incoming.PhoneNumberId, whatsAppConfig, token);
-                    whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
-                    whatsAppConfig.BusinessAccountId = runtimeCredential.WabaId;
-                    whatsAppConfig.ApiVersion = runtimeCredential.GraphVersion;
-                    whatsAppConfig.AccessToken = runtimeCredential.AccessToken;
-                    await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
+                    try
+                    {
+                        var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+                            currentBaseId, null, incoming.PhoneNumberId, whatsAppConfig, token);
+                        whatsAppConfig.PhoneNumberId = runtimeCredential.PhoneNumberId;
+                        whatsAppConfig.BusinessAccountId = runtimeCredential.WabaId;
+                        whatsAppConfig.ApiVersion = runtimeCredential.GraphVersion;
+                        whatsAppConfig.AccessToken = runtimeCredential.AccessToken;
+                        await StoreIncomingAttachmentsAsync(conversationId, messageId, incoming, whatsAppConfig, token);
+                    }
+                    catch (Exception ex)
+                    {
+                        // El mensaje ya quedó persistido. La descarga no debe hacer que Meta
+                        // reintente todo el webhook ni retrasar la actualización del inbox;
+                        // RecoverConversationAttachmentsAsync intentará completar el archivo
+                        // cuando el operador abra la conversación.
+                        logger.LogWarning(
+                            ex,
+                            "Se recibió el mensaje {WhatsAppMessageId}, pero la descarga de su adjunto quedó pendiente.",
+                            incoming.WhatsAppMessageId);
+                    }
                 }
                 else if (incoming.Attachments.Count > 0 && embeddedSignupWithoutVault)
                 {
@@ -10073,7 +10088,8 @@ public sealed class ConversacionesService(
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
         var client = httpClientFactory.CreateClient();
-        using var response = await client.SendAsync(request, ct);
+        client.Timeout = WhatsAppMediaRequestTimeout;
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
@@ -10099,7 +10115,8 @@ public sealed class ConversacionesService(
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
 
         var client = httpClientFactory.CreateClient();
-        using var response = await client.SendAsync(request, ct);
+        client.Timeout = WhatsAppMediaRequestTimeout;
+        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync(ct);

@@ -23537,6 +23537,41 @@ html[data-theme="light"] .pos-settings-modal {
     overflow: visible !important;
 }
 
+/* Los modales de Conversaciones deben cubrir también el encabezado del chat.
+   Ese encabezado usa una capa alta para sus menús; si el modal conserva 900/901,
+   el nombre del contacto queda visible por encima de la ventana modal. */
+.conversations-modal-backdrop {
+    z-index: 20000 !important;
+}
+
+.conversations-modal {
+    z-index: 20001 !important;
+}
+
+/* El visor de adjuntos es otro overlay independiente del modal genérico. */
+.attachment-preview-overlay {
+    z-index: 2147483000 !important;
+}
+
+.modal-overlay.conversations-template-modal,
+.modal-overlay.conversations-new-thread-modal {
+    z-index: 2147483000 !important;
+}
+
+/* Parte de horas es una ventana modal bloqueante: mientras está abierta, el
+   encabezado sticky del chat no debe conservar una capa visual propia. */
+.conversations-page--odoo.conversations-page--hours-open .conversations-chat__header {
+    z-index: 0 !important;
+}
+
+.conversations-page--odoo.conversations-page--hours-open .conversations-hours-backdrop {
+    z-index: 2147483000 !important;
+}
+
+.conversations-page--odoo.conversations-page--hours-open .conversations-hours-dialog {
+    z-index: 2147483001 !important;
+}
+
 .conversations-page--odoo .conversation-header-state {
     position: relative !important;
     z-index: 10020 !important;

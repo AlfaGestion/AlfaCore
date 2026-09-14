@@ -162,7 +162,7 @@
 </style>
 
 <section id="conversations-page"
-         class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty) @(IsAiSuggestionDrawerVisible ? "conversations-page--ai-open" : string.Empty)"
+         class="page-grid conversations-page conversations-page--odoo @GetChannelCssClass() @(IsMobileChatView ? "conversations-page--chat-active" : string.Empty) @(IsAiSuggestionDrawerVisible ? "conversations-page--ai-open" : string.Empty) @(_showParteHorasDialog ? "conversations-page--hours-open" : string.Empty)"
          @onclick="DismissConversationNoticesAsync">
     @if (_loadError is not null)
     {
