@@ -11942,12 +11942,46 @@
     internal static string GetMessageDisplayText(ConversacionMensajeDto message)
     {
         if (!IsUnsupportedMessage(message))
+        {
+            // BUG REAL encontrado al auditar (Prioridad 5/6): para un mensaje de media (imagen/video/
+            // audio/documento/sticker) sin ningún adjunto registrado -- típico de historial donde el
+            // media de Meta ya no está disponible para descargar -- el texto guardado es literalmente
+            // "[video]"/"[image]"/etc. (ver ExtractIncomingText en ConversacionesService, el fallback
+            // final cuando no hay caption ni filename). Eso se mostraba tal cual, crudo, en la burbuja
+            // -- exactamente el bug reportado ("[video]" en vez de una explicación). Con un adjunto
+            // registrado esto ya no pasa (HasHumanAttachmentText lo filtra), así que sólo hace falta acá
+            // para el caso sin ningún adjunto.
+            var unavailableMediaText = GetUnavailableHistoricalMediaText(message);
+            if (unavailableMediaText is not null)
+                return unavailableMediaText;
+
             return message.Texto;
+        }
 
         var unsupportedType = ExtractUnsupportedType(message.PayloadJson);
         return string.IsNullOrWhiteSpace(unsupportedType)
             ? "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo."
             : $"WhatsApp envió un formato no compatible: {unsupportedType}.";
+    }
+
+    private static string? GetUnavailableHistoricalMediaText(ConversacionMensajeDto message)
+    {
+        if (message.TieneAdjuntos)
+            return null;
+
+        var text = (message.Texto ?? string.Empty).Trim();
+        if (!text.StartsWith('[') || !text.Contains(']'))
+            return null;
+
+        return (message.MessageType ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "IMAGE" => "Imagen histórica no disponible.",
+            "VIDEO" => "Video histórico no disponible.",
+            "AUDIO" => "Audio histórico no disponible.",
+            "DOCUMENT" => "Documento histórico no disponible.",
+            "STICKER" => "Sticker no disponible.",
+            _ => null
+        };
     }
 
     private static readonly Regex MessageUrlRegex = new(
