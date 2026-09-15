@@ -620,6 +620,17 @@
                     {
                         <div class="wa-business-block">
                             <h3>WhatsApp Business App</h3>
+                            @* Sólo un panel grande mientras está sincronizando o si algo requiere atención (Declined/
+                               Expired/Failed) -- ya sincronizado se reduce a la línea compacta de abajo. No tiene
+                               sentido un panel gigante permanente para algo que ya terminó bien. *@
+                            @if (BuildCoexistenceHistorySyncPanel(GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.History)) is { } historyPanel)
+                            {
+                                <AlfaFeedbackPanel Message="@historyPanel" Dismissible="false" />
+                            }
+                            @if (BuildCoexistenceContactsSyncPanel(GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.ContactState)) is { } contactsPanel)
+                            {
+                                <AlfaFeedbackPanel Message="@contactsPanel" Dismissible="false" />
+                            }
                             <dl class="wa-business-definition">
                                 @if (GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.History) is { } coexistenceHistory)
                                 { <div><dt>Historial</dt><dd>@DescribeCoexistenceSyncStatus(coexistenceHistory)</dd></div> }
@@ -4067,13 +4078,48 @@
         {
             AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Pending => "Pendiente",
             AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Requested or AlfaCore.Models.WhatsAppCoexistenceSyncStatus.InProgress => "Sincronizando",
-            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Completed => isHistory ? "Sincronizado" : "Sincronizados",
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Completed => isHistory ? "✓ Sincronizado" : "✓ Sincronizados",
             AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Declined => "No compartido",
             AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Expired => "Vencido",
             AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Failed => "Error",
             _ => "Pendiente"
         };
     }
+
+    /// <summary>
+    /// Prioridad 9: un panel grande sólo mientras hay algo en curso o que requiere atención -- ya
+    /// sincronizado alcanza con la línea compacta del <dl> (DescribeCoexistenceSyncStatus). null =
+    /// nada que mostrar en grande (Pending/Completed). Historial y Contactos tienen textos propios
+    /// (no un único template genérico) para que la concordancia de género/número en español quede bien
+    /// en los dos casos ("el historial... no compartido" vs. "los contactos... no compartidos").
+    /// </summary>
+    internal static AppUiMessage? BuildCoexistenceHistorySyncPanel(AlfaCore.Models.WhatsAppCoexistenceSyncDto? sync)
+        => sync?.Status switch
+        {
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Requested or AlfaCore.Models.WhatsAppCoexistenceSyncStatus.InProgress =>
+                AppUiMessage.InProgress("Sincronizando historial", "Estamos sincronizando el historial de conversaciones desde WhatsApp Business App. Esto puede demorar unos minutos y no afecta el uso normal de este WhatsApp."),
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Declined =>
+                AppUiMessage.Warning("Historial no compartido", "WhatsApp Business App no compartió el historial de conversaciones.", "Podés seguir usando este WhatsApp con normalidad."),
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Expired =>
+                AppUiMessage.Warning("Historial vencido", "La solicitud de sincronización del historial venció.", "Podés seguir usando este WhatsApp con normalidad."),
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Failed =>
+                AppUiMessage.Error("Error al sincronizar el historial", "No pudimos sincronizar el historial desde WhatsApp Business App.", "Podés seguir usando este WhatsApp con normalidad."),
+            _ => null
+        };
+
+    internal static AppUiMessage? BuildCoexistenceContactsSyncPanel(AlfaCore.Models.WhatsAppCoexistenceSyncDto? sync)
+        => sync?.Status switch
+        {
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Requested or AlfaCore.Models.WhatsAppCoexistenceSyncStatus.InProgress =>
+                AppUiMessage.InProgress("Sincronizando contactos", "Estamos sincronizando los contactos desde WhatsApp Business App. Esto puede demorar unos minutos y no afecta el uso normal de este WhatsApp."),
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Declined =>
+                AppUiMessage.Warning("Contactos no compartidos", "WhatsApp Business App no compartió los contactos.", "Podés seguir usando este WhatsApp con normalidad."),
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Expired =>
+                AppUiMessage.Warning("Contactos vencidos", "La solicitud de sincronización de contactos venció.", "Podés seguir usando este WhatsApp con normalidad."),
+            AlfaCore.Models.WhatsAppCoexistenceSyncStatus.Failed =>
+                AppUiMessage.Error("Error al sincronizar contactos", "No pudimos sincronizar los contactos desde WhatsApp Business App.", "Podés seguir usando este WhatsApp con normalidad."),
+            _ => null
+        };
 
     private async Task LoadNumerosAsync()
     {
