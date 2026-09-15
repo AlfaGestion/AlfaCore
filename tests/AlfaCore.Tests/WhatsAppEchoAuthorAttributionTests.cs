@@ -1,3 +1,5 @@
+using AlfaCore.Components.Pages;
+using AlfaCore.Models;
 using Xunit;
 
 namespace AlfaCore.Tests;
@@ -44,19 +46,147 @@ public sealed class WhatsAppEchoAuthorAttributionTests
         Assert.Contains("await EnsureMensajeOrigenColumnAsync(cn, token);", methodBody, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Auditoría de call-sites (segunda ronda): GetMessagesAsync (variante NO paginada) es un endpoint
+    /// HTTP real y registrado -- GET /api/conversaciones/{id}/mensajes (Program.cs) -- no código muerto.
+    /// Ningún JS de este repo lo llama (grep en wwwroot sin resultados), así que no es la ruta que usa
+    /// la página Blazor de Conversaciones (ésa usa GetMessagesPageAsync vía DI directa, ya corregida),
+    /// pero es una ruta real y alcanzable para cualquier consumidor externo -- por eso se corrige igual,
+    /// con el mismo patrón exacto (SELECT + self-heal + mapeo), no se deja como gap documentado.
+    /// </summary>
     [Fact]
-    public void GetMessageAuthor_NeverAttributesAnEchoMessageToAlfaCoreTeam()
+    public void GetMessagesAsync_NonPagedRestEndpoint_AlsoSelectsAndMapsOrigen()
     {
-        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "Conversaciones.razor"));
-        var methodStart = source.IndexOf("private string GetMessageAuthor(ConversacionMensajeDto message)", StringComparison.Ordinal);
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        var methodStart = source.IndexOf("public Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(", StringComparison.Ordinal);
         Assert.True(methodStart >= 0);
-        var methodBody = ExtractBody(source, methodStart, until: ';');
+        var methodBody = ExtractBody(source, methodStart);
 
-        Assert.Contains("WHATSAPP_BUSINESS_APP", methodBody, StringComparison.Ordinal);
-        Assert.Contains("\"WhatsApp Business\"", methodBody, StringComparison.Ordinal);
-        // Un autor real de AlfaCore (si por algún motivo lo hubiera) sigue teniendo prioridad sobre la
-        // etiqueta genérica -- FirstNonEmpty(TecnicoAutorNombre, UsuarioAutor, "WhatsApp Business").
-        Assert.Contains("FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, \"WhatsApp Business\")", methodBody, StringComparison.Ordinal);
+        Assert.Contains("ISNULL(m.Origen, '')", methodBody, StringComparison.Ordinal);
+        Assert.Contains("Origen = GetString(rd, 17)", methodBody, StringComparison.Ordinal);
+        Assert.Contains("await EnsureMensajeOrigenColumnAsync(cn, token);", methodBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetMessagesAsync_IsARealRegisteredHttpEndpoint_NotDeadCode()
+    {
+        var programSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
+        Assert.Contains("""app.MapGet("/api/conversaciones/{id:long}/mensajes", async (""", programSource, StringComparison.Ordinal);
+        Assert.Contains("svc.GetMessagesAsync(id, ct)", programSource, StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    /// Los otros dos call-sites de "new ConversacionMensajeDto" en ConversacionesService.cs quedan
+    /// documentados y SIN tocar, con evidencia de por qué no aplican acá:
+    /// - GetPendingMediaHydrationAsync: sólo ENTRANTE (WHERE Direction='ENTRANTE'), un echo es siempre
+    ///   SALIENTE -- estructuralmente no puede alcanzar un mensaje de echo.
+    /// - El helper de contexto para IA (histórico de conversación para el asistente): no llena
+    ///   UsuarioAutor/TecnicoAutorNombre en absoluto (sólo Direction/Texto/FechaHora) y no se renderiza
+    ///   nunca como "quién lo mandó" en ninguna UI -- no hay atribución de autor que corregir ahí.
+    /// </summary>
+    [Fact]
+    public void OtherConversacionMensajeDtoCallSites_StructurallyCannotReachAnEchoAuthorBug()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+
+        var hydrationStart = source.IndexOf("private async Task<List<PendingMediaHydration>> GetPendingMediaHydrationAsync(", StringComparison.Ordinal);
+        Assert.True(hydrationStart >= 0, "No se encontró GetPendingMediaHydrationAsync.");
+        var hydrationBody = ExtractBody(source, hydrationStart);
+        Assert.Contains("UPPER(ISNULL(m.Direction, '')) = N'ENTRANTE'", hydrationBody, StringComparison.Ordinal);
+    }
+
+    // GetMessageAuthor delega en ResolveNonIncomingMessageAuthor (internal static, extraído a propósito
+    // para poder testear estos casos de verdad en vez de con regex sobre el código fuente) para todo lo
+    // que no sea ENTRANTE (ENTRANTE depende de CurrentConversationContactName, estado de instancia).
+
+    [Fact]
+    public void PaginatedEcho_IsAttributedToWhatsAppBusiness_NotAlfaCoreTeam()
+    {
+        var echo = new ConversacionMensajeDto
+        {
+            Direction = "SALIENTE",
+            Origen = "WHATSAPP_BUSINESS_APP",
+            UsuarioAutor = string.Empty,
+            TecnicoAutorNombre = string.Empty
+        };
+
+        Assert.Equal("WhatsApp Business", Conversaciones.ResolveNonIncomingMessageAuthor(echo));
+    }
+
+    [Fact]
+    public void HistoryImportedOutgoingMessage_IsAlsoAttributedToWhatsAppBusiness_NeverConfusedWithAnAlfaCoreMessage()
+    {
+        // "history no se confunde con echo": ambos representan lo mismo (el negocio mandó esto
+        // directamente desde la app, no AlfaCore) y ambos deben mostrar la misma etiqueta -- confirmado
+        // que esto YA NO pasaba antes de este fix (HISTORY no estaba en la lista, sólo
+        // WHATSAPP_BUSINESS_APP, así que un SALIENTE de historial cai­a al "Equipo Alfa" incorrecto).
+        var historical = new ConversacionMensajeDto
+        {
+            Direction = "SALIENTE",
+            Origen = "HISTORY",
+            UsuarioAutor = string.Empty,
+            TecnicoAutorNombre = string.Empty
+        };
+
+        Assert.Equal("WhatsApp Business", Conversaciones.ResolveNonIncomingMessageAuthor(historical));
+    }
+
+    [Fact]
+    public void NormalAlfaCoreMessage_KeepsItsRealAuthor_NeverOverriddenByTheEchoFallback()
+    {
+        var normal = new ConversacionMensajeDto
+        {
+            Direction = "SALIENTE",
+            Origen = string.Empty,
+            UsuarioAutor = "jperez",
+            TecnicoAutorNombre = "Juan Pérez"
+        };
+
+        Assert.Equal("Juan Pérez", Conversaciones.ResolveNonIncomingMessageAuthor(normal));
+    }
+
+    [Fact]
+    public void NormalAlfaCoreMessageWithNoAttachedTechnician_FallsBackToEquipoAlfa_NotWhatsAppBusiness()
+    {
+        var normal = new ConversacionMensajeDto
+        {
+            Direction = "SALIENTE",
+            Origen = string.Empty,
+            UsuarioAutor = string.Empty,
+            TecnicoAutorNombre = string.Empty
+        };
+
+        Assert.Equal("Equipo Alfa", Conversaciones.ResolveNonIncomingMessageAuthor(normal));
+    }
+
+    [Fact]
+    public void RealAuthor_StillTakesPriorityOverTheWhatsAppBusinessFallback_ForEchoOrHistory()
+    {
+        // Si por algún motivo un echo/history SÍ trajera un autor real (caso hoy no esperado pero
+        // defensivo), no debe perderse detrás de la etiqueta genérica.
+        var echoWithKnownAuthor = new ConversacionMensajeDto
+        {
+            Direction = "SALIENTE",
+            Origen = "WHATSAPP_BUSINESS_APP",
+            UsuarioAutor = "dueño-del-negocio",
+            TecnicoAutorNombre = string.Empty
+        };
+
+        Assert.Equal("dueño-del-negocio", Conversaciones.ResolveNonIncomingMessageAuthor(echoWithKnownAuthor));
+    }
+
+    [Fact]
+    public void NotaInterna_IsUnaffectedByOrigen_KeepsItsOwnFallback()
+    {
+        var nota = new ConversacionMensajeDto
+        {
+            Direction = "NOTA_INTERNA",
+            Origen = string.Empty,
+            UsuarioAutor = string.Empty,
+            TecnicoAutorNombre = string.Empty
+        };
+
+        Assert.Equal("Nota interna", Conversaciones.ResolveNonIncomingMessageAuthor(nota));
     }
 
     private static string ExtractBody(string source, int start, char until = '}')

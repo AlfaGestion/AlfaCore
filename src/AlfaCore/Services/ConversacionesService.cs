@@ -1759,7 +1759,8 @@ public sealed class ConversacionesService(
                         FROM dbo.CONV_ADJUNTOS a
                         WHERE a.IdMensaje = m.IdMensaje
                     ) THEN 1 ELSE 0 END,
-                    ISNULL(m.MarcaInterna, '')
+                    ISNULL(m.MarcaInterna, ''),
+                    ISNULL(m.Origen, '')
                 FROM dbo.CONV_MENSAJES m
                 INNER JOIN dbo.CONV_CONVERSACIONES c
                     ON c.IdConversacion = @IdConversacion
@@ -1782,6 +1783,12 @@ public sealed class ConversacionesService(
             var items = new List<ConversacionMensajeDto>();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            // Auto-sana la columna Origen (ver InsertMessageAsync/GetMessagesPageAsync) por si esta base
+            // tenant todavía no recibió nunca un mensaje de history/echo -- si no existiera, el SELECT
+            // de abajo fallaría. Este método es un endpoint HTTP real (GET /api/conversaciones/{id}/
+            // mensajes, Program.cs) -- un consumidor externo también merece el dato correcto, no sólo
+            // la página Blazor.
+            await EnsureMensajeOrigenColumnAsync(cn, token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdConversacion", conversationId);
             await using var rd = await cmd.ExecuteReaderAsync(token);
@@ -1805,7 +1812,8 @@ public sealed class ConversacionesService(
                     IdTecnicoAutor = GetString(rd, 12),
                     TecnicoAutorNombre = GetString(rd, 13),
                     TieneAdjuntos = GetInt(rd, 15) == 1,
-                    MarcaInterna = GetString(rd, 16)
+                    MarcaInterna = GetString(rd, 16),
+                    Origen = GetString(rd, 17)
                 };
 
                 items.Add(item);

@@ -79,6 +79,63 @@ public sealed class Meta131031PanelTests
     }
 
     [Fact]
+    public void GetLastOutboundDeliveryErrorAsync_ScopesStrictlyByThisNumero_NeverLeaksAcrossNumbers()
+    {
+        // "error viejo de otro PhoneNumberId no afecta" / "otro número de la misma Base no se mezcla":
+        // el JOIN filtra por c.IdNumeroWhatsApp = @IdNumero -- IdNumero es el id interno de AlfaCore,
+        // único por número incluso dentro de la misma Base, así que un 131031 de otro número (misma
+        // Base o no) nunca puede aparecer acá. No hay forma de correrlo contra SQL real en este entorno
+        // (CONV_MENSAJES/CONV_CONVERSACIONES viven en la base TENANT, no en ALFA_CENTRAL -- el único
+        // SqlIntegrationFact disponible apunta a una ALFA_CENTRAL de test) -- se confirma por la forma
+        // exacta de la consulta en vez de con datos reales.
+        var source = ReadServiceSource();
+        var methodStart = source.IndexOf("public Task<string?> GetLastOutboundDeliveryErrorAsync(", StringComparison.Ordinal);
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        Assert.Contains("JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion", methodBody, StringComparison.Ordinal);
+        Assert.Contains("WHERE c.IdNumeroWhatsApp = @IdNumero AND m.Direction = N'SALIENTE'", methodBody, StringComparison.Ordinal);
+        Assert.Contains("cmd.Parameters.AddWithValue(\"@IdNumero\", idNumero)", methodBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void QueueNumeroBlockedFeedbackRefresh_AlwaysRequeries_NeverSkipsBecauseOfAStaleCacheHit()
+    {
+        // BUG REAL encontrado en auditoría de staleness: esto antes se saltaba la consulta por completo
+        // si el número ya estaba en _numeroBlockedFeedbackCache -- una vez detectado un 131031, el
+        // panel quedaba pegado para siempre en esa sesión de browser aunque Meta reactivara la cuenta y
+        // un envío posterior tuviera éxito. El fix elimina el guard de "ya está en cache" -- refresca
+        // siempre que se lo llama.
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "Conversaciones.razor"));
+        var methodStart = source.IndexOf("private void QueueNumeroBlockedFeedbackRefresh()", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0);
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        Assert.DoesNotContain("_numeroBlockedFeedbackCache.ContainsKey", methodBody, StringComparison.Ordinal);
+        Assert.Contains("RefreshNumeroBlockedFeedbackAsync(idNumero)", methodBody, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("private async Task SendReplyAsync()")]
+    [InlineData("private async Task SendTemplateAsync()")]
+    [InlineData("private async Task SendOrRemoveReactionAsync(long messageId, string emoji, bool remove)")]
+    public void EverySendPath_RefreshesTheBlockedPanel_AfterCompleting_SoItClearsWithoutSwitchingConversation(string methodSignature)
+    {
+        // Con el fix anterior (siempre requerir), alcanza con cambiar de conversación y volver para ver
+        // el panel actualizado -- pero si el mensaje B exitoso se manda DESDE la misma conversación que
+        // ya tenía el panel abierto, sin esto el panel seguiría "bloqueado" hasta que el usuario
+        // navegara a otro lado. Cada camino de envío debe refrescar en su finally, éxito o error.
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "Conversaciones.razor"));
+        var methodStart = source.IndexOf(methodSignature, StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, $"No se encontró {methodSignature}.");
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        var finallyIndex = methodBody.LastIndexOf("finally", StringComparison.Ordinal);
+        Assert.True(finallyIndex >= 0, $"No se encontró bloque finally en {methodSignature}.");
+        var finallyBody = methodBody[finallyIndex..];
+        Assert.Contains("QueueNumeroBlockedFeedbackRefresh();", finallyBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void QuickReactionEmojisDoNotAccidentallyMatchBlockedPanelLogic()
     {
         // Test de cordura simple: IsAccountLocked no debe confundirse con "cualquier ERROR_ENVIO" --

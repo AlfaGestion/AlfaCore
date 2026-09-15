@@ -8190,6 +8190,10 @@
         {
             _busyAction = false;
             await ClearTypingAsync();
+            // Refresca el panel de "bloqueado por Meta" con o sin error -- si este envío tuvo éxito
+            // después de un 131031 anterior, el panel debe desaparecer ya mismo, sin esperar a que el
+            // usuario cambie de conversación y vuelva.
+            QueueNumeroBlockedFeedbackRefresh();
         }
     }
 
@@ -8605,6 +8609,7 @@
         {
             _busyAction = false;
             _sendingTemplate = false;
+            QueueNumeroBlockedFeedbackRefresh();
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -10622,9 +10627,19 @@
             ? cached
             : null;
 
+    /// <summary>
+    /// BUG REAL encontrado al auditar staleness (post-mortem 131031): esto antes se saltaba la consulta
+    /// por completo si el número ya estaba en _numeroBlockedFeedbackCache -- una vez detectado un
+    /// 131031, el panel "Cuenta bloqueada por Meta" quedaba pegado para siempre en esa sesión de
+    /// browser, incluso después de que Meta reactivara la cuenta y un envío posterior tuviera éxito
+    /// (el mismo GetLastOutboundDeliveryErrorAsync ya se autocorrige -- el bug estaba en que nunca se
+    /// lo volvía a llamar). Ahora SIEMPRE refresca: al seleccionar la conversación y también después de
+    /// cada intento de envío (ver los finally de SendReplyAsync/SendTemplateAsync/
+    /// SendOrRemoveReactionAsync) para que el panel se actualice sin necesitar cambiar de conversación.
+    /// </summary>
     private void QueueNumeroBlockedFeedbackRefresh()
     {
-        if (_selectedConversation?.IdNumeroWhatsApp is not (> 0 and { } idNumero) || _numeroBlockedFeedbackCache.ContainsKey(idNumero))
+        if (_selectedConversation?.IdNumeroWhatsApp is not (> 0 and { } idNumero))
             return;
 
         _ = RefreshNumeroBlockedFeedbackAsync(idNumero);
@@ -10746,6 +10761,7 @@
         finally
         {
             _reactionSendingMessageId = null;
+            QueueNumeroBlockedFeedbackRefresh();
         }
     }
 
@@ -11323,16 +11339,24 @@
     }
 
     private string GetMessageAuthor(ConversacionMensajeDto message)
+        => message.Direction == "ENTRANTE" ? CurrentConversationContactName : ResolveNonIncomingMessageAuthor(message);
+
+    /// <summary>
+    /// Parte pura de GetMessageAuthor (todo lo que no depende de CurrentConversationContactName), para
+    /// poder testearla directamente sin instanciar la página. Prioridad 7 + auditoría de call-sites
+    /// (segunda ronda): tanto un echo (smb_message_echoes, Origen=WHATSAPP_BUSINESS_APP) como un
+    /// SALIENTE importado por history sync (Origen=HISTORY -- mensajes que el negocio ya había mandado
+    /// desde la app de WhatsApp Business ANTES de conectar Coexistence con AlfaCore) nunca tienen
+    /// TecnicoAutorNombre/UsuarioAutor. Los dos representan lo mismo -- "esto lo mandó el negocio
+    /// directamente, no AlfaCore" -- así que los dos caían al mismo fallback "Equipo Alfa" que un
+    /// mensaje normal de AlfaCore, mal atribuido al soporte. Un autor real de AlfaCore (si por algún
+    /// motivo lo hubiera) sigue teniendo prioridad sobre la etiqueta genérica en ambos casos.
+    /// </summary>
+    internal static string ResolveNonIncomingMessageAuthor(ConversacionMensajeDto message)
         => message.Direction switch
         {
-            "ENTRANTE" => CurrentConversationContactName,
             "NOTA_INTERNA" => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "Nota interna"),
-            // Prioridad 7: un mensaje reflejado de smb_message_echoes (enviado desde la app de WhatsApp
-            // Business, no desde AlfaCore) nunca tiene TecnicoAutorNombre/UsuarioAutor -- antes eso caía
-            // al mismo fallback "Equipo Alfa" que un mensaje normal de AlfaCore, atribuyéndolo
-            // incorrectamente al soporte cuando en realidad lo mandó el negocio directamente desde su
-            // celular. Se prioriza igual un autor real de AlfaCore si por algún motivo lo hubiera.
-            _ when string.Equals(message.Origen, "WHATSAPP_BUSINESS_APP", StringComparison.OrdinalIgnoreCase)
+            _ when message.Origen is "WHATSAPP_BUSINESS_APP" or "HISTORY"
                 => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "WhatsApp Business"),
             _ => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "Equipo Alfa")
         };
