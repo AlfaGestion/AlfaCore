@@ -3672,7 +3672,7 @@
         _feedbackScope = null;
 
         var result = await UiOps.RunAsync(
-            () => ConfigSvc.GetWhatsAppConfigAsync(),
+            () => ConfigSvc.GetWhatsAppConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de WhatsApp.");
 
         if (result.Success && result.Value is not null)
@@ -3687,7 +3687,7 @@
         }
 
         var instagramResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetInstagramConfigAsync(),
+            () => ConfigSvc.GetInstagramConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de Instagram.");
 
         if (instagramResult.Success && instagramResult.Value is not null)
@@ -3702,7 +3702,7 @@
         }
 
         var facebookResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetFacebookConfigAsync(),
+            () => ConfigSvc.GetFacebookConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de Facebook.");
 
         if (facebookResult.Success && facebookResult.Value is not null)
@@ -3717,7 +3717,7 @@
         }
 
         var mercadoLibreResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetMercadoLibreConfigAsync(),
+            () => ConfigSvc.GetMercadoLibreConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de Mercado Libre.");
 
         if (mercadoLibreResult.Success && mercadoLibreResult.Value is not null)
@@ -3732,7 +3732,7 @@
         }
 
         var alfaKnowledgeResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetAlfaKnowledgeConfigAsync(),
+            () => ConfigSvc.GetAlfaKnowledgeConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de AlfaKnowledge.");
 
         if (alfaKnowledgeResult.Success && alfaKnowledgeResult.Value is not null)
@@ -3747,7 +3747,7 @@
         }
 
         var automatizacionesResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetAutomatizacionesConfigAsync(),
+            () => ConfigSvc.GetAutomatizacionesConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de automatizaciones.");
 
         if (automatizacionesResult.Success && automatizacionesResult.Value is not null)
@@ -3761,7 +3761,7 @@
         }
 
         var clasificacionesResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetClasificacionesAsync(),
+            () => ConfigSvc.GetClasificacionesAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar las clasificaciones de clientes.");
 
         if (clasificacionesResult.Success && clasificacionesResult.Value is not null)
@@ -3774,7 +3774,7 @@
         }
 
         var prioridadResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetPrioridadConfigAsync(),
+            () => ConfigSvc.GetPrioridadConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de prioridad de atención.");
 
         if (prioridadResult.Success && prioridadResult.Value is not null)
@@ -3787,7 +3787,7 @@
         }
 
         var usuariosResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetUsuariosSistemaAsync(),
+            () => ConfigSvc.GetUsuariosSistemaAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar los usuarios del sistema.");
 
         if (usuariosResult.Success && usuariosResult.Value is not null)
@@ -3802,7 +3802,7 @@
         await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
 
         var administradoresResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetConversacionAdministradoresAsync(),
+            () => ConfigSvc.GetConversacionAdministradoresAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar los administradores de conversaciones.");
 
         if (administradoresResult.Success && administradoresResult.Value is not null)
@@ -3838,7 +3838,7 @@
     private async Task LoadReglasAsync()
     {
         var result = await UiOps.RunAsync(
-            () => ConfigSvc.GetReglasAsync(),
+            () => ConfigSvc.GetReglasAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar las reglas de palabras clave.");
 
         if (result.Success && result.Value is not null)

@@ -5,18 +5,23 @@ namespace AlfaCore.Services;
 public interface IConversacionesConfigService
 {
     Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default);
+    Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(string connectionString, CancellationToken ct = default);
     Task SaveWhatsAppConfigAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct = default);
     Task<ConversacionWhatsAppConfigDto> GenerateWhatsAppWebPairingAsync(ConversacionWhatsAppWebPairingRequestDto request, CancellationToken ct = default);
     Task<ConversacionWhatsAppConfigDto> ClearWhatsAppWebPairingAsync(CancellationToken ct = default);
     Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(CancellationToken ct = default);
+    Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveInstagramConfigAsync(ConversacionInstagramConfigDto config, CancellationToken ct = default);
     Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(CancellationToken ct = default);
+    Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveFacebookConfigAsync(ConversacionFacebookConfigDto config, CancellationToken ct = default);
     Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(CancellationToken ct = default);
+    Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveMercadoLibreConfigAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default);
     Task SaveMercadoLibreTokensAsync(ConversacionMercadoLibreConfigDto config, CancellationToken ct = default);
     Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default);
+    Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveAlfaKnowledgeConfigAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default);
     /// <summary>
     /// Igual que <see cref="SaveAlfaKnowledgeConfigAsync"/> pero escribe contra una base de un
@@ -27,6 +32,7 @@ public interface IConversacionesConfigService
     Task SaveAlfaKnowledgeConfigForConnectionAsync(string connectionString, ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default);
     Task<ConversacionAlfaKnowledgeConnectionTestResultDto> TestAlfaKnowledgeConnectionAsync(ConversacionAlfaKnowledgeConfigDto config, CancellationToken ct = default);
     Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(CancellationToken ct = default);
+    Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveAutomatizacionesConfigAsync(ConversacionAutomatizacionesConfigDto config, CancellationToken ct = default);
 
     /// <summary>
@@ -34,13 +40,16 @@ public interface IConversacionesConfigService
     /// las mismas claves sin prefijo que ya graba Desktop, no son exclusivas de Conversaciones).
     /// </summary>
     Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default);
+    Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SavePrioridadConfigAsync(ConversacionPrioridadConfigDto config, CancellationToken ct = default);
 
     /// <summary>Catálogo de dbo.TA_CLASIFICACIONES, para poblar los combos de prioridad.</summary>
     Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(int? expectedBaseId, CancellationToken ct = default);
 
     /// <summary>Usuarios del sistema actual (dbo.TA_USUARIOS), para poblar checklists/multi-selects.</summary>
     Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(int? expectedBaseId, CancellationToken ct = default);
 
     /// <summary>Números de WhatsApp configurados y, para cada uno, los usuarios vinculados.</summary>
     Task<IReadOnlyList<ConversacionWhatsAppNumeroDto>> GetWhatsAppNumerosAsync(CancellationToken ct = default);
@@ -57,12 +66,14 @@ public interface IConversacionesConfigService
 
     /// <summary>Usuarios marcados como administradores de Conversaciones (ven/responden por cualquier número).</summary>
     Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(int? expectedBaseId, CancellationToken ct = default);
     Task SaveConversacionAdministradoresAsync(IReadOnlyList<string> usuarios, CancellationToken ct = default);
     Task<ConversacionesInboxPreferenceDto> GetInboxPreferenceAsync(string userName, string? sistema, CancellationToken ct = default);
     Task SaveInboxPreferenceAsync(string userName, string? sistema, ConversacionesInboxPreferenceDto preference, CancellationToken ct = default);
 
     /// <summary>Reglas del motor de palabras clave (CONV_REGLAS), ordenadas por Orden.</summary>
     Task<IReadOnlyList<ConversacionReglaDto>> GetReglasAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<ConversacionReglaDto>> GetReglasAsync(int? expectedBaseId, CancellationToken ct = default);
     Task<int> SaveReglaAsync(ConversacionReglaDto regla, CancellationToken ct = default);
     Task DeleteReglaAsync(int idRegla, CancellationToken ct = default);
 }
