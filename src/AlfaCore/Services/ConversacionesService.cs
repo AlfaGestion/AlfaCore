@@ -2597,8 +2597,11 @@ public sealed class ConversacionesService(
 
             await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
 
-            var emoji = NormalizeReactionEmoji(request.Emoji);
-            if (string.IsNullOrWhiteSpace(emoji))
+            // Meta acepta un mensaje de reacción con emoji vacío para quitar una reacción previa -- sólo
+            // se permite vacío cuando el cliente lo pide explícitamente (RemoveReaction), para que un
+            // Emoji vacío por error/bug de cliente siga rechazándose como antes.
+            var emoji = request.RemoveReaction ? string.Empty : NormalizeReactionEmoji(request.Emoji);
+            if (!request.RemoveReaction && string.IsNullOrWhiteSpace(emoji))
                 throw new InvalidOperationException("ElegÃ­ una reacciÃ³n vÃ¡lida.");
 
             var conversationTask = RequireConversationAsync(request.IdConversacion, token);
@@ -2644,8 +2647,14 @@ public sealed class ConversacionesService(
             }
             catch (Exception ex)
             {
+                // Antes esto envolvía SIEMPRE en un InvalidOperationException("No se pudo enviar la
+                // reacción por WhatsApp.", ex) genérico -- exactamente el bug reportado: la UI nunca
+                // veía la causa real (rechazo de Graph, red, etc.), sólo esa frase fija. Al re-lanzar
+                // la excepción original, ExecuteLoggedAsync la envuelve igual que a texto/plantillas
+                // (AppUserFacingException con la excepción real como InnerException), así la UI puede
+                // clasificarla con WhatsAppOutboundErrorClassifier en vez de perder el detalle.
                 await UpdateMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
-                throw new InvalidOperationException("No se pudo enviar la reacciÃ³n por WhatsApp.", ex);
+                throw;
             }
 
             await UpdateMessageDeliveryAsync(messageId, sendResult.EstadoEnvio, sendResult.WhatsAppMessageId, sendResult.PayloadJson, token);
@@ -9989,7 +9998,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al enviar reacci\u00f3n: {responseBody}");
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar reacci\u00f3n");
         return new WhatsAppSendResult

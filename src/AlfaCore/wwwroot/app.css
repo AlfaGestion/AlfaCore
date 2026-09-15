@@ -8183,6 +8183,12 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     font-size: 1.1rem;
 }
 
+.message-reaction-picker__emoji.is-active {
+    background: rgba(16, 185, 129, .18);
+    border-radius: 8px;
+    box-shadow: inset 0 0 0 1px rgba(16, 185, 129, .55);
+}
+
 .message-bubble-shell > .message-reaction-picker {
     position: relative;
     left: auto;

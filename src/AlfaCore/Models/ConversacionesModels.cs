@@ -439,6 +439,12 @@ public sealed class ConversacionReaccionRequest
     public long IdConversacion { get; set; }
     public long IdMensaje { get; set; }
     public string Emoji { get; set; } = string.Empty;
+    /// <summary>
+    /// true = quitar la reacción previamente enviada por AlfaCore a este mensaje (Meta acepta un
+    /// mensaje de reacción con emoji vacío para esto). Explícito en vez de inferir de Emoji vacío para
+    /// que un Emoji vacío por error de cliente siga rechazándose como antes.
+    /// </summary>
+    public bool RemoveReaction { get; set; }
     public string? IdTecnicoAutor { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }

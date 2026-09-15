@@ -1599,15 +1599,17 @@
                                     <div class="message-bubble-shell">
                                         @if (_openReactionMessageId == message.IdMensaje)
                                         {
+                                            var myActiveReaction = GetMyActiveReactionEmoji(message);
                                             <div class="message-reaction-picker" @onclick:stopPropagation>
                                                 @foreach (var emoji in QuickReactionEmojis)
                                                 {
                                                     var reactionMessageId = message.IdMensaje;
                                                     var reactionEmoji = emoji;
+                                                    var isActive = string.Equals(emoji, myActiveReaction, StringComparison.Ordinal);
                                                     <button type="button"
-                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji"
-                                                            title="Reaccionar @emoji"
-                                                            @onclick="async () => await SendReactionAsync(reactionMessageId, reactionEmoji)"
+                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji @(isActive ? "is-active" : string.Empty)"
+                                                            title="@(isActive ? $"Quitar reacción {emoji}" : $"Reaccionar {emoji}")"
+                                                            @onclick="async () => await (isActive ? RemoveReactionAsync(reactionMessageId) : SendReactionAsync(reactionMessageId, reactionEmoji))"
                                                             disabled="@(_reactionSendingMessageId.HasValue)">
                                                         @emoji
                                                     </button>
@@ -10590,7 +10592,35 @@
         await AutoResizeReplyTextareaAsync();
     }
 
-    private async Task SendReactionAsync(long messageId, string emoji)
+    private Task SendReactionAsync(long messageId, string emoji)
+        => SendOrRemoveReactionAsync(messageId, emoji, remove: false);
+
+    /// <summary>
+    /// Quita la reacción de AlfaCore a este mensaje (Meta acepta un mensaje de reacción con emoji
+    /// vacío para esto). Antes esto no era posible: NormalizeReactionEmoji/SendReactionAsync
+    /// rechazaban explícitamente un emoji vacío, así que la única forma de "cambiar de opinión" era
+    /// reemplazar por otra reacción -- nunca quitarla del todo.
+    /// </summary>
+    private Task RemoveReactionAsync(long messageId)
+        => SendOrRemoveReactionAsync(messageId, string.Empty, remove: true);
+
+    private string GetMyActiveReactionEmoji(ConversacionMensajeDto message)
+    {
+        if (string.IsNullOrWhiteSpace(message.WhatsAppMessageId))
+            return string.Empty;
+
+        var latestOwn = _messages
+            .Where(IsReactionMessage)
+            .Where(x => string.Equals(x.WhatsAppReplyToMessageId, message.WhatsAppMessageId, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.Equals((x.Direction ?? string.Empty).Trim(), "SALIENTE", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.FechaHora)
+            .ThenByDescending(x => x.IdMensaje)
+            .FirstOrDefault();
+
+        return latestOwn is null ? string.Empty : ExtractReactionEmoji(latestOwn);
+    }
+
+    private async Task SendOrRemoveReactionAsync(long messageId, string emoji, bool remove)
     {
         if (_selectedConversation is null || _reactionSendingMessageId.HasValue)
             return;
@@ -10629,6 +10659,7 @@
                 IdConversacion = conversationId,
                 IdMensaje = messageId,
                 Emoji = emoji,
+                RemoveReaction = remove,
                 IdTecnicoAutor = CurrentMessageTechnicianId,
                 UsuarioAccion = CurrentUserNameForAudit,
                 SistemaAccion = CurrentUserSystemForAudit
@@ -10645,12 +10676,23 @@
         catch (OperationCanceledException)
         {
             _messages.RemoveAll(x => x.IdMensaje == optimisticId);
-            _actionError = "No se pudo enviar la reacción a tiempo. Revisá la conexión y reintentá.";
+            _actionError = remove
+                ? "No se pudo quitar la reacción a tiempo. Revisá la conexión y reintentá."
+                : "No se pudo enviar la reacción a tiempo. Revisá la conexión y reintentá.";
         }
         catch (Exception ex)
         {
             _messages.RemoveAll(x => x.IdMensaje == optimisticId);
-            _actionError = ex.Message;
+            // La causa real puede venir envuelta en AppUserFacingException (ver ExecuteLoggedAsync /
+            // SendReactionAsync en ConversacionesService, que ya no traga la excepción real -- antes
+            // esto siempre mostraba "No se pudo enviar la reacción por WhatsApp." sin importar la causa).
+            var causeException = ex is AlfaCore.Services.AppUserFacingException { InnerException: { } inner } ? inner : ex;
+            var classified = causeException is InvalidOperationException businessRule
+                ? AppUiMessage.Warning("No se pudo procesar la reacción", businessRule.Message)
+                : AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException);
+            _actionError = classified is not null
+                ? $"{classified.Title}: {classified.Message}"
+                : (remove ? "No se pudo quitar la reacción por WhatsApp." : "No se pudo enviar la reacción por WhatsApp.");
         }
         finally
         {
