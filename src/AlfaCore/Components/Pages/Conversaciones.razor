@@ -4065,6 +4065,10 @@
         _crmModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("CRM");
         if (!IsTenantLoadCurrent(lease))
             return;
+
+        if (_alfaKnowledgeModuloActivo)
+            await AlfaKnowledgeSvc.EnsureConfiguredAsync();
+
         await LoadWhatsAppNumerosAndAdminStatusAsync();
         await LoadInboxPreferenceAsync();
 
@@ -9413,7 +9417,9 @@
             var instruction =
                 "Mejorá únicamente la redacción del siguiente borrador, manteniendo exactamente su intención, " +
                 "los datos y el tono profesional cercano. No agregues información, explicaciones, saludos ni " +
-                $"contenido nuevo. Devolvé solamente el texto final mejorado. Borrador: {draft}";
+                "contenido nuevo. Usá español rioplatense argentino y voseo natural; no uses ‘tú’, ‘tienes’, " +
+                "‘puedes’ ni ‘quieres’. Devolvé solamente el texto final mejorado. " +
+                $"Borrador: {draft}";
             var result = await AlfaKnowledgeSvc.SuggestReplyAsync(
                 focusMessage.Texto,
                 _messages,
