@@ -95,9 +95,21 @@ public static class WhatsAppOutboundErrorClassifier
     /// mismo momento del catch en la UI, sin esperar a que la fila del mensaje se recargue. Reconstruye
     /// la misma forma que BuildDeliveryErrorPayload (ConversacionesService) a partir de la excepción
     /// para reusar ExtractGraphError/ClassifyDeliveryError con una sola fuente de verdad de parseo.
+    ///
+    /// Antes de eso, chequea explícitamente si la causa es Vault/DataProtection inaccesible EN ESTE
+    /// PROCESO (WhatsAppCredentialErrorClassifier) -- caso real: corriendo AlfaCore local contra una
+    /// base cuyo SecureVault está protegido con un certificado que sólo existe en el servidor, el
+    /// intento de resolver la credencial nunca llega a golpear Graph, pero antes esto caía igual en la
+    /// clasificación genérica y en algunos caminos terminaba mostrando "WhatsApp requiere reconexión"
+    /// -- semánticamente incorrecto: la credencial de Meta sigue siendo válida, sólo que este proceso
+    /// no puede leerla. Chequear el TIPO de excepción primero evita esa confusión sin importar qué
+    /// texto tenga el mensaje.
     /// </summary>
-    public static AppUiMessage? ClassifyDeliverySendException(Exception ex)
+    public static AppUiMessage? ClassifyDeliverySendException(Exception ex, bool isProduction = false)
     {
+        if (WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(ex, isProduction) is { } credentialMessage)
+            return credentialMessage;
+
         var baseException = ex.GetBaseException();
         var wrapped = JsonSerializer.Serialize(new
         {

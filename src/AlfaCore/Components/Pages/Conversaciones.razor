@@ -8162,7 +8162,13 @@
         }
         catch (Exception ex)
         {
-            var errorMessage = ex.Message;
+            // Vault/DataProtection inaccesible EN ESTE PROCESO (p. ej. local contra una base cuyo
+            // SecureVault usa un certificado que sólo existe en el servidor) nunca debe mostrarse como
+            // si la conexión de WhatsApp estuviera rota -- ver WhatsAppCredentialErrorClassifier.
+            var causeException = ex is AlfaCore.Services.AppUserFacingException { InnerException: { } inner } ? inner : ex;
+            var errorMessage = AlfaCore.Models.WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(causeException, HostEnvironment.IsProduction()) is { } credentialMessage
+                ? $"{credentialMessage.Title}: {credentialMessage.Message}"
+                : ex.Message;
             _actionError = errorMessage;
             MarkPendingAttachmentsError(errorMessage);
             if (optimisticMessageId.HasValue)
@@ -8593,11 +8599,19 @@
             // InvalidOperationException con un mensaje propio, seguro y específico -- mostrarlo tal cual
             // es mejor que forzarlo por el clasificador de errores de Graph, que asumiría "Meta no pudo
             // entregar este mensaje" y perdería la causa real.
+            //
+            // El Vault/DataProtection inaccesible EN ESTE PROCESO (p. ej. local contra una base cuyo
+            // SecureVault usa un certificado que sólo existe en el servidor) se chequea ANTES que la
+            // regla de negocio genérica -- WhatsAppEmbeddedVaultUnavailableException también ES-A
+            // InvalidOperationException, así que sin este chequeo explícito por tipo caería en el mismo
+            // "businessRule.Message" de cualquier forma (no en "reconexión" acá, pero sin el framing de
+            // entorno/administrador que corresponde).
             var causeException = ex is AlfaCore.Services.AppUserFacingException { InnerException: { } inner } ? inner : ex;
-            _templateSendFeedback = causeException is InvalidOperationException businessRule
-                ? AppUiMessage.Warning("No se pudo enviar la plantilla", businessRule.Message)
-                : AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException)
-                  ?? AppUiMessage.Error("No se pudo enviar la plantilla", "Ocurrió un error al enviar el mensaje por WhatsApp.");
+            _templateSendFeedback = AlfaCore.Models.WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(causeException, HostEnvironment.IsProduction())
+                ?? (causeException is InvalidOperationException businessRule
+                    ? AppUiMessage.Warning("No se pudo enviar la plantilla", businessRule.Message)
+                    : AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException, HostEnvironment.IsProduction())
+                      ?? AppUiMessage.Error("No se pudo enviar la plantilla", "Ocurrió un error al enviar el mensaje por WhatsApp."));
 
             if (_selectedConversation is not null)
             {
@@ -10751,9 +10765,12 @@
             // SendReactionAsync en ConversacionesService, que ya no traga la excepción real -- antes
             // esto siempre mostraba "No se pudo enviar la reacción por WhatsApp." sin importar la causa).
             var causeException = ex is AlfaCore.Services.AppUserFacingException { InnerException: { } inner } ? inner : ex;
-            var classified = causeException is InvalidOperationException businessRule
-                ? AppUiMessage.Warning("No se pudo procesar la reacción", businessRule.Message)
-                : AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException);
+            // Vault/DataProtection inaccesible EN ESTE PROCESO se chequea antes que la regla de negocio
+            // genérica -- ver el mismo comentario en SendTemplateAsync.
+            var classified = AlfaCore.Models.WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(causeException, HostEnvironment.IsProduction())
+                ?? (causeException is InvalidOperationException businessRule
+                    ? AppUiMessage.Warning("No se pudo procesar la reacción", businessRule.Message)
+                    : AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException, HostEnvironment.IsProduction()));
             _actionError = classified is not null
                 ? $"{classified.Title}: {classified.Message}"
                 : (remove ? "No se pudo quitar la reacción por WhatsApp." : "No se pudo enviar la reacción por WhatsApp.");

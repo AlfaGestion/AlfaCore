@@ -112,7 +112,20 @@ public sealed class WhatsAppReactionTests
         var methodBody = ExtractMethodBody(source, methodStart);
 
         Assert.DoesNotContain("_actionError = ex.Message;", methodBody, StringComparison.Ordinal);
-        Assert.Contains("WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException)", methodBody, StringComparison.Ordinal);
+        Assert.Contains("WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException, HostEnvironment.IsProduction())", methodBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ReactionSendCatch_ChecksCredentialUnavailability_BeforeTheBusinessRuleFallback()
+    {
+        var source = ReadPageSource();
+        var methodStart = source.IndexOf("private async Task SendOrRemoveReactionAsync(", StringComparison.Ordinal);
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        var credentialCheckIndex = methodBody.IndexOf("WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(causeException", StringComparison.Ordinal);
+        var businessRuleIndex = methodBody.IndexOf("causeException is InvalidOperationException businessRule", StringComparison.Ordinal);
+        Assert.True(credentialCheckIndex >= 0, "No se encontró el chequeo de credencial no disponible.");
+        Assert.True(credentialCheckIndex < businessRuleIndex, "El chequeo de credencial debe ir antes que la regla de negocio genérica.");
     }
 
     private static string ExtractMethodBody(string source, int methodStart)

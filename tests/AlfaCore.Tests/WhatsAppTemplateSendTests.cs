@@ -104,7 +104,23 @@ public sealed class WhatsAppTemplateSendTests
         // incorrecta) ya trae un mensaje claro y seguro -- no debe forzarse por el clasificador de
         // errores de Graph, que asumiría "Meta no pudo entregar este mensaje" y perdería la causa real.
         Assert.Contains("causeException is InvalidOperationException businessRule", methodBody, StringComparison.Ordinal);
-        Assert.Contains("WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException)", methodBody, StringComparison.Ordinal);
+        Assert.Contains("WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException, HostEnvironment.IsProduction())", methodBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TemplateModal_ChecksCredentialUnavailability_BeforeTheBusinessRuleFallback()
+    {
+        // Vault/DataProtection inaccesible en este proceso (WhatsAppEmbeddedVaultUnavailableException)
+        // ES-A InvalidOperationException -- sin este chequeo explícito por tipo ANTES de la rama
+        // "businessRule", caería ahí igual y perdería el framing de entorno/administrador.
+        var source = ReadPageSource();
+        var methodStart = source.IndexOf("private async Task SendTemplateAsync()", StringComparison.Ordinal);
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        var credentialCheckIndex = methodBody.IndexOf("WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(causeException", StringComparison.Ordinal);
+        var businessRuleIndex = methodBody.IndexOf("causeException is InvalidOperationException businessRule", StringComparison.Ordinal);
+        Assert.True(credentialCheckIndex >= 0, "No se encontró el chequeo de credencial no disponible.");
+        Assert.True(credentialCheckIndex < businessRuleIndex, "El chequeo de credencial debe ir antes que la regla de negocio genérica.");
     }
 
     [Fact]

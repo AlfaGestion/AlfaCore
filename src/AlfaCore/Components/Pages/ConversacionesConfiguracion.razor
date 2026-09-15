@@ -2934,7 +2934,7 @@
                 ex,
                 "No se pudo completar la autorización de WhatsApp con Meta.",
                 new { IdOnboarding = id, IdBase = idBase });
-            _embeddedSignupFeedback = ClassifyEmbeddedSignupAuthorizationError(ex, incident);
+            _embeddedSignupFeedback = ClassifyEmbeddedSignupAuthorizationError(ex, incident, HostEnvironment.IsProduction());
         }
         finally
         {
@@ -2953,8 +2953,17 @@
     /// excepciones propias del orquestador (ver WhatsAppEmbeddedSignupOrchestrator.cs y
     /// MetaOAuthClient.cs) ya están auditados para no contener secretos ni el body crudo de Meta.
     /// </summary>
-    internal static AppUiMessage ClassifyEmbeddedSignupAuthorizationError(Exception ex, string incident)
+    internal static AppUiMessage ClassifyEmbeddedSignupAuthorizationError(Exception ex, string incident, bool isProduction = false)
     {
+        // Vault/DataProtection inaccesible EN ESTE PROCESO (p. ej. local contra una base cuyo
+        // SecureVault usa un certificado que sólo existe en el servidor) se chequea antes que todo lo
+        // demás -- WhatsAppEmbeddedVaultUnavailableException ES-A InvalidOperationException, así que
+        // sin este chequeo por tipo explícito caía en la rama "Meta rechazó el intercambio con
+        // AlfaCore" de más abajo -- igual de incorrecto que "requiere reconexión": ni fue Meta quien
+        // rechazó nada, ni la credencial de Meta está mal, sólo este proceso no puede leerla.
+        if (AlfaCore.Models.WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(ex, isProduction) is { } credentialMessage)
+            return credentialMessage;
+
         if (ex is UnauthorizedAccessException unauthorized)
         {
             var expiredOrReused = unauthorized.Message.Contains("venció", StringComparison.OrdinalIgnoreCase)

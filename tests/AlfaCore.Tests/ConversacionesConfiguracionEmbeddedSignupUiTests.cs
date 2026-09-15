@@ -148,7 +148,7 @@ public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
 
         Assert.Contains("catch (Exception ex)", methodBody, StringComparison.Ordinal);
         Assert.Contains("AppEvents.LogErrorAsync(", methodBody, StringComparison.Ordinal);
-        Assert.Contains("ClassifyEmbeddedSignupAuthorizationError(ex, incident)", methodBody, StringComparison.Ordinal);
+        Assert.Contains("ClassifyEmbeddedSignupAuthorizationError(ex, incident, HostEnvironment.IsProduction())", methodBody, StringComparison.Ordinal);
     }
 
     [Fact]
