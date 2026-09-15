@@ -186,16 +186,86 @@ public sealed class WhatsAppPhoneInspectionCommandTests
     }
 
     [Fact]
-    public async Task NameStatus_NotApproved_IsClassifiedAsPendingApproval()
+    public async Task NameStatus_AvailableWithoutReview_IsSuccessAndDoesNotInferRegistration()
+    {
+        var text = await ExecuteWithNameStatusesAsync("AVAILABLE_WITHOUT_REVIEW", "AVAILABLE_WITHOUT_REVIEW");
+
+        Assert.Contains("NAME_STATUS = AVAILABLE_WITHOUT_REVIEW", text, StringComparison.Ordinal);
+        Assert.Contains("NEW_NAME_STATUS = AVAILABLE_WITHOUT_REVIEW", text, StringComparison.Ordinal);
+        Assert.Contains("CERTIFICATE_PRESENT = False", text, StringComparison.Ordinal);
+        Assert.Contains("NEW_CERTIFICATE_PRESENT = False", text, StringComparison.Ordinal);
+        Assert.Contains("REGISTRATION_AFTER_NAME_CHANGE_NEEDED = NO", text, StringComparison.Ordinal);
+        Assert.Contains("EVIDENCE = SUCCESS)", text, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("APPROVED", "APPROVED", "SUCCESS", "NO")]
+    [InlineData("AVAILABLE_WITHOUT_REVIEW", "AVAILABLE_WITHOUT_REVIEW", "SUCCESS", "NO")]
+    [InlineData("PENDING_REVIEW", "APPROVED", "WAITING", "NO")]
+    [InlineData("APPROVED", "PENDING_REVIEW", "WAITING", "NO")]
+    [InlineData("DECLINED", "APPROVED", "REJECTED", "NO")]
+    [InlineData("APPROVED", "DECLINED", "REJECTED", "NO")]
+    [InlineData("EXPIRED", "APPROVED", "CERTIFICATE_PROBLEM", "NO")]
+    [InlineData("APPROVED", "NONE", "CERTIFICATE_PROBLEM", "NO")]
+    [InlineData("UNKNOWN_STATUS", "APPROVED", "UNKNOWN", "NO CONFIRMABLE")]
+    public async Task NameStatus_DocumentedValues_AreClassified(
+        string nameStatus,
+        string newNameStatus,
+        string expectedEvidencePrefix,
+        string expectedRegistration)
+    {
+        var text = await ExecuteWithNameStatusesAsync(nameStatus, newNameStatus);
+
+        Assert.Contains($"NAME_STATUS = {nameStatus}", text, StringComparison.Ordinal);
+        Assert.Contains($"NEW_NAME_STATUS = {newNameStatus}", text, StringComparison.Ordinal);
+        Assert.Contains($"REGISTRATION_AFTER_NAME_CHANGE_NEEDED = {expectedRegistration}", text, StringComparison.Ordinal);
+        Assert.Contains($"EVIDENCE = {expectedEvidencePrefix})", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NameStatus_NewApprovedWithNewCertificate_IsOnlyPositiveRegistrationEvidence()
+    {
+        var text = await ExecuteWithNameStatusesAsync(
+            "APPROVED",
+            "APPROVED",
+            certificate: "secret-certificate-never-printed",
+            newCertificate: "secret-new-certificate-never-printed");
+
+        Assert.Contains("NEW_NAME_STATUS = APPROVED", text, StringComparison.Ordinal);
+        Assert.Contains("NEW_CERTIFICATE_PRESENT = True", text, StringComparison.Ordinal);
+        Assert.Contains("REGISTRATION_AFTER_NAME_CHANGE_NEEDED = SI", text, StringComparison.Ordinal);
+        Assert.Contains("EVIDENCE = NAME_CHANGE_READY_TO_REGISTER)", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-certificate-never-printed", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-new-certificate-never-printed", text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task NameStatus_NotSuccessWithoutNewCertificate_DoesNotInferRegistration()
+    {
+        var text = await ExecuteWithNameStatusesAsync("PENDING_REVIEW", "PENDING_REVIEW");
+
+        Assert.Contains("EVIDENCE = WAITING)", text, StringComparison.Ordinal);
+        Assert.Contains("REGISTRATION_AFTER_NAME_CHANGE_NEEDED = NO", text, StringComparison.Ordinal);
+    }
+
+    private static async Task<string> ExecuteWithNameStatusesAsync(
+        string nameStatus,
+        string newNameStatus,
+        string? certificate = null,
+        string? newCertificate = null)
     {
         var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
         var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
             Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var certificateJson = certificate is null ? string.Empty : $",\"certificate\":\"{certificate}\"";
+        var newCertificateJson = newCertificate is null ? string.Empty : $",\"new_certificate\":\"{newCertificate}\"";
         var handler = new RecordingHandler(request =>
             request.RequestUri?.AbsolutePath.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal) == true
                 ? new HttpResponseMessage(HttpStatusCode.OK)
                 {
-                    Content = new StringContent("""{"data":[{"id":"1362965780228889","name_status":"PENDING_REVIEW","new_name_status":"NO_STATUS"}]}""")
+                    Content = new StringContent($$"""
+                        {"data":[{"id":"{{Phone}}","name_status":"{{nameStatus}}","new_name_status":"{{newNameStatus}}"{{certificateJson}}{{newCertificateJson}}}]}
+                        """)
                 }
                 : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
         using var httpClient = new HttpClient(handler);
@@ -204,10 +274,7 @@ public sealed class WhatsAppPhoneInspectionCommandTests
         await WhatsAppPhoneInspectionCommand.ExecuteAsync(
             Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
 
-        var text = output.ToString();
-        Assert.Contains("NAME_STATUS = PENDING_REVIEW", text, StringComparison.Ordinal);
-        Assert.Contains("REGISTRATION_AFTER_NAME_CHANGE_NEEDED = NO CONFIRMABLE", text, StringComparison.Ordinal);
-        Assert.Contains("EVIDENCE = A) name_status != APPROVED", text, StringComparison.Ordinal);
+        return output.ToString();
     }
 
     private sealed class FakeOwnershipStore(WhatsAppPhoneOwnership? ownership) : IWhatsAppAssetOwnershipStore
