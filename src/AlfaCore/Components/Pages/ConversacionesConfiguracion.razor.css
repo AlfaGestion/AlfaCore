@@ -165,6 +165,10 @@
     line-height: 1.5;
 }
 
+.wa-embedded-feedback {
+    margin-top: var(--alfa-space-12, 12px);
+}
+
 .wa-field {
     display: grid;
     gap: var(--alfa-space-4, 4px);

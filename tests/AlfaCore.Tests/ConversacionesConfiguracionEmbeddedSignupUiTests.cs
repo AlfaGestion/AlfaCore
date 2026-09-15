@@ -105,6 +105,52 @@ public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
         Assert.Contains("Disabled=\"@_embeddedSignupBusy\"", primaryCtaButtonBlock, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void EmbeddedSignupFeedback_NeverRendersOverConnectedState()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        // MUY IMPORTANTE (auditoría UX post-Base4264): el feedback de un intento NUEVO (p. ej. "Conectar
+        // otro WhatsApp" que falla) no debe aparecer pegado debajo de la tarjeta verde "WhatsApp
+        // conectado" de un número YA operativo, como si ambos fueran el mismo objeto. El render de
+        // _embeddedSignupFeedback debe excluir explícitamente el estado Connected.
+        var renderIndex = source.IndexOf("_embeddedSignupFeedback is not null", StringComparison.Ordinal);
+        Assert.True(renderIndex >= 0, "No se encontró el render condicionado de _embeddedSignupFeedback.");
+        var conditionLine = source[renderIndex..source.IndexOf('\n', renderIndex)];
+        Assert.Contains("EmbeddedSignupUiState != AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Connected", conditionLine, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void StartingNewEmbeddedSignupAttempt_ClearsStaleFeedbackFromPreviousAttempt()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        // Al arrancar un intento nuevo (StartEmbeddedSignupAsync), _embeddedSignupFeedback se
+        // sobrescribe incondicionalmente con un mensaje "InProgress" propio de este intento -- así un
+        // error de un intento anterior no sigue visible mientras corre uno nuevo.
+        var methodStart = source.IndexOf("private async Task StartEmbeddedSignupAsync(", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "No se encontró StartEmbeddedSignupAsync.");
+        var methodBody = ExtractMethodBody(source, methodStart);
+        Assert.Contains("_embeddedSignupFeedback = AppUiMessage.InProgress(", methodBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompleteEmbeddedSignupAuthorization_NeverUsesBlindCatch()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        // Regresión Base4264: el catch ciego ("catch { }") de este método ocultaba la excepción real
+        // de HandleAuthorizationCallbackAsync (la carrera watchdog/callback incluida). Ahora debe
+        // capturar la excepción, loguearla sanitizada y clasificarla -- nunca descartarla en silencio.
+        var methodStart = source.IndexOf("public async Task CompleteEmbeddedSignupAuthorization(", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "No se encontró CompleteEmbeddedSignupAuthorization.");
+        var methodBody = ExtractMethodBody(source, source.IndexOf('{', methodStart));
+
+        Assert.Contains("catch (Exception ex)", methodBody, StringComparison.Ordinal);
+        Assert.Contains("AppEvents.LogErrorAsync(", methodBody, StringComparison.Ordinal);
+        Assert.Contains("ClassifyEmbeddedSignupAuthorizationError(ex, incident)", methodBody, StringComparison.Ordinal);
+    }
+
     private static string ExtractMethodBody(string source, int methodStart)
     {
         var openBrace = source.IndexOf('{', methodStart);

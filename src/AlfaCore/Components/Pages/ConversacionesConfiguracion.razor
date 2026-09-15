@@ -450,9 +450,12 @@
                                     }
                                 </div>
                             }
-                            @if (!string.IsNullOrWhiteSpace(_embeddedSignupMessage))
+                            @if (_embeddedSignupFeedback is not null && EmbeddedSignupUiState != AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Connected)
                             {
-                                <p class="wa-field-note">@_embeddedSignupMessage</p>
+                                @* Nunca se muestra sobre el estado "Conectado": un aviso de un intento nuevo (p. ej. "Conectar
+                                   otro WhatsApp") no debe aparecer pegado debajo de la tarjeta verde de un número que ya
+                                   funciona -- confundía ambos objetos como si fueran el mismo (auditoría Base4264). *@
+                                <AlfaFeedbackPanel Message="@_embeddedSignupFeedback" Class="wa-embedded-feedback" Dismissible="false" />
                             }
                         </div>
                         }
@@ -2258,7 +2261,7 @@
     private bool _cancelActionRequiredBusy;
     private string _cancelActionRequiredError = string.Empty;
     private string _embeddedSignupState = string.Empty;
-    private string _embeddedSignupMessage = string.Empty;
+    private AppUiMessage? _embeddedSignupFeedback;
     private AlfaCore.Models.WhatsAppEmbeddedStatusView? _embeddedSignupStatus;
     private AlfaCore.Services.WhatsAppEmbeddedRecoveryCandidate? _embeddedRecoveryCandidate;
     private IReadOnlyList<AlfaCore.Models.WhatsAppEmbeddedPendingConnection> _embeddedPendingConnections = [];
@@ -2537,10 +2540,12 @@
             _ => throw new ArgumentOutOfRangeException(nameof(choice), choice, "La opción de conexión de WhatsApp no es válida.")
         };
 
-    private static string BuildEmbeddedImportMessage(AlfaCore.Services.WhatsAppEmbeddedOperationalImportResult result)
-        => result.Count == 1
-            ? $"WhatsApp conectado. {result.Nombre} ya está listo para usar en AlfaCore."
-            : $"WhatsApp conectado. {result.Count} números ya están listos para usar en AlfaCore.";
+    private static AppUiMessage BuildEmbeddedImportMessage(AlfaCore.Services.WhatsAppEmbeddedOperationalImportResult result)
+        => AppUiMessage.Success(
+            "WhatsApp conectado",
+            result.Count == 1
+                ? $"{result.Nombre} ya está listo para usar en AlfaCore."
+                : $"{result.Count} números ya están listos para usar en AlfaCore.");
 
     private Task ContinueWhatsAppOnboardingAsync()
     {
@@ -2626,17 +2631,21 @@
             var result = await EmbeddedOperationalImport.CompleteAsync(status.IdOnboarding, _lifetimeCts.Token);
             var activeBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
             await RefreshWhatsAppConnectionsAsync(activeBaseId);
-            _embeddedSignupMessage = BuildEmbeddedImportMessage(result);
+            _embeddedSignupFeedback = BuildEmbeddedImportMessage(result);
         }
         catch (Exception ex)
         {
-            await AppEvents.LogErrorAsync(
+            var incident = await AppEvents.LogErrorAsync(
                 "ConversacionesConfiguracion",
                 "CompleteEmbeddedOperationalImport",
                 ex,
                 "No se pudo completar el alta operativa de WhatsApp.",
                 new { status.IdOnboarding, IdBase = SessionSvc.GetActiveSession()?.BaseId });
-            _embeddedSignupMessage = "No se pudo completar el alta operativa. Revisá el incidente en Auditoría.";
+            _embeddedSignupFeedback = AppUiMessage.Error(
+                "No se pudo completar la conexión",
+                "El alta operativa de WhatsApp no terminó correctamente.",
+                "Podés reintentarlo. Si vuelve a fallar, revisá el incidente en Auditoría.",
+                incident);
         }
         finally
         {
@@ -2653,18 +2662,22 @@
         {
             await AuthorizationSvc.EnsureCanManageAsync();
             await EmbeddedSignup.RetryAsync(new(pending.IdOnboarding, AppUserSession.GetCurrentUserName().Trim()), _lifetimeCts.Token);
-            _embeddedSignupMessage = "Reintentando la activación de WhatsApp.";
+            _embeddedSignupFeedback = AppUiMessage.InProgress("Reintentando", "Estamos reintentando la activación de WhatsApp.");
             await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
         }
         catch (Exception ex)
         {
-            await AppEvents.LogErrorAsync(
+            var incident = await AppEvents.LogErrorAsync(
                 "ConversacionesConfiguracion",
                 "RetryEmbeddedSignup",
                 ex,
                 "No se pudo reintentar la activación de WhatsApp.",
                 new { pending.IdOnboarding, IdBase = SessionSvc.GetActiveSession()?.BaseId });
-            _embeddedSignupMessage = "No se pudo reintentar la activación. Revisá el incidente en Auditoría.";
+            _embeddedSignupFeedback = AppUiMessage.Error(
+                "No se pudo reintentar",
+                "No pudimos reintentar la activación de este WhatsApp.",
+                "Probá de nuevo en unos minutos. Si persiste, revisá el incidente en Auditoría.",
+                incident);
         }
         finally
         {
@@ -2691,7 +2704,7 @@
                 _selectedApiNumeroId = result.IdNumero;
                 _apiWorkspaceView = "numero";
             }
-            _embeddedSignupMessage = BuildEmbeddedImportMessage(result);
+            _embeddedSignupFeedback = BuildEmbeddedImportMessage(result);
         }
         catch (Exception ex)
         {
@@ -2702,7 +2715,11 @@
                 "No se pudo recuperar el WhatsApp autorizado.",
                 new { candidate.IdOnboarding, IdBase = SessionSvc.GetActiveSession()?.BaseId },
                 ct: _lifetimeCts.Token);
-            _embeddedSignupMessage = $"No se pudo recuperar el WhatsApp. Revisá el incidente {incident} en Auditoría.";
+            _embeddedSignupFeedback = AppUiMessage.Error(
+                "No se pudo recuperar el WhatsApp",
+                "No pudimos recuperar el WhatsApp ya autorizado en Meta.",
+                "Podés reintentarlo. Si vuelve a fallar, revisá el incidente en Auditoría.",
+                incident);
         }
         finally
         {
@@ -2721,7 +2738,9 @@
         var usuario = AppUserSession.GetCurrentUserName().Trim();
         if (idBase <= 0 || usuario.Length == 0) return;
         _embeddedSignupBusy = true;
-        _embeddedSignupMessage = GetWhatsAppConnectionChoiceConfirmation(choice);
+        // Un intento nuevo arranca "en limpio": el feedback de un intento anterior (éxito o error) ya
+        // no aplica a esta operación y no debe seguir visible mientras esta nueva corre.
+        _embeddedSignupFeedback = AppUiMessage.InProgress("Conectando con Meta", GetWhatsAppConnectionChoiceConfirmation(choice));
         var correlationId = Guid.NewGuid().ToString("N");
         try
         {
@@ -2738,7 +2757,10 @@
                     mismatch,
                     "Se canceló la conexión antes de abrir Meta porque el modo no coincide.",
                     new { CorrelationId = correlationId, UiChoice = choice.ToString(), ExpectedMode = expectedMode.ToString(), StartAsyncInputMode = expectedMode.ToString(), PersistedMode = start.OnboardingMode.ToString(), IdOnboarding = start.IdOnboarding });
-                _embeddedSignupMessage = "No se abrió Meta porque la opción confirmada no coincide con el modo preparado.";
+                _embeddedSignupFeedback = AppUiMessage.Warning(
+                    "No se abrió Meta",
+                    "La opción confirmada no coincide con el modo preparado para esta conexión.",
+                    "Volvé a intentarlo eligiendo la opción de conexión nuevamente.");
                 _embeddedSignupBusy = false;
                 _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
                 _showWhatsAppOnboardingModeDialog = false;
@@ -2780,13 +2802,17 @@
         }
         catch (Exception ex)
         {
-            await AppEvents.LogErrorAsync(
+            var incident = await AppEvents.LogErrorAsync(
                 "ConversacionesConfiguracion",
                 "StartEmbeddedSignup",
                 ex,
                 "No se pudo iniciar la conexión con Meta.",
                 new { IdBase = idBase });
-            _embeddedSignupMessage = "No se pudo iniciar la conexión con Meta. Revisá la configuración técnica.";
+            _embeddedSignupFeedback = AppUiMessage.Error(
+                "No se pudo iniciar la conexión",
+                "No pudimos iniciar la conexión con Meta.",
+                "Revisá la configuración técnica o probá de nuevo en unos minutos.",
+                incident);
             _embeddedSignupBusy = false;
             _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         }
@@ -2846,7 +2872,9 @@
         // ~30 minutos (FechaExpiracionUtc), no a los 90 segundos.
         _embeddedSignupBusy = false;
         _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
-        _embeddedSignupMessage = "La autorización con Meta está demorando. Si ya la completaste en tu celular, puede tardar unos segundos más en reflejarse acá.";
+        _embeddedSignupFeedback = AppUiMessage.InProgress(
+            "La autorización está demorando",
+            "Si ya la completaste en tu celular, puede tardar unos segundos más en reflejarse acá.");
         await InvokeAsync(StateHasChanged);
 
         var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
@@ -2865,14 +2893,27 @@
         try
         {
             await EmbeddedSignup.HandleAuthorizationCallbackAsync(new(id, idBase, state, code, usuario, wabaId, phoneNumberId));
-            _embeddedSignupMessage = EmbeddedSignupOptions.Value.WorkerEnabled
-                ? "Autorización recibida correctamente. La configuración automática continuará en la próxima etapa."
-                : "Autorización recibida correctamente. La conexión quedó pendiente de completar de forma supervisada.";
+            _embeddedSignupFeedback = AppUiMessage.Success(
+                "Autorización recibida",
+                EmbeddedSignupOptions.Value.WorkerEnabled
+                    ? "La configuración automática continuará en la próxima etapa."
+                    : "La conexión quedó pendiente de completar de forma supervisada.");
             await RefreshWhatsAppConnectionsAsync(idBase);
         }
-        catch
+        catch (Exception ex)
         {
-            _embeddedSignupMessage = "No se pudo completar la autorización con Meta.";
+            // REGRESIÓN Base4264 (2026-09-14, IdOnboarding d23ddd26-393b-4334-a0b9-87b1bb6e2098): este
+            // catch era un "catch { }" ciego que descartaba la excepción real y siempre mostraba el
+            // mismo mensaje genérico -- así fue como la carrera watchdog/callback quedó invisible hasta
+            // que se auditó a mano con evidencia de producción. Ahora se registra sanitizado (nunca el
+            // code/token/state) y se clasifica para dar una causa útil sin exponer secretos.
+            var incident = await AppEvents.LogErrorAsync(
+                "ConversacionesConfiguracion",
+                "CompleteEmbeddedSignupAuthorization",
+                ex,
+                "No se pudo completar la autorización de WhatsApp con Meta.",
+                new { IdOnboarding = id, IdBase = idBase });
+            _embeddedSignupFeedback = ClassifyEmbeddedSignupAuthorizationError(ex, incident);
         }
         finally
         {
@@ -2884,6 +2925,65 @@
         }
     }
 
+    /// <summary>
+    /// Traduce la excepción real de HandleAuthorizationCallbackAsync a un mensaje accionable para el
+    /// usuario, sin exponer nunca token/code/state/stack trace -- sólo texto estático conocido más el
+    /// id de incidente sanitizado ya generado por AppEvents.LogErrorAsync. Los mensajes de las
+    /// excepciones propias del orquestador (ver WhatsAppEmbeddedSignupOrchestrator.cs y
+    /// MetaOAuthClient.cs) ya están auditados para no contener secretos ni el body crudo de Meta.
+    /// </summary>
+    internal static AppUiMessage ClassifyEmbeddedSignupAuthorizationError(Exception ex, string incident)
+    {
+        if (ex is UnauthorizedAccessException unauthorized)
+        {
+            var expiredOrReused = unauthorized.Message.Contains("venció", StringComparison.OrdinalIgnoreCase)
+                || unauthorized.Message.Contains("ya fue utilizada", StringComparison.OrdinalIgnoreCase);
+            return expiredOrReused
+                ? AppUiMessage.ActionRequired(
+                    "La autorización venció o ya se usó",
+                    "Esta autorización con Meta ya no es válida (venció o se consumió por otra vía, por ejemplo un reintento en paralelo).",
+                    "Iniciá la conexión nuevamente desde el botón de WhatsApp.")
+                : AppUiMessage.Warning(
+                    "No pudimos validar esta autorización",
+                    "La sesión de autorización con Meta cambió o ya no corresponde a este intento.",
+                    "Iniciá la conexión nuevamente desde el botón de WhatsApp.");
+        }
+
+        if (ex is ArgumentException)
+            return AppUiMessage.Warning(
+                "Meta no envió todos los datos",
+                "Meta no envió toda la información necesaria para completar la conexión.",
+                "Intentá nuevamente. Si vuelve a pasar, puede ser un problema temporal de Meta.");
+
+        if (ex is InvalidOperationException invalidOperation)
+        {
+            var isConfigIssue = invalidOperation.Message.Contains("Falta configurar", StringComparison.OrdinalIgnoreCase);
+            if (isConfigIssue)
+                return AppUiMessage.Error(
+                    "Falla interna de configuración",
+                    "Hay un problema de configuración interno que impide completar la conexión con Meta.",
+                    "Contactá a soporte técnico.",
+                    incident);
+
+            return AppUiMessage.Warning(
+                "Meta rechazó el intercambio con AlfaCore",
+                "Meta no aceptó completar la autorización en este intento.",
+                "Puede pasar si el proceso tardó demasiado o si se usó dos veces. Iniciá la conexión nuevamente.");
+        }
+
+        if (ex is HttpRequestException or TaskCanceledException or OperationCanceledException)
+            return AppUiMessage.Warning(
+                "No pudimos comunicarnos con Meta",
+                "Hubo un problema temporal de comunicación con Meta al completar la autorización.",
+                "Probá de nuevo en unos minutos.");
+
+        return AppUiMessage.Error(
+            "No se pudo completar la autorización",
+            "Ocurrió un error interno de AlfaCore al completar la autorización con Meta.",
+            "Podés reintentarlo. Si persiste, revisá el incidente en Auditoría.",
+            incident);
+    }
+
     [JSInvokable]
     public Task EmbeddedSignupCancelled()
     {
@@ -2892,7 +2992,7 @@
         _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         _showWhatsAppOnboardingModeDialog = false;
         _whatsAppConnectionChoiceSelection.Clear();
-        _embeddedSignupMessage = "Conexión cancelada. Podés intentarlo nuevamente.";
+        _embeddedSignupFeedback = AppUiMessage.Info("Conexión cancelada", "Podés intentarlo nuevamente cuando quieras.");
         return PersistEmbeddedSignupCancellationAsync();
     }
 
@@ -2990,9 +3090,11 @@
         var incident = _embeddedSignupId is Guid id && idBase > 0
             ? await EmbeddedSignupErrorLogger.LogAsync(id, idBase, "AUTHORIZATION", safeCode, null, null, 0)
             : string.Empty;
-        _embeddedSignupMessage = string.IsNullOrWhiteSpace(incident)
-            ? "Meta no pudo completar la autorización. Podés intentarlo nuevamente."
-            : $"Meta no pudo completar la autorización. Código: {incident}.";
+        _embeddedSignupFeedback = AppUiMessage.Error(
+            "Meta no pudo completar la autorización",
+            "Meta reportó un error durante el proceso de autorización.",
+            "Podés intentarlo nuevamente.",
+            incident);
         await InvokeAsync(StateHasChanged);
     }
 
