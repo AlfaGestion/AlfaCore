@@ -69,6 +69,9 @@ public sealed class ConversacionesAuthorizationService(
     }
 
     public async Task EnsureCanAttendConversationAsync(long idConversacion, CancellationToken ct = default)
+        => await EnsureCanAttendConversationAsync(idConversacion, ConnectionString, ct);
+
+    public async Task EnsureCanAttendConversationAsync(long idConversacion, string connectionString, CancellationToken ct = default)
     {
         if (idConversacion <= 0)
             throw new ArgumentOutOfRangeException(nameof(idConversacion));
@@ -124,7 +127,7 @@ public sealed class ConversacionesAuthorizationService(
             ) THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END;
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
@@ -135,6 +138,9 @@ public sealed class ConversacionesAuthorizationService(
     }
 
     public async Task EnsureCanUseWhatsAppNumeroAsync(int idNumero, CancellationToken ct = default)
+        => await EnsureCanUseWhatsAppNumeroAsync(idNumero, ConnectionString, ct);
+
+    public async Task EnsureCanUseWhatsAppNumeroAsync(int idNumero, string connectionString, CancellationToken ct = default)
     {
         if (idNumero <= 0)
             throw new ArgumentOutOfRangeException(nameof(idNumero));
@@ -171,7 +177,7 @@ public sealed class ConversacionesAuthorizationService(
             THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END;
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdNumero", idNumero);

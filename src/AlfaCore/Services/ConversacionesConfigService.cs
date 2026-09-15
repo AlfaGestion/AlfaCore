@@ -38,6 +38,30 @@ public sealed class ConversacionesConfigService(
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
+    private TenantConnectionContext ResolveTenantConnection(int? expectedBaseId, string operation)
+    {
+        var active = sessionService.GetActiveSession();
+        if (expectedBaseId is > 0 && active?.BaseId != expectedBaseId.Value)
+            throw new InvalidOperationException(
+                $"La sesión activa no coincide con la base solicitada para Conversaciones.{operation}.");
+
+        if (active is not null)
+        {
+            return new TenantConnectionContext(active.BaseId, new SqlConnectionStringBuilder
+            {
+                DataSource = active.Servidor,
+                InitialCatalog = active.BaseDatos,
+                UserID = active.Usuario,
+                Password = active.Password,
+                TrustServerCertificate = active.TrustServerCertificate,
+                ApplicationName = "AlfaCore"
+            }.ConnectionString);
+        }
+
+        return new TenantConnectionContext(null, configuration.GetConnectionString("AlfaGestion")
+            ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'."));
+    }
+
     public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppConfig", async token =>
         {
@@ -1277,9 +1301,13 @@ public sealed class ConversacionesConfigService(
         }, "No se pudieron cargar los usuarios del sistema.", ct);
 
     public Task<IReadOnlyList<ConversacionWhatsAppNumeroDto>> GetWhatsAppNumerosAsync(CancellationToken ct = default)
+        => GetWhatsAppNumerosAsync(null, ct);
+
+    public Task<IReadOnlyList<ConversacionWhatsAppNumeroDto>> GetWhatsAppNumerosAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppNumeros", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetWhatsAppNumeros");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
 
             var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
@@ -1353,6 +1381,12 @@ public sealed class ConversacionesConfigService(
             return null;
 
         var numeros = await GetWhatsAppNumerosAsync(ct);
+        return numeros.FirstOrDefault(x => x.IdNumero == idNumero);
+    }
+
+    public async Task<ConversacionWhatsAppNumeroDto?> GetWhatsAppNumeroAsync(int idNumero, int? expectedBaseId, CancellationToken ct = default)
+    {
+        var numeros = await GetWhatsAppNumerosAsync(expectedBaseId, ct);
         return numeros.FirstOrDefault(x => x.IdNumero == idNumero);
     }
 
@@ -2629,4 +2663,6 @@ public sealed class ConversacionesConfigService(
             throw new AppUserFacingException(userMessage, incidentId, ex);
         }
     }
+
+    private sealed record TenantConnectionContext(int? BaseId, string ConnectionString);
 }
