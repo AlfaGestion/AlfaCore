@@ -1868,7 +1868,7 @@
                                     @if (IsOutgoingMessage(message))
                                     {
                                         <div class="message-card__delivery">
-                                            <span class="message-delivery @GetDeliveryClass(message.EstadoEnvio)" title="@GetDeliveryLabel(message.EstadoEnvio)">
+                                            <span class="message-delivery @GetDeliveryClass(message.EstadoEnvio)" title="@GetDeliveryLabel(message)">
                                                 <i class="bi @GetDeliveryIcon(message.EstadoEnvio)"></i>
                                                 <span>@GetDeliveryLabel(message.EstadoEnvio)</span>
                                             </span>
@@ -12661,6 +12661,20 @@
             _ when state.Contains("ERROR", StringComparison.OrdinalIgnoreCase) => "Error",
             _ => string.IsNullOrWhiteSpace(estadoEnvio) ? "Enviado" : estadoEnvio
         };
+    }
+
+    /// <summary>
+    /// Variante consciente del payload de error para el tooltip del mensaje individual (a diferencia de
+    /// GetDeliveryLabel(string), que sólo tiene el EstadoEnvio del renglón resumen de la lista de
+    /// conversaciones y no puede clasificar nada). Nunca muestra el genérico "Error" cuando ya se
+    /// conoce la causa real -- p. ej. 131031 (cuenta bloqueada por Meta, ver
+    /// WhatsAppOutboundErrorClassifier): confundir ese caso con un error de envío cualquiera llevaba a
+    /// reintentos inútiles.
+    /// </summary>
+    private static string GetDeliveryLabel(AlfaCore.Models.ConversacionMensajeDto message)
+    {
+        var classified = AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliveryError(message.EstadoEnvio, message.PayloadJson);
+        return classified is null ? GetDeliveryLabel(message.EstadoEnvio) : $"{classified.Title}: {classified.Message}";
     }
 
     private static string InferAudioExtension(string mimeType)
