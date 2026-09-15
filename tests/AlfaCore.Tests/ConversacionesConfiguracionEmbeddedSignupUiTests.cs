@@ -66,58 +66,63 @@ public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
     }
 
     [Fact]
-    public void PrimaryCtaAndRetryButtons_HaveIndependentLoadingFlags()
+    public void PrimaryCtaLoadingFlag_NeverLightsUpDuringAPendingConnectionAction()
     {
+        // Rediseño "detalle = número/conexión seleccionada" (ver auditoría Ministerio Vida de
+        // Dios/AlfaNet): las viejas ramas globales Failed/Expired con su propio botón "Reintentar"
+        // (Loading="@EmbeddedSignupRetryLoading") desaparecieron -- ahora reintentar/reconectar es la
+        // acción primaria del AlfaFeedbackPanel de la conexión pendiente seleccionada, con su propio
+        // Loading directo (_embeddedSignupBusy), nunca EmbeddedSignupPrimaryCtaLoading. La garantía que
+        // importa se mantiene: el botón "Conectar WhatsApp" del estado vacío y la acción de una
+        // conexión pendiente seleccionada nunca comparten el mismo flag visual de carga.
         var source = File.ReadAllText(FindPagePath());
 
-        // Existen dos getters de Loading distintos, cada uno atado a un origen distinto del mismo
-        // _embeddedSignupBusy compartido -- ya no un único flag animando dos botones a la vez.
-        Assert.Contains("private enum EmbeddedSignupBusyOrigin { None, PrimaryCta, Retry }", source, StringComparison.Ordinal);
         Assert.Contains("private bool EmbeddedSignupPrimaryCtaLoading => _embeddedSignupBusy && _embeddedSignupBusyOrigin == EmbeddedSignupBusyOrigin.PrimaryCta;", source, StringComparison.Ordinal);
-        Assert.Contains("private bool EmbeddedSignupRetryLoading => _embeddedSignupBusy && _embeddedSignupBusyOrigin == EmbeddedSignupBusyOrigin.Retry;", source, StringComparison.Ordinal);
-
-        // El CTA principal (lista vacía de WhatsApp) usa el flag de PrimaryCta, no el _embeddedSignupBusy
-        // crudo -- y el "Reintentar" de los paneles Failed/Expired usa el de Retry. Sin este split,
-        // ambos "latían" juntos ante cualquier _embeddedSignupBusy=true (bug confirmado en Base4264).
         Assert.Contains("Loading=\"@EmbeddedSignupPrimaryCtaLoading\"", source, StringComparison.Ordinal);
-        Assert.Contains("Loading=\"@EmbeddedSignupRetryLoading\"", source, StringComparison.Ordinal);
 
-        var retryLoadingCount = Regex.Matches(source, Regex.Escape("Loading=\"@EmbeddedSignupRetryLoading\"")).Count;
-        Assert.Equal(2, retryLoadingCount); // panel Failed + panel Expired
+        // El panel de la conexión pendiente usa el flag directo, no el de PrimaryCta.
+        Assert.Contains("PrimaryActionLoading=\"@_embeddedSignupBusy\"", source, StringComparison.Ordinal);
 
-        // Todo punto que apaga _embeddedSignupBusy también debe limpiar el origen -- si no, un origen
-        // viejo (p. ej. Retry de un intento anterior) podría "filtrarse" y prender el spinner
-        // equivocado en la próxima acción no relacionada.
-        var busyFalseCount = Regex.Matches(source, @"_embeddedSignupBusy = false;").Count;
-        var originResetCount = Regex.Matches(source, @"_embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin\.None;").Count;
-        Assert.True(originResetCount >= busyFalseCount,
-            $"Cada '_embeddedSignupBusy = false' debería tener su '_embeddedSignupBusyOrigin = None' acompañante ({originResetCount} resets vs {busyFalseCount} apagados de busy).");
+        // RetryEmbeddedSignupAsync/ReconnectPendingConnectionAsync ponen el origen en None (nunca
+        // PrimaryCta) -- si alguna vez usaran PrimaryCta por error, el botón "Conectar WhatsApp" del
+        // estado vacío empezaría a animar durante un reintento no relacionado.
+        var retryMethodStart = source.IndexOf("private async Task RetryEmbeddedSignupAsync(", StringComparison.Ordinal);
+        Assert.True(retryMethodStart >= 0, "No se encontró RetryEmbeddedSignupAsync.");
+        var retryMethodBody = ExtractMethodBody(source, retryMethodStart);
+        Assert.Contains("_embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;", retryMethodBody, StringComparison.Ordinal);
 
-        // OpenWhatsAppOnboardingModeDialog acepta el origen explícitamente (no hay forma de saber qué
-        // botón abrió el diálogo sin este parámetro).
-        Assert.Contains("private Task OpenWhatsAppOnboardingModeDialog(EmbeddedSignupBusyOrigin origin = EmbeddedSignupBusyOrigin.PrimaryCta)", source, StringComparison.Ordinal);
-        Assert.Contains("_embeddedSignupBusyOrigin = origin;", source, StringComparison.Ordinal);
-        Assert.Contains("OpenWhatsAppOnboardingModeDialog(EmbeddedSignupBusyOrigin.Retry)", source, StringComparison.Ordinal);
+        var reconnectMethodStart = source.IndexOf("private async Task ReconnectPendingConnectionAsync(", StringComparison.Ordinal);
+        Assert.True(reconnectMethodStart >= 0, "No se encontró ReconnectPendingConnectionAsync.");
+        var reconnectMethodBody = ExtractMethodBody(source, reconnectMethodStart);
+        Assert.Contains("_embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;", reconnectMethodBody, StringComparison.Ordinal);
 
-        // _embeddedSignupBusy sigue siendo la única fuente de verdad para Disabled (nada de esto debilita
-        // la protección contra doble-submit; sólo separa qué botón ANIMA su spinner).
+        // _embeddedSignupBusy sigue siendo la única fuente de verdad para Disabled del CTA vacío.
         var primaryCtaButtonBlock = ExtractTag(source, "<AlfaButton", "Loading=\"@EmbeddedSignupPrimaryCtaLoading\"");
         Assert.Contains("Disabled=\"@_embeddedSignupBusy\"", primaryCtaButtonBlock, StringComparison.Ordinal);
     }
 
     [Fact]
-    public void EmbeddedSignupFeedback_NeverRendersOverConnectedState()
+    public void EmbeddedSignupFeedback_CanNeverRenderInsideTheOperationalNumberDetail()
     {
         var source = File.ReadAllText(FindPagePath());
 
-        // MUY IMPORTANTE (auditoría UX post-Base4264): el feedback de un intento NUEVO (p. ej. "Conectar
-        // otro WhatsApp" que falla) no debe aparecer pegado debajo de la tarjeta verde "WhatsApp
-        // conectado" de un número YA operativo, como si ambos fueran el mismo objeto. El render de
-        // _embeddedSignupFeedback debe excluir explícitamente el estado Connected.
-        var renderIndex = source.IndexOf("_embeddedSignupFeedback is not null", StringComparison.Ordinal);
-        Assert.True(renderIndex >= 0, "No se encontró el render condicionado de _embeddedSignupFeedback.");
-        var conditionLine = source[renderIndex..source.IndexOf('\n', renderIndex)];
-        Assert.Contains("EmbeddedSignupUiState != AlfaCore.Models.WhatsAppEmbeddedConnectionUiState.Connected", conditionLine, StringComparison.Ordinal);
+        // MUY IMPORTANTE (auditoría UX post-Base4264, y confirmado de nuevo con evidencia real: Ministerio
+        // Vida de Dios operativo + AlfaNet fallido -- el panel derecho mostraba "WhatsApp conectado"
+        // mezclando el estado de OTRA conexión con la seleccionada). Ahora la rama del número operativo
+        // seleccionado (SelectedApiNumero) es estructuralmente incapaz de referenciar _embeddedSignupFeedback
+        // -- no hay ningún "if" que excluir: el campo simplemente no aparece en ese bloque de markup.
+        var branchStart = source.IndexOf("else if (SelectedApiNumero is { } selectedNumero)", StringComparison.Ordinal);
+        Assert.True(branchStart >= 0, "No se encontró la rama de detalle del número seleccionado.");
+        // OJO: la condición del if ya contiene un "{ }" propio (el patrón "is { } selectedNumero"), así
+        // que hay que arrancar a buscar la llave de apertura del BLOQUE recién después del ')' que
+        // cierra la condición -- si no, ExtractMethodBody encuentra esa llave vacía del patrón primero.
+        var blockOpenBrace = source.IndexOf('{', source.IndexOf(')', branchStart));
+        var branchBody = ExtractMethodBody(source, blockOpenBrace);
+
+        Assert.DoesNotContain("_embeddedSignupFeedback", branchBody, StringComparison.Ordinal);
+        // En cambio, sí usa su propio estado con fuente de verdad (131031 derivado del último envío de
+        // ESTE número) -- ya cubierto por Meta131031PanelTests, sólo se confirma acá que sigue presente.
+        Assert.Contains("_selectedNumeroBlockedFeedback", branchBody, StringComparison.Ordinal);
     }
 
     [Fact]
