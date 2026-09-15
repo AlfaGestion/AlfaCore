@@ -27,6 +27,32 @@ public interface IWhatsAppEmbeddedSignupStore
     /// </summary>
     Task<bool> CancelStartedIfNotConsumedAsync(Guid idOnboarding, int idBase, string expectedStateHash, DateTime nowUtc, CancellationToken ct = default)
         => Task.FromResult(false);
+
+    /// <summary>
+    /// Reintento MANUAL disparado por el usuario desde la UI (botón "Reintentar") -- UN SOLO UPDATE
+    /// atómico y guardado, mismo patrón que CancelStartedIfNotConsumedAsync: sólo continúa si, en el
+    /// mismo instante, Estado='FAILED_RETRYABLE' AND RetryCount &lt; maxManualRetryCount. Si cualquiera
+    /// de esas condiciones ya no se cumple (ya se reintentó el máximo de veces, o el estado cambió
+    /// concurrentemente -- p. ej. el worker automático ya lo re-procesó), esto es un no-op: devuelve
+    /// false y la UI debe ofrecer "Volver a conectar con Meta" en vez de reintentar de nuevo. Reusa el
+    /// mismo RetryCount que ya incrementa el worker automático (MarkRetryableFailureAsync) -- no es un
+    /// contador paralelo: cuenta "cuántas veces se intentó continuar este onboarding", sin importar si
+    /// lo disparó el usuario o el worker.
+    /// </summary>
+    Task<bool> RetryStartedByUserAsync(Guid idOnboarding, int idBase, int maxManualRetryCount, DateTime nowUtc, CancellationToken ct = default)
+        => Task.FromResult(false);
+
+    /// <summary>
+    /// El usuario agotó los reintentos manuales y eligió "Volver a conectar con Meta": el onboarding
+    /// viejo (FAILED_RETRYABLE) pasa a un estado terminal apropiado (FAILED_FINAL) en vez de quedar
+    /// reapareciendo en la lista de conexiones pendientes para siempre. UN SOLO UPDATE atómico y
+    /// guardado -- sólo actúa si, en el mismo instante, Estado='FAILED_RETRYABLE'. Nunca hace DELETE:
+    /// el onboarding queda como historial/evidencia, igual que ya se preserva d23ddd26-393b-4334-a0b9-87b1bb6e2098.
+    /// No toca ownership/Vault/token -- sólo el estado de ESTE onboarding.
+    /// </summary>
+    Task<bool> SupersedeFailedForReconnectAsync(Guid idOnboarding, int idBase, DateTime nowUtc, CancellationToken ct = default)
+        => Task.FromResult(false);
+
     Task MarkAuthorizedAsync(Guid idOnboarding, string tokenReference, string metaBusinessId, CancellationToken ct = default);
     Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default);
     Task MarkRetryableFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default);
@@ -105,6 +131,17 @@ public interface IWhatsAppEmbeddedSignupOrchestrator
     /// efectivamente canceló la fila esperada (IdOnboarding + IdBase + Estado=ACTION_REQUIRED).
     /// </summary>
     Task<bool> CancelActionRequiredConfigurationAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
+        => Task.FromResult(false);
+
+    /// <summary>
+    /// "Volver a conectar con Meta" después de agotar los reintentos manuales: el onboarding viejo
+    /// (FAILED_RETRYABLE) pasa a FAILED_FINAL -- preservado como historial, nunca DELETE -- para que
+    /// deje de aparecer en la lista de conexiones pendientes. NO inicia el Embedded Signup nuevo: eso
+    /// sigue siendo responsabilidad de StartAsync, llamado por separado (mismo flujo ya usado para
+    /// "Conectar WhatsApp"/"Conectar otro WhatsApp" -- no se duplica esa lógica acá). Devuelve true
+    /// únicamente si efectivamente superó la fila esperada (IdOnboarding + IdBase + Estado=FAILED_RETRYABLE).
+    /// </summary>
+    Task<bool> SupersedeForReconnectAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
         => Task.FromResult(false);
 }
 

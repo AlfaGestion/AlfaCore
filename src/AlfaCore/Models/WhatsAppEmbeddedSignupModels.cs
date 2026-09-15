@@ -218,7 +218,7 @@ public sealed class WhatsAppEmbeddedOnboardingDto
 public sealed record WhatsAppEmbeddedStartRequest(int IdBase, string IdCliente, string UsuarioIniciador, WhatsAppEmbeddedOnboardingMode OnboardingMode, string CorrelationId = "");
 public sealed record WhatsAppEmbeddedStartResult(Guid IdOnboarding, string State, DateTime ExpiresAtUtc, WhatsAppEmbeddedOnboardingMode OnboardingMode, string CorrelationId);
 public sealed record WhatsAppEmbeddedAuthorizationCallback(Guid IdOnboarding, int IdBase, string State, string AuthorizationCode, string Usuario, string WabaId = "", string PhoneNumberId = "");
-public sealed record WhatsAppEmbeddedRetryRequest(Guid IdOnboarding, string Usuario);
+public sealed record WhatsAppEmbeddedRetryRequest(Guid IdOnboarding, int IdBase, string Usuario);
 
 public sealed record WhatsAppEmbeddedProgressItem(string Key, string Label, WhatsAppEmbeddedProgressState State);
 public enum WhatsAppEmbeddedProgressState { Pending, InProgress, Completed, ActionRequired, Failed }

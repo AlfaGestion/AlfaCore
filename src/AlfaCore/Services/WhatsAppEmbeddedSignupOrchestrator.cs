@@ -177,6 +177,13 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         return await store.CancelActionRequiredAsync(idOnboarding, idBase, ct);
     }
 
+    public async Task<bool> SupersedeForReconnectAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
+    {
+        EnsureFeatureEnabled();
+        if (idOnboarding == Guid.Empty || idBase <= 0) return false;
+        return await store.SupersedeFailedForReconnectAsync(idOnboarding, idBase, DateTime.UtcNow, ct);
+    }
+
     public async Task ProcessNextStepAsync(Guid idOnboarding, CancellationToken ct = default)
     {
         var item = await store.GetAsync(idOnboarding, ct)
@@ -331,17 +338,28 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         }
     }
 
+    /// <summary>
+    /// Reintento MANUAL (botón "Reintentar" en la UI). Máximo <see cref="WhatsAppEmbeddedSignupOptions.MaxManualRetryCount"/>
+    /// veces -- política UX explícita, auditada sobre el RetryCount que YA existe en el dominio (lo
+    /// incrementa también el worker automático para fallas transitorias, ver ProcessNextStepAsync) --
+    /// no es un contador paralelo. El guard real (Estado='FAILED_RETRYABLE' AND RetryCount &lt; máximo)
+    /// vive en UN SOLO UPDATE atómico (RetryStartedByUserAsync) -- nunca dos pasos separados, para que
+    /// no haya ventana entre "leer el estado" y "escribir el nuevo estado" donde el worker automático
+    /// pueda intercalarse.
+    /// </summary>
     public async Task RetryAsync(WhatsAppEmbeddedRetryRequest request, CancellationToken ct = default)
     {
         var item = await store.GetAsync(request.IdOnboarding, ct)
             ?? throw new InvalidOperationException("El onboarding no existe.");
         EnsureFeatureEnabled();
+        if (item.IdBase != request.IdBase)
+            throw new UnauthorizedAccessException("El onboarding no pertenece a esta base.");
         if (!string.Equals(item.UsuarioIniciador.Trim(), request.Usuario.Trim(), StringComparison.OrdinalIgnoreCase))
             throw new UnauthorizedAccessException("El onboarding no pertenece al usuario actual.");
-        if (item.Status != WhatsAppEmbeddedOnboardingStatus.FailedRetryable)
-            throw new InvalidOperationException("El onboarding no está disponible para reintentar.");
 
-        await store.UpdateStatusAsync(item.IdOnboarding, item.Status, WhatsAppEmbeddedOnboardingStatus.Authorized, "RETRYING", ct);
+        var retried = await store.RetryStartedByUserAsync(request.IdOnboarding, request.IdBase, _options.MaxManualRetryCount, DateTime.UtcNow, ct);
+        if (!retried)
+            throw new InvalidOperationException("El onboarding no está disponible para reintentar (se alcanzó el máximo de reintentos, o ya cambió de estado).");
     }
 
     // Iniciar un onboarding NUEVO: exige elegibilidad administrativa (Enabled + AllowAllTenants o lista).

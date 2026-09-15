@@ -2682,7 +2682,8 @@
         try
         {
             await AuthorizationSvc.EnsureCanManageAsync();
-            await EmbeddedSignup.RetryAsync(new(pending.IdOnboarding, AppUserSession.GetCurrentUserName().Trim()), _lifetimeCts.Token);
+            var retryIdBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+            await EmbeddedSignup.RetryAsync(new(pending.IdOnboarding, retryIdBase, AppUserSession.GetCurrentUserName().Trim()), _lifetimeCts.Token);
             _embeddedSignupFeedback = AppUiMessage.InProgress("Reintentando", "Estamos reintentando la activación de WhatsApp.");
             await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
         }

@@ -56,6 +56,13 @@ public sealed class WhatsAppEmbeddedSignupOptions
     public int RetryInitialDelaySeconds { get; set; } = 30;
     public int RetryMaxDelaySeconds { get; set; } = 1800;
     public int MaxRetryCount { get; set; } = 8;
+    /// <summary>
+    /// Tope de reintentos MANUALES (botón "Reintentar" en la UI) antes de que se ofrezca "Volver a
+    /// conectar con Meta" en su lugar -- política de UX explícita, distinta de <see cref="MaxRetryCount"/>
+    /// (el presupuesto del worker automático para fallas transitorias, mucho más generoso). Ambas
+    /// cuentan sobre el MISMO RetryCount persistido -- no hay un contador paralelo.
+    /// </summary>
+    public int MaxManualRetryCount { get; set; } = 2;
     public WhatsAppEmbeddedSignupCreditMode CreditMode { get; set; } = WhatsAppEmbeddedSignupCreditMode.CustomerPaysMeta;
 
     /// <summary>

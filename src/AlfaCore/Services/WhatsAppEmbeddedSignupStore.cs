@@ -105,6 +105,47 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
         return rows == 1;
     }
 
+    public async Task<bool> RetryStartedByUserAsync(Guid idOnboarding, int idBase, int maxManualRetryCount, DateTime nowUtc, CancellationToken ct = default)
+    {
+        // UN SOLO UPDATE guardado -- mismo patrón que CancelStartedIfNotConsumedAsync. El WHERE exige
+        // Estado='FAILED_RETRYABLE' (nunca reanuda CANCELLED/FAILED_FINAL/READY -- ver
+        // WhatsAppEmbeddedSignupStateMachine, esos no son ni siquiera transiciones válidas desde acá) Y
+        // RetryCount < @MaxManualRetryCount -- si ya se alcanzó el máximo, o si el worker automático ya
+        // movió la fila a otro estado concurrentemente, esto es un no-op (0 filas): la UI debe ofrecer
+        // "Volver a conectar con Meta" en vez de reintentar.
+        const string sql = """
+            UPDATE dbo.WhatsAppEmbeddedOnboarding WITH (UPDLOCK, ROWLOCK)
+            SET Estado = 'AUTHORIZED', PasoActual = 'RETRYING', RetryCount = RetryCount + 1, FechaModificacionUtc = @NowUtc
+            WHERE IdOnboarding = @Id
+              AND IdBase = @IdBase
+              AND Estado = 'FAILED_RETRYABLE'
+              AND RetryCount < @MaxManualRetryCount;
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        var rows = await cn.ExecuteAsync(new CommandDefinition(sql, new { Id = idOnboarding, IdBase = idBase, MaxManualRetryCount = maxManualRetryCount, NowUtc = nowUtc }, cancellationToken: ct));
+        return rows == 1;
+    }
+
+    public async Task<bool> SupersedeFailedForReconnectAsync(Guid idOnboarding, int idBase, DateTime nowUtc, CancellationToken ct = default)
+    {
+        // UN SOLO UPDATE guardado. Nunca DELETE -- el onboarding queda como historial/evidencia, igual
+        // que ya se preserva d23ddd26-393b-4334-a0b9-87b1bb6e2098 (regresión del watchdog). Sólo actúa
+        // sobre FAILED_RETRYABLE -- ACTION_REQUIRED tiene su propio mecanismo de cancelación explícita
+        // (RequestCancelActionRequiredConfigurationAsync), no se toca acá.
+        const string sql = """
+            UPDATE dbo.WhatsAppEmbeddedOnboarding WITH (UPDLOCK, ROWLOCK)
+            SET Estado = 'FAILED_FINAL', PasoActual = 'SUPERSEDED_BY_RECONNECT',
+                ErrorCode = 'SUPERSEDED_BY_RECONNECT', ErrorSummary = 'El usuario inició una nueva conexión con Meta.',
+                FechaModificacionUtc = @NowUtc
+            WHERE IdOnboarding = @Id
+              AND IdBase = @IdBase
+              AND Estado = 'FAILED_RETRYABLE';
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        var rows = await cn.ExecuteAsync(new CommandDefinition(sql, new { Id = idOnboarding, IdBase = idBase, NowUtc = nowUtc }, cancellationToken: ct));
+        return rows == 1;
+    }
+
     public async Task UpdateStatusAsync(Guid id, WhatsAppEmbeddedOnboardingStatus expected, WhatsAppEmbeddedOnboardingStatus next, string step, CancellationToken ct = default)
     {
         WhatsAppEmbeddedSignupStateMachine.EnsureTransition(expected, next);
