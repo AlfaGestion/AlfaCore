@@ -2620,7 +2620,7 @@
     /// cliente -- nunca se muestra el nombre técnico del paso ni de la excepción. Sólo cubre los pasos
     /// reales que existen en WhatsAppEmbeddedOnboardingStatus/CurrentStep -- no se inventan pasos.
     /// </summary>
-    private static string MapOnboardingStepToFriendlyText(string? step)
+    internal static string MapOnboardingStepToFriendlyText(string? step)
         => (step ?? string.Empty).Trim().ToUpperInvariant() switch
         {
             "AUTHORIZED" or "RETRYING" => "Preparando la configuración",
@@ -2664,8 +2664,12 @@
     /// WhatsAppEmbeddedSignupErrorLogger), paso mapeado a texto y fecha/hora.
     /// </summary>
     private AppUiMessage? BuildPendingConnectionFeedbackPanel(AlfaCore.Models.WhatsAppEmbeddedPendingConnection pending)
+        => BuildPendingConnectionFeedbackPanel(pending, EmbeddedSignupOptions.Value.MaxManualRetryCount);
+
+    /// <summary>Puro y testeable directamente -- separado del overload de instancia sólo para no
+    /// depender de EmbeddedSignupOptions (inyectado) en los tests.</summary>
+    internal static AppUiMessage? BuildPendingConnectionFeedbackPanel(AlfaCore.Models.WhatsAppEmbeddedPendingConnection pending, int maxManualRetryCount)
     {
-        var maxManualRetryCount = EmbeddedSignupOptions.Value.MaxManualRetryCount;
         switch (pending.Status)
         {
             case AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Importing:

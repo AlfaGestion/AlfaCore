@@ -175,6 +175,49 @@ public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
         Assert.Contains("sin usuarios asignados", methodBody, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void AdvancedConfiguration_IsNeverRendered_ButItsUnderlyingCodeIsNotDeleted()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        // "Configuración avanzada" ya no es un botón/entry-point alcanzable desde la UI cliente.
+        Assert.DoesNotContain("<strong>Configuración avanzada</strong>", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("@onclick=\"SelectApiIntegration\"", source, StringComparison.Ordinal);
+
+        // Pero nada de los datos/persistencia detrás se eliminó -- sigue en código, sólo dejó de
+        // exponerse. Si soporte necesita una pantalla interna algún día, la lógica ya existe.
+        Assert.Contains("private ConversacionWhatsAppConfigDto? _metaConfigDraft;", source, StringComparison.Ordinal);
+        Assert.Contains("private RenderFragment SecretEditor(", source, StringComparison.Ordinal);
+        Assert.Contains("private static string GetSecretStatus(", source, StringComparison.Ordinal);
+        Assert.Contains("private string GetCallbackStatus(", source, StringComparison.Ordinal);
+        Assert.Contains("private Task SelectApiIntegration()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SelectingAPendingConnection_ClearsTheOperationalNumeroSelection_AndViceVersa()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        var selectNumeroStart = source.IndexOf("private Task SelectApiNumero(ConversacionWhatsAppNumeroDto numero)", StringComparison.Ordinal);
+        Assert.True(selectNumeroStart >= 0);
+        var selectNumeroBody = ExtractMethodBody(source, selectNumeroStart);
+        Assert.Contains("_selectedPendingOnboardingId = null;", selectNumeroBody, StringComparison.Ordinal);
+
+        var selectPendingStart = source.IndexOf("private Task SelectPendingConnection(AlfaCore.Models.WhatsAppEmbeddedPendingConnection pending)", StringComparison.Ordinal);
+        Assert.True(selectPendingStart >= 0);
+        var selectPendingBody = ExtractMethodBody(source, selectPendingStart);
+        Assert.Contains("_selectedApiNumeroId = null;", selectPendingBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PendingConnectionRows_AreNowClickable_UnlikeBefore()
+    {
+        // Antes esta fila era un <div> sin @onclick alguno -- una conexión fallida/pendiente (como
+        // AlfaNet en el caso real) nunca podía convertirse en la selección activa.
+        var source = File.ReadAllText(FindPagePath());
+        Assert.Contains("@onclick=\"() => SelectPendingConnection(pending)\"", source, StringComparison.Ordinal);
+    }
+
     private static string ExtractMethodBody(string source, int methodStart)
     {
         var openBrace = source.IndexOf('{', methodStart);
