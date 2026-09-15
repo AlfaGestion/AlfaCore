@@ -473,6 +473,17 @@ public sealed class WhatsAppTenantIsolationTests
         var load = page.IndexOf("await LoadAsync();", init, StringComparison.Ordinal);
 
         Assert.True(init >= 0 && ensure > init && canManage > ensure && load > canManage);
+        Assert.Contains("ConfigSvc.GetWhatsAppConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetInstagramConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetFacebookConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetMercadoLibreConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetAlfaKnowledgeConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetAutomatizacionesConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetClasificacionesAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetPrioridadConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetUsuariosSistemaAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetConversacionAdministradoresAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetReglasAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
         Assert.Contains("ConfigSvc.GetWhatsAppNumerosAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
         Assert.Contains("ConvSvc.GetTechniciansAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
         Assert.Contains("Task<bool> CanManageAsync(int? expectedBaseId", contract, StringComparison.Ordinal);

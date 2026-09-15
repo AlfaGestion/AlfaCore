@@ -63,9 +63,13 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default)
+        => GetWhatsAppConfigAsync((int?)null, ct);
+
+    public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppConfig", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetWhatsAppConfig");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -288,9 +292,13 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo limpiar el emparejamiento de WhatsApp Web.", ct);
 
     public Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(CancellationToken ct = default)
+        => GetInstagramConfigAsync(null, ct);
+
+    public Task<ConversacionInstagramConfigDto> GetInstagramConfigAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetInstagramConfig", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetInstagramConfig");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -391,9 +399,13 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(CancellationToken ct = default)
+        => GetFacebookConfigAsync(null, ct);
+
+    public Task<ConversacionFacebookConfigDto> GetFacebookConfigAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetFacebookConfig", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetFacebookConfig");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -493,9 +505,13 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(CancellationToken ct = default)
+        => GetMercadoLibreConfigAsync(null, ct);
+
+    public Task<ConversacionMercadoLibreConfigDto> GetMercadoLibreConfigAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMercadoLibreConfig", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetMercadoLibreConfig");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -642,9 +658,13 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(CancellationToken ct = default)
+        => GetAlfaKnowledgeConfigAsync(null, ct);
+
+    public Task<ConversacionAlfaKnowledgeConfigDto> GetAlfaKnowledgeConfigAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetAlfaKnowledgeConfig", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetAlfaKnowledgeConfig");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -739,9 +759,13 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(CancellationToken ct = default)
+        => GetAutomatizacionesConfigAsync(null, ct);
+
+    public Task<ConversacionAutomatizacionesConfigDto> GetAutomatizacionesConfigAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetAutomatizacionesConfig", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetAutomatizacionesConfig");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -916,10 +940,14 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<IReadOnlyList<ConversacionReglaDto>> GetReglasAsync(CancellationToken ct = default)
+        => GetReglasAsync(null, ct);
+
+    public Task<IReadOnlyList<ConversacionReglaDto>> GetReglasAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetReglas", async token =>
         {
             var reglas = new List<ConversacionReglaDto>();
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetReglas");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
 
             // La tabla puede no existir todavía en bases donde no corrió la migración: devolvemos vacío.
@@ -1130,9 +1158,13 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(CancellationToken ct = default)
+        => GetPrioridadConfigAsync(null, ct);
+
+    public Task<ConversacionPrioridadConfigDto> GetPrioridadConfigAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetPrioridadConfig", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetPrioridadConfig");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -1214,9 +1246,13 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(CancellationToken ct = default)
+        => GetClasificacionesAsync(null, ct);
+
+    public Task<IReadOnlyList<ConversacionClasificacionOptionDto>> GetClasificacionesAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetClasificaciones", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetClasificaciones");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
 
             // El código se devuelve SIN espacios: los códigos de TA_CLASIFICACIONES vienen
@@ -1243,13 +1279,17 @@ public sealed class ConversacionesConfigService(
     // IConversacionesConfigService -- inyectar AutorizacionTareasService acá cierra un ciclo en el
     // contenedor de DI y tira "circular dependency detected" al arrancar la app.
     public Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(CancellationToken ct = default)
+        => GetUsuariosSistemaAsync(null, ct);
+
+    public Task<IReadOnlyList<UsuarioSistemaDto>> GetUsuariosSistemaAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetUsuariosSistema", async token =>
         {
             var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
             if (sistema.Length == 0)
                 return (IReadOnlyList<UsuarioSistemaDto>)Array.Empty<UsuarioSistemaDto>();
 
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetUsuariosSistema");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
 
             const string tableExistsSql = "SELECT COUNT(1) FROM sys.tables WHERE object_id = OBJECT_ID(N'dbo.TA_USUARIOS');";
@@ -1666,9 +1706,13 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default)
+        => GetConversacionAdministradoresAsync(null, ct);
+
+    public Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversacionAdministradores", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetConversacionAdministradores");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
 
             var sistema = (appUserSession.CurrentUser?.SystemCode ?? string.Empty).Trim().ToUpperInvariant();
