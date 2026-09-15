@@ -1305,7 +1305,9 @@ public sealed class ConversacionesConfigService(
                     {SelectNullableIntColumn(numeroColumns, "WebWorkerProcessId")},
                     {SelectNullableDateColumn(numeroColumns, "WebPairingGeneratedAtUtc")},
                     {SelectNullableDateColumn(numeroColumns, "WebPairingExpiresAtUtc")},
-                    {SelectNullableDateColumn(numeroColumns, "WebRuntimeUpdatedAtUtc")}
+                    {SelectNullableDateColumn(numeroColumns, "WebRuntimeUpdatedAtUtc")},
+                    {SelectStringColumn(numeroColumns, "MetaBusinessId")},
+                    {SelectStringColumn(numeroColumns, "WabaId")}
                 FROM dbo.CONV_WHATSAPP_NUMEROS
                 ORDER BY Nombre;
                 """;
@@ -1543,6 +1545,17 @@ public sealed class ConversacionesConfigService(
 
         await using var cn = new SqlConnection(connectionString);
         await cn.OpenAsync(ct);
+
+        // Columnas opcionales (Portfolio/WABA) -- self-tolerant: si la base todavía no corrió la
+        // actualización que las agrega, simplemente no se completan (el alta operativa nunca debe
+        // fallar por esto). Se consulta ANTES de abrir la transacción: GetTableColumnsAsync no recibe
+        // la transacción y fallaría si corriera dentro de ella.
+        var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", ct);
+        var hasMetaBusinessId = HasColumn(numeroColumns, "MetaBusinessId");
+        var hasWabaId = HasColumn(numeroColumns, "WabaId");
+        var metaBusinessId = (numero.MetaBusinessId ?? string.Empty).Trim();
+        var wabaId = (numero.WabaId ?? string.Empty).Trim();
+
         await using var tx = await cn.BeginTransactionAsync(ct);
 
         const string findSql = """
@@ -1560,10 +1573,12 @@ public sealed class ConversacionesConfigService(
 
         if (idNumero > 0)
         {
-            const string updateSql = """
+            var updateSql = $"""
                 UPDATE dbo.CONV_WHATSAPP_NUMEROS
                 SET Nombre = @Nombre,
                     Activo = @Activo,
+                    {(hasMetaBusinessId ? "MetaBusinessId = @MetaBusinessId," : "")}
+                    {(hasWabaId ? "WabaId = @WabaId," : "")}
                     FechaHora_Modificacion = GETDATE()
                 WHERE IdNumero = @IdNumero;
                 """;
@@ -1571,19 +1586,25 @@ public sealed class ConversacionesConfigService(
             update.Parameters.AddWithValue("@Nombre", nombre);
             update.Parameters.AddWithValue("@Activo", numero.Activo);
             update.Parameters.AddWithValue("@IdNumero", idNumero);
+            if (hasMetaBusinessId) update.Parameters.AddWithValue("@MetaBusinessId", DbNullable(metaBusinessId));
+            if (hasWabaId) update.Parameters.AddWithValue("@WabaId", DbNullable(wabaId));
             await update.ExecuteNonQueryAsync(ct);
         }
         else
         {
-            const string insertSql = """
-                INSERT INTO dbo.CONV_WHATSAPP_NUMEROS (PhoneNumberId, Nombre, Activo)
+            var insertColumns = "PhoneNumberId, Nombre, Activo" + (hasMetaBusinessId ? ", MetaBusinessId" : "") + (hasWabaId ? ", WabaId" : "");
+            var insertValues = "@PhoneNumberId, @Nombre, @Activo" + (hasMetaBusinessId ? ", @MetaBusinessId" : "") + (hasWabaId ? ", @WabaId" : "");
+            var insertSql = $"""
+                INSERT INTO dbo.CONV_WHATSAPP_NUMEROS ({insertColumns})
                 OUTPUT INSERTED.IdNumero
-                VALUES (@PhoneNumberId, @Nombre, @Activo);
+                VALUES ({insertValues});
                 """;
             await using var insert = new SqlCommand(insertSql, cn, (SqlTransaction)tx);
             insert.Parameters.AddWithValue("@PhoneNumberId", phoneNumberId);
             insert.Parameters.AddWithValue("@Nombre", nombre);
             insert.Parameters.AddWithValue("@Activo", numero.Activo);
+            if (hasMetaBusinessId) insert.Parameters.AddWithValue("@MetaBusinessId", DbNullable(metaBusinessId));
+            if (hasWabaId) insert.Parameters.AddWithValue("@WabaId", DbNullable(wabaId));
             idNumero = (int)(await insert.ExecuteScalarAsync(ct))!;
         }
 
@@ -1594,8 +1615,89 @@ public sealed class ConversacionesConfigService(
             PhoneNumberId = phoneNumberId,
             Nombre = nombre,
             Activo = numero.Activo,
+            MetaBusinessId = metaBusinessId,
+            WabaId = wabaId,
             Usuarios = []
         };
+    }
+
+    public Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetPortfolioNames", async token =>
+        {
+            var ids = (metaBusinessIds ?? []).Select(id => (id ?? string.Empty).Trim()).Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+            var empty = (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(StringComparer.Ordinal);
+            if (ids.Length == 0)
+                return empty;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var portfolioColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS", token);
+            if (portfolioColumns.Count == 0)
+                return empty; // Tabla todavía no existe en esta base -- no es un error, sólo "sin caché todavía".
+
+            var inClause = string.Join(",", ids.Select((_, index) => $"@Id{index}"));
+            var sql = $"""
+                SELECT MetaBusinessId, PortfolioName
+                FROM dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS
+                WHERE MetaBusinessId IN ({inClause});
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            for (var index = 0; index < ids.Length; index++)
+                cmd.Parameters.AddWithValue($"@Id{index}", ids[index]);
+
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+                result[GetString(rd, 0)] = GetString(rd, 1);
+
+            return (IReadOnlyDictionary<string, string>)result;
+        }, "No se pudieron cargar los nombres de portfolio de WhatsApp.", ct);
+
+    public async Task SetPortfolioNameAsync(int idBase, string metaBusinessId, string portfolioName, CancellationToken ct = default)
+    {
+        var businessId = (metaBusinessId ?? string.Empty).Trim();
+        var name = (portfolioName ?? string.Empty).Trim();
+        if (idBase <= 0 || businessId.Length == 0 || name.Length == 0)
+            return;
+
+        try
+        {
+            var baseInfo = await centralBasesService.GetByIdAsync(idBase, ct);
+            if (baseInfo is null)
+                return;
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(ct);
+            var portfolioColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS", ct);
+            if (portfolioColumns.Count == 0)
+                return; // Tabla todavía no existe en esta base -- nunca falla el onboarding por esto.
+
+            const string sql = """
+                MERGE dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS AS target
+                USING (SELECT @MetaBusinessId AS MetaBusinessId) AS source
+                ON target.MetaBusinessId = source.MetaBusinessId
+                WHEN MATCHED THEN UPDATE SET PortfolioName = @PortfolioName, ModifiedAtUtc = @NowUtc
+                WHEN NOT MATCHED THEN INSERT (MetaBusinessId, PortfolioName, ModifiedAtUtc) VALUES (@MetaBusinessId, @PortfolioName, @NowUtc);
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@MetaBusinessId", businessId);
+            cmd.Parameters.AddWithValue("@PortfolioName", name);
+            cmd.Parameters.AddWithValue("@NowUtc", DateTime.UtcNow);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Best-effort: nunca debe poder tirar abajo el alta operativa de un número por esto.
+        }
     }
 
     public Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default)
@@ -2416,7 +2518,9 @@ public sealed class ConversacionesConfigService(
             WebWorkerProcessId = rd.IsDBNull(14) ? null : rd.GetInt32(14),
             WebPairingGeneratedAtUtc = rd.IsDBNull(15) ? null : rd.GetDateTime(15),
             WebPairingExpiresAtUtc = rd.IsDBNull(16) ? null : rd.GetDateTime(16),
-            WebRuntimeUpdatedAtUtc = rd.IsDBNull(17) ? null : rd.GetDateTime(17)
+            WebRuntimeUpdatedAtUtc = rd.IsDBNull(17) ? null : rd.GetDateTime(17),
+            MetaBusinessId = GetString(rd, 18),
+            WabaId = GetString(rd, 19)
         };
     }
 

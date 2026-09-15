@@ -250,6 +250,10 @@
                             {
                                 <span>@numero.Usuarios.Count usuario(s)</span>
                             }
+                            @if (GetPortfolioDisplayLine(numero) is { } portfolioLineList)
+                            {
+                                <span>@portfolioLineList</span>
+                            }
                         </span>
                     </button>
                 }
@@ -395,7 +399,14 @@
                     }
                     <div class="wa-business-block">
                         <h3>Identificación</h3>
-                        <dl class="wa-business-definition"><div><dt>Nombre</dt><dd>@GetNumeroDisplayName(selectedNumero)</dd></div><div><dt>Conexión</dt><dd>AlfaCore</dd></div></dl>
+                        <dl class="wa-business-definition">
+                            <div><dt>Nombre</dt><dd>@GetNumeroDisplayName(selectedNumero)</dd></div>
+                            <div><dt>Conexión</dt><dd>AlfaCore</dd></div>
+                            @if (GetPortfolioName(selectedNumero) is { } portfolioNameDetail)
+                            {
+                                <div><dt>Portfolio</dt><dd>@portfolioNameDetail</dd></div>
+                            }
+                        </dl>
                     </div>
                     @if (GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.History) is not null
                         || GetCoexistenceSyncStatus(selectedNumero.PhoneNumberId, AlfaCore.Models.WhatsAppCoexistenceSyncType.ContactState) is not null)
@@ -427,7 +438,20 @@
                     </div>
                     <details class="wa-api-technical">
                         <summary>Información técnica</summary>
-                        <dl class="wa-business-definition wa-api-technical__body"><div><dt>ID interno</dt><dd>@selectedNumero.IdNumero</dd></div><div><dt>Phone Number ID</dt><dd>@selectedNumero.PhoneNumberId</dd></div><div><dt>Proveedor</dt><dd>Meta Cloud API</dd></div></dl>
+                        <dl class="wa-business-definition wa-api-technical__body">
+                            <div><dt>ID interno</dt><dd>@selectedNumero.IdNumero</dd></div>
+                            <div><dt>Phone Number ID</dt><dd>@selectedNumero.PhoneNumberId</dd></div>
+                            <div><dt>Proveedor</dt><dd>Meta Cloud API</dd></div>
+                            @if (!string.IsNullOrWhiteSpace(selectedNumero.WabaId))
+                            {
+                                <div><dt>WABA ID</dt><dd>@selectedNumero.WabaId</dd></div>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(selectedNumero.MetaBusinessId))
+                            {
+                                <div><dt>Portfolio ID</dt><dd>@selectedNumero.MetaBusinessId</dd></div>
+                                <div><dt>Portfolio Name</dt><dd>@GetPortfolioName(selectedNumero)</dd></div>
+                            }
+                        </dl>
                     </details>
                 }
                 else if (!_whatsAppConnectionsLoaded)
@@ -1991,6 +2015,7 @@
     private IReadOnlyList<UsuarioSistemaDto> _usuariosSistema = [];
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> _numeros = [];
     private HashSet<int> _blockedNumeroIds = [];
+    private IReadOnlyDictionary<string, string> _portfolioNamesByBusinessId = new Dictionary<string, string>(StringComparer.Ordinal);
     private IReadOnlyList<AlfaCore.Models.WhatsAppCoexistenceSyncDto> _coexistenceSyncStatuses = [];
     private Func<Task>? _pendingNavigation;
     private bool _discardChangesDialogOpen;
@@ -4170,6 +4195,7 @@
                 _selectedBusinessNumeroId = ActiveBusinessNumeros.FirstOrDefault()?.IdNumero;
 
             await RefreshBlockedNumeroIdsAsync();
+            await RefreshPortfolioNamesAsync();
         }
         else
         {
@@ -4177,6 +4203,60 @@
         }
 
     }
+
+    /// <summary>
+    /// Una sola consulta en lote por refresh (nunca un GET a Meta) -- resuelve el NOMBRE de portfolio
+    /// para todos los MetaBusinessId conocidos de la lista. Un id sin entrada en el diccionario resultante
+    /// significa "portfolio conocido pero nombre todavía no cacheado" (ver GetPortfolioDisplayLine).
+    /// </summary>
+    private async Task RefreshPortfolioNamesAsync()
+    {
+        try
+        {
+            var idsConocidos = WhatsAppApiNumeros
+                .Select(n => n.MetaBusinessId)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray();
+            _portfolioNamesByBusinessId = await ConfigSvc.GetPortfolioNamesAsync(idsConocidos, _lifetimeCts.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // No bloquear la lista por esto -- en el peor caso no se muestra el nombre hasta el próximo refresh.
+        }
+    }
+
+    /// <summary>
+    /// "Portfolio: &lt;nombre&gt;" para la fila de la lista y la sección "Identificación" del detalle --
+    /// null cuando el número no tiene MetaBusinessId conocido (p. ej. agregado manualmente por Phone
+    /// Number ID, nunca pasó por Embedded Signup) para no insinuar un concepto que no aplica. Cuando SÍ
+    /// hay MetaBusinessId pero el nombre todavía no se cacheó, muestra el fallback pedido explícitamente
+    /// ("no identificado") en vez de omitir la línea -- para no aparentar que no hay portfolio.
+    /// </summary>
+    /// <summary>Sólo el nombre (o el fallback) -- null cuando el número no tiene MetaBusinessId conocido.</summary>
+    private string? GetPortfolioName(ConversacionWhatsAppNumeroDto numero)
+        => ResolvePortfolioName(numero, _portfolioNamesByBusinessId);
+
+    private string? GetPortfolioDisplayLine(ConversacionWhatsAppNumeroDto numero)
+        => ResolvePortfolioDisplayLine(numero, _portfolioNamesByBusinessId);
+
+    /// <summary>
+    /// Pura y testeable directamente (mismo criterio que BuildPendingConnectionFeedbackPanel) -- toma el
+    /// diccionario como parámetro en vez de leer el campo de instancia, así un test puede armar dos
+    /// números con portfolios distintos y confirmar que nunca se mezclan sin tener que renderizar Razor.
+    /// </summary>
+    internal static string? ResolvePortfolioName(ConversacionWhatsAppNumeroDto numero, IReadOnlyDictionary<string, string> portfolioNamesByBusinessId)
+    {
+        if (string.IsNullOrWhiteSpace(numero.MetaBusinessId))
+            return null;
+
+        return portfolioNamesByBusinessId.TryGetValue(numero.MetaBusinessId, out var cached) && !string.IsNullOrWhiteSpace(cached)
+            ? cached
+            : "no identificado";
+    }
+
+    internal static string? ResolvePortfolioDisplayLine(ConversacionWhatsAppNumeroDto numero, IReadOnlyDictionary<string, string> portfolioNamesByBusinessId)
+        => ResolvePortfolioName(numero, portfolioNamesByBusinessId) is { } name ? $"Portfolio: {name}" : null;
 
     /// <summary>
     /// Una sola consulta en lote para TODOS los números de la lista -- nunca N+1 por fila. Alimenta

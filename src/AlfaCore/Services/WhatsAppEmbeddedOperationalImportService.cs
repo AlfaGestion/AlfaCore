@@ -106,6 +106,8 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
                 PhoneNumberId = phone.PhoneNumberId,
                 Nombre = phone.VerifiedName,
                 Activo = true,
+                MetaBusinessId = phone.MetaBusinessId,
+                WabaId = phone.WabaId,
                 Usuarios = []
             }, ct);
             imported.Add(new WhatsAppEmbeddedOperationalImportedNumber(
@@ -114,6 +116,12 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
                 phone.DisplayPhoneNumber,
                 phone.PhoneNumberId,
                 phone.WabaId));
+
+            // Oportunista: sólo cachea el nombre cuando ya se conoce (discovery lo trajo de todos modos
+            // para resolver el WABA/business) -- nunca dispara un GET a Meta sólo para esto, y nunca
+            // puede fallar el alta operativa (SetPortfolioNameAsync es best-effort).
+            if (!string.IsNullOrWhiteSpace(phone.BusinessName))
+                await conversacionesConfig.SetPortfolioNameAsync(activeBaseId, phone.MetaBusinessId, phone.BusinessName, ct);
         }
 
         await store.MarkReadyAsync(idOnboarding, ct);
@@ -351,7 +359,8 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
                     phone.DisplayPhoneNumber,
                     phone.VerifiedName,
                     phone.RegistrationStatus,
-                    phone.IsOnBizApp)));
+                    phone.IsOnBizApp,
+                    business.Name)));
             }
         }
 
@@ -368,7 +377,13 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
         string DisplayPhoneNumber,
         string VerifiedName,
         MetaPhoneRegistrationStatus RegistrationStatus,
-        bool IsOnBizApp = false);
+        bool IsOnBizApp = false,
+        /// <summary>
+        /// Nombre del Business/Portfolio -- sólo se conoce cuando el discovery pasó por
+        /// DiscoverAuthorizedBusinessesAsync (fields=id,name). Cuando el WABA ya era conocido
+        /// (context.WabaId) ese llamado no se hace -- vacío acá, NO un GET extra a Meta sólo para esto.
+        /// </summary>
+        string BusinessName = "");
 
     private sealed record PendingConnectionMetadata(
         string PhoneNumberId,

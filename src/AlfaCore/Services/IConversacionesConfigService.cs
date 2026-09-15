@@ -53,6 +53,21 @@ public interface IConversacionesConfigService
         CancellationToken ct = default);
     Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default);
 
+    /// <summary>
+    /// Nombre del Portfolio/Business de Meta para cada MetaBusinessId conocido (base activa de la
+    /// sesión) -- nunca pega contra Meta, sólo lee la caché local (dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS,
+    /// self-tolerant: base sin la tabla todavía = diccionario vacío, no un error). Ids que no están en el
+    /// resultado significan "portfolio conocido, nombre todavía no resuelto" -- no "sin portfolio".
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, CancellationToken ct = default);
+    /// <summary>
+    /// Guarda (best-effort) el nombre de un Portfolio/Business para reutilizarlo después sin volver a
+    /// preguntarle a Meta. Pensado para llamarse sólo cuando el nombre YA se obtuvo de una llamada a
+    /// Meta que iba a hacerse de todos modos (discovery de Embedded Signup) -- nunca dispara una llamada
+    /// nueva. Nunca debe poder fallar el flujo que la llama: ver WhatsAppEmbeddedOperationalImportService.
+    /// </summary>
+    Task SetPortfolioNameAsync(int idBase, string metaBusinessId, string portfolioName, CancellationToken ct = default);
+
     /// <summary>Usuarios marcados como administradores de Conversaciones (ven/responden por cualquier número).</summary>
     Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default);
     Task SaveConversacionAdministradoresAsync(IReadOnlyList<string> usuarios, CancellationToken ct = default);

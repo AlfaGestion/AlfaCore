@@ -388,6 +388,17 @@ public sealed class ConversacionWhatsAppNumeroDto
     public string PhoneNumberId { get; set; } = string.Empty;
     public string Nombre { get; set; } = string.Empty;
     public bool Activo { get; set; } = true;
+    /// <summary>
+    /// Id técnico del Business/Portfolio de Meta dueño de este número (viene de Embedded Signup, ver
+    /// AuthorizedPhoneForImport.MetaBusinessId). Vacío para números sin ese origen (p. ej. agregados por
+    /// Phone Number ID manualmente). Nunca se muestra al cliente -- sólo sirve para resolver el NOMBRE
+    /// del portfolio (WhatsAppConnectionCardStatusExtensions/ConversacionesConfiguracion lo resuelven vía
+    /// una consulta en lote, nunca un GET a Meta) y para la sección "Información técnica" de soporte.
+    /// </summary>
+    public string MetaBusinessId { get; set; } = string.Empty;
+    /// <summary>Id técnico de la WABA dueña de este número. Mismo origen y mismo criterio de visibilidad
+    /// que <see cref="MetaBusinessId"/> -- nunca al cliente, sólo soporte interno.</summary>
+    public string WabaId { get; set; } = string.Empty;
     public string WebSessionMode { get; set; } = ConversacionWhatsAppWebSessionModes.Qr;
     public string WebPhoneNumber { get; set; } = string.Empty;
     public string WebSessionStatus { get; set; } = ConversacionWhatsAppWebSessionStatuses.Disconnected;
