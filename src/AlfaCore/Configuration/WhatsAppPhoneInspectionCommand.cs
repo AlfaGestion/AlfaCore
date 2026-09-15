@@ -206,33 +206,60 @@ internal static class WhatsAppPhoneInspectionCommand
 
     private static string ClassifyNameStatus(string nameStatus, string newNameStatus, bool newCertificatePresent)
     {
-        if (string.Equals(nameStatus, "NO DISPONIBLE", StringComparison.Ordinal)
-            || string.Equals(newNameStatus, "NO DISPONIBLE", StringComparison.Ordinal))
-            return "D";
+        var nameKind = ClassifyMetaNameStatus(nameStatus);
+        var newNameKind = ClassifyMetaNameStatus(newNameStatus);
 
-        if (!string.Equals(nameStatus, "APPROVED", StringComparison.OrdinalIgnoreCase))
-            return "A";
+        if (newNameKind == "SUCCESS"
+            && string.Equals(newNameStatus, "APPROVED", StringComparison.OrdinalIgnoreCase)
+            && newCertificatePresent)
+            return "NAME_CHANGE_READY_TO_REGISTER";
 
-        if (string.Equals(newNameStatus, "APPROVED", StringComparison.OrdinalIgnoreCase) && newCertificatePresent)
-            return "B";
+        if (nameKind == "SUCCESS" && newNameKind == "SUCCESS")
+            return "SUCCESS";
 
-        if (string.Equals(nameStatus, "APPROVED", StringComparison.OrdinalIgnoreCase)
-            && string.Equals(newNameStatus, "APPROVED", StringComparison.OrdinalIgnoreCase))
-            return "C";
+        if (nameKind == "WAITING" || newNameKind == "WAITING")
+            return "WAITING";
 
-        return "D";
+        if (nameKind == "REJECTED" || newNameKind == "REJECTED")
+            return "REJECTED";
+
+        if (nameKind == "CERTIFICATE_PROBLEM" || newNameKind == "CERTIFICATE_PROBLEM")
+            return "CERTIFICATE_PROBLEM";
+
+        return "UNKNOWN";
+    }
+
+    private static string ClassifyMetaNameStatus(string status)
+    {
+        if (string.Equals(status, "APPROVED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "AVAILABLE_WITHOUT_REVIEW", StringComparison.OrdinalIgnoreCase))
+            return "SUCCESS";
+
+        if (string.Equals(status, "PENDING_REVIEW", StringComparison.OrdinalIgnoreCase))
+            return "WAITING";
+
+        if (string.Equals(status, "DECLINED", StringComparison.OrdinalIgnoreCase))
+            return "REJECTED";
+
+        if (string.Equals(status, "EXPIRED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "NONE", StringComparison.OrdinalIgnoreCase))
+            return "CERTIFICATE_PROBLEM";
+
+        return "UNKNOWN";
     }
 
     private static string RegistrationAfterNameChangeNeeded(string diagnosis)
-        => diagnosis == "B" ? "SI" : "NO CONFIRMABLE";
+        => diagnosis == "NAME_CHANGE_READY_TO_REGISTER" ? "SI" : diagnosis == "UNKNOWN" ? "NO CONFIRMABLE" : "NO";
 
     private static string BuildNameStatusEvidence(string diagnosis, string nameStatus, string newNameStatus, bool newCertificatePresent)
         => diagnosis switch
         {
-            "A" => $"A) name_status != APPROVED ({nameStatus}).",
-            "B" => $"B) new_name_status = APPROVED y new_certificate presente ({newCertificatePresent}).",
-            "C" => "C) name_status y new_name_status APPROVED; si el outbound sigue en 131037, Meta sigue rechazando pese a esos estados.",
-            _ => $"D) campos no disponibles o combinacion no concluyente (name_status={nameStatus}, new_name_status={newNameStatus}, new_certificate_present={newCertificatePresent})."
+            "NAME_CHANGE_READY_TO_REGISTER" => "NAME_CHANGE_READY_TO_REGISTER) new_name_status = APPROVED y new_certificate presente.",
+            "SUCCESS" => "SUCCESS) name_status/new_name_status listos para uso (APPROVED o AVAILABLE_WITHOUT_REVIEW).",
+            "WAITING" => $"WAITING) Meta todavía tiene revisión pendiente (name_status={nameStatus}, new_name_status={newNameStatus}).",
+            "REJECTED" => $"REJECTED) Meta rechazó el nombre visible (name_status={nameStatus}, new_name_status={newNameStatus}).",
+            "CERTIFICATE_PROBLEM" => $"CERTIFICATE_PROBLEM) Meta informa problema de certificado/status (name_status={nameStatus}, new_name_status={newNameStatus}).",
+            _ => $"UNKNOWN) combinación no concluyente (name_status={nameStatus}, new_name_status={newNameStatus}, new_certificate_present={newCertificatePresent})."
         };
 
     private static JsonElement? FindPhoneNumber(JsonElement root, string phoneNumberId)
