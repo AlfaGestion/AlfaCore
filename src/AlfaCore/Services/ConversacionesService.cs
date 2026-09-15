@@ -12802,7 +12802,7 @@ public sealed class ConversacionesService(
         return propertyName.Length > 0 && message.TryGetProperty(propertyName, out media) && media.ValueKind == JsonValueKind.Object;
     }
 
-    private static string ExtractIncomingText(JsonElement message, string type)
+    internal static string ExtractIncomingText(JsonElement message, string type)
     {
         if (string.Equals(type, "text", StringComparison.OrdinalIgnoreCase) &&
             message.TryGetProperty("text", out var text) &&
@@ -14160,7 +14160,7 @@ public sealed class ConversacionesService(
         return normalized.Length <= 160 ? normalized : normalized[..160];
     }
 
-    private static string NormalizeMessageType(string? messageType)
+    internal static string NormalizeMessageType(string? messageType)
     {
         var normalized = string.IsNullOrWhiteSpace(messageType) ? "TEXT" : messageType.Trim().ToUpperInvariant();
         return normalized switch
@@ -14176,6 +14176,11 @@ public sealed class ConversacionesService(
             "BUTTON" or "INTERACTIVE" => "TEXT",
             "REACTION" => "REACTION",
             "SYSTEM" => "SYSTEM",
+            // ExtractIncomingText ya tenía un extractor dedicado para "order" (ExtractOrderText,
+            // "Pedido de catálogo recibido...") desde antes de esta auditoría -- pero al no estar
+            // clasificado acá, un mensaje de pedido real terminaba con MessageType=UNKNOWN y la UI
+            // descartaba ese texto ya armado para mostrar el genérico "tipo no compatible" en su lugar.
+            "ORDER" => "ORDER",
             _ => "UNKNOWN"
         };
     }

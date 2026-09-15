@@ -11407,6 +11407,7 @@
         {
             "NOTA_INTERNA" => "Nota interna",
             _ when IsUnsupportedMessage(message) => "No compatible",
+            _ when string.Equals(message.MessageType, "ORDER", StringComparison.OrdinalIgnoreCase) => "Pedido",
             _ => message.MessageType
         };
 
@@ -11938,7 +11939,7 @@
                && Path.HasExtension(text);
     }
 
-    private static string GetMessageDisplayText(ConversacionMensajeDto message)
+    internal static string GetMessageDisplayText(ConversacionMensajeDto message)
     {
         if (!IsUnsupportedMessage(message))
             return message.Texto;
@@ -12277,7 +12278,16 @@
         }
     }
 
-    private static string ExtractUnsupportedType(string payloadJson)
+    /// <summary>
+    /// BUG REAL encontrado al auditar (Prioridad 4): esto buscaba "unsupported.type" en la RAÍZ del
+    /// PayloadJson, pero BuildIncomingWhatsAppMessagePayloadJson (ConversacionesService, usada tanto
+    /// para mensajes en vivo como para history/echoes) siempre envuelve el mensaje real de Meta como
+    /// {metadata:{...}, message:{...}} -- el tipo real está en message.type, no en un "unsupported"
+    /// suelto en la raíz (que nunca existió con esa forma). Por eso el mensaje siempre caía al genérico
+    /// "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo." aunque Meta sí
+    /// mandara el nombre real del tipo.
+    /// </summary>
+    internal static string ExtractUnsupportedType(string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(payloadJson))
             return string.Empty;
@@ -12285,11 +12295,17 @@
         try
         {
             using var doc = JsonDocument.Parse(payloadJson);
-            if (doc.RootElement.TryGetProperty("unsupported", out var unsupported)
-                && unsupported.ValueKind == JsonValueKind.Object
-                && unsupported.TryGetProperty("type", out var typeProp))
+            var message = doc.RootElement.TryGetProperty("message", out var messageProp) && messageProp.ValueKind == JsonValueKind.Object
+                ? messageProp
+                : doc.RootElement;
+
+            if (message.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String)
             {
-                return typeProp.GetString() ?? string.Empty;
+                var type = typeProp.GetString() ?? string.Empty;
+                // "unsupported" a secas no es un nombre de tipo útil para mostrar -- es la etiqueta que
+                // Meta usa cuando NO puede identificar el tipo real (ver ExtractUnsupportedReason para
+                // el motivo que si vino, vía message.errors).
+                return string.Equals(type, "unsupported", StringComparison.OrdinalIgnoreCase) ? string.Empty : type;
             }
         }
         catch (JsonException)
@@ -12300,7 +12316,7 @@
         return string.Empty;
     }
 
-    private static string ExtractUnsupportedReason(string payloadJson)
+    internal static string ExtractUnsupportedReason(string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(payloadJson))
             return string.Empty;
@@ -12308,7 +12324,12 @@
         try
         {
             using var doc = JsonDocument.Parse(payloadJson);
-            if (!doc.RootElement.TryGetProperty("errors", out var errors) || errors.ValueKind != JsonValueKind.Array)
+            // Mismo bug de path que ExtractUnsupportedType: "errors" viene dentro de message.errors
+            // (la forma real que manda Meta para type=unsupported), no en la raíz del wrapper.
+            var metaMessage = doc.RootElement.TryGetProperty("message", out var metaMessageProp) && metaMessageProp.ValueKind == JsonValueKind.Object
+                ? metaMessageProp
+                : doc.RootElement;
+            if (!metaMessage.TryGetProperty("errors", out var errors) || errors.ValueKind != JsonValueKind.Array)
                 return string.Empty;
 
             foreach (var error in errors.EnumerateArray())
