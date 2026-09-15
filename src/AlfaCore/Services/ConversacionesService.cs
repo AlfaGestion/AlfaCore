@@ -92,22 +92,30 @@ public sealed class ConversacionesService(
           ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
 
     private string GetConnectionStringForExpectedTenant(int? expectedBaseId, string operation)
-    {
-        EnsureExpectedTenant(expectedBaseId, operation);
-        return ConnectionString;
-    }
+        => ResolveTenantConnection(expectedBaseId, operation).ConnectionString;
 
-    private void EnsureExpectedTenant(int? expectedBaseId, string operation)
+    private TenantConnectionContext ResolveTenantConnection(int? expectedBaseId, string operation)
     {
-        if (expectedBaseId is not > 0)
-            return;
-
         var active = sessionService.GetActiveSession();
-        if (active?.BaseId != expectedBaseId)
-        {
+        if (expectedBaseId is > 0 && active?.BaseId != expectedBaseId.Value)
             throw new InvalidOperationException(
                 $"La sesión activa no coincide con la base solicitada para Conversaciones.{operation}.");
+
+        if (active is not null)
+        {
+            return new TenantConnectionContext(active.BaseId, new SqlConnectionStringBuilder
+            {
+                DataSource = active.Servidor,
+                InitialCatalog = active.BaseDatos,
+                UserID = active.Usuario,
+                Password = active.Password,
+                TrustServerCertificate = active.TrustServerCertificate,
+                ApplicationName = "AlfaCore"
+            }.ConnectionString);
         }
+
+        return new TenantConnectionContext(null, configuration.GetConnectionString("AlfaGestion")
+            ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'."));
     }
 
     private void LogInboxConnection(ConversacionesInboxFilters filters, SqlConnection connection)
@@ -2689,7 +2697,8 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "GetTemplates", async token =>
         {
             filters ??= new();
-            var templateContext = await ResolveTemplateContextAsync(filters.IdNumeroWhatsApp, token);
+            var tenant = ResolveTenantConnection(filters.ExpectedBaseId, "GetTemplates");
+            var templateContext = await ResolveTemplateContextAsync(filters.IdNumeroWhatsApp, filters.ExpectedBaseId, tenant.ConnectionString, token);
             const string sql = """
                 SELECT
                     IdPlantilla,
@@ -2725,7 +2734,7 @@ public sealed class ConversacionesService(
                 """;
 
             var items = new List<ConversacionPlantillaDto>();
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IncluirInactivas", filters.IncluirInactivas);
@@ -2740,15 +2749,19 @@ public sealed class ConversacionesService(
         }, "No se pudieron cargar las plantillas de WhatsApp.", ct);
 
     public Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesForConversationAsync(long idConversacion, CancellationToken ct = default)
+        => GetTemplatesForConversationAsync(idConversacion, null, ct);
+
+    public Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesForConversationAsync(long idConversacion, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTemplatesForConversation", async token =>
         {
-            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(idConversacion, token);
-            var conversation = await RequireConversationAsync(idConversacion, token);
-            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
-            var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(sessionService.GetActiveSession()?.BaseId ?? 0,
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetTemplatesForConversation");
+            await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(idConversacion, tenant.ConnectionString, token);
+            var conversation = await RequireConversationAsync(idConversacion, tenant.ConnectionString, token);
+            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(tenant.ConnectionString, token);
+            var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(tenant.BaseId ?? expectedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0,
                 conversation.IdNumeroWhatsApp, conversation.PhoneNumberId, config, token);
             if (runtime.Origin == WhatsAppRuntimeCredentialOrigin.Legacy)
-                return await GetTemplatesAsync(new ConversacionPlantillaFilters { EstadoMeta = "APPROVED" }, token);
+                return await GetTemplatesAsync(new ConversacionPlantillaFilters { ExpectedBaseId = expectedBaseId, EstadoMeta = "APPROVED" }, token);
             var reference = runtime.CredentialReference
                 ?? throw new InvalidOperationException("La referencia segura de Meta no está disponible.");
             var templates = await metaWhatsAppManagementClient.DiscoverTemplatesAsync(runtime.WabaId, reference, token);
@@ -2757,8 +2770,12 @@ public sealed class ConversacionesService(
         }, "No se pudieron cargar las plantillas aprobadas de este WhatsApp.", ct);
 
     public Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, CancellationToken ct = default)
+        => GetTemplateAsync(idPlantilla, null, ct);
+
+    public Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTemplate", async token =>
         {
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetTemplate");
             const string sql = """
                 SELECT
                     IdPlantilla,
@@ -2783,7 +2800,7 @@ public sealed class ConversacionesService(
                 WHERE IdPlantilla = @IdPlantilla
                 """;
 
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
@@ -7138,6 +7155,9 @@ public sealed class ConversacionesService(
     }
 
     private async Task<ConversationIdentity> RequireConversationAsync(long idConversacion, CancellationToken ct)
+        => await RequireConversationAsync(idConversacion, ConnectionString, ct);
+
+    private static async Task<ConversationIdentity> RequireConversationAsync(long idConversacion, string connectionString, CancellationToken ct)
     {
         const string sql = """
             SELECT TOP (1)
@@ -7153,7 +7173,7 @@ public sealed class ConversacionesService(
             WHERE c.IdConversacion = @IdConversacion
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
@@ -13534,19 +13554,30 @@ public sealed class ConversacionesService(
     private sealed record TemplateContext(string? WabaId, ConversacionWhatsAppConfigDto Config);
 
     private async Task<TemplateContext> ResolveTemplateContextAsync(int? idNumeroWhatsApp, CancellationToken ct)
+        => await ResolveTemplateContextAsync(idNumeroWhatsApp, null, null, ct);
+
+    private async Task<TemplateContext> ResolveTemplateContextAsync(int? idNumeroWhatsApp, int? expectedBaseId, string? connectionString, CancellationToken ct)
     {
-        var config = await conversacionesConfigService.GetWhatsAppConfigAsync(ct);
+        var config = string.IsNullOrWhiteSpace(connectionString)
+            ? await conversacionesConfigService.GetWhatsAppConfigAsync(ct)
+            : await conversacionesConfigService.GetWhatsAppConfigAsync(connectionString, ct);
         if (idNumeroWhatsApp is not > 0)
             return new(null, config);
 
-        await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct);
-        var numero = await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct)
-            ?? throw new InvalidOperationException("El WhatsApp seleccionado ya no está disponible.");
+        if (string.IsNullOrWhiteSpace(connectionString))
+            await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct);
+        else
+            await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, connectionString, ct);
+        var numero = expectedBaseId is > 0
+            ? await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, expectedBaseId, ct)
+            : await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct);
+        if (numero is null)
+            throw new InvalidOperationException("El WhatsApp seleccionado ya no está disponible.");
         if (!numero.Activo || string.IsNullOrWhiteSpace(numero.PhoneNumberId))
             throw new InvalidOperationException("El WhatsApp seleccionado no está operativo.");
 
         var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(
-            sessionService.GetActiveSession()?.BaseId ?? 0,
+            expectedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0,
             numero.IdNumero,
             numero.PhoneNumberId,
             config,
@@ -14776,6 +14807,8 @@ public sealed class ConversacionesService(
     }
 
     private sealed record ConversationStateSummary(string CodigoEstado, string Descripcion);
+
+    private sealed record TenantConnectionContext(int? BaseId, string ConnectionString);
 
     private sealed record TypingPresence(
         string ActorKey,

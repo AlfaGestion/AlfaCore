@@ -3,6 +3,8 @@
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
@@ -98,7 +100,7 @@
                     <span>Incluir inactivas</span>
                     <input type="checkbox" @bind="_filters.IncluirInactivas" />
                 </label>
-                <button type="button" class="btn btn--primary" @onclick="LoadTemplatesAsync" disabled="@_loading">
+                <button type="button" class="btn btn--primary" @onclick="() => LoadTemplatesAsync()" disabled="@_loading">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
                 <button type="button"
@@ -328,6 +330,8 @@
     private bool _confirmArchive;
     private string _crearSeleccion = CrearOpciones.Crear;
     private int _crearPulseVersion;
+    private int _loadGeneration;
+    private bool _syncingRouteTenant;
 
     private const string MultiValueSeparator = "---";
     private const int MetaBodyMaxLength = 550;
@@ -471,19 +475,161 @@
            && !IsBodyTooLong
            && !HasBeenSubmittedToMeta;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         UpdatePageHeader();
-        _whatsappNumeros = await ConfigSvc.GetWhatsAppNumerosAsync();
-        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
-        if (query.TryGetValue("idNumero", out var idNumeroRaw)
-            && int.TryParse(idNumeroRaw.ToString(), out var idNumero)
-            && TemplateWhatsAppNumeros.Any(x => x.IdNumero == idNumero))
-            _filters.IdNumeroWhatsApp = idNumero;
-        else
-            _filters.IdNumeroWhatsApp = TemplateWhatsAppNumeros.FirstOrDefault()?.IdNumero;
-        await LoadTemplatesAsync();
+        SessionSvc.SessionChanged += OnTenantContextChanged;
+        AppUserSession.StateChanged += OnTenantContextChanged;
     }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadRouteTenantAsync();
+    }
+
+    private async Task LoadRouteTenantAsync()
+    {
+        var generation = ++_loadGeneration;
+        ResetTenantData();
+        _loading = true;
+        _loadError = null;
+
+        if (!TryResolveExpectedBaseId(out var expectedBaseId))
+        {
+            _loadError = "No se pudo abrir la información de esta base.";
+            _loading = false;
+            return;
+        }
+
+        if (!EnsureRouteTenantReady(expectedBaseId))
+        {
+            if (generation == _loadGeneration)
+            {
+                _loadError = "No se pudo abrir la información de esta base.";
+                _loading = false;
+            }
+            return;
+        }
+
+        try
+        {
+            var numeros = await ConfigSvc.GetWhatsAppNumerosAsync(expectedBaseId);
+            if (!IsCurrentRequest(generation, expectedBaseId, null))
+                return;
+
+            _whatsappNumeros = numeros;
+            _filters = new ConversacionPlantillaFilters { ExpectedBaseId = expectedBaseId };
+
+            var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(Nav.ToAbsoluteUri(Nav.Uri).Query);
+            if (query.TryGetValue("idNumero", out var idNumeroRaw)
+                && int.TryParse(idNumeroRaw.ToString(), out var idNumero)
+                && TemplateWhatsAppNumeros.Any(x => x.IdNumero == idNumero))
+                _filters.IdNumeroWhatsApp = idNumero;
+            else
+                _filters.IdNumeroWhatsApp = TemplateWhatsAppNumeros.FirstOrDefault()?.IdNumero;
+
+            await LoadTemplatesAsync(generation);
+        }
+        catch (Exception)
+        {
+            if (generation == _loadGeneration)
+                _loadError = "No se pudo abrir la información de esta base.";
+        }
+        finally
+        {
+            if (generation == _loadGeneration)
+                _loading = false;
+        }
+    }
+
+    private bool TryResolveExpectedBaseId(out int? expectedBaseId)
+    {
+        expectedBaseId = null;
+        if (idbase > 0)
+        {
+            expectedBaseId = idbase;
+            return true;
+        }
+
+        return !AppMode.IsSaaSMode;
+    }
+
+    private bool EnsureRouteTenantReady(int? expectedBaseId)
+    {
+        if (expectedBaseId is not > 0)
+            return true;
+
+        var active = SessionSvc.GetActiveSession();
+        if (active?.BaseId == expectedBaseId.Value)
+            return AppUserSession.IsAuthorizedForSession(active.Id);
+
+        var routeSession = SessionSvc.GetAllSessions().FirstOrDefault(x => x.BaseId == expectedBaseId.Value);
+        if (routeSession is null)
+            return false;
+
+        try
+        {
+            _syncingRouteTenant = true;
+            SessionSvc.SwitchSession(routeSession.Id);
+        }
+        finally
+        {
+            _syncingRouteTenant = false;
+        }
+
+        active = SessionSvc.GetActiveSession();
+        return active?.BaseId == expectedBaseId.Value
+               && AppUserSession.IsAuthorizedForSession(active.Id);
+    }
+
+    private bool IsCurrentRequest(int generation, int? expectedBaseId, int? selectedNumeroId)
+    {
+        if (generation != _loadGeneration)
+            return false;
+
+        if (!TryResolveExpectedBaseId(out var currentExpectedBaseId) || currentExpectedBaseId != expectedBaseId)
+            return false;
+
+        return selectedNumeroId is null || _filters.IdNumeroWhatsApp == selectedNumeroId;
+    }
+
+    private void ResetTenantData()
+    {
+        _whatsappNumeros = [];
+        _allTemplates = [];
+        _templates = [];
+        _filters = new ConversacionPlantillaFilters();
+        _selectedId = 0;
+        _form = NewForm();
+        _examplesText = string.Empty;
+        _formEstadoMeta = "DRAFT";
+        _feedback = null;
+        _error = null;
+        _errorDetail = null;
+        _showErrorDetail = false;
+        _confirmArchive = false;
+    }
+
+    private void OnTenantContextChanged()
+    {
+        if (_syncingRouteTenant)
+            return;
+
+        _ = InvokeAsync(LoadRouteTenantAsync);
+    }
+
+    private int? CurrentExpectedBaseIdOrNull()
+        => TryResolveExpectedBaseId(out var expectedBaseId) ? expectedBaseId : null;
+
+    private ConversacionPlantillaFilters BuildCurrentFilters()
+        => new()
+        {
+            ExpectedBaseId = CurrentExpectedBaseIdOrNull(),
+            IdNumeroWhatsApp = _filters.IdNumeroWhatsApp,
+            Search = _filters.Search,
+            EstadoMeta = _filters.EstadoMeta,
+            IncluirInactivas = _filters.IncluirInactivas
+        };
 
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> TemplateWhatsAppNumeros
         => _whatsappNumeros
@@ -504,10 +650,14 @@
             || !TemplateWhatsAppNumeros.Any(x => x.IdNumero == idNumero))
             return;
 
+        var generation = ++_loadGeneration;
         _filters.IdNumeroWhatsApp = idNumero;
+        _filters.ExpectedBaseId = CurrentExpectedBaseIdOrNull();
         _selectedId = 0;
         NuevaPlantilla();
-        await LoadTemplatesAsync();
+        _allTemplates = [];
+        _templates = [];
+        await LoadTemplatesAsync(generation);
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -521,7 +671,12 @@
             UpdatePageHeader();
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        SessionSvc.SessionChanged -= OnTenantContextChanged;
+        AppUserSession.StateChanged -= OnTenantContextChanged;
+        PageHeader.Clear();
+    }
 
     private void UpdatePageHeader()
     {
@@ -566,24 +721,50 @@
         };
     }
 
-    private async Task LoadTemplatesAsync()
+    private async Task LoadTemplatesAsync(int? existingGeneration = null)
     {
+        if (!TryResolveExpectedBaseId(out var expectedBaseId))
+        {
+            ResetTenantData();
+            _loadError = "No se pudo abrir la información de esta base.";
+            return;
+        }
+
+        if (!EnsureRouteTenantReady(expectedBaseId))
+        {
+            ResetTenantData();
+            _loadError = "No se pudo abrir la información de esta base.";
+            return;
+        }
+
+        var generation = existingGeneration ?? ++_loadGeneration;
+        var selectedNumeroId = _filters.IdNumeroWhatsApp;
+        _filters.ExpectedBaseId = expectedBaseId;
         _loading = true;
         _loadError = null;
+        _allTemplates = [];
+        _templates = [];
         try
         {
-            _allTemplates = (await ConversacionesSvc.GetTemplatesAsync(_filters)).ToList();
+            var filters = BuildCurrentFilters();
+            var loaded = (await ConversacionesSvc.GetTemplatesAsync(filters)).ToList();
+            if (!IsCurrentRequest(generation, expectedBaseId, selectedNumeroId))
+                return;
+
+            _allTemplates = loaded;
             AplicarFiltroModeloSeleccionado();
             if (_selectedId > 0 && _templates.All(x => x.IdPlantilla != _selectedId))
                 NuevaPlantilla();
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            _loadError = ex.Message;
+            if (IsCurrentRequest(generation, expectedBaseId, selectedNumeroId))
+                _loadError = "No se pudo abrir la información de esta base.";
         }
         finally
         {
-            _loading = false;
+            if (IsCurrentRequest(generation, expectedBaseId, selectedNumeroId))
+                _loading = false;
         }
     }
 
@@ -597,7 +778,7 @@
 
         _mostrarMenuCrear = false;
         MarcarOpcionCrear(CrearOpciones.Crear);
-        _filters = new ConversacionPlantillaFilters { IdNumeroWhatsApp = _filters.IdNumeroWhatsApp };
+        _filters = new ConversacionPlantillaFilters { ExpectedBaseId = CurrentExpectedBaseIdOrNull(), IdNumeroWhatsApp = _filters.IdNumeroWhatsApp };
         await LoadTemplatesAsync();
         NuevaPlantilla();
     }
@@ -751,18 +932,29 @@
 
     private async Task ClearTemplateFiltersAsync()
     {
-        _filters = new ConversacionPlantillaFilters { IdNumeroWhatsApp = _filters.IdNumeroWhatsApp };
+        _filters = new ConversacionPlantillaFilters { ExpectedBaseId = CurrentExpectedBaseIdOrNull(), IdNumeroWhatsApp = _filters.IdNumeroWhatsApp };
         await LoadTemplatesAsync();
     }
 
     private async Task SelectTemplateAsync(long idPlantilla)
     {
+        if (!TryResolveExpectedBaseId(out var expectedBaseId) || !EnsureRouteTenantReady(expectedBaseId))
+        {
+            SetError("No se pudo abrir la información de esta base.");
+            return;
+        }
+
+        var generation = ++_loadGeneration;
+        var selectedNumeroId = _filters.IdNumeroWhatsApp;
         _busy = true;
         _feedback = null;
         ClearError();
         try
         {
-            var item = await ConversacionesSvc.GetTemplateAsync(idPlantilla);
+            var item = await ConversacionesSvc.GetTemplateAsync(idPlantilla, expectedBaseId);
+            if (!IsCurrentRequest(generation, expectedBaseId, selectedNumeroId))
+                return;
+
             if (item is null)
             {
                 SetError("La plantilla seleccionada ya no existe.");
@@ -775,13 +967,15 @@
             _formEstadoMeta = string.IsNullOrWhiteSpace(item.EstadoMeta) ? "DRAFT" : item.EstadoMeta;
             _confirmArchive = false;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            SetError(ex);
+            if (IsCurrentRequest(generation, expectedBaseId, selectedNumeroId))
+                SetError("No se pudo abrir la información de esta base.");
         }
         finally
         {
-            _busy = false;
+            if (IsCurrentRequest(generation, expectedBaseId, selectedNumeroId))
+                _busy = false;
         }
     }
 
