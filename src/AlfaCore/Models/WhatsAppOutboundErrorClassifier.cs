@@ -73,6 +73,23 @@ public static class WhatsAppOutboundErrorClassifier
     public static bool IsAccountLocked(string? deliveryPayloadJson)
         => string.Equals(ExtractGraphError(deliveryPayloadJson).Code, WhatsAppGraphErrorCodes.AccountLocked, StringComparison.Ordinal);
 
+    /// <summary>
+    /// Clasifica directamente la excepción capturada por un envío (plantilla, reacción, texto) en el
+    /// mismo momento del catch en la UI, sin esperar a que la fila del mensaje se recargue. Reconstruye
+    /// la misma forma que BuildDeliveryErrorPayload (ConversacionesService) a partir de la excepción
+    /// para reusar ExtractGraphError/ClassifyDeliveryError con una sola fuente de verdad de parseo.
+    /// </summary>
+    public static AppUiMessage? ClassifyDeliverySendException(Exception ex)
+    {
+        var baseException = ex.GetBaseException();
+        var wrapped = JsonSerializer.Serialize(new
+        {
+            Error = baseException.Message,
+            Type = baseException.GetType().FullName
+        });
+        return ClassifyDeliveryError("ERROR_ENVIO", wrapped);
+    }
+
     /// <summary>Devuelve null cuando estadoEnvio no es un error de envío (nada que clasificar).</summary>
     public static AppUiMessage? ClassifyDeliveryError(string? estadoEnvio, string? deliveryPayloadJson)
     {

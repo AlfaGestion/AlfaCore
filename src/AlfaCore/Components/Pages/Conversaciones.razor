@@ -2891,6 +2891,11 @@
                         </div>
                     }
 
+                    @if (IsSelectedTemplateUnavailable)
+                    {
+                        <AlfaFeedbackPanel Message="@AppUiMessage.Warning("Plantilla no disponible", "Esta plantilla todavía no está aprobada por Meta.")" Dismissible="false" />
+                    }
+
                     @if (SelectedTemplate is not null && CountTemplateVariables(SelectedTemplate.CuerpoTexto) > 0)
                     {
                         <div class="field">
@@ -2899,6 +2904,10 @@
                                       rows="4"
                                       placeholder="Un valor por línea"
                                       @bind="_templateValuesText"></textarea>
+                            @if (MissingTemplateVariablesMessage is { } missingVariables)
+                            {
+                                <AlfaFeedbackPanel Message="@AppUiMessage.Warning("Faltan datos para enviar la plantilla", missingVariables)" Dismissible="false" />
+                            }
                         </div>
                     }
 
@@ -2979,11 +2988,25 @@
                 </div>
             </div>
 
+            @if (_templateSendFeedback is not null)
+            {
+                <AlfaFeedbackPanel Message="@_templateSendFeedback" Dismissible="false" />
+            }
+
             <div class="modal-card__actions">
                 <button type="button" class="btn btn--primary" @onclick="SendTemplateAsync" disabled="@(!CanSendTemplate)">
-                    <i class="bi bi-send-fill"></i> Enviar mensaje
+                    @if (_sendingTemplate)
+                    {
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                        <span>Enviando plantilla...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-send-fill"></i>
+                        <span>Enviar mensaje</span>
+                    }
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="CloseTemplatePanel">
+                <button type="button" class="btn btn--ghost" @onclick="CloseTemplatePanel" disabled="@_sendingTemplate">
                     Cerrar
                 </button>
             </div>
@@ -3696,6 +3719,13 @@
     private string _templateValuesText = string.Empty;
     private string? _templateAutoNotice;
     private bool _uploadingTemplateFile;
+    /// <summary>
+    /// Feedback propio del envío de plantilla, distinto de _actionError (compartido por ~15 acciones no
+    /// relacionadas en esta página). Se muestra dentro del modal de plantilla, así el error de ESTE
+    /// intento nunca se confunde con el de otra operación de la conversación.
+    /// </summary>
+    private AppUiMessage? _templateSendFeedback;
+    private bool _sendingTemplate;
 
     private ConversacionesInboxFilters _filters = new() { Canal = "SOCIAL" };
     private List<ConversacionTecnicoOptionDto> _technicians = [];
@@ -3999,10 +4029,31 @@
     private ConversacionPlantillaDto? SelectedTemplate
         => _availableTemplates.FirstOrDefault(x => x.IdPlantilla == _selectedTemplateId);
     private IReadOnlyList<string> TemplateValues => ParseTemplateValues(_templateValuesText);
+    // _availableTemplates ya viene filtrado a EstadoMeta=APPROVED desde el servidor
+    // (GetTemplatesForConversationAsync), así que esto no debería poder pasar en uso normal -- es una
+    // red de seguridad defensiva, no la validación principal.
+    private bool IsSelectedTemplateUnavailable
+        => SelectedTemplate is { } template && !string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase);
+    private string? MissingTemplateVariablesMessage
+    {
+        get
+        {
+            if (SelectedTemplate is not { } template)
+                return null;
+            var required = CountTemplateVariables(template.CuerpoTexto);
+            var provided = TemplateValues.Count;
+            if (provided >= required)
+                return null;
+            var missing = string.Join(", ", Enumerable.Range(provided + 1, required - provided).Select(i => $"{{{{{i}}}}}"));
+            return $"Completá: {missing}";
+        }
+    }
     private bool CanSendTemplate
         => !_busyAction
+           && !_sendingTemplate
            && _selectedConversation is not null
            && SelectedTemplate is not null
+           && !IsSelectedTemplateUnavailable
            && HasRequiredTemplateValues(SelectedTemplate, TemplateValues);
     private bool IsAuditResultsMode
         => _selectedConversation is null && ShouldKeepAuditResultsOpen;
@@ -8412,6 +8463,8 @@
 
     private async Task OnTemplateChangedAsync()
     {
+        // Cambiar de plantilla es un intento nuevo: el error/estado del intento anterior ya no aplica.
+        _templateSendFeedback = null;
         await PrepareTemplateValuesAsync(forceReload: true);
     }
 
@@ -8468,12 +8521,15 @@
 
     private async Task SendTemplateAsync()
     {
-        if (_selectedConversation is null || SelectedTemplate is null)
+        if (_selectedConversation is null || SelectedTemplate is null || _sendingTemplate)
             return;
 
         _busyAction = true;
-        _actionMessage = null;
-        _actionError = null;
+        _sendingTemplate = true;
+        // Feedback propio de ESTE intento -- nunca reutiliza _actionError, que es compartido por otras
+        // ~15 acciones no relacionadas de la página (nota interna, asignación, cierre, etc.).
+        _templateSendFeedback = AppUiMessage.InProgress("Enviando plantilla...", "Estamos enviando el mensaje por WhatsApp.");
+        await InvokeAsync(StateHasChanged);
 
         try
         {
@@ -8494,6 +8550,10 @@
             var selectedConversationId = _selectedConversation.IdConversacion;
             var previewText = RenderTemplatePreview(SelectedTemplate, TemplateValues);
 
+            // Éxito: el mensaje ya va a aparecer de inmediato en el hilo de la conversación -- no hace
+            // falta un panel de éxito redundante encima, alcanza con cerrar el modal (mismo criterio que
+            // "no mostrar modal/toast redundante si el mensaje ya aparece en la conversación").
+            _templateSendFeedback = null;
             _showTemplatePanel = false;
             ClearTemplateSelection();
 
@@ -8508,18 +8568,30 @@
         }
         catch (Exception ex)
         {
-            var error = ex.Message;
+            // La causa real (p. ej. Meta rechazó el intercambio, 131031, ventana cerrada) puede venir
+            // envuelta en AppUserFacingException (ver ExecuteLoggedAsync) -- se clasifica la excepción
+            // original, no el wrapper genérico, para no perder el detalle sanitizado. Una regla de
+            // negocio propia (plantilla no aprobada, variables faltantes, WABA incorrecta) ya llega como
+            // InvalidOperationException con un mensaje propio, seguro y específico -- mostrarlo tal cual
+            // es mejor que forzarlo por el clasificador de errores de Graph, que asumiría "Meta no pudo
+            // entregar este mensaje" y perdería la causa real.
+            var causeException = ex is AlfaCore.Services.AppUserFacingException { InnerException: { } inner } ? inner : ex;
+            _templateSendFeedback = causeException is InvalidOperationException businessRule
+                ? AppUiMessage.Warning("No se pudo enviar la plantilla", businessRule.Message)
+                : AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException)
+                  ?? AppUiMessage.Error("No se pudo enviar la plantilla", "Ocurrió un error al enviar el mensaje por WhatsApp.");
+
             if (_selectedConversation is not null)
             {
                 await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
                 await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             }
-
-            _actionError = error;
         }
         finally
         {
             _busyAction = false;
+            _sendingTemplate = false;
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -9806,14 +9878,22 @@
             await LoadTemplatesForConversationAsync();
 
         _showContextPanel = false;
+        _templateSendFeedback = null;
         await PrepareTemplateValuesAsync(forceReload: true);
         _showTemplatePanel = true;
     }
 
     private void CloseTemplatePanel()
     {
+        // No cerrar mientras hay un envío en curso: si el usuario cierra el modal a mitad de camino, el
+        // feedback del intento (éxito o error) queda huérfano -- ya no hay dónde mostrarlo asociado a
+        // esta operación, y _busyAction seguiría en true hasta que el envío en curso termine solo.
+        if (_sendingTemplate)
+            return;
+
         _showTemplatePanel = false;
         _templatePendingAttachments.Clear();
+        _templateSendFeedback = null;
     }
 
     private async Task CrearHiloInternoAsync()

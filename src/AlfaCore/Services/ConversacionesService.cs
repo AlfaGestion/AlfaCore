@@ -3021,6 +3021,11 @@ public sealed class ConversacionesService(
             }
 
             var values = NormalizeTemplateValues(request.ValoresVariables);
+            var requiredVariableCount = CountTemplateVariables(template.CuerpoTexto);
+            if (values.Count < requiredVariableCount)
+                throw new InvalidOperationException(
+                    $"Faltan datos para enviar la plantilla. Se requieren {requiredVariableCount} variable(s) y se recibieron {values.Count}.");
+
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                 config.PhoneNumberId = conversation.PhoneNumberId;
@@ -13761,7 +13766,7 @@ public sealed class ConversacionesService(
     private static string NormalizeTemplateLanguage(string? value)
         => string.IsNullOrWhiteSpace(value) ? "es_AR" : value.Trim();
 
-    private static int CountTemplateVariables(string? text)
+    internal static int CountTemplateVariables(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return 0;
