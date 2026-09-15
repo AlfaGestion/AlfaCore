@@ -25,12 +25,28 @@ public sealed class WhatsAppPhoneInspectionCommandTests
         var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
         var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
             Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
-        var handler = new RecordingHandler(_ => new HttpResponseMessage(HttpStatusCode.OK)
+        var handler = new RecordingHandler(request =>
         {
-            Content = new StringContent("""
-                {"id":"1362965780228889","platform_type":"CLOUD_API","is_on_biz_app":true,
-                 "display_phone_number":"+1 555-365-8051","verified_name":"AlfaNetPapelera","quality_rating":"GREEN"}
-                """)
+            if (request.RequestUri?.AbsolutePath.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal) == true)
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""
+                        {"data":[{"id":"1362965780228889","display_phone_number":"+1 555-365-8051",
+                          "name_status":"APPROVED","new_name_status":"APPROVED",
+                          "certificate":"secret-certificate-never-printed",
+                          "new_certificate":"secret-new-certificate-never-printed"}]}
+                        """)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""
+                    {"id":"1362965780228889","platform_type":"CLOUD_API","is_on_biz_app":true,
+                     "display_phone_number":"+1 555-365-8051","verified_name":"AlfaNetPapelera","quality_rating":"GREEN"}
+                    """)
+            };
         });
         using var httpClient = new HttpClient(handler);
         var output = new StringWriter();
@@ -49,6 +65,16 @@ public sealed class WhatsAppPhoneInspectionCommandTests
         Assert.Contains("display_phone_number = +1 555-365-8051", text, StringComparison.Ordinal);
         Assert.Contains("verified_name = AlfaNetPapelera", text, StringComparison.Ordinal);
         Assert.Contains("quality_rating = GREEN", text, StringComparison.Ordinal);
+        Assert.Contains("PHONE_NUMBERS GRAPH HTTP = 200", text, StringComparison.Ordinal);
+        Assert.Contains("NAME_STATUS = APPROVED", text, StringComparison.Ordinal);
+        Assert.Contains("NEW_NAME_STATUS = APPROVED", text, StringComparison.Ordinal);
+        Assert.Contains("CERTIFICATE_PRESENT = True", text, StringComparison.Ordinal);
+        Assert.Contains("NEW_CERTIFICATE_PRESENT = True", text, StringComparison.Ordinal);
+        Assert.Contains("REGISTRATION_AFTER_NAME_CHANGE_NEEDED = SI", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-certificate-never-printed", text, StringComparison.Ordinal);
+        Assert.DoesNotContain("secret-new-certificate-never-printed", text, StringComparison.Ordinal);
+        Assert.Contains(handler.Requests, r => r.Method == HttpMethod.Get && r.RequestUri?.AbsolutePath.EndsWith($"/{Phone}", StringComparison.Ordinal) == true);
+        Assert.Contains(handler.Requests, r => r.Method == HttpMethod.Get && r.RequestUri?.AbsolutePath.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal) == true);
     }
 
     [Fact]
@@ -159,6 +185,31 @@ public sealed class WhatsAppPhoneInspectionCommandTests
         Assert.DoesNotContain("Authorization", output.ToString(), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task NameStatus_NotApproved_IsClassifiedAsPendingApproval()
+    {
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, Base4264, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(
+            Waba, Phone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(request =>
+            request.RequestUri?.AbsolutePath.EndsWith($"/{Waba}/phone_numbers", StringComparison.Ordinal) == true
+                ? new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"data":[{"id":"1362965780228889","name_status":"PENDING_REVIEW","new_name_status":"NO_STATUS"}]}""")
+                }
+                : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("{}") });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        await WhatsAppPhoneInspectionCommand.ExecuteAsync(
+            Base4264, Phone, ownershipStore, resolver, httpClient, "https://graph.facebook.com", output, CancellationToken.None);
+
+        var text = output.ToString();
+        Assert.Contains("NAME_STATUS = PENDING_REVIEW", text, StringComparison.Ordinal);
+        Assert.Contains("REGISTRATION_AFTER_NAME_CHANGE_NEEDED = NO CONFIRMABLE", text, StringComparison.Ordinal);
+        Assert.Contains("EVIDENCE = A) name_status != APPROVED", text, StringComparison.Ordinal);
+    }
+
     private sealed class FakeOwnershipStore(WhatsAppPhoneOwnership? ownership) : IWhatsAppAssetOwnershipStore
     {
         public Task<bool> IsSchemaAvailableAsync(CancellationToken ct = default) => Task.FromResult(true);
@@ -183,10 +234,12 @@ public sealed class WhatsAppPhoneInspectionCommandTests
     private sealed class RecordingHandler(Func<HttpRequestMessage, HttpResponseMessage> responseFactory) : HttpMessageHandler
     {
         public bool Called { get; private set; }
+        public List<HttpRequestMessage> Requests { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             Called = true;
+            Requests.Add(request);
             return Task.FromResult(responseFactory(request));
         }
     }
