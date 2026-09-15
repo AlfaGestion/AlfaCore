@@ -6,6 +6,7 @@ public interface IConversacionesService
 {
     Task<bool> HasConversationSchemaAsync(CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(int? expectedBaseId, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionEstadoOptionDto>> GetStatesAsync(CancellationToken ct = default);
     Task<ConversacionesEstadisticasDto> GetEstadisticasAsync(ConversacionesEstadisticasFilters filters, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionInboxItemDto>> GetInboxAsync(ConversacionesInboxFilters filters, CancellationToken ct = default);

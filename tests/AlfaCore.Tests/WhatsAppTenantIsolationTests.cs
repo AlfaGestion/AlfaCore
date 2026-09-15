@@ -401,6 +401,85 @@ public sealed class WhatsAppTenantIsolationTests
         Assert.Contains("protected override async Task OnParametersSetAsync()", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ConversacionesTemplatePaths_UseExpectedBaseAndTenantLoadGuard()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "Conversaciones.razor"));
+
+        var programar = source.IndexOf("private async Task EnsureProgramarTemplatesAsync()", StringComparison.Ordinal);
+        var programarCapture = source.IndexOf("TryCaptureTenantLoad(out var lease)", programar, StringComparison.Ordinal);
+        var programarExpected = source.IndexOf("ExpectedBaseId = lease.BaseId", programar, StringComparison.Ordinal);
+        var programarCurrent = source.IndexOf("IsTenantLoadCurrent(lease)", programar, StringComparison.Ordinal);
+
+        var conversationTemplates = source.IndexOf("private async Task LoadTemplatesForConversationAsync()", StringComparison.Ordinal);
+        var conversationCapture = source.IndexOf("TryCaptureTenantLoad(out var lease)", conversationTemplates, StringComparison.Ordinal);
+        var serviceCall = source.IndexOf("GetTemplatesForConversationAsync(_selectedConversation.IdConversacion, lease.BaseId)", conversationTemplates, StringComparison.Ordinal);
+        var lateGuard = source.IndexOf("IsTenantLoadCurrent(lease)", conversationTemplates, StringComparison.Ordinal);
+
+        Assert.True(programar >= 0 && programarCapture > programar && programarExpected > programarCapture && programarCurrent > programarExpected);
+        Assert.True(conversationTemplates >= 0 && conversationCapture > conversationTemplates && serviceCall > conversationCapture && lateGuard > serviceCall);
+    }
+
+    [Fact]
+    public void Estadisticas_UsesExpectedBaseAcrossUiAndService()
+    {
+        var page = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesEstadisticas.razor"));
+        var service = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        var contract = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "IConversacionesService.cs"));
+        var models = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Models", "ConversacionesModels.cs"));
+
+        Assert.Contains("ConversationTenantLoadGuard", page, StringComparison.Ordinal);
+        Assert.Contains("ConversacionesSvc.GetTechniciansAsync(lease.BaseId)", page, StringComparison.Ordinal);
+        Assert.Contains("ExpectedBaseId = lease.BaseId", page, StringComparison.Ordinal);
+        Assert.Contains("IsTenantLoadCurrent(lease)", page, StringComparison.Ordinal);
+        Assert.Contains("Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(int? expectedBaseId", contract, StringComparison.Ordinal);
+        Assert.Contains("public int? ExpectedBaseId { get; set; }", models, StringComparison.Ordinal);
+        Assert.Contains("GetConnectionStringForExpectedTenant(expectedBaseId, \"GetTechnicians\")", service, StringComparison.Ordinal);
+        Assert.Contains("GetConnectionStringForExpectedTenant(filters.ExpectedBaseId, \"GetEstadisticas\")", service, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Informes_UsesRouteBaseForPagesServicesAndExcelExport()
+    {
+        var page = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesInformes.razor"));
+        var detail = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesInformeDetalle.razor"));
+        var service = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesInformesService.cs"));
+        var contract = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "IConversacionesInformesService.cs"));
+        var program = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
+
+        Assert.Contains("ConversationTenantLoadGuard", page, StringComparison.Ordinal);
+        Assert.Contains("CurrentExpectedBaseIdOrNull()", page, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.GetByPeriodoAsync(_anio, _mes, CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.ListarAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.GetAsync(id, CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.GetDetalleAsync(IdDetalle, CurrentExpectedBaseIdOrNull())", detail, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.GetTendenciaClienteAsync(IdDetalle, CurrentExpectedBaseIdOrNull())", detail, StringComparison.Ordinal);
+        Assert.Contains("Task<ConversacionInformeMensualDto?> GetAsync(int idInforme, int? expectedBaseId", contract, StringComparison.Ordinal);
+        Assert.Contains("ResolveTenantConnection(expectedBaseId, \"GetInforme\")", service, StringComparison.Ordinal);
+        Assert.Contains("ResolveTenantConnection(expectedBaseId, \"GetDetalleInforme\")", service, StringComparison.Ordinal);
+        Assert.Contains("var informe = await svc.GetAsync(idInforme, idbase, ct);", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Configuracion_ValidatesRouteTenantBeforeProtectedLoads()
+    {
+        var page = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesConfiguracion.razor"));
+        var auth = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesAuthorizationService.cs"));
+        var contract = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "IConversacionesAuthorizationService.cs"));
+
+        var init = page.IndexOf("private async Task CompleteProtectedInitializationAsync()", StringComparison.Ordinal);
+        var ensure = page.IndexOf("EnsureRouteTenantReady(expectedBaseId)", init, StringComparison.Ordinal);
+        var canManage = page.IndexOf("AuthorizationSvc.CanManageAsync(expectedBaseId", init, StringComparison.Ordinal);
+        var load = page.IndexOf("await LoadAsync();", init, StringComparison.Ordinal);
+
+        Assert.True(init >= 0 && ensure > init && canManage > ensure && load > canManage);
+        Assert.Contains("ConfigSvc.GetWhatsAppNumerosAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConvSvc.GetTechniciansAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("Task<bool> CanManageAsync(int? expectedBaseId", contract, StringComparison.Ordinal);
+        Assert.Contains("ResolveTenantConnection(expectedBaseId, \"CanManage\")", auth, StringComparison.Ordinal);
+        Assert.Contains("active?.BaseId != expectedBaseId.Value", auth, StringComparison.Ordinal);
+    }
+
     private static readonly WhatsAppEmbeddedSignupOptions EsAppSecretOptions = new()
     {
         Enabled = true,
