@@ -55,16 +55,37 @@ public sealed class WhatsAppOutboundErrorClassifierTests
     }
 
     [Fact]
-    public void OtherGraphErrorCode_ClassifiesGenerically_WithoutInventingAnUnverifiedCause()
+    public void UnmappedGraphErrorCode_ClassifiesGenerically_WithoutInventingAnUnverifiedCause()
     {
-        var payload = BuildDeliveryErrorPayload(131026, "Message undeliverable");
+        var payload = BuildDeliveryErrorPayload(999999, "Some future Meta error nobody mapped yet");
 
         var message = WhatsAppOutboundErrorClassifier.ClassifyDeliveryError("ERROR_ENVIO", payload);
 
         Assert.NotNull(message);
         Assert.NotEqual("Cuenta de WhatsApp bloqueada por Meta", message!.Title);
-        Assert.Equal("131026", message.Code);
-        Assert.Equal("Message undeliverable", message.Message);
+        Assert.Equal("999999", message.Code);
+        Assert.Equal("Some future Meta error nobody mapped yet", message.Message);
+    }
+
+    [Theory]
+    [InlineData(131047, "Ventana de atención vencida")]
+    [InlineData(190, "WhatsApp requiere reconexión")]
+    [InlineData(131026, "Destinatario inválido")]
+    [InlineData(131048, "Envíos limitados temporalmente por Meta")]
+    [InlineData(130429, "Envíos limitados temporalmente por Meta")]
+    public void WellKnownMetaErrorCodes_ClassifyWithASpecificActionableMessage(int graphCode, string expectedTitle)
+    {
+        // Prioridad 6: estos son los códigos que Meta documenta públicamente para WhatsApp Cloud API --
+        // a diferencia de 131031, ninguno tiene todavía un caso confirmado con evidencia real de
+        // producción en AlfaCore (ver comentario en WhatsAppGraphErrorCodes). Igual deben mostrar una
+        // causa específica en vez del "Error al enviar" genérico.
+        var payload = BuildDeliveryErrorPayload(graphCode, "Mensaje de error crudo de Meta");
+
+        var message = WhatsAppOutboundErrorClassifier.ClassifyDeliveryError("ERROR_ENVIO", payload);
+
+        Assert.NotNull(message);
+        Assert.Equal(expectedTitle, message!.Title);
+        Assert.NotEqual("Mensaje de error crudo de Meta", message.Message);
     }
 
     [Fact]

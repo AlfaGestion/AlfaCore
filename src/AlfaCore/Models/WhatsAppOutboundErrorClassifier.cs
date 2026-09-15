@@ -11,6 +11,23 @@ public static class WhatsAppGraphErrorCodes
     /// cuenta está bloqueada -- ninguno de esos campos es sinónimo de una cuenta operativa.
     /// </summary>
     public const string AccountLocked = "131031";
+
+    // Los siguientes SON los códigos que Meta documenta públicamente para WhatsApp Cloud API
+    // (developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes) -- a diferencia de
+    // AccountLocked, ninguno de éstos tiene todavía un caso confirmado con evidencia real de
+    // producción en AlfaCore. Se mapean igual porque el pedido los pidió explícitamente por categoría,
+    // pero si alguno resulta no coincidir con lo que realmente devuelve Meta en un caso real, hay que
+    // corregirlo con esa evidencia, no asumir que esta lista es infalible.
+    /// <summary>Mensaje de re-enganche fuera de la ventana de 24hs (texto libre sin plantilla).</summary>
+    public const string ReEngagementWindowExpired = "131047";
+    /// <summary>Código Graph estándar para token de acceso inválido o vencido.</summary>
+    public const string InvalidAccessToken = "190";
+    /// <summary>Mensaje no se pudo entregar (número inválido, no es WhatsApp, etc).</summary>
+    public const string MessageUndeliverable = "131026";
+    /// <summary>Límite de envíos por spam/calidad alcanzado.</summary>
+    public const string SpamRateLimitHit = "131048";
+    /// <summary>Límite de envíos de la aplicación/número alcanzado.</summary>
+    public const string RateLimitHit = "130429";
 }
 
 /// <summary>
@@ -97,17 +114,39 @@ public static class WhatsAppOutboundErrorClassifier
             return null;
 
         var (code, message) = ExtractGraphError(deliveryPayloadJson);
-        if (string.Equals(code, WhatsAppGraphErrorCodes.AccountLocked, StringComparison.Ordinal))
-            return AppUiMessage.Error(
+        return code switch
+        {
+            WhatsAppGraphErrorCodes.AccountLocked => AppUiMessage.Error(
                 "Cuenta de WhatsApp bloqueada por Meta",
                 "Meta bloqueó esta cuenta de WhatsApp Business. Mientras esté bloqueada no se pueden enviar ni recibir mensajes por este canal.",
                 "Esto se resuelve directamente con Meta -- AlfaCore no puede desbloquearla ni reintentando el envío.",
-                code ?? string.Empty);
+                code),
 
-        return AppUiMessage.Error(
-            "No se pudo enviar",
-            string.IsNullOrWhiteSpace(message) ? "Meta no pudo entregar este mensaje." : message,
-            string.Empty,
-            code ?? string.Empty);
+            WhatsAppGraphErrorCodes.ReEngagementWindowExpired => AppUiMessage.Warning(
+                "Ventana de atención vencida",
+                "No podés enviar texto libre fuera de la ventana de atención de WhatsApp.",
+                "Usá una plantilla aprobada para reabrir la conversación."),
+
+            WhatsAppGraphErrorCodes.InvalidAccessToken => AppUiMessage.Error(
+                "WhatsApp requiere reconexión",
+                "La credencial de esta conexión de WhatsApp ya no es válida.",
+                "Revisá la conexión con WhatsApp en Configuración."),
+
+            WhatsAppGraphErrorCodes.MessageUndeliverable => AppUiMessage.Warning(
+                "Destinatario inválido",
+                "Meta no pudo entregarle el mensaje a este número.",
+                "Verificá que el número tenga WhatsApp activo."),
+
+            WhatsAppGraphErrorCodes.SpamRateLimitHit or WhatsAppGraphErrorCodes.RateLimitHit => AppUiMessage.Warning(
+                "Envíos limitados temporalmente por Meta",
+                "Meta limitó temporalmente los envíos de este número.",
+                "Probá de nuevo más tarde."),
+
+            _ => AppUiMessage.Error(
+                "No se pudo enviar",
+                string.IsNullOrWhiteSpace(message) ? "Meta no pudo entregar este mensaje." : message,
+                string.Empty,
+                code ?? string.Empty)
+        };
     }
 }
