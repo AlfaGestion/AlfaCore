@@ -41,6 +41,29 @@ public sealed class MetaWhatsAppManagementClient(
         return name.Length > 0 ? name : null;
     }
 
+    public async Task<string?> GetWabaOwningBusinessIdAsync(string wabaId, string accessToken, string graphVersion, CancellationToken ct = default)
+    {
+        var normalizedWabaId = RequiredMetaId(wabaId, nameof(wabaId));
+        var token = (accessToken ?? string.Empty).Trim();
+        if (token.Length == 0)
+            throw new MetaWhatsAppManagementException("META_AUTH_EXPIRED", false, true, "La credencial de Meta no está disponible.");
+
+        var baseUrl = _options.GraphBaseUrl.TrimEnd('/');
+        var version = (string.IsNullOrWhiteSpace(graphVersion) ? _options.GraphApiVersion : graphVersion).Trim('/');
+        var uri = new Uri($"{baseUrl}/{version}/{normalizedWabaId}?fields=owner_business_info", UriKind.Absolute);
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        using var document = await SendJsonAsync(request, ct);
+        if (!document.RootElement.TryGetProperty("owner_business_info", out var owner) || owner.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var businessId = GetString(owner, "id");
+        return businessId.Length > 0 ? businessId : null;
+    }
+
     public async Task<IReadOnlyList<MetaWabaAsset>> DiscoverWabasAsync(string businessId, WhatsAppCredentialReference tokenReference, CancellationToken ct = default)
     {
         var normalizedBusinessId = RequiredMetaId(businessId, nameof(businessId));

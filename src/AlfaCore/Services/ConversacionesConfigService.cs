@@ -1632,8 +1632,8 @@ public sealed class ConversacionesConfigService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var portfolioColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS", token);
-            if (portfolioColumns.Count == 0)
-                return empty; // Tabla todavía no existe en esta base -- no es un error, sólo "sin caché todavía".
+            if (!CanReadPortfolioCache(portfolioColumns))
+                return empty; // Tabla ausente o parcialmente migrada -- no es un error, sólo "sin caché todavía".
 
             var inClause = string.Join(",", ids.Select((_, index) => $"@Id{index}"));
             var sql = $"""
@@ -1678,8 +1678,8 @@ public sealed class ConversacionesConfigService(
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(ct);
             var portfolioColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS", ct);
-            if (portfolioColumns.Count == 0)
-                return; // Tabla todavía no existe en esta base -- nunca falla el onboarding por esto.
+            if (!CanWritePortfolioCache(portfolioColumns))
+                return; // Tabla ausente o parcialmente migrada -- nunca falla el onboarding por esto.
 
             const string sql = """
                 MERGE dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS WITH (HOLDLOCK) AS target
@@ -1724,8 +1724,8 @@ public sealed class ConversacionesConfigService(
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(ct);
             var portfolioColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS", ct);
-            if (portfolioColumns.Count == 0)
-                return false; // Tabla todavía no existe en esta base -- nada que reservar todavía.
+            if (!CanWritePortfolioCache(portfolioColumns))
+                return false; // Tabla ausente o parcialmente migrada -- nada que reservar todavía.
 
             var now = DateTime.UtcNow;
             var threshold = now - throttleWindow;
@@ -1767,7 +1767,7 @@ public sealed class ConversacionesConfigService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
             var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", token);
-            if (!HasColumn(numeroColumns, "MetaBusinessId") || !HasColumn(numeroColumns, "WabaId"))
+            if (!CanWriteNumeroMetaIdentity(numeroColumns))
                 return false; // Base sin la actualización todavía -- nada para backfillear acá.
 
             const string sql = """
@@ -1783,6 +1783,140 @@ public sealed class ConversacionesConfigService(
             await cmd.ExecuteNonQueryAsync(token);
             return true;
         }, "No se pudo completar el Portfolio del número de WhatsApp.", ct);
+
+    public Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetWabaBusinessMap", async token =>
+        {
+            var ids = (wabaIds ?? []).Select(id => (id ?? string.Empty).Trim()).Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
+            var empty = (IReadOnlyDictionary<string, string>)new Dictionary<string, string>(StringComparer.Ordinal);
+            if (ids.Length == 0)
+                return empty;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var columns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_WABA_BUSINESS_MAP", token);
+            if (!CanReadWabaBusinessMap(columns))
+                return empty; // Tabla ausente o parcialmente migrada -- no es un error.
+
+            var inClause = string.Join(",", ids.Select((_, index) => $"@Id{index}"));
+            var sql = $"""
+                SELECT WabaId, MetaBusinessId
+                FROM dbo.CONV_WHATSAPP_WABA_BUSINESS_MAP
+                WHERE WabaId IN ({inClause});
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            for (var index = 0; index < ids.Length; index++)
+                cmd.Parameters.AddWithValue($"@Id{index}", ids[index]);
+
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+                result[GetString(rd, 0)] = GetString(rd, 1);
+
+            return (IReadOnlyDictionary<string, string>)result;
+        }, "No se pudo cargar el mapeo WABA -> Business de WhatsApp.", ct);
+
+    public async Task<bool> TryReserveWabaResolutionAttemptAsync(int idBase, string wabaId, TimeSpan throttleWindow, CancellationToken ct = default)
+    {
+        var normalizedWabaId = (wabaId ?? string.Empty).Trim();
+        if (idBase <= 0 || normalizedWabaId.Length == 0)
+            return false;
+
+        try
+        {
+            var baseInfo = await centralBasesService.GetByIdAsync(idBase, ct);
+            if (baseInfo is null)
+                return false;
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(ct);
+            var columns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_WABA_BUSINESS_MAP", ct);
+            if (!CanWriteWabaBusinessMap(columns))
+                return false; // Tabla ausente o parcialmente migrada -- nada que reservar todavía.
+
+            var now = DateTime.UtcNow;
+            var threshold = now - throttleWindow;
+
+            const string sql = """
+                MERGE dbo.CONV_WHATSAPP_WABA_BUSINESS_MAP WITH (HOLDLOCK) AS target
+                USING (SELECT @WabaId AS WabaId) AS source
+                ON target.WabaId = source.WabaId
+                WHEN NOT MATCHED THEN
+                    INSERT (WabaId, MetaBusinessId, ModifiedAtUtc, LastResolutionAttemptUtc)
+                    VALUES (@WabaId, N'', @NowUtc, @NowUtc)
+                WHEN MATCHED AND target.MetaBusinessId = N''
+                    AND (target.LastResolutionAttemptUtc IS NULL OR target.LastResolutionAttemptUtc < @Threshold) THEN
+                    UPDATE SET LastResolutionAttemptUtc = @NowUtc
+                OUTPUT $action;
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@WabaId", normalizedWabaId);
+            cmd.Parameters.AddWithValue("@NowUtc", now);
+            cmd.Parameters.AddWithValue("@Threshold", threshold);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            return await rd.ReadAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
+    public async Task SetWabaOwningBusinessIdAsync(int idBase, string wabaId, string metaBusinessId, CancellationToken ct = default)
+    {
+        var normalizedWabaId = (wabaId ?? string.Empty).Trim();
+        var businessId = (metaBusinessId ?? string.Empty).Trim();
+        if (idBase <= 0 || normalizedWabaId.Length == 0 || businessId.Length == 0)
+            return;
+
+        try
+        {
+            var baseInfo = await centralBasesService.GetByIdAsync(idBase, ct);
+            if (baseInfo is null)
+                return;
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(ct);
+            var columns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_WABA_BUSINESS_MAP", ct);
+            if (!CanWriteWabaBusinessMap(columns))
+                return;
+
+            const string sql = """
+                MERGE dbo.CONV_WHATSAPP_WABA_BUSINESS_MAP WITH (HOLDLOCK) AS target
+                USING (SELECT @WabaId AS WabaId) AS source
+                ON target.WabaId = source.WabaId
+                WHEN MATCHED THEN UPDATE SET MetaBusinessId = @MetaBusinessId, ModifiedAtUtc = @NowUtc, LastResolutionAttemptUtc = @NowUtc
+                WHEN NOT MATCHED THEN INSERT (WabaId, MetaBusinessId, ModifiedAtUtc, LastResolutionAttemptUtc) VALUES (@WabaId, @MetaBusinessId, @NowUtc, @NowUtc);
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@WabaId", normalizedWabaId);
+            cmd.Parameters.AddWithValue("@MetaBusinessId", businessId);
+            cmd.Parameters.AddWithValue("@NowUtc", DateTime.UtcNow);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Best-effort.
+        }
+    }
 
     public Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default)
     {
@@ -2662,6 +2796,37 @@ public sealed class ConversacionesConfigService(
 
     private static bool HasColumn(HashSet<string> columns, string columnName)
         => columns.Contains(columnName);
+
+    /// <summary>
+    /// Guardas de esquema para Portfolio -- puras y testeables sin DB real (ver
+    /// WhatsAppPortfolioSchemaGuardTests). "La tabla existe" NO alcanza: un tenant podría quedar en un
+    /// estado parcial si el motor de actualizaciones se interrumpe entre el CREATE TABLE y el ALTER
+    /// TABLE ADD LastResolutionAttemptUtc del mismo script (cada batch se ejecuta por separado, no todo
+    /// en una transacción) -- estas guardas verifican cada columna que la sentencia SQL va a referenciar
+    /// explícitamente, no sólo "¿hay alguna columna?".
+    /// </summary>
+    internal static bool CanReadPortfolioCache(HashSet<string> portfolioColumns)
+        => HasColumn(portfolioColumns, "MetaBusinessId") && HasColumn(portfolioColumns, "PortfolioName");
+
+    internal static bool CanWritePortfolioCache(HashSet<string> portfolioColumns)
+        => HasColumn(portfolioColumns, "MetaBusinessId")
+           && HasColumn(portfolioColumns, "PortfolioName")
+           && HasColumn(portfolioColumns, "ModifiedAtUtc")
+           && HasColumn(portfolioColumns, "LastResolutionAttemptUtc");
+
+    internal static bool CanWriteNumeroMetaIdentity(HashSet<string> numeroColumns)
+        => HasColumn(numeroColumns, "MetaBusinessId") && HasColumn(numeroColumns, "WabaId");
+
+    /// <summary>Mismo criterio que CanReadPortfolioCache/CanWritePortfolioCache, para la caché WABA-&gt;Business
+    /// de números manuales (CONV_WHATSAPP_WABA_BUSINESS_MAP).</summary>
+    internal static bool CanReadWabaBusinessMap(HashSet<string> columns)
+        => HasColumn(columns, "WabaId") && HasColumn(columns, "MetaBusinessId");
+
+    internal static bool CanWriteWabaBusinessMap(HashSet<string> columns)
+        => HasColumn(columns, "WabaId")
+           && HasColumn(columns, "MetaBusinessId")
+           && HasColumn(columns, "ModifiedAtUtc")
+           && HasColumn(columns, "LastResolutionAttemptUtc");
 
     private static bool HasAnyWhatsAppWebColumns(HashSet<string> columns)
         => HasColumn(columns, "WebSessionMode");

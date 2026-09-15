@@ -505,6 +505,35 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             return Task.CompletedTask;
         }
 
+        public Dictionary<string, string> WabaBusinessMap { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, DateTime> WabaResolutionAttempts { get; } = new(StringComparer.Ordinal);
+
+        public Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, string>>(WabaBusinessMap);
+
+        public Task<bool> TryReserveWabaResolutionAttemptAsync(int idBase, string wabaId, TimeSpan throttleWindow, CancellationToken ct = default)
+        {
+            if (WabaBusinessMap.TryGetValue(wabaId, out var businessId) && !string.IsNullOrWhiteSpace(businessId))
+                return Task.FromResult(false);
+
+            var now = DateTime.UtcNow;
+            if (WabaResolutionAttempts.TryGetValue(wabaId, out var last) && now - last < throttleWindow)
+                return Task.FromResult(false);
+
+            WabaResolutionAttempts[wabaId] = now;
+            return Task.FromResult(true);
+        }
+
+        public Task SetWabaOwningBusinessIdAsync(int idBase, string wabaId, string metaBusinessId, CancellationToken ct = default)
+        {
+            if (!string.IsNullOrWhiteSpace(wabaId) && !string.IsNullOrWhiteSpace(metaBusinessId))
+            {
+                WabaBusinessMap[wabaId] = metaBusinessId;
+                WabaResolutionAttempts[wabaId] = DateTime.UtcNow;
+            }
+            return Task.CompletedTask;
+        }
+
         public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(string connectionString, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveWhatsAppConfigAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();

@@ -4197,6 +4197,7 @@
 
             var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
             await RefreshNumeroMetaIdentityBackfillAsync(idBase);
+            await TryResolveLegacyWabaOwningBusinessIfNeededAsync(idBase);
             await RefreshBlockedNumeroIdsAsync();
             await RefreshPortfolioNamesAsync();
             await TryResolveMissingPortfolioNamesAsync(idBase);
@@ -4211,11 +4212,12 @@
     /// <summary>
     /// KNOWN/RESOLVABLE/UNKNOWN (auditoría de persistencia de Portfolio): un número existente conectado
     /// ANTES de esta funcionalidad puede tener MetaBusinessId/WabaId vacíos -- eso es RESOLVABLE, no
-    /// UNKNOWN, si el ownership central (WhatsAppPhoneOwnership -> WhatsAppWabaOwnership) todavía tiene
-    /// el dato. Se reconstruye SIN llamar a Meta -- sólo lecturas a ALFA_CENTRAL. Self-throttling: una
-    /// vez que el número tiene MetaBusinessId, ya no vuelve a entrar acá en refreshes futuros. Números
-    /// que nunca pasaron por Embedded Signup (agregados por Phone Number ID) no tienen ownership -- se
-    /// quedan UNKNOWN para siempre, correctamente.
+    /// UNKNOWN, en dos casos: (a) el ownership central (WhatsAppPhoneOwnership -> WhatsAppWabaOwnership)
+    /// todavía tiene el dato (Embedded Signup histórico), o (b) el número es MANUAL (por Phone Number ID)
+    /// pero la WABA legacy de la base ya tiene su Business resuelto en caché (ver
+    /// TryResolveLegacyWabaOwningBusinessIfNeededAsync). Ninguno de los dos casos llama a Meta acá --
+    /// sólo lecturas. Self-throttling: una vez que el número tiene MetaBusinessId, ya no vuelve a entrar
+    /// acá en refreshes futuros. Sólo se queda UNKNOWN para siempre si NINGUNA de las dos vías aplica.
     /// </summary>
     private async Task RefreshNumeroMetaIdentityBackfillAsync(int idBase)
     {
@@ -4237,6 +4239,38 @@
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Best-effort -- el próximo refresh de la lista puede reintentar.
+        }
+    }
+
+    /// <summary>
+    /// Sólo para números MANUALES (sin ownership central -- si ya tuvieran, RefreshNumeroMetaIdentityBackfillAsync
+    /// ya los resolvió arriba sin necesidad de esto). Todos comparten UNA sola WABA legacy
+    /// (ConversacionWhatsAppConfigDto.BusinessAccountId -- Cloud API legacy no soporta más de una por
+    /// token), así que un solo intento throttled alcanza para todos, nunca uno por número. Si Meta
+    /// responde, vuelve a correr el backfill para reflejarlo en este mismo render.
+    /// </summary>
+    private async Task TryResolveLegacyWabaOwningBusinessIfNeededAsync(int idBase)
+    {
+        if (idBase <= 0)
+            return;
+
+        try
+        {
+            var pendiente = WhatsAppApiNumeros.FirstOrDefault(n => string.IsNullOrWhiteSpace(n.MetaBusinessId));
+            if (pendiente is null)
+                return; // Todos los números ya tienen identidad -- nada que resolver.
+
+            var legacyConfig = await ConfigSvc.GetWhatsAppConfigAsync(_lifetimeCts.Token);
+            var wabaId = (legacyConfig.BusinessAccountId ?? string.Empty).Trim();
+            if (wabaId.Length == 0)
+                return; // Ni siquiera hay una WABA legacy configurada -- Unknown de verdad, nada para intentar.
+
+            await PortfolioResolution.TryResolveLegacyWabaOwningBusinessAsync(idBase, wabaId, pendiente.PhoneNumberId, _lifetimeCts.Token);
+            await RefreshNumeroMetaIdentityBackfillAsync(idBase); // Recoger en este mismo render si Meta respondió.
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Best-effort -- el próximo refresh puede reintentar (sujeto al mismo throttle).
         }
     }
 

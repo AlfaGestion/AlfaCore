@@ -91,6 +91,93 @@ public sealed class WhatsAppPortfolioResolutionServiceTests
         Assert.Equal("biz-B", identityB!.MetaBusinessId);
     }
 
+    // ---- Números MANUALES (sin ownership central, WABA legacy) --------------------------------------
+
+    [Fact]
+    public async Task Backfill_ManualNumero_IsResolvable_NotUnknown_WhenTheLegacyWabaIsAlreadyMappedToABusiness()
+    {
+        // Auditoría: "MANUAL PHONE-ID = UNKNOWN para siempre" era incorrecto -- si la caché WABA->Business
+        // ya tiene el resultado (resuelto antes por TryResolveLegacyWabaOwningBusinessAsync), el backfill
+        // lo usa sin llamar a Meta.
+        var ctx = CreateContext();
+        ctx.Config.LegacyConfig.BusinessAccountId = "waba-legacy";
+        ctx.Config.WabaBusinessMap["waba-legacy"] = "biz-legacy";
+        var numero = Numero(1, "phone-manual"); // Sin ownership central sembrado.
+
+        var identity = await ctx.Service.BackfillNumeroMetaIdentityAsync(84, numero);
+
+        Assert.NotNull(identity);
+        Assert.Equal("biz-legacy", identity!.MetaBusinessId);
+        Assert.Equal("waba-legacy", identity.WabaId);
+        Assert.Equal(0, ctx.Management.GetWabaOwningBusinessCalls); // Sólo lee la caché, no llama a Meta.
+    }
+
+    [Fact]
+    public async Task Backfill_ManualNumero_IsUnknown_WhenNoLegacyWabaIsConfiguredAtAll()
+    {
+        // Sin ownership central Y sin WABA legacy configurada -- acá sí no hay nada que preguntarle a
+        // nadie. Éste es el único caso legítimamente UNKNOWN para siempre.
+        var ctx = CreateContext();
+        // ctx.Config.LegacyConfig.BusinessAccountId queda vacío (default).
+        var numero = Numero(1, "phone-manual");
+
+        var identity = await ctx.Service.BackfillNumeroMetaIdentityAsync(84, numero);
+
+        Assert.Null(identity);
+    }
+
+    [Fact]
+    public async Task Backfill_ManualNumero_StaysResolvable_WhileTheLegacyWabaHasNotBeenResolvedYet()
+    {
+        // Hay WABA legacy configurada, pero todavía nadie resolvió qué Business es dueño -- no debe
+        // backfillear nada todavía (eso lo hace TryResolveLegacyWabaOwningBusinessAsync, throttled).
+        var ctx = CreateContext();
+        ctx.Config.LegacyConfig.BusinessAccountId = "waba-legacy";
+        var numero = Numero(1, "phone-manual");
+
+        var identity = await ctx.Service.BackfillNumeroMetaIdentityAsync(84, numero);
+
+        Assert.Null(identity);
+        Assert.Equal(0, ctx.Config.BackfillCalls);
+    }
+
+    [Fact]
+    public async Task ResolveLegacyWaba_ClaimsThrottleThenCallsMeta_AndCachesTheOwningBusiness()
+    {
+        var ctx = CreateContext();
+        ctx.Management.WabaOwningBusinesses["waba-legacy"] = "biz-legacy";
+
+        await ctx.Service.TryResolveLegacyWabaOwningBusinessAsync(84, "waba-legacy", "phone-manual");
+
+        Assert.Equal(1, ctx.Management.GetWabaOwningBusinessCalls);
+        Assert.Equal("biz-legacy", ctx.Config.WabaBusinessMap["waba-legacy"]);
+    }
+
+    [Fact]
+    public async Task ResolveLegacyWaba_NeverCallsMetaTwiceWithinTheThrottleWindow()
+    {
+        // Todos los números manuales de la base comparten la MISMA WABA legacy -- un solo intento debe
+        // alcanzar para todos, nunca uno por número.
+        var ctx = CreateContext();
+        ctx.Management.WabaOwningBusinesses["waba-legacy"] = null; // Meta no da resultado el primer intento.
+
+        await ctx.Service.TryResolveLegacyWabaOwningBusinessAsync(84, "waba-legacy", "phone-A");
+        await ctx.Service.TryResolveLegacyWabaOwningBusinessAsync(84, "waba-legacy", "phone-B");
+
+        Assert.Equal(1, ctx.Management.GetWabaOwningBusinessCalls);
+    }
+
+    [Fact]
+    public async Task ResolveLegacyWaba_NeverCallsMeta_WhenAlreadyResolved()
+    {
+        var ctx = CreateContext();
+        ctx.Config.WabaBusinessMap["waba-legacy"] = "biz-legacy";
+
+        await ctx.Service.TryResolveLegacyWabaOwningBusinessAsync(84, "waba-legacy", "phone-manual");
+
+        Assert.Equal(0, ctx.Management.GetWabaOwningBusinessCalls);
+    }
+
     // ---- Resolución del nombre (throttled, con Meta) -----------------------------------------------
 
     [Fact]
@@ -156,6 +243,63 @@ public sealed class WhatsAppPortfolioResolutionServiceTests
 
         Assert.Equal("Portfolio A", ctx.Config.PortfolioNames["biz-A"]);
         Assert.Equal("Portfolio B", ctx.Config.PortfolioNames["biz-B"]);
+    }
+
+    [Fact]
+    public async Task ResolveName_FiveNumerosSharingTheSamePortfolio_ConcurrentRefresh_ProducesOneRowAndOneRealMetaCall()
+    {
+        // Auditoría de concurrencia: 5 números con el mismo MetaBusinessId, cada uno disparando su
+        // propio TryResolvePortfolioNameAsync en un refresh concurrente (ej. 5 pestañas, o el polling de
+        // varios circuitos Blazor a la vez) -- debe producir UNA fila de portfolio y UN solo GET real a
+        // Meta, nunca cinco. El lock en el fake modela el MERGE ... WITH (HOLDLOCK) real.
+        var ctx = CreateContext();
+        ctx.Management.Names["biz-compartido"] = "Portfolio Compartido";
+
+        var tasks = Enumerable.Range(1, 5)
+            .Select(i => ctx.Service.TryResolvePortfolioNameAsync(84, "biz-compartido", $"phone-{i}"));
+        await Task.WhenAll(tasks);
+
+        Assert.Equal(1, ctx.Management.GetBusinessNameCalls);
+        Assert.Single(ctx.Config.PortfolioNames);
+        Assert.Equal("Portfolio Compartido", ctx.Config.PortfolioNames["biz-compartido"]);
+    }
+
+    [Fact]
+    public async Task ResolveName_MetaPermissionMissing_PreservesCachedName_RegistersAttempt_NeverBreaks()
+    {
+        // "portfolio cache existente + refresh falla / permiso business_management faltante" ->
+        // conservar el nombre cacheado, no vaciarlo, no romper Configuración, registrar el intento
+        // (para que el throttle lo respete) y esperar la ventana.
+        var ctx = CreateContext();
+        ctx.Config.PortfolioNames["biz-1"] = "Nombre cacheado antes del fallo de permisos";
+        // Al ya haber un nombre no vacío, TryReserveResolutionAttemptAsync nunca reserva -- Meta ni se
+        // llama, así que un eventual error de permisos ni siquiera puede alcanzar el nombre cacheado.
+        var exceptionThrown = await Record.ExceptionAsync(() => ctx.Service.TryResolvePortfolioNameAsync(84, "biz-1", "phone-1"));
+
+        Assert.Null(exceptionThrown); // Nunca rompe Configuración.
+        Assert.Equal(0, ctx.Management.GetBusinessNameCalls);
+        Assert.Equal("Nombre cacheado antes del fallo de permisos", ctx.Config.PortfolioNames["biz-1"]);
+    }
+
+    [Fact]
+    public async Task ResolveName_MetaThrows_NeverPropagates_AndTheAttemptStaysRegisteredForTheThrottle()
+    {
+        // Simula "permiso business_management faltante" como una excepción real de Meta (lo típico:
+        // MetaWhatsAppManagementException por 403/permission denied) DESPUÉS de haber reservado el
+        // intento -- el throttle ya quedó registrado (no se revierte), así que un refresh inmediato
+        // siguiente no reintenta machacando Meta; la próxima ventana sí podrá reintentar.
+        var ctx = CreateContext();
+        ctx.Management.ThrowOnGetBusinessName = true;
+
+        var exceptionThrown = await Record.ExceptionAsync(() => ctx.Service.TryResolvePortfolioNameAsync(84, "biz-1", "phone-1"));
+
+        Assert.Null(exceptionThrown);
+        Assert.False(ctx.Config.PortfolioNames.ContainsKey("biz-1")); // Nunca se cachea un nombre a medias.
+        Assert.True(ctx.Config.PortfolioResolutionAttempts.ContainsKey("biz-1")); // El intento SÍ quedó registrado.
+
+        // Un segundo intento inmediato (misma ventana) no debe volver a llamar a Meta.
+        await ctx.Service.TryResolvePortfolioNameAsync(84, "biz-1", "phone-1");
+        Assert.Equal(1, ctx.Management.GetBusinessNameCalls);
     }
 
     [Fact]
@@ -263,35 +407,91 @@ public sealed class WhatsAppPortfolioResolutionServiceTests
 
         public Task SetPortfolioNameAsync(int idBase, string metaBusinessId, string portfolioName, CancellationToken ct = default)
         {
-            if (!string.IsNullOrWhiteSpace(metaBusinessId) && !string.IsNullOrWhiteSpace(portfolioName))
+            lock (_throttleLock)
             {
-                PortfolioNames[metaBusinessId] = portfolioName;
-                PortfolioResolutionAttempts[metaBusinessId] = DateTime.UtcNow;
+                if (!string.IsNullOrWhiteSpace(metaBusinessId) && !string.IsNullOrWhiteSpace(portfolioName))
+                {
+                    PortfolioNames[metaBusinessId] = portfolioName;
+                    PortfolioResolutionAttempts[metaBusinessId] = DateTime.UtcNow;
+                }
+                return Task.CompletedTask;
             }
-            return Task.CompletedTask;
         }
 
+        private readonly object _throttleLock = new();
+
+        /// <summary>
+        /// Lock explícito -- modela la misma atomicidad que MERGE ... WITH (HOLDLOCK) en el SQL real:
+        /// bajo refresh concurrente (5 números compartiendo un MetaBusinessId, cada uno disparando su
+        /// propio intento de reserva en paralelo), sólo UNO debe ganar la reserva. Sin este lock, un
+        /// Dictionary in-memory no da esa garantía y el test de concurrencia sería falso-verde.
+        /// </summary>
         public Task<bool> TryReserveResolutionAttemptAsync(int idBase, string metaBusinessId, TimeSpan throttleWindow, CancellationToken ct = default)
         {
-            if (PortfolioNames.TryGetValue(metaBusinessId, out var name) && !string.IsNullOrWhiteSpace(name))
-                return Task.FromResult(false);
+            lock (_throttleLock)
+            {
+                if (PortfolioNames.TryGetValue(metaBusinessId, out var name) && !string.IsNullOrWhiteSpace(name))
+                    return Task.FromResult(false);
 
-            var now = DateTime.UtcNow;
-            if (PortfolioResolutionAttempts.TryGetValue(metaBusinessId, out var last) && now - last < throttleWindow)
-                return Task.FromResult(false);
+                var now = DateTime.UtcNow;
+                if (PortfolioResolutionAttempts.TryGetValue(metaBusinessId, out var last) && now - last < throttleWindow)
+                    return Task.FromResult(false);
 
-            PortfolioResolutionAttempts[metaBusinessId] = now;
-            return Task.FromResult(true);
+                PortfolioResolutionAttempts[metaBusinessId] = now;
+                return Task.FromResult(true);
+            }
         }
 
         public Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, CancellationToken ct = default)
         {
             BackfillCalls++;
+            var numero = Numeros.SingleOrDefault(x => x.IdNumero == idNumero);
+            if (numero is not null && string.IsNullOrWhiteSpace(numero.MetaBusinessId))
+            {
+                numero.MetaBusinessId = metaBusinessId;
+                numero.WabaId = wabaId;
+            }
             return Task.CompletedTask;
         }
 
+        public Dictionary<string, string> WabaBusinessMap { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, DateTime> WabaResolutionAttempts { get; } = new(StringComparer.Ordinal);
+
+        public Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, string>>(WabaBusinessMap);
+
+        public Task<bool> TryReserveWabaResolutionAttemptAsync(int idBase, string wabaId, TimeSpan throttleWindow, CancellationToken ct = default)
+        {
+            lock (_throttleLock)
+            {
+                if (WabaBusinessMap.TryGetValue(wabaId, out var businessId) && !string.IsNullOrWhiteSpace(businessId))
+                    return Task.FromResult(false);
+
+                var now = DateTime.UtcNow;
+                if (WabaResolutionAttempts.TryGetValue(wabaId, out var last) && now - last < throttleWindow)
+                    return Task.FromResult(false);
+
+                WabaResolutionAttempts[wabaId] = now;
+                return Task.FromResult(true);
+            }
+        }
+
+        public Task SetWabaOwningBusinessIdAsync(int idBase, string wabaId, string metaBusinessId, CancellationToken ct = default)
+        {
+            lock (_throttleLock)
+            {
+                if (!string.IsNullOrWhiteSpace(wabaId) && !string.IsNullOrWhiteSpace(metaBusinessId))
+                {
+                    WabaBusinessMap[wabaId] = metaBusinessId;
+                    WabaResolutionAttempts[wabaId] = DateTime.UtcNow;
+                }
+                return Task.CompletedTask;
+            }
+        }
+
         public Task<IReadOnlyList<ConversacionWhatsAppNumeroDto>> GetWhatsAppNumerosAsync(CancellationToken ct = default) => Task.FromResult<IReadOnlyList<ConversacionWhatsAppNumeroDto>>(Numeros);
-        public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default) => Task.FromResult(new ConversacionWhatsAppConfigDto());
+        public ConversacionWhatsAppConfigDto LegacyConfig { get; } = new();
+        public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default) => Task.FromResult(LegacyConfig);
         public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(string connectionString, CancellationToken ct = default) => throw new NotSupportedException();
         public Task SaveWhatsAppConfigAsync(ConversacionWhatsAppConfigDto config, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<ConversacionWhatsAppConfigDto> GenerateWhatsAppWebPairingAsync(ConversacionWhatsAppWebPairingRequestDto request, CancellationToken ct = default) => throw new NotSupportedException();
@@ -330,12 +530,26 @@ public sealed class WhatsAppPortfolioResolutionServiceTests
     private sealed class FakeMetaManagementClient : IMetaWhatsAppManagementClient
     {
         public Dictionary<string, string?> Names { get; } = [];
-        public int GetBusinessNameCalls { get; private set; }
+        private int _getBusinessNameCalls;
+        public int GetBusinessNameCalls => _getBusinessNameCalls;
+        public Dictionary<string, string?> WabaOwningBusinesses { get; } = [];
+        private int _getWabaOwningBusinessCalls;
+        public int GetWabaOwningBusinessCalls => _getWabaOwningBusinessCalls;
+
+        public bool ThrowOnGetBusinessName { get; set; }
 
         public Task<string?> GetBusinessNameAsync(string businessId, string accessToken, string graphVersion, CancellationToken ct = default)
         {
-            GetBusinessNameCalls++;
+            Interlocked.Increment(ref _getBusinessNameCalls);
+            if (ThrowOnGetBusinessName)
+                throw new MetaWhatsAppManagementException("META_PERMISSION_DENIED", false, true, "Falta el permiso business_management.");
             return Task.FromResult(Names.TryGetValue(businessId, out var name) ? name : null);
+        }
+
+        public Task<string?> GetWabaOwningBusinessIdAsync(string wabaId, string accessToken, string graphVersion, CancellationToken ct = default)
+        {
+            Interlocked.Increment(ref _getWabaOwningBusinessCalls);
+            return Task.FromResult(WabaOwningBusinesses.TryGetValue(wabaId, out var businessId) ? businessId : null);
         }
 
         public Task<IReadOnlyList<MetaAuthorizedBusiness>> DiscoverAuthorizedBusinessesAsync(WhatsAppCredentialReference tokenReference, CancellationToken ct = default) => throw new NotSupportedException();

@@ -116,27 +116,27 @@ public sealed class WhatsAppNumeroPortfolioTests
     [Fact]
     public void Classify_Unknown_WhenNeitherMetaBusinessIdNorCentralOwnershipExist()
         => Assert.Equal(WhatsAppPortfolioResolutionStatus.Unknown,
-            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: false, hasCentralOwnership: false, hasCachedName: false));
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: false, hasReconstructiblePath: false, hasCachedName: false));
 
     [Fact]
     public void Classify_Resolvable_WhenNoMetaBusinessIdButCentralOwnershipCanReconstructIt()
         => Assert.Equal(WhatsAppPortfolioResolutionStatus.Resolvable,
-            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: false, hasCentralOwnership: true, hasCachedName: false));
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: false, hasReconstructiblePath: true, hasCachedName: false));
 
     [Fact]
     public void Classify_Resolvable_WhenMetaBusinessIdKnownButNameNotCachedYet()
         => Assert.Equal(WhatsAppPortfolioResolutionStatus.Resolvable,
-            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: true, hasCentralOwnership: false, hasCachedName: false));
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: true, hasReconstructiblePath: false, hasCachedName: false));
 
     [Fact]
     public void Classify_Known_OnlyWhenBothMetaBusinessIdAndNameAreAvailable()
         => Assert.Equal(WhatsAppPortfolioResolutionStatus.Known,
-            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: true, hasCentralOwnership: false, hasCachedName: true));
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: true, hasReconstructiblePath: false, hasCachedName: true));
 
     [Fact]
     public void Classify_NeverKnown_WithoutAMetaBusinessId_EvenIfSomehowANameWereCached()
         => Assert.Equal(WhatsAppPortfolioResolutionStatus.Resolvable,
-            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: false, hasCentralOwnership: true, hasCachedName: true));
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: false, hasReconstructiblePath: true, hasCachedName: true));
 
     private static readonly string RepositoryRoot = FindRepositoryRoot();
 
@@ -153,6 +153,29 @@ public sealed class WhatsAppNumeroPortfolioTests
         Assert.Contains("await TryResolveMissingPortfolioNamesAsync(idBase);", source, StringComparison.Ordinal);
         Assert.Contains("PortfolioResolution.BackfillNumeroMetaIdentityAsync(idBase, numero, _lifetimeCts.Token)", source, StringComparison.Ordinal);
         Assert.Contains("PortfolioResolution.TryResolvePortfolioNameAsync(idBase, numero.MetaBusinessId, numero.PhoneNumberId, _lifetimeCts.Token)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ManualNumeros_ResolveTheirLegacyWabaOwningBusiness_WiredIntoTheSameListRefresh()
+    {
+        // Auditoría: "MANUAL PHONE-ID = UNKNOWN para siempre" era incorrecto -- un número agregado
+        // manualmente puede seguir siendo Resolvable si hay una WABA legacy configurada
+        // (ConversacionWhatsAppConfigDto.BusinessAccountId). Este paso debe correr en el mismo refresh
+        // de la lista, antes de intentar resolver el nombre (para que el MetaBusinessId recién
+        // descubierto ya esté disponible en ese mismo render).
+        var source = ReadPageSource();
+
+        Assert.Contains("await TryResolveLegacyWabaOwningBusinessIfNeededAsync(idBase);", source, StringComparison.Ordinal);
+        Assert.Contains("PortfolioResolution.TryResolveLegacyWabaOwningBusinessAsync(idBase, wabaId, pendiente.PhoneNumberId, _lifetimeCts.Token)", source, StringComparison.Ordinal);
+
+        // Orden: backfill (central ownership + caché legacy) -> resolver la WABA legacy si hace falta ->
+        // recién ahí el resto (bloqueados, nombres). Nunca al revés -- si no, un número manual recién
+        // resuelto tendría que esperar al próximo refresh para que su MetaBusinessId se reflejara.
+        var backfillIndex = source.IndexOf("await RefreshNumeroMetaIdentityBackfillAsync(idBase);", StringComparison.Ordinal);
+        var legacyWabaIndex = source.IndexOf("await TryResolveLegacyWabaOwningBusinessIfNeededAsync(idBase);", StringComparison.Ordinal);
+        var namesIndex = source.IndexOf("await TryResolveMissingPortfolioNamesAsync(idBase);", StringComparison.Ordinal);
+        Assert.True(backfillIndex >= 0 && legacyWabaIndex >= 0 && namesIndex >= 0);
+        Assert.True(backfillIndex < legacyWabaIndex && legacyWabaIndex < namesIndex);
     }
 
     [Fact]
@@ -179,8 +202,10 @@ public sealed class WhatsAppNumeroPortfolioTests
         Assert.DoesNotContain("managementClient", methodBody, StringComparison.Ordinal);
         Assert.DoesNotContain("HttpClient", methodBody, StringComparison.Ordinal);
         Assert.Contains("FROM dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS", methodBody, StringComparison.Ordinal);
-        // Self-tolerant: si la base todavía no corrió la actualización que crea la tabla, no debe fallar.
-        Assert.Contains("if (portfolioColumns.Count == 0)", methodBody, StringComparison.Ordinal);
+        // Self-tolerant: si la base todavía no corrió la actualización que crea la tabla (o la corrió
+        // parcialmente), no debe fallar -- ver WhatsAppPortfolioSchemaGuardTests para la cobertura
+        // detallada de esta guarda.
+        Assert.Contains("if (!CanReadPortfolioCache(portfolioColumns))", methodBody, StringComparison.Ordinal);
     }
 
     [Fact]

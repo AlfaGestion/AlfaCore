@@ -184,6 +184,17 @@ public interface IMetaWhatsAppManagementClient
     /// </summary>
     Task<string?> GetBusinessNameAsync(string businessId, string accessToken, string graphVersion, CancellationToken ct = default)
         => throw new NotSupportedException("Este cliente de administración de Meta no admite consultar el nombre de un business por id.");
+
+    /// <summary>
+    /// GET /{wabaId}?fields=owner_business_info -- resuelve qué Business/Portfolio es dueño de una WABA
+    /// ya conocida SIN ownership central (típicamente un número agregado manualmente por Phone Number ID,
+    /// cuya única credencial es la legacy: ConversacionWhatsAppConfigDto.BusinessAccountId + AccessToken).
+    /// "Manual" no es sinónimo de "sin forma de resolver Portfolio": si el token legacy tiene permiso de
+    /// leer la WABA, esto alcanza sin ninguna otra integración. Mismo criterio que GetBusinessNameAsync:
+    /// token crudo, nunca Vault de onboarding, nunca por render (ver WhatsAppPortfolioResolutionService).
+    /// </summary>
+    Task<string?> GetWabaOwningBusinessIdAsync(string wabaId, string accessToken, string graphVersion, CancellationToken ct = default)
+        => throw new NotSupportedException("Este cliente de administración de Meta no admite consultar el business dueño de una WABA.");
 }
 
 public sealed record MetaTokenExchangeResult(WhatsAppCredentialReference TokenReference, DateTime? ExpiresAtUtc);

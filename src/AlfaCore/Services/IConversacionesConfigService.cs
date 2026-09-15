@@ -83,6 +83,17 @@ public interface IConversacionesConfigService
     /// </summary>
     Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, CancellationToken ct = default);
 
+    /// <summary>
+    /// Business dueño de cada WABA (base activa de la sesión) YA cacheado -- para números manuales/
+    /// legacy sin ownership central, cuya única WABA conocida es ConversacionWhatsAppConfigDto.
+    /// BusinessAccountId. Nunca pega contra Meta -- sólo lee la caché local, self-tolerant.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, CancellationToken ct = default);
+    /// <summary>Mismo mecanismo que TryReserveResolutionAttemptAsync, pero para la caché WABA-&gt;Business.</summary>
+    Task<bool> TryReserveWabaResolutionAttemptAsync(int idBase, string wabaId, TimeSpan throttleWindow, CancellationToken ct = default);
+    /// <summary>Mismo mecanismo que SetPortfolioNameAsync, pero para la caché WABA-&gt;Business.</summary>
+    Task SetWabaOwningBusinessIdAsync(int idBase, string wabaId, string metaBusinessId, CancellationToken ct = default);
+
     /// <summary>Usuarios marcados como administradores de Conversaciones (ven/responden por cualquier número).</summary>
     Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default);
     Task SaveConversacionAdministradoresAsync(IReadOnlyList<string> usuarios, CancellationToken ct = default);

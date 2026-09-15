@@ -71,6 +71,27 @@ BEGIN
 END;
 GO
 
+-- Números agregados MANUALMENTE por Phone Number ID no tienen ownership central (nunca pasaron por
+-- Embedded Signup) -- pero SÍ suelen tener una WABA legacy conocida (ConversacionWhatsAppConfigDto.
+-- BusinessAccountId, compartida por todos los números legacy de la base) con un AccessToken utilizable
+-- de sólo lectura. Esta tabla cachea, con el mismo mecanismo de throttle que el nombre del portfolio,
+-- qué Business es dueño de esa WABA -- para que "manual" no sea sinónimo de "Portfolio siempre
+-- desconocido". Ver WhatsAppPortfolioResolutionService.TryResolveLegacyWabaOwningBusinessAsync.
+IF OBJECT_ID(N'dbo.CONV_WHATSAPP_WABA_BUSINESS_MAP', N'U') IS NULL
+BEGIN
+    CREATE TABLE dbo.CONV_WHATSAPP_WABA_BUSINESS_MAP
+    (
+        WabaId                   nvarchar(40)  NOT NULL,
+        -- Vacío = intento hecho, todavía sin resultado (mismo criterio que PortfolioName en
+        -- CONV_WHATSAPP_BUSINESS_PORTFOLIOS) -- nunca NULL.
+        MetaBusinessId            nvarchar(40)  NOT NULL CONSTRAINT DF_CONV_WHATSAPP_WABA_BUSINESS_MAP_MetaBusinessId DEFAULT (N''),
+        ModifiedAtUtc             datetime2     NOT NULL,
+        LastResolutionAttemptUtc  datetime2     NULL,
+        CONSTRAINT PK_CONV_WHATSAPP_WABA_BUSINESS_MAP PRIMARY KEY CLUSTERED (WabaId)
+    );
+END;
+GO
+
 /*
 Decisiones de diseño explícitas (pedidas en la auditoría):
 
@@ -81,10 +102,11 @@ Decisiones de diseño explícitas (pedidas en la auditoría):
   una relación de integridad -- igual criterio que WhatsAppWabaOwnership.MetaBusinessId (tampoco tiene FK
   a nada) en el central.
 
-- SIN índices adicionales más allá de la PK. Todo el acceso es por MetaBusinessId (punto o IN (...)),
-  cubierto por la PK clustered. No hay ningún escaneo por PortfolioName/ModifiedAtUtc/
-  LastResolutionAttemptUtc en el código -- agregar un índice sin un query real que lo use sería
-  overhead sin beneficio.
+- SIN índices adicionales más allá de la PK en ninguna de las dos tablas nuevas. Todo el acceso es por
+  MetaBusinessId o WabaId (punto o IN (...)), cubierto por la PK clustered de cada una. No hay ningún
+  escaneo por las demás columnas en el código -- agregar un índice sin un query real que lo use sería
+  overhead sin beneficio. Mismo razonamiento de "sin FK" para CONV_WHATSAPP_WABA_BUSINESS_MAP: es una
+  caché best-effort, no una relación de integridad.
 
 - SQL Server 2016 SP1, compatibility_level 100: todo lo de este script (CREATE TABLE, ALTER TABLE ADD,
   MERGE, IF OBJECT_ID/COL_LENGTH, datetime2) es sintaxis disponible desde SQL Server 2008 -- ninguna
