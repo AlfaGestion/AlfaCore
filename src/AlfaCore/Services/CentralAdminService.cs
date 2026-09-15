@@ -848,9 +848,12 @@ public sealed class CentralAdminService(
             .Select(m =>
             {
                 activos.TryGetValue(m.Id, out var activoRow);
-                var estaActivo = esLegacy
-                    || string.Equals(activoRow?.Estado, ClienteModuloEstados.Activo, StringComparison.OrdinalIgnoreCase)
-                    || EstaEnPruebaVigente(activoRow?.Estado, activoRow?.PruebaVenceUtc);
+                var explicito = CompraIaHabilitacion.RequiereActivacionExplicita(m.Codigo);
+                var legacyHabilita = esLegacy && !explicito;
+                var estaActivo = legacyHabilita || (explicito
+                    ? CompraIaHabilitacion.EstaActivo(activoRow?.Estado, activoRow?.PruebaVenceUtc, DateTime.UtcNow)
+                    : string.Equals(activoRow?.Estado, ClienteModuloEstados.Activo, StringComparison.OrdinalIgnoreCase)
+                      || EstaEnPruebaVigente(activoRow?.Estado, activoRow?.PruebaVenceUtc));
 
                 return new ClienteModuloDto
                 {
@@ -860,7 +863,7 @@ public sealed class CentralAdminService(
                     Precio = m.Precio,
                     EsDependenciaDeOtro = esDependenciaSet.Contains(m.Id),
                     EstaActivo = estaActivo,
-                    Estado = esLegacy ? ClienteModuloEstados.Activo : (activoRow?.Estado ?? string.Empty),
+                    Estado = legacyHabilita ? ClienteModuloEstados.Activo : (activoRow?.Estado ?? string.Empty),
                     ActivadoUtc = activoRow?.ActivadoUtc,
                     ActivadoPor = activoRow?.ActivadoPor,
                     SolicitadoUtc = activoRow?.SolicitadoUtc,
@@ -985,6 +988,8 @@ public sealed class CentralAdminService(
                 // El módulo pedido directamente recibe el estado pedido (Activo o Prueba); las
                 // dependencias arrastradas siempre van directo a Activo sin cargo.
                 var esModuloDirecto = id == idModulo;
+                if (!esModuloDirecto && CompraIaHabilitacion.RequiereActivacionExplicita(modulos.First(m => m.Id == id).Codigo))
+                    continue; // Esta autorización no se hereda de otros módulos.
                 var estadoAAplicar = esModuloDirecto ? estado : ClienteModuloEstados.Activo;
                 var venceAAplicar = esModuloDirecto ? pruebaVenceUtc : null;
 
@@ -1513,6 +1518,24 @@ public sealed class CentralAdminService(
 
     public async Task<bool> IsModuloActivoParaClienteActualAsync(string codigoModulo, CancellationToken ct = default)
     {
+        if (CompraIaHabilitacion.RequiereActivacionExplicita(codigoModulo))
+        {
+            try
+            {
+                var cliente = await ResolveIdClienteDeBaseActivaAsync(ct);
+                if (string.IsNullOrWhiteSpace(cliente)) return false;
+                return (await GetClienteModulosAsync(cliente, ct)).Any(m =>
+                    CompraIaHabilitacion.RequiereActivacionExplicita(m.Codigo) && m.EstaActivo);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+            catch (Exception ex)
+            {
+                await appEvents.LogErrorAsync("Central", "ComprobantesIaHabilitacion", ex,
+                    "No se pudo verificar la habilitación explícita de comprobantes con IA.", ct: ct);
+                return false;
+            }
+        }
+
         // Instalación clásica de un solo cliente (on-premise, sin ALFA_CENTRAL de por medio):
         // no hay noción de "módulo contratado", todo sigue disponible como siempre.
         if (!appMode.IsSaaSMode)
