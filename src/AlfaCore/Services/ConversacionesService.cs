@@ -1850,7 +1850,8 @@ public sealed class ConversacionesService(
                             FROM dbo.CONV_ADJUNTOS a
                             WHERE a.IdMensaje = m.IdMensaje
                         ) THEN 1 ELSE 0 END AS TieneAdjuntos,
-                        ISNULL(m.MarcaInterna, '') AS MarcaInterna
+                        ISNULL(m.MarcaInterna, '') AS MarcaInterna,
+                        ISNULL(m.Origen, '') AS Origen
                     FROM dbo.CONV_MENSAJES m
                     INNER JOIN dbo.CONV_CONVERSACIONES c
                         ON c.IdConversacion = @IdConversacion
@@ -1894,7 +1895,8 @@ public sealed class ConversacionesService(
                     page.TecnicoAutorNombre,
                     page.PayloadJson,
                     page.TieneAdjuntos,
-                    page.MarcaInterna
+                    page.MarcaInterna,
+                    page.Origen
                 FROM PagedMessages page
                 ORDER BY page.FechaHora ASC, page.IdMensaje ASC;
                 """;
@@ -1941,6 +1943,9 @@ public sealed class ConversacionesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            // Auto-sana la columna Origen (ver InsertMessageAsync) por si esta base tenant todavía no
+            // recibió nunca un mensaje de history/echo -- si no existiera, el SELECT de abajo fallaría.
+            await EnsureMensajeOrigenColumnAsync(cn, token);
             await using var cmd = new SqlCommand(pageSql, cn);
             cmd.Parameters.AddWithValue("@IdConversacion", conversationId);
             cmd.Parameters.AddWithValue("@Take", pageSize);
@@ -1969,7 +1974,8 @@ public sealed class ConversacionesService(
                     TecnicoAutorNombre = GetString(rd, 13),
                     PayloadJson = GetString(rd, 14),
                     TieneAdjuntos = GetInt(rd, 15) == 1,
-                    MarcaInterna = GetString(rd, 16)
+                    MarcaInterna = GetString(rd, 16),
+                    Origen = GetString(rd, 17)
                 });
             }
 

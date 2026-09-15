@@ -339,6 +339,13 @@ public sealed class ConversacionMensajeDto
     /// es solo para uso propio del agente. <c>null</c>/vacío = sin marcar.
     /// </summary>
     public string? MarcaInterna { get; set; }
+    /// <summary>
+    /// "HISTORY" (importado por history sync de Coexistence) o "WHATSAPP_BUSINESS_APP" (reflejo de un
+    /// mensaje enviado desde la app de WhatsApp Business, vía smb_message_echoes) o vacío para mensajes
+    /// normales de AlfaCore. Antes no se exponía al cliente -- un echo con autor vacío se atribuía por
+    /// defecto a "Equipo Alfa", como si lo hubiera enviado AlfaCore.
+    /// </summary>
+    public string Origen { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionMensajesPaginaDto

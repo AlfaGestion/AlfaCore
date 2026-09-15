@@ -11327,6 +11327,13 @@
         {
             "ENTRANTE" => CurrentConversationContactName,
             "NOTA_INTERNA" => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "Nota interna"),
+            // Prioridad 7: un mensaje reflejado de smb_message_echoes (enviado desde la app de WhatsApp
+            // Business, no desde AlfaCore) nunca tiene TecnicoAutorNombre/UsuarioAutor -- antes eso caía
+            // al mismo fallback "Equipo Alfa" que un mensaje normal de AlfaCore, atribuyéndolo
+            // incorrectamente al soporte cuando en realidad lo mandó el negocio directamente desde su
+            // celular. Se prioriza igual un autor real de AlfaCore si por algún motivo lo hubiera.
+            _ when string.Equals(message.Origen, "WHATSAPP_BUSINESS_APP", StringComparison.OrdinalIgnoreCase)
+                => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "WhatsApp Business"),
             _ => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "Equipo Alfa")
         };
 
