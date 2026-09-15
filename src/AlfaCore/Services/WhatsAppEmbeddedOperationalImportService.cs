@@ -209,7 +209,12 @@ public sealed class WhatsAppEmbeddedOperationalImportService(
                 name,
                 displayPhoneNumber,
                 phoneNumberId,
-                onboarding.ActionRequiredReason));
+                onboarding.ActionRequiredReason,
+                onboarding.RetryCount,
+                onboarding.ErrorSummary,
+                onboarding.IncidentId,
+                onboarding.CurrentStep,
+                onboarding.ModifiedAtUtc));
         }
 
         return result;

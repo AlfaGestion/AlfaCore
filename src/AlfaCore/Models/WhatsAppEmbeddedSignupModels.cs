@@ -265,9 +265,24 @@ public sealed record WhatsAppEmbeddedPendingConnection(
     string Nombre,
     string DisplayPhoneNumber,
     string PhoneNumberId,
-    WhatsAppEmbeddedActionRequiredReason? ActionRequiredReason)
+    WhatsAppEmbeddedActionRequiredReason? ActionRequiredReason,
+    /// <summary>
+    /// Mismo RetryCount del dominio (WhatsAppEmbeddedOnboardingDto) -- no un contador nuevo. Sirve
+    /// para que la UI decida si todavía ofrece "Reintentar" (RetryCount &lt; MaxManualRetryCount) o ya
+    /// hay que ofrecer "Volver a conectar con Meta".
+    /// </summary>
+    int RetryCount = 0,
+    string ErrorSummary = "",
+    string IncidentId = "",
+    string CurrentStep = "",
+    DateTime? ModifiedAtUtc = null)
 {
     public bool IsInProgress => WhatsAppEmbeddedSignupCtaPolicy.IsActiveInProgress(Status) && Status != WhatsAppEmbeddedOnboardingStatus.Started;
+
+    /// <summary>Sólo tiene sentido preguntarlo cuando Status es FailedRetryable -- para cualquier otro
+    /// estado, "Reintentar" no aplica de entrada.</summary>
+    public bool CanRetry(int maxManualRetryCount)
+        => Status == WhatsAppEmbeddedOnboardingStatus.FailedRetryable && RetryCount < maxManualRetryCount;
 
     public string StatusLabel => Status switch
     {
