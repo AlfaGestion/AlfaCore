@@ -2676,6 +2676,34 @@ public sealed class ConversacionesService(
             };
         }, "No se pudo enviar la reacciÃ³n por WhatsApp.", ct);
 
+    public Task<string?> GetLastOutboundDeliveryErrorAsync(int idNumero, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetLastOutboundDeliveryError", async token =>
+        {
+            if (idNumero <= 0)
+                return (string?)null;
+
+            const string sql = """
+                SELECT TOP (1) m.EstadoEnvio, m.PayloadJson
+                FROM dbo.CONV_MENSAJES m
+                JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                WHERE c.IdNumeroWhatsApp = @IdNumero AND m.Direction = N'SALIENTE'
+                ORDER BY m.FechaHora DESC
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            if (!await rd.ReadAsync(token))
+                return (string?)null;
+
+            var estadoEnvio = GetString(rd, 0);
+            return string.Equals(estadoEnvio, "ERROR_ENVIO", StringComparison.OrdinalIgnoreCase)
+                ? GetString(rd, 1)
+                : null;
+        }, "No se pudo consultar el último error de envío de WhatsApp.", ct);
+
     public Task SetConversationWhatsAppNumeroAsync(ConversacionWhatsAppNumeroRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SetConversationWhatsAppNumero", async token =>
         {

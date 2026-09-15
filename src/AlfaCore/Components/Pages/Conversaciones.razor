@@ -1464,6 +1464,10 @@
                         <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_conversationError</div>
                     }
 
+                    @if (SelectedConversationBlockedFeedback is not null && !_showStatusMenu)
+                    {
+                        <AlfaFeedbackPanel Message="@SelectedConversationBlockedFeedback" Dismissible="false" Class="conversations-window-banner-panel" />
+                    }
                     @if (IsWhatsAppWindowExpired && !_showStatusMenu)
                     {
                         <div class="conversations-window-banner">
@@ -3741,6 +3745,13 @@
     private List<ConversacionClienteCandidateDto> _clientCandidates = [];
     private readonly Dictionary<long, ConversationViewCache> _conversationCache = [];
     private readonly Dictionary<string, ConversationChannelCache> _channelCache = [];
+    /// <summary>
+    /// Prioridad 3: si el canal WhatsApp seleccionado tiene un 131031 (cuenta bloqueada por Meta)
+    /// vigente, se muestra un panel grande -- nunca un flag persistido, se deriva del último mensaje
+    /// saliente (GetLastOutboundDeliveryErrorAsync) y se cachea por número dentro de la sesión para no
+    /// repetir la consulta en cada cambio de conversación del mismo número.
+    /// </summary>
+    private readonly Dictionary<int, AppUiMessage?> _numeroBlockedFeedbackCache = [];
     private ConversacionDetalleDto? _selectedConversation;
     private long? _selectedConversationId;
     private bool _mobileChatActive;
@@ -5825,6 +5836,7 @@
         CloseMessageSearch();
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
+        QueueNumeroBlockedFeedbackRefresh();
 
         // Antes, si el panel de IA quedaba abierto mientras el operador navegaba entre
         // conversaciones, cada clic en la bandeja disparaba sugerencia (AlfaKnowledge) + análisis
@@ -10603,6 +10615,43 @@
     /// </summary>
     private Task RemoveReactionAsync(long messageId)
         => SendOrRemoveReactionAsync(messageId, string.Empty, remove: true);
+
+    private AppUiMessage? SelectedConversationBlockedFeedback
+        => _selectedConversation?.IdNumeroWhatsApp is > 0 and { } idNumero
+           && _numeroBlockedFeedbackCache.TryGetValue(idNumero, out var cached)
+            ? cached
+            : null;
+
+    private void QueueNumeroBlockedFeedbackRefresh()
+    {
+        if (_selectedConversation?.IdNumeroWhatsApp is not (> 0 and { } idNumero) || _numeroBlockedFeedbackCache.ContainsKey(idNumero))
+            return;
+
+        _ = RefreshNumeroBlockedFeedbackAsync(idNumero);
+    }
+
+    private async Task RefreshNumeroBlockedFeedbackAsync(int idNumero)
+    {
+        string? payload;
+        try
+        {
+            payload = await ConversacionesSvc.GetLastOutboundDeliveryErrorAsync(idNumero);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return;
+        }
+
+        _numeroBlockedFeedbackCache[idNumero] = AlfaCore.Models.WhatsAppOutboundErrorClassifier.IsAccountLocked(payload)
+            ? AppUiMessage.Error(
+                "Este WhatsApp está bloqueado por Meta",
+                "No se pueden enviar ni recibir mensajes hasta que Meta reactive la cuenta.",
+                "Esto se resuelve directamente con Meta -- AlfaCore no puede desbloquearla ni reintentando el envío.")
+            : null;
+
+        if (_selectedConversation?.IdNumeroWhatsApp == idNumero)
+            await InvokeAsync(StateHasChanged);
+    }
 
     private string GetMyActiveReactionEmoji(ConversacionMensajeDto message)
     {

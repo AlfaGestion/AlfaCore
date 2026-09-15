@@ -20,6 +20,13 @@ public interface IConversacionesService
     Task SetTypingAsync(ConversacionTypingRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendMessageAsync(ConversacionSendMessageRequest request, CancellationToken ct = default);
     Task<ConversacionMessageResultDto> SendReactionAsync(ConversacionReaccionRequest request, CancellationToken ct = default);
+    /// <summary>
+    /// PayloadJson del último mensaje saliente de este número (o null si no hay mensajes salientes o
+    /// el último no fue ERROR_ENVIO). Deliberadamente derivado -- no hay ningún flag de "bloqueado"
+    /// persistido: si el último intento tuvo éxito, esto devuelve null aunque haya habido un 131031
+    /// puntual antes. Usar con WhatsAppOutboundErrorClassifier para clasificar (p. ej. 131031).
+    /// </summary>
+    Task<string?> GetLastOutboundDeliveryErrorAsync(int idNumero, CancellationToken ct = default);
     Task SetConversationWhatsAppNumeroAsync(ConversacionWhatsAppNumeroRequest request, CancellationToken ct = default);
     /// <summary>
     /// Marca interna de seguimiento por mensaje (ej. "PENDIENTE"/"COMPLETADA") — nunca se envía

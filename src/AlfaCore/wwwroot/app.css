@@ -7169,6 +7169,10 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     white-space: nowrap;
 }
 
+.conversations-window-banner-panel {
+    margin: .5rem .75rem;
+}
+
 .conversations-window-banner {
     position: relative;
     z-index: 5;

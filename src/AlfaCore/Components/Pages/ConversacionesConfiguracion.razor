@@ -607,6 +607,10 @@
                         <div><h2>@GetNumeroDisplayName(selectedNumero)</h2><p>Detalle del WhatsApp conectado con AlfaCore.</p></div>
                         @if (IsConfiguredGlobalApiNumero(selectedNumero)) { <AlfaTag Tone="AlfaTagTone.Accent">Predeterminado</AlfaTag> }
                     </div>
+                    @if (_selectedNumeroBlockedFeedback is not null)
+                    {
+                        <AlfaFeedbackPanel Message="@_selectedNumeroBlockedFeedback" Dismissible="false" />
+                    }
                     <div class="wa-business-block">
                         <h3>Identificación</h3>
                         <dl class="wa-business-definition"><div><dt>Nombre</dt><dd>@GetNumeroDisplayName(selectedNumero)</dd></div><div><dt>Conexión</dt><dd>AlfaCore</dd></div></dl>
@@ -2268,6 +2272,12 @@
     private CancellationTokenSource? _embeddedSignupPollingCts;
     private CancellationTokenSource? _embeddedSignupWatchdogCts;
     private bool _whatsAppConnectionsLoaded;
+    /// <summary>
+    /// Derivado del último mensaje saliente del número seleccionado -- nunca un flag persistido (ver
+    /// GetLastOutboundDeliveryErrorAsync). Se recalcula cada vez que se selecciona un número, así un
+    /// 131031 puntual viejo no queda mostrado como "bloqueado" para siempre si un envío posterior tuvo éxito.
+    /// </summary>
+    private AppUiMessage? _selectedNumeroBlockedFeedback;
 
     /// <summary>
     /// Números cuyo QR/código de pairing fue iniciado explícitamente en esta sesión de UI.
@@ -4360,9 +4370,40 @@
             _selectedApiNumeroId = numero.IdNumero;
             _apiNumeroDraft = null;
             _addingApiNumero = false;
+            _selectedNumeroBlockedFeedback = null;
             UpdatePageHeader();
             await InvokeAsync(StateHasChanged);
+            await RefreshSelectedNumeroBlockedFeedbackAsync(numero.IdNumero);
         });
+
+    /// <summary>
+    /// Prioridad 3 de la auditoría UX: un tooltip no alcanza para un 131031 (cuenta bloqueada por
+    /// Meta) -- necesita un panel grande y persistente en Configuración. No es un flag persistido: se
+    /// recalcula desde el último mensaje saliente cada vez que se abre el detalle de este número.
+    /// </summary>
+    private async Task RefreshSelectedNumeroBlockedFeedbackAsync(int idNumero)
+    {
+        string? payload;
+        try
+        {
+            payload = await ConvSvc.GetLastOutboundDeliveryErrorAsync(idNumero, _lifetimeCts.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return;
+        }
+
+        if (_selectedApiNumeroId != idNumero)
+            return; // El usuario ya cambió de número mientras esto cargaba -- no pisar su selección actual.
+
+        _selectedNumeroBlockedFeedback = AlfaCore.Models.WhatsAppOutboundErrorClassifier.IsAccountLocked(payload)
+            ? AppUiMessage.Error(
+                "Cuenta bloqueada por Meta",
+                "Meta bloqueó esta cuenta de WhatsApp y actualmente no permite enviar ni recibir mensajes.",
+                "Esto se resuelve directamente con Meta -- AlfaCore no puede desbloquearla ni reintentando el envío.")
+            : null;
+        await InvokeAsync(StateHasChanged);
+    }
 
     private Task SelectApiIntegration()
         => RequestNavigationAsync(async () =>
