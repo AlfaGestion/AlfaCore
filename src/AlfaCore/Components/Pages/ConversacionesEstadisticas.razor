@@ -3,6 +3,7 @@
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject NavigationManager Nav
 @implements IDisposable
 @using AlfaCore.Models
@@ -612,6 +613,9 @@
     private string _hastaText = DateTime.Today.ToString("yyyy-MM-dd");
     private string _idTecnico = string.Empty;
     private string _activeRange = StatsRange.Today;
+    private readonly AlfaCore.Services.ConversationTenantLoadGuard _tenantLoadGuard = new();
+    private AlfaCore.Services.ConversationTenantLoadLease _tenantLoadLease;
+    private long _statsLoadGeneration;
 
     private string RangeLabel
         => _stats is null ? string.Empty : $"{_stats.Desde:dd/MM/yyyy} - {_stats.Hasta:dd/MM/yyyy}";
@@ -643,11 +647,15 @@
     private int MaxDailyCount => Math.Max(1, _stats?.PorDia.Select(x => Math.Max(Math.Max(x.Entrantes, x.Salientes), x.Cerradas + x.Tickets)).DefaultIfEmpty(0).Max() ?? 1);
     private int MaxClientDemandScore => Math.Max(1, _stats?.PorCliente.Select(GetClientDemandScore).DefaultIfEmpty(0).Max() ?? 1);
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         UpdatePageHeader();
-        _technicians = (await ConversacionesSvc.GetTechniciansAsync()).ToList();
-        await LoadStatsAsync();
+        SessionSvc.SessionChanged += OnTenantContextChanged;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadTenantAsync();
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -661,7 +669,67 @@
             UpdatePageHeader();
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        SessionSvc.SessionChanged -= OnTenantContextChanged;
+        PageHeader.Clear();
+    }
+
+    private async Task LoadTenantAsync()
+    {
+        var generation = ++_statsLoadGeneration;
+        _tenantLoadLease = AlfaCore.Services.ConversationTenantLoadLease.Invalid;
+        _technicians = [];
+        _stats = null;
+        _error = null;
+        _loading = true;
+
+        if (!TryCaptureTenantLoad(out var lease))
+        {
+            _error = "No se pudo abrir la información de esta base.";
+            _loading = false;
+            return;
+        }
+
+        _tenantLoadLease = lease;
+
+        try
+        {
+            var technicians = await ConversacionesSvc.GetTechniciansAsync(lease.BaseId);
+            if (!IsTenantLoadCurrent(lease) || generation != _statsLoadGeneration)
+                return;
+
+            _technicians = technicians.ToList();
+            await LoadStatsAsync(lease, generation);
+        }
+        catch (Exception ex)
+        {
+            if (IsTenantLoadCurrent(lease) && generation == _statsLoadGeneration)
+                _error = ex.Message;
+        }
+        finally
+        {
+            if (IsTenantLoadCurrent(lease) && generation == _statsLoadGeneration)
+                _loading = false;
+        }
+    }
+
+    private bool TryCaptureTenantLoad(out AlfaCore.Services.ConversationTenantLoadLease lease)
+    {
+        var routeBaseId = idbase is > 0 ? idbase : null;
+        var sessionBaseId = SessionSvc.GetActiveSession()?.BaseId;
+        lease = _tenantLoadGuard.Capture(routeBaseId, sessionBaseId);
+        return lease.IsValid;
+    }
+
+    private bool IsTenantLoadCurrent(AlfaCore.Services.ConversationTenantLoadLease lease)
+        => _tenantLoadGuard.IsCurrent(lease, idbase is > 0 ? idbase : null, SessionSvc.GetActiveSession()?.BaseId);
+
+    private void OnTenantContextChanged()
+    {
+        _tenantLoadGuard.Invalidate();
+        _ = InvokeAsync(LoadTenantAsync);
+    }
 
     private void UpdatePageHeader()
     {
@@ -740,6 +808,17 @@
 
     private async Task LoadStatsAsync()
     {
+        if (!_tenantLoadLease.IsValid)
+        {
+            await LoadTenantAsync();
+            return;
+        }
+
+        await LoadStatsAsync(_tenantLoadLease, ++_statsLoadGeneration);
+    }
+
+    private async Task LoadStatsAsync(AlfaCore.Services.ConversationTenantLoadLease lease, long generation)
+    {
         _loading = true;
         _error = null;
 
@@ -751,16 +830,24 @@
             {
                 Desde = desde,
                 Hasta = hasta,
-                IdTecnico = _idTecnico
+                IdTecnico = _idTecnico,
+                ExpectedBaseId = lease.BaseId
             });
+            if (!IsTenantLoadCurrent(lease) || generation != _statsLoadGeneration)
+            {
+                _stats = null;
+                return;
+            }
         }
         catch (Exception ex)
         {
-            _error = ex.Message;
+            if (IsTenantLoadCurrent(lease) && generation == _statsLoadGeneration)
+                _error = ex.Message;
         }
         finally
         {
-            _loading = false;
+            if (IsTenantLoadCurrent(lease) && generation == _statsLoadGeneration)
+                _loading = false;
         }
     }
 

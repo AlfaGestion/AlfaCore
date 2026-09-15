@@ -1722,11 +1722,12 @@ public class Program
 
         var descargarInformeConversacionesExcel = async (
             int idInforme,
+            int? idbase,
             IConversacionesInformesService svc,
             ConversacionesInformeExcelExporter exporter,
             CancellationToken ct) =>
         {
-            var informe = await svc.GetAsync(idInforme, ct);
+            var informe = await svc.GetAsync(idInforme, idbase, ct);
             if (informe is null) return Results.NotFound();
             var bytes = exporter.Exportar(informe);
             return Results.File(bytes,

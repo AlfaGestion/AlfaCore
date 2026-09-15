@@ -55,6 +55,7 @@ public sealed class ConversacionesEstadisticasFilters
     public DateTime Desde { get; set; } = DateTime.Today;
     public DateTime Hasta { get; set; } = DateTime.Today;
     public string? IdTecnico { get; set; }
+    public int? ExpectedBaseId { get; set; }
 }
 
 public sealed class ConversacionesEstadisticasDto

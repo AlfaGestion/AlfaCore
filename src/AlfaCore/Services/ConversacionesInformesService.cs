@@ -16,6 +16,30 @@ public sealed class ConversacionesInformesService(
 {
     private const string ModuleName = "Conversaciones";
 
+    private TenantConnectionContext ResolveTenantConnection(int? expectedBaseId, string operation)
+    {
+        var active = sessionService.GetActiveSession();
+        if (expectedBaseId is > 0 && active?.BaseId != expectedBaseId.Value)
+            throw new InvalidOperationException(
+                $"La sesión activa no coincide con la base solicitada para ConversacionesInformes.{operation}.");
+
+        if (active is not null)
+        {
+            return new TenantConnectionContext(active.BaseId, new SqlConnectionStringBuilder
+            {
+                DataSource = active.Servidor,
+                InitialCatalog = active.BaseDatos,
+                UserID = active.Usuario,
+                Password = active.Password,
+                TrustServerCertificate = active.TrustServerCertificate,
+                ApplicationName = "AlfaCore"
+            }.ConnectionString);
+        }
+
+        return new TenantConnectionContext(null, configuration.GetConnectionString("AlfaGestion")
+            ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'."));
+    }
+
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
@@ -118,15 +142,20 @@ public sealed class ConversacionesInformesService(
         """;
 
     public Task<ConversacionInformeMensualDto> GenerarAsync(int anio, int mes, string? usuario, CancellationToken ct = default)
+        => GenerarAsync(anio, mes, usuario, null, ct);
+
+    public Task<ConversacionInformeMensualDto> GenerarAsync(int anio, int mes, string? usuario, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("GenerarInforme", async token =>
         {
+            var tenant = ResolveTenantConnection(expectedBaseId, "GenerarInforme");
+
             if (mes < 1 || mes > 12)
                 throw new ArgumentOutOfRangeException(nameof(mes), "El mes debe estar entre 1 y 12.");
 
             var desde = new DateTime(anio, mes, 1);
             var hasta = desde.AddMonths(1);
 
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
 
             var filas = (await cn.QueryAsync<ConversacionInformeFilaDto>(new CommandDefinition(
@@ -190,13 +219,17 @@ public sealed class ConversacionesInformesService(
                 idInforme.ToString(), "Informe mensual de conversaciones generado.",
                 new { anio, mes, filas = filas.Count }, token);
 
-            return (await GetAsync(idInforme, token))!;
+            return (await GetAsync(idInforme, expectedBaseId, token))!;
         }, ct);
 
     public Task<IReadOnlyList<ConversacionInformeListItemDto>> ListarAsync(CancellationToken ct = default)
+        => ListarAsync(null, ct);
+
+    public Task<IReadOnlyList<ConversacionInformeListItemDto>> ListarAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("ListarInformes", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "ListarInformes");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             var items = (await cn.QueryAsync<ConversacionInformeListItemDto>(new CommandDefinition("""
                 SELECT h.IdInforme, h.Anio, h.Mes, h.FechaGeneracion,
                     (SELECT COUNT(1) FROM dbo.CONV_INFORME_MENSUAL_DET d WHERE d.IdInforme = h.IdInforme) AS CantFilas
@@ -207,9 +240,13 @@ public sealed class ConversacionesInformesService(
         }, ct);
 
     public Task<ConversacionInformeMensualDto?> GetAsync(int idInforme, CancellationToken ct = default)
+        => GetAsync(idInforme, null, ct);
+
+    public Task<ConversacionInformeMensualDto?> GetAsync(int idInforme, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetInforme", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetInforme");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             var cab = await cn.QuerySingleOrDefaultAsync<ConversacionInformeMensualDto>(new CommandDefinition(
                 "SELECT IdInforme, Anio, Mes, FechaGeneracion, ISNULL(UsuarioGeneracion, N'') AS UsuarioGeneracion, Estado FROM dbo.CONV_INFORME_MENSUAL WHERE IdInforme = @Id;",
                 new { Id = idInforme }, cancellationToken: token));
@@ -222,13 +259,17 @@ public sealed class ConversacionesInformesService(
         }, ct);
 
     public Task<ConversacionInformeMensualDto?> GetByPeriodoAsync(int anio, int mes, CancellationToken ct = default)
+        => GetByPeriodoAsync(anio, mes, null, ct);
+
+    public Task<ConversacionInformeMensualDto?> GetByPeriodoAsync(int anio, int mes, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetInformePeriodo", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetInformePeriodo");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             var id = await cn.ExecuteScalarAsync<int?>(new CommandDefinition(
                 "SELECT IdInforme FROM dbo.CONV_INFORME_MENSUAL WHERE Anio = @Anio AND Mes = @Mes;",
                 new { Anio = anio, Mes = mes }, cancellationToken: token));
-            return id.HasValue ? await GetAsync(id.Value, token) : null;
+            return id.HasValue ? await GetAsync(id.Value, expectedBaseId, token) : null;
         }, ct);
 
     private const string DetalleSelectSql = """
@@ -306,9 +347,13 @@ public sealed class ConversacionesInformesService(
         """;
 
     public Task<ConversacionInformeDetalleDto?> GetDetalleAsync(int idDetalle, CancellationToken ct = default)
+        => GetDetalleAsync(idDetalle, null, ct);
+
+    public Task<ConversacionInformeDetalleDto?> GetDetalleAsync(int idDetalle, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("GetDetalleInforme", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetDetalleInforme");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
 
             var fila = await cn.QuerySingleOrDefaultAsync<ConversacionInformeFilaDto>(new CommandDefinition(
@@ -358,20 +403,24 @@ public sealed class ConversacionesInformesService(
         }, ct);
 
     public Task<string> GenerarResumenAsync(int idDetalle, CancellationToken ct = default)
+        => GenerarResumenAsync(idDetalle, null, ct);
+
+    public Task<string> GenerarResumenAsync(int idDetalle, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("GenerarResumenInforme", async token =>
         {
-            var det = await GetDetalleAsync(idDetalle, token)
+            var tenant = ResolveTenantConnection(expectedBaseId, "GenerarResumenInforme");
+            var det = await GetDetalleAsync(idDetalle, expectedBaseId, token)
                       ?? throw new InvalidOperationException("La fila del informe no existe.");
 
             if (det.Mensajes.Count == 0)
             {
                 const string vacio = "Durante el período no registramos conversaciones con este cliente.";
-                await GuardarBorradorAsync(idDetalle, vacio, token);
+                await GuardarBorradorAsync(idDetalle, vacio, expectedBaseId, token);
                 return vacio;
             }
 
             string tono;
-            await using (var cn = new SqlConnection(ConnectionString))
+            await using (var cn = new SqlConnection(tenant.ConnectionString))
             {
                 await cn.OpenAsync(token);
                 tono = (await ReadConfigAsync(cn, "CONV_INFORME_INSTRUCCIONES", token)).Trim();
@@ -384,14 +433,18 @@ public sealed class ConversacionesInformesService(
             // Prepend un párrafo con datos duros exactos (período, días, mensajes, horas, contactos).
             var intro = BuildIntroDatos(det);
             var final = intro.Length > 0 ? $"{intro}\n\n{resumen.Trim()}" : resumen.Trim();
-            await GuardarBorradorAsync(idDetalle, final, token);
+            await GuardarBorradorAsync(idDetalle, final, expectedBaseId, token);
             return final;
         }, ct);
 
     public Task GuardarResumenEditadoAsync(int idDetalle, string texto, CancellationToken ct = default)
+        => GuardarResumenEditadoAsync(idDetalle, texto, null, ct);
+
+    public Task GuardarResumenEditadoAsync(int idDetalle, string texto, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("GuardarResumenInforme", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GuardarResumenInforme");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.ExecuteAsync(new CommandDefinition(
                 "UPDATE dbo.CONV_INFORME_MENSUAL_DET SET ResumenEditado = @Texto WHERE IdDetalle = @Id;",
                 new { Id = idDetalle, Texto = (texto ?? string.Empty).Trim() }, cancellationToken: token));
@@ -399,20 +452,24 @@ public sealed class ConversacionesInformesService(
         }, ct);
 
     public Task EnviarPorEmailAsync(int idDetalle, string destinatario, CancellationToken ct = default)
+        => EnviarPorEmailAsync(idDetalle, destinatario, null, ct);
+
+    public Task EnviarPorEmailAsync(int idDetalle, string destinatario, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("EnviarInformeEmail", async token =>
         {
+            var tenant = ResolveTenantConnection(expectedBaseId, "EnviarInformeEmail");
             var to = (destinatario ?? string.Empty).Trim();
             if (to.Length == 0)
                 throw new InvalidOperationException("Ingresá un email de destino.");
             _ = new MailAddress(to);
 
-            var det = await GetDetalleAsync(idDetalle, token)
+            var det = await GetDetalleAsync(idDetalle, expectedBaseId, token)
                       ?? throw new InvalidOperationException("La fila del informe no existe.");
             var texto = TextoAEnviar(det.Fila);
             if (string.IsNullOrWhiteSpace(texto))
                 throw new InvalidOperationException("Generá o escribí el resumen antes de enviarlo.");
 
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var empresa = (await ReadConfigAsync(cn, "Nombre", token)).Trim();
             var mail = await ResolveMailConfigAsync(cn, token);
@@ -442,9 +499,13 @@ public sealed class ConversacionesInformesService(
         }, ct);
 
     public Task EnviarPorWhatsAppAsync(int idDetalle, CancellationToken ct = default)
+        => EnviarPorWhatsAppAsync(idDetalle, null, ct);
+
+    public Task EnviarPorWhatsAppAsync(int idDetalle, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("EnviarInformeWhatsApp", async token =>
         {
-            var det = await GetDetalleAsync(idDetalle, token)
+            var tenant = ResolveTenantConnection(expectedBaseId, "EnviarInformeWhatsApp");
+            var det = await GetDetalleAsync(idDetalle, expectedBaseId, token)
                       ?? throw new InvalidOperationException("La fila del informe no existe.");
             if (!det.IdConversacionWhatsApp.HasValue)
                 throw new InvalidOperationException("Este cliente no tiene una conversación de WhatsApp para enviarle el resumen.");
@@ -466,7 +527,7 @@ public sealed class ConversacionesInformesService(
                 SistemaAccion = "INFORME"
             }, token);
 
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             await MarcarEnviadoAsync(cn, idDetalle, "WHATSAPP", token);
             await appEvents.LogAuditAsync(ModuleName, "EnviarInformeWhatsApp", "CONV_INFORME_MENSUAL_DET",
@@ -475,13 +536,17 @@ public sealed class ConversacionesInformesService(
         }, ct);
 
     public Task<IReadOnlyList<ConversacionInformeTendenciaDto>> GetTendenciaMensajesAsync(int anio, int mes, CancellationToken ct = default)
+        => GetTendenciaMensajesAsync(anio, mes, null, ct);
+
+    public Task<IReadOnlyList<ConversacionInformeTendenciaDto>> GetTendenciaMensajesAsync(int anio, int mes, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("TendenciaInforme", async token =>
         {
+            var tenant = ResolveTenantConnection(expectedBaseId, "TendenciaInforme");
             var primerMes = new DateTime(anio, mes, 1);
             var desde = primerMes.AddMonths(-11);
             var hasta = primerMes.AddMonths(1);
 
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             var datos = (await cn.QueryAsync<ConversacionInformeTendenciaDto>(new CommandDefinition("""
                 SELECT YEAR(m.FechaHora) AS Anio, MONTH(m.FechaHora) AS Mes, COUNT(*) AS CantMensajes
                 FROM dbo.CONV_MENSAJES m
@@ -508,9 +573,10 @@ public sealed class ConversacionesInformesService(
             return (IReadOnlyList<ConversacionInformeTendenciaDto>)serie;
         }, ct);
 
-    private async Task GuardarBorradorAsync(int idDetalle, string texto, CancellationToken ct)
+    private async Task GuardarBorradorAsync(int idDetalle, string texto, int? expectedBaseId, CancellationToken ct)
     {
-        await using var cn = new SqlConnection(ConnectionString);
+        var tenant = ResolveTenantConnection(expectedBaseId, "GuardarBorradorInforme");
+        await using var cn = new SqlConnection(tenant.ConnectionString);
         await cn.ExecuteAsync(new CommandDefinition(
             "UPDATE dbo.CONV_INFORME_MENSUAL_DET SET ResumenBorrador = @Texto, ResumenGeneradoIA = 1 WHERE IdDetalle = @Id;",
             new { Id = idDetalle, Texto = texto }, cancellationToken: ct));
@@ -601,9 +667,13 @@ public sealed class ConversacionesInformesService(
     }
 
     public Task<IReadOnlyList<ConversacionInformeTendenciaDto>> GetTendenciaClienteAsync(int idDetalle, CancellationToken ct = default)
+        => GetTendenciaClienteAsync(idDetalle, null, ct);
+
+    public Task<IReadOnlyList<ConversacionInformeTendenciaDto>> GetTendenciaClienteAsync(int idDetalle, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("TendenciaClienteInforme", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "TendenciaClienteInforme");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
 
             var fila = await cn.QuerySingleOrDefaultAsync<ConversacionInformeFilaDto>(new CommandDefinition(
@@ -713,6 +783,8 @@ public sealed class ConversacionesInformesService(
         => !string.IsNullOrWhiteSpace(dbValue) ? dbValue.Trim() : (configuration[key] ?? configuration[$"PuntoVenta:{key}"] ?? string.Empty);
 
     private sealed record MailInfo(string Server, int Port, string From, string Password, bool EnableSsl);
+
+    private sealed record TenantConnectionContext(int? BaseId, string ConnectionString);
 
     private async Task<T> ExecuteLoggedAsync<T>(string action, Func<CancellationToken, Task<T>> operation, CancellationToken ct)
     {

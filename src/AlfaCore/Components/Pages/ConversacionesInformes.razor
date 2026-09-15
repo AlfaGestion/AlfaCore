@@ -3,6 +3,7 @@
 @inject AlfaCore.Services.IConversacionesInformesService InformesSvc
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject NavigationManager Nav
 @inject Microsoft.JSInterop.IJSRuntime Js
 @implements IDisposable
@@ -212,10 +213,14 @@
     private int _tendenciaMax;
     private string _sortCol = string.Empty;
     private bool _sortAsc = true;
+    private readonly AlfaCore.Services.ConversationTenantLoadGuard _tenantLoadGuard = new();
+    private AlfaCore.Services.ConversationTenantLoadLease _tenantLoadLease;
+    private long _loadGeneration;
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         UpdatePageHeader();
+        SessionSvc.SessionChanged += OnTenantContextChanged;
         if (AnioQuery is > 0 && MesQuery is >= 1 and <= 12)
         {
             // Volvemos de un detalle: reabrimos el mismo período.
@@ -229,8 +234,11 @@
             _mes = previo.Month;
             _anio = previo.Year;
         }
-        await CargarListaAsync();
-        await AutoAbrirPeriodoAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadTenantAsync();
     }
 
     protected override void OnAfterRender(bool firstRender)
@@ -244,7 +252,53 @@
             UpdatePageHeader();
     }
 
-    public void Dispose() => PageHeader.Clear();
+    public void Dispose()
+    {
+        SessionSvc.SessionChanged -= OnTenantContextChanged;
+        PageHeader.Clear();
+    }
+
+    private async Task LoadTenantAsync()
+    {
+        var generation = ++_loadGeneration;
+        _tenantLoadLease = AlfaCore.Services.ConversationTenantLoadLease.Invalid;
+        _informe = null;
+        _informes = [];
+        _tendencia = [];
+        _tendenciaMax = 0;
+        _feedback = null;
+
+        if (!TryCaptureTenantLoad(out var lease))
+        {
+            SetFeedback(false, "No se pudo abrir la información de esta base.");
+            return;
+        }
+
+        _tenantLoadLease = lease;
+        await CargarListaAsync();
+        if (IsTenantLoadCurrent(lease) && generation == _loadGeneration)
+            await AutoAbrirPeriodoAsync();
+    }
+
+    private bool TryCaptureTenantLoad(out AlfaCore.Services.ConversationTenantLoadLease lease)
+    {
+        var routeBaseId = idbase is > 0 ? idbase : null;
+        var sessionBaseId = SessionSvc.GetActiveSession()?.BaseId;
+        lease = _tenantLoadGuard.Capture(routeBaseId, sessionBaseId);
+        return lease.IsValid;
+    }
+
+    private bool IsTenantLoadCurrent(AlfaCore.Services.ConversationTenantLoadLease lease)
+        => _tenantLoadGuard.IsCurrent(lease, idbase is > 0 ? idbase : null, SessionSvc.GetActiveSession()?.BaseId);
+
+    private void OnTenantContextChanged()
+    {
+        _tenantLoadGuard.Invalidate();
+        _ = InvokeAsync(LoadTenantAsync);
+    }
+
+    private int? CurrentExpectedBaseIdOrNull()
+        => idbase is > 0 ? idbase : SessionSvc.GetActiveSession()?.BaseId;
 
     private void UpdatePageHeader()
     {
@@ -294,7 +348,7 @@
     {
         try
         {
-            _informe = await InformesSvc.GetByPeriodoAsync(_anio, _mes);
+            _informe = await InformesSvc.GetByPeriodoAsync(_anio, _mes, CurrentExpectedBaseIdOrNull());
             _yaGenerado = _informe is not null;
             _sortCol = string.Empty;
             if (_informe is not null)
@@ -315,7 +369,7 @@
     {
         try
         {
-            _informes = (await InformesSvc.ListarAsync()).ToList();
+            _informes = (await InformesSvc.ListarAsync(CurrentExpectedBaseIdOrNull())).ToList();
             _yaGenerado = _informes.Any(i => i.Anio == _anio && i.Mes == _mes);
         }
         catch (Exception ex)
@@ -331,7 +385,7 @@
         StateHasChanged();
         try
         {
-            _informe = await InformesSvc.GenerarAsync(_anio, _mes, null);
+            _informe = await InformesSvc.GenerarAsync(_anio, _mes, null, CurrentExpectedBaseIdOrNull());
             _sortCol = string.Empty;
             await CargarListaAsync();
             await CargarTendenciaAsync();
@@ -355,7 +409,7 @@
         StateHasChanged();
         try
         {
-            _informe = await InformesSvc.GetAsync(id);
+            _informe = await InformesSvc.GetAsync(id, CurrentExpectedBaseIdOrNull());
             if (_informe is not null)
             {
                 _mes = _informe.Mes;
@@ -394,7 +448,7 @@
     {
         try
         {
-            _tendencia = (await InformesSvc.GetTendenciaMensajesAsync(_anio, _mes)).ToList();
+            _tendencia = (await InformesSvc.GetTendenciaMensajesAsync(_anio, _mes, CurrentExpectedBaseIdOrNull())).ToList();
             _tendenciaMax = _tendencia.Count > 0 ? _tendencia.Max(t => t.CantMensajes) : 0;
         }
         catch

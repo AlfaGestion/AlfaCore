@@ -239,8 +239,13 @@ public sealed class ConversacionesService(
     }
 
     public Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(CancellationToken ct = default)
+        => GetTechniciansAsync(null, ct);
+
+    public Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTechnicians", async token =>
         {
+            var connectionString = GetConnectionStringForExpectedTenant(expectedBaseId, "GetTechnicians");
+
             const string sql = """
                 SELECT
                     LTRIM(RTRIM(ISNULL(IdTecnico, ''))),
@@ -254,7 +259,7 @@ public sealed class ConversacionesService(
                 """;
 
             var items = new List<ConversacionTecnicoOptionDto>();
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
 
             await using var cmd = new SqlCommand(sql, cn);
@@ -312,6 +317,7 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "GetEstadisticas", async token =>
         {
             ArgumentNullException.ThrowIfNull(filters);
+            var connectionString = GetConnectionStringForExpectedTenant(filters.ExpectedBaseId, "GetEstadisticas");
 
             var desde = filters.Desde.Date;
             var hastaInclusive = filters.Hasta.Date;
@@ -691,7 +697,7 @@ public sealed class ConversacionesService(
                 ORDER BY FechaHora DESC, IdMensaje DESC;
                 """;
 
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@Desde", desde);
