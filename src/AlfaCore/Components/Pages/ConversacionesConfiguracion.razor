@@ -245,11 +245,8 @@
                             {
                                 <AlfaTag Tone="AlfaTagTone.Accent">Predeterminado</AlfaTag>
                             }
-                            @if (numero.Usuarios.Count == 0)
-                            {
-                                <span class="wa-api-list__warning">Sin usuarios asignados</span>
-                            }
-                            else
+                            <AlfaTag Tone="@GetNumeroCardStatus(numero).Tone()">@GetNumeroCardStatus(numero).Label()</AlfaTag>
+                            @if (numero.Usuarios.Count > 0)
                             {
                                 <span>@numero.Usuarios.Count usuario(s)</span>
                             }
@@ -270,7 +267,7 @@
                             <span>@pending.DisplayPhoneNumber</span>
                         }
                         <span class="wa-api-number-row__meta">
-                            <AlfaTag Tone="@(pending.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.FailedRetryable || pending.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.ActionRequired ? AlfaTagTone.Warning : AlfaTagTone.Accent)">@pending.StatusLabel</AlfaTag>
+                            <AlfaTag Tone="@GetPendingConnectionCardStatus(pending).Tone()">@pending.StatusLabel</AlfaTag>
                         </span>
                     </button>
                 }
@@ -1993,6 +1990,7 @@
     private IReadOnlyList<ConversacionClasificacionOptionDto> _clasificaciones = [];
     private IReadOnlyList<UsuarioSistemaDto> _usuariosSistema = [];
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> _numeros = [];
+    private HashSet<int> _blockedNumeroIds = [];
     private IReadOnlyList<AlfaCore.Models.WhatsAppCoexistenceSyncDto> _coexistenceSyncStatuses = [];
     private Func<Task>? _pendingNavigation;
     private bool _discardChangesDialogOpen;
@@ -4170,12 +4168,33 @@
             var businessIds = ActiveBusinessNumeros.Select(n => n.IdNumero).ToHashSet();
             if (!_selectedBusinessNumeroId.HasValue || !businessIds.Contains(_selectedBusinessNumeroId.Value))
                 _selectedBusinessNumeroId = ActiveBusinessNumeros.FirstOrDefault()?.IdNumero;
+
+            await RefreshBlockedNumeroIdsAsync();
         }
         else
         {
             _feedback ??= result.Feedback;
         }
 
+    }
+
+    /// <summary>
+    /// Una sola consulta en lote para TODOS los números de la lista -- nunca N+1 por fila. Alimenta
+    /// WhatsAppConnectionCardStatusExtensions.ForNumero para que la tarjeta de la lista muestre
+    /// "Cuenta bloqueada" (131031) sin tener que abrir el detalle de cada número.
+    /// </summary>
+    private async Task RefreshBlockedNumeroIdsAsync()
+    {
+        try
+        {
+            _blockedNumeroIds = await ConvSvc.GetBlockedNumeroIdsAsync(
+                WhatsAppApiNumeros.Select(n => n.IdNumero).ToArray(), _lifetimeCts.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // No bloquear la carga de la lista por esto -- en el peor caso la tarjeta no muestra
+            // "Cuenta bloqueada" hasta el próximo refresh, nunca rompe la pantalla.
+        }
     }
 
     private async Task LoadEmbeddedSignupStateAsync(int activeBaseId)
@@ -6277,6 +6296,17 @@
         => _selectedApiNumeroId == numero.IdNumero
             ? "wa-api-number-row is-selected"
             : "wa-api-number-row";
+
+    /// <summary>
+    /// Jerarquía de la Sección 9 de la auditoría (BLOCKED > ... > READY) aplicada a un número YA
+    /// operativo. _blockedNumeroIds viene de una única consulta en lote (RefreshBlockedNumeroIdsAsync)
+    /// -- nunca se pregunta por bloqueo número a número en cada render.
+    /// </summary>
+    private AlfaCore.Models.WhatsAppConnectionCardStatus GetNumeroCardStatus(ConversacionWhatsAppNumeroDto numero)
+        => AlfaCore.Models.WhatsAppConnectionCardStatusExtensions.ForNumero(_blockedNumeroIds.Contains(numero.IdNumero), numero.Usuarios.Count);
+
+    private static AlfaCore.Models.WhatsAppConnectionCardStatus GetPendingConnectionCardStatus(AlfaCore.Models.WhatsAppEmbeddedPendingConnection pending)
+        => AlfaCore.Models.WhatsAppConnectionCardStatusExtensions.ForPending(pending.Status);
 
     private string GetPendingConnectionRowClass(AlfaCore.Models.WhatsAppEmbeddedPendingConnection pending)
         => _selectedPendingOnboardingId == pending.IdOnboarding

@@ -27,6 +27,13 @@ public interface IConversacionesService
     /// puntual antes. Usar con WhatsAppOutboundErrorClassifier para clasificar (p. ej. 131031).
     /// </summary>
     Task<string?> GetLastOutboundDeliveryErrorAsync(int idNumero, CancellationToken ct = default);
+    /// <summary>
+    /// Igual que <see cref="GetLastOutboundDeliveryErrorAsync"/> pero para VARIOS números en una sola
+    /// consulta (window function) -- pensado para la lista de "WhatsApp conectados", donde consultar
+    /// bloqueo Meta número por número sería un N+1 en cada refresh/poll. Devuelve sólo los IdNumero que
+    /// están efectivamente bloqueados (131031) en su último envío.
+    /// </summary>
+    Task<HashSet<int>> GetBlockedNumeroIdsAsync(IReadOnlyCollection<int> idNumeros, CancellationToken ct = default);
     Task SetConversationWhatsAppNumeroAsync(ConversacionWhatsAppNumeroRequest request, CancellationToken ct = default);
     /// <summary>
     /// Marca interna de seguimiento por mensaje (ej. "PENDIENTE"/"COMPLETADA") — nunca se envía

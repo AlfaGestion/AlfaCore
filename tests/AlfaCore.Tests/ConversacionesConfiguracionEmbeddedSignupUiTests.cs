@@ -218,6 +218,44 @@ public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
         Assert.Contains("@onclick=\"() => SelectPendingConnection(pending)\"", source, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ListRows_UseTheSharedCardStatusResolver_NotAnAdHocTernary()
+    {
+        // Sección 9 de la auditoría: antes la fila de número operativo no distinguía "Cuenta bloqueada"
+        // de "Conectado" (era imposible de saber sin abrir el detalle), y la fila de pendiente resolvía
+        // su tono con un ternario en línea que no compartía nada con la de número. Ambas ramas deben
+        // usar el mismo resolver -- WhatsAppConnectionCardStatusExtensions -- para que la jerarquía
+        // BLOCKED > ACTION_REQUIRED > FAILED > CONFIGURING > READY_WITH_NO_USERS > READY sea consistente.
+        var source = File.ReadAllText(FindPagePath());
+
+        Assert.Contains("GetNumeroCardStatus(numero).Tone()", source, StringComparison.Ordinal);
+        Assert.Contains("GetNumeroCardStatus(numero).Label()", source, StringComparison.Ordinal);
+        Assert.Contains("GetPendingConnectionCardStatus(pending).Tone()", source, StringComparison.Ordinal);
+        Assert.Contains("WhatsAppConnectionCardStatusExtensions.ForNumero(_blockedNumeroIds.Contains(numero.IdNumero)", source, StringComparison.Ordinal);
+        Assert.Contains("WhatsAppConnectionCardStatusExtensions.ForPending(pending.Status)", source, StringComparison.Ordinal);
+
+        // No debe haber quedado el viejo ternario inline resolviendo el tono a mano.
+        Assert.DoesNotContain("pending.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.FailedRetryable || pending.Status ==", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BlockedNumeroIds_AreFetchedInOneBatch_NeverOnePerRow()
+    {
+        // Cuenta bloqueada (131031) se deriva del último envío -- consultarlo número por número en
+        // cada refresh de la lista (y el polling cada 5s durante un onboarding) sería un N+1. Debe
+        // haber una sola llamada por refresh, no una por número en el foreach.
+        var source = File.ReadAllText(FindPagePath());
+
+        Assert.Contains("private async Task RefreshBlockedNumeroIdsAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("ConvSvc.GetBlockedNumeroIdsAsync(", source, StringComparison.Ordinal);
+        Assert.Contains("await RefreshBlockedNumeroIdsAsync();", source, StringComparison.Ordinal);
+
+        // La llamada en lote sólo debe aparecer una vez en todo el archivo -- si apareciera dentro de
+        // GetNumeroCardStatus o de un @foreach, sería la regresión N+1 que esto previene.
+        var occurrences = System.Text.RegularExpressions.Regex.Matches(source, System.Text.RegularExpressions.Regex.Escape("ConvSvc.GetBlockedNumeroIdsAsync(")).Count;
+        Assert.Equal(1, occurrences);
+    }
+
     private static string ExtractMethodBody(string source, int methodStart)
     {
         var openBrace = source.IndexOf('{', methodStart);

@@ -2718,6 +2718,41 @@ public sealed class ConversacionesService(
                 : null;
         }, "No se pudo consultar el último error de envío de WhatsApp.", ct);
 
+    public Task<HashSet<int>> GetBlockedNumeroIdsAsync(IReadOnlyCollection<int> idNumeros, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetBlockedNumeroIds", async token =>
+        {
+            var ids = idNumeros.Where(id => id > 0).Distinct().ToArray();
+            if (ids.Length == 0)
+                return new HashSet<int>();
+
+            var inClause = string.Join(",", ids.Select((_, index) => $"@Id{index}"));
+            var sql = $"""
+                ;WITH Last AS (
+                    SELECT c.IdNumeroWhatsApp AS IdNumero, m.EstadoEnvio, m.PayloadJson,
+                           ROW_NUMBER() OVER (PARTITION BY c.IdNumeroWhatsApp ORDER BY m.FechaHora DESC) AS Rn
+                    FROM dbo.CONV_MENSAJES m
+                    JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                    WHERE c.IdNumeroWhatsApp IN ({inClause}) AND m.Direction = N'SALIENTE'
+                )
+                SELECT IdNumero, PayloadJson FROM Last WHERE Rn = 1 AND EstadoEnvio = N'ERROR_ENVIO'
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            for (var index = 0; index < ids.Length; index++)
+                cmd.Parameters.AddWithValue($"@Id{index}", ids[index]);
+
+            var blocked = new HashSet<int>();
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                if (WhatsAppOutboundErrorClassifier.IsAccountLocked(GetString(rd, 1)))
+                    blocked.Add(rd.GetInt32(0));
+            }
+            return blocked;
+        }, "No se pudo consultar los números bloqueados por Meta.", ct);
+
     public Task SetConversationWhatsAppNumeroAsync(ConversacionWhatsAppNumeroRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SetConversationWhatsAppNumero", async token =>
         {

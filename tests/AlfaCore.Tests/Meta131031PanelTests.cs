@@ -147,6 +147,31 @@ public sealed class Meta131031PanelTests
             """{"Error":"Meta devolvió 400: {\"error\":{\"code\":131031,\"message\":\"Business Account locked\"}}","Type":"System.Net.Http.HttpRequestException"}"""));
     }
 
+    [Fact]
+    public void GetBlockedNumeroIdsAsync_IsOneBatchedQuery_UsingTheSameIsAccountLockedClassifier()
+    {
+        // Sección 9 de la auditoría (jerarquía de tarjetas en la lista): "Cuenta bloqueada" debe poder
+        // mostrarse en la LISTA, no sólo en el detalle -- pero consultar 131031 número por número en
+        // cada refresh (incluido el polling cada 5s mientras hay un onboarding en curso) sería un N+1.
+        // Esta consulta trae todos los números de una sola vez con una window function.
+        var source = ReadServiceSource();
+        var methodStart = source.IndexOf("public Task<HashSet<int>> GetBlockedNumeroIdsAsync(", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "No se encontró GetBlockedNumeroIdsAsync.");
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        Assert.Contains("ROW_NUMBER() OVER (PARTITION BY c.IdNumeroWhatsApp ORDER BY m.FechaHora DESC)", methodBody, StringComparison.Ordinal);
+        Assert.Contains("WhatsAppOutboundErrorClassifier.IsAccountLocked(GetString(rd, 1))", methodBody, StringComparison.Ordinal);
+
+        // Reusa el mismo criterio de "último envío falló" que GetLastOutboundDeliveryErrorAsync
+        // (EstadoEnvio = ERROR_ENVIO), no un criterio distinto inventado para la lista.
+        Assert.Contains("EstadoEnvio = N'ERROR_ENVIO'", methodBody, StringComparison.Ordinal);
+
+        // Corte temprano con lista vacía: nunca debe emitir un IN () vacío ni pegarle a la base sin
+        // números que preguntar.
+        Assert.Contains("if (ids.Length == 0)", methodBody, StringComparison.Ordinal);
+        Assert.Contains("return new HashSet<int>();", methodBody, StringComparison.Ordinal);
+    }
+
     private static string ExtractMethodBody(string source, int methodStart)
     {
         var openBrace = source.IndexOf('{', methodStart);
