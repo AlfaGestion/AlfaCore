@@ -151,6 +151,25 @@ public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
         Assert.Contains("ClassifyEmbeddedSignupAuthorizationError(ex, incident)", methodBody, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void ZeroAssignedUsers_RendersBigWarningPanel_NotSmallGrayText()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        // Fase 11 de la auditoría UX: un número conectado con 0 usuarios asignados puede ser
+        // invisible/inoperable en la bandeja para el usuario actual. Antes se mostraba como
+        // <p class="wa-field-note">Sin usuarios asignados.</p> -- texto gris chico, indistinguible de
+        // cualquier otro dato secundario, fácil de confundir con un problema de Meta/desconexión.
+        var methodStart = source.IndexOf("private static RenderFragment ApiUsers(", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "No se encontró ApiUsers.");
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        Assert.DoesNotContain("wa-field-note\">Sin usuarios asignados", methodBody, StringComparison.Ordinal);
+        Assert.Contains("AlfaFeedbackPanel", methodBody, StringComparison.Ordinal);
+        Assert.Contains("AppUiMessage.Warning(", methodBody, StringComparison.Ordinal);
+        Assert.Contains("sin usuarios asignados", methodBody, StringComparison.OrdinalIgnoreCase);
+    }
+
     private static string ExtractMethodBody(string source, int methodStart)
     {
         var openBrace = source.IndexOf('{', methodStart);

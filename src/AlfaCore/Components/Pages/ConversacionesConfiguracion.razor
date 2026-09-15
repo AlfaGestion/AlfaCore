@@ -4821,7 +4821,13 @@
                     }
                 </ul>
             </div>
-            : @<p class="wa-field-note">Sin usuarios asignados.</p>;
+            // Antes era un <p class="wa-field-note"> -- texto gris chico, fácil de confundir con un
+            // problema de Meta/desconexión. Un número con 0 usuarios asignados está conectado y
+            // operativo, pero puede ser invisible/inoperable en la bandeja para el usuario actual; el
+            // botón "Asignar usuarios" ya está en el header adyacente (ver los dos call-sites de
+            // ApiUsers), así que este panel no duplica esa acción.
+            : @<AlfaFeedbackPanel Message="@AppUiMessage.Warning("WhatsApp conectado, pero sin usuarios asignados", "Nadie va a ver los mensajes de este número en la bandeja hasta que se le asignen usuarios.")"
+                                   Dismissible="false" />;
     }
 
     private void SetReplaceAccessToken(bool value) => _replaceAccessToken = value;
