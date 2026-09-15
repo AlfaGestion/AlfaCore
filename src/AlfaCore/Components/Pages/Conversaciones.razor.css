@@ -1645,9 +1645,31 @@
     background: transparent !important;
 }
 
+/* Imagen histórica/normal en el hilo -- nunca a ancho completo del hilo, nunca estirada. El design
+   system (alfacore-design.css) no tiene tokens de tamaño de media (sólo --alfa-space-* de 4-24px, muy
+   chicos para esto), así que estos valores son literales a propósito, documentados acá en vez de
+   repetidos sueltos por el archivo. min(340px, 100%) hace que en mobile el límite real termine siendo
+   el ancho disponible del bubble (ya acotado a 88% del hilo, ver @media max-width:768px más abajo),
+   nunca los 340px fijos si la pantalla es angosta. */
 .conversations-page--odoo .message-attachment--image img {
-    max-width: min(280px, 100%) !important;
-    max-height: 260px !important;
+    max-width: min(340px, 100%) !important;
+    max-height: 320px !important;
+    width: auto !important;
+    height: auto !important;
+    object-fit: contain !important;
+    display: block !important;
+    border-radius: 8px !important;
+}
+
+/* Un sticker es notoriamente más chico que una foto real -- misma imagen (IsImageAttachment agrupa
+   ambos), pero .message-attachment--sticker se agrega además de .message-attachment--image cuando
+   IsStickerAttachment es true (ver el markup), y esta regla -- misma especificidad, declarada después
+   -- gana por orden de cascada. object-fit:contain preserva la transparencia/aspect ratio del WebP. */
+.conversations-page--odoo .message-attachment--sticker img {
+    max-width: min(160px, 100%) !important;
+    max-height: 160px !important;
+    width: auto !important;
+    height: auto !important;
     object-fit: contain !important;
     display: block !important;
     border-radius: 8px !important;

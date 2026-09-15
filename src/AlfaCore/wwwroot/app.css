@@ -8031,9 +8031,18 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     margin-top: .28rem;
 }
 
+/* Superseded por la regla !important de Conversaciones.razor.css (CSS aislado, gana por especificidad
+   y orden) -- se actualiza igual para que nadie audite estos números viejos (170x118) por error
+   pensando que son los que están vigentes. .message-attachment--image/--sticker sólo se usan en
+   Conversaciones.razor (confirmado por grep) -- no hay otra página que dependa de este valor. */
 .conversations-page--odoo .message-attachment--image img {
-    max-width: min(170px, 100%);
-    max-height: 118px;
+    max-width: min(340px, 100%);
+    max-height: 320px;
+}
+
+.conversations-page--odoo .message-attachment--sticker img {
+    max-width: min(160px, 100%);
+    max-height: 160px;
 }
 
 .conversations-page--odoo .message-card:hover {

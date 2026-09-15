@@ -1719,7 +1719,7 @@
                                             {
                                                 @if (IsImageAttachment(adj))
                                                 {
-                                                    <div class="message-attachment message-attachment--image">
+                                                    <div class="message-attachment message-attachment--image @(IsStickerAttachment(adj) ? "message-attachment--sticker" : string.Empty)">
                                                         @if (IsAttachmentAvailable(adj))
                                                         {
                                                             <button type="button"
