@@ -388,12 +388,15 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         public List<(string WabaId, int IdBase)> ReservedWabas { get; } = [];
         public List<(string PhoneNumberId, string WabaId, int IdBase)> ReservedPhones { get; } = [];
 
+        public Dictionary<string, string> WabaMetaBusinessIds { get; } = [];
+
         public Task<WhatsAppAssetOwnershipDecision> ReserveWabaAsync(string wabaId, int idBase, string metaBusinessId, CancellationToken ct = default)
         {
             var result = WhatsAppAssetOwnershipPolicy.Evaluate(WabaOwners.TryGetValue(wabaId, out var owner) ? owner : null, idBase);
             if (result != WhatsAppAssetOwnershipResult.Conflict)
             {
                 WabaOwners[wabaId] = idBase;
+                WabaMetaBusinessIds[wabaId] = metaBusinessId;
                 ReservedWabas.Add((wabaId, idBase));
             }
             return Task.FromResult(new WhatsAppAssetOwnershipDecision(result, WabaOwners.GetValueOrDefault(wabaId), wabaId));
@@ -410,8 +413,18 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             return Task.FromResult(new WhatsAppAssetOwnershipDecision(result, PhoneOwners.GetValueOrDefault(phoneNumberId), phoneNumberId));
         }
 
-        public Task<WhatsAppWabaOwnership?> GetWabaOwnershipAsync(string wabaId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<WhatsAppPhoneOwnership?> GetPhoneOwnershipAsync(string phoneNumberId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<WhatsAppWabaOwnership?> GetWabaOwnershipAsync(string wabaId, CancellationToken ct = default)
+            => Task.FromResult(WabaOwners.TryGetValue(wabaId, out var idBase)
+                ? new WhatsAppWabaOwnership(wabaId, idBase, WabaMetaBusinessIds.GetValueOrDefault(wabaId, ""), DateTime.UtcNow)
+                : null);
+
+        public Task<WhatsAppPhoneOwnership?> GetPhoneOwnershipAsync(string phoneNumberId, CancellationToken ct = default)
+        {
+            if (!PhoneOwners.TryGetValue(phoneNumberId, out var idBase))
+                return Task.FromResult<WhatsAppPhoneOwnership?>(null);
+            var wabaId = ReservedPhones.LastOrDefault(x => x.PhoneNumberId == phoneNumberId).WabaId ?? "";
+            return Task.FromResult<WhatsAppPhoneOwnership?>(new WhatsAppPhoneOwnership(phoneNumberId, wabaId, idBase, DateTime.UtcNow));
+        }
     }
 
     private sealed class MemoryConversacionesConfigService : IConversacionesConfigService
@@ -451,6 +464,8 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         }
 
         public Dictionary<string, string> PortfolioNames { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, DateTime> PortfolioResolutionAttempts { get; } = new(StringComparer.Ordinal);
+        public int BackfillCalls { get; private set; }
 
         public Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyDictionary<string, string>>(PortfolioNames);
@@ -458,7 +473,35 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         public Task SetPortfolioNameAsync(int idBase, string metaBusinessId, string portfolioName, CancellationToken ct = default)
         {
             if (!string.IsNullOrWhiteSpace(metaBusinessId) && !string.IsNullOrWhiteSpace(portfolioName))
+            {
                 PortfolioNames[metaBusinessId] = portfolioName;
+                PortfolioResolutionAttempts[metaBusinessId] = DateTime.UtcNow;
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> TryReserveResolutionAttemptAsync(int idBase, string metaBusinessId, TimeSpan throttleWindow, CancellationToken ct = default)
+        {
+            if (PortfolioNames.TryGetValue(metaBusinessId, out var name) && !string.IsNullOrWhiteSpace(name))
+                return Task.FromResult(false);
+
+            var now = DateTime.UtcNow;
+            if (PortfolioResolutionAttempts.TryGetValue(metaBusinessId, out var lastAttempt) && now - lastAttempt < throttleWindow)
+                return Task.FromResult(false);
+
+            PortfolioResolutionAttempts[metaBusinessId] = now;
+            return Task.FromResult(true);
+        }
+
+        public Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, CancellationToken ct = default)
+        {
+            BackfillCalls++;
+            var numero = Numeros.SingleOrDefault(x => x.IdNumero == idNumero);
+            if (numero is not null && string.IsNullOrWhiteSpace(numero.MetaBusinessId))
+            {
+                numero.MetaBusinessId = metaBusinessId;
+                numero.WabaId = wabaId;
+            }
             return Task.CompletedTask;
         }
 

@@ -172,6 +172,18 @@ public interface IMetaWhatsAppManagementClient
     /// </summary>
     Task<MetaSmbAppDataSyncResult> RequestSmbAppDataSyncAsync(string phoneNumberId, WhatsAppCoexistenceSyncType syncType, WhatsAppCredentialReference tokenReference, CancellationToken ct = default)
         => throw new NotSupportedException("Este cliente de administración de Meta no admite smb_app_data.");
+
+    /// <summary>
+    /// GET /{businessId}?fields=name -- resuelve el nombre de un Portfolio/Business ya conocido (por
+    /// MetaBusinessId) para un número YA conectado, fuera de un onboarding activo. A propósito toma el
+    /// access token crudo (de <see cref="WhatsAppRuntimeCredential"/>, el mismo usado para enviar
+    /// mensajes) en vez de un <see cref="WhatsAppCredentialReference"/> de Vault de onboarding -- ese
+    /// Vault sólo tiene contexto vigente durante/poco después de un onboarding, no años después para un
+    /// número que ya quedó operativo. Nunca se llama por render: sólo cuando
+    /// WhatsAppPortfolioResolutionThrottle.TryReserveResolutionAttemptAsync reserva el intento.
+    /// </summary>
+    Task<string?> GetBusinessNameAsync(string businessId, string accessToken, string graphVersion, CancellationToken ct = default)
+        => throw new NotSupportedException("Este cliente de administración de Meta no admite consultar el nombre de un business por id.");
 }
 
 public sealed record MetaTokenExchangeResult(WhatsAppCredentialReference TokenReference, DateTime? ExpiresAtUtc);

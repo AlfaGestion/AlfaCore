@@ -1682,11 +1682,11 @@ public sealed class ConversacionesConfigService(
                 return; // Tabla todavía no existe en esta base -- nunca falla el onboarding por esto.
 
             const string sql = """
-                MERGE dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS AS target
+                MERGE dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS WITH (HOLDLOCK) AS target
                 USING (SELECT @MetaBusinessId AS MetaBusinessId) AS source
                 ON target.MetaBusinessId = source.MetaBusinessId
-                WHEN MATCHED THEN UPDATE SET PortfolioName = @PortfolioName, ModifiedAtUtc = @NowUtc
-                WHEN NOT MATCHED THEN INSERT (MetaBusinessId, PortfolioName, ModifiedAtUtc) VALUES (@MetaBusinessId, @PortfolioName, @NowUtc);
+                WHEN MATCHED THEN UPDATE SET PortfolioName = @PortfolioName, ModifiedAtUtc = @NowUtc, LastResolutionAttemptUtc = @NowUtc
+                WHEN NOT MATCHED THEN INSERT (MetaBusinessId, PortfolioName, ModifiedAtUtc, LastResolutionAttemptUtc) VALUES (@MetaBusinessId, @PortfolioName, @NowUtc, @NowUtc);
                 """;
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@MetaBusinessId", businessId);
@@ -1699,6 +1699,90 @@ public sealed class ConversacionesConfigService(
             // Best-effort: nunca debe poder tirar abajo el alta operativa de un número por esto.
         }
     }
+
+    public async Task<bool> TryReserveResolutionAttemptAsync(int idBase, string metaBusinessId, TimeSpan throttleWindow, CancellationToken ct = default)
+    {
+        var businessId = (metaBusinessId ?? string.Empty).Trim();
+        if (idBase <= 0 || businessId.Length == 0)
+            return false;
+
+        try
+        {
+            var baseInfo = await centralBasesService.GetByIdAsync(idBase, ct);
+            if (baseInfo is null)
+                return false;
+
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = baseInfo.DbServer,
+                InitialCatalog = baseInfo.DbName,
+                UserID = baseInfo.DbUser,
+                Password = baseInfo.DbPassword,
+                TrustServerCertificate = true
+            }.ConnectionString;
+
+            await using var cn = new SqlConnection(connectionString);
+            await cn.OpenAsync(ct);
+            var portfolioColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS", ct);
+            if (portfolioColumns.Count == 0)
+                return false; // Tabla todavía no existe en esta base -- nada que reservar todavía.
+
+            var now = DateTime.UtcNow;
+            var threshold = now - throttleWindow;
+
+            const string sql = """
+                MERGE dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS WITH (HOLDLOCK) AS target
+                USING (SELECT @MetaBusinessId AS MetaBusinessId) AS source
+                ON target.MetaBusinessId = source.MetaBusinessId
+                WHEN NOT MATCHED THEN
+                    INSERT (MetaBusinessId, PortfolioName, ModifiedAtUtc, LastResolutionAttemptUtc)
+                    VALUES (@MetaBusinessId, N'', @NowUtc, @NowUtc)
+                WHEN MATCHED AND target.PortfolioName = N''
+                    AND (target.LastResolutionAttemptUtc IS NULL OR target.LastResolutionAttemptUtc < @Threshold) THEN
+                    UPDATE SET LastResolutionAttemptUtc = @NowUtc
+                OUTPUT $action;
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@MetaBusinessId", businessId);
+            cmd.Parameters.AddWithValue("@NowUtc", now);
+            cmd.Parameters.AddWithValue("@Threshold", threshold);
+            await using var rd = await cmd.ExecuteReaderAsync(ct);
+            var claimed = await rd.ReadAsync(ct); // Alguna fila de $action -> INSERT o UPDATE disparó -> reservado.
+            return claimed;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return false; // Ante la duda, no llamar a Meta -- el próximo refresh puede reintentar la reserva.
+        }
+    }
+
+    public Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, CancellationToken ct = default)
+        => ExecuteLoggedAsync<bool>("Conversaciones", "BackfillNumeroMetaIdentity", async token =>
+        {
+            var businessId = (metaBusinessId ?? string.Empty).Trim();
+            var normalizedWabaId = (wabaId ?? string.Empty).Trim();
+            if (idNumero <= 0 || businessId.Length == 0 || normalizedWabaId.Length == 0)
+                return false;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", token);
+            if (!HasColumn(numeroColumns, "MetaBusinessId") || !HasColumn(numeroColumns, "WabaId"))
+                return false; // Base sin la actualización todavía -- nada para backfillear acá.
+
+            const string sql = """
+                UPDATE dbo.CONV_WHATSAPP_NUMEROS
+                SET MetaBusinessId = @MetaBusinessId, WabaId = @WabaId
+                WHERE IdNumero = @IdNumero
+                  AND (MetaBusinessId IS NULL OR MetaBusinessId = N'');
+                """;
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@MetaBusinessId", businessId);
+            cmd.Parameters.AddWithValue("@WabaId", normalizedWabaId);
+            cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+            await cmd.ExecuteNonQueryAsync(token);
+            return true;
+        }, "No se pudo completar el Portfolio del número de WhatsApp.", ct);
 
     public Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default)
     {

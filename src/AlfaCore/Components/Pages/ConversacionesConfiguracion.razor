@@ -15,6 +15,7 @@
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IWhatsAppEmbeddedSignupOrchestrator EmbeddedSignup
 @inject AlfaCore.Services.WhatsAppEmbeddedOperationalImportService EmbeddedOperationalImport
+@inject AlfaCore.Services.IWhatsAppPortfolioResolutionService PortfolioResolution
 @inject AlfaCore.Services.IWhatsAppEmbeddedSignupErrorLogger EmbeddedSignupErrorLogger
 @inject AlfaCore.Services.IWhatsAppCoexistenceSyncStore CoexistenceSyncStore
 @inject AlfaCore.Services.IAppEventService AppEvents
@@ -4194,14 +4195,83 @@
             if (!_selectedBusinessNumeroId.HasValue || !businessIds.Contains(_selectedBusinessNumeroId.Value))
                 _selectedBusinessNumeroId = ActiveBusinessNumeros.FirstOrDefault()?.IdNumero;
 
+            var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
+            await RefreshNumeroMetaIdentityBackfillAsync(idBase);
             await RefreshBlockedNumeroIdsAsync();
             await RefreshPortfolioNamesAsync();
+            await TryResolveMissingPortfolioNamesAsync(idBase);
         }
         else
         {
             _feedback ??= result.Feedback;
         }
 
+    }
+
+    /// <summary>
+    /// KNOWN/RESOLVABLE/UNKNOWN (auditoría de persistencia de Portfolio): un número existente conectado
+    /// ANTES de esta funcionalidad puede tener MetaBusinessId/WabaId vacíos -- eso es RESOLVABLE, no
+    /// UNKNOWN, si el ownership central (WhatsAppPhoneOwnership -> WhatsAppWabaOwnership) todavía tiene
+    /// el dato. Se reconstruye SIN llamar a Meta -- sólo lecturas a ALFA_CENTRAL. Self-throttling: una
+    /// vez que el número tiene MetaBusinessId, ya no vuelve a entrar acá en refreshes futuros. Números
+    /// que nunca pasaron por Embedded Signup (agregados por Phone Number ID) no tienen ownership -- se
+    /// quedan UNKNOWN para siempre, correctamente.
+    /// </summary>
+    private async Task RefreshNumeroMetaIdentityBackfillAsync(int idBase)
+    {
+        if (idBase <= 0)
+            return;
+
+        try
+        {
+            foreach (var numero in WhatsAppApiNumeros.Where(n => string.IsNullOrWhiteSpace(n.MetaBusinessId)).ToArray())
+            {
+                var identity = await PortfolioResolution.BackfillNumeroMetaIdentityAsync(idBase, numero, _lifetimeCts.Token);
+                if (identity is not null)
+                {
+                    numero.MetaBusinessId = identity.MetaBusinessId;
+                    numero.WabaId = identity.WabaId;
+                }
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Best-effort -- el próximo refresh de la lista puede reintentar.
+        }
+    }
+
+    /// <summary>
+    /// Para cada MetaBusinessId conocido (ya sea original o recién backfillado arriba) sin nombre
+    /// cacheado: intenta reservar un intento throttled y, si se reserva, resuelve contra Meta -- nunca
+    /// una llamada por render (el throttle vive en el store, ver TryReserveResolutionAttemptAsync). Si
+    /// algo se resolvió recién, vuelve a cargar el diccionario para que se refleje en este mismo render
+    /// en vez de esperar al próximo refresh.
+    /// </summary>
+    private async Task TryResolveMissingPortfolioNamesAsync(int idBase)
+    {
+        if (idBase <= 0)
+            return;
+
+        try
+        {
+            var pendientes = WhatsAppApiNumeros
+                .Where(n => !string.IsNullOrWhiteSpace(n.MetaBusinessId)
+                    && (!_portfolioNamesByBusinessId.TryGetValue(n.MetaBusinessId, out var name) || string.IsNullOrWhiteSpace(name)))
+                .GroupBy(n => n.MetaBusinessId, StringComparer.Ordinal)
+                .Select(g => g.First())
+                .ToArray();
+            if (pendientes.Length == 0)
+                return;
+
+            foreach (var numero in pendientes)
+                await PortfolioResolution.TryResolvePortfolioNameAsync(idBase, numero.MetaBusinessId, numero.PhoneNumberId, _lifetimeCts.Token);
+
+            await RefreshPortfolioNamesAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Best-effort -- el próximo refresh puede reintentar (sujeto al mismo throttle).
+        }
     }
 
     /// <summary>
@@ -4233,7 +4303,6 @@
     /// hay MetaBusinessId pero el nombre todavía no se cacheó, muestra el fallback pedido explícitamente
     /// ("no identificado") en vez de omitir la línea -- para no aparentar que no hay portfolio.
     /// </summary>
-    /// <summary>Sólo el nombre (o el fallback) -- null cuando el número no tiene MetaBusinessId conocido.</summary>
     private string? GetPortfolioName(ConversacionWhatsAppNumeroDto numero)
         => ResolvePortfolioName(numero, _portfolioNamesByBusinessId);
 

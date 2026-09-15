@@ -63,6 +63,13 @@ public sealed class WhatsAppEmbeddedSignupOptions
     /// cuentan sobre el MISMO RetryCount persistido -- no hay un contador paralelo.
     /// </summary>
     public int MaxManualRetryCount { get; set; } = 2;
+    /// <summary>
+    /// Ventana mínima entre dos intentos de resolver el NOMBRE de un mismo Portfolio/Business contra
+    /// Meta (para un número ya conectado, fuera de un onboarding activo). No es "cada cuánto se
+    /// refresca" -- es "cuánto hay que esperar antes de poder reintentar si el último intento no dio un
+    /// nombre" (Meta no respondió, token sin permiso todavía, etc.). Ver WhatsAppPortfolioResolutionThrottle.
+    /// </summary>
+    public TimeSpan PortfolioResolutionThrottle { get; set; } = TimeSpan.FromHours(24);
     public WhatsAppEmbeddedSignupCreditMode CreditMode { get; set; } = WhatsAppEmbeddedSignupCreditMode.CustomerPaysMeta;
 
     /// <summary>

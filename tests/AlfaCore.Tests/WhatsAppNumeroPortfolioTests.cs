@@ -113,7 +113,47 @@ public sealed class WhatsAppNumeroPortfolioTests
         Assert.Equal("Portfolio: AlfaNet Portfolio", line);
     }
 
+    [Fact]
+    public void Classify_Unknown_WhenNeitherMetaBusinessIdNorCentralOwnershipExist()
+        => Assert.Equal(WhatsAppPortfolioResolutionStatus.Unknown,
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: false, hasCentralOwnership: false, hasCachedName: false));
+
+    [Fact]
+    public void Classify_Resolvable_WhenNoMetaBusinessIdButCentralOwnershipCanReconstructIt()
+        => Assert.Equal(WhatsAppPortfolioResolutionStatus.Resolvable,
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: false, hasCentralOwnership: true, hasCachedName: false));
+
+    [Fact]
+    public void Classify_Resolvable_WhenMetaBusinessIdKnownButNameNotCachedYet()
+        => Assert.Equal(WhatsAppPortfolioResolutionStatus.Resolvable,
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: true, hasCentralOwnership: false, hasCachedName: false));
+
+    [Fact]
+    public void Classify_Known_OnlyWhenBothMetaBusinessIdAndNameAreAvailable()
+        => Assert.Equal(WhatsAppPortfolioResolutionStatus.Known,
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: true, hasCentralOwnership: false, hasCachedName: true));
+
+    [Fact]
+    public void Classify_NeverKnown_WithoutAMetaBusinessId_EvenIfSomehowANameWereCached()
+        => Assert.Equal(WhatsAppPortfolioResolutionStatus.Resolvable,
+            WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId: false, hasCentralOwnership: true, hasCachedName: true));
+
     private static readonly string RepositoryRoot = FindRepositoryRoot();
+
+    [Fact]
+    public void ExistingNumerosBackfill_AndThrottledNameResolution_AreWiredIntoTheListRefresh()
+    {
+        // Un número conectado ANTES de esta funcionalidad (Request D) no debe quedar eternamente en
+        // "Portfolio no identificado" -- LoadNumerosAsync debe intentar completar tanto los IDs (sin
+        // Meta) como el nombre (throttled) en cada refresh, delegando en el servicio dedicado en vez de
+        // reimplementar la lógica inline en el Razor.
+        var source = ReadPageSource();
+
+        Assert.Contains("await RefreshNumeroMetaIdentityBackfillAsync(idBase);", source, StringComparison.Ordinal);
+        Assert.Contains("await TryResolveMissingPortfolioNamesAsync(idBase);", source, StringComparison.Ordinal);
+        Assert.Contains("PortfolioResolution.BackfillNumeroMetaIdentityAsync(idBase, numero, _lifetimeCts.Token)", source, StringComparison.Ordinal);
+        Assert.Contains("PortfolioResolution.TryResolvePortfolioNameAsync(idBase, numero.MetaBusinessId, numero.PhoneNumberId, _lifetimeCts.Token)", source, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void PortfolioNames_AreFetchedInOneBatch_NeverOnePerRow()
@@ -204,10 +244,24 @@ public sealed class WhatsAppNumeroPortfolioTests
         Assert.Contains("COL_LENGTH('dbo.CONV_WHATSAPP_NUMEROS', 'MetaBusinessId') IS NULL", sql, StringComparison.Ordinal);
         Assert.Contains("COL_LENGTH('dbo.CONV_WHATSAPP_NUMEROS', 'WabaId') IS NULL", sql, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS", sql, StringComparison.Ordinal);
-        // Nunca toca Vault, ownership ni WABA/Phone ownership -- sólo la tabla de números (propia de la
-        // base tenant, no ALFA_CENTRAL) y una tabla nueva e independiente.
-        Assert.DoesNotContain("Vault", sql, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("Ownership", sql, StringComparison.OrdinalIgnoreCase);
+        // Puede MENCIONAR Vault/ownership en comentarios (para aclarar que el mecanismo justamente NO
+        // los usa -- el backfill LEE ownership central, la resolución de nombre usa el runtime
+        // credential, no el Vault de onboarding), pero ningún DDL/DML real de este script debe crear,
+        // alterar ni escribir nada con esos nombres -- sólo la tabla de números (propia de la base
+        // tenant, no ALFA_CENTRAL) y una tabla nueva e independiente.
+        var ddlLines = sql.Split('\n').Where(line =>
+            line.Contains("ALTER TABLE", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("CREATE TABLE", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("INSERT INTO", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("UPDATE ", StringComparison.OrdinalIgnoreCase)
+            || line.Contains("DELETE FROM", StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+        Assert.NotEmpty(ddlLines);
+        Assert.All(ddlLines, line =>
+        {
+            Assert.DoesNotContain("Ownership", line, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Vault", line, StringComparison.OrdinalIgnoreCase);
+        });
     }
 
     private static string ReadPageSource()

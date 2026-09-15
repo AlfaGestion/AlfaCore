@@ -67,6 +67,21 @@ public interface IConversacionesConfigService
     /// nueva. Nunca debe poder fallar el flujo que la llama: ver WhatsAppEmbeddedOperationalImportService.
     /// </summary>
     Task SetPortfolioNameAsync(int idBase, string metaBusinessId, string portfolioName, CancellationToken ct = default);
+    /// <summary>
+    /// Reserva atómicamente el derecho a intentar resolver el nombre de un Portfolio/Business contra
+    /// Meta: true si nadie más lo intentó dentro de <paramref name="throttleWindow"/> y el nombre
+    /// todavía no está cacheado (el llamador debe entonces llamar a Meta); false si ya hay un nombre
+    /// cacheado, o si otro intento (de este proceso u otro circuito Blazor) ya reservó la ventana --
+    /// en ambos casos el llamador NO debe llamar a Meta. Autocontenido: crea la fila si no existe.
+    /// </summary>
+    Task<bool> TryReserveResolutionAttemptAsync(int idBase, string metaBusinessId, TimeSpan throttleWindow, CancellationToken ct = default);
+    /// <summary>
+    /// Completa MetaBusinessId/WabaId de un número YA existente que se quedó sin esos ids (típicamente
+    /// conectado antes de que existiera esta funcionalidad) -- nunca sobrescribe un valor ya presente.
+    /// Usa la base activa de la sesión, igual que GetWhatsAppNumerosAsync (el llamador sólo backfillea
+    /// números de la base que tiene abierta). Best-effort: nunca lanza.
+    /// </summary>
+    Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, CancellationToken ct = default);
 
     /// <summary>Usuarios marcados como administradores de Conversaciones (ven/responden por cualquier número).</summary>
     Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default);
