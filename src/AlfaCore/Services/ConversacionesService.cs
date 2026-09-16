@@ -1773,7 +1773,8 @@ public sealed class ConversacionesService(
                         FROM dbo.CONV_ADJUNTOS a
                         WHERE a.IdMensaje = m.IdMensaje
                     ) THEN 1 ELSE 0 END,
-                    ISNULL(m.MarcaInterna, '')
+                    ISNULL(m.MarcaInterna, ''),
+                    ISNULL(m.Origen, '')
                 FROM dbo.CONV_MENSAJES m
                 INNER JOIN dbo.CONV_CONVERSACIONES c
                     ON c.IdConversacion = @IdConversacion
@@ -1796,6 +1797,12 @@ public sealed class ConversacionesService(
             var items = new List<ConversacionMensajeDto>();
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            // Auto-sana la columna Origen (ver InsertMessageAsync/GetMessagesPageAsync) por si esta base
+            // tenant todavía no recibió nunca un mensaje de history/echo -- si no existiera, el SELECT
+            // de abajo fallaría. Este método es un endpoint HTTP real (GET /api/conversaciones/{id}/
+            // mensajes, Program.cs) -- un consumidor externo también merece el dato correcto, no sólo
+            // la página Blazor.
+            await EnsureMensajeOrigenColumnAsync(cn, token);
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IdConversacion", conversationId);
             await using var rd = await cmd.ExecuteReaderAsync(token);
@@ -1819,7 +1826,8 @@ public sealed class ConversacionesService(
                     IdTecnicoAutor = GetString(rd, 12),
                     TecnicoAutorNombre = GetString(rd, 13),
                     TieneAdjuntos = GetInt(rd, 15) == 1,
-                    MarcaInterna = GetString(rd, 16)
+                    MarcaInterna = GetString(rd, 16),
+                    Origen = GetString(rd, 17)
                 };
 
                 items.Add(item);
@@ -1864,7 +1872,8 @@ public sealed class ConversacionesService(
                             FROM dbo.CONV_ADJUNTOS a
                             WHERE a.IdMensaje = m.IdMensaje
                         ) THEN 1 ELSE 0 END AS TieneAdjuntos,
-                        ISNULL(m.MarcaInterna, '') AS MarcaInterna
+                        ISNULL(m.MarcaInterna, '') AS MarcaInterna,
+                        ISNULL(m.Origen, '') AS Origen
                     FROM dbo.CONV_MENSAJES m
                     INNER JOIN dbo.CONV_CONVERSACIONES c
                         ON c.IdConversacion = @IdConversacion
@@ -1908,7 +1917,8 @@ public sealed class ConversacionesService(
                     page.TecnicoAutorNombre,
                     page.PayloadJson,
                     page.TieneAdjuntos,
-                    page.MarcaInterna
+                    page.MarcaInterna,
+                    page.Origen
                 FROM PagedMessages page
                 ORDER BY page.FechaHora ASC, page.IdMensaje ASC;
                 """;
@@ -1955,6 +1965,9 @@ public sealed class ConversacionesService(
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
+            // Auto-sana la columna Origen (ver InsertMessageAsync) por si esta base tenant todavía no
+            // recibió nunca un mensaje de history/echo -- si no existiera, el SELECT de abajo fallaría.
+            await EnsureMensajeOrigenColumnAsync(cn, token);
             await using var cmd = new SqlCommand(pageSql, cn);
             cmd.Parameters.AddWithValue("@IdConversacion", conversationId);
             cmd.Parameters.AddWithValue("@Take", pageSize);
@@ -1983,7 +1996,8 @@ public sealed class ConversacionesService(
                     TecnicoAutorNombre = GetString(rd, 13),
                     PayloadJson = GetString(rd, 14),
                     TieneAdjuntos = GetInt(rd, 15) == 1,
-                    MarcaInterna = GetString(rd, 16)
+                    MarcaInterna = GetString(rd, 16),
+                    Origen = GetString(rd, 17)
                 });
             }
 
@@ -2611,8 +2625,11 @@ public sealed class ConversacionesService(
 
             await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
 
-            var emoji = NormalizeReactionEmoji(request.Emoji);
-            if (string.IsNullOrWhiteSpace(emoji))
+            // Meta acepta un mensaje de reacción con emoji vacío para quitar una reacción previa -- sólo
+            // se permite vacío cuando el cliente lo pide explícitamente (RemoveReaction), para que un
+            // Emoji vacío por error/bug de cliente siga rechazándose como antes.
+            var emoji = request.RemoveReaction ? string.Empty : NormalizeReactionEmoji(request.Emoji);
+            if (!request.RemoveReaction && string.IsNullOrWhiteSpace(emoji))
                 throw new InvalidOperationException("ElegÃ­ una reacciÃ³n vÃ¡lida.");
 
             var conversationTask = RequireConversationAsync(request.IdConversacion, token);
@@ -2658,8 +2675,14 @@ public sealed class ConversacionesService(
             }
             catch (Exception ex)
             {
+                // Antes esto envolvía SIEMPRE en un InvalidOperationException("No se pudo enviar la
+                // reacción por WhatsApp.", ex) genérico -- exactamente el bug reportado: la UI nunca
+                // veía la causa real (rechazo de Graph, red, etc.), sólo esa frase fija. Al re-lanzar
+                // la excepción original, ExecuteLoggedAsync la envuelve igual que a texto/plantillas
+                // (AppUserFacingException con la excepción real como InnerException), así la UI puede
+                // clasificarla con WhatsAppOutboundErrorClassifier en vez de perder el detalle.
                 await UpdateMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
-                throw new InvalidOperationException("No se pudo enviar la reacciÃ³n por WhatsApp.", ex);
+                throw;
             }
 
             await UpdateMessageDeliveryAsync(messageId, sendResult.EstadoEnvio, sendResult.WhatsAppMessageId, sendResult.PayloadJson, token);
@@ -2680,6 +2703,69 @@ public sealed class ConversacionesService(
                 WhatsAppMessageId = sendResult.WhatsAppMessageId
             };
         }, "No se pudo enviar la reacciÃ³n por WhatsApp.", ct);
+
+    public Task<string?> GetLastOutboundDeliveryErrorAsync(int idNumero, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetLastOutboundDeliveryError", async token =>
+        {
+            if (idNumero <= 0)
+                return (string?)null;
+
+            const string sql = """
+                SELECT TOP (1) m.EstadoEnvio, m.PayloadJson
+                FROM dbo.CONV_MENSAJES m
+                JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                WHERE c.IdNumeroWhatsApp = @IdNumero AND m.Direction = N'SALIENTE'
+                ORDER BY m.FechaHora DESC
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdNumero", idNumero);
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            if (!await rd.ReadAsync(token))
+                return (string?)null;
+
+            var estadoEnvio = GetString(rd, 0);
+            return string.Equals(estadoEnvio, "ERROR_ENVIO", StringComparison.OrdinalIgnoreCase)
+                ? GetString(rd, 1)
+                : null;
+        }, "No se pudo consultar el último error de envío de WhatsApp.", ct);
+
+    public Task<HashSet<int>> GetBlockedNumeroIdsAsync(IReadOnlyCollection<int> idNumeros, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetBlockedNumeroIds", async token =>
+        {
+            var ids = idNumeros.Where(id => id > 0).Distinct().ToArray();
+            if (ids.Length == 0)
+                return new HashSet<int>();
+
+            var inClause = string.Join(",", ids.Select((_, index) => $"@Id{index}"));
+            var sql = $"""
+                ;WITH Last AS (
+                    SELECT c.IdNumeroWhatsApp AS IdNumero, m.EstadoEnvio, m.PayloadJson,
+                           ROW_NUMBER() OVER (PARTITION BY c.IdNumeroWhatsApp ORDER BY m.FechaHora DESC) AS Rn
+                    FROM dbo.CONV_MENSAJES m
+                    JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                    WHERE c.IdNumeroWhatsApp IN ({inClause}) AND m.Direction = N'SALIENTE'
+                )
+                SELECT IdNumero, PayloadJson FROM Last WHERE Rn = 1 AND EstadoEnvio = N'ERROR_ENVIO'
+                """;
+
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            await using var cmd = new SqlCommand(sql, cn);
+            for (var index = 0; index < ids.Length; index++)
+                cmd.Parameters.AddWithValue($"@Id{index}", ids[index]);
+
+            var blocked = new HashSet<int>();
+            await using var rd = await cmd.ExecuteReaderAsync(token);
+            while (await rd.ReadAsync(token))
+            {
+                if (WhatsAppOutboundErrorClassifier.IsAccountLocked(GetString(rd, 1)))
+                    blocked.Add(rd.GetInt32(0));
+            }
+            return blocked;
+        }, "No se pudo consultar los números bloqueados por Meta.", ct);
 
     public Task SetConversationWhatsAppNumeroAsync(ConversacionWhatsAppNumeroRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SetConversationWhatsAppNumero", async token =>
@@ -2704,7 +2790,7 @@ public sealed class ConversacionesService(
         {
             filters ??= new();
             var tenant = ResolveTenantConnection(filters.ExpectedBaseId, "GetTemplates");
-            var templateContext = await ResolveTemplateContextAsync(filters.IdNumeroWhatsApp, filters.ExpectedBaseId, tenant.ConnectionString, token);
+            var templateContext = await ResolveTemplateListContextAsync(filters.IdNumeroWhatsApp, filters.ExpectedBaseId, tenant.ConnectionString, token);
             const string sql = """
                 SELECT
                     IdPlantilla,
@@ -2763,16 +2849,26 @@ public sealed class ConversacionesService(
             var tenant = ResolveTenantConnection(expectedBaseId, "GetTemplatesForConversation");
             await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(idConversacion, tenant.ConnectionString, token);
             var conversation = await RequireConversationAsync(idConversacion, tenant.ConnectionString, token);
+            var localTemplates = await GetTemplatesAsync(new ConversacionPlantillaFilters
+            {
+                ExpectedBaseId = expectedBaseId,
+                IdNumeroWhatsApp = conversation.IdNumeroWhatsApp,
+                EstadoMeta = "APPROVED"
+            }, token);
+            if (localTemplates.Count > 0)
+                return localTemplates;
+
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(tenant.ConnectionString, token);
             var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(tenant.BaseId ?? expectedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0,
                 conversation.IdNumeroWhatsApp, conversation.PhoneNumberId, config, token);
             if (runtime.Origin == WhatsAppRuntimeCredentialOrigin.Legacy)
-                return await GetTemplatesAsync(new ConversacionPlantillaFilters { ExpectedBaseId = expectedBaseId, EstadoMeta = "APPROVED" }, token);
+                return localTemplates;
+
             var reference = runtime.CredentialReference
                 ?? throw new InvalidOperationException("La referencia segura de Meta no está disponible.");
             var templates = await metaWhatsAppManagementClient.DiscoverTemplatesAsync(runtime.WabaId, reference, token);
             return templates.Where(static x => string.Equals(x.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
-                .Select(MapRemoteTemplate).OrderBy(static x => x.NombreVisible, StringComparer.OrdinalIgnoreCase).ToArray();
+                .Select(template => MapRemoteTemplate(runtime.WabaId, template)).OrderBy(static x => x.NombreVisible, StringComparer.OrdinalIgnoreCase).ToArray();
         }, "No se pudieron cargar las plantillas aprobadas de este WhatsApp.", ct);
 
     public Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, CancellationToken ct = default)
@@ -3033,8 +3129,7 @@ public sealed class ConversacionesService(
             if (request.EsMetaRemota)
             {
                 template = (await GetTemplatesForConversationAsync(request.IdConversacion, token)).SingleOrDefault(x => x.EsMetaRemota
-                    && string.Equals(x.NombreMeta, request.NombreMeta.Trim(), StringComparison.Ordinal)
-                    && string.Equals(x.Idioma, request.Idioma.Trim(), StringComparison.OrdinalIgnoreCase))
+                    && x.IdPlantilla == request.IdPlantilla)
                     ?? throw new InvalidOperationException("La plantilla ya no está aprobada para la WABA de este número.");
             }
             else
@@ -3044,6 +3139,11 @@ public sealed class ConversacionesService(
             }
 
             var values = NormalizeTemplateValues(request.ValoresVariables);
+            var requiredVariableCount = CountTemplateVariables(template.CuerpoTexto);
+            if (values.Count < requiredVariableCount)
+                throw new InvalidOperationException(
+                    $"Faltan datos para enviar la plantilla. Se requieren {requiredVariableCount} variable(s) y se recibieron {values.Count}.");
+
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                 config.PhoneNumberId = conversation.PhoneNumberId;
@@ -3058,6 +3158,9 @@ public sealed class ConversacionesService(
             config.ApiVersion = runtimeCredential.GraphVersion;
             config.AccessToken = runtimeCredential.AccessToken;
             EnsureWhatsAppMetaProvider(config, "enviar plantillas");
+            EnsureTemplateMatchesRuntime(template, runtimeCredential);
+            if (!template.Activa)
+                throw new InvalidOperationException("La plantilla seleccionada no está activa.");
             if (!template.EsMetaRemota && !string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
             {
                 var meta = await GetMetaTemplateStatusAsync(config, template, token);
@@ -10010,7 +10113,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolvi\u00f3 {(int)response.StatusCode} al enviar reacci\u00f3n: {responseBody}");
+            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar reacci\u00f3n");
         return new WhatsAppSendResult
@@ -12786,7 +12889,7 @@ public sealed class ConversacionesService(
         return propertyName.Length > 0 && message.TryGetProperty(propertyName, out media) && media.ValueKind == JsonValueKind.Object;
     }
 
-    private static string ExtractIncomingText(JsonElement message, string type)
+    internal static string ExtractIncomingText(JsonElement message, string type)
     {
         if (string.Equals(type, "text", StringComparison.OrdinalIgnoreCase) &&
             message.TryGetProperty("text", out var text) &&
@@ -13558,6 +13661,29 @@ public sealed class ConversacionesService(
     }
 
     private sealed record TemplateContext(string? WabaId, ConversacionWhatsAppConfigDto Config);
+    private sealed record TemplateListContext(string? WabaId);
+
+    private async Task<TemplateListContext> ResolveTemplateListContextAsync(int? idNumeroWhatsApp, int? expectedBaseId, string? connectionString, CancellationToken ct)
+    {
+        if (idNumeroWhatsApp is not > 0)
+            return new(null);
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+            await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct);
+        else
+            await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, connectionString, ct);
+
+        var numero = expectedBaseId is > 0
+            ? await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, expectedBaseId, ct)
+            : await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct);
+        if (numero is null)
+            throw new InvalidOperationException("El WhatsApp seleccionado ya no está disponible.");
+        if (!numero.Activo || string.IsNullOrWhiteSpace(numero.PhoneNumberId))
+            throw new InvalidOperationException("El WhatsApp seleccionado no está operativo.");
+
+        var wabaId = (numero.WabaId ?? string.Empty).Trim();
+        return new(wabaId.Length == 0 ? null : wabaId);
+    }
 
     private async Task<TemplateContext> ResolveTemplateContextAsync(int? idNumeroWhatsApp, CancellationToken ct)
         => await ResolveTemplateContextAsync(idNumeroWhatsApp, null, null, ct);
@@ -13599,6 +13725,26 @@ public sealed class ConversacionesService(
     {
         if (!string.Equals(template.WabaId ?? string.Empty, context.WabaId ?? string.Empty, StringComparison.Ordinal))
             throw new UnauthorizedAccessException("La plantilla no pertenece al WhatsApp seleccionado.");
+    }
+
+    private static void EnsureTemplateMatchesRuntime(ConversacionPlantillaDto template, WhatsAppRuntimeCredential runtime)
+    {
+        var templateWabaId = (template.WabaId ?? string.Empty).Trim();
+        var runtimeWabaId = (runtime.WabaId ?? string.Empty).Trim();
+
+        if (runtime.Origin == WhatsAppRuntimeCredentialOrigin.EmbeddedSignup)
+        {
+            if (templateWabaId.Length == 0 || !string.Equals(templateWabaId, runtimeWabaId, StringComparison.Ordinal))
+                throw new UnauthorizedAccessException("La plantilla seleccionada no pertenece a este número de WhatsApp.");
+            return;
+        }
+
+        if (templateWabaId.Length > 0
+            && runtimeWabaId.Length > 0
+            && !string.Equals(templateWabaId, runtimeWabaId, StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException("La plantilla seleccionada no pertenece a este número de WhatsApp.");
+        }
     }
 
     private static ConversacionPlantillaDto ReadTemplate(SqlDataReader rd)
@@ -13798,7 +13944,7 @@ public sealed class ConversacionesService(
     private static string NormalizeTemplateLanguage(string? value)
         => string.IsNullOrWhiteSpace(value) ? "es_AR" : value.Trim();
 
-    private static int CountTemplateVariables(string? text)
+    internal static int CountTemplateVariables(string? text)
     {
         if (string.IsNullOrWhiteSpace(text))
             return 0;
@@ -13893,9 +14039,9 @@ public sealed class ConversacionesService(
             .Where(x => x.Length > 0)
             .ToList() ?? [];
 
-    private static ConversacionPlantillaDto MapRemoteTemplate(MetaMessageTemplate template)
+    private static ConversacionPlantillaDto MapRemoteTemplate(string wabaId, MetaMessageTemplate template)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{template.Id}|{template.Name}|{template.Language}"));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{wabaId}|{template.Id}|{template.Name}|{template.Language}"));
         var id = (long)(BitConverter.ToUInt64(hash, 0) & 0x7FFFFFFFFFFFFFFF);
         if (id == 0) id = 1;
         return new ConversacionPlantillaDto
@@ -13903,7 +14049,7 @@ public sealed class ConversacionesService(
             IdPlantilla = id, NombreVisible = template.Name, NombreMeta = template.Name,
             Categoria = template.Category, Idioma = template.Language, EncabezadoTexto = template.HeaderText,
             CuerpoTexto = template.BodyText, PieTexto = template.FooterText, EstadoLocal = ConversacionPlantillaEstadosLocales.Sincronizada,
-            EstadoMeta = template.Status, MetaTemplateId = template.Id, Activa = true, EsMetaRemota = true
+            EstadoMeta = template.Status, MetaTemplateId = template.Id, WabaId = wabaId, Activa = true, EsMetaRemota = true
         };
     }
 
@@ -14155,7 +14301,7 @@ public sealed class ConversacionesService(
         return normalized.Length <= 160 ? normalized : normalized[..160];
     }
 
-    private static string NormalizeMessageType(string? messageType)
+    internal static string NormalizeMessageType(string? messageType)
     {
         var normalized = string.IsNullOrWhiteSpace(messageType) ? "TEXT" : messageType.Trim().ToUpperInvariant();
         return normalized switch
@@ -14171,6 +14317,11 @@ public sealed class ConversacionesService(
             "BUTTON" or "INTERACTIVE" => "TEXT",
             "REACTION" => "REACTION",
             "SYSTEM" => "SYSTEM",
+            // ExtractIncomingText ya tenía un extractor dedicado para "order" (ExtractOrderText,
+            // "Pedido de catálogo recibido...") desde antes de esta auditoría -- pero al no estar
+            // clasificado acá, un mensaje de pedido real terminaba con MessageType=UNKNOWN y la UI
+            // descartaba ese texto ya armado para mostrar el genérico "tipo no compatible" en su lugar.
+            "ORDER" => "ORDER",
             _ => "UNKNOWN"
         };
     }

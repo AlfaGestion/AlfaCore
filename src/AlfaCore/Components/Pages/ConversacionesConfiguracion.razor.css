@@ -165,6 +165,10 @@
     line-height: 1.5;
 }
 
+.wa-embedded-feedback {
+    margin-top: var(--alfa-space-12, 12px);
+}
+
 .wa-field {
     display: grid;
     gap: var(--alfa-space-4, 4px);
@@ -508,6 +512,7 @@
 .wa-api-list__status { color: var(--alfa-success, #4abf80) !important; font-weight: 600; }
 .wa-api-list__warning { color: var(--alfa-warning, #f2b840) !important; }
 .wa-api-number-row__meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.wa-api-number-row__portfolio-pending { font-style: italic; opacity: .72; }
 .wa-api-detail { display: flex; flex-direction: column; gap: 12px; padding: 20px 24px; }
 .wa-api-detail__heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
 .wa-api-detail__heading h2 { margin: 0; color: var(--alfa-text-primary, #f5f5f7); font-size: 18px; line-height: 1.35; font-weight: 600; }

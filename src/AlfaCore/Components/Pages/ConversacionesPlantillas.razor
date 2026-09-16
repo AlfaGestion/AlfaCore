@@ -3,6 +3,8 @@
 @inject AlfaCore.Services.IConversacionesService ConversacionesSvc
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.IAppSessionInitialization SessionInitialization
+@inject AlfaCore.Services.ITenantIdentityReadiness TenantIdentityReadiness
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.IPageHeaderService PageHeader
@@ -332,6 +334,7 @@
     private int _crearPulseVersion;
     private int _loadGeneration;
     private bool _syncingRouteTenant;
+    private readonly CancellationTokenSource _lifetimeCts = new();
 
     private const string MultiValueSeparator = "---";
     private const int MetaBodyMaxLength = 550;
@@ -484,7 +487,38 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        await LoadRouteTenantAsync();
+        await CompleteProtectedLoadAsync();
+    }
+
+    private async Task CompleteProtectedLoadAsync()
+    {
+        try
+        {
+            await SessionInitialization.WaitUntilReadyAsync(_lifetimeCts.Token);
+            if (!AppUserSession.IsAuthenticated)
+            {
+                NavigateToLoginPreservingCurrentUrl();
+                return;
+            }
+
+            var tenantIdentityState = await TenantIdentityReadiness.WaitForTenantIdentityReadyAsync(_lifetimeCts.Token);
+            if (tenantIdentityState == AlfaCore.Services.TenantIdentityState.Unauthenticated)
+            {
+                NavigateToLoginPreservingCurrentUrl();
+                return;
+            }
+
+            await LoadRouteTenantAsync();
+        }
+        catch (OperationCanceledException) when (_lifetimeCts.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void NavigateToLoginPreservingCurrentUrl()
+    {
+        var relative = "/" + Nav.ToBaseRelativePath(Nav.Uri).TrimStart('/');
+        Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(relative)}", replace: true);
     }
 
     private async Task LoadRouteTenantAsync()
@@ -615,7 +649,7 @@
         if (_syncingRouteTenant)
             return;
 
-        _ = InvokeAsync(LoadRouteTenantAsync);
+        _ = InvokeAsync(CompleteProtectedLoadAsync);
     }
 
     private int? CurrentExpectedBaseIdOrNull()
@@ -673,9 +707,11 @@
 
     public void Dispose()
     {
+        _lifetimeCts.Cancel();
         SessionSvc.SessionChanged -= OnTenantContextChanged;
         AppUserSession.StateChanged -= OnTenantContextChanged;
         PageHeader.Clear();
+        _lifetimeCts.Dispose();
     }
 
     private void UpdatePageHeader()

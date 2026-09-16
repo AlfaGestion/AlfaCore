@@ -220,10 +220,84 @@ public sealed class WhatsAppEmbeddedSignupWorkerGateTests
             new ErrorLogger(),
             Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [84] }));
 
-        await orchestrator.RetryAsync(new WhatsAppEmbeddedRetryRequest(item.IdOnboarding, item.UsuarioIniciador));
+        await orchestrator.RetryAsync(new WhatsAppEmbeddedRetryRequest(item.IdOnboarding, item.IdBase, item.UsuarioIniciador));
 
         Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Authorized, item.Status);
         Assert.Equal("RETRYING", item.CurrentStep);
+        Assert.Equal(1, item.RetryCount);
+    }
+
+    [Fact]
+    public async Task Retry_StopsAfterMaxManualRetryCount_OffersReconnectInstead()
+    {
+        var item = CreateOnboarding(84, WhatsAppEmbeddedOnboardingStatus.FailedRetryable);
+        item.RetryCount = 2; // ya se usaron los 2 reintentos manuales permitidos.
+        var store = new MutableStore(item);
+        var orchestrator = new WhatsAppEmbeddedSignupOrchestrator(
+            store,
+            new WhatsAppEmbeddedSignupStateProtector(),
+            new ValidOAuthClient(),
+            new CredentialVault(),
+            new PhonePinVault(),
+            new RoutingSpyManagementClient(),
+            new OwnershipStore(),
+            new ErrorLogger(),
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [84] }));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            orchestrator.RetryAsync(new WhatsAppEmbeddedRetryRequest(item.IdOnboarding, item.IdBase, item.UsuarioIniciador)));
+
+        // No-op real: el estado nunca se tocó.
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.FailedRetryable, item.Status);
+        Assert.Equal(2, item.RetryCount);
+    }
+
+    [Fact]
+    public async Task SupersedeForReconnect_MovesOldOnboardingToFailedFinal_NeverDeletes()
+    {
+        var item = CreateOnboarding(84, WhatsAppEmbeddedOnboardingStatus.FailedRetryable);
+        item.RetryCount = 2;
+        var store = new MutableStore(item);
+        var orchestrator = new WhatsAppEmbeddedSignupOrchestrator(
+            store,
+            new WhatsAppEmbeddedSignupStateProtector(),
+            new ValidOAuthClient(),
+            new CredentialVault(),
+            new PhonePinVault(),
+            new RoutingSpyManagementClient(),
+            new OwnershipStore(),
+            new ErrorLogger(),
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [84] }));
+
+        var superseded = await orchestrator.SupersedeForReconnectAsync(item.IdOnboarding, item.IdBase);
+
+        Assert.True(superseded);
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.FailedFinal, item.Status);
+        Assert.Equal("SUPERSEDED_BY_RECONNECT", item.CurrentStep);
+        // El onboarding sigue existiendo (mismo IdOnboarding) -- nunca DELETE, queda como historial.
+        Assert.NotEqual(Guid.Empty, item.IdOnboarding);
+    }
+
+    [Fact]
+    public async Task SupersedeForReconnect_IsANoOp_WhenTheOnboardingIsNotFailedRetryable()
+    {
+        var item = CreateOnboarding(84, WhatsAppEmbeddedOnboardingStatus.Ready);
+        var store = new MutableStore(item);
+        var orchestrator = new WhatsAppEmbeddedSignupOrchestrator(
+            store,
+            new WhatsAppEmbeddedSignupStateProtector(),
+            new ValidOAuthClient(),
+            new CredentialVault(),
+            new PhonePinVault(),
+            new RoutingSpyManagementClient(),
+            new OwnershipStore(),
+            new ErrorLogger(),
+            Options.Create(new WhatsAppEmbeddedSignupOptions { Enabled = true, AllowedBaseIds = [84] }));
+
+        var superseded = await orchestrator.SupersedeForReconnectAsync(item.IdOnboarding, item.IdBase);
+
+        Assert.False(superseded);
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.Ready, item.Status);
     }
 
     private static WhatsAppEmbeddedOnboardingDto CreateOnboarding(int idBase, WhatsAppEmbeddedOnboardingStatus status, string tokenReference = "vault-token")
@@ -285,6 +359,25 @@ public sealed class WhatsAppEmbeddedSignupWorkerGateTests
     {
         public Task<WhatsAppEmbeddedOnboardingDto?> GetAsync(Guid idOnboarding, CancellationToken ct = default) => Task.FromResult<WhatsAppEmbeddedOnboardingDto?>(item);
         public Task UpdateStatusAsync(Guid idOnboarding, WhatsAppEmbeddedOnboardingStatus expectedStatus, WhatsAppEmbeddedOnboardingStatus nextStatus, string currentStep, CancellationToken ct = default) { Assert.Equal(item.Status, expectedStatus); item.Status = nextStatus; item.CurrentStep = currentStep; return Task.CompletedTask; }
+        public Task<bool> RetryStartedByUserAsync(Guid idOnboarding, int idBase, int maxManualRetryCount, DateTime nowUtc, CancellationToken ct = default)
+        {
+            if (item.IdOnboarding != idOnboarding || item.IdBase != idBase || item.Status != WhatsAppEmbeddedOnboardingStatus.FailedRetryable || item.RetryCount >= maxManualRetryCount)
+                return Task.FromResult(false);
+            item.Status = WhatsAppEmbeddedOnboardingStatus.Authorized;
+            item.CurrentStep = "RETRYING";
+            item.RetryCount++;
+            return Task.FromResult(true);
+        }
+        public Task<bool> SupersedeFailedForReconnectAsync(Guid idOnboarding, int idBase, DateTime nowUtc, CancellationToken ct = default)
+        {
+            if (item.IdOnboarding != idOnboarding || item.IdBase != idBase || item.Status != WhatsAppEmbeddedOnboardingStatus.FailedRetryable)
+                return Task.FromResult(false);
+            item.Status = WhatsAppEmbeddedOnboardingStatus.FailedFinal;
+            item.CurrentStep = "SUPERSEDED_BY_RECONNECT";
+            item.ErrorCode = "SUPERSEDED_BY_RECONNECT";
+            item.ErrorSummary = "El usuario inició una nueva conexión con Meta.";
+            return Task.FromResult(true);
+        }
         public Task CreateAsync(WhatsAppEmbeddedOnboardingDto onboarding, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WhatsAppEmbeddedOnboardingDto?> GetLatestForBaseAsync(int idBase, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string stateHash, int idBase, string usuario, DateTime nowUtc, CancellationToken ct = default) => throw new NotSupportedException();

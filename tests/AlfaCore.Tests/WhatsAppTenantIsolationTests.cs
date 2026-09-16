@@ -309,6 +309,11 @@ public sealed class WhatsAppTenantIsolationTests
         var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesPlantillas.razor"));
         var routeBase = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "SaaSRoutePageBase.cs"));
         var route = source.IndexOf("@page \"/{idweb}/{idbase:int}/conversaciones/plantillas\"", StringComparison.Ordinal);
+        var parameters = source.IndexOf("protected override async Task OnParametersSetAsync()", StringComparison.Ordinal);
+        var protectedLoad = source.IndexOf("private async Task CompleteProtectedLoadAsync()", parameters, StringComparison.Ordinal);
+        var waitSession = source.IndexOf("SessionInitialization.WaitUntilReadyAsync(_lifetimeCts.Token)", protectedLoad, StringComparison.Ordinal);
+        var waitIdentity = source.IndexOf("TenantIdentityReadiness.WaitForTenantIdentityReadyAsync(_lifetimeCts.Token)", waitSession, StringComparison.Ordinal);
+        var protectedRouteLoad = source.IndexOf("await LoadRouteTenantAsync();", waitIdentity, StringComparison.Ordinal);
         var loadRoute = source.IndexOf("private async Task LoadRouteTenantAsync()", StringComparison.Ordinal);
         var reset = source.IndexOf("ResetTenantData();", loadRoute, StringComparison.Ordinal);
         var ensure = source.IndexOf("EnsureRouteTenantReady(expectedBaseId)", loadRoute, StringComparison.Ordinal);
@@ -318,10 +323,50 @@ public sealed class WhatsAppTenantIsolationTests
 
         Assert.True(route >= 0);
         Assert.Contains("public int? idbase { get; set; }", routeBase, StringComparison.Ordinal);
-        Assert.True(loadRoute > route);
+        Assert.True(parameters > route && protectedLoad > parameters);
+        Assert.True(waitSession > protectedLoad && waitIdentity > waitSession && protectedRouteLoad > waitIdentity);
+        Assert.True(loadRoute > protectedRouteLoad);
         Assert.True(reset > loadRoute && ensure > reset && numeros > ensure && templates > numeros);
         Assert.True(detail > loadRoute);
         Assert.Contains("_loadError = \"No se pudo abrir la información de esta base.\";", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlantillasRoute_WaitsForSessionAndTenantIdentityBeforeFailClosedGuard()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesPlantillas.razor"));
+
+        Assert.Contains("@inject AlfaCore.Services.IAppSessionInitialization SessionInitialization", source, StringComparison.Ordinal);
+        Assert.Contains("@inject AlfaCore.Services.ITenantIdentityReadiness TenantIdentityReadiness", source, StringComparison.Ordinal);
+
+        var protectedLoad = source.IndexOf("private async Task CompleteProtectedLoadAsync()", StringComparison.Ordinal);
+        var sessionReady = source.IndexOf("await SessionInitialization.WaitUntilReadyAsync(_lifetimeCts.Token)", protectedLoad, StringComparison.Ordinal);
+        var authenticated = source.IndexOf("if (!AppUserSession.IsAuthenticated)", sessionReady, StringComparison.Ordinal);
+        var tenantReady = source.IndexOf("await TenantIdentityReadiness.WaitForTenantIdentityReadyAsync(_lifetimeCts.Token)", authenticated, StringComparison.Ordinal);
+        var loadRoute = source.IndexOf("await LoadRouteTenantAsync();", tenantReady, StringComparison.Ordinal);
+        var failClosedGuard = source.IndexOf("EnsureRouteTenantReady(expectedBaseId)", source.IndexOf("private async Task LoadRouteTenantAsync()", StringComparison.Ordinal), StringComparison.Ordinal);
+
+        Assert.True(protectedLoad >= 0);
+        Assert.True(sessionReady > protectedLoad);
+        Assert.True(authenticated > sessionReady);
+        Assert.True(tenantReady > authenticated);
+        Assert.True(loadRoute > tenantReady);
+        Assert.True(failClosedGuard > loadRoute);
+    }
+
+    [Fact]
+    public void PlantillasRoute_ReusesProtectedLoadForDirectInternalRefreshAndCurrentSessionCases()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesPlantillas.razor"));
+
+        Assert.Contains("protected override async Task OnParametersSetAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("await CompleteProtectedLoadAsync();", source, StringComparison.Ordinal);
+        Assert.Contains("_ = InvokeAsync(CompleteProtectedLoadAsync);", source, StringComparison.Ordinal);
+        Assert.Contains("active?.BaseId == expectedBaseId.Value", source, StringComparison.Ordinal);
+        Assert.Contains("return AppUserSession.IsAuthorizedForSession(active.Id);", source, StringComparison.Ordinal);
+        Assert.Contains("SessionSvc.SwitchSession(routeSession.Id);", source, StringComparison.Ordinal);
+        Assert.Contains("_lifetimeCts.Cancel();", source, StringComparison.Ordinal);
+        Assert.Contains("_lifetimeCts.Dispose();", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -341,7 +386,8 @@ public sealed class WhatsAppTenantIsolationTests
 
         var getForConversation = service.IndexOf("GetTemplatesForConversationAsync(long idConversacion, int? expectedBaseId", StringComparison.Ordinal);
         var conversationGuard = service.IndexOf("ResolveTenantConnection(expectedBaseId, \"GetTemplatesForConversation\")", getForConversation, StringComparison.Ordinal);
-        var fallback = service.IndexOf("new ConversacionPlantillaFilters { ExpectedBaseId = expectedBaseId, EstadoMeta = \"APPROVED\" }", getForConversation, StringComparison.Ordinal);
+        var fallback = service.IndexOf("var localTemplates = await GetTemplatesAsync(new ConversacionPlantillaFilters", getForConversation, StringComparison.Ordinal);
+        var numberFilter = service.IndexOf("IdNumeroWhatsApp = conversation.IdNumeroWhatsApp", fallback, StringComparison.Ordinal);
 
         var numeros = config.IndexOf("GetWhatsAppNumerosAsync(int? expectedBaseId", StringComparison.Ordinal);
         var numerosGuard = config.IndexOf("ResolveTenantConnection(expectedBaseId, \"GetWhatsAppNumeros\")", numeros, StringComparison.Ordinal);
@@ -349,7 +395,7 @@ public sealed class WhatsAppTenantIsolationTests
 
         Assert.True(templatesGuard > getTemplates && templatesGuard < templatesSql && templatesConnection > templatesGuard);
         Assert.True(detailGuard > getTemplate && detailGuard < detailSql);
-        Assert.True(conversationGuard > getForConversation && fallback > conversationGuard);
+        Assert.True(conversationGuard > getForConversation && fallback > conversationGuard && numberFilter > fallback);
         Assert.True(numerosGuard > numeros && numerosGuard < numerosSql);
         Assert.Contains("active?.BaseId != expectedBaseId.Value", service, StringComparison.Ordinal);
         Assert.Contains("active?.BaseId != expectedBaseId.Value", config, StringComparison.Ordinal);
@@ -413,11 +459,12 @@ public sealed class WhatsAppTenantIsolationTests
 
         var conversationTemplates = source.IndexOf("private async Task LoadTemplatesForConversationAsync()", StringComparison.Ordinal);
         var conversationCapture = source.IndexOf("TryCaptureTenantLoad(out var lease)", conversationTemplates, StringComparison.Ordinal);
-        var serviceCall = source.IndexOf("GetTemplatesForConversationAsync(_selectedConversation.IdConversacion, lease.BaseId)", conversationTemplates, StringComparison.Ordinal);
-        var lateGuard = source.IndexOf("IsTenantLoadCurrent(lease)", conversationTemplates, StringComparison.Ordinal);
+        var conversationId = source.IndexOf("var conversationId = _selectedConversation.IdConversacion;", conversationCapture, StringComparison.Ordinal);
+        var serviceCall = source.IndexOf("GetTemplatesForConversationAsync(conversationId, lease.BaseId)", conversationTemplates, StringComparison.Ordinal);
+        var lateGuard = source.IndexOf("IsTemplateLoadCurrent(generation, conversationId, lease)", conversationTemplates, StringComparison.Ordinal);
 
         Assert.True(programar >= 0 && programarCapture > programar && programarExpected > programarCapture && programarCurrent > programarExpected);
-        Assert.True(conversationTemplates >= 0 && conversationCapture > conversationTemplates && serviceCall > conversationCapture && lateGuard > serviceCall);
+        Assert.True(conversationTemplates >= 0 && conversationCapture > conversationTemplates && conversationId > conversationCapture && serviceCall > conversationId && lateGuard > serviceCall);
     }
 
     [Fact]

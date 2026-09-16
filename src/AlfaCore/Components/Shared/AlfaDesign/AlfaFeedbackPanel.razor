@@ -1,0 +1,85 @@
+@using AlfaCore.Models
+
+@if (Message is not null)
+{
+    <div class="@PanelClass" role="@LiveRole" aria-live="@LiveMode" aria-atomic="true">
+        <i class="@IconClass" aria-hidden="true"></i>
+        <div class="alfa-feedback-panel__body">
+            @if (!string.IsNullOrWhiteSpace(Message.Title))
+            {
+                <strong class="alfa-feedback-panel__title">@Message.Title</strong>
+            }
+            @if (!string.IsNullOrWhiteSpace(Message.Message))
+            {
+                <p class="alfa-feedback-panel__message">@Message.Message</p>
+            }
+            @if (Message.HasSuggestion)
+            {
+                <p class="alfa-feedback-panel__suggestion">@Message.Suggestion</p>
+            }
+            @if (Message.HasCode)
+            {
+                <p class="alfa-feedback-panel__code">Código: @Message.Code</p>
+            }
+            @if (Message.HasPrimaryAction || Message.HasSecondaryAction)
+            {
+                <div class="alfa-feedback-panel__actions">
+                    @if (Message.HasPrimaryAction)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Loading="@PrimaryActionLoading" OnClick="HandlePrimaryAsync">@Message.PrimaryActionLabel</AlfaButton>
+                    }
+                    @if (Message.HasSecondaryAction)
+                    {
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" OnClick="HandleSecondaryAsync">@Message.SecondaryActionLabel</AlfaButton>
+                    }
+                </div>
+            }
+        </div>
+        @if (Dismissible && OnDismiss.HasDelegate)
+        {
+            <AlfaIconButton Icon="bi bi-x-lg" Label="Cerrar aviso" Size="AlfaSize.Sm" OnClick="HandleDismissAsync" />
+        }
+    </div>
+}
+
+@code {
+    /// <summary>
+    /// Panel de feedback grande y persistente (no se auto-oculta) para resultados de operaciones de
+    /// WhatsApp que necesitan confirmación inequívoca: se renderiza inline, donde el que lo usa lo
+    /// coloque, a diferencia de AlfaNotification que es un toast flotante auto-dismissible. Reutiliza
+    /// el mismo modelo de datos (AppUiMessage/AppUiFeedbackSeverity) que AlfaNotification para no
+    /// duplicar la lógica de construcción de mensajes ya existente en el resto del código.
+    /// </summary>
+    [Parameter] public AppUiMessage? Message { get; set; }
+    [Parameter] public EventCallback OnPrimaryAction { get; set; }
+    [Parameter] public EventCallback OnSecondaryAction { get; set; }
+    [Parameter] public EventCallback OnDismiss { get; set; }
+    [Parameter] public bool Dismissible { get; set; } = true;
+    [Parameter] public bool PrimaryActionLoading { get; set; }
+    [Parameter] public string? Class { get; set; }
+
+    private string PanelClass => string.Join(" ", new[]
+    {
+        "alfa-feedback-panel",
+        $"alfa-feedback-panel--{Message?.Severity.ToString().ToLowerInvariant()}",
+        Class
+    }.Where(static value => !string.IsNullOrWhiteSpace(value)));
+
+    private bool IsAssertive => Message?.Severity is AppUiFeedbackSeverity.Warning or AppUiFeedbackSeverity.Error or AppUiFeedbackSeverity.ActionRequired;
+    private string LiveRole => IsAssertive ? "alert" : "status";
+    private string LiveMode => IsAssertive ? "assertive" : "polite";
+
+    private string IconClass => (Message?.Severity switch
+    {
+        AppUiFeedbackSeverity.Success => "bi bi-check2-circle",
+        AppUiFeedbackSeverity.Warning => "bi bi-exclamation-triangle",
+        AppUiFeedbackSeverity.Error => "bi bi-x-circle",
+        AppUiFeedbackSeverity.ActionRequired => "bi bi-exclamation-octagon",
+        AppUiFeedbackSeverity.InProgress => "bi bi-arrow-repeat alfa-feedback-panel__icon--spin",
+        _ => "bi bi-info-circle"
+    }) + " alfa-feedback-panel__icon";
+
+    private Task HandlePrimaryAsync() => OnPrimaryAction.InvokeAsync();
+    private Task HandleSecondaryAsync() => OnSecondaryAction.InvokeAsync();
+    private Task HandleDismissAsync() => OnDismiss.InvokeAsync();
+}

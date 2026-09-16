@@ -340,6 +340,13 @@ public sealed class ConversacionMensajeDto
     /// es solo para uso propio del agente. <c>null</c>/vacío = sin marcar.
     /// </summary>
     public string? MarcaInterna { get; set; }
+    /// <summary>
+    /// "HISTORY" (importado por history sync de Coexistence) o "WHATSAPP_BUSINESS_APP" (reflejo de un
+    /// mensaje enviado desde la app de WhatsApp Business, vía smb_message_echoes) o vacío para mensajes
+    /// normales de AlfaCore. Antes no se exponía al cliente -- un echo con autor vacío se atribuía por
+    /// defecto a "Equipo Alfa", como si lo hubiera enviado AlfaCore.
+    /// </summary>
+    public string Origen { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionMensajesPaginaDto
@@ -440,6 +447,12 @@ public sealed class ConversacionReaccionRequest
     public long IdConversacion { get; set; }
     public long IdMensaje { get; set; }
     public string Emoji { get; set; } = string.Empty;
+    /// <summary>
+    /// true = quitar la reacción previamente enviada por AlfaCore a este mensaje (Meta acepta un
+    /// mensaje de reacción con emoji vacío para esto). Explícito en vez de inferir de Emoji vacío para
+    /// que un Emoji vacío por error de cliente siga rechazándose como antes.
+    /// </summary>
+    public bool RemoveReaction { get; set; }
     public string? IdTecnicoAutor { get; set; }
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }

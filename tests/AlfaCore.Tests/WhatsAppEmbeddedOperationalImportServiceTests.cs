@@ -96,6 +96,55 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         Assert.True(context.Store.MarkedReady);
     }
 
+    /// <summary>
+    /// Feature Portfolio: el número queda con MetaBusinessId/WabaId (para poder resolver el portfolio
+    /// después), y el nombre del business que el discovery YA trajo (me/businesses?fields=id,name) se
+    /// cachea oportunistamente -- nunca dispara una llamada nueva a Meta sólo para esto.
+    /// </summary>
+    [Fact]
+    public async Task Complete_PersistsMetaBusinessIdAndWabaIdOnTheNumero_AndCachesThePortfolioNameAlreadyDiscovered()
+    {
+        var idOnboarding = Guid.NewGuid();
+        var context = CreateContext(idOnboarding, activeBaseId: 84);
+        context.Management.Businesses.Add(new("business-1", "Business 1"));
+        context.Management.Businesses.Add(new("business-2", "Business 2"));
+        context.Management.WabasByBusiness["business-1"] = [new("waba-1", "business-1", "WABA 1")];
+        context.Management.WabasByBusiness["business-2"] = [new("waba-2", "business-2", "WABA 2")];
+        context.Management.PhonesByWaba["waba-1"] = [Phone("phone-1", "waba-1", "+54 11 1", "Ventas")];
+        context.Management.PhonesByWaba["waba-2"] = [Phone("phone-3", "waba-2", "+54 11 3", "Demo")];
+
+        await context.Service.CompleteAsync(idOnboarding);
+
+        var phone1 = context.Config.Numeros.Single(x => x.PhoneNumberId == "phone-1");
+        Assert.Equal("business-1", phone1.MetaBusinessId);
+        Assert.Equal("waba-1", phone1.WabaId);
+        var phone3 = context.Config.Numeros.Single(x => x.PhoneNumberId == "phone-3");
+        Assert.Equal("business-2", phone3.MetaBusinessId);
+
+        // Dos businesses distintos -- sus nombres no se mezclan en la caché.
+        Assert.Equal("Business 1", context.Config.PortfolioNames["business-1"]);
+        Assert.Equal("Business 2", context.Config.PortfolioNames["business-2"]);
+    }
+
+    [Fact]
+    public async Task Complete_NeverCachesAPortfolioName_WhenTheFastKnownWabaPathNeverCallsMetaForIt()
+    {
+        // Mismo escenario que Complete_UsesPersistedWabaBeforeBroadBusinessDiscovery (WabaId ya conocido
+        // por el contexto del Vault): DiscoverAuthorizedBusinessesAsync nunca se llama, así que el nombre
+        // del business nunca se conoce en este paso. No debe cachearse un nombre inventado/vacío --
+        // "Portfolio no identificado" es responsabilidad de la UI (ResolvePortfolioName), no de acá.
+        var idOnboarding = Guid.NewGuid();
+        var context = CreateContext(idOnboarding, activeBaseId: 84, WhatsAppEmbeddedOnboardingMode.BusinessAppCoexistence);
+        context.Vault.Context = new WhatsAppVaultSecretContext(84, idOnboarding, "business-1", "waba-1", "phone-1", "META_EMBEDDED_SIGNUP_BUSINESS_AUTHORIZATION", null);
+        context.Management.ThrowOnDiscoverBusinesses = true;
+        context.Management.PhonesByWaba["waba-1"] = [Phone("phone-1", "waba-1", "+54 11 1", "Coexistence")];
+
+        await context.Service.CompleteAsync(idOnboarding);
+
+        Assert.Empty(context.Config.PortfolioNames);
+        Assert.Equal("business-1", context.Config.Numeros.Single().MetaBusinessId);
+    }
+
     [Fact]
     public async Task Complete_ImportsExistingCoexistenceAtLegacyReadyForImportApprovalStep()
     {
@@ -339,12 +388,15 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         public List<(string WabaId, int IdBase)> ReservedWabas { get; } = [];
         public List<(string PhoneNumberId, string WabaId, int IdBase)> ReservedPhones { get; } = [];
 
+        public Dictionary<string, string> WabaMetaBusinessIds { get; } = [];
+
         public Task<WhatsAppAssetOwnershipDecision> ReserveWabaAsync(string wabaId, int idBase, string metaBusinessId, CancellationToken ct = default)
         {
             var result = WhatsAppAssetOwnershipPolicy.Evaluate(WabaOwners.TryGetValue(wabaId, out var owner) ? owner : null, idBase);
             if (result != WhatsAppAssetOwnershipResult.Conflict)
             {
                 WabaOwners[wabaId] = idBase;
+                WabaMetaBusinessIds[wabaId] = metaBusinessId;
                 ReservedWabas.Add((wabaId, idBase));
             }
             return Task.FromResult(new WhatsAppAssetOwnershipDecision(result, WabaOwners.GetValueOrDefault(wabaId), wabaId));
@@ -361,8 +413,18 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             return Task.FromResult(new WhatsAppAssetOwnershipDecision(result, PhoneOwners.GetValueOrDefault(phoneNumberId), phoneNumberId));
         }
 
-        public Task<WhatsAppWabaOwnership?> GetWabaOwnershipAsync(string wabaId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task<WhatsAppPhoneOwnership?> GetPhoneOwnershipAsync(string phoneNumberId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<WhatsAppWabaOwnership?> GetWabaOwnershipAsync(string wabaId, CancellationToken ct = default)
+            => Task.FromResult(WabaOwners.TryGetValue(wabaId, out var idBase)
+                ? new WhatsAppWabaOwnership(wabaId, idBase, WabaMetaBusinessIds.GetValueOrDefault(wabaId, ""), DateTime.UtcNow)
+                : null);
+
+        public Task<WhatsAppPhoneOwnership?> GetPhoneOwnershipAsync(string phoneNumberId, CancellationToken ct = default)
+        {
+            if (!PhoneOwners.TryGetValue(phoneNumberId, out var idBase))
+                return Task.FromResult<WhatsAppPhoneOwnership?>(null);
+            var wabaId = ReservedPhones.LastOrDefault(x => x.PhoneNumberId == phoneNumberId).WabaId ?? "";
+            return Task.FromResult<WhatsAppPhoneOwnership?>(new WhatsAppPhoneOwnership(phoneNumberId, wabaId, idBase, DateTime.UtcNow));
+        }
     }
 
     private sealed class MemoryConversacionesConfigService : IConversacionesConfigService
@@ -396,7 +458,85 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             CancellationToken ct = default)
         {
             await SaveWhatsAppNumeroAsync(numero, ct);
-            return Numeros.Single(item => string.Equals(item.PhoneNumberId, numero.PhoneNumberId, StringComparison.Ordinal));
+            var saved = Numeros.Single(item => string.Equals(item.PhoneNumberId, numero.PhoneNumberId, StringComparison.Ordinal));
+            saved.MetaBusinessId = numero.MetaBusinessId;
+            saved.WabaId = numero.WabaId;
+            return saved;
+        }
+
+        public Dictionary<string, string> PortfolioNames { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, DateTime> PortfolioResolutionAttempts { get; } = new(StringComparer.Ordinal);
+        public int BackfillCalls { get; private set; }
+
+        public Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, string>>(PortfolioNames);
+        public Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, int? expectedBaseId, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, string>>(PortfolioNames);
+
+        public Task SetPortfolioNameAsync(int idBase, string metaBusinessId, string portfolioName, CancellationToken ct = default)
+        {
+            if (!string.IsNullOrWhiteSpace(metaBusinessId) && !string.IsNullOrWhiteSpace(portfolioName))
+            {
+                PortfolioNames[metaBusinessId] = portfolioName;
+                PortfolioResolutionAttempts[metaBusinessId] = DateTime.UtcNow;
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> TryReserveResolutionAttemptAsync(int idBase, string metaBusinessId, TimeSpan throttleWindow, CancellationToken ct = default)
+        {
+            if (PortfolioNames.TryGetValue(metaBusinessId, out var name) && !string.IsNullOrWhiteSpace(name))
+                return Task.FromResult(false);
+
+            var now = DateTime.UtcNow;
+            if (PortfolioResolutionAttempts.TryGetValue(metaBusinessId, out var lastAttempt) && now - lastAttempt < throttleWindow)
+                return Task.FromResult(false);
+
+            PortfolioResolutionAttempts[metaBusinessId] = now;
+            return Task.FromResult(true);
+        }
+
+        public Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, int? expectedBaseId, CancellationToken ct = default)
+        {
+            BackfillCalls++;
+            var numero = Numeros.SingleOrDefault(x => x.IdNumero == idNumero);
+            if (numero is not null && string.IsNullOrWhiteSpace(numero.MetaBusinessId))
+            {
+                numero.MetaBusinessId = metaBusinessId;
+                numero.WabaId = wabaId;
+            }
+            return Task.CompletedTask;
+        }
+
+        public Dictionary<string, string> WabaBusinessMap { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, DateTime> WabaResolutionAttempts { get; } = new(StringComparer.Ordinal);
+
+        public Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, string>>(WabaBusinessMap);
+        public Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, int? expectedBaseId, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, string>>(WabaBusinessMap);
+
+        public Task<bool> TryReserveWabaResolutionAttemptAsync(int idBase, string wabaId, TimeSpan throttleWindow, CancellationToken ct = default)
+        {
+            if (WabaBusinessMap.TryGetValue(wabaId, out var businessId) && !string.IsNullOrWhiteSpace(businessId))
+                return Task.FromResult(false);
+
+            var now = DateTime.UtcNow;
+            if (WabaResolutionAttempts.TryGetValue(wabaId, out var last) && now - last < throttleWindow)
+                return Task.FromResult(false);
+
+            WabaResolutionAttempts[wabaId] = now;
+            return Task.FromResult(true);
+        }
+
+        public Task SetWabaOwningBusinessIdAsync(int idBase, string wabaId, string metaBusinessId, CancellationToken ct = default)
+        {
+            if (!string.IsNullOrWhiteSpace(wabaId) && !string.IsNullOrWhiteSpace(metaBusinessId))
+            {
+                WabaBusinessMap[wabaId] = metaBusinessId;
+                WabaResolutionAttempts[wabaId] = DateTime.UtcNow;
+            }
+            return Task.CompletedTask;
         }
 
         public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default) => throw new NotSupportedException();

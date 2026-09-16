@@ -1464,6 +1464,10 @@
                         <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_conversationError</div>
                     }
 
+                    @if (SelectedConversationBlockedFeedback is not null && !_showStatusMenu)
+                    {
+                        <AlfaFeedbackPanel Message="@SelectedConversationBlockedFeedback" Dismissible="false" Class="conversations-window-banner-panel" />
+                    }
                     @if (IsWhatsAppWindowExpired && !_showStatusMenu)
                     {
                         <div class="conversations-window-banner">
@@ -1599,15 +1603,17 @@
                                     <div class="message-bubble-shell">
                                         @if (_openReactionMessageId == message.IdMensaje)
                                         {
+                                            var myActiveReaction = GetMyActiveReactionEmoji(message);
                                             <div class="message-reaction-picker" @onclick:stopPropagation>
                                                 @foreach (var emoji in QuickReactionEmojis)
                                                 {
                                                     var reactionMessageId = message.IdMensaje;
                                                     var reactionEmoji = emoji;
+                                                    var isActive = string.Equals(emoji, myActiveReaction, StringComparison.Ordinal);
                                                     <button type="button"
-                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji"
-                                                            title="Reaccionar @emoji"
-                                                            @onclick="async () => await SendReactionAsync(reactionMessageId, reactionEmoji)"
+                                                            class="btn btn--ghost btn--sm message-reaction-picker__emoji @(isActive ? "is-active" : string.Empty)"
+                                                            title="@(isActive ? $"Quitar reacción {emoji}" : $"Reaccionar {emoji}")"
+                                                            @onclick="async () => await (isActive ? RemoveReactionAsync(reactionMessageId) : SendReactionAsync(reactionMessageId, reactionEmoji))"
                                                             disabled="@(_reactionSendingMessageId.HasValue)">
                                                         @emoji
                                                     </button>
@@ -1713,7 +1719,7 @@
                                             {
                                                 @if (IsImageAttachment(adj))
                                                 {
-                                                    <div class="message-attachment message-attachment--image">
+                                                    <div class="message-attachment message-attachment--image @(IsStickerAttachment(adj) ? "message-attachment--sticker" : string.Empty)">
                                                         @if (IsAttachmentAvailable(adj))
                                                         {
                                                             <button type="button"
@@ -1868,7 +1874,7 @@
                                     @if (IsOutgoingMessage(message))
                                     {
                                         <div class="message-card__delivery">
-                                            <span class="message-delivery @GetDeliveryClass(message.EstadoEnvio)" title="@GetDeliveryLabel(message.EstadoEnvio)">
+                                            <span class="message-delivery @GetDeliveryClass(message.EstadoEnvio)" title="@GetDeliveryLabel(message)">
                                                 <i class="bi @GetDeliveryIcon(message.EstadoEnvio)"></i>
                                                 <span>@GetDeliveryLabel(message.EstadoEnvio)</span>
                                             </span>
@@ -2891,6 +2897,11 @@
                         </div>
                     }
 
+                    @if (IsSelectedTemplateUnavailable)
+                    {
+                        <AlfaFeedbackPanel Message="@AppUiMessage.Warning("Plantilla no disponible", "Esta plantilla todavía no está aprobada por Meta.")" Dismissible="false" />
+                    }
+
                     @if (SelectedTemplate is not null && CountTemplateVariables(SelectedTemplate.CuerpoTexto) > 0)
                     {
                         <div class="field">
@@ -2899,6 +2910,10 @@
                                       rows="4"
                                       placeholder="Un valor por línea"
                                       @bind="_templateValuesText"></textarea>
+                            @if (MissingTemplateVariablesMessage is { } missingVariables)
+                            {
+                                <AlfaFeedbackPanel Message="@AppUiMessage.Warning("Faltan datos para enviar la plantilla", missingVariables)" Dismissible="false" />
+                            }
                         </div>
                     }
 
@@ -2979,11 +2994,25 @@
                 </div>
             </div>
 
+            @if (_templateSendFeedback is not null)
+            {
+                <AlfaFeedbackPanel Message="@_templateSendFeedback" Dismissible="false" />
+            }
+
             <div class="modal-card__actions">
                 <button type="button" class="btn btn--primary" @onclick="SendTemplateAsync" disabled="@(!CanSendTemplate)">
-                    <i class="bi bi-send-fill"></i> Enviar mensaje
+                    @if (_sendingTemplate)
+                    {
+                        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                        <span>Enviando plantilla...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-send-fill"></i>
+                        <span>Enviar mensaje</span>
+                    }
                 </button>
-                <button type="button" class="btn btn--ghost" @onclick="CloseTemplatePanel">
+                <button type="button" class="btn btn--ghost" @onclick="CloseTemplatePanel" disabled="@_sendingTemplate">
                     Cerrar
                 </button>
             </div>
@@ -3695,7 +3724,15 @@
     private bool _loadingTemplates;
     private string _templateValuesText = string.Empty;
     private string? _templateAutoNotice;
+    private int _templateLoadGeneration;
     private bool _uploadingTemplateFile;
+    /// <summary>
+    /// Feedback propio del envío de plantilla, distinto de _actionError (compartido por ~15 acciones no
+    /// relacionadas en esta página). Se muestra dentro del modal de plantilla, así el error de ESTE
+    /// intento nunca se confunde con el de otra operación de la conversación.
+    /// </summary>
+    private AppUiMessage? _templateSendFeedback;
+    private bool _sendingTemplate;
 
     private ConversacionesInboxFilters _filters = new() { Canal = "SOCIAL" };
     private List<ConversacionTecnicoOptionDto> _technicians = [];
@@ -3709,6 +3746,13 @@
     private List<ConversacionClienteCandidateDto> _clientCandidates = [];
     private readonly Dictionary<long, ConversationViewCache> _conversationCache = [];
     private readonly Dictionary<string, ConversationChannelCache> _channelCache = [];
+    /// <summary>
+    /// Prioridad 3: si el canal WhatsApp seleccionado tiene un 131031 (cuenta bloqueada por Meta)
+    /// vigente, se muestra un panel grande -- nunca un flag persistido, se deriva del último mensaje
+    /// saliente (GetLastOutboundDeliveryErrorAsync) y se cachea por número dentro de la sesión para no
+    /// repetir la consulta en cada cambio de conversación del mismo número.
+    /// </summary>
+    private readonly Dictionary<int, AppUiMessage?> _numeroBlockedFeedbackCache = [];
     private ConversacionDetalleDto? _selectedConversation;
     private long? _selectedConversationId;
     private bool _mobileChatActive;
@@ -3999,10 +4043,31 @@
     private ConversacionPlantillaDto? SelectedTemplate
         => _availableTemplates.FirstOrDefault(x => x.IdPlantilla == _selectedTemplateId);
     private IReadOnlyList<string> TemplateValues => ParseTemplateValues(_templateValuesText);
+    // _availableTemplates ya viene filtrado a EstadoMeta=APPROVED desde el servidor
+    // (GetTemplatesForConversationAsync), así que esto no debería poder pasar en uso normal -- es una
+    // red de seguridad defensiva, no la validación principal.
+    private bool IsSelectedTemplateUnavailable
+        => SelectedTemplate is { } template && !string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase);
+    private string? MissingTemplateVariablesMessage
+    {
+        get
+        {
+            if (SelectedTemplate is not { } template)
+                return null;
+            var required = CountTemplateVariables(template.CuerpoTexto);
+            var provided = TemplateValues.Count;
+            if (provided >= required)
+                return null;
+            var missing = string.Join(", ", Enumerable.Range(provided + 1, required - provided).Select(i => $"{{{{{i}}}}}"));
+            return $"Completá: {missing}";
+        }
+    }
     private bool CanSendTemplate
         => !_busyAction
+           && !_sendingTemplate
            && _selectedConversation is not null
            && SelectedTemplate is not null
+           && !IsSelectedTemplateUnavailable
            && HasRequiredTemplateValues(SelectedTemplate, TemplateValues);
     private bool IsAuditResultsMode
         => _selectedConversation is null && ShouldKeepAuditResultsOpen;
@@ -5776,6 +5841,7 @@
         CloseMessageSearch();
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
+        QueueNumeroBlockedFeedbackRefresh();
 
         // Antes, si el panel de IA quedaba abierto mientras el operador navegaba entre
         // conversaciones, cada clic en la bandeja disparaba sugerencia (AlfaKnowledge) + análisis
@@ -8101,7 +8167,13 @@
         }
         catch (Exception ex)
         {
-            var errorMessage = ex.Message;
+            // Vault/DataProtection inaccesible EN ESTE PROCESO (p. ej. local contra una base cuyo
+            // SecureVault usa un certificado que sólo existe en el servidor) nunca debe mostrarse como
+            // si la conexión de WhatsApp estuviera rota -- ver WhatsAppCredentialErrorClassifier.
+            var causeException = ex is AlfaCore.Services.AppUserFacingException { InnerException: { } inner } ? inner : ex;
+            var errorMessage = AlfaCore.Models.WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(causeException, HostEnvironment.IsProduction()) is { } credentialMessage
+                ? $"{credentialMessage.Title}: {credentialMessage.Message}"
+                : ex.Message;
             _actionError = errorMessage;
             MarkPendingAttachmentsError(errorMessage);
             if (optimisticMessageId.HasValue)
@@ -8129,6 +8201,10 @@
         {
             _busyAction = false;
             await ClearTypingAsync();
+            // Refresca el panel de "bloqueado por Meta" con o sin error -- si este envío tuvo éxito
+            // después de un 131031 anterior, el panel debe desaparecer ya mismo, sin esperar a que el
+            // usuario cambie de conversación y vuelva.
+            QueueNumeroBlockedFeedbackRefresh();
         }
     }
 
@@ -8404,13 +8480,15 @@
             return;
         }
 
+        var generation = ++_templateLoadGeneration;
+        var conversationId = _selectedConversation.IdConversacion;
         _loadingTemplates = true;
         _availableTemplates = [];
 
         try
         {
-            var loaded = await ConversacionesSvc.GetTemplatesForConversationAsync(_selectedConversation.IdConversacion, lease.BaseId);
-            if (!IsTenantLoadCurrent(lease))
+            var loaded = await ConversacionesSvc.GetTemplatesForConversationAsync(conversationId, lease.BaseId);
+            if (!IsTemplateLoadCurrent(generation, conversationId, lease))
                 return;
 
             _availableTemplates = loaded
@@ -8435,25 +8513,31 @@
         }
         finally
         {
-            _loadingTemplates = false;
+            if (generation == _templateLoadGeneration)
+                _loadingTemplates = false;
         }
     }
 
     private async Task OnTemplateChangedAsync()
     {
+        // Cambiar de plantilla es un intento nuevo: el error/estado del intento anterior ya no aplica.
+        _templateSendFeedback = null;
         await PrepareTemplateValuesAsync(forceReload: true);
     }
 
     private async Task PrepareTemplateValuesAsync(bool forceReload = false)
     {
         _templateAutoNotice = null;
-        if (SelectedTemplate is null)
+        var selectedTemplate = SelectedTemplate;
+        var selectedTemplateId = _selectedTemplateId;
+        var selectedConversationId = _selectedConversation?.IdConversacion;
+        if (selectedTemplate is null)
         {
             _templateValuesText = string.Empty;
             return;
         }
 
-        var required = CountTemplateVariables(SelectedTemplate.CuerpoTexto);
+        var required = CountTemplateVariables(selectedTemplate.CuerpoTexto);
         if (required <= 0)
         {
             _templateValuesText = string.Empty;
@@ -8470,6 +8554,9 @@
             try
             {
                 var autoValues = await ConversacionesSvc.GetTemplateAutoValuesAsync(_selectedConversation.IdConversacion, required);
+                if (_selectedTemplateId != selectedTemplateId || _selectedConversation?.IdConversacion != selectedConversationId)
+                    return;
+
                 automaticValues = autoValues.Valores.ToList();
                 _templateAutoNotice = string.IsNullOrWhiteSpace(autoValues.Observaciones)
                     ? "Variables cargadas automáticamente desde la conversación y la cuenta del cliente."
@@ -8477,6 +8564,9 @@
             }
             catch (Exception ex)
             {
+                if (_selectedTemplateId != selectedTemplateId || _selectedConversation?.IdConversacion != selectedConversationId)
+                    return;
+
                 _templateAutoNotice = $"No se pudieron cargar variables automáticas: {ex.Message}";
             }
         }
@@ -8497,12 +8587,15 @@
 
     private async Task SendTemplateAsync()
     {
-        if (_selectedConversation is null || SelectedTemplate is null)
+        if (_selectedConversation is null || SelectedTemplate is null || _sendingTemplate)
             return;
 
         _busyAction = true;
-        _actionMessage = null;
-        _actionError = null;
+        _sendingTemplate = true;
+        // Feedback propio de ESTE intento -- nunca reutiliza _actionError, que es compartido por otras
+        // ~15 acciones no relacionadas de la página (nota interna, asignación, cierre, etc.).
+        _templateSendFeedback = AppUiMessage.InProgress("Enviando plantilla...", "Estamos enviando el mensaje por WhatsApp.");
+        await InvokeAsync(StateHasChanged);
 
         try
         {
@@ -8523,6 +8616,10 @@
             var selectedConversationId = _selectedConversation.IdConversacion;
             var previewText = RenderTemplatePreview(SelectedTemplate, TemplateValues);
 
+            // Éxito: el mensaje ya va a aparecer de inmediato en el hilo de la conversación -- no hace
+            // falta un panel de éxito redundante encima, alcanza con cerrar el modal (mismo criterio que
+            // "no mostrar modal/toast redundante si el mensaje ya aparece en la conversación").
+            _templateSendFeedback = null;
             _showTemplatePanel = false;
             ClearTemplateSelection();
 
@@ -8537,18 +8634,39 @@
         }
         catch (Exception ex)
         {
-            var error = ex.Message;
+            // La causa real (p. ej. Meta rechazó el intercambio, 131031, ventana cerrada) puede venir
+            // envuelta en AppUserFacingException (ver ExecuteLoggedAsync) -- se clasifica la excepción
+            // original, no el wrapper genérico, para no perder el detalle sanitizado. Una regla de
+            // negocio propia (plantilla no aprobada, variables faltantes, WABA incorrecta) ya llega como
+            // InvalidOperationException con un mensaje propio, seguro y específico -- mostrarlo tal cual
+            // es mejor que forzarlo por el clasificador de errores de Graph, que asumiría "Meta no pudo
+            // entregar este mensaje" y perdería la causa real.
+            //
+            // El Vault/DataProtection inaccesible EN ESTE PROCESO (p. ej. local contra una base cuyo
+            // SecureVault usa un certificado que sólo existe en el servidor) se chequea ANTES que la
+            // regla de negocio genérica -- WhatsAppEmbeddedVaultUnavailableException también ES-A
+            // InvalidOperationException, así que sin este chequeo explícito por tipo caería en el mismo
+            // "businessRule.Message" de cualquier forma (no en "reconexión" acá, pero sin el framing de
+            // entorno/administrador que corresponde).
+            var causeException = ex is AlfaCore.Services.AppUserFacingException { InnerException: { } inner } ? inner : ex;
+            _templateSendFeedback = AlfaCore.Models.WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(causeException, HostEnvironment.IsProduction())
+                ?? (causeException is InvalidOperationException businessRule
+                    ? AppUiMessage.Warning("No se pudo enviar la plantilla", businessRule.Message)
+                    : AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException, HostEnvironment.IsProduction())
+                      ?? AppUiMessage.Error("No se pudo enviar la plantilla", "Ocurrió un error al enviar el mensaje por WhatsApp."));
+
             if (_selectedConversation is not null)
             {
                 await SelectConversationAsync(_selectedConversation.IdConversacion, updateUrl: false);
                 await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
             }
-
-            _actionError = error;
         }
         finally
         {
             _busyAction = false;
+            _sendingTemplate = false;
+            QueueNumeroBlockedFeedbackRefresh();
+            await InvokeAsync(StateHasChanged);
         }
     }
 
@@ -9833,18 +9951,24 @@
         if (!IsWhatsAppConversation)
             return;
 
-        if (_availableTemplates.Count == 0)
-            await LoadTemplatesForConversationAsync();
-
         _showContextPanel = false;
-        await PrepareTemplateValuesAsync(forceReload: true);
+        _templateSendFeedback = null;
         _showTemplatePanel = true;
+        ClearTemplateSelection();
+        await LoadTemplatesForConversationAsync();
     }
 
     private void CloseTemplatePanel()
     {
+        // No cerrar mientras hay un envío en curso: si el usuario cierra el modal a mitad de camino, el
+        // feedback del intento (éxito o error) queda huérfano -- ya no hay dónde mostrarlo asociado a
+        // esta operación, y _busyAction seguiría en true hasta que el envío en curso termine solo.
+        if (_sendingTemplate)
+            return;
+
         _showTemplatePanel = false;
-        _templatePendingAttachments.Clear();
+        _templateSendFeedback = null;
+        ClearTemplateSelection();
     }
 
     private async Task CrearHiloInternoAsync()
@@ -10541,7 +10665,82 @@
         await AutoResizeReplyTextareaAsync();
     }
 
-    private async Task SendReactionAsync(long messageId, string emoji)
+    private Task SendReactionAsync(long messageId, string emoji)
+        => SendOrRemoveReactionAsync(messageId, emoji, remove: false);
+
+    /// <summary>
+    /// Quita la reacción de AlfaCore a este mensaje (Meta acepta un mensaje de reacción con emoji
+    /// vacío para esto). Antes esto no era posible: NormalizeReactionEmoji/SendReactionAsync
+    /// rechazaban explícitamente un emoji vacío, así que la única forma de "cambiar de opinión" era
+    /// reemplazar por otra reacción -- nunca quitarla del todo.
+    /// </summary>
+    private Task RemoveReactionAsync(long messageId)
+        => SendOrRemoveReactionAsync(messageId, string.Empty, remove: true);
+
+    private AppUiMessage? SelectedConversationBlockedFeedback
+        => _selectedConversation?.IdNumeroWhatsApp is > 0 and { } idNumero
+           && _numeroBlockedFeedbackCache.TryGetValue(idNumero, out var cached)
+            ? cached
+            : null;
+
+    /// <summary>
+    /// BUG REAL encontrado al auditar staleness (post-mortem 131031): esto antes se saltaba la consulta
+    /// por completo si el número ya estaba en _numeroBlockedFeedbackCache -- una vez detectado un
+    /// 131031, el panel "Cuenta bloqueada por Meta" quedaba pegado para siempre en esa sesión de
+    /// browser, incluso después de que Meta reactivara la cuenta y un envío posterior tuviera éxito
+    /// (el mismo GetLastOutboundDeliveryErrorAsync ya se autocorrige -- el bug estaba en que nunca se
+    /// lo volvía a llamar). Ahora SIEMPRE refresca: al seleccionar la conversación y también después de
+    /// cada intento de envío (ver los finally de SendReplyAsync/SendTemplateAsync/
+    /// SendOrRemoveReactionAsync) para que el panel se actualice sin necesitar cambiar de conversación.
+    /// </summary>
+    private void QueueNumeroBlockedFeedbackRefresh()
+    {
+        if (_selectedConversation?.IdNumeroWhatsApp is not (> 0 and { } idNumero))
+            return;
+
+        _ = RefreshNumeroBlockedFeedbackAsync(idNumero);
+    }
+
+    private async Task RefreshNumeroBlockedFeedbackAsync(int idNumero)
+    {
+        string? payload;
+        try
+        {
+            payload = await ConversacionesSvc.GetLastOutboundDeliveryErrorAsync(idNumero);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return;
+        }
+
+        _numeroBlockedFeedbackCache[idNumero] = AlfaCore.Models.WhatsAppOutboundErrorClassifier.IsAccountLocked(payload)
+            ? AppUiMessage.Error(
+                "Este WhatsApp está bloqueado por Meta",
+                "No se pueden enviar ni recibir mensajes hasta que Meta reactive la cuenta.",
+                "Esto se resuelve directamente con Meta -- AlfaCore no puede desbloquearla ni reintentando el envío.")
+            : null;
+
+        if (_selectedConversation?.IdNumeroWhatsApp == idNumero)
+            await InvokeAsync(StateHasChanged);
+    }
+
+    private string GetMyActiveReactionEmoji(ConversacionMensajeDto message)
+    {
+        if (string.IsNullOrWhiteSpace(message.WhatsAppMessageId))
+            return string.Empty;
+
+        var latestOwn = _messages
+            .Where(IsReactionMessage)
+            .Where(x => string.Equals(x.WhatsAppReplyToMessageId, message.WhatsAppMessageId, StringComparison.OrdinalIgnoreCase))
+            .Where(x => string.Equals((x.Direction ?? string.Empty).Trim(), "SALIENTE", StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(x => x.FechaHora)
+            .ThenByDescending(x => x.IdMensaje)
+            .FirstOrDefault();
+
+        return latestOwn is null ? string.Empty : ExtractReactionEmoji(latestOwn);
+    }
+
+    private async Task SendOrRemoveReactionAsync(long messageId, string emoji, bool remove)
     {
         if (_selectedConversation is null || _reactionSendingMessageId.HasValue)
             return;
@@ -10580,6 +10779,7 @@
                 IdConversacion = conversationId,
                 IdMensaje = messageId,
                 Emoji = emoji,
+                RemoveReaction = remove,
                 IdTecnicoAutor = CurrentMessageTechnicianId,
                 UsuarioAccion = CurrentUserNameForAudit,
                 SistemaAccion = CurrentUserSystemForAudit
@@ -10596,16 +10796,31 @@
         catch (OperationCanceledException)
         {
             _messages.RemoveAll(x => x.IdMensaje == optimisticId);
-            _actionError = "No se pudo enviar la reacción a tiempo. Revisá la conexión y reintentá.";
+            _actionError = remove
+                ? "No se pudo quitar la reacción a tiempo. Revisá la conexión y reintentá."
+                : "No se pudo enviar la reacción a tiempo. Revisá la conexión y reintentá.";
         }
         catch (Exception ex)
         {
             _messages.RemoveAll(x => x.IdMensaje == optimisticId);
-            _actionError = ex.Message;
+            // La causa real puede venir envuelta en AppUserFacingException (ver ExecuteLoggedAsync /
+            // SendReactionAsync en ConversacionesService, que ya no traga la excepción real -- antes
+            // esto siempre mostraba "No se pudo enviar la reacción por WhatsApp." sin importar la causa).
+            var causeException = ex is AlfaCore.Services.AppUserFacingException { InnerException: { } inner } ? inner : ex;
+            // Vault/DataProtection inaccesible EN ESTE PROCESO se chequea antes que la regla de negocio
+            // genérica -- ver el mismo comentario en SendTemplateAsync.
+            var classified = AlfaCore.Models.WhatsAppCredentialErrorClassifier.ClassifyCredentialUnavailable(causeException, HostEnvironment.IsProduction())
+                ?? (causeException is InvalidOperationException businessRule
+                    ? AppUiMessage.Warning("No se pudo procesar la reacción", businessRule.Message)
+                    : AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliverySendException(causeException, HostEnvironment.IsProduction()));
+            _actionError = classified is not null
+                ? $"{classified.Title}: {classified.Message}"
+                : (remove ? "No se pudo quitar la reacción por WhatsApp." : "No se pudo enviar la reacción por WhatsApp.");
         }
         finally
         {
             _reactionSendingMessageId = null;
+            QueueNumeroBlockedFeedbackRefresh();
         }
     }
 
@@ -10776,12 +10991,19 @@
 
     private void ClearTemplateSelection()
     {
+        _templateLoadGeneration++;
         _availableTemplates = [];
         _selectedTemplateId = 0;
+        _loadingTemplates = false;
         _templateValuesText = string.Empty;
         _templateAutoNotice = null;
         _templatePendingAttachments = [];
     }
+
+    private bool IsTemplateLoadCurrent(int generation, long conversationId, ConversationTenantLoadLease lease)
+        => generation == _templateLoadGeneration
+           && _selectedConversation?.IdConversacion == conversationId
+           && IsTenantLoadCurrent(lease);
 
     private static string GetDisplayName(ConversacionInboxItemDto item)
         => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);
@@ -11183,10 +11405,25 @@
     }
 
     private string GetMessageAuthor(ConversacionMensajeDto message)
+        => message.Direction == "ENTRANTE" ? CurrentConversationContactName : ResolveNonIncomingMessageAuthor(message);
+
+    /// <summary>
+    /// Parte pura de GetMessageAuthor (todo lo que no depende de CurrentConversationContactName), para
+    /// poder testearla directamente sin instanciar la página. Prioridad 7 + auditoría de call-sites
+    /// (segunda ronda): tanto un echo (smb_message_echoes, Origen=WHATSAPP_BUSINESS_APP) como un
+    /// SALIENTE importado por history sync (Origen=HISTORY -- mensajes que el negocio ya había mandado
+    /// desde la app de WhatsApp Business ANTES de conectar Coexistence con AlfaCore) nunca tienen
+    /// TecnicoAutorNombre/UsuarioAutor. Los dos representan lo mismo -- "esto lo mandó el negocio
+    /// directamente, no AlfaCore" -- así que los dos caían al mismo fallback "Equipo Alfa" que un
+    /// mensaje normal de AlfaCore, mal atribuido al soporte. Un autor real de AlfaCore (si por algún
+    /// motivo lo hubiera) sigue teniendo prioridad sobre la etiqueta genérica en ambos casos.
+    /// </summary>
+    internal static string ResolveNonIncomingMessageAuthor(ConversacionMensajeDto message)
         => message.Direction switch
         {
-            "ENTRANTE" => CurrentConversationContactName,
             "NOTA_INTERNA" => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "Nota interna"),
+            _ when message.Origen is "WHATSAPP_BUSINESS_APP" or "HISTORY"
+                => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "WhatsApp Business"),
             _ => FirstNonEmpty(message.TecnicoAutorNombre, message.UsuarioAutor, "Equipo Alfa")
         };
 
@@ -11267,6 +11504,7 @@
         {
             "NOTA_INTERNA" => "Nota interna",
             _ when IsUnsupportedMessage(message) => "No compatible",
+            _ when string.Equals(message.MessageType, "ORDER", StringComparison.OrdinalIgnoreCase) => "Pedido",
             _ => message.MessageType
         };
 
@@ -11798,15 +12036,49 @@
                && Path.HasExtension(text);
     }
 
-    private static string GetMessageDisplayText(ConversacionMensajeDto message)
+    internal static string GetMessageDisplayText(ConversacionMensajeDto message)
     {
         if (!IsUnsupportedMessage(message))
+        {
+            // BUG REAL encontrado al auditar (Prioridad 5/6): para un mensaje de media (imagen/video/
+            // audio/documento/sticker) sin ningún adjunto registrado -- típico de historial donde el
+            // media de Meta ya no está disponible para descargar -- el texto guardado es literalmente
+            // "[video]"/"[image]"/etc. (ver ExtractIncomingText en ConversacionesService, el fallback
+            // final cuando no hay caption ni filename). Eso se mostraba tal cual, crudo, en la burbuja
+            // -- exactamente el bug reportado ("[video]" en vez de una explicación). Con un adjunto
+            // registrado esto ya no pasa (HasHumanAttachmentText lo filtra), así que sólo hace falta acá
+            // para el caso sin ningún adjunto.
+            var unavailableMediaText = GetUnavailableHistoricalMediaText(message);
+            if (unavailableMediaText is not null)
+                return unavailableMediaText;
+
             return message.Texto;
+        }
 
         var unsupportedType = ExtractUnsupportedType(message.PayloadJson);
         return string.IsNullOrWhiteSpace(unsupportedType)
             ? "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo."
             : $"WhatsApp envió un formato no compatible: {unsupportedType}.";
+    }
+
+    private static string? GetUnavailableHistoricalMediaText(ConversacionMensajeDto message)
+    {
+        if (message.TieneAdjuntos)
+            return null;
+
+        var text = (message.Texto ?? string.Empty).Trim();
+        if (!text.StartsWith('[') || !text.Contains(']'))
+            return null;
+
+        return (message.MessageType ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "IMAGE" => "Imagen histórica no disponible.",
+            "VIDEO" => "Video histórico no disponible.",
+            "AUDIO" => "Audio histórico no disponible.",
+            "DOCUMENT" => "Documento histórico no disponible.",
+            "STICKER" => "Sticker no disponible.",
+            _ => null
+        };
     }
 
     private static readonly Regex MessageUrlRegex = new(
@@ -12137,7 +12409,16 @@
         }
     }
 
-    private static string ExtractUnsupportedType(string payloadJson)
+    /// <summary>
+    /// BUG REAL encontrado al auditar (Prioridad 4): esto buscaba "unsupported.type" en la RAÍZ del
+    /// PayloadJson, pero BuildIncomingWhatsAppMessagePayloadJson (ConversacionesService, usada tanto
+    /// para mensajes en vivo como para history/echoes) siempre envuelve el mensaje real de Meta como
+    /// {metadata:{...}, message:{...}} -- el tipo real está en message.type, no en un "unsupported"
+    /// suelto en la raíz (que nunca existió con esa forma). Por eso el mensaje siempre caía al genérico
+    /// "WhatsApp envió un tipo de mensaje que todavía no es compatible con el módulo." aunque Meta sí
+    /// mandara el nombre real del tipo.
+    /// </summary>
+    internal static string ExtractUnsupportedType(string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(payloadJson))
             return string.Empty;
@@ -12145,11 +12426,17 @@
         try
         {
             using var doc = JsonDocument.Parse(payloadJson);
-            if (doc.RootElement.TryGetProperty("unsupported", out var unsupported)
-                && unsupported.ValueKind == JsonValueKind.Object
-                && unsupported.TryGetProperty("type", out var typeProp))
+            var message = doc.RootElement.TryGetProperty("message", out var messageProp) && messageProp.ValueKind == JsonValueKind.Object
+                ? messageProp
+                : doc.RootElement;
+
+            if (message.TryGetProperty("type", out var typeProp) && typeProp.ValueKind == JsonValueKind.String)
             {
-                return typeProp.GetString() ?? string.Empty;
+                var type = typeProp.GetString() ?? string.Empty;
+                // "unsupported" a secas no es un nombre de tipo útil para mostrar -- es la etiqueta que
+                // Meta usa cuando NO puede identificar el tipo real (ver ExtractUnsupportedReason para
+                // el motivo que si vino, vía message.errors).
+                return string.Equals(type, "unsupported", StringComparison.OrdinalIgnoreCase) ? string.Empty : type;
             }
         }
         catch (JsonException)
@@ -12160,7 +12447,7 @@
         return string.Empty;
     }
 
-    private static string ExtractUnsupportedReason(string payloadJson)
+    internal static string ExtractUnsupportedReason(string payloadJson)
     {
         if (string.IsNullOrWhiteSpace(payloadJson))
             return string.Empty;
@@ -12168,7 +12455,12 @@
         try
         {
             using var doc = JsonDocument.Parse(payloadJson);
-            if (!doc.RootElement.TryGetProperty("errors", out var errors) || errors.ValueKind != JsonValueKind.Array)
+            // Mismo bug de path que ExtractUnsupportedType: "errors" viene dentro de message.errors
+            // (la forma real que manda Meta para type=unsupported), no en la raíz del wrapper.
+            var metaMessage = doc.RootElement.TryGetProperty("message", out var metaMessageProp) && metaMessageProp.ValueKind == JsonValueKind.Object
+                ? metaMessageProp
+                : doc.RootElement;
+            if (!metaMessage.TryGetProperty("errors", out var errors) || errors.ValueKind != JsonValueKind.Array)
                 return string.Empty;
 
             foreach (var error in errors.EnumerateArray())
@@ -12692,6 +12984,20 @@
             _ when state.Contains("ERROR", StringComparison.OrdinalIgnoreCase) => "Error",
             _ => string.IsNullOrWhiteSpace(estadoEnvio) ? "Enviado" : estadoEnvio
         };
+    }
+
+    /// <summary>
+    /// Variante consciente del payload de error para el tooltip del mensaje individual (a diferencia de
+    /// GetDeliveryLabel(string), que sólo tiene el EstadoEnvio del renglón resumen de la lista de
+    /// conversaciones y no puede clasificar nada). Nunca muestra el genérico "Error" cuando ya se
+    /// conoce la causa real -- p. ej. 131031 (cuenta bloqueada por Meta, ver
+    /// WhatsAppOutboundErrorClassifier): confundir ese caso con un error de envío cualquiera llevaba a
+    /// reintentos inútiles.
+    /// </summary>
+    private static string GetDeliveryLabel(AlfaCore.Models.ConversacionMensajeDto message)
+    {
+        var classified = AlfaCore.Models.WhatsAppOutboundErrorClassifier.ClassifyDeliveryError(message.EstadoEnvio, message.PayloadJson);
+        return classified is null ? GetDeliveryLabel(message.EstadoEnvio) : $"{classified.Title}: {classified.Message}";
     }
 
     private static string InferAudioExtension(string mimeType)

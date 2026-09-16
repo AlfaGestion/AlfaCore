@@ -218,7 +218,7 @@ public sealed class WhatsAppEmbeddedOnboardingDto
 public sealed record WhatsAppEmbeddedStartRequest(int IdBase, string IdCliente, string UsuarioIniciador, WhatsAppEmbeddedOnboardingMode OnboardingMode, string CorrelationId = "");
 public sealed record WhatsAppEmbeddedStartResult(Guid IdOnboarding, string State, DateTime ExpiresAtUtc, WhatsAppEmbeddedOnboardingMode OnboardingMode, string CorrelationId);
 public sealed record WhatsAppEmbeddedAuthorizationCallback(Guid IdOnboarding, int IdBase, string State, string AuthorizationCode, string Usuario, string WabaId = "", string PhoneNumberId = "");
-public sealed record WhatsAppEmbeddedRetryRequest(Guid IdOnboarding, string Usuario);
+public sealed record WhatsAppEmbeddedRetryRequest(Guid IdOnboarding, int IdBase, string Usuario);
 
 public sealed record WhatsAppEmbeddedProgressItem(string Key, string Label, WhatsAppEmbeddedProgressState State);
 public enum WhatsAppEmbeddedProgressState { Pending, InProgress, Completed, ActionRequired, Failed }
@@ -265,9 +265,24 @@ public sealed record WhatsAppEmbeddedPendingConnection(
     string Nombre,
     string DisplayPhoneNumber,
     string PhoneNumberId,
-    WhatsAppEmbeddedActionRequiredReason? ActionRequiredReason)
+    WhatsAppEmbeddedActionRequiredReason? ActionRequiredReason,
+    /// <summary>
+    /// Mismo RetryCount del dominio (WhatsAppEmbeddedOnboardingDto) -- no un contador nuevo. Sirve
+    /// para que la UI decida si todavía ofrece "Reintentar" (RetryCount &lt; MaxManualRetryCount) o ya
+    /// hay que ofrecer "Volver a conectar con Meta".
+    /// </summary>
+    int RetryCount = 0,
+    string ErrorSummary = "",
+    string IncidentId = "",
+    string CurrentStep = "",
+    DateTime? ModifiedAtUtc = null)
 {
     public bool IsInProgress => WhatsAppEmbeddedSignupCtaPolicy.IsActiveInProgress(Status) && Status != WhatsAppEmbeddedOnboardingStatus.Started;
+
+    /// <summary>Sólo tiene sentido preguntarlo cuando Status es FailedRetryable -- para cualquier otro
+    /// estado, "Reintentar" no aplica de entrada.</summary>
+    public bool CanRetry(int maxManualRetryCount)
+        => Status == WhatsAppEmbeddedOnboardingStatus.FailedRetryable && RetryCount < maxManualRetryCount;
 
     public string StatusLabel => Status switch
     {

@@ -66,43 +66,194 @@ public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
     }
 
     [Fact]
-    public void PrimaryCtaAndRetryButtons_HaveIndependentLoadingFlags()
+    public void PrimaryCtaLoadingFlag_NeverLightsUpDuringAPendingConnectionAction()
+    {
+        // Rediseño "detalle = número/conexión seleccionada" (ver auditoría Ministerio Vida de
+        // Dios/AlfaNet): las viejas ramas globales Failed/Expired con su propio botón "Reintentar"
+        // (Loading="@EmbeddedSignupRetryLoading") desaparecieron -- ahora reintentar/reconectar es la
+        // acción primaria del AlfaFeedbackPanel de la conexión pendiente seleccionada, con su propio
+        // Loading directo (_embeddedSignupBusy), nunca EmbeddedSignupPrimaryCtaLoading. La garantía que
+        // importa se mantiene: el botón "Conectar WhatsApp" del estado vacío y la acción de una
+        // conexión pendiente seleccionada nunca comparten el mismo flag visual de carga.
+        var source = File.ReadAllText(FindPagePath());
+
+        Assert.Contains("private bool EmbeddedSignupPrimaryCtaLoading => _embeddedSignupBusy && _embeddedSignupBusyOrigin == EmbeddedSignupBusyOrigin.PrimaryCta;", source, StringComparison.Ordinal);
+        Assert.Contains("Loading=\"@EmbeddedSignupPrimaryCtaLoading\"", source, StringComparison.Ordinal);
+
+        // El panel de la conexión pendiente usa el flag directo, no el de PrimaryCta.
+        Assert.Contains("PrimaryActionLoading=\"@_embeddedSignupBusy\"", source, StringComparison.Ordinal);
+
+        // RetryEmbeddedSignupAsync/ReconnectPendingConnectionAsync ponen el origen en None (nunca
+        // PrimaryCta) -- si alguna vez usaran PrimaryCta por error, el botón "Conectar WhatsApp" del
+        // estado vacío empezaría a animar durante un reintento no relacionado.
+        var retryMethodStart = source.IndexOf("private async Task RetryEmbeddedSignupAsync(", StringComparison.Ordinal);
+        Assert.True(retryMethodStart >= 0, "No se encontró RetryEmbeddedSignupAsync.");
+        var retryMethodBody = ExtractMethodBody(source, retryMethodStart);
+        Assert.Contains("_embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;", retryMethodBody, StringComparison.Ordinal);
+
+        var reconnectMethodStart = source.IndexOf("private async Task ReconnectPendingConnectionAsync(", StringComparison.Ordinal);
+        Assert.True(reconnectMethodStart >= 0, "No se encontró ReconnectPendingConnectionAsync.");
+        var reconnectMethodBody = ExtractMethodBody(source, reconnectMethodStart);
+        Assert.Contains("_embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;", reconnectMethodBody, StringComparison.Ordinal);
+
+        // _embeddedSignupBusy sigue siendo la única fuente de verdad para Disabled del CTA vacío.
+        var primaryCtaButtonBlock = ExtractTag(source, "<AlfaButton", "Loading=\"@EmbeddedSignupPrimaryCtaLoading\"");
+        Assert.Contains("Disabled=\"@_embeddedSignupBusy\"", primaryCtaButtonBlock, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EmbeddedSignupFeedback_CanNeverRenderInsideTheOperationalNumberDetail()
     {
         var source = File.ReadAllText(FindPagePath());
 
-        // Existen dos getters de Loading distintos, cada uno atado a un origen distinto del mismo
-        // _embeddedSignupBusy compartido -- ya no un único flag animando dos botones a la vez.
-        Assert.Contains("private enum EmbeddedSignupBusyOrigin { None, PrimaryCta, Retry }", source, StringComparison.Ordinal);
-        Assert.Contains("private bool EmbeddedSignupPrimaryCtaLoading => _embeddedSignupBusy && _embeddedSignupBusyOrigin == EmbeddedSignupBusyOrigin.PrimaryCta;", source, StringComparison.Ordinal);
-        Assert.Contains("private bool EmbeddedSignupRetryLoading => _embeddedSignupBusy && _embeddedSignupBusyOrigin == EmbeddedSignupBusyOrigin.Retry;", source, StringComparison.Ordinal);
+        // MUY IMPORTANTE (auditoría UX post-Base4264, y confirmado de nuevo con evidencia real: Ministerio
+        // Vida de Dios operativo + AlfaNet fallido -- el panel derecho mostraba "WhatsApp conectado"
+        // mezclando el estado de OTRA conexión con la seleccionada). Ahora la rama del número operativo
+        // seleccionado (SelectedApiNumero) es estructuralmente incapaz de referenciar _embeddedSignupFeedback
+        // -- no hay ningún "if" que excluir: el campo simplemente no aparece en ese bloque de markup.
+        var branchStart = source.IndexOf("else if (SelectedApiNumero is { } selectedNumero)", StringComparison.Ordinal);
+        Assert.True(branchStart >= 0, "No se encontró la rama de detalle del número seleccionado.");
+        // OJO: la condición del if ya contiene un "{ }" propio (el patrón "is { } selectedNumero"), así
+        // que hay que arrancar a buscar la llave de apertura del BLOQUE recién después del ')' que
+        // cierra la condición -- si no, ExtractMethodBody encuentra esa llave vacía del patrón primero.
+        var blockOpenBrace = source.IndexOf('{', source.IndexOf(')', branchStart));
+        var branchBody = ExtractMethodBody(source, blockOpenBrace);
 
-        // El CTA principal (lista vacía de WhatsApp) usa el flag de PrimaryCta, no el _embeddedSignupBusy
-        // crudo -- y el "Reintentar" de los paneles Failed/Expired usa el de Retry. Sin este split,
-        // ambos "latían" juntos ante cualquier _embeddedSignupBusy=true (bug confirmado en Base4264).
-        Assert.Contains("Loading=\"@EmbeddedSignupPrimaryCtaLoading\"", source, StringComparison.Ordinal);
-        Assert.Contains("Loading=\"@EmbeddedSignupRetryLoading\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("_embeddedSignupFeedback", branchBody, StringComparison.Ordinal);
+        // En cambio, sí usa su propio estado con fuente de verdad (131031 derivado del último envío de
+        // ESTE número) -- ya cubierto por Meta131031PanelTests, sólo se confirma acá que sigue presente.
+        Assert.Contains("_selectedNumeroBlockedFeedback", branchBody, StringComparison.Ordinal);
+    }
 
-        var retryLoadingCount = Regex.Matches(source, Regex.Escape("Loading=\"@EmbeddedSignupRetryLoading\"")).Count;
-        Assert.Equal(2, retryLoadingCount); // panel Failed + panel Expired
+    [Fact]
+    public void StartingNewEmbeddedSignupAttempt_ClearsStaleFeedbackFromPreviousAttempt()
+    {
+        var source = File.ReadAllText(FindPagePath());
 
-        // Todo punto que apaga _embeddedSignupBusy también debe limpiar el origen -- si no, un origen
-        // viejo (p. ej. Retry de un intento anterior) podría "filtrarse" y prender el spinner
-        // equivocado en la próxima acción no relacionada.
-        var busyFalseCount = Regex.Matches(source, @"_embeddedSignupBusy = false;").Count;
-        var originResetCount = Regex.Matches(source, @"_embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin\.None;").Count;
-        Assert.True(originResetCount >= busyFalseCount,
-            $"Cada '_embeddedSignupBusy = false' debería tener su '_embeddedSignupBusyOrigin = None' acompañante ({originResetCount} resets vs {busyFalseCount} apagados de busy).");
+        // Al arrancar un intento nuevo (StartEmbeddedSignupAsync), _embeddedSignupFeedback se
+        // sobrescribe incondicionalmente con un mensaje "InProgress" propio de este intento -- así un
+        // error de un intento anterior no sigue visible mientras corre uno nuevo.
+        var methodStart = source.IndexOf("private async Task StartEmbeddedSignupAsync(", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "No se encontró StartEmbeddedSignupAsync.");
+        var methodBody = ExtractMethodBody(source, methodStart);
+        Assert.Contains("_embeddedSignupFeedback = AppUiMessage.InProgress(", methodBody, StringComparison.Ordinal);
+    }
 
-        // OpenWhatsAppOnboardingModeDialog acepta el origen explícitamente (no hay forma de saber qué
-        // botón abrió el diálogo sin este parámetro).
-        Assert.Contains("private Task OpenWhatsAppOnboardingModeDialog(EmbeddedSignupBusyOrigin origin = EmbeddedSignupBusyOrigin.PrimaryCta)", source, StringComparison.Ordinal);
-        Assert.Contains("_embeddedSignupBusyOrigin = origin;", source, StringComparison.Ordinal);
-        Assert.Contains("OpenWhatsAppOnboardingModeDialog(EmbeddedSignupBusyOrigin.Retry)", source, StringComparison.Ordinal);
+    [Fact]
+    public void CompleteEmbeddedSignupAuthorization_NeverUsesBlindCatch()
+    {
+        var source = File.ReadAllText(FindPagePath());
 
-        // _embeddedSignupBusy sigue siendo la única fuente de verdad para Disabled (nada de esto debilita
-        // la protección contra doble-submit; sólo separa qué botón ANIMA su spinner).
-        var primaryCtaButtonBlock = ExtractTag(source, "<AlfaButton", "Loading=\"@EmbeddedSignupPrimaryCtaLoading\"");
-        Assert.Contains("Disabled=\"@_embeddedSignupBusy\"", primaryCtaButtonBlock, StringComparison.Ordinal);
+        // Regresión Base4264: el catch ciego ("catch { }") de este método ocultaba la excepción real
+        // de HandleAuthorizationCallbackAsync (la carrera watchdog/callback incluida). Ahora debe
+        // capturar la excepción, loguearla sanitizada y clasificarla -- nunca descartarla en silencio.
+        var methodStart = source.IndexOf("public async Task CompleteEmbeddedSignupAuthorization(", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "No se encontró CompleteEmbeddedSignupAuthorization.");
+        var methodBody = ExtractMethodBody(source, source.IndexOf('{', methodStart));
+
+        Assert.Contains("catch (Exception ex)", methodBody, StringComparison.Ordinal);
+        Assert.Contains("AppEvents.LogErrorAsync(", methodBody, StringComparison.Ordinal);
+        Assert.Contains("ClassifyEmbeddedSignupAuthorizationError(ex, incident, HostEnvironment.IsProduction())", methodBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ZeroAssignedUsers_RendersBigWarningPanel_NotSmallGrayText()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        // Fase 11 de la auditoría UX: un número conectado con 0 usuarios asignados puede ser
+        // invisible/inoperable en la bandeja para el usuario actual. Antes se mostraba como
+        // <p class="wa-field-note">Sin usuarios asignados.</p> -- texto gris chico, indistinguible de
+        // cualquier otro dato secundario, fácil de confundir con un problema de Meta/desconexión.
+        var methodStart = source.IndexOf("private static RenderFragment ApiUsers(", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "No se encontró ApiUsers.");
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        Assert.DoesNotContain("wa-field-note\">Sin usuarios asignados", methodBody, StringComparison.Ordinal);
+        Assert.Contains("AlfaFeedbackPanel", methodBody, StringComparison.Ordinal);
+        Assert.Contains("AppUiMessage.Warning(", methodBody, StringComparison.Ordinal);
+        Assert.Contains("sin usuarios asignados", methodBody, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void AdvancedConfiguration_IsNeverRendered_ButItsUnderlyingCodeIsNotDeleted()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        // "Configuración avanzada" ya no es un botón/entry-point alcanzable desde la UI cliente.
+        Assert.DoesNotContain("<strong>Configuración avanzada</strong>", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("@onclick=\"SelectApiIntegration\"", source, StringComparison.Ordinal);
+
+        // Pero nada de los datos/persistencia detrás se eliminó -- sigue en código, sólo dejó de
+        // exponerse. Si soporte necesita una pantalla interna algún día, la lógica ya existe.
+        Assert.Contains("private ConversacionWhatsAppConfigDto? _metaConfigDraft;", source, StringComparison.Ordinal);
+        Assert.Contains("private RenderFragment SecretEditor(", source, StringComparison.Ordinal);
+        Assert.Contains("private static string GetSecretStatus(", source, StringComparison.Ordinal);
+        Assert.Contains("private string GetCallbackStatus(", source, StringComparison.Ordinal);
+        Assert.Contains("private Task SelectApiIntegration()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SelectingAPendingConnection_ClearsTheOperationalNumeroSelection_AndViceVersa()
+    {
+        var source = File.ReadAllText(FindPagePath());
+
+        var selectNumeroStart = source.IndexOf("private Task SelectApiNumero(ConversacionWhatsAppNumeroDto numero)", StringComparison.Ordinal);
+        Assert.True(selectNumeroStart >= 0);
+        var selectNumeroBody = ExtractMethodBody(source, selectNumeroStart);
+        Assert.Contains("_selectedPendingOnboardingId = null;", selectNumeroBody, StringComparison.Ordinal);
+
+        var selectPendingStart = source.IndexOf("private Task SelectPendingConnection(AlfaCore.Models.WhatsAppEmbeddedPendingConnection pending)", StringComparison.Ordinal);
+        Assert.True(selectPendingStart >= 0);
+        var selectPendingBody = ExtractMethodBody(source, selectPendingStart);
+        Assert.Contains("_selectedApiNumeroId = null;", selectPendingBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PendingConnectionRows_AreNowClickable_UnlikeBefore()
+    {
+        // Antes esta fila era un <div> sin @onclick alguno -- una conexión fallida/pendiente (como
+        // AlfaNet en el caso real) nunca podía convertirse en la selección activa.
+        var source = File.ReadAllText(FindPagePath());
+        Assert.Contains("@onclick=\"() => SelectPendingConnection(pending)\"", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ListRows_UseTheSharedCardStatusResolver_NotAnAdHocTernary()
+    {
+        // Sección 9 de la auditoría: antes la fila de número operativo no distinguía "Cuenta bloqueada"
+        // de "Conectado" (era imposible de saber sin abrir el detalle), y la fila de pendiente resolvía
+        // su tono con un ternario en línea que no compartía nada con la de número. Ambas ramas deben
+        // usar el mismo resolver -- WhatsAppConnectionCardStatusExtensions -- para que la jerarquía
+        // BLOCKED > ACTION_REQUIRED > FAILED > CONFIGURING > READY_WITH_NO_USERS > READY sea consistente.
+        var source = File.ReadAllText(FindPagePath());
+
+        Assert.Contains("GetNumeroCardStatus(numero).Tone()", source, StringComparison.Ordinal);
+        Assert.Contains("GetNumeroCardStatus(numero).Label()", source, StringComparison.Ordinal);
+        Assert.Contains("GetPendingConnectionCardStatus(pending).Tone()", source, StringComparison.Ordinal);
+        Assert.Contains("WhatsAppConnectionCardStatusExtensions.ForNumero(_blockedNumeroIds.Contains(numero.IdNumero)", source, StringComparison.Ordinal);
+        Assert.Contains("WhatsAppConnectionCardStatusExtensions.ForPending(pending.Status)", source, StringComparison.Ordinal);
+
+        // No debe haber quedado el viejo ternario inline resolviendo el tono a mano.
+        Assert.DoesNotContain("pending.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.FailedRetryable || pending.Status ==", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BlockedNumeroIds_AreFetchedInOneBatch_NeverOnePerRow()
+    {
+        // Cuenta bloqueada (131031) se deriva del último envío -- consultarlo número por número en
+        // cada refresh de la lista (y el polling cada 5s durante un onboarding) sería un N+1. Debe
+        // haber una sola llamada por refresh, no una por número en el foreach.
+        var source = File.ReadAllText(FindPagePath());
+
+        Assert.Contains("private async Task RefreshBlockedNumeroIdsAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("ConvSvc.GetBlockedNumeroIdsAsync(", source, StringComparison.Ordinal);
+        Assert.Contains("await RefreshBlockedNumeroIdsAsync();", source, StringComparison.Ordinal);
+
+        // La llamada en lote sólo debe aparecer una vez en todo el archivo -- si apareciera dentro de
+        // GetNumeroCardStatus o de un @foreach, sería la regresión N+1 que esto previene.
+        var occurrences = System.Text.RegularExpressions.Regex.Matches(source, System.Text.RegularExpressions.Regex.Escape("ConvSvc.GetBlockedNumeroIdsAsync(")).Count;
+        Assert.Equal(1, occurrences);
     }
 
     private static string ExtractMethodBody(string source, int methodStart)

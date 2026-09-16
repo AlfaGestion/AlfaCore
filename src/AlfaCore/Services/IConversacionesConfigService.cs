@@ -64,6 +64,56 @@ public interface IConversacionesConfigService
         CancellationToken ct = default);
     Task SaveWhatsAppNumeroWebSessionAsync(ConversacionWhatsAppNumeroDto numero, CancellationToken ct = default);
 
+    /// <summary>
+    /// Nombre del Portfolio/Business de Meta para cada MetaBusinessId conocido (base activa de la
+    /// sesión) -- nunca pega contra Meta, sólo lee la caché local (dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS,
+    /// self-tolerant: base sin la tabla todavía = diccionario vacío, no un error). Ids que no están en el
+    /// resultado significan "portfolio conocido, nombre todavía no resuelto" -- no "sin portfolio".
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, int? expectedBaseId, CancellationToken ct = default);
+    /// <summary>
+    /// Guarda (best-effort) el nombre de un Portfolio/Business para reutilizarlo después sin volver a
+    /// preguntarle a Meta. Pensado para llamarse sólo cuando el nombre YA se obtuvo de una llamada a
+    /// Meta que iba a hacerse de todos modos (discovery de Embedded Signup) -- nunca dispara una llamada
+    /// nueva. Nunca debe poder fallar el flujo que la llama: ver WhatsAppEmbeddedOperationalImportService.
+    /// </summary>
+    Task SetPortfolioNameAsync(int idBase, string metaBusinessId, string portfolioName, CancellationToken ct = default);
+    /// <summary>
+    /// Reserva atómicamente el derecho a intentar resolver el nombre de un Portfolio/Business contra
+    /// Meta: true si nadie más lo intentó dentro de <paramref name="throttleWindow"/> y el nombre
+    /// todavía no está cacheado (el llamador debe entonces llamar a Meta); false si ya hay un nombre
+    /// cacheado, o si otro intento (de este proceso u otro circuito Blazor) ya reservó la ventana --
+    /// en ambos casos el llamador NO debe llamar a Meta. Autocontenido: crea la fila si no existe.
+    /// </summary>
+    Task<bool> TryReserveResolutionAttemptAsync(int idBase, string metaBusinessId, TimeSpan throttleWindow, CancellationToken ct = default);
+    /// <summary>
+    /// Completa MetaBusinessId/WabaId de un número YA existente que se quedó sin esos ids (típicamente
+    /// conectado antes de que existiera esta funcionalidad) -- nunca sobrescribe un valor ya presente.
+    /// WabaId es la única precondición: puede escribirse solo, sin MetaBusinessId todavía ("ownership
+    /// central incompleto" es un estado válido -- ver WhatsAppPortfolioResolutionService). Pasar
+    /// <paramref name="metaBusinessId"/> vacío es válido y no-op para esa columna específica.
+    /// <paramref name="expectedBaseId"/> sigue el mismo contrato que el resto de la interfaz
+    /// (ResolveTenantConnection): si no coincide con la base de la sesión activa, tira en vez de escribir
+    /// contra la base equivocada -- la base tenant se resuelve por CONNECTION STRING (una base física
+    /// distinta por tenant), así que un IdNumero numéricamente válido en OTRA base igual podría existir
+    /// y aceptar el UPDATE silenciosamente si la sesión hubiera derivado sin este chequeo. Best-effort en
+    /// todo lo demás: nunca lanza por columnas/tabla faltantes.
+    /// </summary>
+    Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, int? expectedBaseId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Business dueño de cada WABA (base activa de la sesión) YA cacheado -- para números manuales/
+    /// legacy sin ownership central, cuya única WABA conocida es ConversacionWhatsAppConfigDto.
+    /// BusinessAccountId. Nunca pega contra Meta -- sólo lee la caché local, self-tolerant.
+    /// </summary>
+    Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, CancellationToken ct = default);
+    Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, int? expectedBaseId, CancellationToken ct = default);
+    /// <summary>Mismo mecanismo que TryReserveResolutionAttemptAsync, pero para la caché WABA-&gt;Business.</summary>
+    Task<bool> TryReserveWabaResolutionAttemptAsync(int idBase, string wabaId, TimeSpan throttleWindow, CancellationToken ct = default);
+    /// <summary>Mismo mecanismo que SetPortfolioNameAsync, pero para la caché WABA-&gt;Business.</summary>
+    Task SetWabaOwningBusinessIdAsync(int idBase, string wabaId, string metaBusinessId, CancellationToken ct = default);
+
     /// <summary>Usuarios marcados como administradores de Conversaciones (ven/responden por cualquier número).</summary>
     Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(CancellationToken ct = default);
     Task<IReadOnlyList<string>> GetConversacionAdministradoresAsync(int? expectedBaseId, CancellationToken ct = default);

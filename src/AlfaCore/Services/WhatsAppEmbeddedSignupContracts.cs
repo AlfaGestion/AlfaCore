@@ -27,6 +27,32 @@ public interface IWhatsAppEmbeddedSignupStore
     /// </summary>
     Task<bool> CancelStartedIfNotConsumedAsync(Guid idOnboarding, int idBase, string expectedStateHash, DateTime nowUtc, CancellationToken ct = default)
         => Task.FromResult(false);
+
+    /// <summary>
+    /// Reintento MANUAL disparado por el usuario desde la UI (botón "Reintentar") -- UN SOLO UPDATE
+    /// atómico y guardado, mismo patrón que CancelStartedIfNotConsumedAsync: sólo continúa si, en el
+    /// mismo instante, Estado='FAILED_RETRYABLE' AND RetryCount &lt; maxManualRetryCount. Si cualquiera
+    /// de esas condiciones ya no se cumple (ya se reintentó el máximo de veces, o el estado cambió
+    /// concurrentemente -- p. ej. el worker automático ya lo re-procesó), esto es un no-op: devuelve
+    /// false y la UI debe ofrecer "Volver a conectar con Meta" en vez de reintentar de nuevo. Reusa el
+    /// mismo RetryCount que ya incrementa el worker automático (MarkRetryableFailureAsync) -- no es un
+    /// contador paralelo: cuenta "cuántas veces se intentó continuar este onboarding", sin importar si
+    /// lo disparó el usuario o el worker.
+    /// </summary>
+    Task<bool> RetryStartedByUserAsync(Guid idOnboarding, int idBase, int maxManualRetryCount, DateTime nowUtc, CancellationToken ct = default)
+        => Task.FromResult(false);
+
+    /// <summary>
+    /// El usuario agotó los reintentos manuales y eligió "Volver a conectar con Meta": el onboarding
+    /// viejo (FAILED_RETRYABLE) pasa a un estado terminal apropiado (FAILED_FINAL) en vez de quedar
+    /// reapareciendo en la lista de conexiones pendientes para siempre. UN SOLO UPDATE atómico y
+    /// guardado -- sólo actúa si, en el mismo instante, Estado='FAILED_RETRYABLE'. Nunca hace DELETE:
+    /// el onboarding queda como historial/evidencia, igual que ya se preserva d23ddd26-393b-4334-a0b9-87b1bb6e2098.
+    /// No toca ownership/Vault/token -- sólo el estado de ESTE onboarding.
+    /// </summary>
+    Task<bool> SupersedeFailedForReconnectAsync(Guid idOnboarding, int idBase, DateTime nowUtc, CancellationToken ct = default)
+        => Task.FromResult(false);
+
     Task MarkAuthorizedAsync(Guid idOnboarding, string tokenReference, string metaBusinessId, CancellationToken ct = default);
     Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default);
     Task MarkRetryableFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default);
@@ -79,6 +105,32 @@ public interface IWhatsAppAssetOwnershipStore
     /// cuando llega un webhook para un phone_number_id sin ownership.
     /// </summary>
     Task<bool> HasEmbeddedSignupFootprintAsync(int idBase, CancellationToken ct = default) => Task.FromResult(false);
+
+    /// <summary>
+    /// Repara (NUNCA sobrescribe) un WhatsAppWabaOwnership.MetaBusinessId vacío una vez que algo (hoy:
+    /// WhatsAppPortfolioResolutionService, después de un GET /{wabaId}?fields=owner_business_info
+    /// exitoso) lo resolvió -- "ownership central incompleto" (WabaId conocido, MetaBusinessId vacío)
+    /// es un estado real que puede quedar así para siempre si nadie lo completa; sin esto, cada tenant
+    /// reencontraría el mismo dato para siempre en vez de que el central quede como fuente autoritativa.
+    /// Atómico (WITH (UPDLOCK, HOLDLOCK), misma guardia que ReserveWabaAsync): WabaId + IdBase deben
+    /// coincidir con el ownership ya reservado. Si el MetaBusinessId actual ya es exactamente el mismo
+    /// valor, no-op idempotente. Si ya tiene OTRO valor no vacío, fail-closed -- nunca se pisa: eso
+    /// sería una inconsistencia real que hay que investigar, no resolver a ciegas sobrescribiendo.
+    /// </summary>
+    Task<WhatsAppWabaMetaBusinessRepairResult> TryRepairWabaMetaBusinessIdAsync(string wabaId, int idBase, string resolvedMetaBusinessId, CancellationToken ct = default)
+        => Task.FromResult(WhatsAppWabaMetaBusinessRepairResult.NotFound);
+}
+
+public enum WhatsAppWabaMetaBusinessRepairResult
+{
+    /// <summary>Estaba vacío, ahora quedó con el valor resuelto.</summary>
+    Repaired,
+    /// <summary>Ya tenía exactamente ese valor -- no se tocó nada, pero no es un error.</summary>
+    AlreadyMatches,
+    /// <summary>Ya tenía un valor NO vacío y DISTINTO -- fail closed, no se tocó nada.</summary>
+    Conflict,
+    /// <summary>No hay ownership para ese WabaId+IdBase -- nada que reparar.</summary>
+    NotFound,
 }
 
 public interface IWhatsAppEmbeddedSignupStateProtector
@@ -105,6 +157,17 @@ public interface IWhatsAppEmbeddedSignupOrchestrator
     /// efectivamente canceló la fila esperada (IdOnboarding + IdBase + Estado=ACTION_REQUIRED).
     /// </summary>
     Task<bool> CancelActionRequiredConfigurationAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
+        => Task.FromResult(false);
+
+    /// <summary>
+    /// "Volver a conectar con Meta" después de agotar los reintentos manuales: el onboarding viejo
+    /// (FAILED_RETRYABLE) pasa a FAILED_FINAL -- preservado como historial, nunca DELETE -- para que
+    /// deje de aparecer en la lista de conexiones pendientes. NO inicia el Embedded Signup nuevo: eso
+    /// sigue siendo responsabilidad de StartAsync, llamado por separado (mismo flujo ya usado para
+    /// "Conectar WhatsApp"/"Conectar otro WhatsApp" -- no se duplica esa lógica acá). Devuelve true
+    /// únicamente si efectivamente superó la fila esperada (IdOnboarding + IdBase + Estado=FAILED_RETRYABLE).
+    /// </summary>
+    Task<bool> SupersedeForReconnectAsync(Guid idOnboarding, int idBase, CancellationToken ct = default)
         => Task.FromResult(false);
 }
 
@@ -135,6 +198,29 @@ public interface IMetaWhatsAppManagementClient
     /// </summary>
     Task<MetaSmbAppDataSyncResult> RequestSmbAppDataSyncAsync(string phoneNumberId, WhatsAppCoexistenceSyncType syncType, WhatsAppCredentialReference tokenReference, CancellationToken ct = default)
         => throw new NotSupportedException("Este cliente de administración de Meta no admite smb_app_data.");
+
+    /// <summary>
+    /// GET /{businessId}?fields=name -- resuelve el nombre de un Portfolio/Business ya conocido (por
+    /// MetaBusinessId) para un número YA conectado, fuera de un onboarding activo. A propósito toma el
+    /// access token crudo (de <see cref="WhatsAppRuntimeCredential"/>, el mismo usado para enviar
+    /// mensajes) en vez de un <see cref="WhatsAppCredentialReference"/> de Vault de onboarding -- ese
+    /// Vault sólo tiene contexto vigente durante/poco después de un onboarding, no años después para un
+    /// número que ya quedó operativo. Nunca se llama por render: sólo cuando
+    /// WhatsAppPortfolioResolutionThrottle.TryReserveResolutionAttemptAsync reserva el intento.
+    /// </summary>
+    Task<string?> GetBusinessNameAsync(string businessId, string accessToken, string graphVersion, CancellationToken ct = default)
+        => throw new NotSupportedException("Este cliente de administración de Meta no admite consultar el nombre de un business por id.");
+
+    /// <summary>
+    /// GET /{wabaId}?fields=owner_business_info -- resuelve qué Business/Portfolio es dueño de una WABA
+    /// ya conocida SIN ownership central (típicamente un número agregado manualmente por Phone Number ID,
+    /// cuya única credencial es la legacy: ConversacionWhatsAppConfigDto.BusinessAccountId + AccessToken).
+    /// "Manual" no es sinónimo de "sin forma de resolver Portfolio": si el token legacy tiene permiso de
+    /// leer la WABA, esto alcanza sin ninguna otra integración. Mismo criterio que GetBusinessNameAsync:
+    /// token crudo, nunca Vault de onboarding, nunca por render (ver WhatsAppPortfolioResolutionService).
+    /// </summary>
+    Task<string?> GetWabaOwningBusinessIdAsync(string wabaId, string accessToken, string graphVersion, CancellationToken ct = default)
+        => throw new NotSupportedException("Este cliente de administración de Meta no admite consultar el business dueño de una WABA.");
 }
 
 public sealed record MetaTokenExchangeResult(WhatsAppCredentialReference TokenReference, DateTime? ExpiresAtUtc);

@@ -59,6 +59,40 @@ public sealed class WhatsAppAssetOwnershipStore(IConfiguration configuration, IH
         return await cn.ExecuteScalarAsync<bool>(new CommandDefinition(sql, new { IdBase = idBase }, cancellationToken: ct));
     }
 
+    public async Task<WhatsAppWabaMetaBusinessRepairResult> TryRepairWabaMetaBusinessIdAsync(string wabaId, int idBase, string resolvedMetaBusinessId, CancellationToken ct = default)
+    {
+        var normalizedWabaId = NormalizeId(wabaId, nameof(wabaId));
+        var normalizedBusinessId = (resolvedMetaBusinessId ?? string.Empty).Trim();
+        if (idBase <= 0 || normalizedBusinessId.Length == 0)
+            throw new ArgumentException("El MetaBusinessId resuelto es obligatorio para reparar el ownership central.", nameof(resolvedMetaBusinessId));
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var tx = (SqlTransaction)await cn.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+
+        const string select = "SELECT WabaId, IdBase, MetaBusinessId, FechaModificacionUtc ModifiedAtUtc FROM dbo.WhatsAppWabaOwnership WITH (UPDLOCK, HOLDLOCK) WHERE WabaId=@WabaId";
+        var current = await cn.QuerySingleOrDefaultAsync<WhatsAppWabaOwnership>(new CommandDefinition(select, new { WabaId = normalizedWabaId }, tx, cancellationToken: ct));
+        if (current is null || current.IdBase != idBase)
+        {
+            await tx.RollbackAsync(ct);
+            return WhatsAppWabaMetaBusinessRepairResult.NotFound;
+        }
+
+        var existing = (current.MetaBusinessId ?? string.Empty).Trim();
+        if (existing.Length > 0)
+        {
+            await tx.RollbackAsync(ct);
+            return string.Equals(existing, normalizedBusinessId, StringComparison.Ordinal)
+                ? WhatsAppWabaMetaBusinessRepairResult.AlreadyMatches
+                : WhatsAppWabaMetaBusinessRepairResult.Conflict; // Fail closed -- nunca se pisa un valor distinto ya presente.
+        }
+
+        const string update = "UPDATE dbo.WhatsAppWabaOwnership SET MetaBusinessId=@MetaBusinessId, FechaModificacionUtc=SYSUTCDATETIME() WHERE WabaId=@WabaId AND IdBase=@IdBase";
+        await cn.ExecuteAsync(new CommandDefinition(update, new { MetaBusinessId = normalizedBusinessId, WabaId = normalizedWabaId, IdBase = idBase }, tx, cancellationToken: ct));
+        await tx.CommitAsync(ct);
+        return WhatsAppWabaMetaBusinessRepairResult.Repaired;
+    }
+
     private async Task<WhatsAppAssetOwnershipDecision> ReserveAsync(string kind, string assetId, string? wabaId, int idBase, string metaBusinessId, CancellationToken ct)
     {
         if (idBase <= 0) throw new ArgumentOutOfRangeException(nameof(idBase));
