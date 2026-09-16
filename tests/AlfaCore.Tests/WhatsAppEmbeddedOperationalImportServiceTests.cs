@@ -470,6 +470,8 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
 
         public Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyDictionary<string, string>>(PortfolioNames);
+        public Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, int? expectedBaseId, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, string>>(PortfolioNames);
 
         public Task SetPortfolioNameAsync(int idBase, string metaBusinessId, string portfolioName, CancellationToken ct = default)
         {
@@ -494,7 +496,7 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
             return Task.FromResult(true);
         }
 
-        public Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, CancellationToken ct = default)
+        public Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, int? expectedBaseId, CancellationToken ct = default)
         {
             BackfillCalls++;
             var numero = Numeros.SingleOrDefault(x => x.IdNumero == idNumero);
@@ -510,6 +512,8 @@ public sealed class WhatsAppEmbeddedOperationalImportServiceTests
         public Dictionary<string, DateTime> WabaResolutionAttempts { get; } = new(StringComparer.Ordinal);
 
         public Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, CancellationToken ct = default)
+            => Task.FromResult<IReadOnlyDictionary<string, string>>(WabaBusinessMap);
+        public Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, int? expectedBaseId, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyDictionary<string, string>>(WabaBusinessMap);
 
         public Task<bool> TryReserveWabaResolutionAttemptAsync(int idBase, string wabaId, TimeSpan throttleWindow, CancellationToken ct = default)

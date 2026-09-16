@@ -4315,7 +4315,7 @@
             if (pendiente is null)
                 return; // Todos los números ya tienen identidad -- nada que resolver.
 
-            var legacyConfig = await ConfigSvc.GetWhatsAppConfigAsync(_lifetimeCts.Token);
+            var legacyConfig = await ConfigSvc.GetWhatsAppConfigAsync(idBase, _lifetimeCts.Token);
             var wabaId = (legacyConfig.BusinessAccountId ?? string.Empty).Trim();
             if (wabaId.Length == 0)
                 return; // Ni siquiera hay una WABA legacy configurada -- Unknown de verdad, nada para intentar.
@@ -4377,7 +4377,7 @@
                 .Where(id => !string.IsNullOrWhiteSpace(id))
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
-            _portfolioNamesByBusinessId = await ConfigSvc.GetPortfolioNamesAsync(idsConocidos, _lifetimeCts.Token);
+            _portfolioNamesByBusinessId = await ConfigSvc.GetPortfolioNamesAsync(idsConocidos, CurrentExpectedBaseIdOrNull(), _lifetimeCts.Token);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

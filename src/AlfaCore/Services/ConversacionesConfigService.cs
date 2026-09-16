@@ -1696,6 +1696,9 @@ public sealed class ConversacionesConfigService(
     }
 
     public Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, CancellationToken ct = default)
+        => GetPortfolioNamesAsync(metaBusinessIds, null, ct);
+
+    public Task<IReadOnlyDictionary<string, string>> GetPortfolioNamesAsync(IReadOnlyCollection<string> metaBusinessIds, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetPortfolioNames", async token =>
         {
             var ids = (metaBusinessIds ?? []).Select(id => (id ?? string.Empty).Trim()).Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
@@ -1703,7 +1706,8 @@ public sealed class ConversacionesConfigService(
             if (ids.Length == 0)
                 return empty;
 
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetPortfolioNames");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var portfolioColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_BUSINESS_PORTFOLIOS", token);
             if (!CanReadPortfolioCache(portfolioColumns))
@@ -1830,7 +1834,7 @@ public sealed class ConversacionesConfigService(
         }
     }
 
-    public Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, CancellationToken ct = default)
+    public Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync<bool>("Conversaciones", "BackfillNumeroMetaIdentity", async token =>
         {
             var businessId = (metaBusinessId ?? string.Empty).Trim();
@@ -1838,7 +1842,8 @@ public sealed class ConversacionesConfigService(
             if (idNumero <= 0 || businessId.Length == 0 || normalizedWabaId.Length == 0)
                 return false;
 
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "BackfillNumeroMetaIdentity");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var numeroColumns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_NUMEROS", token);
             if (!CanWriteNumeroMetaIdentity(numeroColumns))
@@ -1859,6 +1864,9 @@ public sealed class ConversacionesConfigService(
         }, "No se pudo completar el Portfolio del número de WhatsApp.", ct);
 
     public Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, CancellationToken ct = default)
+        => GetWabaBusinessMapAsync(wabaIds, null, ct);
+
+    public Task<IReadOnlyDictionary<string, string>> GetWabaBusinessMapAsync(IReadOnlyCollection<string> wabaIds, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetWabaBusinessMap", async token =>
         {
             var ids = (wabaIds ?? []).Select(id => (id ?? string.Empty).Trim()).Where(id => id.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
@@ -1866,7 +1874,8 @@ public sealed class ConversacionesConfigService(
             if (ids.Length == 0)
                 return empty;
 
-            await using var cn = new SqlConnection(ConnectionString);
+            var tenant = ResolveTenantConnection(expectedBaseId, "GetWabaBusinessMap");
+            await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
             var columns = await GetTableColumnsAsync(cn, "dbo.CONV_WHATSAPP_WABA_BUSINESS_MAP", token);
             if (!CanReadWabaBusinessMap(columns))

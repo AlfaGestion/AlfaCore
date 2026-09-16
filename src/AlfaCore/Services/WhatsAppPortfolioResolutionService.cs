@@ -88,7 +88,7 @@ public sealed class WhatsAppPortfolioResolutionService(
         if (wabaOwnership is null)
             return null;
 
-        await conversacionesConfig.BackfillNumeroMetaIdentityAsync(numero.IdNumero, wabaOwnership.MetaBusinessId, phoneOwnership.WabaId, ct);
+        await conversacionesConfig.BackfillNumeroMetaIdentityAsync(numero.IdNumero, wabaOwnership.MetaBusinessId, phoneOwnership.WabaId, idBase, ct);
         return new WhatsAppNumeroMetaIdentity(wabaOwnership.MetaBusinessId, phoneOwnership.WabaId);
     }
 
@@ -99,16 +99,16 @@ public sealed class WhatsAppPortfolioResolutionService(
     /// </summary>
     private async Task<WhatsAppNumeroMetaIdentity?> TryFromLegacyWabaCacheAsync(int idBase, ConversacionWhatsAppNumeroDto numero, CancellationToken ct)
     {
-        var legacyConfig = await conversacionesConfig.GetWhatsAppConfigAsync(ct);
+        var legacyConfig = await conversacionesConfig.GetWhatsAppConfigAsync(idBase, ct);
         var wabaId = (legacyConfig.BusinessAccountId ?? string.Empty).Trim();
         if (wabaId.Length == 0)
             return null; // Ni siquiera hay una WABA legacy configurada -- Unknown de verdad.
 
-        var map = await conversacionesConfig.GetWabaBusinessMapAsync([wabaId], ct);
+        var map = await conversacionesConfig.GetWabaBusinessMapAsync([wabaId], idBase, ct);
         if (!map.TryGetValue(wabaId, out var businessId) || string.IsNullOrWhiteSpace(businessId))
             return null; // Todavía no resuelto -- TryResolveLegacyWabaOwningBusinessAsync se encarga (throttled).
 
-        await conversacionesConfig.BackfillNumeroMetaIdentityAsync(numero.IdNumero, businessId, wabaId, ct);
+        await conversacionesConfig.BackfillNumeroMetaIdentityAsync(numero.IdNumero, businessId, wabaId, idBase, ct);
         return new WhatsAppNumeroMetaIdentity(businessId, wabaId);
     }
 
@@ -124,7 +124,7 @@ public sealed class WhatsAppPortfolioResolutionService(
             if (!claimed)
                 return; // Ya resuelto, o alguien más ya reservó esta ventana -- nunca llamar a Meta acá.
 
-            var legacyConfig = await conversacionesConfig.GetWhatsAppConfigAsync(ct);
+            var legacyConfig = await conversacionesConfig.GetWhatsAppConfigAsync(idBase, ct);
             var credential = await credentialResolver.ResolveAsync(idBase, null, representativePhoneNumberId, legacyConfig, ct);
             var businessId = await managementClient.GetWabaOwningBusinessIdAsync(normalizedWabaId, credential.AccessToken, credential.GraphVersion, ct);
             if (!string.IsNullOrWhiteSpace(businessId))
@@ -148,7 +148,7 @@ public sealed class WhatsAppPortfolioResolutionService(
             if (!claimed)
                 return; // Ya resuelto, o alguien más ya reservó esta ventana -- nunca llamar a Meta acá.
 
-            var legacyConfig = await conversacionesConfig.GetWhatsAppConfigAsync(ct);
+            var legacyConfig = await conversacionesConfig.GetWhatsAppConfigAsync(idBase, ct);
             var credential = await credentialResolver.ResolveAsync(idBase, null, representativePhoneNumberId, legacyConfig, ct);
             var name = await managementClient.GetBusinessNameAsync(businessId, credential.AccessToken, credential.GraphVersion, ct);
             if (!string.IsNullOrWhiteSpace(name))
