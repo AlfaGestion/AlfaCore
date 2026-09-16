@@ -214,6 +214,7 @@ public class Program
         builder.Services.AddScoped<ICentralProvisioningService, CentralProvisioningService>();
         builder.Services.AddScoped<ICentralRegistrationService, CentralRegistrationService>();
         builder.Services.AddScoped<IConexionClienteService, ConexionClienteService>();
+        builder.Services.AddScoped<ISaaSTenantRouteGuard, SaaSTenantRouteGuard>();
         builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
         builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();

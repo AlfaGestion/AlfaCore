@@ -9,6 +9,7 @@
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUiDialogService DialogSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
@@ -212,7 +213,24 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (!await EnsureTenantAsync())
+            return;
+
         await Task.WhenAll(CargarGeneralAsync(), BuscarCatalogosAsync(1));
+    }
+
+    private int? CurrentExpectedBaseId()
+        => idbase is > 0 ? idbase : SessionSvc.GetActiveSession()?.BaseId;
+
+    private async Task<bool> EnsureTenantAsync()
+    {
+        var context = await TenantRouteGuard.ResolveAsync(idbase, idweb);
+        if (context.IsValid)
+            return true;
+
+        _page = new PagedResult<CarritoComprasResumenDto>();
+        _general = null;
+        return false;
     }
 
     private Task OnPageChangedAsync(int pageNumber)
@@ -230,6 +248,10 @@
 
         try
         {
+            if (!await EnsureTenantAsync())
+                return;
+
+            var expectedBaseId = CurrentExpectedBaseId();
             var result = await UiOps.RunAsync(() => CarritoComprasSvc.SearchAsync(new CarritoComprasFiltroDto
             {
                 Texto = string.IsNullOrWhiteSpace(_texto) ? null : _texto.Trim(),
@@ -237,7 +259,7 @@
                 Estado = _estadoFiltro,
                 PageNumber = pageNumber,
                 PageSize = 50
-            }), "No se pudieron cargar los carritos de catálogo.");
+            }, expectedBaseId), "No se pudieron cargar los carritos de catálogo.");
 
             _page = result.Success && result.Value is not null
                 ? result.Value
@@ -259,7 +281,10 @@
 
         try
         {
-            var result = await UiOps.RunAsync(() => CarritoComprasSvc.GetGeneralAsync(0), "No se pudo cargar el carrito general.");
+            if (!await EnsureTenantAsync())
+                return;
+
+            var result = await UiOps.RunAsync(() => CarritoComprasSvc.GetGeneralAsync(0, CurrentExpectedBaseId()), "No se pudo cargar el carrito general.");
             _general = result.Success ? result.Value : null;
             await ResolveGeneralPublicUrlAsync();
         }
@@ -292,7 +317,7 @@
             return;
 
         var ownerIdWeb = GetPublicLinkOwnerIdWeb();
-        var ownerIdBase = SessionSvc.GetActiveSession()?.BaseId ?? idbase;
+        var ownerIdBase = idbase ?? SessionSvc.GetActiveSession()?.BaseId;
 
         if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(ownerIdWeb) || ownerIdBase is not > 0)
         {
@@ -352,7 +377,7 @@
     private async Task ResolveGeneralPublicUrlAsync()
     {
         var ownerIdWeb = GetPublicLinkOwnerIdWeb();
-        var ownerIdBase = SessionSvc.GetActiveSession()?.BaseId ?? idbase;
+        var ownerIdBase = idbase ?? SessionSvc.GetActiveSession()?.BaseId;
 
         if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(ownerIdWeb) || ownerIdBase is not > 0)
         {

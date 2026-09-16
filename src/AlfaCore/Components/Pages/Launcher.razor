@@ -154,7 +154,7 @@ else
         SessionSvc.SessionChanged += OnContextChanged;
         AppUserSession.StateChanged += OnContextChanged;
 
-        if (WorkspaceSvc.TryGetCachedHome(out var cachedHome))
+        if (CanUseActiveSessionForRoute() && WorkspaceSvc.TryGetCachedHome(out var cachedHome))
         {
             _home = cachedHome;
             _loading = false;
@@ -453,7 +453,10 @@ else
                 return;
             }
 
-            var hasCachedHome = WorkspaceSvc.TryGetCachedHome(out var cachedHome);
+            var hasCachedHome = false;
+            ShellHomeDto cachedHome = new();
+            if (CanUseActiveSessionForRoute())
+                hasCachedHome = WorkspaceSvc.TryGetCachedHome(out cachedHome);
             if (hasCachedHome)
             {
                 _home = cachedHome;
@@ -491,6 +494,8 @@ else
                 ? await WorkspaceSvc.GetHomeAsync()
                 : await WorkspaceSvc.RefreshHomeAsync();
             if (version != _loadVersion)
+                return;
+            if (!CanUseActiveSessionForRoute())
                 return;
 
             _home = home;
@@ -534,6 +539,14 @@ else
 
     private bool HasVisibleHome()
         => _home.Modules.Count > 0 || _home.Favorites.Count > 0 || _home.Recents.Count > 0;
+
+    private bool CanUseActiveSessionForRoute()
+    {
+        if (!AppMode.IsSaaSMode || idbase is not > 0)
+            return true;
+
+        return SessionSvc.GetActiveSession()?.BaseId == idbase.Value;
+    }
 
     private static string? NormalizeRouteIdWeb(string? value)
     {

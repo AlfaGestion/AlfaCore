@@ -24,6 +24,7 @@ public interface IInterfacesCatalogosService
     Task<PagedResult<CatalogosCatalogoResumenDto>> SearchCatalogosAsync(string? texto, int pageNumber = 1, int pageSize = 50, DateTime? fechaFiltro = null, string? tipoFiltro = null, string? estadoFiltro = null, CancellationToken ct = default);
     Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default);
     Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, CancellationToken ct = default);
+    Task<CatalogosCatalogoDetalleDto?> GetCatalogoPublicoAsync(int idInsert, int? expectedBaseId, CancellationToken ct = default);
     Task<CatalogosCatalogoSaveResultDto> SaveCatalogoVigenciaAsync(CatalogosCatalogoSaveRequestDto request, CancellationToken ct = default);
     Task<CatalogosCatalogoAccessUrlsDto> GetCatalogoAccessUrlsAsync(int idInsert, string? idWeb = null, int? idBase = null, CancellationToken ct = default);
     Task<int> GetCatalogoPredeterminadoIdAsync(CancellationToken ct = default);

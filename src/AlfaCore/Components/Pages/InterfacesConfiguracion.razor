@@ -3,6 +3,8 @@
 @using AlfaCore.Models
 @inject AlfaCore.Services.IInterfacesConfigService ConfigSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
 
 <PageTitle>Configuración de Interfaces | Alfa Gestión</PageTitle>
 
@@ -272,8 +274,12 @@
 
         var result = await UiOps.RunAsync(async () =>
         {
-            var uploadTask = ConfigSvc.GetUploadSettingsAsync();
-            var iaTask = ConfigSvc.GetCompraIaSettingsAsync();
+            if (!await EnsureTenantAsync())
+                throw new InvalidOperationException("No se pudo resolver la base de esta URL.");
+
+            var expectedBaseId = CurrentExpectedBaseId();
+            var uploadTask = ConfigSvc.GetUploadSettingsAsync(expectedBaseId);
+            var iaTask = ConfigSvc.GetCompraIaSettingsAsync(expectedBaseId);
             await Task.WhenAll(uploadTask, iaTask);
             return (Upload: await uploadTask, Ia: await iaTask);
         }, "No se pudo cargar la configuración de Interfaces.");
@@ -291,6 +297,15 @@
         }
 
         Loading = false;
+    }
+
+    private int? CurrentExpectedBaseId()
+        => idbase is > 0 ? idbase : SessionSvc.GetActiveSession()?.BaseId;
+
+    private async Task<bool> EnsureTenantAsync()
+    {
+        var context = await TenantRouteGuard.ResolveAsync(idbase, idweb);
+        return context.IsValid;
     }
 
     private async Task SaveAsync()
