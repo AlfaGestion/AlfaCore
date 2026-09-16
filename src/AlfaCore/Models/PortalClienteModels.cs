@@ -7,6 +7,7 @@ namespace AlfaCore.Models;
 public sealed class PortalClienteInvitacionRequestDto
 {
     public string CodigoCliente { get; set; } = string.Empty;
+    public string? EmailDestino { get; set; }
     public int? IdContacto { get; set; }
     public string? IdWeb { get; set; }
     public int? IdBase { get; set; }
@@ -14,6 +15,36 @@ public sealed class PortalClienteInvitacionRequestDto
     public string UrlBaseRestablecer { get; set; } = string.Empty;
     public string NombreEmpresa { get; set; } = string.Empty;
     public string? LogoUrlAbsoluta { get; set; }
+}
+
+public sealed class PortalClienteInvitacionApiRequestDto
+{
+    public string IdWeb { get; set; } = string.Empty;
+    public int IdBase { get; set; }
+    public string IdCliente { get; set; } = string.Empty;
+    public string Email { get; set; } = string.Empty;
+}
+
+public sealed class PortalClienteInvitacionApiResultDto
+{
+    public bool Enviado { get; init; }
+    public string Email { get; init; } = string.Empty;
+    public string Mensaje { get; init; } = string.Empty;
+}
+
+public sealed class PortalClienteDatosApiResultDto
+{
+    public string IdCliente { get; init; } = string.Empty;
+    public string IdWeb { get; init; } = string.Empty;
+    public int IdBase { get; init; }
+    public string NombreBase { get; init; } = string.Empty;
+    public IReadOnlyList<PortalClienteBaseApiDto> Bases { get; init; } = [];
+}
+
+public sealed class PortalClienteBaseApiDto
+{
+    public int IdBase { get; init; }
+    public string Nombre { get; init; } = string.Empty;
 }
 
 public sealed class PortalClientePedidosFiltroDto

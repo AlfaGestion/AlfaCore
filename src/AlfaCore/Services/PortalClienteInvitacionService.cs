@@ -74,6 +74,10 @@ public sealed class PortalClienteInvitacionService(
             if (string.IsNullOrWhiteSpace(cliente.Email))
                 throw new InvalidOperationException("El cliente no tiene un email registrado para ingresar al portal.");
 
+            if (!string.IsNullOrWhiteSpace(request.EmailDestino)
+                && !string.Equals(cliente.Email.Trim(), request.EmailDestino.Trim(), StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("El email recibido no coincide con el email registrado del cliente.");
+
             string emailDestino;
             string nombreDestinatario;
             var esContacto = request.IdContacto is > 0;

@@ -1122,6 +1122,215 @@ public class Program
             return Results.File(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", PortalClientePedidosExcelExporter.NombreArchivo());
         }).AllowAnonymous();
 
+        app.MapPost("/api/portal-cliente/invitaciones", async (
+            HttpRequest request,
+            PortalClienteInvitacionApiRequestDto invitationRequest,
+            IConfiguration config,
+            ICentralBasesService centralBasesSvc,
+            ICentralClientesService centralClientesSvc,
+            ISessionService sessionSvc,
+            IPortalClienteInvitacionService invitacionSvc,
+            IAppEventService appEvents,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = (config["PortalCliente:InvitacionApiKey"] ?? string.Empty).Trim();
+            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+            {
+                await appEvents.LogErrorAsync(
+                    "PortalClienteInvitacion",
+                    "ApiEnviarInvitacion",
+                    new InvalidOperationException("Falta PortalCliente:InvitacionApiKey."),
+                    "No se pudo procesar la invitación externa.",
+                    null,
+                    AppEventSeverity.Error,
+                    ct);
+                return Results.Json(
+                    new PortalClienteInvitacionApiResultDto { Mensaje = "El endpoint de invitaciones no está configurado." },
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(apiKeyRecibida),
+                    Encoding.UTF8.GetBytes(apiKeyConfigurada)))
+            {
+                return Results.Json(
+                    new PortalClienteInvitacionApiResultDto { Mensaje = "No autorizado." },
+                    statusCode: StatusCodes.Status401Unauthorized);
+            }
+
+            var idWeb = (invitationRequest.IdWeb ?? string.Empty).Trim();
+            var codigoCliente = (invitationRequest.IdCliente ?? string.Empty).Trim();
+            var email = (invitationRequest.Email ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(idWeb) || invitationRequest.IdBase <= 0
+                || string.IsNullOrWhiteSpace(codigoCliente) || string.IsNullOrWhiteSpace(email))
+            {
+                return Results.Json(
+                    new PortalClienteInvitacionApiResultDto { Mensaje = "idWeb, idBase, idCliente y email son obligatorios." },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            if (!System.Net.Mail.MailAddress.TryCreate(email, out var parsedEmail)
+                || !string.Equals(parsedEmail.Address, email, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.Json(
+                    new PortalClienteInvitacionApiResultDto { Email = email, Mensaje = "El email no es válido." },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+
+            try
+            {
+                var baseInfo = await centralBasesSvc.GetByIdAsync(invitationRequest.IdBase, ct);
+                if (baseInfo is null)
+                {
+                    return Results.Json(
+                        new PortalClienteInvitacionApiResultDto { Email = email, Mensaje = "No existe el idBase indicado." },
+                        statusCode: StatusCodes.Status404NotFound);
+                }
+
+                var centralCliente = await centralClientesSvc.GetByIdClienteAsync(baseInfo.IdCliente, ct);
+                if (centralCliente is null
+                    || !string.Equals(centralCliente.IdWeb.Trim(), idWeb, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.Json(
+                        new PortalClienteInvitacionApiResultDto { Email = email, Mensaje = "idWeb e idBase no pertenecen a la misma empresa." },
+                        statusCode: StatusCodes.Status400BadRequest);
+                }
+
+                sessionSvc.SetWebhookOverride(new SessionDto
+                {
+                    Id = Guid.Parse($"00000000-0000-0000-0000-{baseInfo.IdBase:000000000000}"),
+                    BaseId = baseInfo.IdBase,
+                    Nombre = baseInfo.Nombre,
+                    Servidor = baseInfo.DbServer,
+                    BaseDatos = baseInfo.DbName,
+                    Usuario = baseInfo.DbUser,
+                    Password = baseInfo.DbPassword,
+                    TrustServerCertificate = true,
+                    Activa = true
+                });
+
+                var urlPortal = BuildAbsolutePublicUrl(
+                    request,
+                    config,
+                    $"/{Uri.EscapeDataString(idWeb)}/{invitationRequest.IdBase}/portal-cliente");
+                var urlRestablecer = $"{urlPortal.TrimEnd('/')}/restablecer-clave";
+                var emailEnviado = await invitacionSvc.EnviarInvitacionAsync(
+                    new PortalClienteInvitacionRequestDto
+                    {
+                        CodigoCliente = codigoCliente,
+                        EmailDestino = email,
+                        IdWeb = idWeb,
+                        IdBase = invitationRequest.IdBase,
+                        UrlPortal = urlPortal,
+                        UrlBaseRestablecer = urlRestablecer
+                    },
+                    "API:PortalClienteInvitacion",
+                    ct);
+
+                return Results.Ok(new PortalClienteInvitacionApiResultDto
+                {
+                    Enviado = true,
+                    Email = emailEnviado,
+                    Mensaje = "Invitación enviada correctamente."
+                });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(
+                    new PortalClienteInvitacionApiResultDto { Email = email, Mensaje = ex.Message },
+                    statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (Exception ex)
+            {
+                var incidentId = await appEvents.LogErrorAsync(
+                    "PortalClienteInvitacion",
+                    "ApiEnviarInvitacion",
+                    ex,
+                    "No se pudo procesar la invitación externa.",
+                    null,
+                    AppEventSeverity.Error,
+                    ct);
+                return Results.Json(
+                    new PortalClienteInvitacionApiResultDto
+                    {
+                        Email = email,
+                        Mensaje = $"No se pudo enviar la invitación. Incidente: {incidentId}"
+                    },
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+        });
+
+        app.MapGet("/api/datos-cliente", async (
+            HttpRequest request,
+            string? idCliente,
+            string? licenciaPrincipal,
+            string? nombreBase,
+            IConfiguration config,
+            ICentralClientesService centralClientesSvc,
+            ICentralBasesService centralBasesSvc,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = (config["PortalCliente:InvitacionApiKey"] ?? string.Empty).Trim();
+            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+            {
+                return Results.Json(
+                    new { ok = false, mensaje = "El endpoint de datos del cliente no está configurado." },
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(apiKeyRecibida),
+                    Encoding.UTF8.GetBytes(apiKeyConfigurada)))
+            {
+                return Results.Unauthorized();
+            }
+
+            var codigoCliente = (idCliente ?? string.Empty).Trim();
+            var licencia = (licenciaPrincipal ?? string.Empty).Trim();
+            var baseSolicitada = (nombreBase ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(codigoCliente) || string.IsNullOrWhiteSpace(licencia)
+                || string.IsNullOrWhiteSpace(baseSolicitada))
+                return Results.BadRequest(new { ok = false, mensaje = "idCliente, licenciaPrincipal y nombreBase son obligatorios." });
+
+            var clientePorId = await centralClientesSvc.GetByIdClienteAsync(codigoCliente, ct);
+            var clientePorLicencia = await centralClientesSvc.GetByLicenciaPrincipalAsync(licencia, ct);
+            if (clientePorId is null || clientePorLicencia is null
+                || !string.Equals(clientePorId.IdCliente.Trim(), clientePorLicencia.IdCliente.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.NotFound(new { ok = false, mensaje = "idCliente y licenciaPrincipal no corresponden al mismo cliente." });
+            }
+
+            var todasLasBases = await centralBasesSvc.GetByClienteAsync(clientePorId.IdCliente, ct: ct);
+            var bases = todasLasBases
+                .Where(baseInfo => string.Equals(baseInfo.Nombre.Trim(), baseSolicitada, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (bases.Length == 0)
+            {
+                bases = todasLasBases
+                    .Where(baseInfo => baseInfo.Nombre.Contains(baseSolicitada, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+            }
+            if (bases.Length == 0)
+                return Results.NotFound(new { ok = false, mensaje = "El cliente no tiene una base con el nombre indicado." });
+
+            var baseSeleccionada = bases[0];
+
+            return Results.Ok(new PortalClienteDatosApiResultDto
+            {
+                IdCliente = clientePorId.IdCliente.Trim(),
+                IdWeb = clientePorId.IdWeb.Trim(),
+                IdBase = baseSeleccionada.IdBase,
+                NombreBase = baseSeleccionada.Nombre.Trim(),
+                Bases = bases.Select(static baseInfo => new PortalClienteBaseApiDto
+                {
+                    IdBase = baseInfo.IdBase,
+                    Nombre = baseInfo.Nombre.Trim()
+                }).ToArray()
+            });
+        });
+
         static int? ResolveSqlSessionBaseId(string? sessionIdCookie)
         {
             if (string.IsNullOrWhiteSpace(sessionIdCookie))
