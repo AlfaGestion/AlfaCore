@@ -2,6 +2,7 @@ using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Services;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -300,6 +301,194 @@ public sealed class WhatsAppTenantIsolationTests
         Assert.Contains("OWNERSHIP_RESOLVED", serviceSource, StringComparison.Ordinal);
         Assert.Contains("BEFORE_WEBHOOK_LOG", serviceSource, StringComparison.Ordinal);
         Assert.Contains("WEBHOOK_LOG_INSERTED", serviceSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlantillasRoute_UsesRouteBaseAsTenantAuthorityBeforeLoadingData()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesPlantillas.razor"));
+        var routeBase = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "SaaSRoutePageBase.cs"));
+        var route = source.IndexOf("@page \"/{idweb}/{idbase:int}/conversaciones/plantillas\"", StringComparison.Ordinal);
+        var loadRoute = source.IndexOf("private async Task LoadRouteTenantAsync()", StringComparison.Ordinal);
+        var reset = source.IndexOf("ResetTenantData();", loadRoute, StringComparison.Ordinal);
+        var ensure = source.IndexOf("EnsureRouteTenantReady(expectedBaseId)", loadRoute, StringComparison.Ordinal);
+        var numeros = source.IndexOf("ConfigSvc.GetWhatsAppNumerosAsync(expectedBaseId)", loadRoute, StringComparison.Ordinal);
+        var templates = source.IndexOf("ConversacionesSvc.GetTemplatesAsync(filters)", loadRoute, StringComparison.Ordinal);
+        var detail = source.IndexOf("ConversacionesSvc.GetTemplateAsync(idPlantilla, expectedBaseId)", StringComparison.Ordinal);
+
+        Assert.True(route >= 0);
+        Assert.Contains("public int? idbase { get; set; }", routeBase, StringComparison.Ordinal);
+        Assert.True(loadRoute > route);
+        Assert.True(reset > loadRoute && ensure > reset && numeros > ensure && templates > numeros);
+        Assert.True(detail > loadRoute);
+        Assert.Contains("_loadError = \"No se pudo abrir la información de esta base.\";", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlantillasServices_RejectExpectedBaseMismatchBeforeTemplateSql()
+    {
+        var service = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        var config = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesConfigService.cs"));
+
+        var getTemplates = service.IndexOf("public Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesAsync", StringComparison.Ordinal);
+        var templatesGuard = service.IndexOf("ResolveTenantConnection(filters.ExpectedBaseId, \"GetTemplates\")", getTemplates, StringComparison.Ordinal);
+        var templatesSql = service.IndexOf("FROM dbo.CONV_PLANTILLAS", getTemplates, StringComparison.Ordinal);
+        var templatesConnection = service.IndexOf("new SqlConnection(tenant.ConnectionString)", getTemplates, StringComparison.Ordinal);
+
+        var getTemplate = service.IndexOf("GetTemplateAsync(long idPlantilla, int? expectedBaseId", StringComparison.Ordinal);
+        var detailGuard = service.IndexOf("ResolveTenantConnection(expectedBaseId, \"GetTemplate\")", getTemplate, StringComparison.Ordinal);
+        var detailSql = service.IndexOf("WHERE IdPlantilla = @IdPlantilla", getTemplate, StringComparison.Ordinal);
+
+        var getForConversation = service.IndexOf("GetTemplatesForConversationAsync(long idConversacion, int? expectedBaseId", StringComparison.Ordinal);
+        var conversationGuard = service.IndexOf("ResolveTenantConnection(expectedBaseId, \"GetTemplatesForConversation\")", getForConversation, StringComparison.Ordinal);
+        var fallback = service.IndexOf("new ConversacionPlantillaFilters { ExpectedBaseId = expectedBaseId, EstadoMeta = \"APPROVED\" }", getForConversation, StringComparison.Ordinal);
+
+        var numeros = config.IndexOf("GetWhatsAppNumerosAsync(int? expectedBaseId", StringComparison.Ordinal);
+        var numerosGuard = config.IndexOf("ResolveTenantConnection(expectedBaseId, \"GetWhatsAppNumeros\")", numeros, StringComparison.Ordinal);
+        var numerosSql = config.IndexOf("FROM dbo.CONV_WHATSAPP_NUMEROS", numeros, StringComparison.Ordinal);
+
+        Assert.True(templatesGuard > getTemplates && templatesGuard < templatesSql && templatesConnection > templatesGuard);
+        Assert.True(detailGuard > getTemplate && detailGuard < detailSql);
+        Assert.True(conversationGuard > getForConversation && fallback > conversationGuard);
+        Assert.True(numerosGuard > numeros && numerosGuard < numerosSql);
+        Assert.Contains("active?.BaseId != expectedBaseId.Value", service, StringComparison.Ordinal);
+        Assert.Contains("active?.BaseId != expectedBaseId.Value", config, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task PlantillasConfigService_WithExpectedBaseAAndActiveBaseB_FailsBeforeSql()
+    {
+        var session = new WebhookSessionService();
+        session.SetWebhookOverride(new SessionDto
+        {
+            Id = Guid.NewGuid(),
+            BaseId = 106,
+            Nombre = "Base B",
+            Servidor = "invalid-server",
+            BaseDatos = "invalid-db",
+            Usuario = "invalid-user",
+            Password = "invalid-password",
+            Activa = true
+        });
+
+        var service = new ConversacionesConfigService(
+            new ConfigurationBuilder().Build(),
+            session,
+            CreateThrowingProxy<IAppEventService>(),
+            Options.Create(new WhatsAppOptions()),
+            new NullHttpClientFactory(),
+            CreateThrowingProxy<IAppUserSessionService>(),
+            CreateThrowingProxy<IConversacionesAuthorizationService>(),
+            CreateThrowingProxy<ICentralBasesService>());
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => service.GetWhatsAppNumerosAsync(4264));
+        Assert.Contains("no coincide", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void PlantillasPage_DiscardsLateAsyncResponsesAndClearsStaleTenantState()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesPlantillas.razor"));
+
+        Assert.Contains("private int _loadGeneration;", source, StringComparison.Ordinal);
+        Assert.Contains("var generation = ++_loadGeneration;", source, StringComparison.Ordinal);
+        Assert.Contains("private bool IsCurrentRequest(int generation, int? expectedBaseId, int? selectedNumeroId)", source, StringComparison.Ordinal);
+        Assert.Contains("if (!IsCurrentRequest(generation, expectedBaseId, selectedNumeroId))", source, StringComparison.Ordinal);
+        Assert.Contains("_whatsappNumeros = [];", source, StringComparison.Ordinal);
+        Assert.Contains("_allTemplates = [];", source, StringComparison.Ordinal);
+        Assert.Contains("_templates = [];", source, StringComparison.Ordinal);
+        Assert.Contains("_selectedId = 0;", source, StringComparison.Ordinal);
+        Assert.Contains("protected override async Task OnParametersSetAsync()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ConversacionesTemplatePaths_UseExpectedBaseAndTenantLoadGuard()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "Conversaciones.razor"));
+
+        var programar = source.IndexOf("private async Task EnsureProgramarTemplatesAsync()", StringComparison.Ordinal);
+        var programarCapture = source.IndexOf("TryCaptureTenantLoad(out var lease)", programar, StringComparison.Ordinal);
+        var programarExpected = source.IndexOf("ExpectedBaseId = lease.BaseId", programar, StringComparison.Ordinal);
+        var programarCurrent = source.IndexOf("IsTenantLoadCurrent(lease)", programar, StringComparison.Ordinal);
+
+        var conversationTemplates = source.IndexOf("private async Task LoadTemplatesForConversationAsync()", StringComparison.Ordinal);
+        var conversationCapture = source.IndexOf("TryCaptureTenantLoad(out var lease)", conversationTemplates, StringComparison.Ordinal);
+        var serviceCall = source.IndexOf("GetTemplatesForConversationAsync(_selectedConversation.IdConversacion, lease.BaseId)", conversationTemplates, StringComparison.Ordinal);
+        var lateGuard = source.IndexOf("IsTenantLoadCurrent(lease)", conversationTemplates, StringComparison.Ordinal);
+
+        Assert.True(programar >= 0 && programarCapture > programar && programarExpected > programarCapture && programarCurrent > programarExpected);
+        Assert.True(conversationTemplates >= 0 && conversationCapture > conversationTemplates && serviceCall > conversationCapture && lateGuard > serviceCall);
+    }
+
+    [Fact]
+    public void Estadisticas_UsesExpectedBaseAcrossUiAndService()
+    {
+        var page = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesEstadisticas.razor"));
+        var service = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesService.cs"));
+        var contract = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "IConversacionesService.cs"));
+        var models = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Models", "ConversacionesModels.cs"));
+
+        Assert.Contains("ConversationTenantLoadGuard", page, StringComparison.Ordinal);
+        Assert.Contains("ConversacionesSvc.GetTechniciansAsync(lease.BaseId)", page, StringComparison.Ordinal);
+        Assert.Contains("ExpectedBaseId = lease.BaseId", page, StringComparison.Ordinal);
+        Assert.Contains("IsTenantLoadCurrent(lease)", page, StringComparison.Ordinal);
+        Assert.Contains("Task<IReadOnlyList<ConversacionTecnicoOptionDto>> GetTechniciansAsync(int? expectedBaseId", contract, StringComparison.Ordinal);
+        Assert.Contains("public int? ExpectedBaseId { get; set; }", models, StringComparison.Ordinal);
+        Assert.Contains("GetConnectionStringForExpectedTenant(expectedBaseId, \"GetTechnicians\")", service, StringComparison.Ordinal);
+        Assert.Contains("GetConnectionStringForExpectedTenant(filters.ExpectedBaseId, \"GetEstadisticas\")", service, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Informes_UsesRouteBaseForPagesServicesAndExcelExport()
+    {
+        var page = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesInformes.razor"));
+        var detail = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesInformeDetalle.razor"));
+        var service = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesInformesService.cs"));
+        var contract = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "IConversacionesInformesService.cs"));
+        var program = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
+
+        Assert.Contains("ConversationTenantLoadGuard", page, StringComparison.Ordinal);
+        Assert.Contains("CurrentExpectedBaseIdOrNull()", page, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.GetByPeriodoAsync(_anio, _mes, CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.ListarAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.GetAsync(id, CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.GetDetalleAsync(IdDetalle, CurrentExpectedBaseIdOrNull())", detail, StringComparison.Ordinal);
+        Assert.Contains("InformesSvc.GetTendenciaClienteAsync(IdDetalle, CurrentExpectedBaseIdOrNull())", detail, StringComparison.Ordinal);
+        Assert.Contains("Task<ConversacionInformeMensualDto?> GetAsync(int idInforme, int? expectedBaseId", contract, StringComparison.Ordinal);
+        Assert.Contains("ResolveTenantConnection(expectedBaseId, \"GetInforme\")", service, StringComparison.Ordinal);
+        Assert.Contains("ResolveTenantConnection(expectedBaseId, \"GetDetalleInforme\")", service, StringComparison.Ordinal);
+        Assert.Contains("var informe = await svc.GetAsync(idInforme, idbase, ct);", program, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Configuracion_ValidatesRouteTenantBeforeProtectedLoads()
+    {
+        var page = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesConfiguracion.razor"));
+        var auth = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "ConversacionesAuthorizationService.cs"));
+        var contract = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Services", "IConversacionesAuthorizationService.cs"));
+
+        var init = page.IndexOf("private async Task CompleteProtectedInitializationAsync()", StringComparison.Ordinal);
+        var ensure = page.IndexOf("EnsureRouteTenantReady(expectedBaseId)", init, StringComparison.Ordinal);
+        var canManage = page.IndexOf("AuthorizationSvc.CanManageAsync(expectedBaseId", init, StringComparison.Ordinal);
+        var load = page.IndexOf("await LoadAsync();", init, StringComparison.Ordinal);
+
+        Assert.True(init >= 0 && ensure > init && canManage > ensure && load > canManage);
+        Assert.Contains("ConfigSvc.GetWhatsAppConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetInstagramConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetFacebookConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetMercadoLibreConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetAlfaKnowledgeConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetAutomatizacionesConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetClasificacionesAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetPrioridadConfigAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetUsuariosSistemaAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetConversacionAdministradoresAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetReglasAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConfigSvc.GetWhatsAppNumerosAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("ConvSvc.GetTechniciansAsync(CurrentExpectedBaseIdOrNull())", page, StringComparison.Ordinal);
+        Assert.Contains("Task<bool> CanManageAsync(int? expectedBaseId", contract, StringComparison.Ordinal);
+        Assert.Contains("ResolveTenantConnection(expectedBaseId, \"CanManage\")", auth, StringComparison.Ordinal);
+        Assert.Contains("active?.BaseId != expectedBaseId.Value", auth, StringComparison.Ordinal);
     }
 
     private static readonly WhatsAppEmbeddedSignupOptions EsAppSecretOptions = new()
@@ -626,6 +815,10 @@ public sealed class WhatsAppTenantIsolationTests
         where TProxy : DispatchProxy
         => DispatchProxy.Create<TService, TProxy>();
 
+    private static TService CreateThrowingProxy<TService>()
+        where TService : class
+        => DispatchProxy.Create<TService, ThrowingProxy>();
+
     private static string BuildWebhookPayload(string eventKind, string phoneNumberId)
     {
         const string marker = "__PHONE_NUMBER_ID__";
@@ -702,6 +895,17 @@ public sealed class WhatsAppTenantIsolationTests
             Request = (ConversacionWebhookRequest?)args?[0];
             return Task.FromResult(new ConversacionWebhookResultDto());
         }
+    }
+
+    public class ThrowingProxy : DispatchProxy
+    {
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+            => throw new NotSupportedException(targetMethod?.Name);
+    }
+
+    private sealed class NullHttpClientFactory : IHttpClientFactory
+    {
+        public HttpClient CreateClient(string name) => new();
     }
 
     private sealed class OwnershipStore(WhatsAppPhoneOwnership? phone, bool schemaAvailable = true, bool hasFootprint = false) : IWhatsAppAssetOwnershipStore

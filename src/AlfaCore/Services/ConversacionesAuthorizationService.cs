@@ -13,7 +13,11 @@ public sealed class ConversacionesAuthorizationService(
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     public async Task<bool> CanManageAsync(CancellationToken ct = default)
+        => await CanManageAsync(null, ct);
+
+    public async Task<bool> CanManageAsync(int? expectedBaseId, CancellationToken ct = default)
     {
+        var connectionString = ResolveTenantConnection(expectedBaseId, "CanManage").ConnectionString;
         var currentUser = appUserSession.CurrentUser;
         if (currentUser is null)
             return false;
@@ -51,7 +55,7 @@ public sealed class ConversacionesAuthorizationService(
             THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END;
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@Usuario", usuario);
@@ -60,8 +64,11 @@ public sealed class ConversacionesAuthorizationService(
     }
 
     public async Task EnsureCanManageAsync(CancellationToken ct = default)
+        => await EnsureCanManageAsync(null, ct);
+
+    public async Task EnsureCanManageAsync(int? expectedBaseId, CancellationToken ct = default)
     {
-        if (!await CanManageAsync(ct))
+        if (!await CanManageAsync(expectedBaseId, ct))
         {
             throw new UnauthorizedAccessException(
                 "No tenés permiso para modificar la configuración de Conversaciones.");
@@ -69,6 +76,33 @@ public sealed class ConversacionesAuthorizationService(
     }
 
     public async Task EnsureCanAttendConversationAsync(long idConversacion, CancellationToken ct = default)
+        => await EnsureCanAttendConversationAsync(idConversacion, ConnectionString, ct);
+
+    private TenantConnectionContext ResolveTenantConnection(int? expectedBaseId, string operation)
+    {
+        var active = sessionService.GetActiveSession();
+        if (expectedBaseId is > 0 && active?.BaseId != expectedBaseId.Value)
+            throw new InvalidOperationException(
+                $"La sesión activa no coincide con la base solicitada para ConversacionesAuthorization.{operation}.");
+
+        if (active is not null)
+        {
+            return new TenantConnectionContext(active.BaseId, new SqlConnectionStringBuilder
+            {
+                DataSource = active.Servidor,
+                InitialCatalog = active.BaseDatos,
+                UserID = active.Usuario,
+                Password = active.Password,
+                TrustServerCertificate = active.TrustServerCertificate,
+                ApplicationName = "AlfaCore"
+            }.ConnectionString);
+        }
+
+        return new TenantConnectionContext(null, configuration.GetConnectionString("AlfaGestion")
+            ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'."));
+    }
+
+    public async Task EnsureCanAttendConversationAsync(long idConversacion, string connectionString, CancellationToken ct = default)
     {
         if (idConversacion <= 0)
             throw new ArgumentOutOfRangeException(nameof(idConversacion));
@@ -124,7 +158,7 @@ public sealed class ConversacionesAuthorizationService(
             ) THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END;
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
@@ -135,6 +169,9 @@ public sealed class ConversacionesAuthorizationService(
     }
 
     public async Task EnsureCanUseWhatsAppNumeroAsync(int idNumero, CancellationToken ct = default)
+        => await EnsureCanUseWhatsAppNumeroAsync(idNumero, ConnectionString, ct);
+
+    public async Task EnsureCanUseWhatsAppNumeroAsync(int idNumero, string connectionString, CancellationToken ct = default)
     {
         if (idNumero <= 0)
             throw new ArgumentOutOfRangeException(nameof(idNumero));
@@ -171,7 +208,7 @@ public sealed class ConversacionesAuthorizationService(
             THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END;
             """;
 
-        await using var cn = new SqlConnection(ConnectionString);
+        await using var cn = new SqlConnection(connectionString);
         await cn.OpenAsync(ct);
         await using var cmd = new SqlCommand(sql, cn);
         cmd.Parameters.AddWithValue("@IdNumero", idNumero);
@@ -180,6 +217,8 @@ public sealed class ConversacionesAuthorizationService(
         if (await cmd.ExecuteScalarAsync(ct) is not true)
             throw BuildAttendDeniedException();
     }
+
+    private sealed record TenantConnectionContext(int? BaseId, string ConnectionString);
 
     private static UnauthorizedAccessException BuildAttendDeniedException()
         => new("No tenés permiso para ver ni atender conversaciones de este número de WhatsApp.");

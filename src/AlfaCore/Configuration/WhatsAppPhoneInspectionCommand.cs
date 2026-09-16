@@ -146,6 +146,24 @@ internal static class WhatsAppPhoneInspectionCommand
 
         using var document = JsonDocument.Parse(body);
         WriteFields(output, document.RootElement);
+
+        var numberFields = Uri.EscapeDataString("id,display_phone_number,name_status,new_name_status,certificate,new_certificate");
+        var numbersUri = $"{baseUrl}/{version}/{Uri.EscapeDataString(credential.WabaId)}/phone_numbers?fields={numberFields}";
+        using var numbersRequest = new HttpRequestMessage(HttpMethod.Get, numbersUri);
+        numbersRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential.AccessToken);
+
+        using var numbersResponse = await httpClient.SendAsync(numbersRequest, ct);
+        var numbersBody = await numbersResponse.Content.ReadAsStringAsync(ct);
+        output.WriteLine($"PHONE_NUMBERS GRAPH HTTP = {(int)numbersResponse.StatusCode}");
+
+        if (!numbersResponse.IsSuccessStatusCode)
+        {
+            WriteNameStatusFields(output, null);
+            return 1;
+        }
+
+        using var numbersDocument = JsonDocument.Parse(numbersBody);
+        WriteNameStatusFields(output, FindPhoneNumber(numbersDocument.RootElement, phoneNumberId));
         return 0;
     }
 
@@ -170,6 +188,98 @@ internal static class WhatsAppPhoneInspectionCommand
         output.WriteLine($"quality_rating = {GetField(root, "quality_rating")}");
     }
 
+    private static void WriteNameStatusFields(TextWriter output, JsonElement? phoneNumber)
+    {
+        var nameStatus = GetField(phoneNumber, "name_status");
+        var newNameStatus = GetField(phoneNumber, "new_name_status");
+        var certificatePresent = IsPresent(phoneNumber, "certificate");
+        var newCertificatePresent = IsPresent(phoneNumber, "new_certificate");
+        var diagnosis = ClassifyNameStatus(nameStatus, newNameStatus, newCertificatePresent);
+
+        output.WriteLine($"NAME_STATUS = {nameStatus}");
+        output.WriteLine($"NEW_NAME_STATUS = {newNameStatus}");
+        output.WriteLine($"CERTIFICATE_PRESENT = {certificatePresent}");
+        output.WriteLine($"NEW_CERTIFICATE_PRESENT = {newCertificatePresent}");
+        output.WriteLine($"REGISTRATION_AFTER_NAME_CHANGE_NEEDED = {RegistrationAfterNameChangeNeeded(diagnosis)}");
+        output.WriteLine($"EVIDENCE = {BuildNameStatusEvidence(diagnosis, nameStatus, newNameStatus, newCertificatePresent)}");
+    }
+
+    private static string ClassifyNameStatus(string nameStatus, string newNameStatus, bool newCertificatePresent)
+    {
+        var nameKind = ClassifyMetaNameStatus(nameStatus);
+        var newNameKind = ClassifyMetaNameStatus(newNameStatus);
+
+        if (newNameKind == "SUCCESS"
+            && string.Equals(newNameStatus, "APPROVED", StringComparison.OrdinalIgnoreCase)
+            && newCertificatePresent)
+            return "NAME_CHANGE_READY_TO_REGISTER";
+
+        if (nameKind == "SUCCESS" && newNameKind == "SUCCESS")
+            return "SUCCESS";
+
+        if (nameKind == "WAITING" || newNameKind == "WAITING")
+            return "WAITING";
+
+        if (nameKind == "REJECTED" || newNameKind == "REJECTED")
+            return "REJECTED";
+
+        if (nameKind == "CERTIFICATE_PROBLEM" || newNameKind == "CERTIFICATE_PROBLEM")
+            return "CERTIFICATE_PROBLEM";
+
+        return "UNKNOWN";
+    }
+
+    private static string ClassifyMetaNameStatus(string status)
+    {
+        if (string.Equals(status, "APPROVED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "AVAILABLE_WITHOUT_REVIEW", StringComparison.OrdinalIgnoreCase))
+            return "SUCCESS";
+
+        if (string.Equals(status, "PENDING_REVIEW", StringComparison.OrdinalIgnoreCase))
+            return "WAITING";
+
+        if (string.Equals(status, "DECLINED", StringComparison.OrdinalIgnoreCase))
+            return "REJECTED";
+
+        if (string.Equals(status, "EXPIRED", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "NONE", StringComparison.OrdinalIgnoreCase))
+            return "CERTIFICATE_PROBLEM";
+
+        return "UNKNOWN";
+    }
+
+    private static string RegistrationAfterNameChangeNeeded(string diagnosis)
+        => diagnosis == "NAME_CHANGE_READY_TO_REGISTER" ? "SI" : diagnosis == "UNKNOWN" ? "NO CONFIRMABLE" : "NO";
+
+    private static string BuildNameStatusEvidence(string diagnosis, string nameStatus, string newNameStatus, bool newCertificatePresent)
+        => diagnosis switch
+        {
+            "NAME_CHANGE_READY_TO_REGISTER" => "NAME_CHANGE_READY_TO_REGISTER) new_name_status = APPROVED y new_certificate presente.",
+            "SUCCESS" => "SUCCESS) name_status/new_name_status listos para uso (APPROVED o AVAILABLE_WITHOUT_REVIEW).",
+            "WAITING" => $"WAITING) Meta todavía tiene revisión pendiente (name_status={nameStatus}, new_name_status={newNameStatus}).",
+            "REJECTED" => $"REJECTED) Meta rechazó el nombre visible (name_status={nameStatus}, new_name_status={newNameStatus}).",
+            "CERTIFICATE_PROBLEM" => $"CERTIFICATE_PROBLEM) Meta informa problema de certificado/status (name_status={nameStatus}, new_name_status={newNameStatus}).",
+            _ => $"UNKNOWN) combinación no concluyente (name_status={nameStatus}, new_name_status={newNameStatus}, new_certificate_present={newCertificatePresent})."
+        };
+
+    private static JsonElement? FindPhoneNumber(JsonElement root, string phoneNumberId)
+    {
+        if (root.ValueKind != JsonValueKind.Object
+            || !root.TryGetProperty("data", out var data)
+            || data.ValueKind != JsonValueKind.Array)
+            return null;
+
+        foreach (var item in data.EnumerateArray())
+        {
+            if (item.ValueKind == JsonValueKind.Object
+                && item.TryGetProperty("id", out var id)
+                && string.Equals(id.ToString(), phoneNumberId, StringComparison.Ordinal))
+                return item;
+        }
+
+        return null;
+    }
+
     private static string GetField(JsonElement? root, string propertyName)
         => root is { } element && element.TryGetProperty(propertyName, out var value) && value.ValueKind == JsonValueKind.String
             ? (value.GetString() ?? "NO DISPONIBLE")
@@ -179,6 +289,21 @@ internal static class WhatsAppPhoneInspectionCommand
         => root is { } element && element.TryGetProperty(propertyName, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False
             ? value.GetBoolean().ToString()
             : "NO DISPONIBLE";
+
+    private static bool IsPresent(JsonElement? root, string propertyName)
+    {
+        if (root is not { } element || !element.TryGetProperty(propertyName, out var value))
+            return false;
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => false,
+            JsonValueKind.String => !string.IsNullOrWhiteSpace(value.GetString()),
+            JsonValueKind.Array => value.GetArrayLength() > 0,
+            JsonValueKind.Object => value.EnumerateObject().Any(),
+            _ => true
+        };
+    }
 
     private static string? ReadOption(IReadOnlyList<string> args, string name)
     {

@@ -2265,6 +2265,7 @@
     private CancellationTokenSource? _embeddedSignupPollingCts;
     private CancellationTokenSource? _embeddedSignupWatchdogCts;
     private bool _whatsAppConnectionsLoaded;
+    private bool _syncingRouteTenant;
 
     /// <summary>
     /// Números cuyo QR/código de pairing fue iniciado explícitamente en esta sesión de UI.
@@ -2355,14 +2356,19 @@
     }
 
     private void HandleSessionChanged()
-        => _ = InvokeAsync(RefreshEmbeddedSignupStateAfterSessionChangeAsync);
+    {
+        if (_syncingRouteTenant)
+            return;
+
+        _ = InvokeAsync(RefreshEmbeddedSignupStateAfterSessionChangeAsync);
+    }
 
     private async Task RefreshEmbeddedSignupStateAfterSessionChangeAsync()
     {
         if (!_navigationReady)
             return;
 
-        await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
+        await RefreshWhatsAppConnectionsAsync(CurrentExpectedBaseIdOrNull() ?? 0);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -2384,7 +2390,13 @@
                 return;
             }
 
-            if (!await AuthorizationSvc.CanManageAsync(_lifetimeCts.Token))
+            if (!TryResolveExpectedBaseId(out var expectedBaseId) || !EnsureRouteTenantReady(expectedBaseId))
+            {
+                Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones"), replace: true);
+                return;
+            }
+
+            if (!await AuthorizationSvc.CanManageAsync(expectedBaseId, _lifetimeCts.Token))
             {
                 Nav.NavigateTo(RouteContext.BuildRoute("/conversaciones"), replace: true);
                 return;
@@ -2405,6 +2417,49 @@
         var relative = "/" + Nav.ToBaseRelativePath(Nav.Uri).TrimStart('/');
         Nav.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(relative)}", replace: true);
     }
+
+    private bool TryResolveExpectedBaseId(out int? expectedBaseId)
+    {
+        expectedBaseId = null;
+        if (idbase > 0)
+        {
+            expectedBaseId = idbase;
+            return true;
+        }
+
+        return !AppMode.IsSaaSMode;
+    }
+
+    private bool EnsureRouteTenantReady(int? expectedBaseId)
+    {
+        if (expectedBaseId is not > 0)
+            return true;
+
+        var active = SessionSvc.GetActiveSession();
+        if (active?.BaseId == expectedBaseId.Value)
+            return AppUserSession.IsAuthorizedForSession(active.Id);
+
+        var routeSession = SessionSvc.GetAllSessions().FirstOrDefault(x => x.BaseId == expectedBaseId.Value);
+        if (routeSession is null)
+            return false;
+
+        try
+        {
+            _syncingRouteTenant = true;
+            SessionSvc.SwitchSession(routeSession.Id);
+        }
+        finally
+        {
+            _syncingRouteTenant = false;
+        }
+
+        active = SessionSvc.GetActiveSession();
+        return active?.BaseId == expectedBaseId.Value
+               && AppUserSession.IsAuthorizedForSession(active.Id);
+    }
+
+    private int? CurrentExpectedBaseIdOrNull()
+        => TryResolveExpectedBaseId(out var expectedBaseId) ? expectedBaseId : null;
 
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
         => _ = InvokeAsync(() =>
@@ -2622,7 +2677,7 @@
         _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         try
         {
-            await AuthorizationSvc.EnsureCanManageAsync();
+            await AuthorizationSvc.EnsureCanManageAsync(CurrentExpectedBaseIdOrNull());
             var result = await EmbeddedOperationalImport.CompleteAsync(status.IdOnboarding, _lifetimeCts.Token);
             var activeBaseId = SessionSvc.GetActiveSession()?.BaseId ?? 0;
             await RefreshWhatsAppConnectionsAsync(activeBaseId);
@@ -2651,7 +2706,7 @@
         _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         try
         {
-            await AuthorizationSvc.EnsureCanManageAsync();
+            await AuthorizationSvc.EnsureCanManageAsync(CurrentExpectedBaseIdOrNull());
             await EmbeddedSignup.RetryAsync(new(pending.IdOnboarding, AppUserSession.GetCurrentUserName().Trim()), _lifetimeCts.Token);
             _embeddedSignupMessage = "Reintentando la activación de WhatsApp.";
             await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
@@ -2682,7 +2737,7 @@
         _embeddedSignupBusyOrigin = EmbeddedSignupBusyOrigin.None;
         try
         {
-            await AuthorizationSvc.EnsureCanManageAsync();
+            await AuthorizationSvc.EnsureCanManageAsync(CurrentExpectedBaseIdOrNull());
             var result = await EmbeddedOperationalImport.RecoverAsync(candidate.IdOnboarding, _lifetimeCts.Token);
             await LoadNumerosAsync();
             _embeddedRecoveryCandidate = await EmbeddedOperationalImport.GetRecoveryCandidateAsync(_lifetimeCts.Token);
@@ -2716,7 +2771,7 @@
     {
         if (HostEnvironment.IsDevelopment())
             await JS.InvokeVoidAsync("alfaEs2Diagnostics.capture", "click-handler-entry");
-        await AuthorizationSvc.EnsureCanManageAsync();
+        await AuthorizationSvc.EnsureCanManageAsync(CurrentExpectedBaseIdOrNull());
         var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
         var usuario = AppUserSession.GetCurrentUserName().Trim();
         if (idBase <= 0 || usuario.Length == 0) return;
@@ -2859,7 +2914,7 @@
     {
         CancelEmbeddedSignupAuthorizationWatchdog();
         if (_embeddedSignupId is not Guid id || !string.Equals(state, _embeddedSignupState, StringComparison.Ordinal)) return;
-        await AuthorizationSvc.EnsureCanManageAsync();
+        await AuthorizationSvc.EnsureCanManageAsync(CurrentExpectedBaseIdOrNull());
         var idBase = SessionSvc.GetActiveSession()?.BaseId ?? 0;
         var usuario = AppUserSession.GetCurrentUserName().Trim();
         try
@@ -2948,7 +3003,7 @@
 
         try
         {
-            await AuthorizationSvc.EnsureCanManageAsync();
+            await AuthorizationSvc.EnsureCanManageAsync(CurrentExpectedBaseIdOrNull());
             var cancelled = await EmbeddedSignup.CancelActionRequiredConfigurationAsync(id, idBase, _lifetimeCts.Token);
             if (cancelled)
             {
@@ -3617,7 +3672,7 @@
         _feedbackScope = null;
 
         var result = await UiOps.RunAsync(
-            () => ConfigSvc.GetWhatsAppConfigAsync(),
+            () => ConfigSvc.GetWhatsAppConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de WhatsApp.");
 
         if (result.Success && result.Value is not null)
@@ -3632,7 +3687,7 @@
         }
 
         var instagramResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetInstagramConfigAsync(),
+            () => ConfigSvc.GetInstagramConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de Instagram.");
 
         if (instagramResult.Success && instagramResult.Value is not null)
@@ -3647,7 +3702,7 @@
         }
 
         var facebookResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetFacebookConfigAsync(),
+            () => ConfigSvc.GetFacebookConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de Facebook.");
 
         if (facebookResult.Success && facebookResult.Value is not null)
@@ -3662,7 +3717,7 @@
         }
 
         var mercadoLibreResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetMercadoLibreConfigAsync(),
+            () => ConfigSvc.GetMercadoLibreConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de Mercado Libre.");
 
         if (mercadoLibreResult.Success && mercadoLibreResult.Value is not null)
@@ -3677,7 +3732,7 @@
         }
 
         var alfaKnowledgeResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetAlfaKnowledgeConfigAsync(),
+            () => ConfigSvc.GetAlfaKnowledgeConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de AlfaKnowledge.");
 
         if (alfaKnowledgeResult.Success && alfaKnowledgeResult.Value is not null)
@@ -3692,7 +3747,7 @@
         }
 
         var automatizacionesResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetAutomatizacionesConfigAsync(),
+            () => ConfigSvc.GetAutomatizacionesConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de automatizaciones.");
 
         if (automatizacionesResult.Success && automatizacionesResult.Value is not null)
@@ -3706,7 +3761,7 @@
         }
 
         var clasificacionesResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetClasificacionesAsync(),
+            () => ConfigSvc.GetClasificacionesAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar las clasificaciones de clientes.");
 
         if (clasificacionesResult.Success && clasificacionesResult.Value is not null)
@@ -3719,7 +3774,7 @@
         }
 
         var prioridadResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetPrioridadConfigAsync(),
+            () => ConfigSvc.GetPrioridadConfigAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudo cargar la configuración de prioridad de atención.");
 
         if (prioridadResult.Success && prioridadResult.Value is not null)
@@ -3732,7 +3787,7 @@
         }
 
         var usuariosResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetUsuariosSistemaAsync(),
+            () => ConfigSvc.GetUsuariosSistemaAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar los usuarios del sistema.");
 
         if (usuariosResult.Success && usuariosResult.Value is not null)
@@ -3747,7 +3802,7 @@
         await RefreshWhatsAppConnectionsAsync(SessionSvc.GetActiveSession()?.BaseId ?? 0);
 
         var administradoresResult = await UiOps.RunAsync(
-            () => ConfigSvc.GetConversacionAdministradoresAsync(),
+            () => ConfigSvc.GetConversacionAdministradoresAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar los administradores de conversaciones.");
 
         if (administradoresResult.Success && administradoresResult.Value is not null)
@@ -3763,7 +3818,7 @@
         await LoadReglasAsync();
 
         var tecnicosResult = await UiOps.RunAsync(
-            () => ConvSvc.GetTechniciansAsync(),
+            () => ConvSvc.GetTechniciansAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar los técnicos.");
 
         if (tecnicosResult.Success && tecnicosResult.Value is not null)
@@ -3783,7 +3838,7 @@
     private async Task LoadReglasAsync()
     {
         var result = await UiOps.RunAsync(
-            () => ConfigSvc.GetReglasAsync(),
+            () => ConfigSvc.GetReglasAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar las reglas de palabras clave.");
 
         if (result.Success && result.Value is not null)
@@ -3966,7 +4021,7 @@
     private async Task LoadNumerosAsync()
     {
         var result = await UiOps.RunAsync(
-            () => ConfigSvc.GetWhatsAppNumerosAsync(),
+            () => ConfigSvc.GetWhatsAppNumerosAsync(CurrentExpectedBaseIdOrNull()),
             "No se pudieron cargar los números de WhatsApp.");
 
         if (result.Success && result.Value is not null)

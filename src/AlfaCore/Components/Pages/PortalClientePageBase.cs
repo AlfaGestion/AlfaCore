@@ -73,14 +73,14 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
         // servicio Scoped (uno por circuito, sobrevive entre navegaciones), así que si otra página
         // ya cargó la config en esta misma sesión del navegador, se usa ese valor ANTES de cualquier
         // await real: el primer render ya sale correcto, sin esperar una vuelta a la base.
-        if (SeccionesCache.Cached is { } seccionesCacheadas)
-            PortalSecciones = seccionesCacheadas;
-
         if (!string.IsNullOrWhiteSpace(EmailQuery))
             ClienteCodigo = EmailQuery.Trim();
 
         CatalogoClienteSession.StateChanged += OnClientSessionStateChanged;
         await EnsureRouteSessionAsync();
+        if (SeccionesCache.Get(idweb, _effectiveIdBase) is { } seccionesCacheadas)
+            PortalSecciones = seccionesCacheadas;
+
         // La identidad y las secciones son lecturas independientes una vez activada la base.
         // Cargarlas en paralelo evita sumar el tiempo de ambas conexiones al primer render.
         await Task.WhenAll(
@@ -210,7 +210,7 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
             // config mientras el cliente navegaba; SeccionesCache solo evita el parpadeo del primer
             // render, no reemplaza esta lectura.
             PortalSecciones = await ConfigGeneralSvc.GetVentasPortalClienteAsync();
-            SeccionesCache.Set(PortalSecciones);
+            SeccionesCache.Set(idweb, _effectiveIdBase, PortalSecciones);
         }
         catch
         {
@@ -218,7 +218,7 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
             // esconder secciones por un problema de configuración ajeno al cliente -- salvo que ya
             // hubiera algo cacheado de una página anterior en este circuito, en cuyo caso se
             // mantiene ese valor conocido en vez de pisarlo con el default "todo visible".
-            if (SeccionesCache.Cached is null)
+            if (SeccionesCache.Get(idweb, _effectiveIdBase) is null)
                 PortalSecciones = new ConfiguracionVentasPortalClienteDto();
         }
     }

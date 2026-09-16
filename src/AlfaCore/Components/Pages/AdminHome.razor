@@ -5,6 +5,7 @@
 @using Microsoft.AspNetCore.Components.Web
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
+@inject AlfaCore.Services.ICentralCompraIaService CompraIaSvc
 @inject AlfaCore.Services.IPlanesService PlanesSvc
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
@@ -275,6 +276,7 @@
                                                     <th>Base</th>
                                                     <th>Usuario</th>
                                                     <th>Password</th>
+                                                    <th>Lectura con IA</th>
                                                     <th></th>
                                                 </tr>
                                             </thead>
@@ -288,6 +290,14 @@
                                                         <td>@item.DbName</td>
                                                         <td>@item.DbUser</td>
                                                         <td>@item.DbPassword</td>
+                                                        <td>
+                                                            <label class="d-flex gap-2 align-items-center">
+                                                                <input type="checkbox" class="form-check-input" checked="@_basesCompraIa.Contains(item.IdBase)"
+                                                                    disabled="@(_guardandoBaseIa || !_seleccionIaDisponible)"
+                                                                    @onchange="e => CambiarBaseIaAsync(item, e.Value is true)" />
+                                                                Incluir
+                                                            </label>
+                                                        </td>
                                                         <td class="text-end">
                                                             <div class="d-inline-flex gap-2 flex-wrap justify-content-end">
                                                                 <button type="button" class="btn btn-sm btn-outline-info" @onclick="() => OpenSyncConfigAsync(item)" @onclick:stopPropagation="true">Config Sync</button>
@@ -401,12 +411,12 @@
                                                         <div class="d-inline-flex gap-2">
                                                             @if (string.Equals(item.Estado, AlfaCore.Models.ClienteModuloEstados.Prueba, StringComparison.OrdinalIgnoreCase) && item.EstaActivo)
                                                             {
-                                                                <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_esClienteLegacySeleccionado" @onclick="() => SuspenderModuloAsync(item)">Cortar prueba</button>
+                                                                <button type="button" class="btn btn-sm btn-outline-danger" disabled="@(_esClienteLegacySeleccionado && !CompraIaHabilitacion.RequiereActivacionExplicita(item.Codigo))" @onclick="() => SuspenderModuloAsync(item)">Cortar prueba</button>
                                                                 <button type="button" class="btn btn-sm btn-primary" @onclick="() => ActivarModuloAsync(item)">Confirmar pago</button>
                                                             }
                                                             else if (item.EstaActivo)
                                                             {
-                                                                <button type="button" class="btn btn-sm btn-outline-danger" disabled="@_esClienteLegacySeleccionado" @onclick="() => SuspenderModuloAsync(item)">Suspender</button>
+                                                                <button type="button" class="btn btn-sm btn-outline-danger" disabled="@(_esClienteLegacySeleccionado && !CompraIaHabilitacion.RequiereActivacionExplicita(item.Codigo))" @onclick="() => SuspenderModuloAsync(item)">Suspender</button>
                                                             }
                                                             else
                                                             {
@@ -433,7 +443,7 @@
                                 </div>
                                 @if (_esClienteLegacySeleccionado)
                                 {
-                                    <div class="form-text mt-2">Este cliente quedó marcado como legacy: ve todos los módulos activos aunque no tenga filas propias en ClienteModulos.</div>
+                                    <div class="form-text mt-2">Este cliente es legacy: sus módulos habituales están activos. Carga de comprobantes con IA requiere activación explícita y selección de bases.</div>
                                 }
                             }
                         </div>
@@ -805,6 +815,26 @@
 @code {
     private readonly List<AlfaCore.Models.AdminClienteDto> _clients = [];
     private readonly List<AlfaCore.Models.AdminBaseDto> _bases = [];
+    private HashSet<int> _basesCompraIa = [];
+    private bool _guardandoBaseIa, _seleccionIaDisponible;
+
+    private async Task CambiarBaseIaAsync(AdminBaseDto item, bool incluir)
+    {
+        if (_guardandoBaseIa) return;
+        _guardandoBaseIa = true;
+        _error = string.Empty;
+        try
+        {
+            await CompraIaSvc.SetBaseSeleccionadaAsync(item.IdBase, item.IdCliente, incluir);
+            if (incluir) _basesCompraIa.Add(item.IdBase); else _basesCompraIa.Remove(item.IdBase);
+            _message = incluir
+                ? "Base incluida. Se procesará cuando el cliente tenga activo Carga de comprobantes con IA y esté habilitado el worker en Compras."
+                : "Base excluida. El worker dejará de consultarla a partir del próximo ciclo.";
+        }
+        catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
+        finally { _guardandoBaseIa = false; }
+    }
+
     private readonly List<AlfaCore.Models.AdminUserDto> _users = [];
     private readonly List<AlfaCore.Models.ClienteModuloDto> _clienteModulos = [];
     private readonly List<AlfaCore.Models.PlanDto> _planModalOpciones = [];
@@ -902,6 +932,14 @@
             _clients.AddRange(await clientsTask);
             _bases.AddRange(await basesTask);
             _users.AddRange(await usersTask);
+            _seleccionIaDisponible = false;
+            try
+            {
+                _basesCompraIa = (await CompraIaSvc.GetBasesSeleccionadasAsync()).ToHashSet();
+                _seleccionIaDisponible = true;
+            }
+            catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
+
 
             var targetClientId = !string.IsNullOrWhiteSpace(preferredClientId)
                 ? preferredClientId.Trim()
