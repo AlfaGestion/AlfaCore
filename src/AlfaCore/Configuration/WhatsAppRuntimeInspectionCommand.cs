@@ -37,9 +37,11 @@ internal static class WhatsAppRuntimeInspectionCommand
     {
         var idBaseArg = ReadOption(args, "--id-base");
         var phoneNumberId = ReadOption(args, "--phone-number-id")?.Trim();
+        var messageId = ReadLongOption(args, "--message-id");
+        var templateId = ReadLongOption(args, "--template-id");
         if (!int.TryParse(idBaseArg, out var idBase) || idBase <= 0 || string.IsNullOrWhiteSpace(phoneNumberId))
         {
-            output.WriteLine("Uso: AlfaCore --inspect-whatsapp-runtime --id-base <idBase> --phone-number-id <phoneNumberId>");
+            output.WriteLine("Uso: AlfaCore --inspect-whatsapp-runtime --id-base <idBase> --phone-number-id <phoneNumberId> [--message-id <idMensaje>] [--template-id <idPlantilla>]");
             return 1;
         }
 
@@ -64,8 +66,11 @@ internal static class WhatsAppRuntimeInspectionCommand
             options.GraphBaseUrl,
             ct2 => ResolveTenantBaseInfoAsync(centralConnectionString, idBase, ct2),
             (baseInfo, phone, ct2) => ResolveTenantNumeroAsync(baseInfo, phone, ct2),
-            (baseInfo, idNumero, ct2) => ResolveLastOutboundMessageAsync(baseInfo, idNumero, ct2),
+            (baseInfo, idNumero, ct2) => ResolveOutboundMessageAsync(baseInfo, idNumero, messageId, ct2),
+            (baseInfo, idPlantilla, ct2) => ResolveTenantTemplateAsync(baseInfo, idPlantilla, ct2),
             (baseInfo, phone, ct2) => ResolveLastWebhookLogAsync(baseInfo, phone, ct2),
+            messageId,
+            templateId,
             output,
             ct);
     }
@@ -85,12 +90,19 @@ internal static class WhatsAppRuntimeInspectionCommand
         Func<CancellationToken, Task<TenantBaseInfo?>> resolveBaseInfo,
         Func<TenantBaseInfo, string, CancellationToken, Task<TenantNumeroInfo?>> resolveNumero,
         Func<TenantBaseInfo, int?, CancellationToken, Task<TenantOutboundMessageInfo?>> resolveLastOutbound,
+        Func<TenantBaseInfo, long?, CancellationToken, Task<TenantTemplateInfo?>> resolveTemplate,
         Func<TenantBaseInfo, string, CancellationToken, Task<TenantWebhookLogInfo?>> resolveLastWebhookLog,
+        long? messageId,
+        long? templateId,
         TextWriter output,
         CancellationToken ct)
     {
         output.WriteLine("== inspect-whatsapp-runtime (read-only) ==");
         output.WriteLine($"BASE = {idBase}");
+        if (messageId is > 0)
+            output.WriteLine($"REQUESTED_MESSAGE_ID = {messageId}");
+        if (templateId is > 0)
+            output.WriteLine($"REQUESTED_TEMPLATE_ID = {templateId}");
 
         var baseInfo = await resolveBaseInfo(ct);
         if (baseInfo is null)
@@ -135,7 +147,7 @@ internal static class WhatsAppRuntimeInspectionCommand
         }
         output.WriteLine("OWNERSHIP = OK");
 
-        WhatsAppRuntimeCredential credential;
+        WhatsAppRuntimeCredential? credential = null;
         try
         {
             // legacyConfig vacío a propósito, igual que --inspect-whatsapp-phone: con ownership ES
@@ -145,17 +157,17 @@ internal static class WhatsAppRuntimeInspectionCommand
         catch (Exception ex) when (ex is UnauthorizedAccessException or WhatsAppEmbeddedVaultUnavailableException or WhatsAppEmbeddedSchemaUnavailableException)
         {
             output.WriteLine($"VAULT_CREDENTIAL = ERROR ({ex.GetType().Name})");
-            WriteBlockedFromVault(output);
-            return 1;
         }
 
-        if (credential.Origin != WhatsAppRuntimeCredentialOrigin.EmbeddedSignup)
+        if (credential is not null && credential.Origin != WhatsAppRuntimeCredentialOrigin.EmbeddedSignup)
         {
             output.WriteLine("VAULT_CREDENTIAL = ERROR (resolvió Legacy pese a tener ownership ES; abortado antes de Graph)");
-            WriteBlockedFromVault(output);
-            return 1;
+            credential = null;
         }
-        output.WriteLine("VAULT_CREDENTIAL = OK");
+        else if (credential is not null)
+        {
+            output.WriteLine("VAULT_CREDENTIAL = OK");
+        }
         output.WriteLine("");
 
         TenantNumeroInfo? numero = null;
@@ -180,7 +192,7 @@ internal static class WhatsAppRuntimeInspectionCommand
         }
         // Clasificación real: de dónde salió la credencial que se está usando para este número
         // (mismo resolver que usa el runtime real para inbound/outbound) -- nunca inferido del nombre.
-        output.WriteLine($"ORIGEN/CLASIFICACION = {credential.Origin}");
+        output.WriteLine($"ORIGEN/CLASIFICACION = {(credential is null ? "N/A (bloqueado por Vault)" : credential.Origin.ToString())}");
 
         output.WriteLine("");
         output.WriteLine("=== OUTBOUND ===");
@@ -212,6 +224,39 @@ internal static class WhatsAppRuntimeInspectionCommand
             output.WriteLine($"LAST_OUTBOUND_WHATSAPP_ID = {(string.IsNullOrWhiteSpace(outbound.WhatsAppMessageId) ? "(vacío -- nunca confirmado por Meta)" : outbound.WhatsAppMessageId)}");
             output.WriteLine($"LAST_OUTBOUND_ERROR_CODE = {errorCode ?? "N/A"}");
             output.WriteLine($"LAST_OUTBOUND_ERROR_SUMMARY = {(string.IsNullOrWhiteSpace(errorSummary) ? "N/A" : errorSummary)}");
+        }
+
+        output.WriteLine("");
+        output.WriteLine("=== TEMPLATE SEND DIAGNOSTIC ===");
+        TenantTemplateInfo? template = null;
+        try
+        {
+            template = await resolveTemplate(baseInfo, templateId, ct);
+        }
+        catch (Exception ex)
+        {
+            output.WriteLine($"SEND_TEMPLATE_LOCAL_ID = ERROR ({ex.GetType().Name})");
+        }
+
+        var sendPhoneNumberId = credential?.PhoneNumberId ?? phoneNumberId;
+        var sendWabaId = credential?.WabaId ?? ownership.WabaId;
+        output.WriteLine($"SEND_PHONE_NUMBER_ID = {sendPhoneNumberId}");
+        output.WriteLine($"SEND_WABA_ID = {sendWabaId}");
+        if (template is null)
+        {
+            output.WriteLine("SEND_TEMPLATE_LOCAL_ID = N/A");
+            output.WriteLine("SEND_META_TEMPLATE_ID = N/A");
+            output.WriteLine("SEND_TEMPLATE_NAME = N/A");
+            output.WriteLine("SEND_LANGUAGE_CODE = N/A");
+            output.WriteLine("SEND_COMPONENTS = N/A");
+        }
+        else
+        {
+            output.WriteLine($"SEND_TEMPLATE_LOCAL_ID = {template.IdPlantilla}");
+            output.WriteLine($"SEND_META_TEMPLATE_ID = {ValueOrEmpty(template.MetaTemplateId)}");
+            output.WriteLine($"SEND_TEMPLATE_NAME = {ValueOrEmpty(template.NombreMeta)}");
+            output.WriteLine($"SEND_LANGUAGE_CODE = {ValueOrEmpty(template.Idioma)}");
+            output.WriteLine($"SEND_COMPONENTS = {DescribeSendComponents(template.CuerpoTexto)}");
         }
 
         output.WriteLine("");
@@ -249,6 +294,13 @@ internal static class WhatsAppRuntimeInspectionCommand
 
         output.WriteLine("");
         output.WriteLine("=== GRAPH READ-ONLY ===");
+        if (credential is null)
+        {
+            output.WriteLine("HTTP = N/A (bloqueado por Vault/DataProtection)");
+            WriteGraphFields(output, null);
+            return 1;
+        }
+
         var baseUrl = graphBaseUrl.TrimEnd('/');
         var version = credential.GraphVersion.Trim('/');
         var fields = Uri.EscapeDataString("id,display_phone_number,verified_name,quality_rating,platform_type,is_on_biz_app");
@@ -271,6 +323,14 @@ internal static class WhatsAppRuntimeInspectionCommand
 
         using var document = JsonDocument.Parse(body);
         WriteGraphFields(output, document.RootElement);
+
+        if (template is not null)
+        {
+            output.WriteLine("");
+            output.WriteLine("=== META TEMPLATE READ-ONLY ===");
+            var metaTemplate = await FindMetaTemplateAsync(httpClient, baseUrl, version, credential.AccessToken, credential.WabaId, template, ct);
+            WriteMetaTemplateComparison(output, template, credential.WabaId, metaTemplate);
+        }
         return 0;
     }
 
@@ -312,7 +372,7 @@ internal static class WhatsAppRuntimeInspectionCommand
         return await cn.QuerySingleOrDefaultAsync<TenantNumeroInfo>(new CommandDefinition(sql, new { PhoneNumberId = phoneNumberId }, cancellationToken: ct));
     }
 
-    private static async Task<TenantOutboundMessageInfo?> ResolveLastOutboundMessageAsync(TenantBaseInfo baseInfo, int? idNumero, CancellationToken ct)
+    private static async Task<TenantOutboundMessageInfo?> ResolveOutboundMessageAsync(TenantBaseInfo baseInfo, int? idNumero, long? messageId, CancellationToken ct)
     {
         if (idNumero is null)
             return null;
@@ -328,6 +388,24 @@ internal static class WhatsAppRuntimeInspectionCommand
         if (missing.Count > 0)
             throw new InvalidOperationException($"dbo.CONV_MENSAJES no tiene las columnas esperadas: {string.Join(", ", missing)} (esquema real distinto -- no se adivina).");
 
+        if (messageId is > 0)
+        {
+            const string byIdSql = """
+                SELECT TOP (1)
+                    m.IdMensaje,
+                    m.WhatsAppMessageId,
+                    m.EstadoEnvio,
+                    m.FechaHora,
+                    m.PayloadJson
+                FROM dbo.CONV_MENSAJES m
+                JOIN dbo.CONV_CONVERSACIONES c ON c.IdConversacion = m.IdConversacion
+                WHERE c.IdNumeroWhatsApp = @IdNumero AND m.Direction = N'SALIENTE' AND m.IdMensaje = @IdMensaje
+                ORDER BY m.FechaHora DESC;
+                """;
+            return await cn.QuerySingleOrDefaultAsync<TenantOutboundMessageInfo>(
+                new CommandDefinition(byIdSql, new { IdNumero = idNumero.Value, IdMensaje = messageId.Value }, cancellationToken: ct));
+        }
+
         const string sql = """
             SELECT TOP (1)
                 m.IdMensaje,
@@ -341,6 +419,35 @@ internal static class WhatsAppRuntimeInspectionCommand
             ORDER BY m.FechaHora DESC;
             """;
         return await cn.QuerySingleOrDefaultAsync<TenantOutboundMessageInfo>(new CommandDefinition(sql, new { IdNumero = idNumero.Value }, cancellationToken: ct));
+    }
+
+    private static async Task<TenantTemplateInfo?> ResolveTenantTemplateAsync(TenantBaseInfo baseInfo, long? templateId, CancellationToken ct)
+    {
+        if (templateId is not > 0)
+            return null;
+
+        await using var cn = new SqlConnection(BuildTenantConnectionString(baseInfo));
+        await cn.OpenAsync(ct);
+
+        const string expectedColumns = "IdPlantilla,NombreMeta,Idioma,EstadoMeta,MetaTemplateId,WabaId,Activa,CuerpoTexto";
+        var missing = await FindMissingColumnsAsync(cn, "dbo.CONV_PLANTILLAS", expectedColumns.Split(','), ct);
+        if (missing.Count > 0)
+            throw new InvalidOperationException($"dbo.CONV_PLANTILLAS no tiene las columnas esperadas: {string.Join(", ", missing)} (esquema real distinto -- no se adivina).");
+
+        const string sql = """
+            SELECT TOP (1)
+                IdPlantilla,
+                ISNULL(NombreMeta, '') AS NombreMeta,
+                ISNULL(Idioma, '') AS Idioma,
+                ISNULL(EstadoMeta, '') AS EstadoMeta,
+                ISNULL(MetaTemplateId, '') AS MetaTemplateId,
+                ISNULL(WabaId, '') AS WabaId,
+                ISNULL(Activa, 1) AS Activa,
+                ISNULL(CuerpoTexto, '') AS CuerpoTexto
+            FROM dbo.CONV_PLANTILLAS
+            WHERE IdPlantilla = @IdPlantilla;
+            """;
+        return await cn.QuerySingleOrDefaultAsync<TenantTemplateInfo>(new CommandDefinition(sql, new { IdPlantilla = templateId.Value }, cancellationToken: ct));
     }
 
     private static async Task<TenantWebhookLogInfo?> ResolveLastWebhookLogAsync(TenantBaseInfo baseInfo, string phoneNumberId, CancellationToken ct)
@@ -502,6 +609,154 @@ internal static class WhatsAppRuntimeInspectionCommand
         return cleaned.Length <= 400 ? cleaned : cleaned[..400] + "…";
     }
 
+    private static string ValueOrEmpty(string? text)
+        => string.IsNullOrWhiteSpace(text) ? "(vacío)" : Sanitize(text);
+
+    private static string DescribeSendComponents(string? bodyText)
+    {
+        var variableCount = CountTemplateVariables(bodyText);
+        return variableCount == 0
+            ? "[]"
+            : $"BODY_TEXT_PARAMETERS ({variableCount}; valores concretos no persistidos en CONV_MENSAJES)";
+    }
+
+    private static int CountTemplateVariables(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return 0;
+
+        var max = 0;
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(text, @"\{\{\s*(\d+)\s*\}\}"))
+            if (int.TryParse(match.Groups[1].Value, out var index))
+                max = Math.Max(max, index);
+        return max;
+    }
+
+    private static async Task<MetaTemplateInfo?> FindMetaTemplateAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        string version,
+        string accessToken,
+        string wabaId,
+        TenantTemplateInfo template,
+        CancellationToken ct)
+    {
+        var fields = Uri.EscapeDataString("id,name,language,status,category,components");
+        var uri = $"{baseUrl}/{version}/{Uri.EscapeDataString(wabaId)}/message_templates?fields={fields}&limit=100";
+        if (!string.IsNullOrWhiteSpace(template.NombreMeta))
+            uri += $"&name={Uri.EscapeDataString(template.NombreMeta)}";
+
+        for (var page = 0; page < 5 && !string.IsNullOrWhiteSpace(uri); page++)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+            using var response = await httpClient.SendAsync(request, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+                return new MetaTemplateInfo(GraphHttpStatus: ((int)response.StatusCode).ToString(), Found: false);
+
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            if (root.ValueKind == JsonValueKind.Object
+                && root.TryGetProperty("data", out var data)
+                && data.ValueKind == JsonValueKind.Array)
+            {
+                MetaTemplateInfo? byName = null;
+                foreach (var item in data.EnumerateArray())
+                {
+                    var current = MetaTemplateInfo.From(item, ((int)response.StatusCode).ToString());
+                    if (!string.IsNullOrWhiteSpace(template.MetaTemplateId)
+                        && string.Equals(current.Id, template.MetaTemplateId, StringComparison.Ordinal))
+                        return current with { Found = true, FoundById = true };
+                    if (string.Equals(current.Name, template.NombreMeta, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(current.Language, template.Idioma, StringComparison.OrdinalIgnoreCase))
+                        byName = current with { Found = true, FoundByNameLanguage = true };
+                }
+
+                if (byName is not null)
+                    return byName;
+            }
+
+            uri = TryReadNextPageUri(root);
+        }
+
+        return new MetaTemplateInfo(GraphHttpStatus: "200", Found: false);
+    }
+
+    private static string? TryReadNextPageUri(JsonElement root)
+    {
+        if (root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty("paging", out var paging)
+            && paging.ValueKind == JsonValueKind.Object
+            && paging.TryGetProperty("next", out var next)
+            && next.ValueKind == JsonValueKind.String)
+            return next.GetString();
+        return null;
+    }
+
+    private static void WriteMetaTemplateComparison(TextWriter output, TenantTemplateInfo local, string queryWabaId, MetaTemplateInfo? meta)
+    {
+        meta ??= new MetaTemplateInfo(GraphHttpStatus: "N/A", Found: false);
+        output.WriteLine($"META_TEMPLATE_GRAPH_HTTP = {meta.GraphHttpStatus}");
+        output.WriteLine($"LOCAL_TEMPLATE_ID = {local.IdPlantilla}");
+        output.WriteLine($"LOCAL_META_TEMPLATE_ID = {ValueOrEmpty(local.MetaTemplateId)}");
+        output.WriteLine($"LOCAL_NAME = {ValueOrEmpty(local.NombreMeta)}");
+        output.WriteLine($"LOCAL_LANGUAGE = {ValueOrEmpty(local.Idioma)}");
+        output.WriteLine($"META_TEMPLATE_FOUND = {meta.Found}");
+        output.WriteLine($"META_TEMPLATE_FOUND_BY_ID = {meta.FoundById}");
+        output.WriteLine($"META_TEMPLATE_ID = {ValueOrEmpty(meta.Id)}");
+        output.WriteLine($"META_TEMPLATE_NAME = {ValueOrEmpty(meta.Name)}");
+        output.WriteLine($"META_TEMPLATE_LANGUAGE = {ValueOrEmpty(meta.Language)}");
+        output.WriteLine($"META_TEMPLATE_STATUS = {ValueOrEmpty(meta.Status)}");
+        output.WriteLine($"META_TEMPLATE_CATEGORY = {ValueOrEmpty(meta.Category)}");
+        output.WriteLine($"ID_MATCH = {BoolMatch(local.MetaTemplateId, meta.Id)}");
+        output.WriteLine($"NAME_MATCH = {BoolMatch(local.NombreMeta, meta.Name)}");
+        output.WriteLine($"LANGUAGE_MATCH = {BoolMatch(local.Idioma, meta.Language)}");
+        output.WriteLine($"LOCAL_STATUS = {ValueOrEmpty(local.EstadoMeta)}");
+        output.WriteLine($"STATUS_MATCH = {BoolMatch(local.EstadoMeta, meta.Status)}");
+        output.WriteLine($"LOCAL_WABA = {ValueOrEmpty(local.WabaId)}");
+        output.WriteLine($"META_QUERY_WABA = {ValueOrEmpty(queryWabaId)}");
+        output.WriteLine($"WABA_MATCH = {BoolMatch(local.WabaId, queryWabaId)}");
+        output.WriteLine($"TEMPLATE_MATCH = {BuildTemplateMatch(local, queryWabaId, meta)}");
+        output.WriteLine($"EVIDENCE = {BuildTemplateEvidence(local, queryWabaId, meta)}");
+    }
+
+    private static string BoolMatch(string? left, string? right)
+        => (!string.IsNullOrWhiteSpace(left) && !string.IsNullOrWhiteSpace(right) && string.Equals(left.Trim(), right.Trim(), StringComparison.OrdinalIgnoreCase)).ToString();
+
+    private static string BuildTemplateMatch(TenantTemplateInfo local, string queryWabaId, MetaTemplateInfo meta)
+    {
+        if (!meta.Found)
+            return "NO (Meta no devolvió la plantilla en la WABA consultada)";
+        var idOk = string.IsNullOrWhiteSpace(local.MetaTemplateId) || string.Equals(local.MetaTemplateId, meta.Id, StringComparison.Ordinal);
+        var nameOk = string.Equals(local.NombreMeta, meta.Name, StringComparison.OrdinalIgnoreCase);
+        var languageOk = string.Equals(local.Idioma, meta.Language, StringComparison.OrdinalIgnoreCase);
+        var wabaOk = string.Equals(local.WabaId, queryWabaId, StringComparison.Ordinal);
+        return (idOk && nameOk && languageOk && wabaOk).ToString();
+    }
+
+    private static string BuildTemplateEvidence(TenantTemplateInfo local, string queryWabaId, MetaTemplateInfo meta)
+    {
+        if (!meta.Found)
+            return $"Meta no devolvió id/name/language consultados en WABA {queryWabaId}.";
+
+        var parts = new List<string>();
+        if (!string.Equals(local.MetaTemplateId, meta.Id, StringComparison.Ordinal))
+            parts.Add($"id local={ValueOrEmpty(local.MetaTemplateId)} meta={ValueOrEmpty(meta.Id)}");
+        if (!string.Equals(local.NombreMeta, meta.Name, StringComparison.OrdinalIgnoreCase))
+            parts.Add($"name local={ValueOrEmpty(local.NombreMeta)} meta={ValueOrEmpty(meta.Name)}");
+        if (!string.Equals(local.Idioma, meta.Language, StringComparison.OrdinalIgnoreCase))
+            parts.Add($"language local={ValueOrEmpty(local.Idioma)} meta={ValueOrEmpty(meta.Language)}");
+        if (!string.Equals(local.WabaId, queryWabaId, StringComparison.Ordinal))
+            parts.Add($"waba local={ValueOrEmpty(local.WabaId)} query={ValueOrEmpty(queryWabaId)}");
+        if (!string.Equals(local.EstadoMeta, meta.Status, StringComparison.OrdinalIgnoreCase))
+            parts.Add($"status local={ValueOrEmpty(local.EstadoMeta)} meta={ValueOrEmpty(meta.Status)}");
+
+        return parts.Count == 0
+            ? "Local DB y Meta coinciden para id/name/language/status/WABA consultada."
+            : string.Join("; ", parts);
+    }
+
     private static void WriteBlockedFromOwnership(TextWriter output)
     {
         output.WriteLine("VAULT_CREDENTIAL = N/A (bloqueado)");
@@ -546,10 +801,33 @@ internal static class WhatsAppRuntimeInspectionCommand
         return null;
     }
 
+    private static long? ReadLongOption(IReadOnlyList<string> args, string name)
+        => long.TryParse(ReadOption(args, name), out var value) && value > 0 ? value : null;
+
     internal sealed record TenantBaseInfo(int IdBase, string Nombre, string DbServer, string DbName, string DbUser, string DbPassword);
     internal sealed record TenantNumeroInfo(int IdNumero, string Nombre, bool Activo);
     internal sealed record TenantOutboundMessageInfo(long IdMensaje, string? WhatsAppMessageId, string? EstadoEnvio, DateTime FechaHora, string? PayloadJson);
+    internal sealed record TenantTemplateInfo(long IdPlantilla, string NombreMeta, string Idioma, string EstadoMeta, string MetaTemplateId, string WabaId, bool Activa, string CuerpoTexto);
     internal sealed record TenantWebhookLogInfo(DateTime FechaHoraRecepcion, bool? ProcesadoOk, string? PayloadJson, string? ErrorDescripcion, bool CorrelatedToPhoneNumberId);
+    internal sealed record MetaTemplateInfo(string GraphHttpStatus, bool Found, string? Id = null, string? Name = null, string? Language = null, string? Status = null, string? Category = null, bool FoundById = false, bool FoundByNameLanguage = false)
+    {
+        public static MetaTemplateInfo From(JsonElement item, string graphHttpStatus)
+            => new(
+                graphHttpStatus,
+                Found: true,
+                Id: ReadString(item, "id"),
+                Name: ReadString(item, "name"),
+                Language: ReadString(item, "language"),
+                Status: ReadString(item, "status"),
+                Category: ReadString(item, "category"));
+
+        private static string? ReadString(JsonElement item, string propertyName)
+            => item.ValueKind == JsonValueKind.Object
+               && item.TryGetProperty(propertyName, out var value)
+               && value.ValueKind == JsonValueKind.String
+                ? value.GetString()
+                : null;
+    }
 
     private sealed record TenantWebhookLogRow(string? PayloadJson, bool? ProcesadoOk, DateTime FechaHoraRecepcion, string? ErrorDescripcion)
     {

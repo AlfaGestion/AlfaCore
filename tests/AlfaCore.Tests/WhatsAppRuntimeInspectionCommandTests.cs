@@ -40,7 +40,10 @@ public sealed class WhatsAppRuntimeInspectionCommandTests
             _ => Task.FromResult<TenantBaseInfo?>(BaseInfo),
             (b, p, _) => Task.FromResult<TenantNumeroInfo?>(new TenantNumeroInfo(25, "Alfa Business", true)),
             (b, idNumero, _) => Task.FromResult<TenantOutboundMessageInfo?>(new TenantOutboundMessageInfo(999, "wamid.out1", "ERROR_ENVIO", new DateTime(2026, 9, 14, 10, 0, 0, DateTimeKind.Utc), outboundPayload)),
+            (b, idPlantilla, _) => Task.FromResult<TenantTemplateInfo?>(null),
             (b, p, _) => Task.FromResult<TenantWebhookLogInfo?>(new TenantWebhookLogInfo(new DateTime(2026, 9, 14, 9, 0, 0, DateTimeKind.Utc), true, """{"MessageCount":1,"StatusCount":0,"EventTypes":[],"ErrorCodes":[]}""", null, CorrelatedToPhoneNumberId: true)),
+            messageId: null,
+            templateId: null,
             output, CancellationToken.None);
 
         Assert.Equal(0, exitCode);
@@ -81,7 +84,10 @@ public sealed class WhatsAppRuntimeInspectionCommandTests
             _ => Task.FromResult<TenantBaseInfo?>(null),
             (b, p, _) => throw new InvalidOperationException("No debería llamarse."),
             (b, n, _) => throw new InvalidOperationException("No debería llamarse."),
+            (b, t, _) => throw new InvalidOperationException("No debería llamarse."),
             (b, p, _) => throw new InvalidOperationException("No debería llamarse."),
+            messageId: null,
+            templateId: null,
             output, CancellationToken.None);
 
         Assert.Equal(1, exitCode);
@@ -106,7 +112,10 @@ public sealed class WhatsAppRuntimeInspectionCommandTests
             _ => Task.FromResult<TenantBaseInfo?>(BaseInfo),
             (b, p, _) => { numeroCalled = true; return Task.FromResult<TenantNumeroInfo?>(null); },
             (b, n, _) => throw new InvalidOperationException("No debería llamarse."),
+            (b, t, _) => throw new InvalidOperationException("No debería llamarse."),
             (b, p, _) => throw new InvalidOperationException("No debería llamarse."),
+            messageId: null,
+            templateId: null,
             output, CancellationToken.None);
 
         Assert.Equal(1, exitCode);
@@ -130,7 +139,10 @@ public sealed class WhatsAppRuntimeInspectionCommandTests
             _ => Task.FromResult<TenantBaseInfo?>(BaseInfo),
             (b, p, _) => Task.FromResult<TenantNumeroInfo?>(null),
             (b, n, _) => { idNumeroPassedToOutbound = n; return Task.FromResult<TenantOutboundMessageInfo?>(null); },
+            (b, t, _) => Task.FromResult<TenantTemplateInfo?>(null),
             (b, p, _) => Task.FromResult<TenantWebhookLogInfo?>(null),
+            messageId: null,
+            templateId: null,
             output, CancellationToken.None);
 
         Assert.Equal(0, exitCode);
@@ -155,7 +167,10 @@ public sealed class WhatsAppRuntimeInspectionCommandTests
             _ => Task.FromResult<TenantBaseInfo?>(BaseInfo),
             (b, p, _) => Task.FromResult<TenantNumeroInfo?>(new TenantNumeroInfo(1, "X", true)),
             (b, n, _) => Task.FromResult<TenantOutboundMessageInfo?>(null),
+            (b, t, _) => Task.FromResult<TenantTemplateInfo?>(null),
             (b, p, _) => Task.FromResult<TenantWebhookLogInfo?>(new TenantWebhookLogInfo(DateTime.UtcNow, false, "{}", "algún error", CorrelatedToPhoneNumberId: false)),
+            messageId: null,
+            templateId: null,
             output, CancellationToken.None);
 
         Assert.Equal(0, exitCode);
@@ -176,12 +191,84 @@ public sealed class WhatsAppRuntimeInspectionCommandTests
             _ => Task.FromResult<TenantBaseInfo?>(BaseInfo),
             (b, p, _) => throw new InvalidOperationException("No debería llamarse."),
             (b, n, _) => throw new InvalidOperationException("No debería llamarse."),
+            (b, t, _) => throw new InvalidOperationException("No debería llamarse."),
             (b, p, _) => throw new InvalidOperationException("No debería llamarse."),
+            messageId: null,
+            templateId: null,
             output, CancellationToken.None);
 
         Assert.Equal(1, exitCode);
         Assert.False(handler.Called);
         Assert.Contains("OWNERSHIP = ERROR", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TemplateDiagnostic_PrintsActualSendIdentityAndMetaComparisonWithoutToken()
+    {
+        const long messageId = 157;
+        const long templateId = 3;
+        const string metaTemplateId = "3293953324141283";
+        const string templateName = "contacto_prueba";
+        const string language = "es_AR";
+        const string expectedWaba = "888902717349521";
+        const string expectedPhone = "1243405415530992";
+
+        var ownershipStore = new FakeOwnershipStore(new WhatsAppPhoneOwnership(expectedPhone, expectedWaba, Base84, DateTime.UtcNow));
+        var resolver = new FakeCredentialResolver(new WhatsAppRuntimeCredential(expectedWaba, expectedPhone, "v26.0", SecretToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup));
+        var handler = new RecordingHandler(request =>
+        {
+            var uri = request.RequestUri?.ToString() ?? "";
+            if (uri.Contains("/message_templates", StringComparison.Ordinal))
+            {
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent($$"""
+                        {"data":[{"id":"{{metaTemplateId}}","name":"{{templateName}}","language":"{{language}}","status":"APPROVED","category":"MARKETING","components":[{"type":"BODY","text":"Hola, este es un mensaje de prueba."}]}]}
+                        """)
+                };
+            }
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"platform_type":"CLOUD_API","is_on_biz_app":true,"quality_rating":"GREEN"}""")
+            };
+        });
+        using var httpClient = new HttpClient(handler);
+        var output = new StringWriter();
+
+        var exitCode = await ExecuteAsync(
+            Base84, expectedPhone, ownershipStore, resolver, httpClient, "https://graph.facebook.com",
+            _ => Task.FromResult<TenantBaseInfo?>(BaseInfo),
+            (b, p, _) => Task.FromResult<TenantNumeroInfo?>(new TenantNumeroInfo(2, "Alfa Claro 1", true)),
+            (b, idNumero, _) => Task.FromResult<TenantOutboundMessageInfo?>(new TenantOutboundMessageInfo(messageId, "", "ERROR_ENVIO", DateTime.UtcNow, """{"Error":"Meta devolvio 400: {\"error\":{\"message\":\"(#132001) Template name does not exist in the translation\",\"code\":132001}}","Type":"System.Net.Http.HttpRequestException"}""")),
+            (b, idPlantilla, _) => Task.FromResult<TenantTemplateInfo?>(new TenantTemplateInfo(templateId, templateName, language, "APPROVED", metaTemplateId, expectedWaba, true, "Hola, este es un mensaje de prueba.")),
+            (b, p, _) => Task.FromResult<TenantWebhookLogInfo?>(null),
+            messageId,
+            templateId,
+            output,
+            CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        var text = output.ToString();
+        Assert.Contains("SEND_PHONE_NUMBER_ID = " + expectedPhone, text, StringComparison.Ordinal);
+        Assert.Contains("SEND_WABA_ID = " + expectedWaba, text, StringComparison.Ordinal);
+        Assert.Contains("SEND_TEMPLATE_LOCAL_ID = 3", text, StringComparison.Ordinal);
+        Assert.Contains("SEND_META_TEMPLATE_ID = " + metaTemplateId, text, StringComparison.Ordinal);
+        Assert.Contains("SEND_TEMPLATE_NAME = contacto_prueba", text, StringComparison.Ordinal);
+        Assert.Contains("SEND_LANGUAGE_CODE = es_AR", text, StringComparison.Ordinal);
+        Assert.Contains("SEND_COMPONENTS = []", text, StringComparison.Ordinal);
+        Assert.Contains("LOCAL_TEMPLATE_ID = 3", text, StringComparison.Ordinal);
+        Assert.Contains("LOCAL_META_TEMPLATE_ID = " + metaTemplateId, text, StringComparison.Ordinal);
+        Assert.Contains("LOCAL_NAME = contacto_prueba", text, StringComparison.Ordinal);
+        Assert.Contains("LOCAL_LANGUAGE = es_AR", text, StringComparison.Ordinal);
+        Assert.Contains("META_TEMPLATE_FOUND = True", text, StringComparison.Ordinal);
+        Assert.Contains("META_TEMPLATE_FOUND_BY_ID = True", text, StringComparison.Ordinal);
+        Assert.Contains("ID_MATCH = True", text, StringComparison.Ordinal);
+        Assert.Contains("NAME_MATCH = True", text, StringComparison.Ordinal);
+        Assert.Contains("LANGUAGE_MATCH = True", text, StringComparison.Ordinal);
+        Assert.Contains("WABA_MATCH = True", text, StringComparison.Ordinal);
+        Assert.Contains("EVIDENCE = Local DB y Meta coinciden", text, StringComparison.Ordinal);
+        Assert.DoesNotContain(SecretToken, text, StringComparison.Ordinal);
     }
 
     // ---- Extractores puros ------------------------------------------------------------------
