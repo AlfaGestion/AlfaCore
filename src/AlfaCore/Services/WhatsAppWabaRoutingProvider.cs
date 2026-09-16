@@ -12,7 +12,7 @@ public sealed class WhatsAppWabaRoutingProvider(ICentralBasesService centralBase
     public async Task<WhatsAppWabaRoutingConfiguration> GetAsync(int idBase, CancellationToken ct = default)
     {
         var centralBase = await centralBases.GetByIdAsync(idBase, ct)
-            ?? throw new InvalidOperationException("La base del onboarding no existe en la configuración central.");
+            ?? throw new WhatsAppCallbackRoutingConfigurationException("La base del onboarding no existe en la configuración central.");
         sessionService.SetWebhookOverride(new SessionDto
         {
             Id = SessionDto.BuildGuidFromBaseId(idBase), BaseId = idBase, Nombre = centralBase.Nombre,
@@ -27,9 +27,9 @@ public sealed class WhatsAppWabaRoutingProvider(ICentralBasesService centralBase
         if (string.IsNullOrWhiteSpace(config.PublicBaseUrl) && !string.IsNullOrWhiteSpace(_options.CallbackBaseUrl))
             config.PublicBaseUrl = _options.CallbackBaseUrl.Trim();
         if (string.IsNullOrWhiteSpace(config.PublicBaseUrl) || !Uri.TryCreate(config.PublicBaseUrl, UriKind.Absolute, out var baseUri) || baseUri.Scheme != Uri.UriSchemeHttps)
-            throw new InvalidOperationException("La Base pública HTTPS de WhatsApp no es válida (ni la del tenant ni WhatsAppEmbeddedSignup:CallbackBaseUrl).");
+            throw new WhatsAppCallbackRoutingConfigurationException("La Base pública HTTPS de WhatsApp no es válida (ni la del tenant ni WhatsAppEmbeddedSignup:CallbackBaseUrl).");
         if (string.IsNullOrWhiteSpace(config.VerifyToken))
-            throw new InvalidOperationException("El Verify Token de WhatsApp no está configurado (ni el del tenant ni el global WhatsApp:VerifyToken).");
+            throw new WhatsAppCallbackRoutingConfigurationException("El Verify Token de WhatsApp no está configurado (ni el del tenant ni el global WhatsApp:VerifyToken).");
         var token = string.IsNullOrWhiteSpace(centralBase.WebhookToken)
             ? await centralBases.EnsureWebhookTokenAsync(idBase, ct)
             : centralBase.WebhookToken;

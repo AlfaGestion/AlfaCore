@@ -87,7 +87,8 @@ public sealed class WhatsAppEmbeddedSignupHostedService(
         logger.LogError(exception, "Error procesando onboarding Embedded Signup {IdOnboarding} en {Step}.", item.IdOnboarding, item.CurrentStep);
 
         var metaException = exception as MetaWhatsAppManagementException;
-        var errorCode = metaException?.ErrorCode ?? (item.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Importing
+        var routingException = exception as WhatsAppCallbackRoutingConfigurationException;
+        var errorCode = metaException?.ErrorCode ?? routingException?.ErrorCode ?? (item.Status == AlfaCore.Models.WhatsAppEmbeddedOnboardingStatus.Importing
             ? "OPERATIONAL_IMPORT_FAILED"
             : "WORKER_STEP_FAILED");
         var now = DateTime.UtcNow;
@@ -115,11 +116,23 @@ public sealed class WhatsAppEmbeddedSignupHostedService(
 
         try
         {
+            if (exception is WhatsAppCallbackRoutingConfigurationException)
+            {
+                await store.MarkActionRequiredAsync(item.IdOnboarding,
+                    AlfaCore.Models.WhatsAppEmbeddedActionRequiredReason.CallbackRoutingConfigurationInvalid,
+                    "No se pudo completar la configuración pública de WhatsApp. Un administrador debe revisar la configuración de conexión.",
+                    incident,
+                    errorCode,
+                    ct);
+                await store.ReleaseClaimAsync(item.IdOnboarding, _workerId, null, ct);
+                return;
+            }
+
             if (metaException?.RequiresReauthorization == true)
             {
                 await store.MarkActionRequiredAsync(item.IdOnboarding,
                     AlfaCore.Models.WhatsAppEmbeddedActionRequiredReason.ReauthorizationRequired,
-                    "Meta requiere renovar la autorización antes de continuar.", incident, ct);
+                    "Meta requiere renovar la autorización antes de continuar.", incident, ct: ct);
                 await store.ReleaseClaimAsync(item.IdOnboarding, _workerId, null, ct);
                 return;
             }
@@ -146,7 +159,7 @@ public sealed class WhatsAppEmbeddedSignupHostedService(
                 var detail = $"Meta rechazó la lectura necesaria (HTTP {metaException.HttpStatusCode?.ToString() ?? "desconocido"}, código {metaException.ErrorCode}, subcódigo {metaException.ErrorSubcode ?? "sin dato"}, transitorio=no, Retry-After={retryAfterDescription}).";
                 await store.MarkActionRequiredAsync(item.IdOnboarding,
                     AlfaCore.Models.WhatsAppEmbeddedActionRequiredReason.CustomerActionRequired,
-                    detail, incident, ct);
+                    detail, incident, ct: ct);
                 await store.ReleaseClaimAsync(item.IdOnboarding, _workerId, null, ct);
                 return;
             }

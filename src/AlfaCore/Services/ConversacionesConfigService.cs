@@ -2516,7 +2516,7 @@ public sealed class ConversacionesConfigService(
             BusinessAccountId = (config.BusinessAccountId ?? string.Empty).Trim(),
             AppSecret = (config.AppSecret ?? string.Empty).Trim(),
             ApiVersion = string.IsNullOrWhiteSpace(config.ApiVersion) ? "v22.0" : config.ApiVersion.Trim(),
-            PublicBaseUrl = NormalizePublicBaseUrl(config.PublicBaseUrl, "WhatsApp"),
+            PublicBaseUrl = NormalizeWhatsAppPublicBaseUrl(config.PublicBaseUrl),
             WebhookPath = path,
             WebSessionMode = NormalizeWhatsAppWebSessionMode(config.WebSessionMode),
             WebPhoneNumber = (config.WebPhoneNumber ?? string.Empty).Trim(),
@@ -2705,6 +2705,29 @@ public sealed class ConversacionesConfigService(
 
         return normalized;
     }
+
+    internal static string NormalizeWhatsAppPublicBaseUrl(string? value)
+    {
+        var normalized = NormalizeBaseUrl(value);
+        if (string.IsNullOrWhiteSpace(normalized))
+            return string.Empty;
+
+        if (!Uri.TryCreate(normalized, UriKind.Absolute, out var uri)
+            || uri.Scheme != Uri.UriSchemeHttps
+            || string.IsNullOrWhiteSpace(uri.Host)
+            || IsLocalHost(uri.Host)
+            || normalized.Contains(' '))
+        {
+            throw new InvalidOperationException("La base pública de WhatsApp debe estar vacía para usar el fallback global o ser una URL pública HTTPS. No uses localhost, HTTP ni rutas relativas.");
+        }
+
+        return normalized;
+    }
+
+    private static bool IsLocalHost(string host)
+        => string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
+           || string.Equals(host, "::1", StringComparison.OrdinalIgnoreCase);
 
     private static string ResolveConfigSource(Dictionary<string, string> values, int expectedKeys = 8)
     {

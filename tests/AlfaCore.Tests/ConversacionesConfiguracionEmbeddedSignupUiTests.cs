@@ -256,6 +256,23 @@ public sealed class ConversacionesConfiguracionEmbeddedSignupUiTests
         Assert.Equal(1, occurrences);
     }
 
+    [Fact]
+    public void SaveWhatsAppConfigAsync_NeverAutoPersists_NavigationManagerBaseUriAsPublicBaseUrl()
+    {
+        // Base4271 en producción: PublicBaseUrl quedó persistido como "http://localhost:5055/" porque
+        // este método completaba _config.PublicBaseUrl con _suggestedBaseUrl (NavigationManager.BaseUri
+        // del navegador local) cuando el campo estaba vacío al guardar. En producción, EnsureCanStart
+        // pasó a rechazar ese valor tenant no-HTTPS y bloqueó SUBSCRIBING_WABAS. Una URL tenant debe
+        // ser una configuración explícita -- nunca una sugerencia del navegador autoguardada.
+        var source = File.ReadAllText(FindPagePath());
+        var methodStart = source.IndexOf("private async Task SaveAsync()", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0, "No se encontró SaveAsync (guardado de configuración WhatsApp).");
+        var methodBody = ExtractMethodBody(source, methodStart);
+
+        Assert.Contains("ConfigSvc.SaveWhatsAppConfigAsync(_config)", methodBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("_config.PublicBaseUrl = _suggestedBaseUrl", methodBody, StringComparison.Ordinal);
+    }
+
     private static string ExtractMethodBody(string source, int methodStart)
     {
         var openBrace = source.IndexOf('{', methodStart);

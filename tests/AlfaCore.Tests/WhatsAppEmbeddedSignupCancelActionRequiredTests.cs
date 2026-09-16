@@ -217,7 +217,7 @@ public sealed class WhatsAppEmbeddedSignupCancelActionRequiredTests
         public Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string h, int b, string u, DateTime n, CancellationToken ct = default) => throw new NotSupportedException();
         public Task UpdateStatusAsync(Guid id, WhatsAppEmbeddedOnboardingStatus e, WhatsAppEmbeddedOnboardingStatus n, string s, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkAuthorizedAsync(Guid id, string r, string m, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason r, string s, string i, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason r, string s, string i, string ec = "", CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkRetryableFailureAsync(Guid id, string c, string s, string i, DateTime n, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkFinalFailureAsync(Guid id, string c, string s, string i, string? f = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkReadyAsync(Guid id, CancellationToken ct = default) => throw new NotSupportedException();
@@ -245,7 +245,7 @@ public sealed class WhatsAppEmbeddedSignupCancelActionRequiredTests
         public Task<WhatsAppEmbeddedOnboardingDto?> GetLatestForBaseAsync(int idBase, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string h, int b, string u, DateTime n, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkAuthorizedAsync(Guid id, string r, string m, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason r, string s, string i, CancellationToken ct = default)
+        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason r, string s, string i, string ec = "", CancellationToken ct = default)
         { item.Status = WhatsAppEmbeddedOnboardingStatus.ActionRequired; item.CurrentStep = "ACTION_REQUIRED"; return Task.CompletedTask; }
         public Task MarkRetryableFailureAsync(Guid id, string c, string s, string i, DateTime n, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkFinalFailureAsync(Guid id, string c, string s, string i, string? f = null, CancellationToken ct = default)

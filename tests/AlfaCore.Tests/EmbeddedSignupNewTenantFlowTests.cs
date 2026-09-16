@@ -219,7 +219,7 @@ public sealed class EmbeddedSignupNewTenantFlowTests
         public Task<WhatsAppEmbeddedOnboardingDto?> GetLatestForBaseAsync(int idBase, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string h, int b, string u, DateTime n, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkAuthorizedAsync(Guid id, string r, string m, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason r, string s, string i, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason r, string s, string i, string ec = "", CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkRetryableFailureAsync(Guid id, string c, string s, string i, DateTime n, CancellationToken ct = default) => throw new NotSupportedException();
         public string? FinalErrorCode { get; private set; }
         public string? FinalSummary { get; private set; }
