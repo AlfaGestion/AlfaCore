@@ -2849,16 +2849,19 @@ public sealed class ConversacionesService(
             var tenant = ResolveTenantConnection(expectedBaseId, "GetTemplatesForConversation");
             await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(idConversacion, tenant.ConnectionString, token);
             var conversation = await RequireConversationAsync(idConversacion, tenant.ConnectionString, token);
-            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(tenant.ConnectionString, token);
-            var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(tenant.BaseId ?? expectedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0,
-                conversation.IdNumeroWhatsApp, conversation.PhoneNumberId, config, token);
             var localTemplates = await GetTemplatesAsync(new ConversacionPlantillaFilters
             {
                 ExpectedBaseId = expectedBaseId,
                 IdNumeroWhatsApp = conversation.IdNumeroWhatsApp,
                 EstadoMeta = "APPROVED"
             }, token);
-            if (localTemplates.Count > 0 || runtime.Origin == WhatsAppRuntimeCredentialOrigin.Legacy)
+            if (localTemplates.Count > 0)
+                return localTemplates;
+
+            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(tenant.ConnectionString, token);
+            var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(tenant.BaseId ?? expectedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0,
+                conversation.IdNumeroWhatsApp, conversation.PhoneNumberId, config, token);
+            if (runtime.Origin == WhatsAppRuntimeCredentialOrigin.Legacy)
                 return localTemplates;
 
             var reference = runtime.CredentialReference

@@ -18,12 +18,52 @@ public sealed class WhatsAppTemplateSelectionTests
         var numberFilter = service.IndexOf("IdNumeroWhatsApp = conversation.IdNumeroWhatsApp", local, StringComparison.Ordinal);
         var localReturn = service.IndexOf("return localTemplates;", numberFilter, StringComparison.Ordinal);
         var remoteDiscovery = service.IndexOf("DiscoverTemplatesAsync(runtime.WabaId", localReturn, StringComparison.Ordinal);
+        var runtime = service.IndexOf("var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync", method, StringComparison.Ordinal);
 
         Assert.True(method >= 0);
         Assert.True(local > method);
         Assert.True(numberFilter > local);
         Assert.True(localReturn > numberFilter);
+        Assert.True(runtime > localReturn);
         Assert.True(remoteDiscovery > localReturn);
+    }
+
+    [Fact]
+    public void ConversationTemplatesDoNotRequireRuntimeCredentialsWhenLocalApprovedTemplateExists()
+    {
+        var service = Read("src", "AlfaCore", "Services", "ConversacionesService.cs");
+        var method = service.IndexOf("GetTemplatesForConversationAsync(long idConversacion, int? expectedBaseId", StringComparison.Ordinal);
+        var local = service.IndexOf("var localTemplates = await GetTemplatesAsync(new ConversacionPlantillaFilters", method, StringComparison.Ordinal);
+        var approved = service.IndexOf("EstadoMeta = \"APPROVED\"", local, StringComparison.Ordinal);
+        var localReturnCondition = service.IndexOf("if (localTemplates.Count > 0)", approved, StringComparison.Ordinal);
+        var localReturn = service.IndexOf("return localTemplates;", localReturnCondition, StringComparison.Ordinal);
+        var config = service.IndexOf("var config = await conversacionesConfigService.GetWhatsAppConfigAsync", localReturn, StringComparison.Ordinal);
+        var runtime = service.IndexOf("var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync", config, StringComparison.Ordinal);
+
+        Assert.True(method >= 0);
+        Assert.True(local > method);
+        Assert.True(approved > local);
+        Assert.True(localReturnCondition > approved);
+        Assert.True(localReturn > localReturnCondition);
+        Assert.True(config > localReturn);
+        Assert.True(runtime > config);
+    }
+
+    [Fact]
+    public void ConversationTemplatesUseWabaScopeForSameAndDifferentNumberCases()
+    {
+        var service = Read("src", "AlfaCore", "Services", "ConversacionesService.cs");
+        var getTemplates = service.IndexOf("public Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesAsync", StringComparison.Ordinal);
+        var listContext = service.IndexOf("ResolveTemplateListContextAsync(filters.IdNumeroWhatsApp", getTemplates, StringComparison.Ordinal);
+        var storedWaba = service.IndexOf("var wabaId = (numero.WabaId ?? string.Empty).Trim();", StringComparison.Ordinal);
+        var where = service.IndexOf("AND ((@WabaId IS NULL AND WabaId IS NULL) OR WabaId = @WabaId)", getTemplates, StringComparison.Ordinal);
+        var noTemplateNumberColumn = service.IndexOf("IdNumeroWhatsApp = @IdNumeroWhatsApp", getTemplates, where - getTemplates, StringComparison.Ordinal);
+
+        Assert.True(getTemplates >= 0);
+        Assert.True(listContext > getTemplates);
+        Assert.True(storedWaba > listContext);
+        Assert.True(where > listContext);
+        Assert.Equal(-1, noTemplateNumberColumn);
     }
 
     [Fact]
