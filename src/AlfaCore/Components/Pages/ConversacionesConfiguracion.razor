@@ -251,9 +251,13 @@
                             {
                                 <span>@numero.Usuarios.Count usuario(s)</span>
                             }
-                            @if (GetPortfolioDisplayLine(numero) is { } portfolioLineList)
+                            @if (GetPortfolioStatus(numero) == AlfaCore.Models.WhatsAppPortfolioResolutionStatus.Known)
                             {
-                                <span>@portfolioLineList</span>
+                                <span>Portfolio: @GetPortfolioName(numero)</span>
+                            }
+                            else if (GetPortfolioStatus(numero) == AlfaCore.Models.WhatsAppPortfolioResolutionStatus.Resolvable)
+                            {
+                                <span class="wa-api-number-row__portfolio-pending">Portfolio pendiente</span>
                             }
                         </span>
                     </button>
@@ -403,9 +407,13 @@
                         <dl class="wa-business-definition">
                             <div><dt>Nombre</dt><dd>@GetNumeroDisplayName(selectedNumero)</dd></div>
                             <div><dt>Conexión</dt><dd>AlfaCore</dd></div>
-                            @if (GetPortfolioName(selectedNumero) is { } portfolioNameDetail)
+                            @if (GetPortfolioStatus(selectedNumero) == AlfaCore.Models.WhatsAppPortfolioResolutionStatus.Known)
                             {
-                                <div><dt>Portfolio</dt><dd>@portfolioNameDetail</dd></div>
+                                <div><dt>Portfolio</dt><dd>@GetPortfolioName(selectedNumero)</dd></div>
+                            }
+                            else if (GetPortfolioStatus(selectedNumero) == AlfaCore.Models.WhatsAppPortfolioResolutionStatus.Resolvable)
+                            {
+                                <div><dt>Portfolio</dt><dd><AlfaTag Tone="AlfaTagTone.Neutral">Pendiente de identificar</AlfaTag></dd></div>
                             }
                         </dl>
                     </div>
@@ -4416,6 +4424,26 @@
 
     private string? GetPortfolioDisplayLine(ConversacionWhatsAppNumeroDto numero)
         => ResolvePortfolioDisplayLine(numero, _portfolioNamesByBusinessId);
+
+    private AlfaCore.Models.WhatsAppPortfolioResolutionStatus GetPortfolioStatus(ConversacionWhatsAppNumeroDto numero)
+        => ResolvePortfolioStatus(numero, _portfolioNamesByBusinessId);
+
+    /// <summary>
+    /// Sólo para decidir CÓMO renderizar (texto plano vs. badge sutil vs. nada) -- nunca cambia qué se
+    /// resuelve ni se persiste. Reusa el mismo criterio que ResolvePortfolioName, expresado con el
+    /// enum KNOWN/RESOLVABLE/UNKNOWN ya existente (WhatsAppPortfolioResolutionStatus) para no repetir
+    /// lógica ni inventar un cuarto estado. Pura (mismo patrón que ResolvePortfolioName) para poder
+    /// testearla directamente.
+    /// </summary>
+    internal static AlfaCore.Models.WhatsAppPortfolioResolutionStatus ResolvePortfolioStatus(ConversacionWhatsAppNumeroDto numero, IReadOnlyDictionary<string, string> portfolioNamesByBusinessId)
+    {
+        var hasMetaBusinessId = !string.IsNullOrWhiteSpace(numero.MetaBusinessId);
+        var hasCachedName = hasMetaBusinessId
+            && portfolioNamesByBusinessId.TryGetValue(numero.MetaBusinessId, out var cached)
+            && !string.IsNullOrWhiteSpace(cached);
+        var hasReconstructiblePath = !string.IsNullOrWhiteSpace(numero.WabaId);
+        return AlfaCore.Models.WhatsAppPortfolioResolutionStatusExtensions.Classify(hasMetaBusinessId, hasReconstructiblePath, hasCachedName);
+    }
 
     /// <summary>
     /// Pura y testeable directamente (mismo criterio que BuildPendingConnectionFeedbackPanel) -- toma el

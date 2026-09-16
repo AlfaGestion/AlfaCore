@@ -112,6 +112,106 @@ public sealed class WhatsAppNumeroPortfolioTests
         Assert.Equal("Portfolio: Portfolio Real", ConversacionesConfiguracion.ResolvePortfolioDisplayLine(numero, portfolios));
     }
 
+    // ---- UX: KNOWN/RESOLVABLE/UNKNOWN como estados de presentación (card compacta + badge en detalle) ----
+    // Ajuste puramente visual pedido tras validar RESOLVABLE en Base4264 -- no cambia qué se resuelve ni
+    // se persiste, sólo cómo se renderiza cada uno de los tres estados ya existentes.
+
+    [Fact]
+    public void ResolvePortfolioStatus_Known_WhenMetaBusinessIdAndCachedNameBothExist()
+    {
+        var portfolios = new Dictionary<string, string>(StringComparer.Ordinal) { ["biz-A"] = "Prueba" };
+        var numero = Numero("Alfa Claro 1", "biz-A");
+
+        Assert.Equal(WhatsAppPortfolioResolutionStatus.Known, ConversacionesConfiguracion.ResolvePortfolioStatus(numero, portfolios));
+    }
+
+    [Fact]
+    public void ResolvePortfolioStatus_Resolvable_WhenMetaBusinessIdKnownButNameNotCachedYet()
+    {
+        var portfolios = new Dictionary<string, string>(StringComparer.Ordinal);
+        var numero = Numero("Alfa Claro 1", "biz-A");
+
+        Assert.Equal(WhatsAppPortfolioResolutionStatus.Resolvable, ConversacionesConfiguracion.ResolvePortfolioStatus(numero, portfolios));
+    }
+
+    [Fact]
+    public void ResolvePortfolioStatus_Resolvable_WhenOnlyWabaIdIsKnown()
+    {
+        var portfolios = new Dictionary<string, string>(StringComparer.Ordinal);
+        var numero = new ConversacionWhatsAppNumeroDto { IdNumero = 1, Nombre = "Alfa Claro 1", PhoneNumberId = "1243405415530992", MetaBusinessId = "", WabaId = "888902717349521" };
+
+        Assert.Equal(WhatsAppPortfolioResolutionStatus.Resolvable, ConversacionesConfiguracion.ResolvePortfolioStatus(numero, portfolios));
+    }
+
+    [Fact]
+    public void ResolvePortfolioStatus_Unknown_WhenNeitherMetaBusinessIdNorWabaIdExist()
+    {
+        var portfolios = new Dictionary<string, string>(StringComparer.Ordinal);
+        var numero = new ConversacionWhatsAppNumeroDto { IdNumero = 1, Nombre = "Manual sin nada", PhoneNumberId = "999", MetaBusinessId = "", WabaId = "" };
+
+        Assert.Equal(WhatsAppPortfolioResolutionStatus.Unknown, ConversacionesConfiguracion.ResolvePortfolioStatus(numero, portfolios));
+    }
+
+    [Fact]
+    public void CardMarkup_ShowsCompactMutedTextForPending_AndFullNameForKnown_NeverABadgeInTheCard()
+    {
+        // "Card RESOLVABLE pendiente: Portfolio pendiente, como metadata secundaria/muted, más compacta"
+        // -- en la lista es texto plano (heredando el color/tamaño muted de .wa-api-number-row__meta),
+        // nunca un AlfaTag ahí (los badges quedan para el detalle).
+        var source = ReadPageSource();
+
+        Assert.Contains("<span class=\"wa-api-number-row__portfolio-pending\">Portfolio pendiente</span>", source, StringComparison.Ordinal);
+        Assert.Contains("<span>Portfolio: @GetPortfolioName(numero)</span>", source, StringComparison.Ordinal);
+        Assert.Contains("GetPortfolioStatus(numero) == AlfaCore.Models.WhatsAppPortfolioResolutionStatus.Known", source, StringComparison.Ordinal);
+        Assert.Contains("GetPortfolioStatus(numero) == AlfaCore.Models.WhatsAppPortfolioResolutionStatus.Resolvable", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DetailMarkup_ShowsASubtleNeutralBadgeForPending_PlainTextForKnown_NoRowAtAllForUnknown()
+    {
+        // "Detail -> Identificación: label Portfolio, y para RESOLVABLE mostrar Pendiente de identificar
+        // con badge/estado visual sutil. KNOWN: mostrar el nombre normalmente. UNKNOWN real: no
+        // renderizar la fila." -- reusa AlfaTag (mismo lenguaje visual que el resto de Configuración),
+        // tono Neutral (nunca Warning/Danger -- no es un error, es sólo un estado pendiente).
+        var source = ReadPageSource();
+
+        Assert.Contains("<dt>Portfolio</dt><dd>@GetPortfolioName(selectedNumero)</dd>", source, StringComparison.Ordinal);
+        Assert.Contains("<AlfaTag Tone=\"AlfaTagTone.Neutral\">Pendiente de identificar</AlfaTag>", source, StringComparison.Ordinal);
+        Assert.Contains("GetPortfolioStatus(selectedNumero) == AlfaCore.Models.WhatsAppPortfolioResolutionStatus.Known", source, StringComparison.Ordinal);
+        Assert.Contains("GetPortfolioStatus(selectedNumero) == AlfaCore.Models.WhatsAppPortfolioResolutionStatus.Resolvable", source, StringComparison.Ordinal);
+
+        // Nunca un spinner ni un tooltip técnico (title=...) colgado del badge de Portfolio.
+        var badgeIndex = source.IndexOf("<AlfaTag Tone=\"AlfaTagTone.Neutral\">Pendiente de identificar</AlfaTag>", StringComparison.Ordinal);
+        var lineStart = source.LastIndexOf('\n', badgeIndex);
+        var lineEnd = source.IndexOf('\n', badgeIndex);
+        var line = source[(lineStart + 1)..lineEnd];
+        Assert.DoesNotContain("spinner", line, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("title=", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("MetaBusinessId", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("WabaId", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PendingCardText_HasNoTrailingDetailBeyondTheCompactLabel()
+    {
+        // El texto de card pendiente es literalmente "Portfolio pendiente" -- no la frase larga
+        // "Portfolio: pendiente de identificar" que usa el detalle (por diseño, la card es más
+        // compacta).
+        var source = ReadPageSource();
+
+        Assert.DoesNotContain("<span class=\"wa-api-number-row__portfolio-pending\">Portfolio: pendiente de identificar</span>", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PendingCardCssIsMutedAndCompact_NotAHeavyVisualTreatment()
+    {
+        var cssPath = Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesConfiguracion.razor.css");
+        Assert.True(File.Exists(cssPath));
+        var css = File.ReadAllText(cssPath);
+
+        Assert.Contains(".wa-api-number-row__portfolio-pending", css, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void WorksTheSameForStandardAndCoexistence()
     {
