@@ -1133,32 +1133,6 @@ public class Program
             IAppEventService appEvents,
             CancellationToken ct) =>
         {
-            var apiKeyConfigurada = (config["PortalCliente:InvitacionApiKey"] ?? string.Empty).Trim();
-            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString().Trim();
-            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
-            {
-                await appEvents.LogErrorAsync(
-                    "PortalClienteInvitacion",
-                    "ApiEnviarInvitacion",
-                    new InvalidOperationException("Falta PortalCliente:InvitacionApiKey."),
-                    "No se pudo procesar la invitación externa.",
-                    null,
-                    AppEventSeverity.Error,
-                    ct);
-                return Results.Json(
-                    new PortalClienteInvitacionApiResultDto { Mensaje = "El endpoint de invitaciones no está configurado." },
-                    statusCode: StatusCodes.Status500InternalServerError);
-            }
-
-            if (!CryptographicOperations.FixedTimeEquals(
-                    Encoding.UTF8.GetBytes(apiKeyRecibida),
-                    Encoding.UTF8.GetBytes(apiKeyConfigurada)))
-            {
-                return Results.Json(
-                    new PortalClienteInvitacionApiResultDto { Mensaje = "No autorizado." },
-                    statusCode: StatusCodes.Status401Unauthorized);
-            }
-
             var idWeb = (invitationRequest.IdWeb ?? string.Empty).Trim();
             var codigoCliente = (invitationRequest.IdCliente ?? string.Empty).Trim();
             var email = (invitationRequest.Email ?? string.Empty).Trim();
