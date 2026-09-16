@@ -214,6 +214,7 @@ public class Program
         builder.Services.AddScoped<ICentralProvisioningService, CentralProvisioningService>();
         builder.Services.AddScoped<ICentralRegistrationService, CentralRegistrationService>();
         builder.Services.AddScoped<IConexionClienteService, ConexionClienteService>();
+        builder.Services.AddScoped<ISaaSTenantRouteGuard, SaaSTenantRouteGuard>();
         builder.Services.AddScoped<ILegacyBaseUserSessionService, LegacyBaseUserSessionService>();
         builder.Services.AddScoped<IComprasDashboardService, ComprasDashboardService>();
         builder.Services.AddScoped<IReporteComprasService, ReporteComprasService>();
@@ -274,6 +275,7 @@ public class Program
         builder.Services.AddScoped<IPedidosEmailService, PedidosEmailService>();
         builder.Services.AddSingleton<IArticuloImagenFtpService, ArticuloImagenFtpService>();
         builder.Services.AddScoped<ICatalogoPublicoPdfService, CatalogoPublicoPdfService>();
+        builder.Services.AddScoped<ICentralCompraIaService, CentralCompraIaService>();
         builder.Services.AddSingleton<InterfacesCompraIaWorkerState>();
         builder.Services.AddSingleton<RouteSessionUpdatesGuard>();
         builder.Services.AddSingleton<DatabaseUpdatesRuntimeState>();
@@ -1722,11 +1724,12 @@ public class Program
 
         var descargarInformeConversacionesExcel = async (
             int idInforme,
+            int? idbase,
             IConversacionesInformesService svc,
             ConversacionesInformeExcelExporter exporter,
             CancellationToken ct) =>
         {
-            var informe = await svc.GetAsync(idInforme, ct);
+            var informe = await svc.GetAsync(idInforme, idbase, ct);
             if (informe is null) return Results.NotFound();
             var bytes = exporter.Exportar(informe);
             return Results.File(bytes,

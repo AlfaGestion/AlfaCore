@@ -55,6 +55,7 @@ public sealed class ConversacionesEstadisticasFilters
     public DateTime Desde { get; set; } = DateTime.Today;
     public DateTime Hasta { get; set; } = DateTime.Today;
     public string? IdTecnico { get; set; }
+    public int? ExpectedBaseId { get; set; }
 }
 
 public sealed class ConversacionesEstadisticasDto
@@ -641,6 +642,11 @@ public sealed class ConversacionEstadoOptionDto
 
 public sealed class ConversacionPlantillaFilters
 {
+    /// <summary>
+    /// Base esperada por la ruta que inició la carga de plantillas. El servicio la valida contra la
+    /// sesión activa antes de consultar SQL para impedir lecturas de otro tenant.
+    /// </summary>
+    public int? ExpectedBaseId { get; set; }
     public int? IdNumeroWhatsApp { get; set; }
     public string Search { get; set; } = string.Empty;
     public string? EstadoMeta { get; set; }

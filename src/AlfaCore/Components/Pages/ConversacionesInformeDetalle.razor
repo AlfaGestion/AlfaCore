@@ -3,6 +3,7 @@
 @inject AlfaCore.Services.IConversacionesInformesService InformesSvc
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject NavigationManager Nav
 @implements IDisposable
 @using AlfaCore.Models
@@ -200,7 +201,7 @@
     {
         try
         {
-            _det = await InformesSvc.GetDetalleAsync(IdDetalle);
+            _det = await InformesSvc.GetDetalleAsync(IdDetalle, CurrentExpectedBaseIdOrNull());
             if (_det is null)
             {
                 _error = "No se encontró el detalle del informe.";
@@ -210,7 +211,7 @@
             _email = _det.ClienteEmail;
             try
             {
-                _tendencia = (await InformesSvc.GetTendenciaClienteAsync(IdDetalle)).ToList();
+                _tendencia = (await InformesSvc.GetTendenciaClienteAsync(IdDetalle, CurrentExpectedBaseIdOrNull())).ToList();
                 _tendenciaMax = _tendencia.Count > 0 ? _tendencia.Max(t => t.CantMensajes) : 0;
             }
             catch { _tendencia = []; _tendenciaMax = 0; }
@@ -226,7 +227,7 @@
         _trabajando = true; _feedback = null; StateHasChanged();
         try
         {
-            _texto = await InformesSvc.GenerarResumenAsync(IdDetalle);
+            _texto = await InformesSvc.GenerarResumenAsync(IdDetalle, CurrentExpectedBaseIdOrNull());
             SetFeedback(true, "Resumen generado. Revisalo y ajustalo antes de enviar.");
         }
         catch (Exception ex) { SetFeedback(false, ex.Message); }
@@ -238,7 +239,7 @@
         _trabajando = true; _feedback = null; StateHasChanged();
         try
         {
-            await InformesSvc.GuardarResumenEditadoAsync(IdDetalle, _texto);
+            await InformesSvc.GuardarResumenEditadoAsync(IdDetalle, _texto, CurrentExpectedBaseIdOrNull());
             SetFeedback(true, "Cambios guardados.");
         }
         catch (Exception ex) { SetFeedback(false, ex.Message); }
@@ -250,8 +251,8 @@
         _trabajando = true; _feedback = null; StateHasChanged();
         try
         {
-            await InformesSvc.GuardarResumenEditadoAsync(IdDetalle, _texto);
-            await InformesSvc.EnviarPorEmailAsync(IdDetalle, _email);
+            await InformesSvc.GuardarResumenEditadoAsync(IdDetalle, _texto, CurrentExpectedBaseIdOrNull());
+            await InformesSvc.EnviarPorEmailAsync(IdDetalle, _email, CurrentExpectedBaseIdOrNull());
             await CargarAsync();
             SetFeedback(true, $"Enviado por email a {_email}.");
         }
@@ -264,8 +265,8 @@
         _trabajando = true; _feedback = null; StateHasChanged();
         try
         {
-            await InformesSvc.GuardarResumenEditadoAsync(IdDetalle, _texto);
-            await InformesSvc.EnviarPorWhatsAppAsync(IdDetalle);
+            await InformesSvc.GuardarResumenEditadoAsync(IdDetalle, _texto, CurrentExpectedBaseIdOrNull());
+            await InformesSvc.EnviarPorWhatsAppAsync(IdDetalle, CurrentExpectedBaseIdOrNull());
             await CargarAsync();
             SetFeedback(true, "Enviado por WhatsApp.");
         }
@@ -282,4 +283,7 @@
     }
 
     private void SetFeedback(bool ok, string msg) { _feedbackOk = ok; _feedback = msg; }
+
+    private int? CurrentExpectedBaseIdOrNull()
+        => idbase is > 0 ? idbase : SessionSvc.GetActiveSession()?.BaseId;
 }

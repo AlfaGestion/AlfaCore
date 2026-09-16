@@ -5,11 +5,17 @@ namespace AlfaCore.Services;
 public interface IInterfacesService
 {
     Task<IReadOnlyList<InterfacesEstadoOptionDto>> GetStatesAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<InterfacesEstadoOptionDto>> GetStatesAsync(int? expectedBaseId, CancellationToken ct = default);
     Task<IReadOnlyList<InterfacesTipoDocumentoOptionDto>> GetDocumentTypesAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<InterfacesTipoDocumentoOptionDto>> GetDocumentTypesAsync(int? expectedBaseId, CancellationToken ct = default);
     Task<PagedResult<InterfacesInboxItemDto>> SearchAsync(InterfacesFilters filters, CancellationToken ct = default);
+    Task<PagedResult<InterfacesInboxItemDto>> SearchAsync(InterfacesFilters filters, int? expectedBaseId, CancellationToken ct = default);
     Task<InterfacesDetalleDto?> GetByIdAsync(long idComprobanteRecibido, CancellationToken ct = default);
+    Task<InterfacesDetalleDto?> GetByIdAsync(long idComprobanteRecibido, int? expectedBaseId, CancellationToken ct = default);
     Task<long> CreateAsync(InterfacesCrearComprobanteRequest request, CancellationToken ct = default);
+    Task<long> CreateAsync(InterfacesCrearComprobanteRequest request, int? expectedBaseId, CancellationToken ct = default);
     Task<InterfacesLoteResultadoDto> CreateLoteAsync(InterfacesCrearLoteRequest request, CancellationToken ct = default);
+    Task<InterfacesLoteResultadoDto> CreateLoteAsync(InterfacesCrearLoteRequest request, int? expectedBaseId, CancellationToken ct = default);
     Task UpdateAsync(InterfacesActualizarComprobanteRequest request, CancellationToken ct = default);
     Task AddAttachmentsAsync(InterfacesAgregarAdjuntosRequest request, CancellationToken ct = default);
     Task RemoveAttachmentAsync(InterfacesEliminarAdjuntoRequest request, CancellationToken ct = default);
@@ -26,4 +32,5 @@ public interface IInterfacesService
     Task<InterfacesViewSettingsDto> GetViewSettingsAsync(string userName, CancellationToken ct = default);
     Task SaveViewSettingsAsync(string userName, InterfacesViewSettingsDto settings, CancellationToken ct = default);
     Task<IReadOnlyList<InterfacesAdjuntoDuplicadoDto>> FindFilesByHashAsync(IReadOnlyList<string> contentHashes, CancellationToken ct = default);
+    Task<IReadOnlyList<InterfacesAdjuntoDuplicadoDto>> FindFilesByHashAsync(IReadOnlyList<string> contentHashes, int? expectedBaseId, CancellationToken ct = default);
 }

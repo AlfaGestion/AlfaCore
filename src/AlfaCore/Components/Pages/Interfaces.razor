@@ -4,6 +4,8 @@
 @inject AlfaCore.Services.IInterfacesService InterfacesSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
 @inject IJSRuntime Js
 @implements IDisposable
 
@@ -924,11 +926,15 @@
     private CancellationTokenSource? _filtersDebounceCts;
     private CancellationTokenSource? _queueAutoRefreshCts;
     private Task? _queueAutoRefreshTask;
+    private AlfaCore.Services.SaaSTenantRouteLease _tenantLease;
     private bool AreAllCurrentPageSelected => _items.Count > 0 && _items.All(item => _selectedIds.Contains(item.IdComprobanteRecibido));
 
     protected override async Task OnInitializedAsync()
     {
         AppUserSession.StateChanged += OnAppUserSessionChanged;
+        if (!await EnsureTenantAsync())
+            return;
+
         await EnsureViewSettingsLoadedAsync();
         await CargarCatalogosAsync();
         await BuscarAsync();
@@ -953,16 +959,58 @@
         try { cts.Dispose(); } catch (ObjectDisposedException) { }
     }
 
+    private int? CurrentExpectedBaseId()
+        => idbase is > 0 ? idbase : SessionSvc.GetActiveSession()?.BaseId;
+
+    private bool IsCurrentTenant(AlfaCore.Services.SaaSTenantRouteLease lease)
+        => TenantRouteGuard.IsCurrent(lease, idbase is > 0 ? idbase : null, SessionSvc.GetActiveSession()?.BaseId);
+
+    private async Task<bool> EnsureTenantAsync()
+    {
+        var context = await TenantRouteGuard.ResolveAsync(idbase, idweb);
+        if (!context.IsValid)
+        {
+            ClearTenantState();
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Base no disponible",
+                Message = "No se pudo resolver la base de esta URL."
+            };
+            return false;
+        }
+
+        _tenantLease = context.Lease;
+        return true;
+    }
+
+    private void ClearTenantState()
+    {
+        _items.Clear();
+        _states.Clear();
+        _documentTypes.Clear();
+        _selectedIds.Clear();
+        _selectedId = 0;
+        _pagedTotal = 0;
+        _queueSnapshot = new();
+        _detalleLectura = null;
+        _detalleLecturaDocumentoId = null;
+    }
+
     private async Task CargarCatalogosAsync()
     {
-        var statesResult = await UiOps.RunAsync(() => InterfacesSvc.GetStatesAsync(), "No se pudieron cargar los estados.");
+        if (!await EnsureTenantAsync())
+            return;
+
+        var expectedBaseId = CurrentExpectedBaseId();
+        var statesResult = await UiOps.RunAsync(() => InterfacesSvc.GetStatesAsync(expectedBaseId), "No se pudieron cargar los estados.");
         if (statesResult.Success && statesResult.Value is not null)
         {
             _states.Clear();
             _states.AddRange(statesResult.Value);
         }
 
-        var typesResult = await UiOps.RunAsync(() => InterfacesSvc.GetDocumentTypesAsync(), "No se pudieron cargar los tipos documentales.");
+        var typesResult = await UiOps.RunAsync(() => InterfacesSvc.GetDocumentTypesAsync(expectedBaseId), "No se pudieron cargar los tipos documentales.");
         if (typesResult.Success && typesResult.Value is not null)
         {
             _documentTypes.Clear();
@@ -1032,13 +1080,20 @@
 
     private async Task BuscarAsync()
     {
+        if (!await EnsureTenantAsync())
+            return;
+
+        var lease = _tenantLease;
+        var expectedBaseId = CurrentExpectedBaseId();
         _loadingList = true;
         _filters.Desde = _filtersDesde;
         _filters.Hasta = _filtersHasta;
 
         try
         {
-            var result = await UiOps.RunAsync(() => InterfacesSvc.SearchAsync(_filters), "No se pudieron cargar los documentos.");
+            var result = await UiOps.RunAsync(() => InterfacesSvc.SearchAsync(_filters, expectedBaseId), "No se pudieron cargar los documentos.");
+            if (!IsCurrentTenant(lease))
+                return;
             if (!result.Success || result.Value is null)
             {
                 SetFeedback(result.Feedback);
@@ -1066,6 +1121,9 @@
 
     private async Task CargarColaAsync(bool silent = false)
     {
+        if (!await EnsureTenantAsync())
+            return;
+
         _loadingQueue = true;
         try
         {
@@ -1156,7 +1214,11 @@
         _loadingDetalleLectura = true;
         try
         {
-            var result = await UiOps.RunAsync(() => InterfacesSvc.GetByIdAsync(idComprobanteRecibido), "No se pudo cargar el detalle de lectura automática.");
+            if (!await EnsureTenantAsync())
+                return;
+
+            var expectedBaseId = CurrentExpectedBaseId();
+            var result = await UiOps.RunAsync(() => InterfacesSvc.GetByIdAsync(idComprobanteRecibido, expectedBaseId), "No se pudo cargar el detalle de lectura automática.");
             if (!result.Success || result.Value is null)
             {
                 SetFeedback(result.Feedback);

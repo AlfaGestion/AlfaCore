@@ -16,8 +16,19 @@ public sealed class AlfaKnowledgeSuggestionService(
 {
     private const string ModuleName = "AlfaKnowledge";
     private const string KnowledgeBaseHeaderName = "X-Knowledge-Base-Id";
+    private const string RioplatenseSpanishInstruction =
+        "Respondé siempre en español rioplatense argentino. Usá voseo natural (vos, tenés, podés, querés, decime) " +
+        "y evitá el tuteo (tú, tienes, puedes, quieres) y las expresiones propias de otros países. Mantené un " +
+        "tono profesional, claro y cercano.";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    public bool IsConfigured => GetEffectiveSettings().IsConfigured;
+    private readonly SemaphoreSlim settingsGate = new(1, 1);
+    private AlfaKnowledgeOptions? cachedSettings;
+    private string? cachedSettingsConnectionString;
+
+    public bool IsConfigured => GetCachedSettings()?.IsConfigured == true;
+
+    public async Task<bool> EnsureConfiguredAsync(CancellationToken cancellationToken = default)
+        => (await GetEffectiveSettingsAsync(cancellationToken)).IsConfigured;
 
     public string FullChatUrl
     {
@@ -97,13 +108,13 @@ public sealed class AlfaKnowledgeSuggestionService(
 
             // Instrucciones curadas del asistente (persona/tono/reglas): se anteponen SOLO a la
             // sugerencia de respuesta, no a transformaciones puntuales (mejorar/AnyDesk).
-            var effectiveInstruction = instruction;
+            var effectiveInstruction = string.IsNullOrWhiteSpace(instruction)
+                ? RioplatenseSpanishInstruction
+                : $"{RioplatenseSpanishInstruction}\n\n{instruction.Trim()}";
             if (string.Equals(mode, AlfaKnowledgeSuggestionModes.ReplySuggestion, StringComparison.Ordinal)
                 && !string.IsNullOrWhiteSpace(settings.Instrucciones))
             {
-                effectiveInstruction = string.IsNullOrWhiteSpace(instruction)
-                    ? settings.Instrucciones.Trim()
-                    : $"{settings.Instrucciones.Trim()}\n\n{instruction.Trim()}";
+                effectiveInstruction = $"{settings.Instrucciones.Trim()}\n\n{effectiveInstruction}";
             }
 
             var payload = new
@@ -368,28 +379,54 @@ public sealed class AlfaKnowledgeSuggestionService(
 
     private AlfaKnowledgeOptions GetEffectiveSettings()
     {
-        try
-        {
-            return LoadSettingsFromDatabase() ?? CreateEmptyOptions();
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "No se pudo leer la configuración de AlfaKnowledge desde TA_CONFIGURACION.");
-            return CreateEmptyOptions();
-        }
+        return GetCachedSettings() ?? CreateEmptyOptions();
     }
 
     private async Task<AlfaKnowledgeOptions> GetEffectiveSettingsAsync(CancellationToken cancellationToken)
     {
+        var connectionString = ResolveConnectionString();
+        if (string.IsNullOrWhiteSpace(connectionString))
+            return CreateEmptyOptions();
+
+        var cached = GetCachedSettings(connectionString);
+        if (cached is not null)
+            return cached;
+
+        await settingsGate.WaitAsync(cancellationToken);
         try
         {
-            return await LoadSettingsFromDatabaseAsync(cancellationToken) ?? CreateEmptyOptions();
+            cached = GetCachedSettings(connectionString);
+            if (cached is not null)
+                return cached;
+
+            AlfaKnowledgeOptions settings;
+            try
+            {
+                settings = await LoadSettingsFromDatabaseAsync(cancellationToken) ?? CreateEmptyOptions();
+            }
+            catch (Exception ex) when (ex is SqlException or InvalidOperationException)
+            {
+                logger.LogWarning(ex, "No se pudo leer la configuración de AlfaKnowledge desde TA_CONFIGURACION.");
+                settings = CreateEmptyOptions();
+            }
+
+            cachedSettings = settings;
+            cachedSettingsConnectionString = connectionString;
+            return settings;
         }
-        catch (Exception ex) when (ex is SqlException or InvalidOperationException)
+        finally
         {
-            logger.LogWarning(ex, "No se pudo leer la configuración de AlfaKnowledge desde TA_CONFIGURACION.");
-            return CreateEmptyOptions();
+            settingsGate.Release();
         }
+    }
+
+    private AlfaKnowledgeOptions? GetCachedSettings(string? connectionString = null)
+    {
+        connectionString ??= ResolveConnectionString();
+        return cachedSettings is not null
+            && string.Equals(cachedSettingsConnectionString, connectionString, StringComparison.Ordinal)
+            ? cachedSettings
+            : null;
     }
 
     private AlfaKnowledgeOptions? LoadSettingsFromDatabase()

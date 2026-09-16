@@ -93,7 +93,7 @@ else
         SessionSvc.SessionChanged += OnContextChanged;
         AppUserSession.StateChanged += OnContextChanged;
 
-        if (WorkspaceSvc.TryGetCachedModuleWorkspace(ModuleKey, out var cachedWorkspace))
+        if (CanUseActiveSessionForRoute() && WorkspaceSvc.TryGetCachedModuleWorkspace(ModuleKey, out var cachedWorkspace))
         {
             _workspace = cachedWorkspace;
             _loading = false;
@@ -176,7 +176,7 @@ else
 
     private bool TryUseCachedWorkspace()
     {
-        if (!WorkspaceSvc.TryGetCachedModuleWorkspace(ModuleKey, out var cachedWorkspace))
+        if (!CanUseActiveSessionForRoute() || !WorkspaceSvc.TryGetCachedModuleWorkspace(ModuleKey, out var cachedWorkspace))
             return false;
 
         _workspace = cachedWorkspace;
@@ -203,6 +203,8 @@ else
                 ? await WorkspaceSvc.GetModuleWorkspaceAsync(ModuleKey, cts.Token)
                 : await WorkspaceSvc.RefreshModuleWorkspaceAsync(ModuleKey, cts.Token);
             if (version != _loadVersion)
+                return;
+            if (!CanUseActiveSessionForRoute())
                 return;
 
             _workspace = workspace;
@@ -233,6 +235,9 @@ else
 
     private bool HasVisibleWorkspace()
         => _workspace.Module is not null || _workspace.Sections.Count > 0 || _workspace.Favorites.Count > 0 || _workspace.Recents.Count > 0;
+
+    private bool CanUseActiveSessionForRoute()
+        => idbase is not > 0 || SessionSvc.GetActiveSession()?.BaseId == idbase.Value;
 
     public void Dispose()
     {

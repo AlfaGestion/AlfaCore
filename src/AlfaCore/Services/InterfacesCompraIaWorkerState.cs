@@ -11,6 +11,13 @@ namespace AlfaCore.Services;
 public sealed class InterfacesCompraIaWorkerState
 {
     private readonly object _sync = new();
+    private HashSet<int>? _basesHabilitadas;
+
+    public void SetBasesHabilitadas(IEnumerable<int> ids)
+    {
+        lock (_sync) _basesHabilitadas = ids.ToHashSet();
+    }
+
     private readonly Dictionary<int, BaseState> _porBase = new();
 
     private sealed class BaseState
@@ -104,6 +111,14 @@ public sealed class InterfacesCompraIaWorkerState
     {
         lock (_sync)
         {
+            if (_basesHabilitadas is not null && !_basesHabilitadas.Contains(idBase))
+                return new InterfacesCompraIaWorkerStatusDto
+                {
+                    Estado = "DESHABILITADO",
+                    Descripcion = "Lectura automática sin habilitación central",
+                    UltimoMensaje = "Activá Carga de comprobantes con IA para el cliente y seleccioná esta base en Administrar.",
+                    ProximoIntento = null
+                };
             if (!_porBase.TryGetValue(idBase, out var e))
             {
                 return new InterfacesCompraIaWorkerStatusDto

@@ -8,6 +8,7 @@ namespace AlfaCore.Services;
 
 public sealed class InterfacesConfigService(
     ISessionService sessionService,
+    ISaaSTenantRouteGuard tenantRouteGuard,
     IAppEventService appEvents) : IInterfacesConfigService
 {
     private const string ConfigGroup = "INTERFACES";
@@ -33,11 +34,20 @@ public sealed class InterfacesConfigService(
         }
     }
 
+    private string ResolveConnectionString(int? expectedBaseId, string operationName)
+        => expectedBaseId is > 0
+            ? tenantRouteGuard.GetRequiredConnection(expectedBaseId, operationName).ConnectionString
+            : ConnectionString;
+
     public Task<InterfacesUploadSettingsDto> GetUploadSettingsAsync(CancellationToken ct = default)
+        => GetUploadSettingsAsync(null, ct);
+
+    public Task<InterfacesUploadSettingsDto> GetUploadSettingsAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "GetUploadSettings", async token =>
         {
             var activeSession = sessionService.GetActiveSession();
-            await using var cn = new SqlConnection(ConnectionString);
+            var connectionString = ResolveConnectionString(expectedBaseId, "InterfacesConfig.GetUploadSettings");
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
 
@@ -253,9 +263,13 @@ public sealed class InterfacesConfigService(
     }
 
     public Task<InterfacesCompraIaSettingsDto> GetCompraIaSettingsAsync(CancellationToken ct = default)
+        => GetCompraIaSettingsAsync(null, ct);
+
+    public Task<InterfacesCompraIaSettingsDto> GetCompraIaSettingsAsync(int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Interfaces", "GetCompraIaSettings", async token =>
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            var connectionString = ResolveConnectionString(expectedBaseId, "InterfacesConfig.GetCompraIaSettings");
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
             var detailColumn = await ResolveDetailColumnAsync(cn, token);
 

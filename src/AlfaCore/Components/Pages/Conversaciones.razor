@@ -4129,6 +4129,10 @@
         _crmModuloActivo = await AdminSvc.IsModuloActivoParaClienteActualAsync("CRM");
         if (!IsTenantLoadCurrent(lease))
             return;
+
+        if (_alfaKnowledgeModuloActivo)
+            await AlfaKnowledgeSvc.EnsureConfiguredAsync();
+
         await LoadWhatsAppNumerosAndAdminStatusAsync();
         await LoadInboxPreferenceAsync();
 
@@ -8238,11 +8242,24 @@
 
     private async Task EnsureProgramarTemplatesAsync()
     {
+        if (!TryCaptureTenantLoad(out var lease))
+        {
+            _programarTemplates = [];
+            return;
+        }
+
         if (_programarTemplates.Count > 0)
             return;
         try
         {
-            var all = await ConversacionesSvc.GetTemplatesAsync(new ConversacionPlantillaFilters { EstadoMeta = "APPROVED" });
+            var all = await ConversacionesSvc.GetTemplatesAsync(new ConversacionPlantillaFilters
+            {
+                ExpectedBaseId = lease.BaseId,
+                EstadoMeta = "APPROVED"
+            });
+            if (!IsTenantLoadCurrent(lease))
+                return;
+
             _programarTemplates = all
                 .Where(t => t.Activa && string.Equals(t.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
                 .ToList();
@@ -8455,11 +8472,23 @@
 
     private async Task LoadTemplatesForConversationAsync()
     {
+        if (_selectedConversation is null || !TryCaptureTenantLoad(out var lease))
+        {
+            _availableTemplates = [];
+            _loadingTemplates = false;
+            return;
+        }
+
         _loadingTemplates = true;
+        _availableTemplates = [];
 
         try
         {
-            _availableTemplates = (await ConversacionesSvc.GetTemplatesForConversationAsync(_selectedConversation!.IdConversacion))
+            var loaded = await ConversacionesSvc.GetTemplatesForConversationAsync(_selectedConversation.IdConversacion, lease.BaseId);
+            if (!IsTenantLoadCurrent(lease))
+                return;
+
+            _availableTemplates = loaded
             .Where(x => string.Equals(x.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
             .OrderBy(x => x.NombreVisible)
             .ToList();
@@ -9518,7 +9547,9 @@
             var instruction =
                 "Mejorá únicamente la redacción del siguiente borrador, manteniendo exactamente su intención, " +
                 "los datos y el tono profesional cercano. No agregues información, explicaciones, saludos ni " +
-                $"contenido nuevo. Devolvé solamente el texto final mejorado. Borrador: {draft}";
+                "contenido nuevo. Usá español rioplatense argentino y voseo natural; no uses ‘tú’, ‘tienes’, " +
+                "‘puedes’ ni ‘quieres’. Devolvé solamente el texto final mejorado. " +
+                $"Borrador: {draft}";
             var result = await AlfaKnowledgeSvc.SuggestReplyAsync(
                 focusMessage.Texto,
                 _messages,

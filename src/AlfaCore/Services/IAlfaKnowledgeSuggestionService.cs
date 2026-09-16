@@ -6,6 +6,8 @@ public interface IAlfaKnowledgeSuggestionService
 {
     bool IsConfigured { get; }
 
+    Task<bool> EnsureConfiguredAsync(CancellationToken cancellationToken = default);
+
     string FullChatUrl { get; }
 
     string GetCitationUrl(AlfaKnowledgeSuggestionCitation citation);

@@ -9,6 +9,7 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService Session
+@inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
 @inject NavigationManager Navigation
 @inject IJSRuntime Js
 
@@ -512,6 +513,7 @@
     private InterfacesTab _activeTab = InterfacesTab.Datos;
     private PendingUploadFile? _previewPendingFile;
     private decimal _previewZoom = 100m;
+    private AlfaCore.Services.SaaSTenantRouteLease _tenantLease;
 
     private bool _isNewMode => !IdComprobanteRecibido.HasValue;
     private bool IsSavingDetalle => _savingEdit || _changingState;
@@ -525,8 +527,11 @@
         _loading = true;
         try
         {
+            if (!await EnsureTenantAsync())
+                return;
+
             await LoadCatalogsAsync();
-            _settings = await InterfacesConfigSvc.GetUploadSettingsAsync();
+            _settings = await InterfacesConfigSvc.GetUploadSettingsAsync(CurrentExpectedBaseId());
 
             if (_isNewMode)
             {
@@ -549,12 +554,40 @@
         await Js.InvokeVoidAsync("alfaCoreInterfacesUpload.bindPasteDrop", "#interfaces-extra-dropzone", "#interfaces-extra-picker");
     }
 
+    private int? CurrentExpectedBaseId()
+        => idbase is > 0 ? idbase : Session.GetActiveSession()?.BaseId;
+
+    private bool IsCurrentTenant(AlfaCore.Services.SaaSTenantRouteLease lease)
+        => TenantRouteGuard.IsCurrent(lease, idbase is > 0 ? idbase : null, Session.GetActiveSession()?.BaseId);
+
+    private async Task<bool> EnsureTenantAsync()
+    {
+        var context = await TenantRouteGuard.ResolveAsync(idbase, idweb);
+        if (!context.IsValid)
+        {
+            _detail = null;
+            _states.Clear();
+            _documentTypes.Clear();
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "Base no disponible",
+                Message = "No se pudo resolver la base de esta URL."
+            };
+            return false;
+        }
+
+        _tenantLease = context.Lease;
+        return true;
+    }
+
     private async Task LoadCatalogsAsync()
     {
+        var expectedBaseId = CurrentExpectedBaseId();
         _states.Clear();
-        _states.AddRange(await InterfacesSvc.GetStatesAsync());
+        _states.AddRange(await InterfacesSvc.GetStatesAsync(expectedBaseId));
         _documentTypes.Clear();
-        _documentTypes.AddRange(await InterfacesSvc.GetDocumentTypesAsync());
+        _documentTypes.AddRange(await InterfacesSvc.GetDocumentTypesAsync(expectedBaseId));
     }
 
     private async Task CargarDetalleAsync()
@@ -562,7 +595,10 @@
         if (!IdComprobanteRecibido.HasValue)
             return;
 
-        var result = await UiOps.RunAsync(() => InterfacesSvc.GetByIdAsync(IdComprobanteRecibido.Value), "No se pudo cargar el documento.");
+        var expectedBaseId = CurrentExpectedBaseId();
+        var result = await UiOps.RunAsync(() => InterfacesSvc.GetByIdAsync(IdComprobanteRecibido.Value, expectedBaseId), "No se pudo cargar el documento.");
+        if (!IsCurrentTenant(_tenantLease))
+            return;
         if (!result.Success || result.Value is null)
         {
             SetFeedback(result.Feedback);
@@ -618,7 +654,7 @@
             if (hashes.Count > 0)
             {
                 var dupResult = await UiOps.RunAsync(
-                    () => InterfacesSvc.FindFilesByHashAsync(hashes),
+                    () => InterfacesSvc.FindFilesByHashAsync(hashes, CurrentExpectedBaseId()),
                     "No se pudo verificar duplicados.");
 
                 if (dupResult.Success && dupResult.Value is { Count: > 0 })
@@ -659,7 +695,7 @@
                     UsuarioAccion = CurrentUserName,
                     PcAccion = Environment.MachineName,
                     Adjuntos = attachments
-                }), "No se pudo registrar el comprobante.");
+                }, CurrentExpectedBaseId()), "No se pudo registrar el comprobante.");
 
                 if (!result.Success)
                 {

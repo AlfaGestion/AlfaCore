@@ -5,7 +5,7 @@ using Microsoft.Data.SqlClient;
 namespace AlfaCore.Services;
 
 /// <summary>
-/// Procesa la cola de lectura IA de compras de TODAS las bases activas, en cada ciclo. No puede
+/// Procesa la cola de lectura IA de compras solo de las bases autorizadas explícitamente en la central, en cada ciclo. No puede
 /// depender de <see cref="IAppUserSessionService.CurrentUser"/> (el scope de un BackgroundService
 /// nunca tiene sesión de usuario logueado, aunque haya gente usando la app en otro circuito Blazor)
 /// asi que, para cada base, fuerza esa base como activa via
@@ -32,13 +32,28 @@ public sealed class InterfacesCompraIaWorkerHostedService(
 
             try
             {
-                using var scope = services.CreateScope();
-                var basesSvc = scope.ServiceProvider.GetRequiredService<ICentralBasesService>();
-                var sessionSvc = scope.ServiceProvider.GetRequiredService<ISessionService>();
-                var configSvc = scope.ServiceProvider.GetRequiredService<IInterfacesConfigService>();
-                var interfacesSvc = scope.ServiceProvider.GetRequiredService<IInterfacesService>();
+                nextDelaySeconds = await RunCycleAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error general en el worker de lectura automática de compras (listado de bases).");
+            }
 
-                var bases = await basesSvc.GetAllAsync(stoppingToken);
+            await Task.Delay(TimeSpan.FromSeconds(nextDelaySeconds), stoppingToken);
+        }
+    }
+
+    internal async Task<int> RunCycleAsync(CancellationToken stoppingToken)
+    {
+                using var scope = services.CreateScope();
+                var basesSvc = scope.ServiceProvider.GetRequiredService<ICentralCompraIaService>();
+
+                var bases = await basesSvc.GetBasesHabilitadasAsync(stoppingToken);
+                state.SetBasesHabilitadas(bases.Select(b => b.IdBase));
                 var intervalosActivos = new List<int>();
 
                 foreach (var b in bases)
@@ -50,6 +65,8 @@ public sealed class InterfacesCompraIaWorkerHostedService(
 
                     try
                     {
+                        using var baseScope = services.CreateScope();
+                        var sessionSvc = baseScope.ServiceProvider.GetRequiredService<ISessionService>();
                         sessionSvc.SetWebhookOverride(new SessionDto
                         {
                             BaseId = b.IdBase,
@@ -61,6 +78,7 @@ public sealed class InterfacesCompraIaWorkerHostedService(
                             TrustServerCertificate = true
                         });
 
+                        var configSvc = baseScope.ServiceProvider.GetRequiredService<IInterfacesConfigService>();
                         var settings = await configSvc.GetCompraIaSettingsAsync(stoppingToken);
                         delaySecondsBase = Math.Max(3, settings.WorkerIntervaloSegundos);
 
@@ -68,6 +86,7 @@ public sealed class InterfacesCompraIaWorkerHostedService(
                         {
                             intervalosActivos.Add(delaySecondsBase);
                             state.MarkRunning(b.IdBase, "Ejecutando cola de compras.");
+                            var interfacesSvc = baseScope.ServiceProvider.GetRequiredService<IInterfacesService>();
                             var processed = await interfacesSvc.ProcessCompraIaQueueAsync(stoppingToken);
                             state.MarkProcessed(b.IdBase, processed);
                             state.MarkWaiting(b.IdBase, delaySecondsBase, processed > 0
@@ -103,19 +122,7 @@ public sealed class InterfacesCompraIaWorkerHostedService(
 
                 // La cadencia del ciclo compartido sigue al intervalo mas corto entre las bases
                 // que realmente tienen el worker habilitado (si ninguna lo tiene, usa el default).
-                nextDelaySeconds = intervalosActivos.Count > 0 ? intervalosActivos.Min() : DefaultDelaySeconds;
-            }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error general en el worker de lectura automática de compras (listado de bases).");
-            }
-
-            await Task.Delay(TimeSpan.FromSeconds(nextDelaySeconds), stoppingToken);
-        }
+                return intervalosActivos.Count > 0 ? intervalosActivos.Min() : DefaultDelaySeconds;
     }
 
     private void RegisterConnectionWarning(int idBase, int delaySeconds, Exception ex)

@@ -6,6 +6,8 @@
 @inject AlfaCore.Services.IInterfacesConfigService InterfacesConfigSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
 
 <PageTitle>Alta por lote | Interfaces</PageTitle>
 
@@ -169,13 +171,37 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (!await EnsureTenantAsync())
+            return;
+
         _documentTypes.Clear();
-        _documentTypes.AddRange(await InterfacesSvc.GetDocumentTypesAsync());
-        _settings = await InterfacesConfigSvc.GetUploadSettingsAsync();
+        _documentTypes.AddRange(await InterfacesSvc.GetDocumentTypesAsync(CurrentExpectedBaseId()));
+        _settings = await InterfacesConfigSvc.GetUploadSettingsAsync(CurrentExpectedBaseId());
 
         var compras = _documentTypes.FirstOrDefault(t => string.Equals(t.Codigo, "COMPROBANTE_COMPRA", StringComparison.OrdinalIgnoreCase));
         if (compras is not null)
             _idTipoDocumento = compras.IdTipoDocumento;
+    }
+
+    private int? CurrentExpectedBaseId()
+        => idbase is > 0 ? idbase : SessionSvc.GetActiveSession()?.BaseId;
+
+    private async Task<bool> EnsureTenantAsync()
+    {
+        var context = await TenantRouteGuard.ResolveAsync(idbase, idweb);
+        if (context.IsValid)
+            return true;
+
+        _documentTypes.Clear();
+        _selectedFiles.Clear();
+        _settings = null;
+        _feedback = new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Warning,
+            Title = "Base no disponible",
+            Message = "No se pudo resolver la base de esta URL."
+        };
+        return false;
     }
 
     private async Task HandleFilesSelectedAsync(InputFileChangeEventArgs e)
@@ -264,7 +290,7 @@
                     UsuarioAccion = CurrentUserName,
                     PcAccion = Environment.MachineName,
                     Archivos = archivos
-                }), "No se pudo procesar el alta por lote.");
+                }, CurrentExpectedBaseId()), "No se pudo procesar el alta por lote.");
 
                 if (!result.Success)
                 {
