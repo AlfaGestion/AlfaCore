@@ -309,6 +309,11 @@ public sealed class WhatsAppTenantIsolationTests
         var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesPlantillas.razor"));
         var routeBase = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "SaaSRoutePageBase.cs"));
         var route = source.IndexOf("@page \"/{idweb}/{idbase:int}/conversaciones/plantillas\"", StringComparison.Ordinal);
+        var parameters = source.IndexOf("protected override async Task OnParametersSetAsync()", StringComparison.Ordinal);
+        var protectedLoad = source.IndexOf("private async Task CompleteProtectedLoadAsync()", parameters, StringComparison.Ordinal);
+        var waitSession = source.IndexOf("SessionInitialization.WaitUntilReadyAsync(_lifetimeCts.Token)", protectedLoad, StringComparison.Ordinal);
+        var waitIdentity = source.IndexOf("TenantIdentityReadiness.WaitForTenantIdentityReadyAsync(_lifetimeCts.Token)", waitSession, StringComparison.Ordinal);
+        var protectedRouteLoad = source.IndexOf("await LoadRouteTenantAsync();", waitIdentity, StringComparison.Ordinal);
         var loadRoute = source.IndexOf("private async Task LoadRouteTenantAsync()", StringComparison.Ordinal);
         var reset = source.IndexOf("ResetTenantData();", loadRoute, StringComparison.Ordinal);
         var ensure = source.IndexOf("EnsureRouteTenantReady(expectedBaseId)", loadRoute, StringComparison.Ordinal);
@@ -318,10 +323,50 @@ public sealed class WhatsAppTenantIsolationTests
 
         Assert.True(route >= 0);
         Assert.Contains("public int? idbase { get; set; }", routeBase, StringComparison.Ordinal);
-        Assert.True(loadRoute > route);
+        Assert.True(parameters > route && protectedLoad > parameters);
+        Assert.True(waitSession > protectedLoad && waitIdentity > waitSession && protectedRouteLoad > waitIdentity);
+        Assert.True(loadRoute > protectedRouteLoad);
         Assert.True(reset > loadRoute && ensure > reset && numeros > ensure && templates > numeros);
         Assert.True(detail > loadRoute);
         Assert.Contains("_loadError = \"No se pudo abrir la información de esta base.\";", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PlantillasRoute_WaitsForSessionAndTenantIdentityBeforeFailClosedGuard()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesPlantillas.razor"));
+
+        Assert.Contains("@inject AlfaCore.Services.IAppSessionInitialization SessionInitialization", source, StringComparison.Ordinal);
+        Assert.Contains("@inject AlfaCore.Services.ITenantIdentityReadiness TenantIdentityReadiness", source, StringComparison.Ordinal);
+
+        var protectedLoad = source.IndexOf("private async Task CompleteProtectedLoadAsync()", StringComparison.Ordinal);
+        var sessionReady = source.IndexOf("await SessionInitialization.WaitUntilReadyAsync(_lifetimeCts.Token)", protectedLoad, StringComparison.Ordinal);
+        var authenticated = source.IndexOf("if (!AppUserSession.IsAuthenticated)", sessionReady, StringComparison.Ordinal);
+        var tenantReady = source.IndexOf("await TenantIdentityReadiness.WaitForTenantIdentityReadyAsync(_lifetimeCts.Token)", authenticated, StringComparison.Ordinal);
+        var loadRoute = source.IndexOf("await LoadRouteTenantAsync();", tenantReady, StringComparison.Ordinal);
+        var failClosedGuard = source.IndexOf("EnsureRouteTenantReady(expectedBaseId)", source.IndexOf("private async Task LoadRouteTenantAsync()", StringComparison.Ordinal), StringComparison.Ordinal);
+
+        Assert.True(protectedLoad >= 0);
+        Assert.True(sessionReady > protectedLoad);
+        Assert.True(authenticated > sessionReady);
+        Assert.True(tenantReady > authenticated);
+        Assert.True(loadRoute > tenantReady);
+        Assert.True(failClosedGuard > loadRoute);
+    }
+
+    [Fact]
+    public void PlantillasRoute_ReusesProtectedLoadForDirectInternalRefreshAndCurrentSessionCases()
+    {
+        var source = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Components", "Pages", "ConversacionesPlantillas.razor"));
+
+        Assert.Contains("protected override async Task OnParametersSetAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("await CompleteProtectedLoadAsync();", source, StringComparison.Ordinal);
+        Assert.Contains("_ = InvokeAsync(CompleteProtectedLoadAsync);", source, StringComparison.Ordinal);
+        Assert.Contains("active?.BaseId == expectedBaseId.Value", source, StringComparison.Ordinal);
+        Assert.Contains("return AppUserSession.IsAuthorizedForSession(active.Id);", source, StringComparison.Ordinal);
+        Assert.Contains("SessionSvc.SwitchSession(routeSession.Id);", source, StringComparison.Ordinal);
+        Assert.Contains("_lifetimeCts.Cancel();", source, StringComparison.Ordinal);
+        Assert.Contains("_lifetimeCts.Dispose();", source, StringComparison.Ordinal);
     }
 
     [Fact]
