@@ -28,10 +28,15 @@ namespace AlfaCore.Services;
 /// un número con ownership central incompleto o la legacy de varios números manuales, el mecanismo es
 /// el mismo y la reserva es por WabaId, así que 5 números con la misma WABA producen un solo GET
 /// efectivo por ventana. Usa WhatsAppRuntimeCredential (el mismo credential de envío de mensajes) --
-/// nunca el Vault de onboarding, nunca un token legacy arbitrario. Si Meta resuelve el Business,
-/// además de cachearlo tenant-side intenta reparar el ownership CENTRAL (WhatsAppWabaOwnership.
-/// MetaBusinessId) para que otros procesos/tenants futuros no tengan que re-descubrirlo -- fail-closed
-/// si el central ya tenía otro valor (ver IWhatsAppAssetOwnershipStore.TryRepairWabaMetaBusinessIdAsync).
+/// nunca el Vault de onboarding, nunca un token legacy arbitrario. Si Meta resuelve el Business, PRIMERO
+/// intenta reparar el ownership CENTRAL (WhatsAppWabaOwnership.MetaBusinessId -- ver
+/// IWhatsAppAssetOwnershipStore.TryRepairWabaMetaBusinessIdAsync) y sólo si es consistente (vacío
+/// reparado, o ya coincidía, o la WABA nunca se reservó centralmente -- legacy) recién ahí cachea
+/// tenant-side. Si el central ya tenía OTRO valor no vacío (Conflict, una inconsistencia real): fail
+/// closed total -- ni se pisa central ni se persiste el valor de Meta en ningún lado tenant (ni
+/// CONV_WHATSAPP_NUMEROS ni CONV_WHATSAPP_WABA_BUSINESS_MAP), sólo se deja constancia sanitizada para
+/// diagnóstico (IAppEventService.LogAuditAsync). El orden importa: cachear tenant ANTES de chequear el
+/// central dejaría central=A y tenant=B -- inconsistente, no fail-closed.
 ///
 /// TryResolvePortfolioNameAsync resuelve el NOMBRE para un MetaBusinessId ya conocido -- mismo patrón de
 /// throttle/credential, sin cambios respecto de antes.
@@ -62,7 +67,8 @@ public sealed class WhatsAppPortfolioResolutionService(
     IWhatsAppAssetOwnershipStore ownershipStore,
     IMetaWhatsAppManagementClient managementClient,
     IWhatsAppRuntimeCredentialResolver credentialResolver,
-    IOptions<WhatsAppEmbeddedSignupOptions> options) : IWhatsAppPortfolioResolutionService
+    IOptions<WhatsAppEmbeddedSignupOptions> options,
+    IAppEventService appEvents) : IWhatsAppPortfolioResolutionService
 {
     private readonly WhatsAppEmbeddedSignupOptions _options = options.Value;
 
@@ -165,15 +171,51 @@ public sealed class WhatsAppPortfolioResolutionService(
             if (string.IsNullOrWhiteSpace(businessId))
                 return;
 
-            // Primero la caché tenant (lo que la UI de ESTA base lee), después el intento de reparar el
-            // central -- nunca al revés: si el repair fallara por lo que sea, la UI de esta base igual
-            // queda resuelta correctamente.
+            // El central es SIEMPRE lo primero que se consulta, antes de tocar nada tenant -- si el
+            // central ya tiene un MetaBusinessId distinto (Conflict), NO se persiste el valor de Meta ni
+            // acá ni en CONV_WHATSAPP_NUMEROS/CONV_WHATSAPP_WABA_BUSINESS_MAP, ni se resuelve el nombre
+            // del portfolio con él. Escribir tenant primero (como hacía antes) dejaba central=A y
+            // tenant=B -- una inconsistencia real, no un fail-closed. Repaired/AlreadyMatches/NotFound
+            // (WABA nunca reservada centralmente -- típico de la legacy de un número manual) sí son
+            // consistentes: recién ahí se completa la caché tenant.
+            var repairResult = await ownershipStore.TryRepairWabaMetaBusinessIdAsync(normalizedWabaId, idBase, businessId, ct);
+            if (repairResult == WhatsAppWabaMetaBusinessRepairResult.Conflict)
+            {
+                await LogWabaMetaBusinessConflictAsync(idBase, normalizedWabaId, businessId, ct);
+                return; // El número queda RESOLVABLE/pendiente -- nunca UNKNOWN -- con lo que ya
+                        // hubiera cacheado antes (si algo), sin tocar nada nuevo.
+            }
+
             await conversacionesConfig.SetWabaOwningBusinessIdAsync(idBase, normalizedWabaId, businessId, ct);
-            await ownershipStore.TryRepairWabaMetaBusinessIdAsync(normalizedWabaId, idBase, businessId, ct);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             // Best-effort -- ya se registró el intento (throttle). Nunca debe poder romper Configuración.
+        }
+    }
+
+    /// <summary>
+    /// Diagnóstico interno, sanitizado -- sólo ids técnicos de Meta (Waba/Business), nunca tokens ni
+    /// datos de cliente. Nunca lanza: si el logueo en sí fallara, el fail-closed de arriba ya se
+    /// cumplió igual (nada se sobrescribió, nada se persistió mal) y no hace falta romper la pantalla
+    /// sólo porque no se pudo dejar constancia.
+    /// </summary>
+    private async Task LogWabaMetaBusinessConflictAsync(int idBase, string wabaId, string resolvedMetaBusinessId, CancellationToken ct)
+    {
+        try
+        {
+            await appEvents.LogAuditAsync(
+                "WhatsAppPortfolio",
+                "WabaMetaBusinessConflict",
+                "WhatsAppWabaOwnership",
+                wabaId,
+                "El ownership central ya tiene un MetaBusinessId distinto del que Meta devolvió ahora para esta WABA -- fail closed, no se sobrescribió ni se persistió tenant-side.",
+                new { IdBase = idBase, WabaId = wabaId, MetaResolvedBusinessId = resolvedMetaBusinessId },
+                ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Dejar constancia es best-effort -- nunca debe poder romper Configuración.
         }
     }
 

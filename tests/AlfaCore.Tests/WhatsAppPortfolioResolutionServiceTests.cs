@@ -341,20 +341,144 @@ public sealed class WhatsAppPortfolioResolutionServiceTests
     }
 
     [Fact]
-    public async Task ResolveWaba_NeverOverwritesCentral_WhenRepairConflicts_ButStillCachesTenant()
+    public async Task ResolveWaba_CentralEmpty_MetaB_RepairsCentral_AndPersistsTenant()
     {
-        // Si el central tiene un valor DISTINTO (inconsistencia real -- no debería pasar en la práctica,
-        // pero el repair es fail-closed), la caché TENANT de esta base igual se completa con lo que Meta
-        // dijo -- la UI de esta base no debe quedar rota por una inconsistencia del central que no le
-        // pertenece resolver.
+        // Central vacío + Meta B -> permitido: central se repara a B, tenant se persiste con B.
         var ctx = CreateContext();
-        ctx.Ownership.Seed("phone-1", "waba-1", 84, metaBusinessId: "biz-central-viejo-y-distinto");
-        ctx.Management.WabaOwningBusinesses["waba-1"] = "biz-nuevo-resuelto-por-meta";
+        ctx.Ownership.Seed("phone-1", "waba-1", 84, metaBusinessId: "");
+        ctx.Management.WabaOwningBusinesses["waba-1"] = "B";
 
         await ctx.Service.TryResolveWabaOwningBusinessAsync(84, "waba-1", "phone-1");
 
-        Assert.Equal("biz-nuevo-resuelto-por-meta", ctx.Config.WabaBusinessMap["waba-1"]); // Tenant sí se completa.
-        Assert.Equal("biz-central-viejo-y-distinto", (await ctx.Ownership.GetWabaOwnershipAsync("waba-1"))!.MetaBusinessId); // Central nunca se pisa.
+        Assert.Equal("B", (await ctx.Ownership.GetWabaOwnershipAsync("waba-1"))!.MetaBusinessId); // Central reparado.
+        Assert.Equal("B", ctx.Config.WabaBusinessMap["waba-1"]); // Tenant persistido.
+        Assert.Empty(ctx.Events.AuditEntries); // Sin conflicto -- nada que diagnosticar.
+    }
+
+    [Fact]
+    public async Task ResolveWaba_CentralB_MetaB_IsIdempotentNoOp_TenantStillPersisted()
+    {
+        // Central = B + Meta = B -> permitido/idempotente: no hay nada que reparar (AlreadyMatches),
+        // pero el tenant de todos modos se persiste (es consistente, no un conflicto).
+        var ctx = CreateContext();
+        ctx.Ownership.Seed("phone-1", "waba-1", 84, metaBusinessId: "B");
+        ctx.Management.WabaOwningBusinesses["waba-1"] = "B";
+
+        await ctx.Service.TryResolveWabaOwningBusinessAsync(84, "waba-1", "phone-1");
+
+        Assert.Equal("B", (await ctx.Ownership.GetWabaOwnershipAsync("waba-1"))!.MetaBusinessId); // Sin cambios.
+        Assert.Equal("B", ctx.Config.WabaBusinessMap["waba-1"]);
+        Assert.Empty(ctx.Events.AuditEntries);
+    }
+
+    [Fact]
+    public async Task ResolveWaba_CentralA_MetaB_NeverPersistsBInTenantNumeroMap()
+    {
+        // Central = A (no vacío) + Meta = B, A != B -> obligatorio: NO persistir B en
+        // CONV_WHATSAPP_WABA_BUSINESS_MAP (la única caché tenant que este método escribe directamente).
+        var ctx = CreateContext();
+        ctx.Ownership.Seed("phone-1", "waba-1", 84, metaBusinessId: "A");
+        ctx.Management.WabaOwningBusinesses["waba-1"] = "B";
+
+        await ctx.Service.TryResolveWabaOwningBusinessAsync(84, "waba-1", "phone-1");
+
+        Assert.False(ctx.Config.WabaBusinessMap.ContainsKey("waba-1")); // Nunca se escribió B (ni nada).
+    }
+
+    [Fact]
+    public async Task ResolveWaba_CentralA_MetaB_NeverOverwritesCentral()
+    {
+        var ctx = CreateContext();
+        ctx.Ownership.Seed("phone-1", "waba-1", 84, metaBusinessId: "A");
+        ctx.Management.WabaOwningBusinesses["waba-1"] = "B";
+
+        await ctx.Service.TryResolveWabaOwningBusinessAsync(84, "waba-1", "phone-1");
+
+        Assert.Equal("A", (await ctx.Ownership.GetWabaOwnershipAsync("waba-1"))!.MetaBusinessId); // Central intacto.
+    }
+
+    [Fact]
+    public async Task ResolveWaba_CentralA_MetaB_NeverResolvesOrCachesPortfolioB()
+    {
+        // "NO resolver/cachear Portfolio B": como nunca se persiste MetaBusinessId=B en ningún lado
+        // tenant, TryResolvePortfolioNameAsync(idBase, "B", ...) ni siquiera tiene desde dónde
+        // dispararse en el pipeline real (el Razor sólo lo llama para un numero.MetaBusinessId ya
+        // backfillado) -- acá se confirma directamente que CONV_WHATSAPP_BUSINESS_PORTFOLIOS (nombres)
+        // nunca recibe una entrada para "B".
+        var ctx = CreateContext();
+        ctx.Ownership.Seed("phone-1", "waba-1", 84, metaBusinessId: "A");
+        ctx.Management.WabaOwningBusinesses["waba-1"] = "B";
+        ctx.Management.Names["B"] = "Portfolio B (no debería resolverse)";
+
+        await ctx.Service.TryResolveWabaOwningBusinessAsync(84, "waba-1", "phone-1");
+
+        Assert.False(ctx.Config.PortfolioNames.ContainsKey("B"));
+        Assert.Equal(0, ctx.Management.GetBusinessNameCalls); // Nunca se llegó a pedir el nombre.
+    }
+
+    [Fact]
+    public async Task ResolveWaba_CentralA_MetaB_NeverThrows_RegistersSanitizedDiagnostic_KeepsUnrelatedCache()
+    {
+        // "pantalla no explota" + "registrar inconsistencia sanitizada" + "mantener cualquier cache
+        // previo ya existente sin borrarlo" -- probado con la caché de OTRA WABA (no relacionada al
+        // conflicto) para no interferir con el throttle claim de "waba-1" (si "waba-1" ya tuviera un
+        // nombre cacheado, el claim se negaría solo por eso, sin siquiera llegar al chequeo de central).
+        var ctx = CreateContext();
+        ctx.Ownership.Seed("phone-1", "waba-1", 84, metaBusinessId: "A");
+        ctx.Management.WabaOwningBusinesses["waba-1"] = "B";
+        ctx.Config.WabaBusinessMap["waba-otra"] = "otro-valor-cacheado-sin-relacion"; // Caché previo de OTRA WABA.
+
+        var exceptionThrown = await Record.ExceptionAsync(() => ctx.Service.TryResolveWabaOwningBusinessAsync(84, "waba-1", "phone-1"));
+
+        Assert.Null(exceptionThrown); // Nunca rompe Configuración.
+        Assert.False(ctx.Config.WabaBusinessMap.ContainsKey("waba-1")); // El conflicto no escribió nada para "waba-1".
+        Assert.Equal("otro-valor-cacheado-sin-relacion", ctx.Config.WabaBusinessMap["waba-otra"]); // Caché ajeno intacto.
+
+        var entry = Assert.Single(ctx.Events.AuditEntries);
+        Assert.Equal("WhatsAppPortfolio", entry.Module);
+        Assert.Equal("waba-1", entry.EntityId);
+        // Sanitizado: sólo ids técnicos de Meta (Waba/Business), nunca tokens ni datos de cliente.
+        Assert.DoesNotContain("token", entry.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("AccessToken", entry.Data?.ToString() ?? "", StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Backfill_CentralA_MetaAlreadyResolvedToB_NumeroStaysResolvablePending_NeverUnknown()
+    {
+        // El número (WabaId ya conocido, MetaBusinessId todavía vacío porque el conflicto impidió
+        // completarlo) sigue siendo RESOLVABLE -- nunca UNKNOWN. Central YA tenía "A" antes del intento
+        // conflictivo (por eso hubo Conflict en primer lugar): un backfill posterior sigue leyendo esa
+        // "A", que es la autoritativa -- el intento fallido de reconciliar con "B" no la borra ni la
+        // rompe. El número termina resuelto con "A" (el valor bueno que ya estaba), no "atascado vacío".
+        var ctx = CreateContext();
+        ctx.Ownership.Seed("phone-1", "waba-1", 84, metaBusinessId: "A");
+        ctx.Management.WabaOwningBusinesses["waba-1"] = "B";
+        await ctx.Service.TryResolveWabaOwningBusinessAsync(84, "waba-1", "phone-1"); // Conflict -- no persiste nada tenant.
+
+        var numero = Numero(1, "phone-1");
+        var identity = await ctx.Service.BackfillNumeroMetaIdentityAsync(84, numero);
+
+        Assert.NotNull(identity); // RESOLVABLE, no null/UNKNOWN.
+        Assert.Equal("waba-1", identity!.WabaId);
+        Assert.Equal("A", identity.MetaBusinessId); // El valor autoritativo (central), nunca "B".
+    }
+
+    [Fact]
+    public async Task Backfill_CentralEmptyAfterAConflictElsewhere_StaysResolvablePending_NeverStuckOrUnknown()
+    {
+        // Escenario donde SÍ queda genuinamente pendiente: el número ya tiene su WabaId cacheado
+        // localmente (de un backfill anterior), y todavía no hay nada en la caché tenant WABA->Business
+        // (el repair/resolución de ESTA WABA todavía no corrió) -- sigue RESOLVABLE/pendiente, nunca
+        // UNKNOWN, hasta que algo la resuelva.
+        var ctx = CreateContext();
+        var numero = Numero(1, "phone-1");
+        numero.WabaId = "waba-1"; // Ya conocido de un backfill anterior -- central nunca más se consulta para esto.
+
+        var identity = await ctx.Service.BackfillNumeroMetaIdentityAsync(84, numero);
+
+        Assert.NotNull(identity);
+        Assert.Equal("waba-1", identity!.WabaId);
+        Assert.Equal("", identity.MetaBusinessId); // Pendiente -- la UI muestra "pendiente de identificar".
     }
 
     // ---- Resolución del nombre (throttled, con Meta) -----------------------------------------------
@@ -546,8 +670,9 @@ public sealed class WhatsAppPortfolioResolutionServiceTests
         var management = new FakeMetaManagementClient();
         var credentials = new FakeRuntimeCredentialResolver();
         var options = Options.Create(new WhatsAppEmbeddedSignupOptions { PortfolioResolutionThrottle = TimeSpan.FromHours(24) });
-        var service = new WhatsAppPortfolioResolutionService(config, ownership, management, credentials, options);
-        return new TestContext(service, config, ownership, management, credentials);
+        var events = new FakeAppEventService();
+        var service = new WhatsAppPortfolioResolutionService(config, ownership, management, credentials, options, events);
+        return new TestContext(service, config, ownership, management, credentials, events);
     }
 
     private sealed record TestContext(
@@ -555,7 +680,27 @@ public sealed class WhatsAppPortfolioResolutionServiceTests
         MemoryConversacionesConfigService Config,
         MemoryOwnershipStore Ownership,
         FakeMetaManagementClient Management,
-        FakeRuntimeCredentialResolver Credentials);
+        FakeRuntimeCredentialResolver Credentials,
+        FakeAppEventService Events);
+
+    private sealed class FakeAppEventService : IAppEventService
+    {
+        public List<(string Module, string Action, string EntityType, string EntityId, string Message, object? Data)> AuditEntries { get; } = [];
+
+        public Task<string> LogAuditAsync(string module, string action, string entityType, string entityId, string message, object? data = null, CancellationToken ct = default)
+        {
+            AuditEntries.Add((module, action, entityType, entityId, message, data));
+            return Task.FromResult(Guid.NewGuid().ToString());
+        }
+
+        public Task<string> LogErrorAsync(string module, string action, Exception exception, string userMessage, object? data = null, AppEventSeverity severity = AppEventSeverity.Error, CancellationToken ct = default)
+            => throw new NotSupportedException();
+        public Task<Guid> WriteAuditAsync(AuditWriteRequest request, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<Guid> WriteAuditAsync(AuditWriteRequest request, Microsoft.Data.SqlClient.SqlConnection connection, Microsoft.Data.SqlClient.SqlTransaction transaction, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AuditActivityPageDto> GetActivityAsync(string entityType, string recordId, int pageNumber = 1, int pageSize = 20, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(CancellationToken ct = default) => throw new NotSupportedException();
+        public Task<AuditSchemaAvailabilityDto> CheckAuditAvailabilityAsync(Microsoft.Data.SqlClient.SqlConnection connection, Microsoft.Data.SqlClient.SqlTransaction? transaction = null, CancellationToken ct = default) => throw new NotSupportedException();
+    }
 
     private sealed class MemoryOwnershipStore : IWhatsAppAssetOwnershipStore
     {
