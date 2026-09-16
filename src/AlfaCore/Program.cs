@@ -86,6 +86,18 @@ public class Program
             return;
         }
 
+        // Modo one-shot 100% READ-ONLY: reproduce el self-check publico de callback y el GET
+        // /subscribed_apps del paso SUBSCRIBING_WABAS, sin POST ni escrituras SQL/Meta.
+        if (WhatsAppSubscriptionInspectionCommand.IsRequested(args))
+        {
+            var subscriptionInspectExitCode = WhatsAppSubscriptionInspectionCommand
+                .RunAsync(args, WhatsAppVaultMigrationCommand.BuildConfiguration(), Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(subscriptionInspectExitCode);
+            return;
+        }
+
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
         var webRootCandidates = new[]
