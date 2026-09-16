@@ -1261,31 +1261,13 @@ public class Program
         });
 
         app.MapGet("/api/datos-cliente", async (
-            HttpRequest request,
             string? idCliente,
             string? licenciaPrincipal,
             string? nombreBase,
-            IConfiguration config,
             ICentralClientesService centralClientesSvc,
             ICentralBasesService centralBasesSvc,
             CancellationToken ct) =>
         {
-            var apiKeyConfigurada = (config["PortalCliente:InvitacionApiKey"] ?? string.Empty).Trim();
-            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString().Trim();
-            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
-            {
-                return Results.Json(
-                    new { ok = false, mensaje = "El endpoint de datos del cliente no está configurado." },
-                    statusCode: StatusCodes.Status500InternalServerError);
-            }
-
-            if (!CryptographicOperations.FixedTimeEquals(
-                    Encoding.UTF8.GetBytes(apiKeyRecibida),
-                    Encoding.UTF8.GetBytes(apiKeyConfigurada)))
-            {
-                return Results.Unauthorized();
-            }
-
             var codigoCliente = (idCliente ?? string.Empty).Trim();
             var licencia = (licenciaPrincipal ?? string.Empty).Trim();
             var baseSolicitada = (nombreBase ?? string.Empty).Trim();
