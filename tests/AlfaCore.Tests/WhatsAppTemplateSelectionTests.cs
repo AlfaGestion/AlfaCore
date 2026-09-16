@@ -27,6 +27,27 @@ public sealed class WhatsAppTemplateSelectionTests
     }
 
     [Fact]
+    public void TemplatesRouteListsByStoredNumberWabaWithoutResolvingRuntimeCredentials()
+    {
+        var service = Read("src", "AlfaCore", "Services", "ConversacionesService.cs");
+        var getTemplates = service.IndexOf("public Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesAsync", StringComparison.Ordinal);
+        var getTemplatesForConversation = service.IndexOf("public Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesForConversationAsync", getTemplates, StringComparison.Ordinal);
+        var listContext = service.IndexOf("ResolveTemplateListContextAsync(filters.IdNumeroWhatsApp", getTemplates, StringComparison.Ordinal);
+        var commandParameter = service.IndexOf("cmd.Parameters.AddWithValue(\"@WabaId\", DbNullable(templateContext.WabaId));", listContext, StringComparison.Ordinal);
+        var runtime = service.IndexOf("whatsAppRuntimeCredentialResolver.ResolveAsync", getTemplates, StringComparison.Ordinal);
+        var listMethod = service.IndexOf("private async Task<TemplateListContext> ResolveTemplateListContextAsync", StringComparison.Ordinal);
+        var storedWaba = service.IndexOf("var wabaId = (numero.WabaId ?? string.Empty).Trim();", listMethod, StringComparison.Ordinal);
+
+        Assert.True(getTemplates >= 0);
+        Assert.True(getTemplatesForConversation > getTemplates);
+        Assert.True(listContext > getTemplates);
+        Assert.True(commandParameter > listContext);
+        Assert.True(runtime < 0 || runtime > getTemplatesForConversation);
+        Assert.True(listMethod > getTemplates);
+        Assert.True(storedWaba > listMethod);
+    }
+
+    [Fact]
     public void RemoteTemplateIdentityIncludesWabaAndMetaTemplateId()
     {
         var service = Read("src", "AlfaCore", "Services", "ConversacionesService.cs");

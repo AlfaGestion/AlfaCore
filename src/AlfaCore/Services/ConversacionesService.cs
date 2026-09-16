@@ -2790,7 +2790,7 @@ public sealed class ConversacionesService(
         {
             filters ??= new();
             var tenant = ResolveTenantConnection(filters.ExpectedBaseId, "GetTemplates");
-            var templateContext = await ResolveTemplateContextAsync(filters.IdNumeroWhatsApp, filters.ExpectedBaseId, tenant.ConnectionString, token);
+            var templateContext = await ResolveTemplateListContextAsync(filters.IdNumeroWhatsApp, filters.ExpectedBaseId, tenant.ConnectionString, token);
             const string sql = """
                 SELECT
                     IdPlantilla,
@@ -13658,6 +13658,29 @@ public sealed class ConversacionesService(
     }
 
     private sealed record TemplateContext(string? WabaId, ConversacionWhatsAppConfigDto Config);
+    private sealed record TemplateListContext(string? WabaId);
+
+    private async Task<TemplateListContext> ResolveTemplateListContextAsync(int? idNumeroWhatsApp, int? expectedBaseId, string? connectionString, CancellationToken ct)
+    {
+        if (idNumeroWhatsApp is not > 0)
+            return new(null);
+
+        if (string.IsNullOrWhiteSpace(connectionString))
+            await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct);
+        else
+            await conversacionesAuthorizationService.EnsureCanUseWhatsAppNumeroAsync(idNumeroWhatsApp.Value, connectionString, ct);
+
+        var numero = expectedBaseId is > 0
+            ? await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, expectedBaseId, ct)
+            : await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, ct);
+        if (numero is null)
+            throw new InvalidOperationException("El WhatsApp seleccionado ya no está disponible.");
+        if (!numero.Activo || string.IsNullOrWhiteSpace(numero.PhoneNumberId))
+            throw new InvalidOperationException("El WhatsApp seleccionado no está operativo.");
+
+        var wabaId = (numero.WabaId ?? string.Empty).Trim();
+        return new(wabaId.Length == 0 ? null : wabaId);
+    }
 
     private async Task<TemplateContext> ResolveTemplateContextAsync(int? idNumeroWhatsApp, CancellationToken ct)
         => await ResolveTemplateContextAsync(idNumeroWhatsApp, null, null, ct);
