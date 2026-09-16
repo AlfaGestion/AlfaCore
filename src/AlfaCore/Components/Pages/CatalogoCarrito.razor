@@ -20,6 +20,7 @@
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.ISaaSTenantRouteGuard TenantRouteGuard
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @inject ILogger<CatalogoCarrito> Logger
@@ -609,26 +610,12 @@ else
         if (!AppMode.IsSaaSMode || !idbase.HasValue)
             return;
 
-        var routeBaseId = idbase.Value;
-        var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
-        if (routeBase is null)
+        var routeContext = await TenantRouteGuard.ResolveAsync(idbase, idweb);
+        if (!routeContext.IsValid)
         {
             _notFound = true;
             return;
         }
-
-        SessionSvc.SetWebhookOverride(new SessionDto
-        {
-            Id = Guid.Parse($"00000000-0000-0000-0000-{routeBaseId:000000000000}"),
-            BaseId = routeBase.IdBase,
-            Nombre = routeBase.Nombre,
-            Servidor = routeBase.DbServer,
-            BaseDatos = routeBase.DbName,
-            Usuario = routeBase.DbUser,
-            Password = routeBase.DbPassword,
-            TrustServerCertificate = true,
-            Activa = true
-        });
     }
 
     /// <summary>
@@ -654,7 +641,14 @@ else
                 return;
             }
 
-            var carritoPublicado = await CarritoComprasSvc.GetPublicCartAsync(IdInsert, idweb);
+            var routeContext = await TenantRouteGuard.ResolveAsync(idbase, idweb);
+            if (!routeContext.IsValid)
+            {
+                _notFound = true;
+                return;
+            }
+
+            var carritoPublicado = await CarritoComprasSvc.GetPublicCartAsync(IdInsert, idweb, null, routeContext.IdBase);
             if (carritoPublicado is null || !carritoPublicado.HabilitarCarrito)
             {
                 _notFound = true;
@@ -695,8 +689,8 @@ else
             return;
         }
 
-        var routeBase = await CentralBasesSvc.GetByIdAsync(link.IdBase);
-        if (routeBase is null)
+        var routeContext = await TenantRouteGuard.ResolveAsync(link.IdBase, idweb);
+        if (!routeContext.IsValid)
         {
             _notFound = true;
             _effectiveIdBase = null;
@@ -706,19 +700,6 @@ else
         _effectiveIdBase = link.IdBase;
         _publicLinkRouteSegment = link.RouteSegment;
         IdInsert = link.IdReferencia;
-
-        SessionSvc.SetWebhookOverride(new SessionDto
-        {
-            Id = Guid.Parse($"00000000-0000-0000-0000-{link.IdBase:000000000000}"),
-            BaseId = routeBase.IdBase,
-            Nombre = routeBase.Nombre,
-            Servidor = routeBase.DbServer,
-            BaseDatos = routeBase.DbName,
-            Usuario = routeBase.DbUser,
-            Password = routeBase.DbPassword,
-            TrustServerCertificate = true,
-            Activa = true
-        });
 
         // Carrito general (IdReferencia=0, ver InterfacesCarritoCompras.ResolveGeneralPublicUrlAsync)
         // no tiene catálogo real asociado — no se intenta resolver un link de catálogo para él.
@@ -771,7 +752,7 @@ else
         _loading = true;
         await InvokeAsync(StateHasChanged);
 
-        var catalogo = await CarritoComprasSvc.GetPublicCartAsync(IdInsert, idweb, CatalogoClienteSession.CurrentClient?.CodigoCliente);
+        var catalogo = await CarritoComprasSvc.GetPublicCartAsync(IdInsert, idweb, CatalogoClienteSession.CurrentClient?.CodigoCliente, _effectiveIdBase);
         _catalogo = catalogo;
         _notFound = catalogo is null;
         _carritoDeshabilitado = catalogo is not null && !catalogo.HabilitarCarrito;
@@ -1073,7 +1054,7 @@ else
     // --- Estado del carrito: en memoria + localStorage (por catálogo y cliente), sin tablas nuevas ---
 
     private string CarritoStorageKey
-        => $"alfacore_catalogo_carrito_{IdInsert}_{(CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty).Trim().ToUpperInvariant()}";
+        => $"alfacore_catalogo_carrito_{NormalizeRouteSegment(idweb)}_{(_effectiveIdBase ?? 0).ToString(CultureInfo.InvariantCulture)}_{IdInsert}_{(CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty).Trim().ToUpperInvariant()}";
 
     private async Task RestoreCarritoAsync()
     {
