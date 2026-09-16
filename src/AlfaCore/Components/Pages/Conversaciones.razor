@@ -3724,6 +3724,7 @@
     private bool _loadingTemplates;
     private string _templateValuesText = string.Empty;
     private string? _templateAutoNotice;
+    private int _templateLoadGeneration;
     private bool _uploadingTemplateFile;
     /// <summary>
     /// Feedback propio del envío de plantilla, distinto de _actionError (compartido por ~15 acciones no
@@ -8479,13 +8480,15 @@
             return;
         }
 
+        var generation = ++_templateLoadGeneration;
+        var conversationId = _selectedConversation.IdConversacion;
         _loadingTemplates = true;
         _availableTemplates = [];
 
         try
         {
-            var loaded = await ConversacionesSvc.GetTemplatesForConversationAsync(_selectedConversation.IdConversacion, lease.BaseId);
-            if (!IsTenantLoadCurrent(lease))
+            var loaded = await ConversacionesSvc.GetTemplatesForConversationAsync(conversationId, lease.BaseId);
+            if (!IsTemplateLoadCurrent(generation, conversationId, lease))
                 return;
 
             _availableTemplates = loaded
@@ -8510,7 +8513,8 @@
         }
         finally
         {
-            _loadingTemplates = false;
+            if (generation == _templateLoadGeneration)
+                _loadingTemplates = false;
         }
     }
 
@@ -8524,13 +8528,16 @@
     private async Task PrepareTemplateValuesAsync(bool forceReload = false)
     {
         _templateAutoNotice = null;
-        if (SelectedTemplate is null)
+        var selectedTemplate = SelectedTemplate;
+        var selectedTemplateId = _selectedTemplateId;
+        var selectedConversationId = _selectedConversation?.IdConversacion;
+        if (selectedTemplate is null)
         {
             _templateValuesText = string.Empty;
             return;
         }
 
-        var required = CountTemplateVariables(SelectedTemplate.CuerpoTexto);
+        var required = CountTemplateVariables(selectedTemplate.CuerpoTexto);
         if (required <= 0)
         {
             _templateValuesText = string.Empty;
@@ -8547,6 +8554,9 @@
             try
             {
                 var autoValues = await ConversacionesSvc.GetTemplateAutoValuesAsync(_selectedConversation.IdConversacion, required);
+                if (_selectedTemplateId != selectedTemplateId || _selectedConversation?.IdConversacion != selectedConversationId)
+                    return;
+
                 automaticValues = autoValues.Valores.ToList();
                 _templateAutoNotice = string.IsNullOrWhiteSpace(autoValues.Observaciones)
                     ? "Variables cargadas automáticamente desde la conversación y la cuenta del cliente."
@@ -8554,6 +8564,9 @@
             }
             catch (Exception ex)
             {
+                if (_selectedTemplateId != selectedTemplateId || _selectedConversation?.IdConversacion != selectedConversationId)
+                    return;
+
                 _templateAutoNotice = $"No se pudieron cargar variables automáticas: {ex.Message}";
             }
         }
@@ -9938,13 +9951,11 @@
         if (!IsWhatsAppConversation)
             return;
 
-        if (_availableTemplates.Count == 0)
-            await LoadTemplatesForConversationAsync();
-
         _showContextPanel = false;
         _templateSendFeedback = null;
-        await PrepareTemplateValuesAsync(forceReload: true);
         _showTemplatePanel = true;
+        ClearTemplateSelection();
+        await LoadTemplatesForConversationAsync();
     }
 
     private void CloseTemplatePanel()
@@ -9956,8 +9967,8 @@
             return;
 
         _showTemplatePanel = false;
-        _templatePendingAttachments.Clear();
         _templateSendFeedback = null;
+        ClearTemplateSelection();
     }
 
     private async Task CrearHiloInternoAsync()
@@ -10980,12 +10991,19 @@
 
     private void ClearTemplateSelection()
     {
+        _templateLoadGeneration++;
         _availableTemplates = [];
         _selectedTemplateId = 0;
+        _loadingTemplates = false;
         _templateValuesText = string.Empty;
         _templateAutoNotice = null;
         _templatePendingAttachments = [];
     }
+
+    private bool IsTemplateLoadCurrent(int generation, long conversationId, ConversationTenantLoadLease lease)
+        => generation == _templateLoadGeneration
+           && _selectedConversation?.IdConversacion == conversationId
+           && IsTenantLoadCurrent(lease);
 
     private static string GetDisplayName(ConversacionInboxItemDto item)
         => FirstNonEmpty(item.NombreVisible, item.ContactoNombre, item.ClienteNombre, item.TelefonoWhatsApp);

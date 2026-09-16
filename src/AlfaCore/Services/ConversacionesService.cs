@@ -2852,13 +2852,20 @@ public sealed class ConversacionesService(
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(tenant.ConnectionString, token);
             var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(tenant.BaseId ?? expectedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0,
                 conversation.IdNumeroWhatsApp, conversation.PhoneNumberId, config, token);
-            if (runtime.Origin == WhatsAppRuntimeCredentialOrigin.Legacy)
-                return await GetTemplatesAsync(new ConversacionPlantillaFilters { ExpectedBaseId = expectedBaseId, EstadoMeta = "APPROVED" }, token);
+            var localTemplates = await GetTemplatesAsync(new ConversacionPlantillaFilters
+            {
+                ExpectedBaseId = expectedBaseId,
+                IdNumeroWhatsApp = conversation.IdNumeroWhatsApp,
+                EstadoMeta = "APPROVED"
+            }, token);
+            if (localTemplates.Count > 0 || runtime.Origin == WhatsAppRuntimeCredentialOrigin.Legacy)
+                return localTemplates;
+
             var reference = runtime.CredentialReference
                 ?? throw new InvalidOperationException("La referencia segura de Meta no está disponible.");
             var templates = await metaWhatsAppManagementClient.DiscoverTemplatesAsync(runtime.WabaId, reference, token);
             return templates.Where(static x => string.Equals(x.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
-                .Select(MapRemoteTemplate).OrderBy(static x => x.NombreVisible, StringComparer.OrdinalIgnoreCase).ToArray();
+                .Select(template => MapRemoteTemplate(runtime.WabaId, template)).OrderBy(static x => x.NombreVisible, StringComparer.OrdinalIgnoreCase).ToArray();
         }, "No se pudieron cargar las plantillas aprobadas de este WhatsApp.", ct);
 
     public Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, CancellationToken ct = default)
@@ -3119,8 +3126,7 @@ public sealed class ConversacionesService(
             if (request.EsMetaRemota)
             {
                 template = (await GetTemplatesForConversationAsync(request.IdConversacion, token)).SingleOrDefault(x => x.EsMetaRemota
-                    && string.Equals(x.NombreMeta, request.NombreMeta.Trim(), StringComparison.Ordinal)
-                    && string.Equals(x.Idioma, request.Idioma.Trim(), StringComparison.OrdinalIgnoreCase))
+                    && x.IdPlantilla == request.IdPlantilla)
                     ?? throw new InvalidOperationException("La plantilla ya no está aprobada para la WABA de este número.");
             }
             else
@@ -3149,6 +3155,9 @@ public sealed class ConversacionesService(
             config.ApiVersion = runtimeCredential.GraphVersion;
             config.AccessToken = runtimeCredential.AccessToken;
             EnsureWhatsAppMetaProvider(config, "enviar plantillas");
+            EnsureTemplateMatchesRuntime(template, runtimeCredential);
+            if (!template.Activa)
+                throw new InvalidOperationException("La plantilla seleccionada no está activa.");
             if (!template.EsMetaRemota && !string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
             {
                 var meta = await GetMetaTemplateStatusAsync(config, template, token);
@@ -13692,6 +13701,26 @@ public sealed class ConversacionesService(
             throw new UnauthorizedAccessException("La plantilla no pertenece al WhatsApp seleccionado.");
     }
 
+    private static void EnsureTemplateMatchesRuntime(ConversacionPlantillaDto template, WhatsAppRuntimeCredential runtime)
+    {
+        var templateWabaId = (template.WabaId ?? string.Empty).Trim();
+        var runtimeWabaId = (runtime.WabaId ?? string.Empty).Trim();
+
+        if (runtime.Origin == WhatsAppRuntimeCredentialOrigin.EmbeddedSignup)
+        {
+            if (templateWabaId.Length == 0 || !string.Equals(templateWabaId, runtimeWabaId, StringComparison.Ordinal))
+                throw new UnauthorizedAccessException("La plantilla seleccionada no pertenece a este número de WhatsApp.");
+            return;
+        }
+
+        if (templateWabaId.Length > 0
+            && runtimeWabaId.Length > 0
+            && !string.Equals(templateWabaId, runtimeWabaId, StringComparison.Ordinal))
+        {
+            throw new UnauthorizedAccessException("La plantilla seleccionada no pertenece a este número de WhatsApp.");
+        }
+    }
+
     private static ConversacionPlantillaDto ReadTemplate(SqlDataReader rd)
         => new()
         {
@@ -13984,9 +14013,9 @@ public sealed class ConversacionesService(
             .Where(x => x.Length > 0)
             .ToList() ?? [];
 
-    private static ConversacionPlantillaDto MapRemoteTemplate(MetaMessageTemplate template)
+    private static ConversacionPlantillaDto MapRemoteTemplate(string wabaId, MetaMessageTemplate template)
     {
-        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{template.Id}|{template.Name}|{template.Language}"));
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes($"{wabaId}|{template.Id}|{template.Name}|{template.Language}"));
         var id = (long)(BitConverter.ToUInt64(hash, 0) & 0x7FFFFFFFFFFFFFFF);
         if (id == 0) id = 1;
         return new ConversacionPlantillaDto
@@ -13994,7 +14023,7 @@ public sealed class ConversacionesService(
             IdPlantilla = id, NombreVisible = template.Name, NombreMeta = template.Name,
             Categoria = template.Category, Idioma = template.Language, EncabezadoTexto = template.HeaderText,
             CuerpoTexto = template.BodyText, PieTexto = template.FooterText, EstadoLocal = ConversacionPlantillaEstadosLocales.Sincronizada,
-            EstadoMeta = template.Status, MetaTemplateId = template.Id, Activa = true, EsMetaRemota = true
+            EstadoMeta = template.Status, MetaTemplateId = template.Id, WabaId = wabaId, Activa = true, EsMetaRemota = true
         };
     }
 

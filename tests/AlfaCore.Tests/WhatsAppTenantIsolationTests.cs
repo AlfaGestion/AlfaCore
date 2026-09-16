@@ -341,7 +341,8 @@ public sealed class WhatsAppTenantIsolationTests
 
         var getForConversation = service.IndexOf("GetTemplatesForConversationAsync(long idConversacion, int? expectedBaseId", StringComparison.Ordinal);
         var conversationGuard = service.IndexOf("ResolveTenantConnection(expectedBaseId, \"GetTemplatesForConversation\")", getForConversation, StringComparison.Ordinal);
-        var fallback = service.IndexOf("new ConversacionPlantillaFilters { ExpectedBaseId = expectedBaseId, EstadoMeta = \"APPROVED\" }", getForConversation, StringComparison.Ordinal);
+        var fallback = service.IndexOf("var localTemplates = await GetTemplatesAsync(new ConversacionPlantillaFilters", getForConversation, StringComparison.Ordinal);
+        var numberFilter = service.IndexOf("IdNumeroWhatsApp = conversation.IdNumeroWhatsApp", fallback, StringComparison.Ordinal);
 
         var numeros = config.IndexOf("GetWhatsAppNumerosAsync(int? expectedBaseId", StringComparison.Ordinal);
         var numerosGuard = config.IndexOf("ResolveTenantConnection(expectedBaseId, \"GetWhatsAppNumeros\")", numeros, StringComparison.Ordinal);
@@ -349,7 +350,7 @@ public sealed class WhatsAppTenantIsolationTests
 
         Assert.True(templatesGuard > getTemplates && templatesGuard < templatesSql && templatesConnection > templatesGuard);
         Assert.True(detailGuard > getTemplate && detailGuard < detailSql);
-        Assert.True(conversationGuard > getForConversation && fallback > conversationGuard);
+        Assert.True(conversationGuard > getForConversation && fallback > conversationGuard && numberFilter > fallback);
         Assert.True(numerosGuard > numeros && numerosGuard < numerosSql);
         Assert.Contains("active?.BaseId != expectedBaseId.Value", service, StringComparison.Ordinal);
         Assert.Contains("active?.BaseId != expectedBaseId.Value", config, StringComparison.Ordinal);
@@ -413,11 +414,12 @@ public sealed class WhatsAppTenantIsolationTests
 
         var conversationTemplates = source.IndexOf("private async Task LoadTemplatesForConversationAsync()", StringComparison.Ordinal);
         var conversationCapture = source.IndexOf("TryCaptureTenantLoad(out var lease)", conversationTemplates, StringComparison.Ordinal);
-        var serviceCall = source.IndexOf("GetTemplatesForConversationAsync(_selectedConversation.IdConversacion, lease.BaseId)", conversationTemplates, StringComparison.Ordinal);
-        var lateGuard = source.IndexOf("IsTenantLoadCurrent(lease)", conversationTemplates, StringComparison.Ordinal);
+        var conversationId = source.IndexOf("var conversationId = _selectedConversation.IdConversacion;", conversationCapture, StringComparison.Ordinal);
+        var serviceCall = source.IndexOf("GetTemplatesForConversationAsync(conversationId, lease.BaseId)", conversationTemplates, StringComparison.Ordinal);
+        var lateGuard = source.IndexOf("IsTemplateLoadCurrent(generation, conversationId, lease)", conversationTemplates, StringComparison.Ordinal);
 
         Assert.True(programar >= 0 && programarCapture > programar && programarExpected > programarCapture && programarCurrent > programarExpected);
-        Assert.True(conversationTemplates >= 0 && conversationCapture > conversationTemplates && serviceCall > conversationCapture && lateGuard > serviceCall);
+        Assert.True(conversationTemplates >= 0 && conversationCapture > conversationTemplates && conversationId > conversationCapture && serviceCall > conversationId && lateGuard > serviceCall);
     }
 
     [Fact]
