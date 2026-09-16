@@ -34,11 +34,15 @@ internal static class WhatsAppSubscriptionInspectionCommand
     public static async Task<int> RunAsync(IReadOnlyList<string> args, IConfiguration configuration, TextWriter output, CancellationToken ct)
     {
         var idBaseArg = ReadOption(args, "--id-base");
+        var compareIdBaseArg = ReadOption(args, "--compare-id-base");
         var phoneNumberId = ReadOption(args, "--phone-number-id")?.Trim();
         var wabaId = ReadOption(args, "--waba-id")?.Trim();
+        int? compareIdBase = int.TryParse(compareIdBaseArg, out var parsedCompareIdBase) && parsedCompareIdBase > 0
+            ? parsedCompareIdBase
+            : null;
         if (!int.TryParse(idBaseArg, out var idBase) || idBase <= 0 || string.IsNullOrWhiteSpace(phoneNumberId) || string.IsNullOrWhiteSpace(wabaId))
         {
-            output.WriteLine("Uso: AlfaCore --inspect-whatsapp-subscription --id-base <idBase> --phone-number-id <phoneNumberId> --waba-id <wabaId>");
+            output.WriteLine("Uso: AlfaCore --inspect-whatsapp-subscription --id-base <idBase> --phone-number-id <phoneNumberId> --waba-id <wabaId> [--compare-id-base <idBase>]");
             return 1;
         }
 
@@ -73,7 +77,9 @@ internal static class WhatsAppSubscriptionInspectionCommand
             httpClient,
             embeddedOptions.GraphBaseUrl,
             output,
-            ct);
+            ct,
+            (baseId, ct2) => InspectRoutingSourceAsync(baseId, centralBases, session, configService, embeddedOptions, ct2),
+            compareIdBase);
     }
 
     internal static async Task<int> ExecuteAsync(
@@ -87,7 +93,9 @@ internal static class WhatsAppSubscriptionInspectionCommand
         HttpClient httpClient,
         string graphBaseUrl,
         TextWriter output,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<int, CancellationToken, Task<RoutingSourceInspection>>? inspectRoutingSource = null,
+        int? compareIdBase = null)
     {
         output.WriteLine("== inspect-whatsapp-subscription (read-only) ==");
         output.WriteLine($"BASE = {idBase}");
@@ -165,7 +173,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         output.WriteLine("VAULT_CREDENTIAL = OK");
         output.WriteLine("");
 
-        var callback = await InspectCallbackAsync(idBase, routingProvider, httpClient, output, ct);
+        var callback = await InspectCallbackAsync(idBase, routingProvider, httpClient, output, ct, inspectRoutingSource);
         output.WriteLine("");
         var subscribedApps = await InspectSubscribedAppsAsync(
             httpClient,
@@ -178,6 +186,11 @@ internal static class WhatsAppSubscriptionInspectionCommand
             ct);
 
         var evidence = ResolveEvidence(callback, subscribedApps);
+        if (compareIdBase is > 0 && inspectRoutingSource is not null)
+        {
+            output.WriteLine("");
+            await WriteRoutingComparisonAsync(idBase, compareIdBase.Value, inspectRoutingSource, output, ct);
+        }
         output.WriteLine($"EVIDENCE = {evidence}");
         return 0;
     }
@@ -187,13 +200,24 @@ internal static class WhatsAppSubscriptionInspectionCommand
         IWhatsAppWabaRoutingProvider routingProvider,
         HttpClient httpClient,
         TextWriter output,
-        CancellationToken ct)
+        CancellationToken ct,
+        Func<int, CancellationToken, Task<RoutingSourceInspection>>? inspectRoutingSource)
     {
+        RoutingSourceInspection? source = null;
+        if (inspectRoutingSource is not null)
+        {
+            source = await inspectRoutingSource(idBase, ct);
+            WriteRoutingSource(output, source);
+            output.WriteLine("");
+        }
+
         output.WriteLine("=== CALLBACK SELF-CHECK ===");
-        WhatsAppWabaRoutingConfiguration routing;
+        WhatsAppWabaRoutingConfiguration? routing = null;
         try
         {
-            routing = await routingProvider.GetAsync(idBase, ct);
+            routing = source is null
+                ? await routingProvider.GetAsync(idBase, ct)
+                : source.ToRoutingConfiguration();
         }
         catch (Exception ex)
         {
@@ -204,7 +228,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
             output.WriteLine("CALLBACK_ELAPSED_MS = 0");
             output.WriteLine($"CALLBACK_ERROR_TYPE = {ex.GetType().Name}");
             output.WriteLine($"CALLBACK_ERROR_SUMMARY = {Sanitize(ex.Message)}");
-            return new CallbackInspectionResult(RoutingResolved: false, Reachable: false, NormalizeCallbackUri(null));
+            return new CallbackInspectionResult(RoutingResolved: false, Reachable: false, NormalizeCallbackUri(null), source);
         }
 
         var callbackHost = TryGetHost(routing.CallbackUrl);
@@ -225,7 +249,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
             output.WriteLine($"CALLBACK_ELAPSED_MS = {stopwatch.ElapsedMilliseconds}");
             output.WriteLine($"CALLBACK_ERROR_TYPE = {(reachable ? "N/A" : "CallbackVerificationFailed")}");
             output.WriteLine($"CALLBACK_ERROR_SUMMARY = {(reachable ? "N/A" : "El callback no devolvio el challenge esperado.")}");
-            return new CallbackInspectionResult(RoutingResolved: true, reachable, NormalizeCallbackUri(routing.CallbackUrl));
+            return new CallbackInspectionResult(RoutingResolved: true, reachable, NormalizeCallbackUri(routing.CallbackUrl), source);
         }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
         {
@@ -235,7 +259,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
             output.WriteLine($"CALLBACK_ELAPSED_MS = {stopwatch.ElapsedMilliseconds}");
             output.WriteLine($"CALLBACK_ERROR_TYPE = {ResolveCallbackExceptionType(ex)}");
             output.WriteLine($"CALLBACK_ERROR_SUMMARY = {Sanitize(ex.Message)}");
-            return new CallbackInspectionResult(RoutingResolved: true, Reachable: false, NormalizeCallbackUri(routing.CallbackUrl));
+            return new CallbackInspectionResult(RoutingResolved: true, Reachable: false, NormalizeCallbackUri(routing.CallbackUrl), source);
         }
     }
 
@@ -302,6 +326,161 @@ internal static class WhatsAppSubscriptionInspectionCommand
         if (!subscribedApps.ExpectedAppIdFound)
             return EvidenceAppNotSubscribed;
         return EvidenceNoFailureReproduced;
+    }
+
+    private static async Task<RoutingSourceInspection> InspectRoutingSourceAsync(
+        int idBase,
+        ICentralBasesService centralBases,
+        ISessionService sessionService,
+        IConversacionesConfigService configService,
+        WhatsAppEmbeddedSignupOptions options,
+        CancellationToken ct)
+    {
+        try
+        {
+            var centralBase = await centralBases.GetByIdAsync(idBase, ct);
+            if (centralBase is null)
+                return BuildRoutingSourceInspection(idBase, string.Empty, options.CallbackBaseUrl, string.Empty, string.Empty, "CENTRAL_BASE_NOT_FOUND");
+
+            sessionService.SetWebhookOverride(new SessionDto
+            {
+                Id = SessionDto.BuildGuidFromBaseId(idBase),
+                BaseId = idBase,
+                Nombre = centralBase.Nombre,
+                Servidor = centralBase.DbServer,
+                BaseDatos = centralBase.DbName,
+                Usuario = centralBase.DbUser,
+                Password = centralBase.DbPassword,
+                TrustServerCertificate = true,
+                Activa = true
+            });
+
+            var config = await configService.GetWhatsAppConfigAsync(ct);
+            return BuildRoutingSourceInspection(idBase, config.PublicBaseUrl, options.CallbackBaseUrl, config.VerifyToken, centralBase.WebhookToken);
+        }
+        catch (Exception ex)
+        {
+            return BuildRoutingSourceInspection(idBase, string.Empty, options.CallbackBaseUrl, string.Empty, string.Empty,
+                $"ROUTING_CONFIGURATION_EXCEPTION:{ex.GetType().Name}");
+        }
+    }
+
+    internal static RoutingSourceInspection BuildRoutingSourceInspection(
+        int idBase,
+        string? tenantPublicBaseUrl,
+        string? globalCallbackBaseUrl,
+        string? verifyToken,
+        string? webhookToken,
+        string? forcedFailureReason = null)
+    {
+        var tenant = UrlInspection.From(tenantPublicBaseUrl);
+        var global = UrlInspection.From(globalCallbackBaseUrl);
+        var selectedSource = tenant.Present
+            ? "TENANT_PUBLIC_BASE_URL"
+            : global.Present
+                ? "GLOBAL_CALLBACK_BASE_URL"
+                : "NONE";
+        var effective = selectedSource == "TENANT_PUBLIC_BASE_URL"
+            ? tenant
+            : selectedSource == "GLOBAL_CALLBACK_BASE_URL"
+                ? global
+                : UrlInspection.From(string.Empty);
+        var verifyTokenPresent = !string.IsNullOrWhiteSpace(verifyToken);
+        var webhookTokenPresent = !string.IsNullOrWhiteSpace(webhookToken);
+        var failureReason = !string.IsNullOrWhiteSpace(forcedFailureReason)
+            ? forcedFailureReason.Trim()
+            : ResolveRoutingFailureReason(selectedSource, effective, verifyTokenPresent, webhookTokenPresent);
+
+        return new RoutingSourceInspection(
+            idBase,
+            tenant,
+            global,
+            selectedSource,
+            effective,
+            verifyTokenPresent,
+            webhookTokenPresent,
+            failureReason,
+            verifyToken?.Trim() ?? string.Empty,
+            webhookToken?.Trim() ?? string.Empty);
+    }
+
+    private static string ResolveRoutingFailureReason(string selectedSource, UrlInspection effective, bool verifyTokenPresent, bool webhookTokenPresent)
+    {
+        if (selectedSource == "NONE")
+            return "PUBLIC_BASE_URL_MISSING";
+        if (!effective.IsAbsolute)
+            return selectedSource + "_NOT_ABSOLUTE";
+        if (!effective.IsHttps)
+            return selectedSource + "_NOT_HTTPS";
+        if (!verifyTokenPresent)
+            return "VERIFY_TOKEN_MISSING";
+        if (!webhookTokenPresent)
+            return "WEBHOOK_TOKEN_MISSING_READ_ONLY";
+        return "N/A";
+    }
+
+    private static void WriteRoutingSource(TextWriter output, RoutingSourceInspection source)
+    {
+        output.WriteLine("=== ROUTING SOURCE ===");
+        output.WriteLine($"TENANT_PUBLIC_BASE_URL_PRESENT = {source.TenantPublicBaseUrl.Present}");
+        output.WriteLine($"TENANT_PUBLIC_BASE_URL_VALUE_SANITIZED = {source.TenantPublicBaseUrl.ValueSanitized}");
+        output.WriteLine($"TENANT_PUBLIC_BASE_URL_IS_ABSOLUTE = {source.TenantPublicBaseUrl.IsAbsolute}");
+        output.WriteLine($"TENANT_PUBLIC_BASE_URL_IS_HTTPS = {source.TenantPublicBaseUrl.IsHttps}");
+        output.WriteLine($"GLOBAL_CALLBACK_BASE_URL_PRESENT = {source.GlobalCallbackBaseUrl.Present}");
+        output.WriteLine($"GLOBAL_CALLBACK_BASE_URL_VALUE_SANITIZED = {source.GlobalCallbackBaseUrl.ValueSanitized}");
+        output.WriteLine($"GLOBAL_CALLBACK_BASE_URL_IS_ABSOLUTE = {source.GlobalCallbackBaseUrl.IsAbsolute}");
+        output.WriteLine($"GLOBAL_CALLBACK_BASE_URL_IS_HTTPS = {source.GlobalCallbackBaseUrl.IsHttps}");
+        output.WriteLine($"SELECTED_ROUTING_SOURCE = {source.SelectedRoutingSource}");
+        output.WriteLine($"EFFECTIVE_PUBLIC_BASE_URL_SANITIZED = {source.EffectivePublicBaseUrl.ValueSanitized}");
+        output.WriteLine($"EFFECTIVE_PUBLIC_BASE_URL_VALID = {source.EffectivePublicBaseUrlValid}");
+        output.WriteLine($"VERIFY_TOKEN_PRESENT = {source.VerifyTokenPresent}");
+        output.WriteLine($"WEBHOOK_TOKEN_PRESENT = {source.WebhookTokenPresent}");
+        output.WriteLine($"ROUTING_FAILURE_REASON = {source.RoutingFailureReason}");
+    }
+
+    private static async Task WriteRoutingComparisonAsync(
+        int idBase,
+        int compareIdBase,
+        Func<int, CancellationToken, Task<RoutingSourceInspection>> inspectRoutingSource,
+        TextWriter output,
+        CancellationToken ct)
+    {
+        var first = await inspectRoutingSource(idBase, ct);
+        var second = await inspectRoutingSource(compareIdBase, ct);
+        var byId = new[] { first, second }.ToDictionary(x => x.IdBase);
+
+        output.WriteLine("=== ROUTING COMPARISON ===");
+        foreach (var item in byId.OrderBy(x => x.Key))
+        {
+            output.WriteLine($"BASE{item.Key}_ROUTING_SOURCE = {item.Value.SelectedRoutingSource}");
+            output.WriteLine($"BASE{item.Key}_EFFECTIVE_URL_VALID = {item.Value.EffectivePublicBaseUrlValid}");
+        }
+
+        output.WriteLine($"DIFFERENCE = {BuildRoutingDifference(first, second)}");
+        output.WriteLine($"COMPARISON_EVIDENCE = {BuildRoutingComparisonEvidence(first, second)}");
+    }
+
+    private static string BuildRoutingDifference(RoutingSourceInspection first, RoutingSourceInspection second)
+    {
+        var differences = new List<string>();
+        if (!string.Equals(first.SelectedRoutingSource, second.SelectedRoutingSource, StringComparison.Ordinal))
+            differences.Add("fuente distinta");
+        if (first.EffectivePublicBaseUrlValid != second.EffectivePublicBaseUrlValid)
+            differences.Add("validez distinta");
+        if (!string.Equals(first.RoutingFailureReason, second.RoutingFailureReason, StringComparison.Ordinal))
+            differences.Add("motivo distinto");
+        return differences.Count == 0 ? "sin diferencia de routing" : string.Join("; ", differences);
+    }
+
+    private static string BuildRoutingComparisonEvidence(RoutingSourceInspection first, RoutingSourceInspection second)
+    {
+        if (first.EffectivePublicBaseUrlValid && second.EffectivePublicBaseUrlValid)
+            return "ambas bases tienen URL publica efectiva valida";
+        if (!first.EffectivePublicBaseUrlValid && !second.EffectivePublicBaseUrlValid)
+            return "ambas bases tienen routing invalido";
+        var failing = first.EffectivePublicBaseUrlValid ? second : first;
+        var ok = first.EffectivePublicBaseUrlValid ? first : second;
+        return $"BASE{failing.IdBase} falla por {failing.RoutingFailureReason}; BASE{ok.IdBase} tiene routing valido";
     }
 
     private static IReadOnlyList<SubscribedAppItem> ParseSubscribedApps(string body)
@@ -478,7 +657,53 @@ internal static class WhatsAppSubscriptionInspectionCommand
         return null;
     }
 
-    private sealed record CallbackInspectionResult(bool RoutingResolved, bool Reachable, string NormalizedCallbackUrl);
+    internal sealed record RoutingSourceInspection(
+        int IdBase,
+        UrlInspection TenantPublicBaseUrl,
+        UrlInspection GlobalCallbackBaseUrl,
+        string SelectedRoutingSource,
+        UrlInspection EffectivePublicBaseUrl,
+        bool VerifyTokenPresent,
+        bool WebhookTokenPresent,
+        string RoutingFailureReason,
+        string VerifyToken,
+        string WebhookToken)
+    {
+        public bool EffectivePublicBaseUrlValid => EffectivePublicBaseUrl.IsAbsolute && EffectivePublicBaseUrl.IsHttps;
+
+        public WhatsAppWabaRoutingConfiguration ToRoutingConfiguration()
+        {
+            if (!EffectivePublicBaseUrlValid)
+                throw new InvalidOperationException("La Base publica HTTPS de WhatsApp no es valida (ni la del tenant ni WhatsAppEmbeddedSignup:CallbackBaseUrl).");
+            if (!VerifyTokenPresent)
+                throw new InvalidOperationException("El Verify Token de WhatsApp no esta configurado (ni el del tenant ni el global WhatsApp:VerifyToken).");
+            if (!WebhookTokenPresent)
+                throw new InvalidOperationException("La base central no tiene WebhookToken y el inspector read-only no puede generarlo.");
+            return new WhatsAppWabaRoutingConfiguration($"{EffectivePublicBaseUrl.RawTrimmed.TrimEnd('/')}/{WebhookToken}", VerifyToken);
+        }
+    }
+
+    internal sealed record UrlInspection(string RawTrimmed, bool Present, string ValueSanitized, bool IsAbsolute, bool IsHttps)
+    {
+        public static UrlInspection From(string? value)
+        {
+            var raw = (value ?? string.Empty).Trim();
+            if (raw.Length == 0)
+                return new UrlInspection(string.Empty, false, "N/A", false, false);
+
+            if (Uri.TryCreate(raw, UriKind.Absolute, out var uri))
+            {
+                var path = uri.AbsolutePath.Length > 1 ? uri.AbsolutePath.TrimEnd('/') : uri.AbsolutePath;
+                var sanitized = uri.GetLeftPart(UriPartial.Authority) + path;
+                return new UrlInspection(raw, true, sanitized, true, uri.Scheme == Uri.UriSchemeHttps);
+            }
+
+            var noQuery = raw.Split('?', '#')[0].TrimEnd('/');
+            return new UrlInspection(raw, true, Sanitize(noQuery), false, false);
+        }
+    }
+
+    private sealed record CallbackInspectionResult(bool RoutingResolved, bool Reachable, string NormalizedCallbackUrl, RoutingSourceInspection? Source);
     private sealed record SubscribedAppsInspectionResult(bool GraphSuccess, bool AppAlreadySubscribed, bool ExpectedAppIdFound);
     private sealed record SubscribedAppItem(string? AppId, string OverrideCallbackUri);
     private sealed record GraphErrorInfo(string Code, string Type, string Summary);

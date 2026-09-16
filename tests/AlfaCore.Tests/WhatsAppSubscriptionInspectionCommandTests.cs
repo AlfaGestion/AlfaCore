@@ -193,6 +193,111 @@ public sealed class WhatsAppSubscriptionInspectionCommandTests
     }
 
     [Fact]
+    public async Task RoutingSource_TenantUrlValid_SelectsTenant()
+    {
+        var output = await RunWithRoutingSourceAsync(
+            tenantUrl: "https://tenant.example.com/root/path?token=query-secret",
+            globalUrl: "https://global.example.com",
+            verifyToken: VerifyToken,
+            webhookToken: "webhook-token-secret");
+
+        Assert.Contains("TENANT_PUBLIC_BASE_URL_PRESENT = True", output);
+        Assert.Contains("TENANT_PUBLIC_BASE_URL_VALUE_SANITIZED = https://tenant.example.com/root/path", output);
+        Assert.Contains("TENANT_PUBLIC_BASE_URL_IS_ABSOLUTE = True", output);
+        Assert.Contains("TENANT_PUBLIC_BASE_URL_IS_HTTPS = True", output);
+        Assert.Contains("SELECTED_ROUTING_SOURCE = TENANT_PUBLIC_BASE_URL", output);
+        Assert.Contains("EFFECTIVE_PUBLIC_BASE_URL_VALID = True", output);
+        Assert.Contains("ROUTING_FAILURE_REASON = N/A", output);
+        Assert.DoesNotContain("query-secret", output);
+        Assert.DoesNotContain("webhook-token-secret", output);
+    }
+
+    [Fact]
+    public async Task RoutingSource_TenantEmptyAndGlobalValid_SelectsGlobal()
+    {
+        var output = await RunWithRoutingSourceAsync(
+            tenantUrl: "",
+            globalUrl: "https://global.example.com/base",
+            verifyToken: VerifyToken,
+            webhookToken: "webhook-token-secret");
+
+        Assert.Contains("TENANT_PUBLIC_BASE_URL_PRESENT = False", output);
+        Assert.Contains("GLOBAL_CALLBACK_BASE_URL_PRESENT = True", output);
+        Assert.Contains("GLOBAL_CALLBACK_BASE_URL_VALUE_SANITIZED = https://global.example.com/base", output);
+        Assert.Contains("SELECTED_ROUTING_SOURCE = GLOBAL_CALLBACK_BASE_URL", output);
+        Assert.Contains("EFFECTIVE_PUBLIC_BASE_URL_SANITIZED = https://global.example.com/base", output);
+        Assert.Contains("EFFECTIVE_PUBLIC_BASE_URL_VALID = True", output);
+    }
+
+    [Fact]
+    public async Task RoutingSource_TenantInvalidNonEmptyDoesNotFallbackToGlobal()
+    {
+        var output = await RunWithRoutingSourceAsync(
+            tenantUrl: "http://tenant.example.com",
+            globalUrl: "https://global.example.com",
+            verifyToken: VerifyToken,
+            webhookToken: "webhook-token-secret");
+
+        Assert.Contains("TENANT_PUBLIC_BASE_URL_PRESENT = True", output);
+        Assert.Contains("TENANT_PUBLIC_BASE_URL_IS_ABSOLUTE = True", output);
+        Assert.Contains("TENANT_PUBLIC_BASE_URL_IS_HTTPS = False", output);
+        Assert.Contains("GLOBAL_CALLBACK_BASE_URL_IS_HTTPS = True", output);
+        Assert.Contains("SELECTED_ROUTING_SOURCE = TENANT_PUBLIC_BASE_URL", output);
+        Assert.Contains("EFFECTIVE_PUBLIC_BASE_URL_VALID = False", output);
+        Assert.Contains("ROUTING_FAILURE_REASON = TENANT_PUBLIC_BASE_URL_NOT_HTTPS", output);
+        Assert.Contains("CALLBACK_ROUTING_RESOLVED = False", output);
+    }
+
+    [Fact]
+    public async Task RoutingSource_TenantEmptyAndGlobalInvalid_FailsOnGlobal()
+    {
+        var output = await RunWithRoutingSourceAsync(
+            tenantUrl: "",
+            globalUrl: "http://global.example.com",
+            verifyToken: VerifyToken,
+            webhookToken: "webhook-token-secret");
+
+        Assert.Contains("SELECTED_ROUTING_SOURCE = GLOBAL_CALLBACK_BASE_URL", output);
+        Assert.Contains("GLOBAL_CALLBACK_BASE_URL_IS_HTTPS = False", output);
+        Assert.Contains("EFFECTIVE_PUBLIC_BASE_URL_VALID = False", output);
+        Assert.Contains("ROUTING_FAILURE_REASON = GLOBAL_CALLBACK_BASE_URL_NOT_HTTPS", output);
+    }
+
+    [Fact]
+    public async Task RoutingSource_VerifyTokenMissing_IsReportedWithoutPrintingToken()
+    {
+        var output = await RunWithRoutingSourceAsync(
+            tenantUrl: "https://tenant.example.com",
+            globalUrl: "",
+            verifyToken: "",
+            webhookToken: "webhook-token-secret");
+
+        Assert.Contains("VERIFY_TOKEN_PRESENT = False", output);
+        Assert.Contains("WEBHOOK_TOKEN_PRESENT = True", output);
+        Assert.Contains("ROUTING_FAILURE_REASON = VERIFY_TOKEN_MISSING", output);
+        Assert.DoesNotContain("webhook-token-secret", output);
+    }
+
+    [Fact]
+    public async Task RoutingSource_RedactsQueryTokensAndSecrets()
+    {
+        const string querySecret = "query-token-never-printed";
+        const string webhookSecret = "webhook-token-never-printed";
+        const string verifySecret = "verify-token-never-printed";
+        var output = await RunWithRoutingSourceAsync(
+            tenantUrl: "https://tenant.example.com/webhook?access_token=" + querySecret,
+            globalUrl: "https://global.example.com?token=" + querySecret,
+            verifyToken: verifySecret,
+            webhookToken: webhookSecret);
+
+        Assert.Contains("TENANT_PUBLIC_BASE_URL_VALUE_SANITIZED = https://tenant.example.com/webhook", output);
+        Assert.Contains("GLOBAL_CALLBACK_BASE_URL_VALUE_SANITIZED = https://global.example.com/", output);
+        Assert.DoesNotContain(querySecret, output);
+        Assert.DoesNotContain(webhookSecret, output);
+        Assert.DoesNotContain(verifySecret, output);
+    }
+
+    [Fact]
     public void IsRequested_MatchesVerbCaseInsensitive()
     {
         Assert.True(WhatsAppSubscriptionInspectionCommand.IsRequested(["--inspect-whatsapp-subscription"]));
@@ -216,6 +321,33 @@ public sealed class WhatsAppSubscriptionInspectionCommandTests
             "https://graph.facebook.com",
             output,
             CancellationToken.None);
+
+        Assert.Equal(0, exitCode);
+        return output.ToString();
+    }
+
+    private static async Task<string> RunWithRoutingSourceAsync(string tenantUrl, string globalUrl, string verifyToken, string webhookToken)
+    {
+        var handler = new RoutingHandler(request =>
+            request.RequestUri!.Host.EndsWith(".example.com", StringComparison.Ordinal)
+                ? CallbackSuccess(request)
+                : Json(HttpStatusCode.OK, """{"data":[]}"""));
+        using var client = new HttpClient(handler);
+        var output = new StringWriter();
+
+        var exitCode = await ExecuteAsync(
+            IdBase,
+            Phone,
+            Waba,
+            ExpectedAppId,
+            new FakeOwnershipStore(new WhatsAppPhoneOwnership(Phone, Waba, IdBase, DateTime.UtcNow)),
+            new FakeCredentialResolver(new WhatsAppRuntimeCredential(Waba, Phone, "v26.0", AccessToken, WhatsAppRuntimeCredentialOrigin.EmbeddedSignup)),
+            new ThrowingRoutingProvider(new InvalidOperationException("No deberia usarse cuando hay diagnostico de source.")),
+            client,
+            "https://graph.facebook.com",
+            output,
+            CancellationToken.None,
+            (_, _) => Task.FromResult(BuildRoutingSourceInspection(IdBase, tenantUrl, globalUrl, verifyToken, webhookToken)));
 
         Assert.Equal(0, exitCode);
         return output.ToString();
