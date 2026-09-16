@@ -1260,6 +1260,76 @@ public class Program
             }
         });
 
+        app.MapGet("/api/datos-cliente", async (
+            HttpRequest request,
+            string? idCliente,
+            string? licenciaPrincipal,
+            string? nombreBase,
+            IConfiguration config,
+            ICentralClientesService centralClientesSvc,
+            ICentralBasesService centralBasesSvc,
+            CancellationToken ct) =>
+        {
+            var apiKeyConfigurada = (config["PortalCliente:InvitacionApiKey"] ?? string.Empty).Trim();
+            var apiKeyRecibida = request.Headers["X-Api-Key"].ToString().Trim();
+            if (string.IsNullOrWhiteSpace(apiKeyConfigurada))
+            {
+                return Results.Json(
+                    new { ok = false, mensaje = "El endpoint de datos del cliente no está configurado." },
+                    statusCode: StatusCodes.Status500InternalServerError);
+            }
+
+            if (!CryptographicOperations.FixedTimeEquals(
+                    Encoding.UTF8.GetBytes(apiKeyRecibida),
+                    Encoding.UTF8.GetBytes(apiKeyConfigurada)))
+            {
+                return Results.Unauthorized();
+            }
+
+            var codigoCliente = (idCliente ?? string.Empty).Trim();
+            var licencia = (licenciaPrincipal ?? string.Empty).Trim();
+            var baseSolicitada = (nombreBase ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(codigoCliente) || string.IsNullOrWhiteSpace(licencia)
+                || string.IsNullOrWhiteSpace(baseSolicitada))
+                return Results.BadRequest(new { ok = false, mensaje = "idCliente, licenciaPrincipal y nombreBase son obligatorios." });
+
+            var clientePorId = await centralClientesSvc.GetByIdClienteAsync(codigoCliente, ct);
+            var clientePorLicencia = await centralClientesSvc.GetByLicenciaPrincipalAsync(licencia, ct);
+            if (clientePorId is null || clientePorLicencia is null
+                || !string.Equals(clientePorId.IdCliente.Trim(), clientePorLicencia.IdCliente.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.NotFound(new { ok = false, mensaje = "idCliente y licenciaPrincipal no corresponden al mismo cliente." });
+            }
+
+            var todasLasBases = await centralBasesSvc.GetByClienteAsync(clientePorId.IdCliente, ct: ct);
+            var bases = todasLasBases
+                .Where(baseInfo => string.Equals(baseInfo.Nombre.Trim(), baseSolicitada, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (bases.Length == 0)
+            {
+                bases = todasLasBases
+                    .Where(baseInfo => baseInfo.Nombre.Contains(baseSolicitada, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+            }
+            if (bases.Length == 0)
+                return Results.NotFound(new { ok = false, mensaje = "El cliente no tiene una base con el nombre indicado." });
+
+            var baseSeleccionada = bases[0];
+
+            return Results.Ok(new PortalClienteDatosApiResultDto
+            {
+                IdCliente = clientePorId.IdCliente.Trim(),
+                IdWeb = clientePorId.IdWeb.Trim(),
+                IdBase = baseSeleccionada.IdBase,
+                NombreBase = baseSeleccionada.Nombre.Trim(),
+                Bases = bases.Select(static baseInfo => new PortalClienteBaseApiDto
+                {
+                    IdBase = baseInfo.IdBase,
+                    Nombre = baseInfo.Nombre.Trim()
+                }).ToArray()
+            });
+        });
+
         static int? ResolveSqlSessionBaseId(string? sessionIdCookie)
         {
             if (string.IsNullOrWhiteSpace(sessionIdCookie))

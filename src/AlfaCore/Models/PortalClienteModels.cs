@@ -32,6 +32,21 @@ public sealed class PortalClienteInvitacionApiResultDto
     public string Mensaje { get; init; } = string.Empty;
 }
 
+public sealed class PortalClienteDatosApiResultDto
+{
+    public string IdCliente { get; init; } = string.Empty;
+    public string IdWeb { get; init; } = string.Empty;
+    public int IdBase { get; init; }
+    public string NombreBase { get; init; } = string.Empty;
+    public IReadOnlyList<PortalClienteBaseApiDto> Bases { get; init; } = [];
+}
+
+public sealed class PortalClienteBaseApiDto
+{
+    public int IdBase { get; init; }
+    public string Nombre { get; init; } = string.Empty;
+}
+
 public sealed class PortalClientePedidosFiltroDto
 {
     public string CodigoCliente { get; set; } = string.Empty;
