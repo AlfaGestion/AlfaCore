@@ -1837,9 +1837,14 @@ public sealed class ConversacionesConfigService(
     public Task BackfillNumeroMetaIdentityAsync(int idNumero, string metaBusinessId, string wabaId, int? expectedBaseId, CancellationToken ct = default)
         => ExecuteLoggedAsync<bool>("Conversaciones", "BackfillNumeroMetaIdentity", async token =>
         {
+            // WabaId es la única precondición real -- "ownership central incompleto" (WabaId conocido,
+            // MetaBusinessId todavía vacío) es un estado válido y esperado (RESOLVABLE, no un error): el
+            // número debe poder backfillear SU WabaId ya mismo sin esperar a que Meta resuelva el
+            // Business. MetaBusinessId, cuando viene vacío, simplemente no se toca (nunca se escribe
+            // vacío, nunca se pisa un valor ya presente con otro).
             var businessId = (metaBusinessId ?? string.Empty).Trim();
             var normalizedWabaId = (wabaId ?? string.Empty).Trim();
-            if (idNumero <= 0 || businessId.Length == 0 || normalizedWabaId.Length == 0)
+            if (idNumero <= 0 || normalizedWabaId.Length == 0)
                 return false;
 
             var tenant = ResolveTenantConnection(expectedBaseId, "BackfillNumeroMetaIdentity");
@@ -1849,11 +1854,14 @@ public sealed class ConversacionesConfigService(
             if (!CanWriteNumeroMetaIdentity(numeroColumns))
                 return false; // Base sin la actualización todavía -- nada para backfillear acá.
 
+            // Cada columna se completa de forma independiente y sólo si está vacía -- nunca sobrescribe
+            // un valor ya presente (ni con el nuevo ni, si @MetaBusinessId viniera vacío, con vacío).
             const string sql = """
                 UPDATE dbo.CONV_WHATSAPP_NUMEROS
-                SET MetaBusinessId = @MetaBusinessId, WabaId = @WabaId
-                WHERE IdNumero = @IdNumero
-                  AND (MetaBusinessId IS NULL OR MetaBusinessId = N'');
+                SET WabaId = CASE WHEN (WabaId IS NULL OR WabaId = N'') THEN @WabaId ELSE WabaId END,
+                    MetaBusinessId = CASE WHEN (MetaBusinessId IS NULL OR MetaBusinessId = N'') AND @MetaBusinessId <> N''
+                                          THEN @MetaBusinessId ELSE MetaBusinessId END
+                WHERE IdNumero = @IdNumero;
                 """;
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@MetaBusinessId", businessId);

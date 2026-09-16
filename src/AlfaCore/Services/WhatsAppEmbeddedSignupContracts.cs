@@ -105,6 +105,32 @@ public interface IWhatsAppAssetOwnershipStore
     /// cuando llega un webhook para un phone_number_id sin ownership.
     /// </summary>
     Task<bool> HasEmbeddedSignupFootprintAsync(int idBase, CancellationToken ct = default) => Task.FromResult(false);
+
+    /// <summary>
+    /// Repara (NUNCA sobrescribe) un WhatsAppWabaOwnership.MetaBusinessId vacío una vez que algo (hoy:
+    /// WhatsAppPortfolioResolutionService, después de un GET /{wabaId}?fields=owner_business_info
+    /// exitoso) lo resolvió -- "ownership central incompleto" (WabaId conocido, MetaBusinessId vacío)
+    /// es un estado real que puede quedar así para siempre si nadie lo completa; sin esto, cada tenant
+    /// reencontraría el mismo dato para siempre en vez de que el central quede como fuente autoritativa.
+    /// Atómico (WITH (UPDLOCK, HOLDLOCK), misma guardia que ReserveWabaAsync): WabaId + IdBase deben
+    /// coincidir con el ownership ya reservado. Si el MetaBusinessId actual ya es exactamente el mismo
+    /// valor, no-op idempotente. Si ya tiene OTRO valor no vacío, fail-closed -- nunca se pisa: eso
+    /// sería una inconsistencia real que hay que investigar, no resolver a ciegas sobrescribiendo.
+    /// </summary>
+    Task<WhatsAppWabaMetaBusinessRepairResult> TryRepairWabaMetaBusinessIdAsync(string wabaId, int idBase, string resolvedMetaBusinessId, CancellationToken ct = default)
+        => Task.FromResult(WhatsAppWabaMetaBusinessRepairResult.NotFound);
+}
+
+public enum WhatsAppWabaMetaBusinessRepairResult
+{
+    /// <summary>Estaba vacío, ahora quedó con el valor resuelto.</summary>
+    Repaired,
+    /// <summary>Ya tenía exactamente ese valor -- no se tocó nada, pero no es un error.</summary>
+    AlreadyMatches,
+    /// <summary>Ya tenía un valor NO vacío y DISTINTO -- fail closed, no se tocó nada.</summary>
+    Conflict,
+    /// <summary>No hay ownership para ese WabaId+IdBase -- nada que reparar.</summary>
+    NotFound,
 }
 
 public interface IWhatsAppEmbeddedSignupStateProtector

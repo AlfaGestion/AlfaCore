@@ -76,6 +76,43 @@ public sealed class WhatsAppNumeroPortfolioTests
     }
 
     [Fact]
+    public void NumeroWithWabaIdButNoMetaBusinessId_ShowsPendingToIdentify_NeverHidden()
+    {
+        // Caso real Base4264/Alfa Claro 1: ownership central existe, WabaId conocido, pero
+        // MetaBusinessId nunca se capturó (WhatsAppWabaOwnership.MetaBusinessId vacío). Es RESOLVABLE,
+        // no UNKNOWN -- la UI no debe ocultar la línea, debe mostrar un estado explícito "en progreso".
+        var portfolios = new Dictionary<string, string>(StringComparer.Ordinal);
+        var numero = new ConversacionWhatsAppNumeroDto { IdNumero = 1, Nombre = "Alfa Claro 1", PhoneNumberId = "1243405415530992", MetaBusinessId = "", WabaId = "888902717349521" };
+
+        Assert.Equal("pendiente de identificar", ConversacionesConfiguracion.ResolvePortfolioName(numero, portfolios));
+        Assert.Equal("Portfolio: pendiente de identificar", ConversacionesConfiguracion.ResolvePortfolioDisplayLine(numero, portfolios));
+    }
+
+    [Fact]
+    public void NumeroWithNeitherMetaBusinessIdNorWabaId_IsTrulyUnknown_LineHidden()
+    {
+        // Ni ownership central ni WABA legacy -- acá sí no hay absolutamente nada para resolver.
+        var portfolios = new Dictionary<string, string>(StringComparer.Ordinal);
+        var numero = new ConversacionWhatsAppNumeroDto { IdNumero = 1, Nombre = "Manual sin nada", PhoneNumberId = "999", MetaBusinessId = "", WabaId = "" };
+
+        Assert.Null(ConversacionesConfiguracion.ResolvePortfolioName(numero, portfolios));
+        Assert.Null(ConversacionesConfiguracion.ResolvePortfolioDisplayLine(numero, portfolios));
+    }
+
+    [Fact]
+    public void NumeroWithWabaId_TransitionsFromPendingToKnown_OnceMetaBusinessIdAndNameArrive()
+    {
+        // Simula el ciclo completo: pendiente (WabaId solo) -> resuelto (MetaBusinessId + nombre).
+        var portfolios = new Dictionary<string, string>(StringComparer.Ordinal);
+        var numero = new ConversacionWhatsAppNumeroDto { IdNumero = 1, Nombre = "Alfa Claro 1", PhoneNumberId = "1243405415530992", MetaBusinessId = "", WabaId = "888902717349521" };
+        Assert.Equal("Portfolio: pendiente de identificar", ConversacionesConfiguracion.ResolvePortfolioDisplayLine(numero, portfolios));
+
+        numero.MetaBusinessId = "biz-888902717349521";
+        portfolios["biz-888902717349521"] = "Portfolio Real";
+        Assert.Equal("Portfolio: Portfolio Real", ConversacionesConfiguracion.ResolvePortfolioDisplayLine(numero, portfolios));
+    }
+
+    [Fact]
     public void WorksTheSameForStandardAndCoexistence()
     {
         // El portfolio es una propiedad del Business/WABA en Meta, no del modo de onboarding con el que
@@ -156,26 +193,30 @@ public sealed class WhatsAppNumeroPortfolioTests
     }
 
     [Fact]
-    public void ManualNumeros_ResolveTheirLegacyWabaOwningBusiness_WiredIntoTheSameListRefresh()
+    public void ManualAndIncompleteOwnershipNumeros_ResolveTheirWabaOwningBusiness_WiredIntoTheSameListRefresh()
     {
         // Auditoría: "MANUAL PHONE-ID = UNKNOWN para siempre" era incorrecto -- un número agregado
         // manualmente puede seguir siendo Resolvable si hay una WABA legacy configurada
-        // (ConversacionWhatsAppConfigDto.BusinessAccountId). Este paso debe correr en el mismo refresh
-        // de la lista, antes de intentar resolver el nombre (para que el MetaBusinessId recién
-        // descubierto ya esté disponible en ese mismo render).
+        // (ConversacionWhatsAppConfigDto.BusinessAccountId). Auditoría de Base4264/Alfa Claro 1: un
+        // número con ownership central INCOMPLETO (WabaId conocido, MetaBusinessId no) es el mismo caso
+        // -- ambos comparten TryResolveMissingWabaBusinessIdsAsync/TryResolveWabaOwningBusinessAsync
+        // (agrupado por WabaId, un solo GET por WABA aunque varios números la compartan). Este paso debe
+        // correr en el mismo refresh de la lista, antes de intentar resolver el nombre (para que el
+        // MetaBusinessId recién descubierto ya esté disponible en ese mismo render).
         var source = ReadPageSource();
 
-        Assert.Contains("await TryResolveLegacyWabaOwningBusinessIfNeededAsync(idBase);", source, StringComparison.Ordinal);
-        Assert.Contains("PortfolioResolution.TryResolveLegacyWabaOwningBusinessAsync(idBase, wabaId, pendiente.PhoneNumberId, _lifetimeCts.Token)", source, StringComparison.Ordinal);
+        Assert.Contains("await TryResolveMissingWabaBusinessIdsAsync(idBase);", source, StringComparison.Ordinal);
+        Assert.Contains("PortfolioResolution.TryResolveWabaOwningBusinessAsync(idBase, grupo.Key, grupo.First().PhoneNumberId, _lifetimeCts.Token)", source, StringComparison.Ordinal);
+        Assert.Contains("PortfolioResolution.TryResolveWabaOwningBusinessAsync(idBase, wabaId, pendienteManual.PhoneNumberId, _lifetimeCts.Token)", source, StringComparison.Ordinal);
 
-        // Orden: backfill (central ownership + caché legacy) -> resolver la WABA legacy si hace falta ->
-        // recién ahí el resto (bloqueados, nombres). Nunca al revés -- si no, un número manual recién
-        // resuelto tendría que esperar al próximo refresh para que su MetaBusinessId se reflejara.
+        // Orden: backfill (central ownership + caché legacy) -> resolver la WABA si hace falta -> recién
+        // ahí el resto (bloqueados, nombres). Nunca al revés -- si no, un número recién resuelto tendría
+        // que esperar al próximo refresh para que su MetaBusinessId se reflejara.
         var backfillIndex = source.IndexOf("await RefreshNumeroMetaIdentityBackfillAsync(idBase);", StringComparison.Ordinal);
-        var legacyWabaIndex = source.IndexOf("await TryResolveLegacyWabaOwningBusinessIfNeededAsync(idBase);", StringComparison.Ordinal);
+        var wabaResolveIndex = source.IndexOf("await TryResolveMissingWabaBusinessIdsAsync(idBase);", StringComparison.Ordinal);
         var namesIndex = source.IndexOf("await TryResolveMissingPortfolioNamesAsync(idBase);", StringComparison.Ordinal);
-        Assert.True(backfillIndex >= 0 && legacyWabaIndex >= 0 && namesIndex >= 0);
-        Assert.True(backfillIndex < legacyWabaIndex && legacyWabaIndex < namesIndex);
+        Assert.True(backfillIndex >= 0 && wabaResolveIndex >= 0 && namesIndex >= 0);
+        Assert.True(backfillIndex < wabaResolveIndex && wabaResolveIndex < namesIndex);
     }
 
     [Fact]

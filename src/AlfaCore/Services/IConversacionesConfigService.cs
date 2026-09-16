@@ -90,6 +90,9 @@ public interface IConversacionesConfigService
     /// <summary>
     /// Completa MetaBusinessId/WabaId de un número YA existente que se quedó sin esos ids (típicamente
     /// conectado antes de que existiera esta funcionalidad) -- nunca sobrescribe un valor ya presente.
+    /// WabaId es la única precondición: puede escribirse solo, sin MetaBusinessId todavía ("ownership
+    /// central incompleto" es un estado válido -- ver WhatsAppPortfolioResolutionService). Pasar
+    /// <paramref name="metaBusinessId"/> vacío es válido y no-op para esa columna específica.
     /// <paramref name="expectedBaseId"/> sigue el mismo contrato que el resto de la interfaz
     /// (ResolveTenantConnection): si no coincide con la base de la sesión activa, tira en vez de escribir
     /// contra la base equivocada -- la base tenant se resuelve por CONNECTION STRING (una base física
