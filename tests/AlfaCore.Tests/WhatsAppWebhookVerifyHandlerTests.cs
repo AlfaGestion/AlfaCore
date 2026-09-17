@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using Xunit;
 
 namespace AlfaCore.Tests;
@@ -14,11 +15,17 @@ namespace AlfaCore.Tests;
 /// (WEBHOOK_ROUTE_MATCHED/NotSupportedException y la reconstrucción paralela de
 /// RoutingSourceInspection.ToRoutingConfiguration()), el self-check productivo mostró un callback
 /// correctamente resuelto (VERIFY_TOKEN_PRESENT=True, VERIFY_TOKEN_SOURCE=GLOBAL, CALLBACK_PATH
-/// correcto) pero la verificación GET real seguía devolviendo 401. Estos tests ejercitan
-/// directamente el handler REAL de producción (Program.HandleWhatsAppVerifyAsync, hecho internal
-/// sólo para esto) -- no una reimplementación -- para fijar su contrato de match/mismatch/
-/// no-configurado, y ReadValue (también hecho internal) para fijar la precedencia tenant/fallback
-/// sin depender de una conexión SQL real.
+/// correcto) pero la verificación GET real seguía devolviendo 401. Una primera instrumentación
+/// (commit 7d2686d4) escribía el trazo en Path.GetTempPath(); en producción, corriendo como Windows
+/// Service bajo una cuenta con nombre, ese directorio resultó no determinístico -- confirmado el 401
+/// real (RESULT_STATUS=401_MISMATCH), no apareció ningún archivo. Ahora escribe bajo
+/// AppContext.BaseDirectory\diagnostics -- misma carpeta que ya usa
+/// AppExceptionLoggingMiddleware.TryWriteWebhookFailureDiagnostic -- y estos tests prueban de punta a
+/// punta que el archivo se crea de verdad (no sólo que no explota) tanto en el caso de match como en
+/// el de mismatch. Ejercitan directamente el handler REAL de producción
+/// (Program.HandleWhatsAppVerifyAsync, hecho internal sólo para esto) -- no una reimplementación --
+/// para fijar su contrato de match/mismatch/no-configurado/modo, y ReadValue (también hecho internal)
+/// para fijar la precedencia tenant/fallback sin depender de una conexión SQL real.
 /// </summary>
 public class WhatsAppWebhookVerifyHandlerTests
 {
@@ -40,6 +47,40 @@ public class WhatsAppWebhookVerifyHandlerTests
         return context;
     }
 
+    /// <summary>Nunca abre una conexión SQL real: GetConnectionString() vacío hace que
+    /// HasTenantVerifyTokenAsync devuelva false sin tocar la red -- basta para fijar el contrato de
+    /// HandleWhatsAppVerifyAsync (match/mismatch/no-configurado/modo/escritura del trazo), que es lo
+    /// que estos tests cubren. La precedencia tenant/fallback en sí ya la cubren los tests de
+    /// ReadValue más abajo.</summary>
+    private sealed class NoopSessionService : ISessionService
+    {
+        public event Action? SessionChanged { add { } remove { } }
+        public string GetConnectionString() => string.Empty;
+        public SessionDto? GetActiveSession() => null;
+        public void SetWebhookOverride(SessionDto session) { }
+        public void ClearWebhookOverride() { }
+        public IReadOnlyList<SessionDto> GetAllSessions() => [];
+        public void SwitchSession(Guid id) => throw new NotSupportedException();
+        public Guid AddSession(string nombre, string servidor, string baseDatos, string usuario, string password) => throw new NotSupportedException();
+        public void UpdateSession(Guid id, string nombre, string servidor, string baseDatos, string usuario, string password) => throw new NotSupportedException();
+        public void DeleteSession(Guid id) => throw new NotSupportedException();
+        public void ClearActiveSession() { }
+    }
+
+    /// <summary>Directorio real donde HandleWhatsAppVerifyAsync escribe el trazo (AppContext.BaseDirectory
+    /// -- el propio bin de test, siempre escribible) -- mismo cálculo que el código de producción, para
+    /// probar de punta a punta que el archivo se crea de verdad, no sólo que no explota.</summary>
+    private static string TraceFilePath()
+        => Path.Combine(AppContext.BaseDirectory, "diagnostics", $"webhook-verify-trace-{DateTime.UtcNow:yyyyMMdd}.jsonl");
+
+    private static JsonElement ReadLastTraceLine()
+    {
+        var path = TraceFilePath();
+        Assert.True(File.Exists(path), $"Se esperaba que existiera el archivo de trazo: {path}");
+        var lastLine = File.ReadLines(path).Last();
+        return JsonDocument.Parse(lastLine).RootElement.Clone();
+    }
+
     /// <summary>Caso obligatorio: Base4271 con VerifyToken de tenant vacío ("" en TA_CONFIGURACION,
     /// no ausente) -- el valor efectivo que ve el handler (ya fusionado por ConversacionesConfigService)
     /// es el fallback global, y el GET con ese mismo token debe devolver 200 + el challenge exacto.</summary>
@@ -53,7 +94,7 @@ public class WhatsAppWebhookVerifyHandlerTests
         var context = BuildRequestContext("subscribe", GlobalVerifyToken, "challenge-base4271-empty");
 
         var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
-            context.Request, configService, configuration, whatsAppOptions, CancellationToken.None);
+            context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None);
 
         var content = Assert.IsType<ContentHttpResult>(result);
         Assert.Equal("challenge-base4271-empty", content.ResponseContent);
@@ -73,15 +114,21 @@ public class WhatsAppWebhookVerifyHandlerTests
         var context = BuildRequestContext("subscribe", GlobalVerifyToken, "challenge-base4264-absent");
 
         var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
-            context.Request, configService, configuration, whatsAppOptions, CancellationToken.None);
+            context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None);
 
         var content = Assert.IsType<ContentHttpResult>(result);
         Assert.Equal("challenge-base4264-absent", content.ResponseContent);
         Assert.True(content.StatusCode is null or 200);
     }
 
+    /// <summary>
+    /// Test obligatorio (incidente Base4271/Base4264, 2026-09): effective token = A, incoming token = B
+    /// -&gt; 401 -- Y el escritor del trazo se invoca de verdad, escribe en AppContext.BaseDirectory\
+    /// diagnostics\ (no en %TEMP%, que resultó no determinístico en producción bajo el Windows Service
+    /// corriendo como ".\Administrador"), y RESULT_STATUS refleja exactamente 401_MISMATCH.
+    /// </summary>
     [Fact]
-    public async Task VerifyTokenMismatch_Returns401()
+    public async Task VerifyTokenMismatch_Returns401_AndWritesTraceWithMismatchStatus()
     {
         var effectiveConfig = new ConversacionWhatsAppConfigDto { VerifyToken = GlobalVerifyToken };
         var configService = new FixedWhatsAppConfigConversacionesConfigService(effectiveConfig);
@@ -90,10 +137,22 @@ public class WhatsAppWebhookVerifyHandlerTests
         var context = BuildRequestContext("subscribe", "attacker-or-stale-token", "some-challenge");
 
         var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
-            context.Request, configService, configuration, whatsAppOptions, CancellationToken.None);
+            context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None, idBase: 4271);
 
         var unauthorized = Assert.IsType<UnauthorizedHttpResult>(result);
         Assert.Equal(StatusCodes.Status401Unauthorized, unauthorized.StatusCode);
+
+        var trace = ReadLastTraceLine();
+        Assert.Equal("401_MISMATCH", trace.GetProperty("RESULT_STATUS").GetString());
+        Assert.Equal("4271", trace.GetProperty("ID_BASE").GetString());
+        Assert.True(trace.GetProperty("HOST_OPTIONS_TOKEN_PRESENT").GetBoolean());
+        Assert.True(trace.GetProperty("EFFECTIVE_TOKEN_PRESENT").GetBoolean());
+        Assert.True(trace.GetProperty("INCOMING_TOKEN_PRESENT").GetBoolean());
+        Assert.False(trace.GetProperty("TOKENS_MATCH").GetBoolean());
+        // Nunca el valor del token en ningún campo del trazo.
+        var raw = trace.GetRawText();
+        Assert.DoesNotContain(GlobalVerifyToken, raw, StringComparison.Ordinal);
+        Assert.DoesNotContain("attacker-or-stale-token", raw, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -106,10 +165,13 @@ public class WhatsAppWebhookVerifyHandlerTests
         var context = BuildRequestContext("subscribe", "any-token", "any-challenge");
 
         var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
-            context.Request, configService, configuration, whatsAppOptions, CancellationToken.None);
+            context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None);
 
         var problem = Assert.IsType<ProblemHttpResult>(result);
         Assert.Equal(StatusCodes.Status500InternalServerError, problem.StatusCode);
+
+        var trace = ReadLastTraceLine();
+        Assert.Equal("500_NOT_CONFIGURED", trace.GetProperty("RESULT_STATUS").GetString());
     }
 
     [Fact]
@@ -122,9 +184,63 @@ public class WhatsAppWebhookVerifyHandlerTests
         var context = BuildRequestContext("unsubscribe", GlobalVerifyToken, "any-challenge");
 
         var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
-            context.Request, configService, configuration, whatsAppOptions, CancellationToken.None);
+            context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None);
 
         Assert.IsType<BadRequest<string>>(result);
+
+        var trace = ReadLastTraceLine();
+        Assert.Equal("400_BAD_MODE", trace.GetProperty("RESULT_STATUS").GetString());
+    }
+
+    /// <summary>
+    /// Test obligatorio (incidente Base4271/Base4264, 2026-09): effective token = A, incoming token = A
+    /// -&gt; 200 + challenge exacto -- diseño explícito: el escritor se invoca IGUAL que en el caso de
+    /// mismatch (no sólo en la falla), para poder comparar un caso sano (p. ej. Base4264 funcionando)
+    /// contra uno roto (Base4271 fallando) con la misma evidencia. RESULT_STATUS = 200_CHALLENGE y
+    /// TOKENS_MATCH = true lo distinguen del caso de 401.
+    /// </summary>
+    [Fact]
+    public async Task VerifyTokenMatch_Returns200_AndWritesTraceWithMatchStatus()
+    {
+        var effectiveConfig = new ConversacionWhatsAppConfigDto { VerifyToken = GlobalVerifyToken };
+        var configService = new FixedWhatsAppConfigConversacionesConfigService(effectiveConfig);
+        var configuration = BuildConfiguration(GlobalVerifyToken);
+        var whatsAppOptions = Options.Create(new WhatsAppOptions { VerifyToken = GlobalVerifyToken });
+        var context = BuildRequestContext("subscribe", GlobalVerifyToken, "challenge-match-case");
+
+        var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
+            context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None, idBase: 4264);
+
+        var content = Assert.IsType<ContentHttpResult>(result);
+        Assert.Equal("challenge-match-case", content.ResponseContent);
+
+        var trace = ReadLastTraceLine();
+        Assert.Equal("200_CHALLENGE", trace.GetProperty("RESULT_STATUS").GetString());
+        Assert.Equal("4264", trace.GetProperty("ID_BASE").GetString());
+        Assert.True(trace.GetProperty("TOKENS_MATCH").GetBoolean());
+        var raw = trace.GetRawText();
+        Assert.DoesNotContain(GlobalVerifyToken, raw, StringComparison.Ordinal);
+    }
+
+    /// <summary>Ruta legacy sin token de routing (MapGet("/api/conversaciones/whatsapp/webhook", ...)):
+    /// idBase nunca se resuelve -- el trazo debe reportar ID_BASE = "N/A", nunca reventar por falta de
+    /// sesión activa (HasTenantVerifyTokenAsync aislado en su propio try/catch).</summary>
+    [Fact]
+    public async Task LegacyRouteWithoutToken_NoResolvedBase_TraceReportsIdBaseNotAvailable()
+    {
+        var effectiveConfig = new ConversacionWhatsAppConfigDto { VerifyToken = GlobalVerifyToken };
+        var configService = new FixedWhatsAppConfigConversacionesConfigService(effectiveConfig);
+        var configuration = BuildConfiguration(GlobalVerifyToken);
+        var whatsAppOptions = Options.Create(new WhatsAppOptions { VerifyToken = GlobalVerifyToken });
+        var context = BuildRequestContext("subscribe", GlobalVerifyToken, "challenge-legacy-route");
+
+        var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
+            context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None);
+
+        Assert.IsType<ContentHttpResult>(result);
+        var trace = ReadLastTraceLine();
+        Assert.Equal("N/A", trace.GetProperty("ID_BASE").GetString());
+        Assert.False(trace.GetProperty("TENANT_TOKEN_PRESENT").GetBoolean());
     }
 
     [Fact]

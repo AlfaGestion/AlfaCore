@@ -2557,10 +2557,11 @@ public class Program
             CancellationToken ct) =>
         {
             DisableWebhookCaching(response);
-            if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
+            var resolvedBaseId = await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct);
+            if (resolvedBaseId is null)
                 return Results.NotFound();
 
-            return await HandleWhatsAppVerifyAsync(request, configService, configuration, whatsAppOptions, ct);
+            return await HandleWhatsAppVerifyAsync(request, configService, configuration, whatsAppOptions, sessionService, ct, resolvedBaseId);
         });
 
         app.MapPost("/api/conversaciones/whatsapp/webhook", (
@@ -3425,67 +3426,85 @@ public class Program
         IConversacionesConfigService configService,
         IConfiguration configuration,
         IOptions<WhatsAppOptions> whatsAppOptions,
-        CancellationToken ct)
+        ISessionService sessionService,
+        CancellationToken ct,
+        int? idBase = null)
     {
         var options = await configService.GetWhatsAppConfigAsync(ct);
         var mode = request.Query["hub.mode"].ToString();
         var verifyToken = request.Query["hub.verify_token"].ToString();
         var challenge = request.Query["hub.challenge"].ToString();
 
-        TryWriteWebhookVerifyDiagnostic(configuration, whatsAppOptions.Value, options, mode, verifyToken);
-
+        string resultStatus;
+        IResult result;
         if (!string.Equals(mode, "subscribe", StringComparison.OrdinalIgnoreCase))
-            return Results.BadRequest("Modo de verificación inválido.");
+        {
+            resultStatus = "400_BAD_MODE";
+            result = Results.BadRequest("Modo de verificación inválido.");
+        }
+        else if (!options.IsConfiguredForVerify)
+        {
+            resultStatus = "500_NOT_CONFIGURED";
+            result = Results.Problem("WhatsApp VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
+        }
+        else if (string.Equals(verifyToken, options.VerifyToken, StringComparison.Ordinal))
+        {
+            resultStatus = "200_CHALLENGE";
+            result = Results.Text(challenge);
+        }
+        else
+        {
+            resultStatus = "401_MISMATCH";
+            result = Results.Unauthorized();
+        }
 
-        if (!options.IsConfiguredForVerify)
-            return Results.Problem("WhatsApp VerifyToken no está configurado.", statusCode: StatusCodes.Status500InternalServerError);
-
-        return string.Equals(verifyToken, options.VerifyToken, StringComparison.Ordinal)
-            ? Results.Text(challenge)
-            : Results.Unauthorized();
+        await TryWriteWebhookVerifyDiagnosticAsync(configuration, whatsAppOptions.Value, options, sessionService, idBase, verifyToken, resultStatus, ct);
+        return result;
     }
 
     /// <summary>
-    /// Diagnóstico puntual del incidente Base4271/Base4264 (2026-09): el inspector
-    /// --inspect-whatsapp-subscription corre en un proceso CLI separado del Windows Service real. Ya
-    /// probó que su propio VerifyToken global resuelve correctamente en ESE proceso, pero el self-check
-    /// contra el host real devuelve 401 -- lo que sólo puede significar que el proceso host real ve un
-    /// valor efectivo distinto en Environment -> IConfiguration -> IOptions&lt;WhatsAppOptions&gt; ->
-    /// valor fusionado de ConversacionesConfigService. Este trazo reproduce esa cadena DENTRO del mismo
-    /// proceso/request que falla, sin exponer un endpoint público nuevo: mismo mecanismo best-effort que
-    /// TryWriteWebhookFailureDiagnostic (archivo JSONL local), sólo booleanos/fuente -- nunca el
-    /// valor/longitud/hash/prefijo del token. Nunca debe alterar la respuesta HTTP real.
+    /// Diagnóstico puntual del incidente Base4271/Base4264 (2026-09). Primera versión (commit
+    /// 7d2686d4) escribía en Path.GetTempPath() -- en producción, corriendo como Windows Service bajo
+    /// una cuenta con nombre (".\Administrador"), ese directorio resultó no determinístico: tras un
+    /// 401 real confirmado (el handler SÍ ejecutó -- ver RESULT_STATUS más abajo, siempre se calcula
+    /// ANTES de este trazo), no apareció ningún archivo ni en el TEMP de la cuenta ni en el de
+    /// LocalSystem. Ahora escribe bajo AppContext.BaseDirectory (el propio directorio de instalación
+    /// del servicio, donde el proceso ya tiene que poder leer sus propios binarios) -- misma carpeta
+    /// "diagnostics" que ya usa AppExceptionLoggingMiddleware.TryWriteWebhookFailureDiagnostic para
+    /// excepciones no manejadas de estas mismas rutas, así no se inventa una tercera convención de
+    /// ubicación. Nunca expone el valor/longitud/hash/prefijo del token -- sólo presencia/fuente. Nunca
+    /// debe alterar la respuesta HTTP real: el IResult ya se decidió antes de llamar acá.
     /// </summary>
-    private static void TryWriteWebhookVerifyDiagnostic(
+    private static async Task TryWriteWebhookVerifyDiagnosticAsync(
         IConfiguration configuration,
         WhatsAppOptions fallbackOptions,
         ConversacionWhatsAppConfigDto effectiveConfig,
-        string mode,
-        string incomingVerifyToken)
+        ISessionService sessionService,
+        int? idBase,
+        string incomingVerifyToken,
+        string resultStatus,
+        CancellationToken ct)
     {
         try
         {
             var fallbackVerifyToken = (fallbackOptions.VerifyToken ?? string.Empty).Trim();
             var effectiveVerifyToken = (effectiveConfig.VerifyToken ?? string.Empty).Trim();
-            var handlerVerifyTokenSource = effectiveVerifyToken.Length == 0
-                ? "NONE"
-                : fallbackVerifyToken.Length > 0 && string.Equals(effectiveVerifyToken, fallbackVerifyToken, StringComparison.Ordinal)
-                    ? "GLOBAL"
-                    : "TENANT";
+            var tenantTokenPresent = await HasTenantVerifyTokenAsync(sessionService, ct);
 
-            var directory = Path.Combine(Path.GetTempPath(), "AlfaCore", "webhook-diagnostics");
+            var directory = Path.Combine(AppContext.BaseDirectory, "diagnostics");
             Directory.CreateDirectory(directory);
             var record = new
             {
-                TimestampUtc = DateTimeOffset.UtcNow,
-                Mode = mode,
-                HOST_RAW_ENV_VERIFY_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WhatsApp__VerifyToken")),
-                HOST_CONFIGURATION_VERIFY_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(configuration["WhatsApp:VerifyToken"]),
-                HOST_OPTIONS_VERIFY_TOKEN_PRESENT = fallbackVerifyToken.Length > 0,
-                HANDLER_EFFECTIVE_VERIFY_TOKEN_PRESENT = effectiveVerifyToken.Length > 0,
-                HANDLER_VERIFY_TOKEN_SOURCE = handlerVerifyTokenSource,
+                UTC = DateTimeOffset.UtcNow,
+                ID_BASE = idBase?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "N/A",
+                HOST_ENV_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WhatsApp__VerifyToken")),
+                HOST_CONFIG_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(configuration["WhatsApp:VerifyToken"]),
+                HOST_OPTIONS_TOKEN_PRESENT = fallbackVerifyToken.Length > 0,
+                TENANT_TOKEN_PRESENT = tenantTokenPresent,
+                EFFECTIVE_TOKEN_PRESENT = effectiveVerifyToken.Length > 0,
                 INCOMING_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(incomingVerifyToken),
-                TOKENS_MATCH = effectiveVerifyToken.Length > 0 && string.Equals(incomingVerifyToken, effectiveConfig.VerifyToken, StringComparison.Ordinal)
+                TOKENS_MATCH = effectiveVerifyToken.Length > 0 && string.Equals(incomingVerifyToken, effectiveConfig.VerifyToken, StringComparison.Ordinal),
+                RESULT_STATUS = resultStatus
             };
             var path = Path.Combine(directory, $"webhook-verify-trace-{DateTime.UtcNow:yyyyMMdd}.jsonl");
             File.AppendAllText(path, JsonSerializer.Serialize(record) + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
@@ -3493,6 +3512,31 @@ public class Program
         catch
         {
             // Diagnóstico best-effort: nunca debe enmascarar ni alterar la verificación real.
+        }
+    }
+
+    /// <summary>
+    /// Presencia (nunca el valor) de CONV_WHATSAPP_VERIFY_TOKEN en la base tenant activa -- aislado en
+    /// su propio try/catch a propósito (mismo patrón que WEBHOOK_ROUTE_MATCHED en el inspector): si
+    /// esta lectura extra falla (sin sesión activa, ruta legacy sin token, problema de conexión), el
+    /// resto del trazo (env/config/options/effective/incoming/match/status) se sigue escribiendo igual.
+    /// </summary>
+    private static async Task<bool> HasTenantVerifyTokenAsync(ISessionService sessionService, CancellationToken ct)
+    {
+        try
+        {
+            var connectionString = sessionService.GetConnectionString();
+            if (string.IsNullOrWhiteSpace(connectionString))
+                return false;
+
+            await using var cn = new SqlConnection(connectionString);
+            const string sql = "SELECT VALOR FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'CONV_WHATSAPP_VERIFY_TOKEN';";
+            var valor = await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(sql, cancellationToken: ct));
+            return !string.IsNullOrWhiteSpace(valor);
+        }
+        catch
+        {
+            return false;
         }
     }
 
