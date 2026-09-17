@@ -7,26 +7,28 @@
 
 <PageTitle>Acceso al Portal Cliente</PageTitle>
 
-<section class="page-grid">
-    <section class="panel-card empty-state">
-        @if (NotFound)
-        {
-            <h3 class="panel-card__title">Base no disponible</h3>
-            <p class="panel-card__subtitle">No se pudo resolver la base asociada a este enlace.</p>
-        }
-        else if (_procesando)
-        {
-            <h3 class="panel-card__title">Ingresando al portal...</h3>
-            <p class="panel-card__subtitle">Estamos validando tu enlace de acceso.</p>
-        }
-        else
-        {
-            <h3 class="panel-card__title">Enlace no válido</h3>
-            <p class="panel-card__subtitle">@_mensaje</p>
-            <a class="btn btn--primary" href="@BuildPortalRoute("")">Ir al portal</a>
-        }
+@if (_procesando)
+{
+    <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Validando acceso al portal..." />
+}
+else
+{
+    <section class="page-grid">
+        <section class="panel-card empty-state">
+            @if (NotFound)
+            {
+                <h3 class="panel-card__title">Base no disponible</h3>
+                <p class="panel-card__subtitle">No se pudo resolver la base asociada a este enlace.</p>
+            }
+            else
+            {
+                <h3 class="panel-card__title">Enlace no válido</h3>
+                <p class="panel-card__subtitle">@_mensaje</p>
+                <a class="btn btn--primary" href="@BuildPortalRoute("")">Ir al portal</a>
+            }
+        </section>
     </section>
-</section>
+}
 
 @code {
     [Parameter, SupplyParameterFromQuery] public string? token { get; set; }
@@ -34,6 +36,9 @@
     private bool _procesando = true;
     private string _mensaje = "El enlace no es válido o ya venció.";
     private bool _navegando;
+
+    private static string GetLoadingLogoUrl()
+        => AlfaCore.Components.Shared.AuthThemeAssets.GetLoginLogo(isDarkTheme: true);
 
     protected override async Task OnAfterClientSessionRestoredAsync()
     {

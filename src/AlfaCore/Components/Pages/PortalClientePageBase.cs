@@ -17,7 +17,6 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
     [Inject] protected ICatalogosClienteSessionService CatalogoClienteSession { get; set; } = null!;
     [Inject] protected ICentralBasesService CentralBasesSvc { get; set; } = null!;
     [Inject] protected IAppUiOperationService UiOps { get; set; } = null!;
-    [Inject] protected IAppModeService AppMode { get; set; } = null!;
     [Inject] protected ISessionService SessionSvc { get; set; } = null!;
     [Inject] protected NavigationManager Nav { get; set; } = null!;
     [Inject] protected IJSRuntime Js { get; set; } = null!;
@@ -142,7 +141,12 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
             _effectiveIdBase = sessionBaseId > 0 ? sessionBaseId : null;
         }
 
-        if (!AppMode.IsSaaSMode || !idbase.HasValue)
+        // Las rutas públicas del Portal Cliente llevan la base explícita
+        // (/{idweb}/{idbase}/portal-cliente). Esa base debe tener prioridad también en
+        // instalaciones locales: el enlace de auto login se genera en la base seleccionada
+        // desde el Maestro de Clientes y no necesariamente coincide con la conexión activa
+        // por defecto del proceso web.
+        if (!idbase.HasValue)
             return;
 
         var routeBaseId = idbase.Value;
@@ -184,8 +188,11 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
         try
         {
             Branding = await CatalogosSvc.GetPublicIdentityAsync(idweb);
-            var logo = await ConfigGeneralSvc.GetLogoInfoAsync();
-            if (logo.TieneLogo && idbase is > 0 && !string.IsNullOrWhiteSpace(idweb))
+            // GetPublicIdentityAsync ya resuelve la existencia del logo sobre la base activa.
+            // No volver a consultar TA_LOGOS desde otra ruta de configuración: durante una
+            // navegación entre páginas esa segunda consulta podía observar momentáneamente la
+            // conexión anterior y hacer alternar el logo del encabezado.
+            if (Branding.TieneLogoPersonalizado && idbase is > 0 && !string.IsNullOrWhiteSpace(idweb))
             {
                 // La configuración general es la fuente única para Portal, catálogo, carrito y
                 // documentos. La identidad del catálogo queda únicamente como fallback histórico.
