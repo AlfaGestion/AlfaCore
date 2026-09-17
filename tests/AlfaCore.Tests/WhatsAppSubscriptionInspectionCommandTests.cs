@@ -29,7 +29,74 @@ public sealed class WhatsAppSubscriptionInspectionCommandTests
         Assert.Contains("CALLBACK_ROUTING_RESOLVED = True", output);
         Assert.Contains("CALLBACK_HTTP = 200", output);
         Assert.Contains("CALLBACK_REACHABLE = True", output);
+        Assert.Contains("CALLBACK_PATH = /api/conversaciones/whatsapp/webhook/{token}", output);
+        Assert.Contains("CALLBACK_QUERY_KEYS = hub.mode,hub.verify_token,hub.challenge", output);
+        Assert.Contains("CALLBACK_RESPONSE_CONTENT_TYPE = ", output);
+        Assert.Contains("CALLBACK_RESPONSE_KIND = CHALLENGE", output);
+        Assert.Contains("CALLBACK_RESPONSE_MATCHES_CHALLENGE = True", output);
         Assert.Contains("EVIDENCE = APP_NOT_SUBSCRIBED", output);
+        // El WebhookToken real ("base-token-secret" en CallbackUrl) nunca debe aparecer -- CALLBACK_PATH
+        // lo enmascara siempre como "{token}".
+        Assert.DoesNotContain("base-token-secret", output);
+    }
+
+    /// <summary>
+    /// Regresión Base4271 (producción, 2026-09-16): el self-check reportó CALLBACK_HTTP=200 pero
+    /// CALLBACK_REACHABLE=False ("el callback no devolvió el challenge esperado"). Un HTTP 200 con un
+    /// body que NO es el challenge (típicamente la SPA de Blazor sirviendo su index.html por un
+    /// fallback de ruta -- confirmado en esta sesión con una prueba real contra el host público) es
+    /// indistinguible de "credenciales mal configuradas" sin esta clasificación. Este test fija el
+    /// contrato: CALLBACK_RESPONSE_KIND debe decir HTML, no CHALLENGE, cuando el body es HTML.
+    /// </summary>
+    [Fact]
+    public async Task CallbackReturns200WithHtmlBody_IsClassifiedAsHtmlNotChallenge()
+    {
+        const string htmlShell = "<!DOCTYPE html><html><head><title>AlfaNet - Alfa Gestión</title></head><body></body></html>";
+        var handler = new RoutingHandler(request =>
+            request.RequestUri!.Host == "callback.test"
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(htmlShell, System.Text.Encoding.UTF8, "text/html") }
+                : Json(HttpStatusCode.OK, """{"data":[]}"""));
+        var output = await RunAsync(handler);
+
+        Assert.Contains("CALLBACK_HTTP = 200", output);
+        Assert.Contains("CALLBACK_REACHABLE = False", output);
+        Assert.Contains("CALLBACK_RESPONSE_CONTENT_TYPE = text/html; charset=utf-8", output);
+        Assert.Contains($"CALLBACK_RESPONSE_LENGTH = {htmlShell.Length}", output);
+        Assert.Contains("CALLBACK_RESPONSE_KIND = HTML", output);
+        Assert.Contains("CALLBACK_RESPONSE_MATCHES_CHALLENGE = False", output);
+        Assert.DoesNotContain(htmlShell, output);
+    }
+
+    [Fact]
+    public async Task CallbackReturnsEmptyBody_IsClassifiedAsEmpty()
+    {
+        var handler = new RoutingHandler(request =>
+            request.RequestUri!.Host == "callback.test"
+                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(string.Empty) }
+                : Json(HttpStatusCode.OK, """{"data":[]}"""));
+        var output = await RunAsync(handler);
+
+        Assert.Contains("CALLBACK_RESPONSE_KIND = EMPTY", output);
+        Assert.Contains("CALLBACK_RESPONSE_LENGTH = 0", output);
+    }
+
+    [Fact]
+    public void RoutingSource_VerifyTokenSourceAndWebhookRouteMatched_AreExposedWithoutPrintingValues()
+    {
+        var tenantSourced = BuildRoutingSourceInspection(
+            IdBase, string.Empty, "https://global.example.com", "some-verify-token", "some-webhook-token",
+            tenantVerifyTokenPresent: true, webhookRouteMatched: true);
+        Assert.Equal("TENANT", tenantSourced.VerifyTokenSource);
+        Assert.True(tenantSourced.WebhookRouteMatched);
+
+        var globalSourced = BuildRoutingSourceInspection(
+            IdBase, string.Empty, "https://global.example.com", "some-verify-token", "some-webhook-token",
+            tenantVerifyTokenPresent: false, webhookRouteMatched: false);
+        Assert.Equal("GLOBAL", globalSourced.VerifyTokenSource);
+        Assert.False(globalSourced.WebhookRouteMatched);
+
+        var none = BuildRoutingSourceInspection(IdBase, string.Empty, string.Empty, string.Empty, string.Empty);
+        Assert.Equal("NONE", none.VerifyTokenSource);
     }
 
     [Fact]

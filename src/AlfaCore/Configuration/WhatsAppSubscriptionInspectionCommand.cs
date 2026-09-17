@@ -234,19 +234,27 @@ internal static class WhatsAppSubscriptionInspectionCommand
         var callbackHost = TryGetHost(routing.CallbackUrl);
         output.WriteLine("CALLBACK_ROUTING_RESOLVED = True");
         output.WriteLine($"CALLBACK_HOST = {callbackHost}");
+        output.WriteLine($"CALLBACK_PATH = {MaskCallbackPath(routing.CallbackUrl)}");
 
         var challenge = Convert.ToHexString(RandomNumberGenerator.GetBytes(12));
         var verifyUrl = BuildCallbackVerificationUrl(routing.CallbackUrl, routing.VerifyToken, challenge);
+        output.WriteLine($"CALLBACK_QUERY_KEYS = {DescribeQueryKeys(verifyUrl)}");
         var stopwatch = Stopwatch.StartNew();
         try
         {
             using var response = await httpClient.GetAsync(verifyUrl, ct);
             var body = await response.Content.ReadAsStringAsync(ct);
             stopwatch.Stop();
-            var reachable = response.IsSuccessStatusCode && string.Equals(body.Trim(), challenge, StringComparison.Ordinal);
+            var bodyMatchesChallenge = string.Equals(body.Trim(), challenge, StringComparison.Ordinal);
+            var reachable = response.IsSuccessStatusCode && bodyMatchesChallenge;
+            var contentType = response.Content.Headers.ContentType?.ToString();
             output.WriteLine($"CALLBACK_HTTP = {(int)response.StatusCode}");
             output.WriteLine($"CALLBACK_REACHABLE = {reachable}");
             output.WriteLine($"CALLBACK_ELAPSED_MS = {stopwatch.ElapsedMilliseconds}");
+            output.WriteLine($"CALLBACK_RESPONSE_CONTENT_TYPE = {ValueOrEmpty(contentType)}");
+            output.WriteLine($"CALLBACK_RESPONSE_LENGTH = {body.Length}");
+            output.WriteLine($"CALLBACK_RESPONSE_KIND = {ClassifyCallbackResponseKind(body, contentType, bodyMatchesChallenge)}");
+            output.WriteLine($"CALLBACK_RESPONSE_MATCHES_CHALLENGE = {bodyMatchesChallenge}");
             output.WriteLine($"CALLBACK_ERROR_TYPE = {(reachable ? "N/A" : "CallbackVerificationFailed")}");
             output.WriteLine($"CALLBACK_ERROR_SUMMARY = {(reachable ? "N/A" : "El callback no devolvio el challenge esperado.")}");
             return new CallbackInspectionResult(RoutingResolved: true, reachable, NormalizeCallbackUri(routing.CallbackUrl), source);
@@ -356,12 +364,54 @@ internal static class WhatsAppSubscriptionInspectionCommand
             });
 
             var config = await configService.GetWhatsAppConfigAsync(ct);
-            return BuildRoutingSourceInspection(idBase, config.PublicBaseUrl, options.CallbackBaseUrl, config.VerifyToken, centralBase.WebhookToken);
+
+            // Sólo presencia (nunca el valor) -- distingue si el VerifyToken vino del tenant o cayó al
+            // fallback global, sin necesidad de tocar ConversacionesConfigService (que ya sólo expone
+            // el valor fusionado). Nunca falla la inspección si esta lectura extra no puede resolverse.
+            var tenantVerifyTokenPresent = await HasTenantConfigValueAsync(centralBase, "CONV_WHATSAPP_VERIFY_TOKEN", ct);
+
+            // Reproduce exactamente TryResolveWebhookTenantAsync (Program.cs): el mismo WebhookToken
+            // que va a usar el self-check debe resolver, por lookup inverso, a ESTA base -- si esto da
+            // True pero el self-check sigue fallando, el problema no está en el token ni en la DB, está
+            // en la capa de enrutamiento/infra delante de la app (IIS/rewrite/self-loopback).
+            var webhookRouteMatched = !string.IsNullOrWhiteSpace(centralBase.WebhookToken)
+                && (await centralBases.GetByWebhookTokenAsync(centralBase.WebhookToken, ct))?.IdBase == idBase;
+
+            return BuildRoutingSourceInspection(
+                idBase, config.PublicBaseUrl, options.CallbackBaseUrl, config.VerifyToken, centralBase.WebhookToken,
+                forcedFailureReason: null, tenantVerifyTokenPresent: tenantVerifyTokenPresent, webhookRouteMatched: webhookRouteMatched);
         }
         catch (Exception ex)
         {
             return BuildRoutingSourceInspection(idBase, string.Empty, options.CallbackBaseUrl, string.Empty, string.Empty,
                 $"ROUTING_CONFIGURATION_EXCEPTION:{ex.GetType().Name}");
+        }
+    }
+
+    /// <summary>Sólo confirma presencia (no vacío) de una clave en TA_CONFIGURACION de la base tenant
+    /// -- nunca devuelve ni loguea el valor. Cualquier error de conexión/permiso se trata como "no
+    /// presente" (diagnóstico best-effort, nunca debe tumbar el resto de la inspección read-only).</summary>
+    private static async Task<bool> HasTenantConfigValueAsync(BaseCentralDto centralBase, string clave, CancellationToken ct)
+    {
+        try
+        {
+            var connectionString = new SqlConnectionStringBuilder
+            {
+                DataSource = centralBase.DbServer,
+                InitialCatalog = centralBase.DbName,
+                UserID = centralBase.DbUser,
+                Password = centralBase.DbPassword,
+                TrustServerCertificate = true,
+                ApplicationName = "AlfaCore"
+            }.ConnectionString;
+            await using var cn = new SqlConnection(connectionString);
+            const string sql = "SELECT VALOR FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;";
+            var valor = await cn.QuerySingleOrDefaultAsync<string?>(new CommandDefinition(sql, new { Clave = clave }, cancellationToken: ct));
+            return !string.IsNullOrWhiteSpace(valor);
+        }
+        catch
+        {
+            return false;
         }
     }
 
@@ -371,7 +421,9 @@ internal static class WhatsAppSubscriptionInspectionCommand
         string? globalCallbackBaseUrl,
         string? verifyToken,
         string? webhookToken,
-        string? forcedFailureReason = null)
+        string? forcedFailureReason = null,
+        bool tenantVerifyTokenPresent = false,
+        bool webhookRouteMatched = false)
     {
         var tenant = UrlInspection.From(tenantPublicBaseUrl);
         var global = UrlInspection.From(globalCallbackBaseUrl);
@@ -390,6 +442,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         var failureReason = !string.IsNullOrWhiteSpace(forcedFailureReason)
             ? forcedFailureReason.Trim()
             : ResolveRoutingFailureReason(selectedSource, effective, verifyTokenPresent, webhookTokenPresent);
+        var verifyTokenSource = tenantVerifyTokenPresent ? "TENANT" : verifyTokenPresent ? "GLOBAL" : "NONE";
 
         return new RoutingSourceInspection(
             idBase,
@@ -401,7 +454,9 @@ internal static class WhatsAppSubscriptionInspectionCommand
             webhookTokenPresent,
             failureReason,
             verifyToken?.Trim() ?? string.Empty,
-            webhookToken?.Trim() ?? string.Empty);
+            webhookToken?.Trim() ?? string.Empty,
+            verifyTokenSource,
+            webhookRouteMatched);
     }
 
     private static string ResolveRoutingFailureReason(string selectedSource, UrlInspection effective, bool verifyTokenPresent, bool webhookTokenPresent)
@@ -434,7 +489,9 @@ internal static class WhatsAppSubscriptionInspectionCommand
         output.WriteLine($"EFFECTIVE_PUBLIC_BASE_URL_SANITIZED = {source.EffectivePublicBaseUrl.ValueSanitized}");
         output.WriteLine($"EFFECTIVE_PUBLIC_BASE_URL_VALID = {source.EffectivePublicBaseUrlValid}");
         output.WriteLine($"VERIFY_TOKEN_PRESENT = {source.VerifyTokenPresent}");
+        output.WriteLine($"VERIFY_TOKEN_SOURCE = {source.VerifyTokenSource}");
         output.WriteLine($"WEBHOOK_TOKEN_PRESENT = {source.WebhookTokenPresent}");
+        output.WriteLine($"WEBHOOK_ROUTE_MATCHED = {source.WebhookRouteMatched}");
         output.WriteLine($"ROUTING_FAILURE_REASON = {source.RoutingFailureReason}");
     }
 
@@ -553,6 +610,64 @@ internal static class WhatsAppSubscriptionInspectionCommand
         return $"{callbackUrl}{separator}hub.mode=subscribe&hub.verify_token={Uri.EscapeDataString(verifyToken)}&hub.challenge={Uri.EscapeDataString(challenge)}";
     }
 
+    /// <summary>Shape del path sin el WebhookToken real -- WhatsAppWabaRoutingProvider lo agrega como
+    /// último segmento (ver GetAsync); acá se reemplaza siempre por "{token}", nunca se imprime.</summary>
+    private static string MaskCallbackPath(string callbackUrl)
+    {
+        if (!Uri.TryCreate(callbackUrl, UriKind.Absolute, out var uri))
+            return "N/A";
+        var segments = uri.AbsolutePath.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries);
+        if (segments.Length == 0)
+            return "/";
+        segments[^1] = "{token}";
+        return "/" + string.Join('/', segments);
+    }
+
+    /// <summary>Sólo los nombres de los parámetros de query que arma BuildCallbackVerificationUrl --
+    /// nunca sus valores (hub.verify_token y hub.challenge nunca se imprimen).</summary>
+    private static string DescribeQueryKeys(string url)
+    {
+        var queryStart = url.IndexOf('?', StringComparison.Ordinal);
+        if (queryStart < 0)
+            return "N/A";
+        var keys = url[(queryStart + 1)..]
+            .Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(pair => pair.Split('=', 2)[0])
+            .ToArray();
+        return keys.Length == 0 ? "N/A" : string.Join(",", keys);
+    }
+
+    /// <summary>Clasifica el body de la respuesta del self-check SIN imprimirlo -- sólo su forma. Útil
+    /// para distinguir "el callback devolvió otra cosa" (p. ej. la SPA de Blazor sirviendo su index.html
+    /// por un fallback de ruta) de "el callback nunca respondió nada".</summary>
+    private static string ClassifyCallbackResponseKind(string body, string? contentType, bool matchesChallenge)
+    {
+        if (matchesChallenge)
+            return "CHALLENGE";
+        if (string.IsNullOrEmpty(body))
+            return "EMPTY";
+        var trimmed = body.TrimStart();
+        if ((contentType?.Contains("html", StringComparison.OrdinalIgnoreCase) ?? false)
+            || trimmed.StartsWith("<!DOCTYPE", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("<html", StringComparison.OrdinalIgnoreCase))
+            return "HTML";
+        if (contentType?.Contains("json", StringComparison.OrdinalIgnoreCase) ?? false)
+            return "JSON";
+        if (trimmed.Length > 0 && (trimmed[0] == '{' || trimmed[0] == '['))
+        {
+            try
+            {
+                JsonDocument.Parse(trimmed);
+                return "JSON";
+            }
+            catch (JsonException)
+            {
+                // No era JSON válido pese a empezar con { o [ -- cae a TEXT.
+            }
+        }
+        return "TEXT";
+    }
+
     private static string NormalizeCallbackUri(string? value)
     {
         var trimmed = (value ?? string.Empty).Trim();
@@ -667,7 +782,9 @@ internal static class WhatsAppSubscriptionInspectionCommand
         bool WebhookTokenPresent,
         string RoutingFailureReason,
         string VerifyToken,
-        string WebhookToken)
+        string WebhookToken,
+        string VerifyTokenSource = "NONE",
+        bool WebhookRouteMatched = false)
     {
         public bool EffectivePublicBaseUrlValid => EffectivePublicBaseUrl.IsAbsolute && EffectivePublicBaseUrl.IsHttps;
 
