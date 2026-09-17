@@ -22,10 +22,15 @@ namespace AlfaCore.Tests;
 /// AppContext.BaseDirectory\diagnostics -- misma carpeta que ya usa
 /// AppExceptionLoggingMiddleware.TryWriteWebhookFailureDiagnostic -- y estos tests prueban de punta a
 /// punta que el archivo se crea de verdad (no sólo que no explota) tanto en el caso de match como en
-/// el de mismatch. Ejercitan directamente el handler REAL de producción
+/// el de mismatch. Con la ruta ya corregida, un dato productivo confirmó MACHINE/SERVICIO del registro
+/// idénticos byte a byte y sin embargo TOKENS_MATCH=false -- así que el trazo se extendió con una
+/// matriz de igualdad ordinal exacta entre los 5 eslabones (host env / host config / host options /
+/// effective / incoming), nunca el valor/longitud/hash/prefijo/sufijo, para ubicar EXACTAMENTE en qué
+/// salto diverge. Ejercitan directamente el handler REAL de producción
 /// (Program.HandleWhatsAppVerifyAsync, hecho internal sólo para esto) -- no una reimplementación --
-/// para fijar su contrato de match/mismatch/no-configurado/modo, y ReadValue (también hecho internal)
-/// para fijar la precedencia tenant/fallback sin depender de una conexión SQL real.
+/// para fijar su contrato de match/mismatch/no-configurado/modo/matriz de igualdad, y ReadValue
+/// (también hecho internal) para fijar la precedencia tenant/fallback sin depender de una conexión SQL
+/// real.
 /// </summary>
 public class WhatsAppWebhookVerifyHandlerTests
 {
@@ -241,6 +246,157 @@ public class WhatsAppWebhookVerifyHandlerTests
         var trace = ReadLastTraceLine();
         Assert.Equal("N/A", trace.GetProperty("ID_BASE").GetString());
         Assert.False(trace.GetProperty("TENANT_TOKEN_PRESENT").GetBoolean());
+    }
+
+    /// <summary>
+    /// Dato productivo (2026-09): MACHINE/SERVICIO del registro coinciden byte a byte, pero el handler
+    /// real sigue trazando TOKENS_MATCH=false/401_MISMATCH con las 5 presencias en True. Este test
+    /// obligatorio prueba el caso sano: env=config=options=effective=incoming (los 5 eslabones
+    /// literalmente el mismo valor) -&gt; TODAS las comparaciones de la matriz deben dar True y el
+    /// resultado debe ser 200.
+    /// </summary>
+    [Fact]
+    public async Task EqualityMatrix_AllFiveLinksEqual_EveryComparisonTrue_Returns200()
+    {
+        const string chainValue = "chain-value-identical-across-all-five-links";
+        Environment.SetEnvironmentVariable("WhatsApp__VerifyToken", chainValue);
+        try
+        {
+            var effectiveConfig = new ConversacionWhatsAppConfigDto { VerifyToken = chainValue };
+            var configService = new FixedWhatsAppConfigConversacionesConfigService(effectiveConfig);
+            var configuration = BuildConfiguration(chainValue);
+            var whatsAppOptions = Options.Create(new WhatsAppOptions { VerifyToken = chainValue });
+            var context = BuildRequestContext("subscribe", chainValue, "challenge-all-equal");
+
+            var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
+                context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None, idBase: 4271);
+
+            Assert.IsType<ContentHttpResult>(result);
+            var trace = ReadLastTraceLine();
+            Assert.Equal("200_CHALLENGE", trace.GetProperty("RESULT_STATUS").GetString());
+            foreach (var field in new[]
+                     {
+                         "HOST_ENV_EQUALS_HOST_CONFIG", "HOST_CONFIG_EQUALS_HOST_OPTIONS", "HOST_ENV_EQUALS_HOST_OPTIONS",
+                         "HOST_OPTIONS_EQUALS_EFFECTIVE", "HOST_CONFIG_EQUALS_EFFECTIVE", "HOST_ENV_EQUALS_EFFECTIVE",
+                         "INCOMING_EQUALS_HOST_ENV", "INCOMING_EQUALS_HOST_CONFIG", "INCOMING_EQUALS_HOST_OPTIONS", "INCOMING_EQUALS_EFFECTIVE",
+                         "INCOMING_EQUALS_EFFECTIVE_AFTER_TRIM", "HOST_OPTIONS_EQUALS_EFFECTIVE_AFTER_TRIM", "TOKENS_MATCH"
+                     })
+                Assert.True(trace.GetProperty(field).GetBoolean(), $"{field} debería ser True cuando los 5 eslabones son idénticos.");
+            var raw = trace.GetRawText();
+            Assert.DoesNotContain(chainValue, raw, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WhatsApp__VerifyToken", null);
+        }
+    }
+
+    /// <summary>
+    /// Test obligatorio: env=config=options=effective=A pero incoming=B -&gt; SÓLO las comparaciones que
+    /// involucran a incoming deben dar False (los 6 pares entre env/config/options/effective siguen
+    /// True entre sí) -&gt; 401. Esto reproduce exactamente lo que hace falta para distinguir "la cadena
+    /// interna del host está intacta, el problema es lo que llegó en el request" de cualquier otro
+    /// salto.
+    /// </summary>
+    [Fact]
+    public async Task EqualityMatrix_OnlyIncomingDiffers_OnlyIncomingComparisonsFalse_Returns401()
+    {
+        const string chainValue = "chain-value-A-host-side";
+        const string incomingValue = "chain-value-B-incoming-side";
+        Environment.SetEnvironmentVariable("WhatsApp__VerifyToken", chainValue);
+        try
+        {
+            var effectiveConfig = new ConversacionWhatsAppConfigDto { VerifyToken = chainValue };
+            var configService = new FixedWhatsAppConfigConversacionesConfigService(effectiveConfig);
+            var configuration = BuildConfiguration(chainValue);
+            var whatsAppOptions = Options.Create(new WhatsAppOptions { VerifyToken = chainValue });
+            var context = BuildRequestContext("subscribe", incomingValue, "challenge-incoming-differs");
+
+            var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
+                context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None, idBase: 4271);
+
+            Assert.IsType<UnauthorizedHttpResult>(result);
+            var trace = ReadLastTraceLine();
+            Assert.Equal("401_MISMATCH", trace.GetProperty("RESULT_STATUS").GetString());
+
+            // Cadena interna del host: intacta.
+            foreach (var field in new[]
+                     {
+                         "HOST_ENV_EQUALS_HOST_CONFIG", "HOST_CONFIG_EQUALS_HOST_OPTIONS", "HOST_ENV_EQUALS_HOST_OPTIONS",
+                         "HOST_OPTIONS_EQUALS_EFFECTIVE", "HOST_CONFIG_EQUALS_EFFECTIVE", "HOST_ENV_EQUALS_EFFECTIVE",
+                         "HOST_OPTIONS_EQUALS_EFFECTIVE_AFTER_TRIM"
+                     })
+                Assert.True(trace.GetProperty(field).GetBoolean(), $"{field} debería ser True: sólo incoming difiere.");
+
+            // Sólo lo que involucra a incoming: roto.
+            foreach (var field in new[]
+                     {
+                         "INCOMING_EQUALS_HOST_ENV", "INCOMING_EQUALS_HOST_CONFIG", "INCOMING_EQUALS_HOST_OPTIONS",
+                         "INCOMING_EQUALS_EFFECTIVE", "INCOMING_EQUALS_EFFECTIVE_AFTER_TRIM", "TOKENS_MATCH"
+                     })
+                Assert.False(trace.GetProperty(field).GetBoolean(), $"{field} debería ser False: incoming es un valor distinto.");
+
+            var raw = trace.GetRawText();
+            Assert.DoesNotContain(chainValue, raw, StringComparison.Ordinal);
+            Assert.DoesNotContain(incomingValue, raw, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WhatsApp__VerifyToken", null);
+        }
+    }
+
+    /// <summary>
+    /// Test obligatorio: env=config=options coinciden entre sí, pero effective (lo que en verdad
+    /// devolvió ConversacionesConfigService.GetWhatsAppConfigAsync) es OTRO valor -- la matriz debe
+    /// identificar exactamente ese salto (HOST_*_EQUALS_EFFECTIVE=false) sin tocar las comparaciones
+    /// env/config/options entre sí (que siguen True). incoming coincide con effective a propósito, para
+    /// aislar el hallazgo al salto options-&gt;effective y no mezclarlo con un mismatch de incoming.
+    /// </summary>
+    [Fact]
+    public async Task EqualityMatrix_OptionsDiffersFromEffective_IdentifiesExactlyThatJump()
+    {
+        const string hostSideValue = "chain-value-host-env-config-options";
+        const string effectiveValue = "chain-value-effective-from-config-service";
+        Environment.SetEnvironmentVariable("WhatsApp__VerifyToken", hostSideValue);
+        try
+        {
+            var effectiveConfig = new ConversacionWhatsAppConfigDto { VerifyToken = effectiveValue };
+            var configService = new FixedWhatsAppConfigConversacionesConfigService(effectiveConfig);
+            var configuration = BuildConfiguration(hostSideValue);
+            var whatsAppOptions = Options.Create(new WhatsAppOptions { VerifyToken = hostSideValue });
+            var context = BuildRequestContext("subscribe", effectiveValue, "challenge-options-vs-effective");
+
+            var result = await AlfaCore.Program.HandleWhatsAppVerifyAsync(
+                context.Request, configService, configuration, whatsAppOptions, new NoopSessionService(), CancellationToken.None, idBase: 4271);
+
+            // incoming == effective, así que la respuesta real sigue siendo 200 -- el punto de este
+            // test es que la matriz revele la divergencia interna aunque el request puntual haya
+            // "funcionado" con el valor que casualmente mandó el self-check.
+            Assert.IsType<ContentHttpResult>(result);
+            var trace = ReadLastTraceLine();
+            Assert.Equal("200_CHALLENGE", trace.GetProperty("RESULT_STATUS").GetString());
+            Assert.True(trace.GetProperty("TOKENS_MATCH").GetBoolean());
+
+            // env/config/options: intactos entre sí.
+            Assert.True(trace.GetProperty("HOST_ENV_EQUALS_HOST_CONFIG").GetBoolean());
+            Assert.True(trace.GetProperty("HOST_CONFIG_EQUALS_HOST_OPTIONS").GetBoolean());
+            Assert.True(trace.GetProperty("HOST_ENV_EQUALS_HOST_OPTIONS").GetBoolean());
+
+            // El salto options -> effective: identificado.
+            Assert.False(trace.GetProperty("HOST_OPTIONS_EQUALS_EFFECTIVE").GetBoolean());
+            Assert.False(trace.GetProperty("HOST_CONFIG_EQUALS_EFFECTIVE").GetBoolean());
+            Assert.False(trace.GetProperty("HOST_ENV_EQUALS_EFFECTIVE").GetBoolean());
+            Assert.False(trace.GetProperty("HOST_OPTIONS_EQUALS_EFFECTIVE_AFTER_TRIM").GetBoolean());
+
+            var raw = trace.GetRawText();
+            Assert.DoesNotContain(hostSideValue, raw, StringComparison.Ordinal);
+            Assert.DoesNotContain(effectiveValue, raw, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WhatsApp__VerifyToken", null);
+        }
     }
 
     [Fact]

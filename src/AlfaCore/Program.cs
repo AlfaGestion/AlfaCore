@@ -3487,8 +3487,20 @@ public class Program
     {
         try
         {
-            var fallbackVerifyToken = (fallbackOptions.VerifyToken ?? string.Empty).Trim();
-            var effectiveVerifyToken = (effectiveConfig.VerifyToken ?? string.Empty).Trim();
+            // Valores RAW (sin Trim propio) directamente de cada eslabón pedido -- nunca reconstruidos
+            // en paralelo: hostEnv sale de Environment.GetEnvironmentVariable dentro de ESTE proceso web,
+            // hostConfig de IConfiguration del host real, hostOptions de IOptions<WhatsAppOptions>.Value
+            // que ya tiene DI (fallbackOptions es exactamente ese .Value), effective es exactamente
+            // ConversacionWhatsAppConfigDto.VerifyToken que devolvió
+            // ConversacionesConfigService.GetWhatsAppConfigAsync para este IdBase, e incoming es
+            // exactamente el hub.verify_token que llegó en el request real. Ninguno de los cinco se
+            // vuelve a calcular acá aparte de leerlos -- sólo se usan para comparar por igualdad, nunca
+            // se serializan.
+            var hostEnvToken = Environment.GetEnvironmentVariable("WhatsApp__VerifyToken") ?? string.Empty;
+            var hostConfigToken = configuration["WhatsApp:VerifyToken"] ?? string.Empty;
+            var hostOptionsToken = fallbackOptions.VerifyToken ?? string.Empty;
+            var effectiveToken = effectiveConfig.VerifyToken ?? string.Empty;
+            var incomingToken = incomingVerifyToken ?? string.Empty;
             var tenantTokenPresent = await HasTenantVerifyTokenAsync(sessionService, ct);
 
             var directory = Path.Combine(AppContext.BaseDirectory, "diagnostics");
@@ -3497,14 +3509,37 @@ public class Program
             {
                 UTC = DateTimeOffset.UtcNow,
                 ID_BASE = idBase?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "N/A",
-                HOST_ENV_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WhatsApp__VerifyToken")),
-                HOST_CONFIG_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(configuration["WhatsApp:VerifyToken"]),
-                HOST_OPTIONS_TOKEN_PRESENT = fallbackVerifyToken.Length > 0,
+                HOST_ENV_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(hostEnvToken),
+                HOST_CONFIG_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(hostConfigToken),
+                HOST_OPTIONS_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(hostOptionsToken),
                 TENANT_TOKEN_PRESENT = tenantTokenPresent,
-                EFFECTIVE_TOKEN_PRESENT = effectiveVerifyToken.Length > 0,
-                INCOMING_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(incomingVerifyToken),
-                TOKENS_MATCH = effectiveVerifyToken.Length > 0 && string.Equals(incomingVerifyToken, effectiveConfig.VerifyToken, StringComparison.Ordinal),
-                RESULT_STATUS = resultStatus
+                EFFECTIVE_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(effectiveToken),
+                INCOMING_TOKEN_PRESENT = !string.IsNullOrWhiteSpace(incomingToken),
+                TOKENS_MATCH = effectiveToken.Length > 0 && string.Equals(incomingToken, effectiveToken, StringComparison.Ordinal),
+                RESULT_STATUS = resultStatus,
+
+                // Matriz de igualdad ordinal exacta entre los cinco eslabones -- localiza en qué salto
+                // concreto diverge el token, sin exponer valor/longitud/hash/prefijo/sufijo en ningún
+                // campo. Cadena esperada Environment -> IConfiguration -> IOptions<WhatsAppOptions> ->
+                // ConversacionesConfigService: si TENANT_TOKEN_PRESENT=false, ReadValue debe devolver
+                // exactamente hostOptionsToken.Trim() como effective.
+                HOST_ENV_EQUALS_HOST_CONFIG = string.Equals(hostEnvToken, hostConfigToken, StringComparison.Ordinal),
+                HOST_CONFIG_EQUALS_HOST_OPTIONS = string.Equals(hostConfigToken, hostOptionsToken, StringComparison.Ordinal),
+                HOST_ENV_EQUALS_HOST_OPTIONS = string.Equals(hostEnvToken, hostOptionsToken, StringComparison.Ordinal),
+
+                HOST_OPTIONS_EQUALS_EFFECTIVE = string.Equals(hostOptionsToken, effectiveToken, StringComparison.Ordinal),
+                HOST_CONFIG_EQUALS_EFFECTIVE = string.Equals(hostConfigToken, effectiveToken, StringComparison.Ordinal),
+                HOST_ENV_EQUALS_EFFECTIVE = string.Equals(hostEnvToken, effectiveToken, StringComparison.Ordinal),
+
+                INCOMING_EQUALS_HOST_ENV = string.Equals(incomingToken, hostEnvToken, StringComparison.Ordinal),
+                INCOMING_EQUALS_HOST_CONFIG = string.Equals(incomingToken, hostConfigToken, StringComparison.Ordinal),
+                INCOMING_EQUALS_HOST_OPTIONS = string.Equals(incomingToken, hostOptionsToken, StringComparison.Ordinal),
+                INCOMING_EQUALS_EFFECTIVE = string.Equals(incomingToken, effectiveToken, StringComparison.Ordinal),
+
+                // Sólo para distinguir "difieren de verdad" de "difieren únicamente por espacios/
+                // whitespace sobrante" -- sigue sin revelar nada del contenido real.
+                INCOMING_EQUALS_EFFECTIVE_AFTER_TRIM = string.Equals(incomingToken.Trim(), effectiveToken.Trim(), StringComparison.Ordinal),
+                HOST_OPTIONS_EQUALS_EFFECTIVE_AFTER_TRIM = string.Equals(hostOptionsToken.Trim(), effectiveToken.Trim(), StringComparison.Ordinal)
             };
             var path = Path.Combine(directory, $"webhook-verify-trace-{DateTime.UtcNow:yyyyMMdd}.jsonl");
             File.AppendAllText(path, JsonSerializer.Serialize(record) + Environment.NewLine, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
