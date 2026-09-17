@@ -345,7 +345,10 @@ internal static class WhatsAppSubscriptionInspectionCommand
         return EvidenceNoFailureReproduced;
     }
 
-    private static async Task<RoutingSourceInspection> InspectRoutingSourceAsync(
+    /// <summary>internal sólo para permitir el test de regresión del incidente
+    /// WEBHOOK_ROUTE_MATCHED/NotSupportedException (2026-09) -- visibilidad, cero cambio de
+    /// comportamiento.</summary>
+    internal static async Task<RoutingSourceInspection> InspectRoutingSourceAsync(
         int idBase,
         ICentralBasesService centralBases,
         ISessionService sessionService,
@@ -383,8 +386,29 @@ internal static class WhatsAppSubscriptionInspectionCommand
             // que va a usar el self-check debe resolver, por lookup inverso, a ESTA base -- si esto da
             // True pero el self-check sigue fallando, el problema no está en el token ni en la DB, está
             // en la capa de enrutamiento/infra delante de la app (IIS/rewrite/self-loopback).
-            var webhookRouteMatched = !string.IsNullOrWhiteSpace(centralBase.WebhookToken)
-                && (await centralBases.GetByWebhookTokenAsync(centralBase.WebhookToken, ct))?.IdBase == idBase;
+            //
+            // Aislado en su propio try/catch a propósito -- regresión confirmada (commit 6771726d):
+            // ReadOnlyCentralBasesService.GetByWebhookTokenAsync es un stub que SIEMPRE lanza
+            // NotSupportedException ("no se usa" -- era cierto hasta que este mismo diagnóstico
+            // empezó a llamarlo). Sin este aislamiento, esa excepción escapaba al catch general del
+            // método y tiraba abajo TODO RoutingSourceInspection -- incluido el config.VerifyToken
+            // que ya se había resuelto bien un par de líneas más arriba -- produciendo el falso
+            // negativo VERIFY_TOKEN_PRESENT=False/VERIFY_TOKEN_SOURCE=NONE ya confirmado contra las
+            // DB reales de Base4264/Base4271. Este diagnóstico es best-effort: si no se puede
+            // verificar (por este stub u otra causa), es N/A -- nunca debe poder tumbar el resto de
+            // la inspección.
+            bool? webhookRouteMatched = null;
+            if (!string.IsNullOrWhiteSpace(centralBase.WebhookToken))
+            {
+                try
+                {
+                    webhookRouteMatched = (await centralBases.GetByWebhookTokenAsync(centralBase.WebhookToken, ct))?.IdBase == idBase;
+                }
+                catch (Exception)
+                {
+                    webhookRouteMatched = null;
+                }
+            }
 
             return BuildRoutingSourceInspection(
                 idBase, config.PublicBaseUrl, options.CallbackBaseUrl, config.VerifyToken, centralBase.WebhookToken,
@@ -432,7 +456,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         string? webhookToken,
         string? forcedFailureReason = null,
         bool tenantVerifyTokenPresent = false,
-        bool webhookRouteMatched = false)
+        bool? webhookRouteMatched = null)
     {
         var tenant = UrlInspection.From(tenantPublicBaseUrl);
         var global = UrlInspection.From(globalCallbackBaseUrl);
@@ -500,7 +524,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         output.WriteLine($"VERIFY_TOKEN_PRESENT = {source.VerifyTokenPresent}");
         output.WriteLine($"VERIFY_TOKEN_SOURCE = {source.VerifyTokenSource}");
         output.WriteLine($"WEBHOOK_TOKEN_PRESENT = {source.WebhookTokenPresent}");
-        output.WriteLine($"WEBHOOK_ROUTE_MATCHED = {source.WebhookRouteMatched}");
+        output.WriteLine($"WEBHOOK_ROUTE_MATCHED = {(source.WebhookRouteMatched.HasValue ? source.WebhookRouteMatched.Value.ToString() : "N/A")}");
         output.WriteLine($"ROUTING_FAILURE_REASON = {source.RoutingFailureReason}");
     }
 
@@ -812,7 +836,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
         string VerifyToken,
         string WebhookToken,
         string VerifyTokenSource = "NONE",
-        bool WebhookRouteMatched = false)
+        bool? WebhookRouteMatched = null)
     {
         public bool EffectivePublicBaseUrlValid => EffectivePublicBaseUrl.IsAbsolute && EffectivePublicBaseUrl.IsHttps;
 
