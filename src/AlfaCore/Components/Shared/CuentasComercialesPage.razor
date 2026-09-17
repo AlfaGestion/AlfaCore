@@ -2977,7 +2977,9 @@ else
         {
             // Se abre primero para conservar el gesto del usuario y evitar que el navegador
             // bloquee la nueva pestaña mientras se genera el token en el servidor.
-            await Js.InvokeVoidAsync("open", "about:blank", nombrePestana);
+            var ventanaAbierta = await Js.InvokeAsync<bool>("alfaCorePortalWindow.openPlaceholder", nombrePestana);
+            if (!ventanaAbierta)
+                throw new InvalidOperationException("El navegador bloqueó la nueva pestaña del Portal Cliente.");
             var request = await BuildInvitacionRequestAsync(idContacto: null, emailAcceso: _form.Mail);
             var url = await PortalAutoLoginSvc.GenerarEnlaceAsync(new PortalClienteGenerarAutoLoginRequestDto
             {
@@ -2989,7 +2991,9 @@ else
                 UrlBasePortal = request.UrlPortal
             });
 
-            await Js.InvokeVoidAsync("open", url, nombrePestana);
+            var ventanaNavegada = await Js.InvokeAsync<bool>("alfaCorePortalWindow.navigate", url, nombrePestana);
+            if (!ventanaNavegada)
+                throw new InvalidOperationException("No se pudo abrir el Portal Cliente en la nueva pestaña.");
             SetFeedback(AppUiMessage.Success("Portal abierto", "Se abrió una nueva pestaña con el acceso del cliente."));
         }
         catch (Exception ex)
