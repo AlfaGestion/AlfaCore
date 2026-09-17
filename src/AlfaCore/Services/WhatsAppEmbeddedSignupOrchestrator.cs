@@ -335,6 +335,21 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
             var incident = await errorLogger.LogAsync(item.IdOnboarding, item.IdBase, item.CurrentStep, ex.ErrorCode, null, null, item.RetryCount, ct);
             if (ex.RequiresReauthorization)
                 await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.ReauthorizationRequired, "La autorización de Meta debe renovarse.", incident, ct: ct);
+            else if (ex.ErrorCode == "CALLBACK_VERIFICATION_FAILED")
+                // Determinístico/config-driven, no un rechazo de Meta: nuestro propio callback no pasó
+                // su autoverificación (ver MetaWhatsAppManagementClient.VerifyCallbackAsync). Reintentar
+                // no lo resuelve solo -- siempre va a volver a fallar igual hasta que un administrador
+                // corrija la configuración del servidor. Mismo tratamiento (ACTION_REQUIRED, sin
+                // consumir reintento, NextAttemptUtc limpio) que WhatsAppCallbackRoutingConfigurationException
+                // ya recibe en WhatsAppEmbeddedSignupHostedService para el caso estático (config
+                // ausente/inválida resuelta ANTES de llamar a Meta) -- éste es el caso dinámico (la
+                // config resuelve pero el GET de autoverificación real falla). Incidente
+                // Base4271/Base4264, 2026-09: antes caía al "else" genérico y quedaba FAILED_FINAL en
+                // el primer intento, sin reintentar ni una vez y sin indicarle a nadie que había que
+                // revisar el servidor.
+                await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.CallbackRoutingConfigurationInvalid,
+                    "No se pudo completar la configuración pública de WhatsApp. Un administrador debe revisar la configuración de conexión.",
+                    incident, WhatsAppEmbeddedErrorCodes.CallbackRoutingConfigurationInvalid, ct);
             else if (ex.IsTransient && item.RetryCount < _options.MaxRetryCount)
                 await store.MarkRetryableFailureAsync(item.IdOnboarding, ex.ErrorCode, "Meta no pudo completar temporalmente la configuración.", incident,
                     WhatsAppEmbeddedSignupStateMachine.ScheduleRetry(DateTime.UtcNow, item.RetryCount, _options.RetryInitialDelaySeconds, _options.RetryMaxDelaySeconds), ct);
