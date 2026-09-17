@@ -2738,7 +2738,14 @@ public sealed class ConversacionesConfigService(
         return hasFallback ? "mixta" : "TA_CONFIGURACION";
     }
 
-    private static string ReadValue(Dictionary<string, string> values, string key, string fallback, string defaultValue = "")
+    /// <summary>
+    /// Precedencia tenant -&gt; fallback global -&gt; default. Un valor de tenant presente pero en blanco
+    /// (clave existe con VALOR vacío/espacios) se trata igual que ausente: cae al fallback. Visibilidad
+    /// internal (en vez de private) a propósito para poder testear directamente esta precedencia sin
+    /// una conexión SQL real -- ver WhatsAppVerifyTokenPrecedenceTests (incidente Base4271/Base4264,
+    /// 2026-09).
+    /// </summary>
+    internal static string ReadValue(Dictionary<string, string> values, string key, string fallback, string defaultValue = "")
     {
         if (values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value))
             return value.Trim();
