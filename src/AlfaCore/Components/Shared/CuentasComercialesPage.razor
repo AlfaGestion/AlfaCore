@@ -10,6 +10,7 @@
 @inject ISessionService SessionSvc
 @inject IInterfacesCatalogosService CatalogosSvc
 @inject IPortalClienteInvitacionService PortalInvitacionSvc
+@inject IPortalClienteAutoLoginService PortalAutoLoginSvc
 @inject NavigationManager Nav
 @inject IJSRuntime Js
 @implements IDisposable
@@ -725,6 +726,13 @@ else
                                     disabled="@(_saving || _enviandoInvitacionCliente || _isNewMode || string.IsNullOrWhiteSpace(_form.Mail))">
                                 <i class="bi bi-send"></i>
                                 @(_enviandoInvitacionCliente ? "Enviando..." : "Enviar invitación al Portal")
+                            </button>
+                            <button type="button"
+                                    class="btn btn--ghost"
+                                    @onclick="AbrirPortalComoClienteAsync"
+                                    disabled="@(_saving || _abriendoPortalCliente || _isNewMode)">
+                                <i class="bi bi-box-arrow-up-right"></i>
+                                @(_abriendoPortalCliente ? "Abriendo..." : "Ver portal como cliente")
                             </button>
                             @if (_isNewMode)
                             {
@@ -1660,6 +1668,7 @@ else
     private string _clavePortalOriginal = string.Empty;
     private bool _mostrarClavePortal;
     private bool _enviandoInvitacionCliente;
+    private bool _abriendoPortalCliente;
     private int? _enviandoInvitacionContactoId;
     private DateTime _feedbackSetAtUtc = DateTime.MinValue;
     private bool _scrollFeedbackAfterRender;
@@ -2954,6 +2963,42 @@ else
         finally
         {
             _enviandoInvitacionCliente = false;
+        }
+    }
+
+    private async Task AbrirPortalComoClienteAsync()
+    {
+        if (_abriendoPortalCliente || _isNewMode || string.IsNullOrWhiteSpace(_selectedCodigo))
+            return;
+
+        _abriendoPortalCliente = true;
+        const string nombrePestana = "alfacore_portal_cliente";
+        try
+        {
+            // Se abre primero para conservar el gesto del usuario y evitar que el navegador
+            // bloquee la nueva pestaña mientras se genera el token en el servidor.
+            await Js.InvokeVoidAsync("open", "about:blank", nombrePestana);
+            var request = await BuildInvitacionRequestAsync(idContacto: null, emailAcceso: _form.Mail);
+            var url = await PortalAutoLoginSvc.GenerarEnlaceAsync(new PortalClienteGenerarAutoLoginRequestDto
+            {
+                CodigoCliente = _selectedCodigo,
+                RazonSocial = _form.RazonSocial,
+                Email = _form.Mail,
+                IdWeb = request.IdWeb ?? string.Empty,
+                IdBase = request.IdBase ?? 0,
+                UrlBasePortal = request.UrlPortal
+            });
+
+            await Js.InvokeVoidAsync("open", url, nombrePestana);
+            SetFeedback(AppUiMessage.Success("Portal abierto", "Se abrió una nueva pestaña con el acceso del cliente."));
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(UiOps.BuildMessage(ex, "No pudimos abrir el Portal Cliente."));
+        }
+        finally
+        {
+            _abriendoPortalCliente = false;
         }
     }
 

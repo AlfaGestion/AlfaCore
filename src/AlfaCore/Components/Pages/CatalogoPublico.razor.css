@@ -48,8 +48,9 @@
 }
 
 .catalogo-publico-hero {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto;
     align-items: center;
     gap: 1rem;
     padding: 1.1rem 1.25rem;
@@ -60,6 +61,14 @@
     border-bottom: 1px solid var(--color-border);
     box-shadow: 0 14px 30px rgba(0, 0, 0, 0.12);
     backdrop-filter: blur(8px);
+}
+
+.catalogo-publico-hero__top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    min-width: 0;
 }
 
 .catalogo-publico-hero__brand {
@@ -147,10 +156,18 @@
 
 .catalogo-publico-hero__actions {
     display: flex;
+    grid-column: 1 / -1;
     flex-wrap: wrap;
     justify-content: flex-end;
     gap: 0.5rem;
     align-items: center;
+}
+
+.catalogo-publico-hero__theme {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex: 0 0 auto;
 }
 
 .catalogo-publico-meta__text {
@@ -1517,5 +1534,50 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
     .catalogo-publico-page .catalogo-publico-lightbox__details {
         justify-content: flex-start;
         padding: 0.85rem;
+    }
+}
+
+/* En celular se mantienen dos artículos por fila, igual que en Carrito. */
+@media (max-width: 640px) {
+    .catalogo-publico-page .catalogo-publico-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+    }
+
+    .catalogo-publico-page .catalogo-publico-grid__media {
+        width: 100%;
+        max-width: 200px;
+        padding: 0.55rem;
+    }
+
+    .catalogo-publico-page .catalogo-publico-grid__body {
+        padding: 0.65rem 0.6rem 0.7rem;
+    }
+
+    .catalogo-publico-page .catalogo-publico-grid__title {
+        font-size: 0.84rem;
+    }
+}
+
+/* En móvil el encabezado conserva la composición de escritorio: logo a la izquierda y
+   datos del catálogo a continuación. */
+@media (max-width: 768px) {
+    .catalogo-publico-page .catalogo-publico-hero__brand {
+        width: auto;
+        flex: 1 1 auto;
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        text-align: left;
+    }
+
+    .catalogo-publico-page .catalogo-publico-hero__copy {
+        flex: 1 1 auto;
+        min-width: 0;
+    }
+
+    .catalogo-publico-page .catalogo-publico-hero__actions {
+        width: 100%;
+        justify-content: flex-start;
     }
 }

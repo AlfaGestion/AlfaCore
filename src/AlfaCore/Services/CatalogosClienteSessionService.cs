@@ -29,6 +29,14 @@ public sealed class CatalogosClienteSessionService(
         return client;
     }
 
+    public void LoginTrusted(CatalogosClienteSessionInfo client)
+    {
+        ArgumentNullException.ThrowIfNull(client);
+        _currentClient = client;
+        _sessionToken = sessionStore.Store(client);
+        StateChanged?.Invoke();
+    }
+
     public bool TryRestoreFromToken(string token)
     {
         if (string.IsNullOrWhiteSpace(token))

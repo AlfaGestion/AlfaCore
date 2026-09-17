@@ -316,6 +316,7 @@ public class Program
         builder.Services.AddSingleton<CatalogosClienteSessionStore>();
         builder.Services.AddScoped<ICatalogosClienteSessionService, CatalogosClienteSessionService>();
         builder.Services.AddScoped<IPortalClienteSeccionesCache, PortalClienteSeccionesCache>();
+        builder.Services.AddSingleton<IPortalClienteCatalogoState, PortalClienteCatalogoState>();
         builder.Services.AddSingleton<CatalogoPedidoProcessingGuard>();
         builder.Services.AddSingleton<UsuariosPasswordCodec>();
         builder.Services.AddSingleton<Vb6BridgeTicketStore>();
@@ -326,6 +327,7 @@ public class Program
         builder.Services.AddScoped<IPortalClienteService, PortalClienteService>();
         builder.Services.AddScoped<IPortalClienteRecuperarClaveService, PortalClienteRecuperarClaveService>();
         builder.Services.AddScoped<IPortalClienteRegistrarEmailService, PortalClienteRegistrarEmailService>();
+        builder.Services.AddScoped<IPortalClienteAutoLoginService, PortalClienteAutoLoginService>();
         builder.Services.AddScoped<IPortalClienteInvitacionService, PortalClienteInvitacionService>();
         builder.Services.AddScoped<ICarritoComprasService, CarritoComprasService>();
         builder.Services.AddScoped<IListaPreciosClienteService, ListaPreciosClienteService>();

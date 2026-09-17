@@ -11,6 +11,7 @@
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
+@inject AlfaCore.Services.IPortalClienteCatalogoState PortalCatalogoState
 @inject AlfaCore.Services.IArticuloImagenFtpService ArticuloImagenSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppModeService AppMode
@@ -38,37 +39,42 @@
         @if (!Embedded)
         {
             <section class="catalogo-publico-hero panel-card">
-                <div class="catalogo-publico-hero__brand">
-                    <a class="catalogo-publico-hero__logo @GetBrandingLogoFrameClass()" href="@GetPublicCatalogUrl()" title="Catálogo público" aria-label="Catálogo público">
-                        <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
-                    </a>
-                    <div class="catalogo-publico-hero__copy">
-                        <p class="catalogo-publico-hero__eyebrow">@GetBrandingName()</p>
-                        <h2 class="catalogo-publico-hero__title">@GetCatalogHeaderTitle()</h2>
-                        @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderCatalogName()))
-                        {
-                            <p class="catalogo-publico-hero__catalog-name">@GetCatalogHeaderCatalogName()</p>
-                        }
-                        @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderSubtitle()))
-                        {
-                            <p class="catalogo-publico-hero__text">@GetCatalogHeaderSubtitle()</p>
-                        }
+                <div class="catalogo-publico-hero__top">
+                    <div class="catalogo-publico-hero__brand">
+                        <a class="catalogo-publico-hero__logo @GetBrandingLogoFrameClass()" href="@GetPublicCatalogUrl()" title="Catálogo público" aria-label="Catálogo público">
+                            <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
+                        </a>
+                        <div class="catalogo-publico-hero__copy">
+                            <p class="catalogo-publico-hero__eyebrow">@GetBrandingName()</p>
+                            <h2 class="catalogo-publico-hero__title">@GetCatalogHeaderTitle()</h2>
+                            @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderCatalogName()))
+                            {
+                                <p class="catalogo-publico-hero__catalog-name">@GetCatalogHeaderCatalogName()</p>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(GetCatalogHeaderSubtitle()))
+                            {
+                                <p class="catalogo-publico-hero__text">@GetCatalogHeaderSubtitle()</p>
+                            }
+                        </div>
+                    </div>
+
+                    <div class="catalogo-publico-hero__theme">
+                        <AlfaIconButton Icon="@(_isDark ? "bi bi-sun" : "bi bi-moon")"
+                                        Label="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")"
+                                        Size="AlfaSize.Sm"
+                                        OnClick="ToggleThemeAsync" />
                     </div>
                 </div>
 
+                @if (IsAuthenticatedForCurrentCatalog)
+                {
                 <div class="catalogo-publico-hero__actions">
-                    <AlfaIconButton Icon="@(_isDark ? "bi bi-sun" : "bi bi-moon")"
-                                    Label="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")"
-                                    Size="AlfaSize.Sm"
-                                    OnClick="ToggleThemeAsync" />
-                    @if (IsAuthenticatedForCurrentCatalog)
-                    {
-                        <AlfaTag Tone="AlfaTagTone.Neutral">Cliente: @GetCurrentClientLabel()</AlfaTag>
-                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" Disabled="@_sessionBusy" OnClick="LogoutClienteAsync">
-                            Cerrar sesión
-                        </AlfaButton>
-                    }
+                    <AlfaTag Tone="AlfaTagTone.Neutral">Cliente: @GetCurrentClientLabel()</AlfaTag>
+                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" Disabled="@_sessionBusy" OnClick="LogoutClienteAsync">
+                        Cerrar sesión
+                    </AlfaButton>
                 </div>
+                }
             </section>
         }
 
@@ -505,12 +511,19 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (!_hasRendered)
-            return;
-
         await EnsureRouteSessionAsync();
         if (_redirecting)
             return;
+
+        // La carga inicial se hace también durante el prerender del servidor. Si se espera a
+        // OnAfterRender, una recarga queda mostrando "Conectando..." indefinidamente cuando el
+        // circuito interactivo tarda o no llega a establecerse.
+        if (!_catalogLoadStarted)
+        {
+            _catalogLoadStarted = true;
+            await StartInitialLoadSafeAsync();
+            return;
+        }
 
         // Blazor reutiliza esta MISMA instancia de componente para la navegación in-place que
         // dispara RedirectLegacyPublicRouteAsync (misma ruta de componente, sólo cambian los
@@ -563,11 +576,6 @@
                 // Sin JS interop disponible (prerender): se mantiene el modo oscuro por defecto.
             }
 
-            if (!_catalogLoadStarted)
-            {
-                _catalogLoadStarted = true;
-                _ = StartInitialLoadAsync();
-            }
         }
 
     }
@@ -617,6 +625,15 @@
 
     private async Task RefreshCatalogStateAsync()
     {
+        // La restauración de la sesión del portal dispara StateChanged mientras la carga inicial
+        // todavía está resolviendo la ruta/base. No iniciar otra consulta en paralelo: la segunda
+        // incrementa la versión y puede dejar a la primera descartada con la pantalla en
+        // "Conectando...".
+        if (_loadPhase is CatalogoLoadPhase.Connecting
+            or CatalogoLoadPhase.LoadingCatalog
+            or CatalogoLoadPhase.LoadingImages)
+            return;
+
         if (_routeSessionError)
         {
             _catalogo = null;
@@ -638,7 +655,6 @@
 
         _loadPhase = CatalogoLoadPhase.Connecting;
         _imagesLoading = false;
-        await InvokeAsync(StateHasChanged);
 
         await EnsureRouteSessionAsync();
         if (_redirecting || loadVersion != _catalogLoadVersion)
@@ -937,6 +953,16 @@
 
         _catalogFeedback = null;
 
+        var cachedCatalogo = PortalCatalogoState.GetCatalogo(
+            idweb, GetEffectiveIdBase(), IdInsert, codigoCliente: null);
+        if (cachedCatalogo is not null)
+        {
+            _catalogo = cachedCatalogo;
+            _loadPhase = CatalogoLoadPhase.Ready;
+            _imagesLoading = false;
+            return;
+        }
+
         var result = await UiOps.RunAsync(
             () => IdInsert <= 0 ? CatalogosSvc.GetCatalogoPublicoAsync(0) : CatalogosSvc.GetCatalogoPublicoAsync(IdInsert),
             "No se pudo cargar el catálogo público.");
@@ -946,6 +972,9 @@
                 return;
 
             _catalogo = result.Value;
+            if (_catalogo is not null)
+                PortalCatalogoState.SetCatalogo(
+                    idweb, GetEffectiveIdBase(), IdInsert, codigoCliente: null, catalogo: _catalogo);
             _loadPhase = CatalogoLoadPhase.LoadingImages;
             _imagesLoading = (_catalogo?.Articulos.Count ?? 0) > 0;
 
@@ -1343,6 +1372,34 @@
         _lightboxLoading = false;
         _lightboxError = false;
         _preloadedLightboxArticuloId = null;
+    }
+
+    private async Task StartInitialLoadSafeAsync()
+    {
+        try
+        {
+            await StartInitialLoadAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "CatalogoPublico: falló la carga inicial. IdWeb={IdWeb}, IdBase={IdBase}, IdInsert={IdInsert}", idweb, idbase, IdInsert);
+            _catalogo = null;
+            _catalogFeedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Warning,
+                Title = "No se pudo cargar el catálogo",
+                Message = "Ocurrió un error al conectar con el catálogo. Intentá nuevamente."
+            };
+            _loadPhase = CatalogoLoadPhase.Error;
+            try
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (ObjectDisposedException)
+            {
+                // La navegación pudo destruir el componente mientras terminaba la consulta.
+            }
+        }
     }
 
     private void HandleLightboxKeyDown(KeyboardEventArgs args)

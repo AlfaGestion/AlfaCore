@@ -3,15 +3,163 @@
     gap: 1rem;
 }
 
+.carrito-smart-search {
+    position: relative;
+    display: grid;
+    gap: .65rem;
+    margin-bottom: 1rem;
+}
+
+.carrito-smart-search__bar {
+    display: flex;
+    align-items: center;
+    min-height: 2.85rem;
+    overflow: hidden;
+    border: 1px solid var(--color-border);
+    border-radius: .65rem;
+    background: var(--color-bg);
+    transition: border-color .2s ease, box-shadow .2s ease;
+}
+
+.carrito-smart-search__bar:focus-within,
+.carrito-smart-search__bar.is-open {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 16%, transparent);
+}
+
+.carrito-smart-search__bar > i {
+    flex: 0 0 auto;
+    padding: 0 .75rem;
+    color: var(--color-primary);
+}
+
+.carrito-smart-search__bar input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    padding: .72rem .25rem;
+    color: var(--color-text);
+    background: transparent;
+}
+
+.carrito-smart-search__active-filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+}
+
+.carrito-smart-search__active-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    max-width: 100%;
+    padding: .3rem .55rem;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 35%, var(--color-border));
+    border-radius: 999px;
+    color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 9%, transparent);
+    cursor: pointer;
+    font-size: .76rem;
+}
+
+.carrito-smart-search__active-filter span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.carrito-smart-search__filter-button,
+.carrito-smart-search__toggle {
+    height: 2.85rem;
+    padding: 0 .8rem;
+    border: 0;
+    color: var(--color-muted);
+    background: transparent;
+    cursor: pointer;
+}
+
+.carrito-smart-search__filter-button:hover,
+.carrito-smart-search__toggle:hover,
+.carrito-smart-search__filter-button.is-active {
+    color: var(--color-primary);
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+}
+
+.carrito-smart-search__panel {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    padding: .85rem;
+    border: 1px solid var(--color-border);
+    border-radius: .75rem;
+    background: var(--color-panel);
+}
+
+.carrito-smart-search__section {
+    display: grid;
+    gap: .45rem;
+    min-width: 0;
+}
+
+.carrito-smart-search__section h4 {
+    margin: 0;
+    color: var(--color-text);
+    font-size: .8rem;
+}
+
+.carrito-smart-search__field {
+    width: 100%;
+    min-width: 0;
+}
+
+.carrito-smart-search__actions {
+    display: flex;
+    grid-column: 1 / -1;
+    align-items: end;
+    justify-content: flex-end;
+    gap: .5rem;
+}
+
+.carrito-smart-search__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    color: var(--color-muted);
+    font-size: .82rem;
+}
+
+.carrito-smart-search__clear {
+    border: 0;
+    color: var(--color-primary);
+    background: transparent;
+    cursor: pointer;
+}
+
+@media (max-width: 640px) {
+    .carrito-smart-search__panel {
+        grid-template-columns: 1fr;
+    }
+
+    .carrito-smart-search__actions {
+        justify-content: stretch;
+    }
+
+    .carrito-smart-search__actions ::deep button {
+        flex: 1;
+    }
+}
+
 /* Header standalone — mismas proporciones/tokens que el hero de CatalogoPublico, sin ser
    panel-card genérico ni duplicar su CSS: componente distinto, mismo lenguaje visual. */
 .carrito-page__hero {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
     align-items: center;
     gap: 1rem;
-    padding: 1.1rem 1.25rem;
+    padding: 0.75rem 1rem;
     border-radius: var(--radius-xl, 18px);
     border: 1px solid var(--color-border);
     background: var(--color-panel-strong);
@@ -21,15 +169,22 @@
 .carrito-page__hero-brand {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
     min-width: 0;
 }
 
 .carrito-page__hero-actions {
     display: flex;
+    grid-column: 1 / -1;
     align-items: center;
     gap: 0.6rem;
     flex-wrap: wrap;
+}
+
+.carrito-page__hero-theme {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
 }
 
 .carrito-page__eyebrow {
@@ -79,19 +234,19 @@
 
 .carrito-page__logo--auto {
     width: min(240px, 100%);
-    height: 120px;
+    height: 96px;
     padding: 0.75rem;
 }
 
 .carrito-page__logo--square {
-    width: 120px;
-    height: 120px;
+    width: 104px;
+    height: 104px;
     padding: 0.75rem;
 }
 
 .carrito-page__logo--horizontal {
     width: min(300px, 100%);
-    height: 100px;
+    height: 82px;
     padding: 0.75rem;
 }
 
@@ -161,26 +316,34 @@
 
 .carrito-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 1rem;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 0.8rem;
 }
 
 .carrito-card {
     display: flex;
     flex-direction: column;
-    border-radius: 18px;
+    border-radius: 16px;
     border: 1px solid var(--color-border);
     background: var(--color-panel-strong);
     overflow: hidden;
+    box-shadow: 0 7px 18px rgba(2, 6, 23, 0.12);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.carrito-card:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.2);
+    transform: translateY(-1px);
 }
 
 .carrito-card__media {
     display: grid;
     place-items: center;
-    width: min(100%, 240px);
+    width: min(100%, 205px);
     aspect-ratio: 1 / 1;
     margin-inline: auto;
-    padding: 0.95rem;
+    padding: 0.65rem;
     background: var(--color-panel);
     border-bottom: 1px solid rgba(15, 23, 42, 0.1);
     overflow: hidden;
@@ -212,8 +375,8 @@
 .carrito-card__body {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
-    padding: 0.9rem 0.9rem 1rem;
+    gap: 0.35rem;
+    padding: 0.75rem 0.8rem 0.85rem;
     flex: 1 1 auto;
 }
 
@@ -221,11 +384,11 @@
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: 0.6rem;
+    gap: 0.45rem;
 }
 
 .carrito-card__title {
-    font-size: 0.94rem;
+    font-size: 0.93rem;
     line-height: 1.25;
     color: var(--color-text);
     overflow-wrap: anywhere;
@@ -234,9 +397,9 @@
 
 .carrito-card__code {
     flex: 0 0 auto;
-    padding: 0.2rem 0.5rem;
+    padding: 0.18rem 0.42rem;
     border-radius: 999px;
-    font-size: 0.68rem;
+    font-size: 0.66rem;
     font-weight: 800;
     color: var(--color-muted);
     background: var(--color-bg);
@@ -245,7 +408,7 @@
 .carrito-card__presentation {
     margin: 0;
     color: var(--color-muted);
-    font-size: 0.86rem;
+    font-size: 0.82rem;
 }
 
 .carrito-card__meta {
@@ -266,7 +429,7 @@
 .carrito-card__price-current {
     color: var(--color-text);
     font-weight: 900;
-    font-size: 1.05rem;
+    font-size: 0.98rem;
 }
 
 .carrito-card__price--offer .carrito-card__price-current {
@@ -295,7 +458,7 @@
 .carrito-card__price-offer {
     color: var(--color-primary);
     font-weight: 900;
-    font-size: 1.05rem;
+    font-size: 0.98rem;
 }
 
 .carrito-card__actions {
@@ -624,8 +787,29 @@
 
 @media (max-width: 640px) {
     .carrito-grid {
-        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-        gap: 0.75rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.65rem;
+    }
+
+    .carrito-card__media {
+        width: 100%;
+        max-width: 200px;
+        padding: 0.55rem;
+    }
+
+    .carrito-card__body {
+        padding: 0.65rem 0.6rem 0.7rem;
+    }
+
+    .carrito-card__title {
+        font-size: 0.84rem;
+    }
+
+    .carrito-card__code {
+        max-width: 48%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .carrito-line {
@@ -649,13 +833,27 @@
     }
 
     .carrito-page__hero {
-        flex-direction: column;
-        align-items: flex-start;
+        grid-template-columns: minmax(0, 1fr) auto;
     }
 
     .carrito-page__hero-actions {
         width: 100%;
         justify-content: flex-start;
+    }
+
+    .carrito-page__logo--auto {
+        width: min(200px, 100%);
+        height: 100px;
+    }
+
+    .carrito-page__logo--horizontal {
+        width: min(260px, 100%);
+        height: 84px;
+    }
+
+    .carrito-page__logo--square {
+        width: 100px;
+        height: 100px;
     }
 }
 

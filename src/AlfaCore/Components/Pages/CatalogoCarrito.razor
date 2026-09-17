@@ -13,6 +13,7 @@
 @inject AlfaCore.Services.ICatalogosClienteSessionService CatalogoClienteSession
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
 @inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
+@inject AlfaCore.Services.IPortalClienteCatalogoState PortalCatalogoState
 @inject AlfaCore.Services.IArticuloImagenFtpService ArticuloImagenSvc
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPedidosEmailService PedidosEmailSvc
@@ -80,6 +81,13 @@ else
                     </div>
                 </div>
 
+                <div class="carrito-page__hero-theme">
+                    <AlfaIconButton Icon="@(_isDark ? "bi bi-sun" : "bi bi-moon")"
+                                    Label="@(_isDark ? "Cambiar a modo claro" : "Cambiar a modo oscuro")"
+                                    Size="AlfaSize.Sm"
+                                    OnClick="ToggleThemeAsync" />
+                </div>
+
                 @if (IsAuthenticated)
                 {
                     <div class="carrito-page__hero-actions">
@@ -118,37 +126,40 @@ else
             <section class="panel-card">
                 @if (_catalogo.Articulos.Count > 0)
                 {
-                    <div class="carrito-tabs" role="tablist" aria-label="Filtro por rubro">
-                        <div class="carrito-tabs__scroll">
-                            <button type="button"
-                                    role="tab"
-                                    aria-selected="@(string.IsNullOrEmpty(_filtroRubro))"
-                                    class="carrito-tabs__btn @(string.IsNullOrEmpty(_filtroRubro) ? "is-active" : string.Empty)"
-                                    @onclick="() => _filtroRubro = string.Empty">
-                                Todos
-                            </button>
-                            @foreach (var rubro in GetRubrosDisponibles())
-                            {
-                                <button type="button"
-                                        role="tab"
-                                        aria-selected="@(string.Equals(_filtroRubro, rubro, StringComparison.OrdinalIgnoreCase))"
-                                        class="carrito-tabs__btn @(string.Equals(_filtroRubro, rubro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)"
-                                        @onclick="() => _filtroRubro = rubro">
-                                    @rubro
-                                </button>
-                            }
+                    <div class="carrito-smart-search" @onclick:stopPropagation>
+                        <div class="carrito-smart-search__bar @(_mostrarFiltros ? "is-open" : string.Empty)">
+                            <i class="bi bi-search" aria-hidden="true"></i>
+                            <button type="button" class="carrito-smart-search__filter-button @(HasCarritoFilters ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" @onclick="ToggleFiltros"><i class="bi bi-funnel-fill"></i></button>
+                            <input type="search" placeholder="Buscar productos..." aria-label="Buscar artículos" @bind="_textoBusqueda" @bind:event="oninput" />
+                            <button type="button" class="carrito-smart-search__toggle" title="Mostrar filtros" aria-label="Mostrar filtros" @onclick="ToggleFiltros"><i class="bi @(_mostrarFiltros ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i></button>
                         </div>
+                        @if (HasCarritoFilters)
+                        {
+                            <div class="carrito-smart-search__active-filters" aria-label="Filtros activos">
+                                @if (!string.IsNullOrWhiteSpace(_textoBusqueda))
+                                {
+                                    <button type="button" class="carrito-smart-search__active-filter" @onclick="ClearTextoBusquedaAsync"><span>Buscar: @_textoBusqueda</span><i class="bi bi-x" aria-hidden="true"></i></button>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_filtroRubro))
+                                {
+                                    <button type="button" class="carrito-smart-search__active-filter" @onclick="ClearFiltroRubroAsync"><span>Rubro: @_filtroRubro</span><i class="bi bi-x" aria-hidden="true"></i></button>
+                                }
+                                @if (!string.IsNullOrWhiteSpace(_filtroMarca))
+                                {
+                                    <button type="button" class="carrito-smart-search__active-filter" @onclick="ClearFiltroMarcaAsync"><span>Marca: @_filtroMarca</span><i class="bi bi-x" aria-hidden="true"></i></button>
+                                }
+                            </div>
+                        }
+                        @if (_mostrarFiltros)
+                        {
+                            <div class="carrito-smart-search__panel">
+                                <div class="carrito-smart-search__section"><h4><i class="bi bi-diagram-3-fill"></i> Rubro</h4><AlfaSelect Label="Seleccionar rubro" Value="@_filtroRubro" ValueChanged="v => _filtroRubro = v ?? string.Empty" Options="@GetRubroOptions()" Placeholder="Todos" Class="carrito-smart-search__field" /></div>
+                                <div class="carrito-smart-search__section"><h4><i class="bi bi-tags-fill"></i> Marca</h4><AlfaSelect Label="Seleccionar marca" Value="@_filtroMarca" ValueChanged="v => _filtroMarca = v ?? string.Empty" Options="@GetMarcaOptions()" Placeholder="Todas" Class="carrito-smart-search__field" /></div>
+                                <div class="carrito-smart-search__actions"><AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" OnClick="AplicarFiltrosAsync">Aplicar</AlfaButton><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" OnClick="LimpiarFiltrosAsync">Limpiar</AlfaButton></div>
+                            </div>
+                        }
+                        <div class="carrito-smart-search__footer"><span>@GetArticulosFiltrados().Count artículos</span>@if (HasCarritoFilters){<button type="button" class="carrito-smart-search__clear" @onclick="LimpiarFiltrosAsync">Limpiar filtros</button>}</div>
                     </div>
-
-                    <div class="carrito-filters">
-                        <AlfaSelect Label="Marca"
-                                    Value="@_filtroMarca"
-                                    ValueChanged="v => _filtroMarca = v ?? string.Empty"
-                                    Options="@GetMarcaOptions()"
-                                    Placeholder="Todas"
-                                    Class="carrito-filters__field" />
-                    </div>
-
                     <div class="carrito-grid">
                         @foreach (var item in GetArticulosFiltrados())
                         {
@@ -469,6 +480,7 @@ else
     private bool _hasRendered;
     private bool _restoreAttempted;
     private bool _cartRestoreAttempted;
+    private bool _isDark = true;
 
     private AppUiMessage? _loginFeedback;
     private bool _sessionBusy;
@@ -483,6 +495,8 @@ else
 
     private string _filtroRubro = string.Empty;
     private string _filtroMarca = string.Empty;
+    private string _textoBusqueda = string.Empty;
+    private bool _mostrarFiltros;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly Dictionary<string, decimal> _carrito = new(StringComparer.OrdinalIgnoreCase);
@@ -722,6 +736,20 @@ else
     {
         _hasRendered = true;
 
+        if (firstRender)
+        {
+            try
+            {
+                var theme = await Js.InvokeAsync<string>("dashboardTheme.get");
+                _isDark = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+                await InvokeAsync(StateHasChanged);
+            }
+            catch
+            {
+                // Sin JS interop disponible durante prerender se mantiene el modo oscuro.
+            }
+        }
+
         // Si hay un redirect legacy en curso, IdInsert/_effectiveIdBase todavía son los de la
         // ruta VIEJA — no restaurar sesión ni refrescar el carrito acá; OnParametersSetAsync se
         // encarga una vez que la navegación al link seguro resolvió la ruta final.
@@ -747,12 +775,31 @@ else
         }
     }
 
+    private async Task ToggleThemeAsync()
+    {
+        _isDark = !_isDark;
+        try
+        {
+            await Js.InvokeVoidAsync("dashboardTheme.set", _isDark ? "dark" : "light");
+        }
+        catch
+        {
+        }
+    }
+
     private async Task RefreshCatalogoAsync()
     {
         _loading = true;
         await InvokeAsync(StateHasChanged);
 
-        var catalogo = await CarritoComprasSvc.GetPublicCartAsync(IdInsert, idweb, CatalogoClienteSession.CurrentClient?.CodigoCliente, _effectiveIdBase);
+        var codigoCliente = CatalogoClienteSession.CurrentClient?.CodigoCliente;
+        var catalogo = PortalCatalogoState.GetCarrito(idweb, _effectiveIdBase, IdInsert, codigoCliente);
+        if (catalogo is null)
+        {
+            catalogo = await CarritoComprasSvc.GetPublicCartAsync(IdInsert, idweb, codigoCliente, _effectiveIdBase);
+            if (catalogo is not null)
+                PortalCatalogoState.SetCarrito(idweb, _effectiveIdBase, IdInsert, codigoCliente, catalogo);
+        }
         _catalogo = catalogo;
         _notFound = catalogo is null;
         _carritoDeshabilitado = catalogo is not null && !catalogo.HabilitarCarrito;
@@ -1035,12 +1082,65 @@ else
     private IReadOnlyList<AlfaSelectOption> GetMarcaOptions()
         => GetMarcasDisponibles().Select(m => new AlfaSelectOption(m, m)).ToList();
 
+    private IReadOnlyList<AlfaSelectOption> GetRubroOptions()
+        => GetRubrosDisponibles().Select(r => new AlfaSelectOption(r, r)).ToList();
+
+    private bool HasCarritoFilters
+        => !string.IsNullOrWhiteSpace(_textoBusqueda)
+           || !string.IsNullOrWhiteSpace(_filtroRubro)
+           || !string.IsNullOrWhiteSpace(_filtroMarca);
+
+    private void ToggleFiltros()
+        => _mostrarFiltros = !_mostrarFiltros;
+
+    private Task AplicarFiltrosAsync()
+    {
+        _mostrarFiltros = false;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task LimpiarFiltrosAsync()
+    {
+        _textoBusqueda = string.Empty;
+        _filtroRubro = string.Empty;
+        _filtroMarca = string.Empty;
+        _mostrarFiltros = false;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task ClearTextoBusquedaAsync()
+    {
+        _textoBusqueda = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task ClearFiltroRubroAsync()
+    {
+        _filtroRubro = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task ClearFiltroMarcaAsync()
+    {
+        _filtroMarca = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
     private IReadOnlyList<CatalogosCatalogoItemDto> GetArticulosFiltrados()
     {
         if (_catalogo is null)
             return [];
 
         IEnumerable<CatalogosCatalogoItemDto> query = _catalogo.Articulos;
+
+        if (!string.IsNullOrWhiteSpace(_textoBusqueda))
+        {
+            var texto = _textoBusqueda.Trim();
+            query = query.Where(x =>
+                (x.DescripcionArticulo ?? string.Empty).Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (x.IdArticulo ?? string.Empty).Contains(texto, StringComparison.OrdinalIgnoreCase)
+                || (x.Presentacion ?? string.Empty).Contains(texto, StringComparison.OrdinalIgnoreCase));
+        }
 
         if (!string.IsNullOrWhiteSpace(_filtroRubro))
             query = query.Where(x => string.Equals((x.Rubro ?? string.Empty).Trim(), _filtroRubro, StringComparison.OrdinalIgnoreCase));

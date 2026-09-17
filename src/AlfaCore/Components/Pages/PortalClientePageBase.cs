@@ -310,6 +310,9 @@ public abstract class PortalClientePageBase : SaaSRoutePageBase, IAsyncDisposabl
         }
     }
 
+    protected Task PersistClientSessionAsync()
+        => Js.InvokeVoidAsync("localStorage.setItem", ClientTokenStorageKey, CatalogoClienteSession.CurrentToken ?? string.Empty).AsTask();
+
     protected string GetCurrentClientLabel()
         => CatalogoClienteSession.CurrentClient?.RazonSocial?.Trim()
            ?? CatalogoClienteSession.CurrentClient?.CodigoCliente?.Trim()

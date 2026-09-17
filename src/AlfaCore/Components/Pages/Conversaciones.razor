@@ -13,6 +13,7 @@
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
 @inject AlfaCore.Services.IPortalClienteRecuperarClaveService PortalClienteRecuperarClaveSvc
 @inject AlfaCore.Services.IPortalClienteRegistrarEmailService PortalClienteRegistrarEmailSvc
+@inject AlfaCore.Services.IPortalClienteAutoLoginService PortalClienteAutoLoginSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
@@ -8055,13 +8056,23 @@
             else
             {
                 urlPortal = QueryHelpers.AddQueryString(urlPortal, "email", detalle.Mail.Trim());
+                var urlAutoLogin = await PortalClienteAutoLoginSvc.GenerarEnlaceAsync(
+                    new PortalClienteGenerarAutoLoginRequestDto
+                    {
+                        CodigoCliente = detalle.Codigo,
+                        RazonSocial = detalle.RazonSocial,
+                        Email = detalle.Mail.Trim(),
+                        IdWeb = idWeb.Trim(),
+                        IdBase = idBase.Value,
+                        UrlBasePortal = urlPortal
+                    });
                 if (!string.IsNullOrWhiteSpace(detalle.ClavePortal))
                 {
-                texto = $"Hola, te compartimos los datos para ingresar al Portal Cliente:\n\n" +
-                        $"Enlace: {urlPortal}\n" +
+                texto = $"Hola, te compartimos el acceso al Portal Cliente:\n\n" +
+                        $"Enlace de acceso automático: {urlAutoLogin}\n" +
                         $"ID cliente: {detalle.Codigo}\n" +
-                        $"Email: {detalle.Mail.Trim()}\n" +
-                        $"Contraseña: {detalle.ClavePortal}\n\n" +
+                        $"Email: {detalle.Mail.Trim()}\n\n" +
+                        "El enlace es personal, temporal y te permite ingresar sin escribir la contraseña.\n\n" +
                         "Si necesitás ayuda, escribinos por este medio.";
                 }
                 else
@@ -8079,7 +8090,7 @@
                     });
 
                 texto = $"Hola, te compartimos el acceso al Portal Cliente:\n\n" +
-                        $"Enlace: {urlPortal}\n" +
+                        $"Enlace de acceso automático: {urlAutoLogin}\n" +
                         $"ID cliente: {detalle.Codigo}\n" +
                         $"Email: {detalle.Mail.Trim()}\n\n" +
                         $"Como todavía no tenés una contraseña, creala desde este enlace:\n{enlace}\n\n" +
