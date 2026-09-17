@@ -49,13 +49,22 @@ internal static class WhatsAppSubscriptionInspectionCommand
         var embeddedOptions = configuration.GetSection(WhatsAppEmbeddedSignupOptions.SectionName).Get<WhatsAppEmbeddedSignupOptions>() ?? new();
         var optionsWrapper = Options.Create(embeddedOptions);
         var whatsAppOptions = configuration.GetSection(WhatsAppOptions.SectionName).Get<WhatsAppOptions>() ?? new();
+
+        // Rastreo puntual pedido por incidente Base4271/Base4264 (2026-09): el env var Machine
+        // WhatsApp__VerifyToken se confirmó presente en el proceso justo antes de lanzar
+        // AlfaCore.exe, pero el inspector seguía viendo VERIFY_TOKEN_PRESENT=False. Estas 4 líneas
+        // ubican en qué eslabón exacto de Environment -> IConfiguration -> WhatsAppOptions ->
+        // fallback de ConversacionesConfigService desaparece -- sólo booleano, nunca el valor.
+        var fallbackOptionsWrapper = Options.Create(whatsAppOptions);
+        WriteVerifyTokenTrace(output, configuration, whatsAppOptions, fallbackOptionsWrapper.Value);
+
         var centralBases = new ReadOnlyCentralBasesService(configuration);
         var session = new SessionService(new OneShotConexionClienteService());
         var configService = new ConversacionesConfigService(
             configuration,
             session,
             new NullAppEventService(),
-            Options.Create(whatsAppOptions),
+            fallbackOptionsWrapper,
             new SingleClientFactory(new HttpClient()),
             new OneShotAppUserSessionService(),
             new AllowAllConversacionesAuthorizationService(),
@@ -602,6 +611,25 @@ internal static class WhatsAppSubscriptionInspectionCommand
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Rastreo Environment -> IConfiguration -> WhatsAppOptions -> fallback de
+    /// ConversacionesConfigService, sólo presencia -- nunca el valor, longitud, hash ni prefijo del
+    /// token. "WhatsApp__VerifyToken" es la convención de .NET para el separador de sección de
+    /// configuración (doble guion bajo = ":") -- mapea a la clave "WhatsApp:VerifyToken".
+    /// </summary>
+    internal static void WriteVerifyTokenTrace(
+        TextWriter output,
+        IConfiguration configuration,
+        WhatsAppOptions whatsAppOptions,
+        WhatsAppOptions fallbackOptionsPassedToConfigService)
+    {
+        output.WriteLine($"RAW_PROCESS_ENV_VERIFY_TOKEN_PRESENT = {!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("WhatsApp__VerifyToken"))}");
+        output.WriteLine($"RAW_CONFIGURATION_VERIFY_TOKEN_PRESENT = {!string.IsNullOrWhiteSpace(configuration["WhatsApp:VerifyToken"])}");
+        output.WriteLine($"RAW_OPTIONS_VERIFY_TOKEN_PRESENT = {!string.IsNullOrWhiteSpace(whatsAppOptions.VerifyToken)}");
+        output.WriteLine($"FALLBACK_OPTIONS_VERIFY_TOKEN_PRESENT = {!string.IsNullOrWhiteSpace(fallbackOptionsPassedToConfigService.VerifyToken)}");
+        output.WriteLine("");
     }
 
     private static string BuildCallbackVerificationUrl(string callbackUrl, string verifyToken, string challenge)

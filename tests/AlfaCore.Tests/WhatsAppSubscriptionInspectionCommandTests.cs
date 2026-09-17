@@ -2,6 +2,7 @@ using System.Net;
 using AlfaCore.Configuration;
 using AlfaCore.Models;
 using AlfaCore.Services;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 using static AlfaCore.Configuration.WhatsAppSubscriptionInspectionCommand;
 
@@ -97,6 +98,78 @@ public sealed class WhatsAppSubscriptionInspectionCommandTests
 
         var none = BuildRoutingSourceInspection(IdBase, string.Empty, string.Empty, string.Empty, string.Empty);
         Assert.Equal("NONE", none.VerifyTokenSource);
+    }
+
+    /// <summary>
+    /// Regresión Base4271/Base4264 (2026-09): el operador confirmó WhatsApp__VerifyToken presente a
+    /// nivel Machine Y a nivel Process (forzado explícitamente antes de lanzar AlfaCore.exe), pero el
+    /// inspector real seguía reportando VERIFY_TOKEN_PRESENT=False. Este trace ubica en cuál de los 4
+    /// eslabones (Environment -> IConfiguration -> WhatsAppOptions -> fallback pasado a
+    /// ConversacionesConfigService) desaparece, sin tocar BuildConfiguration/routing/Meta client/
+    /// ConversacionesConfigService -- sólo lee lo que ya existe en cada punto.
+    /// </summary>
+    [Fact]
+    public void VerifyTokenTrace_EnvConfigAndOptionsPresent_ReportsAllFourAsTrueWithoutLeakingTheValue()
+    {
+        const string probeValue = "trace-probe-value-never-printed";
+        Environment.SetEnvironmentVariable("WhatsApp__VerifyToken", probeValue);
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["WhatsApp:VerifyToken"] = probeValue })
+                .Build();
+            var options = new WhatsAppOptions { VerifyToken = probeValue };
+            var output = new StringWriter();
+
+            WriteVerifyTokenTrace(output, configuration, options, options);
+            var text = output.ToString();
+
+            Assert.Contains("RAW_PROCESS_ENV_VERIFY_TOKEN_PRESENT = True", text);
+            Assert.Contains("RAW_CONFIGURATION_VERIFY_TOKEN_PRESENT = True", text);
+            Assert.Contains("RAW_OPTIONS_VERIFY_TOKEN_PRESENT = True", text);
+            Assert.Contains("FALLBACK_OPTIONS_VERIFY_TOKEN_PRESENT = True", text);
+            Assert.DoesNotContain(probeValue, text);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("WhatsApp__VerifyToken", null);
+        }
+    }
+
+    [Fact]
+    public void VerifyTokenTrace_NothingConfigured_ReportsAllFourAsFalse()
+    {
+        Environment.SetEnvironmentVariable("WhatsApp__VerifyToken", null);
+        var configuration = new ConfigurationBuilder().Build();
+        var options = new WhatsAppOptions();
+        var output = new StringWriter();
+
+        WriteVerifyTokenTrace(output, configuration, options, options);
+        var text = output.ToString();
+
+        Assert.Contains("RAW_PROCESS_ENV_VERIFY_TOKEN_PRESENT = False", text);
+        Assert.Contains("RAW_CONFIGURATION_VERIFY_TOKEN_PRESENT = False", text);
+        Assert.Contains("RAW_OPTIONS_VERIFY_TOKEN_PRESENT = False", text);
+        Assert.Contains("FALLBACK_OPTIONS_VERIFY_TOKEN_PRESENT = False", text);
+    }
+
+    /// <summary>Los 4 puntos leen objetos DISTINTOS (whatsAppOptions vs. el IOptions efectivamente
+    /// pasado al constructor) -- si algún cambio futuro los desincroniza, este trace debe poder
+    /// mostrar la divergencia en vez de imprimir el mismo booleano dos veces por construcción.</summary>
+    [Fact]
+    public void VerifyTokenTrace_OptionsAndFallbackCanDivergeIndependently()
+    {
+        var configuration = new ConfigurationBuilder().Build();
+        var options = new WhatsAppOptions { VerifyToken = "value-in-options" };
+        var fallback = new WhatsAppOptions();
+        var output = new StringWriter();
+
+        WriteVerifyTokenTrace(output, configuration, options, fallback);
+        var text = output.ToString();
+
+        Assert.Contains("RAW_OPTIONS_VERIFY_TOKEN_PRESENT = True", text);
+        Assert.Contains("FALLBACK_OPTIONS_VERIFY_TOKEN_PRESENT = False", text);
+        Assert.DoesNotContain("value-in-options", text);
     }
 
     [Fact]
