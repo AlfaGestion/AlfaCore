@@ -127,6 +127,41 @@ public sealed class EmbeddedSignupNewTenantFlowTests
         Assert.Contains((NewBase, "phone-142"), ownership.PhoneReservations);
     }
 
+    /// <summary>
+    /// Incidente Base4271/Base4264 (2026-09): el callback público resolvía bien (routing/PublicBaseUrl/
+    /// VerifyToken todos presentes) pero la autoverificación GET real fallaba (401 en producción) --
+    /// MetaWhatsAppManagementClient.VerifyCallbackAsync tira MetaWhatsAppManagementException
+    /// ("CALLBACK_VERIFICATION_FAILED", isTransient:false, requiresReauthorization:false). Antes del
+    /// fix, eso caía al "else" genérico del catch en ProcessNextStepAsync y quedaba FAILED_FINAL en el
+    /// PRIMER intento -- ni un solo reintento, sin indicarle a nadie que había que revisar el servidor.
+    /// Ahora debe recibir el mismo tratamiento que WhatsAppCallbackRoutingConfigurationException
+    /// (ACTION_REQUIRED/CallbackRoutingConfigurationInvalid, sin consumir reintento, NextAttemptUtc
+    /// limpio) -- ver WhatsAppCallbackRoutingConfigurationTests para el caso estático equivalente
+    /// (routing que ni siquiera resuelve), que ya recibía ese tratamiento vía
+    /// WhatsAppEmbeddedSignupHostedService.
+    /// </summary>
+    [Fact]
+    public async Task NewBase142_SubscribingWabasFails_CallbackVerificationFailed_MarksActionRequired_WithoutConsumingRetry()
+    {
+        var (orchestrator, item, meta, ownership) = Build(webhookRouting: true);
+        meta.ThrowCallbackVerificationFailedOnSubscribe = true;
+        item.RetryCount = 0;
+
+        for (var i = 0; i < 12 && item.Status is not (WhatsAppEmbeddedOnboardingStatus.ActionRequired or WhatsAppEmbeddedOnboardingStatus.Importing); i++)
+            await orchestrator.ProcessNextStepAsync(item.IdOnboarding);
+
+        Assert.Equal(WhatsAppEmbeddedOnboardingStatus.ActionRequired, item.Status);
+        Assert.Equal(WhatsAppEmbeddedActionRequiredReason.CallbackRoutingConfigurationInvalid, item.ActionRequiredReason);
+        Assert.Equal(WhatsAppEmbeddedErrorCodes.CallbackRoutingConfigurationInvalid, item.ErrorCode);
+        // No es un rechazo transitorio de Meta: no debe quedar programado un reintento automático, y el
+        // RetryCount (evidencia histórica) no se toca.
+        Assert.Equal(0, item.RetryCount);
+        Assert.Null(item.NextAttemptUtc);
+        // El ownership creado en ValidatingOwnership no se revierte por el fallo posterior.
+        Assert.Contains((NewBase, "waba-142"), ownership.WabaReservations);
+        Assert.Contains((NewBase, "phone-142"), ownership.PhoneReservations);
+    }
+
     [Fact]
     public void FailedFinalStatus_MapsToFailedUiState_WithPersistedStepAndErrorSummary()
     {
@@ -170,6 +205,7 @@ public sealed class EmbeddedSignupNewTenantFlowTests
         public List<(int IdBase, string WabaId)> SubscriptionCalls { get; } = [];
         public List<string> SystemUserAssignments { get; } = [];
         public bool ThrowInvalidAssetOnSubscribe { get; set; }
+        public bool ThrowCallbackVerificationFailedOnSubscribe { get; set; }
         public Task<IReadOnlyList<MetaAuthorizedBusiness>> DiscoverAuthorizedBusinessesAsync(WhatsAppCredentialReference t, CancellationToken ct = default)
             => Task.FromResult<IReadOnlyList<MetaAuthorizedBusiness>>([new("biz-142", "Cliente142")]);
         public Task<IReadOnlyList<MetaWabaAsset>> DiscoverWabasAsync(string businessId, WhatsAppCredentialReference t, CancellationToken ct = default)
@@ -184,6 +220,12 @@ public sealed class EmbeddedSignupNewTenantFlowTests
                 // id utilizable, no transitorio, no requiere reautorización.
                 throw new MetaWhatsAppManagementException("META_INVALID_ASSET", false, false,
                     "Meta devolvió un identificador inválido para aplicación.");
+            if (ThrowCallbackVerificationFailedOnSubscribe)
+                // Reproduce el incidente Base4271/Base4264 (2026-09): MetaWhatsAppManagementClient.
+                // VerifyCallbackAsync detectó que el GET de autoverificación del callback no coincidió
+                // (401/mismatch) ANTES de intentar el POST de subscribed_apps.
+                throw new MetaWhatsAppManagementException("CALLBACK_VERIFICATION_FAILED", false, false,
+                    "El callback público de la base no superó la verificación.");
             return Task.CompletedTask;
         }
         public Task<IReadOnlyList<MetaPhoneAsset>> DiscoverPhoneNumbersAsync(string wabaId, WhatsAppCredentialReference t, CancellationToken ct = default)
@@ -219,7 +261,17 @@ public sealed class EmbeddedSignupNewTenantFlowTests
         public Task<WhatsAppEmbeddedOnboardingDto?> GetLatestForBaseAsync(int idBase, CancellationToken ct = default) => throw new NotSupportedException();
         public Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string h, int b, string u, DateTime n, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkAuthorizedAsync(Guid id, string r, string m, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason r, string s, string i, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason r, string s, string i, string ec = "", CancellationToken ct = default)
+        {
+            item.Status = WhatsAppEmbeddedOnboardingStatus.ActionRequired;
+            item.CurrentStep = "ACTION_REQUIRED";
+            item.ActionRequiredReason = r;
+            item.ErrorSummary = s;
+            item.ErrorCode = ec;
+            item.IncidentId = i;
+            item.NextAttemptUtc = null; // mismo comportamiento que UpdateFieldsAsync/MarkActionRequiredAsync real.
+            return Task.CompletedTask;
+        }
         public Task MarkRetryableFailureAsync(Guid id, string c, string s, string i, DateTime n, CancellationToken ct = default) => throw new NotSupportedException();
         public string? FinalErrorCode { get; private set; }
         public string? FinalSummary { get; private set; }

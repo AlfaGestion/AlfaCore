@@ -306,7 +306,6 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
     [Theory]
     [InlineData(WhatsAppEmbeddedOnboardingStatus.Ready)]
     [InlineData(WhatsAppEmbeddedOnboardingStatus.Cancelled)]
-    [InlineData(WhatsAppEmbeddedOnboardingStatus.FailedRetryable)]
     [InlineData(WhatsAppEmbeddedOnboardingStatus.FailedFinal)]
     [InlineData(WhatsAppEmbeddedOnboardingStatus.Expired)]
     public void HistoricalOnboarding_DoesNotHideNewEmbeddedSignupCta(WhatsAppEmbeddedOnboardingStatus status)
@@ -470,7 +469,7 @@ public sealed class WhatsAppEmbeddedSignupFoundationTests
         public Task<WhatsAppEmbeddedOnboardingDto?> ConsumeStateAsync(string stateHash, int idBase, string usuario, DateTime nowUtc, CancellationToken ct = default) => throw new NotSupportedException();
         public Task UpdateStatusAsync(Guid idOnboarding, WhatsAppEmbeddedOnboardingStatus expectedStatus, WhatsAppEmbeddedOnboardingStatus nextStatus, string currentStep, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkAuthorizedAsync(Guid idOnboarding, string tokenReference, string metaBusinessId, CancellationToken ct = default) => throw new NotSupportedException();
-        public Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default) => throw new NotSupportedException();
+        public Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, string errorCode = "", CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkRetryableFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkFinalFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, string? failedStep = null, CancellationToken ct = default) => throw new NotSupportedException();
         public Task MarkReadyAsync(Guid idOnboarding, CancellationToken ct = default) => throw new NotSupportedException();

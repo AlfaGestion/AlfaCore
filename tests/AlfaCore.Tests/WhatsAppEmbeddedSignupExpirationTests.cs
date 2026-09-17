@@ -211,7 +211,7 @@ public sealed class WhatsAppEmbeddedSignupExpirationTests
             => throw new NotSupportedException();
         public Task MarkAuthorizedAsync(Guid idOnboarding, string tokenReference, string metaBusinessId, CancellationToken ct = default)
             => throw new NotSupportedException();
-        public Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default)
+        public Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, string errorCode = "", CancellationToken ct = default)
             => throw new NotSupportedException();
         public Task MarkRetryableFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default)
             => throw new NotSupportedException();

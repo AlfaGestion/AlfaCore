@@ -1,3 +1,4 @@
+using System.Data;
 using AlfaCore.Models;
 using Dapper;
 using Microsoft.Data.SqlClient;
@@ -192,8 +193,17 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
             throw new InvalidOperationException("El onboarding no pudo autorizarse de forma atómica.");
     }
 
-    public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default)
-        => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.ActionRequired, "ACTION_REQUIRED", new { ActionRequiredReason = ToDb(reason), ErrorSummary = summary, IncidentId = incidentId }, ct);
+    /// <summary>
+    /// ACTION_REQUIRED es terminal hasta intervención humana -- nunca debe quedar un NextAttemptUtc
+    /// colgado de un MarkRetryableFailureAsync/ScheduleRetryAsync anterior (p. ej. un onboarding que ya
+    /// venía FAILED_RETRYABLE con reintentos automáticos programados y ahora falla por un motivo
+    /// determinístico como routing). El filtro de ClaimNextInternalAsync ya excluye ACTION_REQUIRED por
+    /// Estado, así que esto no cambia la elegibilidad real del worker -- es higiene de datos/auditoría:
+    /// un NextAttemptUtc futuro en una fila ACTION_REQUIRED sería engañoso ("todavía va a reintentar
+    /// solo" cuando en realidad no).
+    /// </summary>
+    public Task MarkActionRequiredAsync(Guid id, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, string errorCode = "", CancellationToken ct = default)
+        => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.ActionRequired, "ACTION_REQUIRED", new { ActionRequiredReason = ToDb(reason), ErrorSummary = summary, IncidentId = incidentId, ErrorCode = errorCode, NextAttemptUtc = (DateTime?)null }, ct);
 
     public Task MarkRetryableFailureAsync(Guid id, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default)
         => UpdateFieldsAsync(id, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, "RETRY_SCHEDULED", new { ErrorCode = errorCode, ErrorSummary = summary, IncidentId = incidentId, NextAttemptUtc = nextAttemptUtc, IncrementRetry = true }, ct);
@@ -288,7 +298,14 @@ public sealed class WhatsAppEmbeddedSignupStore(IConfiguration configuration, IH
     {
         var data = new DynamicParameters();
         foreach (var property in values.GetType().GetProperties())
-            data.Add(property.Name, property.GetValue(values));
+        {
+            var value = property.GetValue(values);
+            // Dapper no puede inferir el DbType de un null sin tipo (perdido por la reflexión) -- sin
+            // esto, un UPDATE ... SET NextAttemptUtc=@NextAttemptUtc con @NextAttemptUtc=NULL puede
+            // fallar según el proveedor. Sólo aplica cuando el valor es null; el resto de las llamadas
+            // (todas con valores no nulos hoy) no cambian.
+            data.Add(property.Name, value, value is null && property.PropertyType == typeof(DateTime?) ? DbType.DateTime2 : null);
+        }
         data.Add("Id", id); data.Add("Estado", ToDb(status)); data.Add("Paso", step);
         var assignments = new List<string> { "Estado=@Estado", "PasoActual=@Paso", "FechaModificacionUtc=SYSUTCDATETIME()" };
         foreach (var name in data.ParameterNames.Where(x => x is not "Id" and not "Estado" and not "Paso" and not "IncrementRetry")) assignments.Add($"{name}=@{name}");

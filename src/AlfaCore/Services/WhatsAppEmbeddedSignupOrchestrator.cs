@@ -44,6 +44,11 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
             && WhatsAppEmbeddedSignupCtaPolicy.IsActiveInProgress(latest.Status))
             throw new InvalidOperationException("Ya hay una configuración de WhatsApp en curso para esta base.");
 
+        if (latest is not null
+            && latest.IdBase == request.IdBase
+            && latest.Status == WhatsAppEmbeddedOnboardingStatus.FailedRetryable)
+            throw new InvalidOperationException("Ya hay una configuración de WhatsApp pendiente de reintento para esta base. Reintentala o usa \"Volver a conectar con Meta\" antes de iniciar otra.");
+
         var (state, hash) = stateProtector.Create();
         var item = new WhatsAppEmbeddedOnboardingDto
         {
@@ -266,7 +271,7 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
                         if (await managementClient.GetCustomerPaymentReadinessAsync(wabaId, tokenReference, ct) == MetaCustomerPaymentReadiness.CustomerActionRequired)
                         {
                             await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.CustomerPaymentSetupRequired,
-                                "El cliente debe completar el método de pago directamente en Meta.", string.Empty, ct);
+                                "El cliente debe completar el método de pago directamente en Meta.", string.Empty, ct: ct);
                             return;
                         }
                     }
@@ -329,7 +334,22 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
         {
             var incident = await errorLogger.LogAsync(item.IdOnboarding, item.IdBase, item.CurrentStep, ex.ErrorCode, null, null, item.RetryCount, ct);
             if (ex.RequiresReauthorization)
-                await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.ReauthorizationRequired, "La autorización de Meta debe renovarse.", incident, ct);
+                await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.ReauthorizationRequired, "La autorización de Meta debe renovarse.", incident, ct: ct);
+            else if (ex.ErrorCode == "CALLBACK_VERIFICATION_FAILED")
+                // Determinístico/config-driven, no un rechazo de Meta: nuestro propio callback no pasó
+                // su autoverificación (ver MetaWhatsAppManagementClient.VerifyCallbackAsync). Reintentar
+                // no lo resuelve solo -- siempre va a volver a fallar igual hasta que un administrador
+                // corrija la configuración del servidor. Mismo tratamiento (ACTION_REQUIRED, sin
+                // consumir reintento, NextAttemptUtc limpio) que WhatsAppCallbackRoutingConfigurationException
+                // ya recibe en WhatsAppEmbeddedSignupHostedService para el caso estático (config
+                // ausente/inválida resuelta ANTES de llamar a Meta) -- éste es el caso dinámico (la
+                // config resuelve pero el GET de autoverificación real falla). Incidente
+                // Base4271/Base4264, 2026-09: antes caía al "else" genérico y quedaba FAILED_FINAL en
+                // el primer intento, sin reintentar ni una vez y sin indicarle a nadie que había que
+                // revisar el servidor.
+                await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.CallbackRoutingConfigurationInvalid,
+                    "No se pudo completar la configuración pública de WhatsApp. Un administrador debe revisar la configuración de conexión.",
+                    incident, WhatsAppEmbeddedErrorCodes.CallbackRoutingConfigurationInvalid, ct);
             else if (ex.IsTransient && item.RetryCount < _options.MaxRetryCount)
                 await store.MarkRetryableFailureAsync(item.IdOnboarding, ex.ErrorCode, "Meta no pudo completar temporalmente la configuración.", incident,
                     WhatsAppEmbeddedSignupStateMachine.ScheduleRetry(DateTime.UtcNow, item.RetryCount, _options.RetryInitialDelaySeconds, _options.RetryMaxDelaySeconds), ct);
@@ -413,15 +433,15 @@ public sealed class WhatsAppEmbeddedSignupOrchestrator(
     }
 
     private async Task MarkReauthorizationRequiredAsync(WhatsAppEmbeddedOnboardingDto item, CancellationToken ct)
-        => await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.ReauthorizationRequired, "La autorización de Meta venció o fue revocada.", string.Empty, ct);
+        => await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.ReauthorizationRequired, "La autorización de Meta venció o fue revocada.", string.Empty, ct: ct);
 
     private async Task MarkCustomerActionRequiredAsync(WhatsAppEmbeddedOnboardingDto item, string summary, CancellationToken ct)
-        => await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.CustomerActionRequired, summary, string.Empty, ct);
+        => await store.MarkActionRequiredAsync(item.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.CustomerActionRequired, summary, string.Empty, ct: ct);
 
     private async Task MarkOwnershipConflictAsync(WhatsAppEmbeddedOnboardingDto item, WhatsAppEmbeddedActionRequiredReason reason, string errorCode, string? wabaId, string? phoneNumberId, CancellationToken ct)
     {
         var incident = await errorLogger.LogAsync(item.IdOnboarding, item.IdBase, "VALIDATING_OWNERSHIP", errorCode, wabaId, phoneNumberId, item.RetryCount, ct);
-        await store.MarkActionRequiredAsync(item.IdOnboarding, reason, "El recurso de WhatsApp ya pertenece a otra base.", incident, ct);
+        await store.MarkActionRequiredAsync(item.IdOnboarding, reason, "El recurso de WhatsApp ya pertenece a otra base.", incident, ct: ct);
     }
 
     private sealed class UnsupportedManagementClient : IMetaWhatsAppManagementClient
@@ -495,6 +515,7 @@ public static class WhatsAppEmbeddedSignupProgressMapper
             Message = item.Status switch
             {
                 WhatsAppEmbeddedOnboardingStatus.ActionRequired when item.ActionRequiredReason == WhatsAppEmbeddedActionRequiredReason.CustomerPaymentSetupRequired => "Para terminar de activar WhatsApp, agregá un método de pago en tu cuenta de Meta. Los cargos de WhatsApp se pagan directamente a Meta.",
+                WhatsAppEmbeddedOnboardingStatus.ActionRequired when !string.IsNullOrWhiteSpace(item.ErrorSummary) => item.ErrorSummary,
                 WhatsAppEmbeddedOnboardingStatus.ActionRequired => "Necesitamos que completes un paso en tu cuenta Meta para continuar.",
                 WhatsAppEmbeddedOnboardingStatus.FailedRetryable => "No pudimos completar la configuración. Podrás reintentar.",
                 WhatsAppEmbeddedOnboardingStatus.FailedFinal => string.IsNullOrWhiteSpace(item.ErrorSummary)

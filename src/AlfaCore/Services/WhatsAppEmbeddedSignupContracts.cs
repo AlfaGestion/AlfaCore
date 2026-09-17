@@ -54,7 +54,14 @@ public interface IWhatsAppEmbeddedSignupStore
         => Task.FromResult(false);
 
     Task MarkAuthorizedAsync(Guid idOnboarding, string tokenReference, string metaBusinessId, CancellationToken ct = default);
-    Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, CancellationToken ct = default);
+    /// <summary>
+    /// <paramref name="errorCode"/> es opcional -- las razones que ya se explican solas por
+    /// <paramref name="reason"/> (pago pendiente, reautorización, conflicto de ownership) lo dejan
+    /// vacío como siempre. Existe para los casos donde además hay un código de error estable y
+    /// consultable (p. ej. CALLBACK_ROUTING_CONFIGURATION_INVALID) que debe quedar en el registro del
+    /// onboarding, no sólo en el incidente de auditoría.
+    /// </summary>
+    Task MarkActionRequiredAsync(Guid idOnboarding, WhatsAppEmbeddedActionRequiredReason reason, string summary, string incidentId, string errorCode = "", CancellationToken ct = default);
     Task MarkRetryableFailureAsync(Guid idOnboarding, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default);
     Task ScheduleRetryAsync(Guid idOnboarding, WhatsAppEmbeddedOnboardingStatus resumeStatus, string resumeStep, string errorCode, string summary, string incidentId, DateTime nextAttemptUtc, CancellationToken ct = default)
         => MarkRetryableFailureAsync(idOnboarding, errorCode, summary, incidentId, nextAttemptUtc, ct);
@@ -235,6 +242,12 @@ public interface IWhatsAppWabaRoutingProvider
     Task<WhatsAppWabaRoutingConfiguration> GetAsync(int idBase, CancellationToken ct = default);
 }
 public enum MetaCustomerPaymentReadiness { Unknown, Ready, CustomerActionRequired }
+
+public sealed class WhatsAppCallbackRoutingConfigurationException(string message, Exception? innerException = null)
+    : InvalidOperationException(message, innerException)
+{
+    public string ErrorCode => WhatsAppEmbeddedErrorCodes.CallbackRoutingConfigurationInvalid;
+}
 
 public sealed class MetaWhatsAppManagementException(
     string errorCode,

@@ -5624,9 +5624,6 @@
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(_config.PublicBaseUrl))
-            _config.PublicBaseUrl = _suggestedBaseUrl;
-
         var result = await UiOps.RunAsync(
             () => ConfigSvc.SaveWhatsAppConfigAsync(_config),
             "No se pudo guardar la configuración de WhatsApp.");

@@ -99,9 +99,14 @@ public static class WhatsAppEmbeddedSignupCtaPolicy
 
         var hasNumbers = operationalNumberCount > 0;
         var active = IsActiveInProgress(latestOnboardingStatus);
+        // FAILED_RETRYABLE no es "activo" (no bloquea con el tag "Configuración en curso"), pero el
+        // dominio SÍ rechaza un StartAsync nuevo mientras exista (ver
+        // WhatsAppEmbeddedSignupOrchestrator.StartAsync) -- la reconexión vive en el panel de la
+        // conexión pendiente (Reintentar / Volver a conectar con Meta), no en este botón genérico.
+        var blockedByPendingRetry = latestOnboardingStatus == WhatsAppEmbeddedOnboardingStatus.FailedRetryable;
         return new(
             true,
-            !active,
+            !active && !blockedByPendingRetry,
             active,
             hasNumbers ? "Conectar otro WhatsApp" : "Conectar WhatsApp",
             hasNumbers ? "WhatsApp conectados" : "Conectá WhatsApp para empezar");
@@ -172,7 +177,8 @@ public enum WhatsAppEmbeddedActionRequiredReason
     ReauthorizationRequired,
     CustomerActionRequired,
     WabaCrossTenantConflict,
-    PhoneCrossTenantConflict
+    PhoneCrossTenantConflict,
+    CallbackRoutingConfigurationInvalid
 }
 
 public static class WhatsAppEmbeddedErrorCodes
@@ -185,6 +191,7 @@ public static class WhatsAppEmbeddedErrorCodes
     public const string CustomerPaymentSetupRequired = "CUSTOMER_PAYMENT_SETUP_REQUIRED";
     public const string PhoneRegistrationRequired = "PHONE_REGISTRATION_REQUIRED";
     public const string UnknownMetaError = "UNKNOWN_META_ERROR";
+    public const string CallbackRoutingConfigurationInvalid = "CALLBACK_ROUTING_CONFIGURATION_INVALID";
 }
 
 public sealed class WhatsAppEmbeddedOnboardingDto
@@ -288,6 +295,8 @@ public sealed record WhatsAppEmbeddedPendingConnection(
     {
         WhatsAppEmbeddedOnboardingStatus.Authorized => "Conexión autorizada",
         WhatsAppEmbeddedOnboardingStatus.Importing => "Activando...",
+        WhatsAppEmbeddedOnboardingStatus.ActionRequired when ActionRequiredReason == WhatsAppEmbeddedActionRequiredReason.CallbackRoutingConfigurationInvalid
+            => "Revisión de un administrador",
         WhatsAppEmbeddedOnboardingStatus.ActionRequired => "Acción requerida",
         WhatsAppEmbeddedOnboardingStatus.FailedRetryable => "No pudimos completar la activación",
         _ => "Activando..."
@@ -297,6 +306,8 @@ public sealed record WhatsAppEmbeddedPendingConnection(
     {
         WhatsAppEmbeddedOnboardingStatus.ActionRequired when ActionRequiredReason == WhatsAppEmbeddedActionRequiredReason.CustomerPaymentSetupRequired
             => "Completá el método de pago en Meta para continuar.",
+        WhatsAppEmbeddedOnboardingStatus.ActionRequired when ActionRequiredReason == WhatsAppEmbeddedActionRequiredReason.CallbackRoutingConfigurationInvalid
+            => "No se pudo completar la configuración pública de WhatsApp. Un administrador debe revisar la configuración de conexión.",
         WhatsAppEmbeddedOnboardingStatus.ActionRequired
             => "Hay un paso pendiente en Meta para terminar la activación.",
         WhatsAppEmbeddedOnboardingStatus.FailedRetryable

@@ -426,6 +426,51 @@ public sealed class WhatsAppEmbeddedSignupSqlIntegrationTests
         }
     }
 
+    /// <summary>
+    /// Regresión Base4271 (producción): el onboarding real ya venía FAILED_RETRYABLE con RetryCount=6
+    /// y NextAttemptUtc programado (varios reintentos automáticos de WORKER_STEP_FAILED antes del fix)
+    /// cuando finalmente se clasificó el routing inválido como ACTION_REQUIRED. Prueba contra SQL real
+    /// (no el doble en memoria) que MarkActionRequiredAsync: (1) no resetea RetryCount -- queda como
+    /// evidencia histórica de cuántas veces se reintentó antes de detectar que era determinístico, (2)
+    /// limpia NextAttemptUtc -- si quedara colgado un valor futuro de antes, sería engañoso (parece que
+    /// "todavía va a reintentar solo"), y (3) el filtro Estado IN (...) de ClaimNextInternalAsync excluye
+    /// ACTION_REQUIRED, así que el worker nunca vuelve a reclamar la fila aunque el reloj avance.
+    /// </summary>
+    [SqlIntegrationFact]
+    public async Task MarkActionRequired_FromRetriedFailedRetryable_ClearsNextAttempt_PreservesRetryCount_AndStopsWorkerClaims()
+    {
+        var store = new WhatsAppEmbeddedSignupStore(Configuration);
+        var (baseA, _) = await GetTwoBaseIdsAsync();
+        var now = DateTime.UtcNow.AddDays(7);
+        var onboarding = NewOnboarding(baseA, WhatsAppEmbeddedOnboardingStatus.FailedRetryable, now.AddHours(1));
+        onboarding.NextAttemptUtc = now.AddSeconds(-1); // ya venció -- sería reclamable si el Estado no lo excluyera.
+        try
+        {
+            await store.CreateAsync(onboarding);
+            await using (var cn = new SqlConnection(ConnectionString))
+                await cn.ExecuteAsync(
+                    "UPDATE dbo.WhatsAppEmbeddedOnboarding SET RetryCount=@RetryCount WHERE IdOnboarding=@Id",
+                    new { RetryCount = 6, Id = onboarding.IdOnboarding });
+
+            await store.MarkActionRequiredAsync(onboarding.IdOnboarding, WhatsAppEmbeddedActionRequiredReason.CallbackRoutingConfigurationInvalid,
+                "No se pudo completar la configuración pública de WhatsApp. Un administrador debe revisar la configuración de conexión.", "incident-123",
+                WhatsAppEmbeddedErrorCodes.CallbackRoutingConfigurationInvalid);
+
+            var persisted = await store.GetAsync(onboarding.IdOnboarding);
+            Assert.Equal(WhatsAppEmbeddedOnboardingStatus.ActionRequired, persisted?.Status);
+            Assert.Equal(WhatsAppEmbeddedActionRequiredReason.CallbackRoutingConfigurationInvalid, persisted?.ActionRequiredReason);
+            Assert.Equal(WhatsAppEmbeddedErrorCodes.CallbackRoutingConfigurationInvalid, persisted?.ErrorCode);
+            Assert.Equal(6, persisted?.RetryCount);
+            Assert.Null(persisted?.NextAttemptUtc);
+
+            Assert.Null(await store.ClaimNextForBasesAsync("worker-post-action-required", [baseA], now.AddHours(2), now.AddHours(3)));
+        }
+        finally
+        {
+            await CleanupOnboardingsAsync([onboarding.IdOnboarding]);
+        }
+    }
+
     private static WhatsAppEmbeddedOnboardingDto NewOnboarding(int idBase, WhatsAppEmbeddedOnboardingStatus status, DateTime expiration)
         => new()
         {
