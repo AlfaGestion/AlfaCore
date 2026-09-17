@@ -157,6 +157,8 @@ public sealed class CatalogosCatalogoItemDto
 
 public sealed class CatalogosCatalogoResumenDto
 {
+    // Total de filas luego de aplicar los filtros, calculado en la misma consulta paginada.
+    public int TotalFiltrados { get; set; }
     public int IdInsert { get; set; }
     public int? IdCatalogo { get; set; }
     public string Tipo { get; set; } = string.Empty;

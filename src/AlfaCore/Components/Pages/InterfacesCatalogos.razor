@@ -22,6 +22,7 @@
 @using AlfaCore.Models
 @using AlfaCore.Components.Shared
 @using AlfaCore.Components.Shared.AlfaDesign
+@using System.Text.Json
 @inject AlfaCore.Services.IInterfacesCatalogosService CatalogosSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUiDialogService DialogSvc
@@ -38,7 +39,7 @@
 @inject ILogger<InterfacesCatalogos> Logger
 @implements IDisposable
 
-<PageTitle>CatÃ¡logos | Alfa GestiÃ³n</PageTitle>
+<PageTitle>Catálogos | Alfa Gestión</PageTitle>
 
 @if (ShouldRenderCatalogosSection)
 {
@@ -47,10 +48,10 @@
 
     @if (_homeSelection is null || _homeSelection == CatalogosHomeSelection.VerCatalogos)
     {
-        <section class="panel-card catalogos-toolbar-card">
+        <section class="panel-card catalogos-toolbar-card catalogos-toolbar-card--legacy">
             <div class="catalogos-toolbar-card__head">
                 <div class="catalogos-toolbar-card__title-block">
-                    <h3 class="panel-card__title">CatÃ¡logos publicados</h3>
+                    <h3 class="panel-card__title">Catálogos publicados</h3>
                     <p class="panel-card__subtitle">@GetCatalogosSummaryText()</p>
                 </div>
                 <div class="catalogos-toolbar-card__actions">
@@ -59,7 +60,7 @@
                                 Icon="bi bi-plus-circle"
                                 Disabled="@_loading"
                                 OnClick="() => ShowNuevoCatalogoAsync()">
-                        Nuevo catÃ¡logo
+                        Nuevo catálogo
                     </AlfaButton>
                     <AlfaIconButton Icon="bi bi-arrow-clockwise"
                                     Label="Recargar"
@@ -68,32 +69,32 @@
                                     Disabled="@_loading"
                                     OnClick="() => RecargarAsync()" />
                     <AlfaActionMenu Items="@GetCatalogosOverflowActions()"
-                                    TriggerLabel="MÃ¡s acciones"
-                                    MenuLabel="MÃ¡s acciones de catÃ¡logos"
+                                    TriggerLabel="Más acciones"
+                                    MenuLabel="Más acciones de catálogos"
                                     Disabled="@_loading" />
-                    <div class="catalogos-toolbar-card__pager" aria-label="PaginaciÃ³n de catÃ¡logos">
+                    <div class="catalogos-toolbar-card__pager" aria-label="Paginación de catálogos">
                         <AlfaIconButton Icon="bi bi-chevron-double-left"
-                                        Label="Primera pÃ¡gina"
-                                        Tooltip="Primera pÃ¡gina"
+                                        Label="Primera página"
+                                        Tooltip="Primera página"
                                         Size="AlfaSize.Sm"
                                         Disabled="@(!CanGoToFirstCatalogosPage)"
                                         OnClick="() => GoToFirstCatalogosPageAsync()" />
                         <AlfaIconButton Icon="bi bi-chevron-left"
-                                        Label="PÃ¡gina anterior"
-                                        Tooltip="PÃ¡gina anterior"
+                                        Label="Página anterior"
+                                        Tooltip="Página anterior"
                                         Size="AlfaSize.Sm"
                                         Disabled="@(!CanGoToPreviousCatalogosPage)"
                                         OnClick="() => GoToPreviousCatalogosPageAsync()" />
                         <span class="catalogos-toolbar-card__pager-status">@GetCatalogosPageIndicator()</span>
                         <AlfaIconButton Icon="bi bi-chevron-right"
-                                        Label="PÃ¡gina siguiente"
-                                        Tooltip="PÃ¡gina siguiente"
+                                        Label="Página siguiente"
+                                        Tooltip="Página siguiente"
                                         Size="AlfaSize.Sm"
                                         Disabled="@(!CanGoToNextCatalogosPage)"
                                         OnClick="() => GoToNextCatalogosPageAsync()" />
                         <AlfaIconButton Icon="bi bi-chevron-double-right"
-                                        Label="Ãšltima pÃ¡gina"
-                                        Tooltip="Ãšltima pÃ¡gina"
+                                        Label="Última página"
+                                        Tooltip="Última página"
                                         Size="AlfaSize.Sm"
                                         Disabled="@(!CanGoToLastCatalogosPage)"
                                         OnClick="() => GoToLastCatalogosPageAsync()" />
@@ -101,36 +102,89 @@
                 </div>
             </div>
 
-            <div class="catalogos-toolbar-card__filters">
-                <AlfaInput Label="Buscar catÃ¡logo"
-                           Type="search"
-                           Value="@_catalogosTexto"
-                           ValueChanged="SetCatalogosTextoAsync"
-                           Placeholder="Nombre, grupo, lista o id"
-                           Class="catalogos-toolbar__field catalogos-toolbar__field--wide" />
-                <AlfaSelect Label="Tipo"
-                            Value="@_catalogosTipoFiltro"
-                            ValueChanged="SetCatalogosTipoFiltroAsync"
-                            Options="@GetCatalogosTipoOptions()"
-                            Class="catalogos-toolbar__field" />
-                <AlfaSelect Label="Estado"
-                            Value="@_catalogosEstadoFiltro"
-                            ValueChanged="SetCatalogosEstadoFiltroAsync"
-                            Options="@GetCatalogosEstadoOptions()"
-                            Class="catalogos-toolbar__field" />
-                <AlfaInput Label="Fecha"
-                           Type="date"
-                           Value="@CatalogosFechaFiltroTexto"
-                           ValueChanged="SetCatalogosFechaFiltroTextoAsync"
-                           Class="catalogos-toolbar__field" />
-                <div class="catalogos-toolbar-card__search-action">
-                    <AlfaButton Variant="AlfaButtonVariant.Secondary"
-                                Size="AlfaSize.Sm"
-                                Icon="bi bi-search"
-                                Disabled="@_loading"
-                                OnClick="() => BuscarCatalogosAsync()">
-                        Buscar
-                    </AlfaButton>
+            <div class="smart-search-card catalogos-smart-search-card">
+                <div class="smart-search" @onclick:stopPropagation>
+                    <div class="smart-search__bar">
+                        <i class="bi bi-search"></i>
+                        <input type="search"
+                               placeholder="Buscar por nombre, grupo, lista o ID..."
+                               value="@_catalogosTexto"
+                               @oninput="OnCatalogosSearchInput"
+                               @onkeydown="OnCatalogosSearchKeyDownAsync" />
+                        <button type="button"
+                                class="smart-search__toggle"
+                                @onclick="ToggleCatalogosSearchPanel"
+                                aria-label="Mostrar filtros">
+                            <i class="bi @(_showCatalogosSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                        </button>
+                    </div>
+                    <div class="smart-search__chips" aria-live="polite">
+                        @if (!string.IsNullOrWhiteSpace(_catalogosTexto))
+                        {
+                            <button type="button" class="smart-chip" @onclick="ClearCatalogosTextAsync">Buscar: @_catalogosTexto.Trim() <i class="bi bi-x"></i></button>
+                        }
+                        @if (_catalogosTipoFiltro != "todos")
+                        {
+                            <button type="button" class="smart-chip" @onclick="ClearCatalogosTypeAsync">Tipo: @GetCatalogosTipoLabel() <i class="bi bi-x"></i></button>
+                        }
+                        @if (_catalogosEstadoFiltro != "todos")
+                        {
+                            <button type="button" class="smart-chip" @onclick="ClearCatalogosStatusAsync">Estado: @GetCatalogosEstadoLabel() <i class="bi bi-x"></i></button>
+                        }
+                        @if (_catalogosFechaFiltro.HasValue)
+                        {
+                            <button type="button" class="smart-chip" @onclick="ClearCatalogosDateAsync">Fecha: @CatalogosFechaFiltroTexto <i class="bi bi-x"></i></button>
+                        }
+                        @if (string.IsNullOrWhiteSpace(_catalogosTexto) && _catalogosTipoFiltro == "todos" && _catalogosEstadoFiltro == "todos" && !_catalogosFechaFiltro.HasValue)
+                        {
+                            <span class="smart-search__hint">Escribí para buscar o abrí los filtros.</span>
+                        }
+                    </div>
+
+                    @if (_showCatalogosSearchPanel)
+                    {
+                        <div class="smart-search__panel" @onkeydown="OnCatalogosSearchKeyDownAsync">
+                            <div class="smart-search__column">
+                                <h4><i class="bi bi-funnel-fill"></i> Filtros</h4>
+                                <div class="smart-search__inline">
+                                    <label for="catalogos-tipo-filtro">Tipo</label>
+                                    <select id="catalogos-tipo-filtro" value="@_catalogosTipoFiltro" @onchange="OnCatalogosTipoChanged">
+                                        @foreach (var option in GetCatalogosTipoOptions())
+                                        {
+                                            <option value="@option.Value">@option.Label</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="smart-search__inline">
+                                    <label for="catalogos-estado-filtro">Estado</label>
+                                    <select id="catalogos-estado-filtro" value="@_catalogosEstadoFiltro" @onchange="OnCatalogosEstadoChanged">
+                                        @foreach (var option in GetCatalogosEstadoOptions())
+                                        {
+                                            <option value="@option.Value">@option.Label</option>
+                                        }
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="smart-search__column">
+                                <h4><i class="bi bi-calendar3"></i> Fecha</h4>
+                                <div class="smart-search__inline">
+                                    <label for="catalogos-fecha-filtro">Publicados al</label>
+                                    <input id="catalogos-fecha-filtro" type="date" value="@CatalogosFechaFiltroTexto" @onchange="OnCatalogosDateChanged" />
+                                </div>
+                            </div>
+                            <div class="smart-search__column">
+                                <h4><i class="bi bi-search"></i> Acción</h4>
+                                <div class="actions">
+                                    <button type="button" class="btn btn--primary btn--sm" @onclick="ApplyCatalogosSearchAsync" disabled="@_loading">
+                                        <i class="bi bi-search"></i> Aplicar
+                                    </button>
+                                    <button type="button" class="btn btn--ghost btn--sm" @onclick="ClearCatalogosFiltersAsync" disabled="@_loading">
+                                        Limpiar
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    }
                 </div>
             </div>
         </section>
@@ -195,15 +249,15 @@
             {
                 <div class="catalogos-loading">
                     <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                    <span>Cargando catÃ¡logos...</span>
+                    <span>Cargando catálogos...</span>
                 </div>
             }
             else if (_catalogosPage.Items.Count == 0)
             {
                 <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
-                                Title="No hay catÃ¡logos publicados"
-                                Message="ProbÃ¡ con otros filtros o creÃ¡ un catÃ¡logo nuevo para empezar."
-                                ActionLabel="Nuevo catÃ¡logo"
+                                Title="No hay catálogos publicados"
+                                Message="Probá con otros filtros o creá un catálogo nuevo para empezar."
+                                ActionLabel="Nuevo catálogo"
                                 ActionIcon="bi bi-plus-circle"
                                 OnAction="ShowNuevoCatalogoAsync" />
             }
@@ -272,7 +326,7 @@
                                                    href="@GetPublicUrl(item.IdInsert)"
                                                    target="_blank"
                                                    rel="noopener"
-                                                   title="Abrir en otra pestaÃ±a">
+                                                   title="Abrir en otra pestaña">
                                                     <i class="bi bi-eye" aria-hidden="true"></i>
                                                     <span>Abrir</span>
                                                 </a>
@@ -283,8 +337,8 @@
                                                     Editar
                                                 </AlfaButton>
                                                 <AlfaActionMenu Items="@BuildCatalogoRowActions(item)"
-                                                                TriggerLabel="MÃ¡s acciones"
-                                                                MenuLabel="Acciones del catÃ¡logo"
+                                                                TriggerLabel="Más acciones"
+                                                                MenuLabel="Acciones del catálogo"
                                                                 Align="AlfaActionMenuAlign.End" />
                                             </div>
                                         </td>
@@ -300,7 +354,7 @@
                         @GetCatalogosSummaryText()
                     </div>
                     <div class="alfa-data-view-footer__controls">
-                        <span class="catalogos-data-view__page-size">@(_catalogosPage?.PageSize ?? 50) por pÃ¡gina</span>
+                        <span class="catalogos-data-view__page-size">@(_catalogosPage?.PageSize ?? 50) por página</span>
                     </div>
                 </footer>
             }
@@ -312,12 +366,12 @@
 
         <section class="section-block">
                 <div class="section-block__head">
-                    <h4 class="section-block__title">Datos del catÃ¡logo</h4>
+                    <h4 class="section-block__title">Datos del catálogo</h4>
                 </div>
                 <div class="row g-3">
                     <div class="col-12">
                         <div class="field">
-                            <label>Tipo de catÃ¡logo</label>
+                            <label>Tipo de catálogo</label>
                             <div class="catalog-mode-group">
                                 @foreach (var item in _modalidades)
                                 {
@@ -331,12 +385,12 @@
                     <div class="col-12 col-md-6">
                         <div class="field">
                             <label>Nombre</label>
-                            <input @bind="_nombre" placeholder="CatÃ¡logo de temporada" />
+                            <input @bind="_nombre" placeholder="Catálogo de temporada" />
                         </div>
                     </div>
                     <div class="col-12 col-md-6">
                         <div class="field">
-                            <label>DescripciÃ³n / observaciones</label>
+                            <label>Descripción / observaciones</label>
                             <textarea rows="3" @bind="_descripcion" placeholder="Opcional"></textarea>
                         </div>
                     </div>
@@ -362,7 +416,7 @@
                                 <span class="catalogos-toggle__track" aria-hidden="true"></span>
                                 <span class="catalogos-toggle__label">
                                     <strong>Habilitar carrito</strong>
-                                    <small>Permite a los clientes armar un pedido desde este catÃ¡logo (toma de pedidos).</small>
+                                    <small>Permite a los clientes armar un pedido desde este catálogo (toma de pedidos).</small>
                                 </span>
                             </label>
                         </div>
@@ -374,7 +428,7 @@
                                 <span class="catalogos-toggle__track" aria-hidden="true"></span>
                                 <span class="catalogos-toggle__label">
                                     <strong>Convertir precio a pesos</strong>
-                                    <small>Si un artÃ­culo tiene su precio en dÃ³lares (u otra moneda), lo muestra convertido a pesos con la cotizaciÃ³n del dÃ­a.</small>
+                                    <small>Si un artículo tiene su precio en dólares (u otra moneda), lo muestra convertido a pesos con la cotización del día.</small>
                                 </span>
                             </label>
                         </div>
@@ -384,7 +438,7 @@
 
         <section class="section-block mt-4">
                 <div class="section-block__head">
-                    <h4 class="section-block__title">ArtÃ­culos</h4>
+                    <h4 class="section-block__title">Artículos</h4>
                 </div>
                 <div class="row g-3">
                     <div class="col-12 col-lg-6">
@@ -394,7 +448,7 @@
                     </div>
                     <div class="col-12 col-lg-6">
                         <button type="button" class="catalog-source-card @(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)" @onclick="() => SelectArticuloSourceAsync(CatalogosArticuloOrigenKeys.Maestro)" disabled="@IsNuevoCatalogoBloqueado">
-                            <strong>Maestro de artÃ­culos</strong>
+                            <strong>Maestro de artículos</strong>
                         </button>
                     </div>
                 </div>
@@ -419,10 +473,10 @@
 
                 <div class="toolbar mt-3">
                     <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-search" Disabled="@(_loading || IsLookupBusy || IsNuevoCatalogoBloqueado)" OnClick="AbrirLookupArticulosAsync">
-                        Consultar artÃ­culos
+                        Consultar artículos
                     </AlfaButton>
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-images" Disabled="@(_loading || !_articulosSeleccionados.Any() || IsNuevoCatalogoBloqueado)" OnClick="AbrirBaseMaestraImagenesAsync">
-                        Obtener imÃ¡genes
+                        Obtener imágenes
                     </AlfaButton>
                     @if (PuedeImportarTodo())
                     {
@@ -434,7 +488,7 @@
                         Quitar seleccionados
                     </AlfaButton>
                     <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-trash" Disabled="@(!_articulosSeleccionados.Any() || IsLookupBusy || IsNuevoCatalogoBloqueado)" OnClick="LimpiarCatalogoAsync">
-                        Limpiar catÃ¡logo
+                        Limpiar catálogo
                     </AlfaButton>
                 </div>
         </section>
@@ -442,13 +496,13 @@
         <section class="section-block mt-4">
                 <div class="section-block__head d-flex justify-content-between align-items-start gap-3">
                     <div>
-                        <h4 class="section-block__title">ArtÃ­culos del catÃ¡logo</h4>
+                        <h4 class="section-block__title">Artículos del catálogo</h4>
                     </div>
                 </div>
 
                 @if (_articulosSeleccionados.Count == 0)
                 {
-                    <div class="usuarios-empty">TodavÃ­a no agregaste artÃ­culos.</div>
+                    <div class="usuarios-empty">Todavía no agregaste artículos.</div>
                 }
                 else
                 {
@@ -460,9 +514,9 @@
                                         <input type="checkbox" @onchange="ToggleSeleccionTodosQuitarAsync" checked="@(_articulosQuitarSeleccionados.Count == _articulosSeleccionados.Count && _articulosSeleccionados.Count > 0)" disabled="@IsNuevoCatalogoBloqueado" />
                                     </th>
                                     <th style="width:88px;">Imagen</th>
-                                    <th>CÃ³digo</th>
-                                    <th>DescripciÃ³n</th>
-                                    <th>PresentaciÃ³n</th>
+                                    <th>Código</th>
+                                    <th>Descripción</th>
+                                    <th>Presentación</th>
                                     <th>Marca</th>
                                     <th>Rubro</th>
                                     <th style="text-align:right;">Precio</th>
@@ -512,10 +566,10 @@
         @if (!string.IsNullOrWhiteSpace(_urlPublica))
         {
             <div class="context-card mt-4">
-                    <span class="context-card__label">Enlaces del catÃ¡logo</span>
+                    <span class="context-card__label">Enlaces del catálogo</span>
                     @if (!string.IsNullOrWhiteSpace(_urlPublica))
                     {
-                        <strong class="mt-3 d-block">Acceso pÃºblico</strong>
+                        <strong class="mt-3 d-block">Acceso público</strong>
                         <div class="d-flex flex-wrap gap-2 align-items-center">
                             <code class="text-break">@_urlPublica</code>
                             <button type="button" class="btn btn--ghost btn--sm" @onclick="CopiarEnlacePublicoAsync">
@@ -551,7 +605,7 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">MenÃº</h3>
+                    <h3 class="panel-card__title">Menú</h3>
                 </div>
             </div>
 
@@ -564,7 +618,7 @@
             }
             else
             {
-                <div class="usuarios-empty">El menÃº de catÃ¡logos no estÃ¡ habilitado en esta base.</div>
+                <div class="usuarios-empty">El menú de catálogos no está habilitado en esta base.</div>
             }
         </section>
     </section>
@@ -576,7 +630,7 @@
         <section class="panel-card">
             <div class="panel-card__header">
                 <div>
-                    <h3 class="panel-card__title">ConfiguraciÃ³n</h3>
+                    <h3 class="panel-card__title">Configuración</h3>
                 </div>
                 <div class="actions">
                     <button type="button" class="btn btn--primary" @onclick="GuardarConfiguracionCatalogosAsync" disabled="@_loading">
@@ -587,24 +641,24 @@
 
             <div class="section-block">
                 <div class="field">
-                    <label>MenÃº</label>
+                    <label>Menú</label>
                     <label class="checkbox">
                         <input type="checkbox" checked="@_menuHabilitadoDraft" @onchange="ToggleMenuHabilitadoDraft" />
-                        <span>Mostrar opciÃ³n MenÃº</span>
+                        <span>Mostrar opción Menú</span>
                     </label>
                 </div>
 
                 <div class="field">
                     <label>Nombre visible</label>
                     <input @bind="_publicIdentityNameDraft" placeholder="@GetPublicIdentityPlaceholder()" maxlength="80" />
-                    <small class="catalogos-config-help">Si estÃ¡ vacÃ­o se utiliza el nombre de la empresa.</small>
+                    <small class="catalogos-config-help">Si está vacío se utiliza el nombre de la empresa.</small>
                 </div>
 
                 <div class="field">
                     <label>Logo</label>
                     <div class="catalogos-config-logo">
                         <div class="catalogos-config-logo__preview @GetPublicLogoFrameClass(_publicLogoFormatDraft)">
-                            <img src="@GetPublicLogoPreviewUrl()" alt="Vista previa del logo pÃºblico" />
+                            <img src="@GetPublicLogoPreviewUrl()" alt="Vista previa del logo público" />
                         </div>
                         <div class="catalogos-config-logo__actions">
                             <InputFile OnChange="HandlePublicLogoSelectedAsync" accept="image/jpeg,image/png,image/webp,image/gif" />
@@ -620,7 +674,7 @@
                 <div class="field mt-3">
                     <label>Formato del logo</label>
                     <select @bind="_publicLogoFormatDraft">
-                        <option value="@CatalogosPublicLogoFormatKeys.Auto">AutomÃ¡tico</option>
+                        <option value="@CatalogosPublicLogoFormatKeys.Auto">Automático</option>
                         <option value="@CatalogosPublicLogoFormatKeys.Square">Cuadrado</option>
                         <option value="@CatalogosPublicLogoFormatKeys.Horizontal">Horizontal</option>
                     </select>
@@ -638,7 +692,7 @@
                         <option value="7">Clase 7</option>
                         <option value="8">Clase 8</option>
                     </select>
-                    <small class="catalogos-config-help">Define quÃ© columna de precio del artÃ­culo (Precio1 a Precio8) se usa al buscar o importar artÃ­culos para el catÃ¡logo. Los catÃ¡logos ya publicados no cambian.</small>
+                    <small class="catalogos-config-help">Define qué columna de precio del artículo (Precio1 a Precio8) se usa al buscar o importar artículos para el catálogo. Los catálogos ya publicados no cambian.</small>
                 </div>
             </div>
 
@@ -649,18 +703,18 @@
             </div>
 
             <div class="context-card mt-3">
-                <span class="context-card__label">Identidad pÃºblica</span>
+                <span class="context-card__label">Identidad pública</span>
                 <strong>@GetPublicIdentitySummary()</strong>
-                <span class="context-card__muted">Se guarda en <code>TA_CONFIGURACION</code> y se aplica al encabezado pÃºblico del catÃ¡logo.</span>
+                <span class="context-card__muted">Se guarda en <code>TA_CONFIGURACION</code> y se aplica al encabezado público del catálogo.</span>
             </div>
         </section>
     </section>
 }
 
 <ArticuloPickerDialog Open="@_showLookupModal"
-                      Titulo="Consultar artÃ­culos"
-                      Subtitulo="@(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) ? "BÃºsqueda filtrada por la lista seleccionada." : "BÃºsqueda sobre el maestro oficial de artÃ­culos.")"
-                      BloqueoMensaje="@(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(_idLista) ? "ElegÃ­ una lista antes de consultar artÃ­culos." : null)"
+                      Titulo="Consultar artículos"
+                      Subtitulo="@(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) ? "Búsqueda filtrada por la lista seleccionada." : "Búsqueda sobre el maestro oficial de artículos.")"
+                      BloqueoMensaje="@(string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase) && string.IsNullOrWhiteSpace(_idLista) ? "Elegí una lista antes de consultar artículos." : null)"
                       Origen="@_articuloOrigen"
                       IdLista="@_idLista"
                       IdWeb="@idweb"
@@ -670,8 +724,8 @@
                       OnClose="CloseLookupArticulos" />
 
 <BaseMaestraImagenesDialog Open="@_showBaseMaestraImagenesModal"
-                           Titulo="ImÃ¡genes encontradas"
-                           Subtitulo="Se consultan los artÃ­culos del catÃ¡logo actual en la Base Maestra oficial."
+                           Titulo="Imágenes encontradas"
+                           Subtitulo="Se consultan los artículos del catálogo actual en la Base Maestra oficial."
                            Articulos="@_baseMaestraImagenesOrigen"
                            IdClienteFtp="@_puntoVentaSettings.FtpCodigoCta"
                            IdBase="@idbase"
@@ -713,6 +767,7 @@
     private int _articuloImageVersion;
     private string _catalogosTexto = string.Empty;
     private DateTime? _catalogosFechaFiltro = DateTime.Today;
+    private bool _showCatalogosSearchPanel;
     private int _catalogosPageNumber = 1;
     private int _catalogosPageSize = 50;
     private string _catalogosTipoFiltro = "todos";
@@ -897,7 +952,7 @@
                 _loading,
                 _catalogosLoaded,
                 _catalogosPage is null);
-            _feedback = UiOps.BuildMessage(ex, "No se pudo cargar el mÃ³dulo de catÃ¡logos.");
+            _feedback = UiOps.BuildMessage(ex, "No se pudo cargar el módulo de catálogos.");
         }
         finally
         {
@@ -929,6 +984,7 @@
         {
             _homeSelection = CatalogosHomeSelection.NuevoCatalogo;
             ResetNuevoCatalogo();
+            await RestaurarBorradorAsync();
             return;
         }
 
@@ -987,19 +1043,19 @@
 
         Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} antes EnsureRouteSessionAsync", traceId);
         _routeSessionReady = await EnsureRouteSessionAsync();
-        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} despuÃ©s EnsureRouteSessionAsync | routeSessionReady={RouteSessionReady}", traceId, _routeSessionReady);
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} después EnsureRouteSessionAsync | routeSessionReady={RouteSessionReady}", traceId, _routeSessionReady);
         if (!_routeSessionReady)
         {
-            Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} sale porque no hay sesiÃ³n de ruta", traceId);
+            Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} sale porque no hay sesión de ruta", traceId);
             return;
         }
 
         Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} antes LoadAsync", traceId);
         await LoadAsync();
-        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} despuÃ©s LoadAsync | loading={Loading}", traceId, _loading);
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} después LoadAsync | loading={Loading}", traceId, _loading);
         Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} antes ApplyRouteSectionAsync", traceId);
         await ApplyRouteSectionAsync(ResolveSection(Vista), forceReloadCatalogos);
-        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} despuÃ©s ApplyRouteSectionAsync | pageNull={PageNull} total={Total} loaded={Loaded}",
+        Logger.LogInformation("CATALOGOS - CargarCatalogosAsync #{TraceId} después ApplyRouteSectionAsync | pageNull={PageNull} total={Total} loaded={Loaded}",
             traceId,
             _catalogosPage is null,
             _catalogosPage?.Total ?? 0,
@@ -1032,18 +1088,18 @@
         var routeBaseId = idbase.Value;
         Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes GetActiveSession", traceId);
         var activeSession = SessionSvc.GetActiveSession();
-        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} despuÃ©s GetActiveSession | activeBaseId={ActiveBaseId}",
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después GetActiveSession | activeBaseId={ActiveBaseId}",
             traceId,
             activeSession is null ? string.Empty : activeSession.BaseId.ToString());
         if (activeSession is not null && activeSession.BaseId == routeBaseId)
         {
-            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} sesiÃ³n ya activa -> true", traceId);
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} sesión ya activa -> true", traceId);
             return true;
         }
 
         Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes GetAllSessions", traceId);
         var availableSession = SessionSvc.GetAllSessions().FirstOrDefault(x => x.BaseId == routeBaseId);
-        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} despuÃ©s GetAllSessions | found={Found}", traceId, availableSession is not null);
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después GetAllSessions | found={Found}", traceId, availableSession is not null);
         if (availableSession is not null)
         {
             Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes SwitchSession | sessionId={SessionId} baseId={BaseId}",
@@ -1051,26 +1107,26 @@
                 availableSession.Id,
                 availableSession.BaseId);
             SessionSvc.SwitchSession(availableSession.Id);
-            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} despuÃ©s SwitchSession", traceId);
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después SwitchSession", traceId);
             try
             {
                 Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes JS setActive", traceId);
                 await Js.InvokeVoidAsync("alfaCoreSqlSession.setActive", availableSession.Id.ToString());
-                Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} despuÃ©s JS setActive", traceId);
+                Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después JS setActive", traceId);
             }
             catch
             {
-                // La sesiÃ³n en memoria ya quedÃ³ activa; el storage es solo persistencia auxiliar.
-                Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} JS setActive fallÃ³ o no estaba disponible", traceId);
+                // La sesión en memoria ya quedó activa; el storage es solo persistencia auxiliar.
+                Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} JS setActive falló o no estaba disponible", traceId);
             }
 
-            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} returning true por sesiÃ³n disponible", traceId);
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} returning true por sesión disponible", traceId);
             return true;
         }
 
         Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes CentralBasesSvc.GetByIdAsync", traceId);
         var routeBase = await CentralBasesSvc.GetByIdAsync(routeBaseId);
-        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} despuÃ©s CentralBasesSvc.GetByIdAsync | routeBaseNull={RouteBaseNull}", traceId, routeBase is null);
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después CentralBasesSvc.GetByIdAsync | routeBaseNull={RouteBaseNull}", traceId, routeBase is null);
         if (routeBase is null)
         {
             _feedback = new AppUiMessage
@@ -1096,18 +1152,18 @@
             TrustServerCertificate = true,
             Activa = true
         });
-        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} despuÃ©s SetWebhookOverride", traceId);
+        Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después SetWebhookOverride", traceId);
 
         try
         {
             Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} antes JS setActive (webhook)", traceId);
             await Js.InvokeVoidAsync("alfaCoreSqlSession.setActive", Guid.Parse($"00000000-0000-0000-0000-{routeBaseId:000000000000}").ToString());
-            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} despuÃ©s JS setActive (webhook)", traceId);
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} después JS setActive (webhook)", traceId);
         }
         catch
         {
-            // La sesiÃ³n en memoria ya quedÃ³ activa; el storage es solo persistencia auxiliar.
-            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} JS setActive (webhook) fallÃ³ o no estaba disponible", traceId);
+            // La sesión en memoria ya quedó activa; el storage es solo persistencia auxiliar.
+            Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync #{TraceId} JS setActive (webhook) falló o no estaba disponible", traceId);
         }
 
         Logger.LogInformation("CATALOGOS - EnsureRouteSessionAsync END #{TraceId} -> true", traceId);
@@ -1168,8 +1224,8 @@
     private string GetCatalogosSummaryText()
     {
         var total = _catalogosPage?.Total ?? 0;
-        var label = total == 1 ? "1 catÃ¡logo" : $"{total} catÃ¡logos";
-        return $"{label} Â· PÃ¡gina {Math.Max(1, _catalogosPage?.PageNumber ?? 1)} de {Math.Max(1, _catalogosPage?.TotalPages ?? 1)}";
+        var label = total == 1 ? "1 catálogo" : $"{total} catálogos";
+        return $"{label} · Página {Math.Max(1, _catalogosPage?.PageNumber ?? 1)} de {Math.Max(1, _catalogosPage?.TotalPages ?? 1)}";
     }
 
     private string CatalogosFechaFiltroTexto
@@ -1181,23 +1237,93 @@
         return Task.CompletedTask;
     }
 
-    private Task SetCatalogosTipoFiltroAsync(string? value)
+    private void OnCatalogosSearchInput(ChangeEventArgs args)
     {
-        _catalogosTipoFiltro = string.IsNullOrWhiteSpace(value) ? "todos" : value.Trim();
-        return Task.CompletedTask;
+        _catalogosTexto = args.Value?.ToString() ?? string.Empty;
+        UpdatePageHeader();
     }
 
-    private Task SetCatalogosEstadoFiltroAsync(string? value)
+    private async Task OnCatalogosSearchKeyDownAsync(KeyboardEventArgs args)
     {
-        _catalogosEstadoFiltro = string.IsNullOrWhiteSpace(value) ? "todos" : value.Trim();
-        return Task.CompletedTask;
+        if (args.Key == "Enter")
+        {
+            await ApplyCatalogosSearchAsync();
+        }
+        else if (args.Key == "Escape")
+        {
+            _showCatalogosSearchPanel = false;
+            UpdatePageHeader();
+        }
     }
 
-    private Task SetCatalogosFechaFiltroTextoAsync(string? value)
+    private void ToggleCatalogosSearchPanel()
     {
-        _catalogosFechaFiltro = DateTime.TryParse(value, out var parsed) ? parsed.Date : null;
-        return Task.CompletedTask;
+        _showCatalogosSearchPanel = !_showCatalogosSearchPanel;
+        UpdatePageHeader();
     }
+
+    private async Task ApplyCatalogosSearchAsync()
+    {
+        _showCatalogosSearchPanel = false;
+        await BuscarCatalogosAsync();
+    }
+
+    private async Task ClearCatalogosTextAsync()
+    {
+        _catalogosTexto = string.Empty;
+        await BuscarCatalogosAsync();
+    }
+
+    private async Task ClearCatalogosTypeAsync()
+    {
+        _catalogosTipoFiltro = "todos";
+        await BuscarCatalogosAsync();
+    }
+
+    private async Task ClearCatalogosStatusAsync()
+    {
+        _catalogosEstadoFiltro = "todos";
+        await BuscarCatalogosAsync();
+    }
+
+    private async Task ClearCatalogosDateAsync()
+    {
+        _catalogosFechaFiltro = null;
+        await BuscarCatalogosAsync();
+    }
+
+    private async Task ClearCatalogosFiltersAsync()
+    {
+        _catalogosTexto = string.Empty;
+        _catalogosTipoFiltro = "todos";
+        _catalogosEstadoFiltro = "todos";
+        _catalogosFechaFiltro = null;
+        await ApplyCatalogosSearchAsync();
+    }
+
+    private void OnCatalogosTipoChanged(ChangeEventArgs args)
+    {
+        _catalogosTipoFiltro = string.IsNullOrWhiteSpace(args.Value?.ToString()) ? "todos" : args.Value!.ToString()!.Trim();
+        UpdatePageHeader();
+    }
+
+    private void OnCatalogosEstadoChanged(ChangeEventArgs args)
+    {
+        _catalogosEstadoFiltro = string.IsNullOrWhiteSpace(args.Value?.ToString()) ? "todos" : args.Value!.ToString()!.Trim();
+        UpdatePageHeader();
+    }
+
+    private void OnCatalogosDateChanged(ChangeEventArgs args)
+    {
+        _catalogosFechaFiltro = DateTime.TryParse(args.Value?.ToString(), out var parsed) ? parsed.Date : null;
+        UpdatePageHeader();
+    }
+
+    private string GetCatalogosTipoLabel()
+        => GetCatalogosTipoOptions().FirstOrDefault(x => x.Value == _catalogosTipoFiltro)?.Label ?? _catalogosTipoFiltro;
+
+    private string GetCatalogosEstadoLabel()
+        => GetCatalogosEstadoOptions().FirstOrDefault(x => x.Value == _catalogosEstadoFiltro)?.Label ?? _catalogosEstadoFiltro;
 
     private IReadOnlyList<AlfaSelectOption> GetCatalogosTipoOptions()
         => [
@@ -1315,7 +1441,7 @@
             new PageHeaderAction
             {
                 Key = "nuevo-catalogo",
-                Label = "Nuevo catÃ¡logo",
+                Label = "Nuevo catálogo",
                 Icon = "bi-plus-circle",
                 Style = PageHeaderActionStyle.Primary,
                 Priority = PageHeaderActionPriority.Essential,
@@ -1427,12 +1553,12 @@
     private bool ShouldRenderCatalogosSection => IsCatalogosSection || IsNuevoSection || IsPredeterminadoSection || IsLegacyCatalogosRoute();
 
     private string GetSectionTitle()
-        => IsPredeterminadoSection ? "CatÃ¡logo predeterminado" : "CatÃ¡logos web";
+        => IsPredeterminadoSection ? "Catálogo predeterminado" : "Catálogos web";
 
     private string GetSectionIntro()
         => IsPredeterminadoSection
-            ? "AdministrÃ¡ el catÃ¡logo general sin fechas de vigencia."
-            : "ElegÃ­ entre ver catÃ¡logos publicados o crear uno nuevo.";
+            ? "Administrá el catálogo general sin fechas de vigencia."
+            : "Elegí entre ver catálogos publicados o crear uno nuevo.";
 
     private static string NormalizeSection(string? value)
         => (value ?? string.Empty).Trim().ToLowerInvariant() switch
@@ -1604,7 +1730,7 @@
             }
 
             return true;
-        }, "No se pudo guardar la configuraciÃ³n de catÃ¡logos.");
+        }, "No se pudo guardar la configuración de catálogos.");
 
         if (!result.Success)
         {
@@ -1622,7 +1748,7 @@
         _publicLogoContentType = string.Empty;
         _publicLogoRestoreRequested = false;
         _hasCustomPublicLogo = _publicIdentity.TieneLogoPersonalizado;
-        _feedback = AppUiMessage.Success("ConfiguraciÃ³n guardada", "La identidad pÃºblica y la visibilidad del menÃº quedaron actualizadas.");
+        _feedback = AppUiMessage.Success("Configuración guardada", "La identidad pública y la visibilidad del menú quedaron actualizadas.");
         UpdatePageHeader();
     }
 
@@ -1678,16 +1804,16 @@
         var name = string.IsNullOrWhiteSpace(_publicIdentityNameDraft)
             ? GetPublicIdentityPlaceholder()
             : _publicIdentityNameDraft.Trim();
-        return $"{name} Â· Logo {(_hasCustomPublicLogo ? "personalizado" : "predeterminado")}";
+        return $"{name} · Logo {(_hasCustomPublicLogo ? "personalizado" : "predeterminado")}";
     }
 
     // Shell AlfaDesign: barra superior global (alfa-app-topbar) en vez del sidebar lateral legacy,
-    // mismo mecanismo que Conversaciones.razor. Las pestaÃ±as de secciÃ³n (CatÃ¡logos / CatÃ¡logo
-    // predeterminado / MenÃº / ConfiguraciÃ³n) ahora viven en TopNavigationItems, ahÃ­ arriba, no en el
-    // MainPageHeader clÃ¡sico -- asÃ­ que ese header clÃ¡sico solo hace falta mientras se edita un
-    // catÃ¡logo (Guardar borrador / Publicar / Volver / Limpiar no tienen otro lugar en la pantalla).
-    // Fuera de esa secciÃ³n se deja Title/Actions vacÃ­os y AlwaysVisible=false a propÃ³sito, igual que
-    // Conversaciones: asÃ­ MainPageHeader.HasHeader da false y no queda una barra extra vacÃ­a debajo
+    // mismo mecanismo que Conversaciones.razor. Las pestañas de sección (Catálogos / Catálogo
+    // predeterminado / Menú / Configuración) ahora viven en TopNavigationItems, ahí arriba, no en el
+    // MainPageHeader clásico -- así que ese header clásico solo hace falta mientras se edita un
+    // catálogo (Guardar borrador / Publicar / Volver / Limpiar no tienen otro lugar en la pantalla).
+    // Fuera de esa sección se deja Title/Actions vacíos y AlwaysVisible=false a propósito, igual que
+    // Conversaciones: así MainPageHeader.HasHeader da false y no queda una barra extra vacía debajo
     // del topbar.
     private void UpdatePageHeader()
     {
@@ -1696,27 +1822,156 @@
         {
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems(),
-            Title = showEditorActions ? GetHeaderTitle() : string.Empty,
-            Actions = BuildHeaderActions(),
-            AlwaysVisible = showEditorActions
+            Title = showEditorActions ? GetHeaderTitle() : "Catálogos",
+            Breadcrumb = ["Interfaces", "Catálogos"],
+            State = showEditorActions ? PageHeaderState.Editing : _loading ? PageHeaderState.Loading : PageHeaderState.List,
+            Search = showEditorActions ? null : new PageHeaderSearchConfig(),
+            SearchContent = showEditorActions ? null : RenderCatalogosSmartSearch(),
+            Pagination = showEditorActions ? null : BuildCatalogosHeaderPagination(),
+            Actions = showEditorActions ? BuildHeaderActions() : BuildListadoActions(),
+            AlwaysVisible = true
         });
     }
+
+    private RenderFragment RenderCatalogosSmartSearch() => @<div class="smart-search" @onclick:stopPropagation @onkeydown="OnCatalogosSearchKeyDownAsync">
+        @{ var activeChips = BuildCatalogosSearchChips(); }
+        <div class="smart-search__bar @(_showCatalogosSearchPanel ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button"
+                    class="smart-search__filter-button @(_showCatalogosSearchPanel || activeChips.Count > 0 ? "is-active" : string.Empty)"
+                    title="Abrir filtros"
+                    aria-label="Abrir filtros"
+                    aria-expanded="@_showCatalogosSearchPanel"
+                    @onclick="ToggleCatalogosSearchPanel">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @foreach (var chip in activeChips.Take(2))
+                {
+                    <button type="button"
+                            class="smart-search__active-filter"
+                            title="@($"Quitar filtro {chip.Label}")"
+                            aria-label="@($"Quitar filtro {chip.Label}")"
+                            @onclick="chip.Clear">
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (activeChips.Count > 2)
+                {
+                    <span class="smart-search__more-filters" title="@string.Join(", ", activeChips.Skip(2).Select(chip => chip.Label))">+@(activeChips.Count - 2)</span>
+                }
+            </div>
+            <input type="search"
+                   placeholder="Buscar por nombre, grupo, lista o ID..."
+                   value="@_catalogosTexto"
+                   @oninput="OnCatalogosSearchInput"
+                   @onkeydown="OnCatalogosSearchKeyDownAsync" />
+            <button type="button" class="smart-search__toggle" @onclick="ToggleCatalogosSearchPanel" aria-label="Mostrar filtros" aria-expanded="@_showCatalogosSearchPanel">
+                <i class="bi @(_showCatalogosSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_showCatalogosSearchPanel)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseCatalogosSearchPanel"></button>
+            <div class="smart-search__panel smart-search__panel--standard" @onclick:stopPropagation @onkeydown="OnCatalogosSearchKeyDownAsync">
+                <div class="smart-search__column smart-search__section">
+                    <h4><i class="bi bi-ui-checks-grid"></i> Tipo</h4>
+                    @foreach (var option in GetCatalogosTipoOptions())
+                    {
+                        <button type="button" class="@GetSmartCatalogosOptionClass(_catalogosTipoFiltro == option.Value)" @onclick="() => SelectCatalogosTypeAsync(option.Value)">@option.Label</button>
+                    }
+                </div>
+                <div class="smart-search__column smart-search__section">
+                    <h4><i class="bi bi-funnel-fill"></i> Estado</h4>
+                    @foreach (var option in GetCatalogosEstadoOptions())
+                    {
+                        <button type="button" class="@GetSmartCatalogosOptionClass(_catalogosEstadoFiltro == option.Value)" @onclick="() => SelectCatalogosStatusAsync(option.Value)">@option.Label</button>
+                    }
+                </div>
+                <div class="smart-search__column smart-search__section">
+                    <h4><i class="bi bi-calendar3"></i> Fecha</h4>
+                    <div class="smart-search__inline">
+                        <label for="catalogos-fecha-filtro">Publicados al</label>
+                        <input id="catalogos-fecha-filtro" type="date" value="@CatalogosFechaFiltroTexto" @onchange="OnCatalogosDateChanged" />
+                    </div>
+                </div>
+                <div class="smart-search__column smart-search__section smart-search__section--actions">
+                    <h4><i class="bi bi-lightning-charge-fill"></i> Acciones</h4>
+                    <div class="actions smart-search__actions">
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_loading" OnClick="ApplyCatalogosSearchAsync">Aplicar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" Disabled="@_loading" OnClick="ClearCatalogosFiltersAsync">Limpiar</AlfaButton>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>;
+
+    private List<(string Key, string Label, Func<Task> Clear)> BuildCatalogosSearchChips()
+    {
+        var chips = new List<(string, string, Func<Task>)>();
+        if (!string.IsNullOrWhiteSpace(_catalogosTexto))
+            chips.Add(("texto", $"Buscar: {_catalogosTexto.Trim()}", ClearCatalogosTextAsync));
+        if (_catalogosTipoFiltro != "todos")
+            chips.Add(("tipo", $"Tipo: {GetCatalogosTipoLabel()}", ClearCatalogosTypeAsync));
+        if (_catalogosEstadoFiltro != "todos")
+            chips.Add(("estado", $"Estado: {GetCatalogosEstadoLabel()}", ClearCatalogosStatusAsync));
+        if (_catalogosFechaFiltro.HasValue)
+            chips.Add(("fecha", $"Fecha: {CatalogosFechaFiltroTexto}", ClearCatalogosDateAsync));
+        return chips;
+    }
+
+    private string GetSmartCatalogosOptionClass(bool active)
+        => active ? "smart-option is-active" : "smart-option";
+
+    private async Task SelectCatalogosTypeAsync(string value)
+    {
+        _catalogosTipoFiltro = value;
+        UpdatePageHeader();
+        await Task.CompletedTask;
+    }
+
+    private async Task SelectCatalogosStatusAsync(string value)
+    {
+        _catalogosEstadoFiltro = value;
+        UpdatePageHeader();
+        await Task.CompletedTask;
+    }
+
+    private void CloseCatalogosSearchPanel()
+    {
+        _showCatalogosSearchPanel = false;
+        UpdatePageHeader();
+    }
+
+    private PageHeaderPaginationConfig BuildCatalogosHeaderPagination()
+        => new()
+        {
+            Label = $"{_catalogosPage?.Total ?? 0:N0} registros",
+            PageLabel = $"{Math.Max(1, _catalogosPage?.PageNumber ?? 1)} / {Math.Max(1, _catalogosPage?.TotalPages ?? 1)}",
+            HasPrevious = _catalogosPage?.HasPrev ?? false,
+            HasNext = _catalogosPage?.HasNext ?? false,
+            Disabled = _loading,
+            OnPrevious = GoToPreviousCatalogosPageAsync,
+            OnNext = GoToNextCatalogosPageAsync
+        };
 
     private string GetHeaderTitle()
     {
         if (IsPredeterminadoSection)
-            return "CatÃ¡logo predeterminado";
+            return "Catálogo predeterminado";
 
         if (IsConfiguracionSection)
-            return "ConfiguraciÃ³n";
+            return "Configuración";
 
         if (IsMenuSection)
-            return "MenÃº";
+            return "Menú";
 
         if (_homeSelection == CatalogosHomeSelection.NuevoCatalogo)
-            return _editingIdInsert.HasValue ? "Editar catÃ¡logo" : "Nuevo catÃ¡logo";
+            return _editingIdInsert.HasValue ? "Editar catálogo" : "Nuevo catálogo";
 
-        return "CatÃ¡logos";
+        return "Catálogos";
     }
 
     private bool ShouldShowEditorHeaderActions()
@@ -1781,8 +2036,8 @@
     }
 
     // Reemplaza a las viejas ViewButtons de MainPageHeader: con ShellMode=AlfaDesignPilot estas
-    // pestaÃ±as se pintan en la barra superior global (alfa-app-topbar), igual que Conversaciones /
-    // Plantillas / ConfiguraciÃ³n en Conversaciones.razor.
+    // pestañas se pintan en la barra superior global (alfa-app-topbar), igual que Conversaciones /
+    // Plantillas / Configuración en Conversaciones.razor.
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
         var items = new List<PageHeaderTopNavItem>
@@ -1790,7 +2045,7 @@
             new()
             {
                 Key = SectionCatalogos,
-                Label = "CatÃ¡logos",
+                Label = "Catálogos",
                 Url = BuildSectionRoute(SectionCatalogos),
                 Active = IsCatalogosSection || IsNuevoSection,
                 OnClick = ShowCatalogosAsync
@@ -1798,7 +2053,7 @@
             new()
             {
                 Key = SectionPredeterminado,
-                Label = "CatÃ¡logo predeterminado",
+                Label = "Catálogo predeterminado",
                 Url = BuildSectionRoute(SectionPredeterminado),
                 Active = IsPredeterminadoSection,
                 OnClick = ShowCatalogoPredeterminadoAsync
@@ -1810,7 +2065,7 @@
             items.Add(new PageHeaderTopNavItem
             {
                 Key = SectionMenu,
-                Label = "MenÃº",
+                Label = "Menú",
                 Url = BuildSectionRoute(SectionMenu),
                 Active = IsMenuSection,
                 OnClick = ShowMenuAsync
@@ -1820,7 +2075,7 @@
         items.Add(new PageHeaderTopNavItem
         {
             Key = SectionConfiguracion,
-            Label = "ConfiguraciÃ³n",
+            Label = "Configuración",
             Url = BuildSectionRoute(SectionConfiguracion),
             Active = IsConfiguracionSection,
             OnClick = ShowConfiguracionAsync
@@ -1829,10 +2084,10 @@
         return items;
     }
 
-    // Un catÃ¡logo no puede mezclar artÃ­culos de dos listas (ni Maestro + Lista a la vez): si ya
-    // hay artÃ­culos cargados, cambiar la lista pide confirmaciÃ³n y reemplaza el contenido en vez
-    // de agregarse encima. Cambiar de lista mientras el picker estÃ¡ abierto tambiÃ©n invalidarÃ­a
-    // su bÃºsqueda ya en curso (Origen/IdLista solo se releen al reabrirlo), asÃ­ que de paso se cierra.
+    // Un catálogo no puede mezclar artículos de dos listas (ni Maestro + Lista a la vez): si ya
+    // hay artículos cargados, cambiar la lista pide confirmación y reemplaza el contenido en vez
+    // de agregarse encima. Cambiar de lista mientras el picker está abierto también invalidaría
+    // su búsqueda ya en curso (Origen/IdLista solo se releen al reabrirlo), así que de paso se cierra.
     private async Task OnListaPrecioChangedAsync(string? nuevaListaRaw)
     {
         if (IsNuevoCatalogoBloqueado)
@@ -1848,15 +2103,15 @@
             var nombreNueva = string.IsNullOrWhiteSpace(nuevaLista) ? "(sin seleccionar)" : GetNombreLista(nuevaLista);
 
             var confirm = await DialogSvc.ConfirmAsync(
-                "Cambiar lista de artÃ­culos",
-                $"Este catÃ¡logo actualmente utiliza la lista {nombreActual}. Si cambiÃ¡s a {nombreNueva}, los artÃ­culos actuales serÃ¡n reemplazados por los de la nueva lista.\n\nÂ¿QuerÃ©s continuar?",
+                "Cambiar lista de artículos",
+                $"Este catálogo actualmente utiliza la lista {nombreActual}. Si cambiás a {nombreNueva}, los artículos actuales serán reemplazados por los de la nueva lista.\n\n¿Querés continuar?",
                 "Cambiar lista",
                 "Cancelar");
 
             if (!confirm)
             {
-                // El <select> nativo ya quedÃ³ visualmente en la opciÃ³n elegida por el usuario;
-                // como _idLista no cambiÃ³, forzamos un remount con @key para que vuelva a
+                // El <select> nativo ya quedó visualmente en la opción elegida por el usuario;
+                // como _idLista no cambió, forzamos un remount con @key para que vuelva a
                 // mostrar el valor real (un re-render normal no reescribe su value).
                 _listaSelectToken++;
                 await InvokeAsync(StateHasChanged);
@@ -1876,7 +2131,7 @@
         if (string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase))
             return string.IsNullOrWhiteSpace(idLista) ? "una lista de precios" : $"la lista {GetNombreLista(idLista)}";
 
-        return "el maestro de artÃ­culos";
+        return "el maestro de artículos";
     }
 
     private string GetNombreLista(string idLista)
@@ -1938,8 +2193,8 @@
         if (IsNuevoCatalogoBloqueado)
             return Task.CompletedTask;
 
-        // La validaciÃ³n "falta la lista" y la bÃºsqueda en sÃ­ quedan dentro de ArticuloPickerDialog
-        // (BloqueoMensaje / carga al abrir); acÃ¡ solo corresponde mostrarlo.
+        // La validación "falta la lista" y la búsqueda en sí quedan dentro de ArticuloPickerDialog
+        // (BloqueoMensaje / carga al abrir); acá solo corresponde mostrarlo.
         _showLookupModal = true;
         return Task.CompletedTask;
     }
@@ -1960,11 +2215,11 @@
             var etiquetaActual = DescribirOrigenArticulos(_articuloOrigen, _idLista);
             var etiquetaNueva = string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase)
                 ? "una lista de precios"
-                : "el maestro de artÃ­culos";
+                : "el maestro de artículos";
 
             var confirm = await DialogSvc.ConfirmAsync(
-                "Cambiar origen de artÃ­culos",
-                $"Este catÃ¡logo actualmente usa {etiquetaActual}. Si cambiÃ¡s a {etiquetaNueva}, los artÃ­culos actuales serÃ¡n reemplazados por los del nuevo origen.\n\nÂ¿QuerÃ©s continuar?",
+                "Cambiar origen de artículos",
+                $"Este catálogo actualmente usa {etiquetaActual}. Si cambiás a {etiquetaNueva}, los artículos actuales serán reemplazados por los del nuevo origen.\n\n¿Querés continuar?",
                 "Cambiar origen",
                 "Cancelar");
 
@@ -1984,17 +2239,17 @@
     }
 
     // "Importar todo" trae el origen completo (sin filtros de rubro/familia/marca: esos no existen
-    // en esta pantalla) excluyendo lo que ya estÃ¡ en el catÃ¡logo, en una sola operaciÃ³n de backend
+    // en esta pantalla) excluyendo lo que ya está en el catálogo, en una sola operación de backend
     // (CountArticulosAllAsync/SearchArticulosAllAsync, compartidas con "Seleccionar todos los
-    // resultados" del picker). No pagina ni hace un alta por artÃ­culo: agrega el lote completo al
-    // arreglo en memoria del catÃ¡logo, igual que ya hacÃ­a "Importar lista completa".
+    // resultados" del picker). No pagina ni hace un alta por artículo: agrega el lote completo al
+    // arreglo en memoria del catálogo, igual que ya hacía "Importar lista completa".
     private async Task ImportarTodoAsync()
     {
         if (!PuedeImportarTodo() || IsNuevoCatalogoBloqueado)
             return;
 
         var esLista = string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase);
-        var origenTexto = esLista ? $"la lista \"{GetNombreListaActual()}\"" : "el maestro de artÃ­culos";
+        var origenTexto = esLista ? $"la lista \"{GetNombreListaActual()}\"" : "el maestro de artículos";
 
         _importandoListaCompleta = true;
         try
@@ -2010,7 +2265,7 @@
                 ExcludedIds = _articulosSeleccionados.Select(x => x.IdArticulo).ToList()
             };
 
-            var conteo = await UiOps.RunAsync(() => CatalogosSvc.CountArticulosAllAsync(filtros, _disposeCts.Token), "No se pudo contar los artÃ­culos a importar.");
+            var conteo = await UiOps.RunAsync(() => CatalogosSvc.CountArticulosAllAsync(filtros, _disposeCts.Token), "No se pudo contar los artículos a importar.");
             if (!conteo.Success)
             {
                 _feedback = conteo.Feedback;
@@ -2023,21 +2278,21 @@
                 {
                     Severity = AppUiFeedbackSeverity.Info,
                     Title = "Nada para importar",
-                    Message = $"No hay artÃ­culos nuevos disponibles en {origenTexto}."
+                    Message = $"No hay artículos nuevos disponibles en {origenTexto}."
                 };
                 return;
             }
 
             var confirmado = await DialogSvc.ConfirmAsync(
                 "Importar todo",
-                $"Se agregarÃ¡n {conteo.Value} artÃ­culo(s) de {origenTexto} al catÃ¡logo. Â¿QuerÃ©s continuar?",
+                $"Se agregarán {conteo.Value} artículo(s) de {origenTexto} al catálogo. ¿Querés continuar?",
                 "Importar",
                 "Cancelar");
 
             if (!confirmado)
                 return;
 
-            var result = await UiOps.RunAsync(() => CatalogosSvc.SearchArticulosAllAsync(filtros, _disposeCts.Token), "No se pudo importar los artÃ­culos.");
+            var result = await UiOps.RunAsync(() => CatalogosSvc.SearchArticulosAllAsync(filtros, _disposeCts.Token), "No se pudo importar los artículos.");
             if (!result.Success || result.Value is null)
             {
                 _feedback = result.Feedback;
@@ -2063,7 +2318,7 @@
                 });
             }
 
-            _feedback = AppUiMessage.Success("ImportaciÃ³n completa", $"Se agregaron {result.Value.Count} artÃ­culo(s) nuevos desde {origenTexto}.");
+            _feedback = AppUiMessage.Success("Importación completa", $"Se agregaron {result.Value.Count} artículo(s) nuevos desde {origenTexto}.");
         }
         finally
         {
@@ -2078,7 +2333,7 @@
 
         var confirm = await DialogSvc.ConfirmAsync(
             "Quitar seleccionados",
-            $"Se quitarÃ¡n {_articulosQuitarSeleccionados.Count} artÃ­culo(s) del catÃ¡logo.",
+            $"Se quitarán {_articulosQuitarSeleccionados.Count} artículo(s) del catálogo.",
             "Quitar",
             "Cancelar");
 
@@ -2087,7 +2342,7 @@
 
         _articulosSeleccionados.RemoveAll(x => _articulosQuitarSeleccionados.Contains(x.IdArticulo));
         _articulosQuitarSeleccionados.Clear();
-        _feedback = AppUiMessage.Success("ArtÃ­culos quitados", "Los seleccionados fueron removidos del catÃ¡logo.");
+        _feedback = AppUiMessage.Success("Artículos quitados", "Los seleccionados fueron removidos del catálogo.");
     }
 
     private async Task LimpiarCatalogoAsync()
@@ -2096,8 +2351,8 @@
             return;
 
         var confirm = await DialogSvc.ConfirmAsync(
-            "Limpiar catÃ¡logo",
-            "Se quitarÃ¡n todos los artÃ­culos del catÃ¡logo actual.",
+            "Limpiar catálogo",
+            "Se quitarán todos los artículos del catálogo actual.",
             "Limpiar",
             "Cancelar");
 
@@ -2106,7 +2361,7 @@
 
         _articulosSeleccionados.Clear();
         _articulosQuitarSeleccionados.Clear();
-        _feedback = AppUiMessage.Success("CatÃ¡logo limpiado", "Se quitaron todos los artÃ­culos.");
+        _feedback = AppUiMessage.Success("Catálogo limpiado", "Se quitaron todos los artículos.");
     }
 
     private async Task ToggleSeleccionTodosQuitarAsync(ChangeEventArgs args)
@@ -2139,8 +2394,8 @@
         await Task.CompletedTask;
     }
 
-    // "Importar todo" estÃ¡ disponible con los dos orÃ­genes: con Lista de precios requiere una lista
-    // elegida (igual que antes); con Maestro de artÃ­culos no depende de ninguna selecciÃ³n previa.
+    // "Importar todo" está disponible con los dos orígenes: con Lista de precios requiere una lista
+    // elegida (igual que antes); con Maestro de artículos no depende de ninguna selección previa.
     private bool PuedeImportarTodo()
         => string.Equals(_articuloOrigen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase)
            ? !string.IsNullOrWhiteSpace(_idLista)
@@ -2153,9 +2408,9 @@
            ?? _idLista;
 
     // Variante de GetNombreListaActual() para una lista arbitraria (no necesariamente la
-    // seleccionada ahora) â€” la usa el confirm de cambio de origen/lista para nombrar "antes" y
-    // "despuÃ©s". Incluye el cÃ³digo entre parÃ©ntesis (formato distinto a GetNombreListaActual,
-    // que ya se usa en otros mensajes existentes y no convenÃ­a tocar).
+    // seleccionada ahora) — la usa el confirm de cambio de origen/lista para nombrar "antes" y
+    // "después". Incluye el código entre paréntesis (formato distinto a GetNombreListaActual,
+    // que ya se usa en otros mensajes existentes y no convenía tocar).
 
     private static string GetArticuloRowClass(string idArticulo)
         => string.IsNullOrWhiteSpace(idArticulo) ? string.Empty : string.Empty;
@@ -2194,7 +2449,7 @@
     {
         _articuloImageVersion++;
         _articuloImageFallbacks.Clear();
-        _feedback = AppUiMessage.Success("ImÃ¡genes actualizadas", $"{resultado.Asignadas} imagen(es) fueron asignadas al catÃ¡logo.");
+        _feedback = AppUiMessage.Success("Imágenes actualizadas", $"{resultado.Asignadas} imagen(es) fueron asignadas al catálogo.");
         await InvokeAsync(StateHasChanged);
     }
 
@@ -2257,18 +2512,20 @@
 
     private async Task GuardarAsync()
     {
-        if (_modo == CatalogosViewGroupKeys.None)
+        try
         {
-            _feedback = AppUiMessage.Success("Borrador actualizado", "El catÃ¡logo permanente quedÃ³ preparado en pantalla.");
+            var request = BuildSaveRequest();
+            var json = JsonSerializer.Serialize(request);
+            await Js.InvokeVoidAsync("localStorage.setItem", GetBorradorStorageKey(), json);
+            _feedback = AppUiMessage.Success("Borrador guardado", "El borrador quedó guardado y se recuperará al volver a Nuevo catálogo.");
             UpdatePageHeader();
             StateHasChanged();
-            return;
         }
-
-        _feedback = AppUiMessage.Success("Borrador preparado", "El catÃ¡logo con vigencia quedÃ³ listo para publicar.");
-        UpdatePageHeader();
-        StateHasChanged();
-        await Task.CompletedTask;
+        catch (Exception ex)
+        {
+            _feedback = UiOps.BuildMessage(ex, "No se pudo guardar el borrador.");
+            StateHasChanged();
+        }
     }
 
     private async Task PublicarAsync()
@@ -2278,14 +2535,14 @@
             _feedback = new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "CatÃ¡logo permanente",
-                Message = "La publicaciÃ³n fÃ­sica del catÃ¡logo permanente se definirÃ¡ en una etapa posterior."
+                Title = "Catálogo permanente",
+                Message = "La publicación física del catálogo permanente se definirá en una etapa posterior."
             };
             StateHasChanged();
             return;
         }
 
-        var result = await UiOps.RunAsync(() => CatalogosSvc.SaveCatalogoVigenciaAsync(BuildSaveRequest()), "No se pudo publicar el catÃ¡logo con vigencia.");
+        var result = await UiOps.RunAsync(() => CatalogosSvc.SaveCatalogoVigenciaAsync(BuildSaveRequest()), "No se pudo publicar el catálogo con vigencia.");
         if (!result.Success || result.Value is null)
         {
             _feedback = result.Feedback;
@@ -2295,7 +2552,8 @@
 
         _editingIdInsert = result.Value.IdInsert;
         await SetCatalogUrlsAsync(result.Value.IdInsert, _nombre);
-        _feedback = AppUiMessage.Success("CatÃ¡logo publicado", result.Value.Mensaje);
+        await EliminarBorradorAsync();
+        _feedback = AppUiMessage.Success("Catálogo publicado", result.Value.Mensaje);
         UpdatePageHeader();
         await BuscarCatalogosAsync();
         StateHasChanged();
@@ -2321,14 +2579,15 @@
     private async Task CancelarAsync()
     {
         ResetNuevoCatalogo();
-        _feedback = AppUiMessage.Success("Formulario reiniciado", "La pantalla volviÃ³ al estado inicial.");
+        _feedback = AppUiMessage.Success("Formulario reiniciado", "La pantalla volvió al estado inicial.");
         await Task.CompletedTask;
     }
 
     private async Task LimpiarFormularioAsync()
     {
         ResetNuevoCatalogo();
-        _feedback = AppUiMessage.Success("Formulario reiniciado", "La pantalla volviÃ³ al estado inicial.");
+        await EliminarBorradorAsync();
+        _feedback = AppUiMessage.Success("Formulario reiniciado", "La pantalla volvió al estado inicial.");
         UpdatePageHeader();
         StateHasChanged();
         await Task.CompletedTask;
@@ -2340,7 +2599,7 @@
         {
             var confirm = await DialogSvc.ConfirmAsync(
                 "Salir sin guardar",
-                "TenÃ©s cambios sin guardar en este catÃ¡logo. Â¿QuerÃ©s salir igual?",
+                "Tenés cambios sin guardar en este catálogo. ¿Querés salir igual?",
                 "Salir",
                 "Cancelar");
             if (!confirm)
@@ -2352,6 +2611,56 @@
         await ApplyRouteSectionAsync(SectionCatalogos, forceReloadCatalogos: true);
         UpdatePageHeader();
         StateHasChanged();
+    }
+
+    private string GetBorradorStorageKey()
+    {
+        var web = string.IsNullOrWhiteSpace(idweb) ? "local" : idweb.Trim();
+        var baseId = idbase?.ToString() ?? "actual";
+        var usuario = string.IsNullOrWhiteSpace(_catalogosUserName) ? "usuario" : _catalogosUserName.Trim();
+        return $"alfacore.catalogos.borrador.{Uri.EscapeDataString(web)}.{Uri.EscapeDataString(baseId)}.{Uri.EscapeDataString(usuario)}";
+    }
+
+    private async Task RestaurarBorradorAsync()
+    {
+        try
+        {
+            var json = await Js.InvokeAsync<string?>("localStorage.getItem", GetBorradorStorageKey());
+            if (string.IsNullOrWhiteSpace(json))
+                return;
+
+            var request = JsonSerializer.Deserialize<CatalogosCatalogoSaveRequestDto>(json);
+            if (request is null)
+                return;
+
+            _modo = request.Tipo;
+            _nombre = request.Nombre;
+            _descripcion = request.Observaciones;
+            _idLista = request.IdLista;
+            _vigenciaDesde = request.VigenciaDesde;
+            _vigenciaHasta = request.VigenciaHasta;
+            _habilitarCarrito = request.HabilitarCarrito;
+            _modificaPrecio = request.ModificaPrecio;
+            _articulosSeleccionados.Clear();
+            _articulosSeleccionados.AddRange(request.Articulos);
+            _feedback = AppUiMessage.Success("Borrador recuperado", "Se restauró el último borrador guardado en este navegador.");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "CATALOGOS - No se pudo restaurar el borrador local");
+        }
+    }
+
+    private async Task EliminarBorradorAsync()
+    {
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.removeItem", GetBorradorStorageKey());
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "CATALOGOS - No se pudo eliminar el borrador local");
+        }
     }
 
     private async Task BuscarCatalogosAsync(bool resetPage = true)
@@ -2377,11 +2686,11 @@
             _catalogosFechaFiltro,
             _catalogosTipoFiltro,
             _catalogosEstadoFiltro,
-            _disposeCts.Token), "No se pudieron cargar los catÃ¡logos.");
+            _disposeCts.Token), "No se pudieron cargar los catálogos.");
         if (traceId != _catalogosSearchSequence || !string.Equals(routeKey, BuildRouteKey(), StringComparison.OrdinalIgnoreCase))
             return;
 
-        Logger.LogInformation("CATALOGOS - BuscarCatalogosAsync #{TraceId} despuÃ©s UiOps.RunAsync | success={Success} hasValue={HasValue} total={Total}",
+        Logger.LogInformation("CATALOGOS - BuscarCatalogosAsync #{TraceId} después UiOps.RunAsync | success={Success} hasValue={HasValue} total={Total}",
             traceId,
             result.Success,
             result.Value is not null,
@@ -2390,7 +2699,7 @@
         if (!result.Success || result.Value is null)
         {
             _feedback = result.Feedback;
-            Logger.LogWarning("CATALOGOS - BuscarCatalogosAsync #{TraceId} terminÃ³ sin resultados vÃ¡lidos", traceId);
+            Logger.LogWarning("CATALOGOS - BuscarCatalogosAsync #{TraceId} terminó sin resultados válidos", traceId);
             return;
         }
 
@@ -2402,14 +2711,15 @@
             _catalogosPage.PageSize);
 
         await ResolveGridPublicUrlsAsync();
+        UpdatePageHeader();
     }
 
     private readonly Dictionary<int, string> _catalogUrls = new();
 
     /// <summary>
-    /// Resuelve (o genera) en un solo lote el link pÃºblico seguro por token de cada catÃ¡logo de la
-    /// pÃ¡gina actual â€” mismo ALFA_PUBLIC_LINK y mismo servicio que usa el panel de detalle
-    /// (SetCatalogUrlsAsync). Los botones "Abrir"/"Copiar enlace" de la grilla leen de acÃ¡.
+    /// Resuelve (o genera) en un solo lote el link público seguro por token de cada catálogo de la
+    /// página actual — mismo ALFA_PUBLIC_LINK y mismo servicio que usa el panel de detalle
+    /// (SetCatalogUrlsAsync). Los botones "Abrir"/"Copiar enlace" de la grilla leen de acá.
     /// </summary>
     private async Task ResolveGridPublicUrlsAsync()
     {
@@ -2436,7 +2746,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "InterfacesCatalogos: no se pudieron generar los links pÃºblicos seguros de la grilla en lote; los botones usan el esquema anterior.");
+            Logger.LogWarning(ex, "InterfacesCatalogos: no se pudieron generar los links públicos seguros de la grilla en lote; los botones usan el esquema anterior.");
             _catalogUrls.Clear();
         }
     }
@@ -2445,7 +2755,7 @@
     {
         Logger.LogInformation("CATALOGOS - {Origin} #{TraceId} antes {Step}", origin, traceId, step);
         var result = await factory();
-        Logger.LogInformation("CATALOGOS - {Origin} #{TraceId} despuÃ©s {Step} | {Result}",
+        Logger.LogInformation("CATALOGOS - {Origin} #{TraceId} después {Step} | {Result}",
             origin,
             traceId,
             step,
@@ -2473,14 +2783,9 @@
         await BuscarCatalogosAsync(resetPage: false);
     }
 
-    private Task HandleCatalogosSearchKeyDownAsync(KeyboardEventArgs args)
-        => args.Key is "Enter" or "NumpadEnter"
-            ? BuscarCatalogosAsync()
-            : Task.CompletedTask;
-
     private async Task EditarCatalogoAsync(int idInsert)
     {
-        var result = await UiOps.RunAsync(() => CatalogosSvc.GetCatalogoAsync(idInsert, _disposeCts.Token), "No se pudo cargar el catÃ¡logo.");
+        var result = await UiOps.RunAsync(() => CatalogosSvc.GetCatalogoAsync(idInsert, _disposeCts.Token), "No se pudo cargar el catálogo.");
         if (!result.Success || result.Value is null)
         {
             _feedback = result.Feedback;
@@ -2524,15 +2829,15 @@
             PrecioOfertaNuevo = x.PrecioOfertaNuevo
         }));
         await SetCatalogUrlsAsync(detail.IdInsert, detail.Nombre);
-        _feedback = AppUiMessage.Success("CatÃ¡logo cargado", $"Se abriÃ³ el catÃ¡logo #{detail.IdInsert} para editarlo.");
+        _feedback = AppUiMessage.Success("Catálogo cargado", $"Se abrió el catálogo #{detail.IdInsert} para editarlo.");
         UpdatePageHeader();
     }
 
     private async Task FinalizarCatalogoAsync(int idInsert)
     {
         var confirm = await DialogSvc.ConfirmAsync(
-            "Finalizar catÃ¡logo",
-            "Â¿QuerÃ©s finalizar este catÃ¡logo? La acciÃ³n lo deja marcado como finalizado y no se aplica directamente.",
+            "Finalizar catálogo",
+            "¿Querés finalizar este catálogo? La acción lo deja marcado como finalizado y no se aplica directamente.",
             "Finalizar",
             "Cancelar");
 
@@ -2543,7 +2848,7 @@
         {
             await CatalogosSvc.FinalizarCatalogoAsync(idInsert, _catalogosUserName, Environment.MachineName, _disposeCts.Token);
             return true;
-        }, "No se pudo finalizar el catÃ¡logo.");
+        }, "No se pudo finalizar el catálogo.");
 
         if (!result.Success)
         {
@@ -2551,7 +2856,7 @@
             return;
         }
 
-        _feedback = AppUiMessage.Success("CatÃ¡logo finalizado", $"El catÃ¡logo #{idInsert} quedÃ³ marcado como finalizado.");
+        _feedback = AppUiMessage.Success("Catálogo finalizado", $"El catálogo #{idInsert} quedó marcado como finalizado.");
         await BuscarCatalogosAsync();
     }
 
@@ -2561,7 +2866,7 @@
         {
             await CatalogosSvc.SetCatalogoPredeterminadoAsync(_catalogosUserName, idInsert, _disposeCts.Token);
             return true;
-        }, "No se pudo marcar el catÃ¡logo como predeterminado.");
+        }, "No se pudo marcar el catálogo como predeterminado.");
 
         if (!result.Success)
         {
@@ -2569,7 +2874,7 @@
             return;
         }
 
-        _feedback = AppUiMessage.Success("CatÃ¡logo predeterminado", $"El catÃ¡logo #{idInsert} ahora es accesible vÃ­a /catalogo/0.");
+        _feedback = AppUiMessage.Success("Catálogo predeterminado", $"El catálogo #{idInsert} ahora es accesible vía /catalogo/0.");
         await BuscarCatalogosAsync();
     }
 
@@ -2579,7 +2884,7 @@
         {
             await CatalogosSvc.SetCatalogoPredeterminadoAsync(_catalogosUserName, 0, _disposeCts.Token);
             return true;
-        }, "No se pudo quitar el catÃ¡logo predeterminado.");
+        }, "No se pudo quitar el catálogo predeterminado.");
 
         if (!result.Success)
         {
@@ -2587,7 +2892,7 @@
             return;
         }
 
-        _feedback = AppUiMessage.Success("CatÃ¡logo predeterminado", "Ya no hay ningÃºn catÃ¡logo marcado como predeterminado.");
+        _feedback = AppUiMessage.Success("Catálogo predeterminado", "Ya no hay ningún catálogo marcado como predeterminado.");
         await BuscarCatalogosAsync();
     }
 
@@ -2627,8 +2932,8 @@
             _feedback = new AppUiMessage
             {
                 Severity = AppUiFeedbackSeverity.Warning,
-                Title = "SesiÃ³n requerida",
-                Message = "NecesitÃ¡s iniciar sesiÃ³n para guardar la configuraciÃ³n de vista."
+                Title = "Sesión requerida",
+                Message = "Necesitás iniciar sesión para guardar la configuración de vista."
             };
             return;
         }
@@ -2638,7 +2943,7 @@
         {
             await CatalogosSvc.SaveViewSettingsAsync(_catalogosUserName, settings, _disposeCts.Token);
             return true;
-        }, "No se pudo guardar la configuraciÃ³n de vista.");
+        }, "No se pudo guardar la configuración de vista.");
 
         if (!result.Success)
         {
@@ -2648,7 +2953,7 @@
 
         _viewSettings = settings;
         _showViewSettings = false;
-        _feedback = AppUiMessage.Success("Vista guardada", "La grilla de catÃ¡logos quedÃ³ actualizada para tu usuario.");
+        _feedback = AppUiMessage.Success("Vista guardada", "La grilla de catálogos quedó actualizada para tu usuario.");
     }
 
     private async Task CancelarVistaAsync()
@@ -2753,8 +3058,8 @@
 
     private static string GetModeLabel(string mode)
         => string.Equals(mode, "vigencia", StringComparison.OrdinalIgnoreCase)
-            ? "CatÃ¡logo con vigencia"
-            : "CatÃ¡logo predeterminado";
+            ? "Catálogo con vigencia"
+            : "Catálogo predeterminado";
 
     private string GetPublicUrl(int idInsert)
         => _catalogUrls.TryGetValue(idInsert, out var url)
@@ -2776,11 +3081,11 @@
         => AppUserSession.CurrentUser?.IdWeb is { Length: > 0 } fromUser ? fromUser : idweb;
 
     /// <summary>
-    /// Panel "Enlaces del catÃ¡logo": genera (o reutiliza) el link pÃºblico seguro por token para
-    /// este catÃ¡logo y su carrito. Reemplaza los links legacy /{idweb}/{idbase}/catalogo|carrito/
-    /// {idInsert} â€” el token nunca revela IdBase. Si por algÃºn motivo no hay IdWeb/IdBase
+    /// Panel "Enlaces del catálogo": genera (o reutiliza) el link público seguro por token para
+    /// este catálogo y su carrito. Reemplaza los links legacy /{idweb}/{idbase}/catalogo|carrito/
+    /// {idInsert} — el token nunca revela IdBase. Si por algún motivo no hay IdWeb/IdBase
     /// resueltos (ej. legacy on-prem sin ALFA_CENTRAL), cae al esquema anterior para no romper el
-    /// botÃ³n de compartir.
+    /// botón de compartir.
     /// </summary>
     private async Task SetCatalogUrlsAsync(int idInsert, string? nombreCatalogo)
     {
@@ -2806,7 +3111,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogWarning(ex, "InterfacesCatalogos: no se pudo generar el link pÃºblico seguro para el catÃ¡logo #{IdInsert}; se usa el esquema anterior.", idInsert);
+            Logger.LogWarning(ex, "InterfacesCatalogos: no se pudo generar el link público seguro para el catálogo #{IdInsert}; se usa el esquema anterior.", idInsert);
             _urlPublica = GetPublicUrl(idInsert);
             _urlCarrito = GetCarritoUrl(idInsert);
         }
@@ -2822,10 +3127,10 @@
             SessionSvc.GetActiveSession()?.BaseId);
 
     private static string Display(string? value)
-        => string.IsNullOrWhiteSpace(value) ? "â€”" : value.Trim();
+        => string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
 
     private static string Money(decimal? value)
-        => value.HasValue ? value.Value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR")) : "â€”";
+        => value.HasValue ? value.Value.ToString("C2", System.Globalization.CultureInfo.GetCultureInfo("es-AR")) : "—";
 
     private static string GetFeedbackClass(AppUiMessage message)
         => message.Severity switch

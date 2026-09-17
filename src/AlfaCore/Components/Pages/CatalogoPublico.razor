@@ -37,7 +37,7 @@
     {
         @if (!Embedded)
         {
-            <section class="catalogo-publico-hero panel-card catalogo-publico-hero--sticky">
+            <section class="catalogo-publico-hero panel-card">
                 <div class="catalogo-publico-hero__brand">
                     <a class="catalogo-publico-hero__logo @GetBrandingLogoFrameClass()" href="@GetPublicCatalogUrl()" title="Catálogo público" aria-label="Catálogo público">
                         <img src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" />
@@ -87,66 +87,101 @@
         else
         {
         <section class="panel-card">
-            <div class="catalogo-publico-list__header">
-                <div>
-                    <h3 class="panel-card__title">Artículos</h3>
-                    <p class="panel-card__subtitle">Elegí entre vista de lista o cuadrícula sin recargar el catálogo.</p>
-                </div>
-                @if (_catalogo.Articulos.Count > 0)
-                {
-                    <a class="alfa-link-button" href="@GetPdfExportUrl()" target="_blank" rel="noopener">
-                        <i class="bi bi-file-earmark-pdf"></i> Exportar PDF
-                    </a>
-                }
-            </div>
-
             @if (_catalogo.Articulos.Count > 0)
             {
-                <div class="catalogo-publico-tabs" role="tablist" aria-label="Filtro por rubro">
-                    <div class="catalogo-publico-tabs__scroll">
+            <div class="catalogo-publico-toolbar-sticky">
+                <div class="smart-search catalogo-publico-smart-search" @onclick:stopPropagation>
+                    <div class="smart-search__bar @(_mostrarFiltros ? "is-open" : string.Empty)">
+                        <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
                         <button type="button"
-                                role="tab"
-                                aria-selected="@(string.IsNullOrEmpty(_filtroRubro))"
-                                class="catalogo-publico-tabs__btn @(string.IsNullOrEmpty(_filtroRubro) ? "is-active" : string.Empty)"
-                                @onclick="() => SetFiltroRubro(string.Empty)">
-                            Todos
+                                class="smart-search__filter-button @(_mostrarFiltros || HasPublicSearchFilters ? "is-active" : string.Empty)"
+                                title="Abrir filtros"
+                                aria-label="Abrir filtros"
+                                aria-expanded="@_mostrarFiltros"
+                                @onclick="ToggleFiltros">
+                            <i class="bi bi-funnel-fill" aria-hidden="true"></i>
                         </button>
-                        @foreach (var rubro in GetRubrosDisponibles())
-                        {
-                            <button type="button"
-                                    role="tab"
-                                    aria-selected="@(string.Equals(_filtroRubro, rubro, StringComparison.OrdinalIgnoreCase))"
-                                    class="catalogo-publico-tabs__btn @(string.Equals(_filtroRubro, rubro, StringComparison.OrdinalIgnoreCase) ? "is-active" : string.Empty)"
-                                    @onclick="() => SetFiltroRubro(rubro)">
-                                @rubro
-                            </button>
-                        }
+                        <input type="search"
+                               placeholder="Buscar productos..."
+                               aria-label="Buscar artículos"
+                               @bind="_textoBusqueda"
+                               @bind:event="oninput" />
+                        <button type="button" class="smart-search__toggle" @onclick="ToggleFiltros" aria-label="Mostrar filtros" aria-expanded="@_mostrarFiltros">
+                            <i class="bi @(_mostrarFiltros ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+                        </button>
                     </div>
+
+                    @if (HasPublicSearchFilters)
+                    {
+                        <div class="catalogo-publico-active-filters" aria-label="Filtros activos">
+                            @if (!string.IsNullOrWhiteSpace(_textoBusqueda))
+                            {
+                                <button type="button" class="catalogo-publico-active-filter" @onclick="ClearTextoBusquedaAsync">
+                                    <span>Buscar: @_textoBusqueda</span><i class="bi bi-x" aria-hidden="true"></i>
+                                </button>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_filtroRubro))
+                            {
+                                <button type="button" class="catalogo-publico-active-filter" @onclick="ClearFiltroRubroAsync">
+                                    <span>Rubro: @_filtroRubro</span><i class="bi bi-x" aria-hidden="true"></i>
+                                </button>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_filtroMarca))
+                            {
+                                <button type="button" class="catalogo-publico-active-filter" @onclick="ClearFiltroMarcaAsync">
+                                    <span>Marca: @_filtroMarca</span><i class="bi bi-x" aria-hidden="true"></i>
+                                </button>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(_ordenPrecio))
+                            {
+                                <button type="button" class="catalogo-publico-active-filter" @onclick="ClearOrdenPrecioAsync">
+                                    <span>Precio: @GetOrdenPrecioLabel()</span><i class="bi bi-x" aria-hidden="true"></i>
+                                </button>
+                            }
+                        </div>
+                    }
+
+                    @if (_mostrarFiltros)
+                    {
+                        <div class="smart-search__panel smart-search__panel--standard" @onclick:stopPropagation>
+                            <div class="smart-search__column smart-search__section">
+                                <h4><i class="bi bi-diagram-3-fill"></i> Rubro</h4>
+                                <AlfaSelect Label="Seleccionar rubro" Value="@_filtroRubro" ValueChanged="v => _filtroRubro = v ?? string.Empty" Options="@GetRubroOptions()" Placeholder="Todos" Class="catalogo-publico-filters__field" />
+                            </div>
+                            <div class="smart-search__column smart-search__section">
+                                <h4><i class="bi bi-tags-fill"></i> Marca</h4>
+                                <AlfaSelect Label="Seleccionar marca" Value="@_filtroMarca" ValueChanged="v => _filtroMarca = v ?? string.Empty" Options="@GetMarcaOptions()" Placeholder="Todas" Class="catalogo-publico-filters__field" />
+                            </div>
+                            <div class="smart-search__column smart-search__section">
+                                <h4><i class="bi bi-currency-dollar"></i> Precio</h4>
+                                <AlfaSelect Label="Ordenar por precio" Value="@_ordenPrecio" ValueChanged="v => _ordenPrecio = v ?? string.Empty" Options="@GetOrdenPrecioOptions()" Placeholder="Orden original" Class="catalogo-publico-filters__field" />
+                                <AlfaCheckbox Value="@_agruparPorMarca" ValueChanged="v => _agruparPorMarca = v ?? false" Class="catalogo-publico-filters__toggle">
+                                    Agrupar por marca
+                                </AlfaCheckbox>
+                            </div>
+                            <div class="smart-search__column smart-search__section smart-search__section--actions">
+                                <h4><i class="bi bi-lightning-charge-fill"></i> Acciones</h4>
+                                <div class="actions smart-search__actions">
+                                    <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" OnClick="ApplyFiltrosAsync">Aplicar</AlfaButton>
+                                    <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" OnClick="LimpiarFiltrosAsync">Limpiar</AlfaButton>
+                                </div>
+                            </div>
+                        </div>
+                    }
                 </div>
 
-                <div class="catalogo-publico-filters">
-                    <AlfaSelect Label="Marca"
-                                Value="@_filtroMarca"
-                                ValueChanged="v => _filtroMarca = v ?? string.Empty"
-                                Options="@GetMarcaOptions()"
-                                Placeholder="Todas"
-                                Class="catalogo-publico-filters__field" />
-                    <AlfaCheckbox Value="@_agruparPorMarca" ValueChanged="v => _agruparPorMarca = v ?? false" Class="catalogo-publico-filters__toggle">
-                        Agrupar por marca
-                    </AlfaCheckbox>
-                    <div class="catalogo-publico-view-switch catalogo-publico-filters__view" role="group" aria-label="Selector de vista de artículos">
-                        <AlfaIconButton Icon="bi bi-list-ul"
-                                        Label="Vista de lista"
-                                        Active="@(_viewMode == CatalogoViewMode.Lista)"
-                                        Class="catalogo-publico-view-switch__btn"
-                                        OnClick="() => SetViewModeAsync(CatalogoViewMode.Lista)" />
-                        <AlfaIconButton Icon="bi bi-grid-3x3-gap"
-                                        Label="Vista de cuadrícula"
-                                        Active="@(_viewMode == CatalogoViewMode.Cuadricula)"
-                                        Class="catalogo-publico-view-switch__btn"
-                                        OnClick="() => SetViewModeAsync(CatalogoViewMode.Cuadricula)" />
+                <div class="catalogo-publico-smart-search__footer">
+                    <span class="catalogo-publico-smart-search__count">@GetResultadoTexto()</span>
+                    <div class="catalogo-publico-view-switch" role="group" aria-label="Selector de vista de artículos">
+                        <AlfaIconButton Icon="bi bi-list-ul" Label="Vista de lista" Active="@(_viewMode == CatalogoViewMode.Lista)" Class="catalogo-publico-view-switch__btn" OnClick="() => SetViewModeAsync(CatalogoViewMode.Lista)" />
+                        <AlfaIconButton Icon="bi bi-grid-3x3-gap" Label="Vista de cuadrícula" Active="@(_viewMode == CatalogoViewMode.Cuadricula)" Class="catalogo-publico-view-switch__btn" OnClick="() => SetViewModeAsync(CatalogoViewMode.Cuadricula)" />
                     </div>
+                    <a class="catalogo-publico-toolbar__pdf" href="@GetPdfExportUrl()" target="_blank" rel="noopener" title="Exportar catálogo en PDF">
+                        <i class="bi bi-file-earmark-pdf" aria-hidden="true"></i>
+                        <span>PDF</span>
+                    </a>
                 </div>
+            </div>
             }
 
             @{
@@ -228,7 +263,10 @@
                                                     }
                                                     else
                                                     {
-                                                        <div class="catalogo-articulo-media__fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                                        <div class="catalogo-articulo-media__fallback">
+                                                            <i class="bi bi-image" aria-hidden="true"></i>
+                                                            <span>Sin imagen</span>
+                                                        </div>
                                                     }
                                                 </div>
                                             </td>
@@ -285,14 +323,17 @@
                                         }
                                         else
                                         {
-                                            <div class="catalogo-publico-grid__fallback">@ProductInitials(item.DescripcionArticulo)</div>
+                                            <div class="catalogo-publico-grid__fallback">
+                                                <i class="bi bi-image" aria-hidden="true"></i>
+                                                <span>Sin imagen</span>
+                                            </div>
                                         }
                                     </div>
 
                                     <div class="catalogo-publico-grid__body">
                                         <div class="catalogo-publico-grid__title-row">
                                             <strong class="catalogo-publico-grid__title">@item.DescripcionArticulo</strong>
-                                            <span class="catalogo-publico-grid__code">@item.IdArticulo</span>
+                                            <span class="catalogo-publico-grid__code" title="Código de artículo">Código: @item.IdArticulo</span>
                                         </div>
 
                                         @if (!string.IsNullOrWhiteSpace(item.Presentacion))
@@ -323,10 +364,10 @@
 @if (_lightboxItem is not null)
 {
     <div class="catalogo-publico-lightbox" @onclick="CloseLightbox">
-        <button type="button" class="catalogo-publico-lightbox__close" @onclick="CloseLightbox" @onclick:stopPropagation="true" title="Cerrar">
-            <i class="bi bi-x-lg"></i>
-        </button>
-        <div class="catalogo-publico-lightbox__content" @onclick:stopPropagation="true">
+        <div class="catalogo-publico-lightbox__content" @onclick:stopPropagation="true" @onkeydown="HandleLightboxKeyDown">
+            <button type="button" class="catalogo-publico-lightbox__close" autofocus @onclick="CloseLightbox" @onclick:stopPropagation="true" title="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
             @if (_lightboxError)
             {
                 <div class="catalogo-publico-lightbox__error">
@@ -343,25 +384,43 @@
                         {
                             <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Cargando imagen..." Compact="true" />
                         }
-                        <img class="catalogo-publico-lightbox__img @(_lightboxLoading ? "catalogo-publico-lightbox__img--hidden" : string.Empty)"
-                             src="@GetProductImageUrl(_lightboxItem)"
-                             alt="@_lightboxItem.DescripcionArticulo"
-                             loading="eager"
-                             fetchpriority="high"
-                             decoding="async"
-                             @onload="OnLightboxImageLoaded"
-                             @onerror="OnLightboxImageError" />
+                        @if (ShouldShowImage(_lightboxItem))
+                        {
+                            <img class="catalogo-publico-lightbox__img @(_lightboxLoading ? "catalogo-publico-lightbox__img--hidden" : string.Empty)"
+                                 src="@GetProductImageUrl(_lightboxItem)"
+                                 alt="@_lightboxItem.DescripcionArticulo"
+                                 loading="eager"
+                                 fetchpriority="high"
+                                 decoding="async"
+                                 @onload="OnLightboxImageLoaded"
+                                 @onerror="OnLightboxImageError" />
+                        }
+                        else
+                        {
+                            <div class="catalogo-publico-lightbox__fallback">
+                                <i class="bi bi-image" aria-hidden="true"></i>
+                                <span>Sin imagen</span>
+                            </div>
+                        }
                     </div>
                     <aside class="catalogo-publico-lightbox__details" aria-label="Detalles del artículo">
                         <p class="catalogo-publico-lightbox__eyebrow">Artículo</p>
                         <h3 class="catalogo-publico-lightbox__title">@_lightboxItem.DescripcionArticulo</h3>
-                        <p class="catalogo-publico-lightbox__code">@_lightboxItem.IdArticulo</p>
+                        <p class="catalogo-publico-lightbox__code">Código: @_lightboxItem.IdArticulo</p>
 
-                        @if (!string.IsNullOrWhiteSpace(_lightboxItem.ObservacionesArticulo) || !string.IsNullOrWhiteSpace(_lightboxItem.Presentacion))
+                        @if (!string.IsNullOrWhiteSpace(_lightboxItem.Presentacion))
+                        {
+                            <div class="catalogo-publico-lightbox__section">
+                                <p class="catalogo-publico-lightbox__section-label">Presentación</p>
+                                <p class="catalogo-publico-lightbox__observation">@_lightboxItem.Presentacion</p>
+                            </div>
+                        }
+
+                        @if (!string.IsNullOrWhiteSpace(_lightboxItem.ObservacionesArticulo))
                         {
                             <div class="catalogo-publico-lightbox__section">
                                 <p class="catalogo-publico-lightbox__section-label">Observación</p>
-                                <p class="catalogo-publico-lightbox__observation">@Display(_lightboxItem.ObservacionesArticulo, _lightboxItem.Presentacion)</p>
+                                <p class="catalogo-publico-lightbox__observation">@_lightboxItem.ObservacionesArticulo</p>
                             </div>
                         }
 
@@ -408,9 +467,15 @@
     private int _catalogLoadVersion;
     private const string ViewModeStorageKey = "alfacore_catalogo_publico_view_mode";
     private bool _isDark = true;
+    private bool _mostrarFiltros;
+    private string _textoBusqueda = string.Empty;
     private string _filtroRubro = string.Empty;
     private string _filtroMarca = string.Empty;
+    private string _ordenPrecio = string.Empty;
     private bool _agruparPorMarca;
+
+    private const string PrecioMenorMayor = "menor";
+    private const string PrecioMayorMenor = "mayor";
 
     private enum CatalogoViewMode
     {
@@ -587,11 +652,9 @@
             return;
         }
 
-        await LoadImageSettingsAsync();
-        if (loadVersion != _catalogLoadVersion)
-            return;
-
-        await LoadPublicIdentityAsync();
+        var imageSettingsTask = LoadImageSettingsAsync();
+        var publicIdentityTask = LoadPublicIdentityAsync();
+        await Task.WhenAll(imageSettingsTask, publicIdentityTask);
         if (loadVersion != _catalogLoadVersion)
             return;
 
@@ -1282,6 +1345,12 @@
         _preloadedLightboxArticuloId = null;
     }
 
+    private void HandleLightboxKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            CloseLightbox();
+    }
+
     private void OnLightboxImageLoaded()
         => _lightboxLoading = false;
 
@@ -1324,6 +1393,63 @@
     private void SetFiltroRubro(string rubro)
         => _filtroRubro = rubro ?? string.Empty;
 
+    private void ToggleFiltros()
+        => _mostrarFiltros = !_mostrarFiltros;
+
+    private void CloseFiltros()
+        => _mostrarFiltros = false;
+
+    private bool HasPublicSearchFilters
+        => !string.IsNullOrWhiteSpace(_textoBusqueda)
+           || !string.IsNullOrWhiteSpace(_filtroRubro)
+           || !string.IsNullOrWhiteSpace(_filtroMarca)
+           || !string.IsNullOrWhiteSpace(_ordenPrecio);
+
+    private string GetOrdenPrecioLabel()
+        => _ordenPrecio == PrecioMenorMayor ? "Menor a mayor"
+            : _ordenPrecio == PrecioMayorMenor ? "Mayor a menor"
+            : "Orden original";
+
+    private Task ApplyFiltrosAsync()
+    {
+        _mostrarFiltros = false;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task ClearFiltroRubroAsync()
+    {
+        _filtroRubro = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task ClearTextoBusquedaAsync()
+    {
+        _textoBusqueda = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task ClearFiltroMarcaAsync()
+    {
+        _filtroMarca = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task ClearOrdenPrecioAsync()
+    {
+        _ordenPrecio = string.Empty;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private Task LimpiarFiltrosAsync()
+    {
+        _textoBusqueda = string.Empty;
+        _filtroRubro = string.Empty;
+        _filtroMarca = string.Empty;
+        _ordenPrecio = string.Empty;
+        _mostrarFiltros = false;
+        return InvokeAsync(StateHasChanged);
+    }
+
     private IReadOnlyList<string> GetRubrosDisponibles()
         => _catalogo?.Articulos
             .Select(x => x.Rubro?.Trim())
@@ -1347,6 +1473,22 @@
     private IReadOnlyList<AlfaSelectOption> GetMarcaOptions()
         => GetMarcasDisponibles().Select(m => new AlfaSelectOption(m, m)).ToList();
 
+    private IReadOnlyList<AlfaSelectOption> GetRubroOptions()
+        => GetRubrosDisponibles().Select(r => new AlfaSelectOption(r, r)).ToList();
+
+    private IReadOnlyList<AlfaSelectOption> GetOrdenPrecioOptions()
+        =>
+        [
+            new AlfaSelectOption(PrecioMenorMayor, "Menor a mayor"),
+            new AlfaSelectOption(PrecioMayorMenor, "Mayor a menor")
+        ];
+
+    private string GetResultadoTexto()
+    {
+        var cantidad = GetArticulosFiltrados().Count;
+        return $"{cantidad:N0} {(cantidad == 1 ? "artículo" : "artículos")}";
+    }
+
     private IReadOnlyList<CatalogosCatalogoItemDto> GetArticulosFiltrados()
     {
         if (_catalogo is null)
@@ -1354,14 +1496,36 @@
 
         IEnumerable<CatalogosCatalogoItemDto> query = _catalogo.Articulos;
 
+        if (!string.IsNullOrWhiteSpace(_textoBusqueda))
+        {
+            var texto = _textoBusqueda.Trim();
+            query = query.Where(x =>
+                ContainsText(x.IdArticulo, texto)
+                || ContainsText(x.DescripcionArticulo, texto)
+                || ContainsText(x.Presentacion, texto)
+                || ContainsText(x.Marca, texto)
+                || ContainsText(x.Rubro, texto));
+        }
+
         if (!string.IsNullOrWhiteSpace(_filtroRubro))
             query = query.Where(x => string.Equals((x.Rubro ?? string.Empty).Trim(), _filtroRubro, StringComparison.OrdinalIgnoreCase));
 
         if (!string.IsNullOrWhiteSpace(_filtroMarca))
             query = query.Where(x => string.Equals((x.Marca ?? string.Empty).Trim(), _filtroMarca, StringComparison.OrdinalIgnoreCase));
 
+        query = _ordenPrecio switch
+        {
+            PrecioMenorMayor => query.OrderBy(x => AlfaCore.Services.CatalogosPriceDisplayHelper.GetPrecioAplicado(x)),
+            PrecioMayorMenor => query.OrderByDescending(x => AlfaCore.Services.CatalogosPriceDisplayHelper.GetPrecioAplicado(x)),
+            _ => query
+        };
+
         return query.ToList();
     }
+
+    private static bool ContainsText(string? value, string texto)
+        => !string.IsNullOrWhiteSpace(value)
+           && value.Contains(texto, StringComparison.OrdinalIgnoreCase);
 
     private IReadOnlyList<CatalogoPublicoGrupoMarca> GetGruposVisibles()
     {

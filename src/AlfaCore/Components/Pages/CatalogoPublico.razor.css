@@ -2,6 +2,11 @@
     gap: 1rem;
     overflow: visible !important;
     align-content: start;
+    min-width: 0;
+}
+
+.catalogo-publico-page > .panel-card {
+    min-width: 0;
 }
 
 /* Bug: en modo Embedded el wrapper pierde la clase .page-grid (para no traer el grid del
@@ -182,46 +187,75 @@
     color: #fff;
 }
 
-.catalogo-publico-tabs {
-    margin-bottom: 0.9rem;
-    max-width: 100%;
+.catalogo-publico-smart-search {
+    display: grid;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    min-width: 0;
 }
 
-.catalogo-publico-tabs__scroll {
+.catalogo-publico-smart-search__bar {
     display: flex;
-    flex-wrap: nowrap;
-    gap: 0.5rem;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding-bottom: 0.35rem;
-    scrollbar-width: thin;
-    -webkit-overflow-scrolling: touch;
-}
-
-.catalogo-publico-tabs__btn {
-    flex: 0 0 auto;
-    white-space: nowrap;
+    align-items: center;
+    min-width: 0;
+    min-height: 2.85rem;
     border: 1px solid var(--color-border);
-    border-radius: 999px;
-    padding: 0.5rem 1rem;
-    font-size: 0.85rem;
-    font-weight: 700;
-    color: var(--color-muted);
+    border-radius: 0.65rem;
     background: var(--color-bg);
-    cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+    overflow: hidden;
 }
 
-.catalogo-publico-tabs__btn:hover {
+.catalogo-publico-smart-search__icon {
+    flex: 0 0 auto;
+    padding: 0 0.75rem;
+    color: var(--color-primary);
+}
+
+.catalogo-publico-smart-search__input {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    padding: 0.72rem 0.25rem;
     color: var(--color-text);
+    background: transparent;
+}
+
+.catalogo-publico-smart-search__input::placeholder {
+    color: var(--color-muted);
+}
+
+.catalogo-publico-smart-search__filter-button {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    height: 2.85rem;
+    padding: 0 0.9rem;
+    border: 0;
+    border-left: 1px solid var(--color-border);
+    color: var(--color-muted);
+    background: transparent;
+    cursor: pointer;
+}
+
+.catalogo-publico-smart-search__filter-button:hover,
+.catalogo-publico-smart-search__filter-button.is-active {
+    color: var(--color-primary);
     background: var(--hover-bg);
 }
 
-.catalogo-publico-tabs__btn.is-active {
-    color: #fff;
-    background: var(--color-primary);
-    border-color: transparent;
-    box-shadow: 0 8px 18px rgba(2, 6, 23, 0.24);
+.catalogo-publico-smart-search__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    min-width: 0;
+}
+
+.catalogo-publico-smart-search__count {
+    color: var(--color-muted);
+    font-size: 0.82rem;
 }
 
 .catalogo-publico-filters {
@@ -229,11 +263,16 @@
     flex-wrap: wrap;
     align-items: flex-end;
     gap: 0.75rem 1rem;
-    margin-bottom: 1rem;
+    padding: 0.85rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    background: var(--color-panel);
 }
 
 .catalogo-publico-filters ::deep .catalogo-publico-filters__field {
+    flex: 1 1 220px;
     min-width: 180px;
+    max-width: 320px;
 }
 
 .catalogo-publico-filters ::deep .catalogo-publico-filters__toggle {
@@ -258,6 +297,12 @@
 
 .catalogo-publico-table {
     margin-bottom: 0;
+}
+
+.catalogo-publico-page .table-responsive {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
 }
 
 .catalogo-publico-grid {
@@ -533,8 +578,18 @@
         align-items: stretch;
     }
 
+    .catalogo-publico-smart-search__filter-button span {
+        display: none;
+    }
+
+    .catalogo-publico-smart-search__footer {
+        align-items: flex-start;
+    }
+
     .catalogo-publico-filters ::deep .catalogo-publico-filters__field {
+        width: 100%;
         min-width: 0;
+        max-width: none;
     }
 
     .catalogo-publico-filters ::deep .catalogo-publico-filters__toggle {
@@ -882,4 +937,585 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
     background: color-mix(in srgb, var(--portal-surface-2) 70%, var(--portal-focus) 12%);
     color: var(--portal-focus);
     border-color: var(--portal-border);
+}
+
+/* El catálogo público no vive dentro de la barra de módulos. Aislamos el smart search para
+   evitar que las reglas históricas de .smart-search del shell lo partan o lo estiren. */
+.catalogo-publico-page .catalogo-publico-smart-search {
+    position: relative;
+    width: min(620px, 100%);
+    max-width: 620px;
+    display: block;
+    margin-bottom: 0;
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__bar {
+    display: flex !important;
+    grid-template-columns: none !important;
+    width: 100% !important;
+    min-height: 36px !important;
+    height: 36px;
+    overflow: hidden;
+    border: 1px solid var(--portal-border-input);
+    border-radius: 7px;
+    background: var(--portal-surface-3);
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__search-icon,
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__filter-button,
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__toggle {
+    flex: 0 0 36px;
+    width: 36px;
+    height: 34px;
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__search-icon {
+    display: grid;
+    place-items: center;
+    color: var(--portal-focus);
+    border-right: 1px solid var(--portal-border-input);
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__filter-button,
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__toggle {
+    display: grid;
+    place-items: center;
+    padding: 0;
+    border: 0;
+    color: var(--portal-text-muted);
+    background: transparent;
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__filter-button {
+    border-right: 1px solid var(--portal-border-input);
+    cursor: pointer;
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__toggle {
+    border-left: 1px solid var(--portal-border-input);
+    background: var(--portal-surface-2);
+    cursor: pointer;
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__bar > input {
+    flex: 1 1 auto;
+    width: auto !important;
+    min-width: 0;
+    height: 34px;
+    padding: 0 9px;
+    border: 0;
+    background: transparent;
+    color: var(--portal-text);
+    outline: 0;
+}
+
+.catalogo-publico-active-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.45rem;
+    width: 100%;
+    padding: 0.15rem 0 0;
+}
+
+.catalogo-publico-active-filter {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-width: 0;
+    max-width: 100%;
+    padding: 0.35rem 0.6rem 0.35rem 0.75rem;
+    border: 1px solid color-mix(in srgb, var(--portal-focus) 35%, var(--portal-border));
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--portal-focus) 14%, var(--portal-surface-2));
+    color: var(--portal-text);
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.catalogo-publico-active-filter span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.catalogo-publico-active-filter i {
+    flex: 0 0 auto;
+    color: var(--portal-text-muted);
+}
+
+.catalogo-publico-active-filter:hover {
+    border-color: var(--portal-focus);
+    background: color-mix(in srgb, var(--portal-focus) 22%, var(--portal-surface-2));
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__active-filters {
+    display: flex;
+    flex: 0 1 auto;
+    min-width: 0;
+    max-width: 210px;
+    align-items: center;
+    gap: 4px;
+    padding: 0 4px;
+    overflow: hidden;
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel {
+    position: absolute !important;
+    top: calc(100% + 6px) !important;
+    left: 0 !important;
+    right: auto !important;
+    z-index: 90;
+    width: min(760px, calc(100vw - 32px)) !important;
+    max-width: calc(100vw - 32px);
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(150px, 1fr)) !important;
+    overflow: hidden;
+    border: 1px solid var(--portal-border);
+    border-radius: 8px;
+    background: var(--portal-surface-1);
+    box-shadow: 0 22px 70px rgba(0, 0, 0, .38);
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel .smart-search__section--actions {
+    grid-column: 1 / -1;
+    border-top: 1px solid var(--portal-border);
+    border-left: 0;
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel .catalogo-publico-filters__field {
+    width: 100%;
+    max-width: none;
+    min-width: 0;
+}
+
+@media (max-width: 768px) {
+    .catalogo-publico-page .catalogo-publico-smart-search {
+        width: 100%;
+        max-width: none;
+    }
+
+    .catalogo-publico-page .catalogo-publico-smart-search .smart-search__active-filters {
+        max-width: 120px;
+    }
+
+    .catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel {
+        grid-template-columns: 1fr !important;
+        max-height: 70vh;
+        overflow-y: auto;
+    }
+
+    .catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel .smart-search__column + .smart-search__column {
+        border-top: 1px solid var(--portal-border);
+        border-left: 0;
+    }
+}
+
+/* Ajustes de densidad del catálogo público. La cabecera identifica el catálogo, pero no queda
+   fija: solo la herramienta de navegación permanece disponible durante el scroll. */
+.catalogo-publico-page .catalogo-publico-hero {
+    position: relative;
+    top: auto;
+    z-index: auto;
+    padding: 0.75rem 1rem;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+.catalogo-publico-page .catalogo-publico-hero__brand {
+    gap: 0.75rem;
+}
+
+.catalogo-publico-page .catalogo-publico-hero__logo--auto {
+    height: 96px;
+}
+
+.catalogo-publico-page .catalogo-publico-hero__logo--horizontal {
+    height: 82px;
+}
+
+.catalogo-publico-page .catalogo-publico-hero__logo--square {
+    width: 104px;
+    height: 104px;
+}
+
+.catalogo-publico-page .catalogo-publico-hero__title {
+    font-size: 1.2rem;
+}
+
+.catalogo-publico-page .catalogo-publico-hero__catalog-name {
+    margin-top: 0.12rem;
+}
+
+.catalogo-publico-page .catalogo-publico-hero__text {
+    margin-top: 0.2rem;
+    font-size: 0.84rem;
+}
+
+.catalogo-publico-toolbar-sticky {
+    position: sticky !important;
+    top: 0;
+    z-index: 860;
+    align-self: start;
+    height: max-content;
+    overflow: visible;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 0.65rem 1rem;
+    margin: 0 -0.25rem 0.9rem;
+    padding: 0.5rem 0.25rem 0.55rem;
+    border-bottom: 1px solid var(--color-border);
+    background: var(--color-bg);
+    box-shadow: 0 5px 12px rgba(2, 6, 23, 0.16);
+    isolation: isolate;
+}
+
+.catalogo-publico-toolbar-sticky .catalogo-publico-smart-search {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+}
+
+.catalogo-publico-toolbar-sticky > .catalogo-publico-smart-search {
+    grid-column: 1;
+    grid-row: 1;
+}
+
+.catalogo-publico-toolbar-sticky > .catalogo-publico-smart-search__footer {
+    grid-column: 2;
+    grid-row: 1;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    min-width: max-content;
+}
+
+.catalogo-publico-toolbar-sticky .catalogo-publico-smart-search__count {
+    white-space: nowrap;
+}
+
+.catalogo-publico-toolbar-sticky .catalogo-publico-smart-search__count + .catalogo-publico-view-switch {
+    margin-left: 0.25rem;
+}
+
+.catalogo-publico-toolbar__pdf {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    min-height: 36px;
+    padding: 0 0.7rem;
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    color: var(--color-text);
+    background: var(--color-bg);
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+.catalogo-publico-toolbar__pdf:hover {
+    border-color: var(--color-primary);
+    color: var(--color-primary);
+    background: var(--hover-bg);
+}
+
+.catalogo-publico-page .catalogo-publico-grid {
+    gap: 0.8rem;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+
+.catalogo-publico-page .catalogo-publico-grid__card {
+    border-radius: 16px;
+    box-shadow: 0 7px 18px rgba(2, 6, 23, 0.12);
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.catalogo-publico-page .catalogo-publico-grid__card:hover {
+    border-color: var(--color-primary);
+    box-shadow: 0 10px 24px rgba(2, 6, 23, 0.2);
+    transform: translateY(-1px);
+}
+
+.catalogo-publico-page .catalogo-publico-grid__media {
+    width: min(100%, 205px);
+    padding: 0.65rem;
+}
+
+.catalogo-publico-page .catalogo-publico-grid__body {
+    gap: 0.35rem;
+    padding: 0.75rem 0.8rem 0.85rem;
+}
+
+.catalogo-publico-page .catalogo-publico-grid__title-row {
+    gap: 0.45rem;
+}
+
+.catalogo-publico-page .catalogo-publico-grid__title {
+    font-size: 0.93rem;
+}
+
+.catalogo-publico-page .catalogo-publico-grid__code {
+    max-width: 48%;
+    padding: 0.18rem 0.42rem;
+    font-size: 0.66rem;
+}
+
+.catalogo-publico-page .catalogo-publico-grid__presentation {
+    font-size: 0.82rem;
+}
+
+.catalogo-publico-page .catalogo-publico-grid__meta {
+    font-size: 0.8rem;
+}
+
+.catalogo-publico-page .catalogo-publico-price__current,
+.catalogo-publico-page .catalogo-publico-price__offer {
+    font-size: 0.98rem;
+}
+
+.catalogo-publico-page .catalogo-articulo-media__fallback,
+.catalogo-publico-page .catalogo-publico-grid__fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.35rem;
+    color: var(--color-muted);
+    background: var(--color-bg);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+.catalogo-publico-page .catalogo-articulo-media__fallback i,
+.catalogo-publico-page .catalogo-publico-grid__fallback i {
+    color: var(--color-primary);
+    font-size: 1.45rem;
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox {
+    padding: clamp(1rem, 3vw, 2.5rem);
+    background: rgba(2, 6, 23, 0.9);
+    backdrop-filter: blur(5px);
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__content {
+    position: relative;
+    width: min(80vw, 1100px);
+    max-width: calc(100vw - 2rem);
+    max-height: min(90vh, 900px);
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__stage {
+    grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
+    align-items: stretch;
+    gap: 0.9rem;
+    padding: 0.85rem;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 20px;
+    background: var(--color-panel);
+    box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__media {
+    min-height: min(56vh, 560px);
+    border-radius: 14px;
+    background: #f5f6f8;
+    overflow: hidden;
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__img {
+    width: 100%;
+    height: 100%;
+    max-width: 100%;
+    max-height: min(56vh, 560px);
+    padding: 0.7rem;
+    border-radius: 14px;
+    background: #f5f6f8;
+    box-shadow: none;
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__fallback {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    min-height: min(56vh, 560px);
+    color: #64748b;
+    background: #f5f6f8;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__fallback i {
+    font-size: 3rem;
+    color: #94a3b8;
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__details {
+    justify-content: center;
+    gap: 0.7rem;
+    padding: 1.3rem 1.45rem;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__title {
+    font-size: clamp(1.2rem, 2vw, 1.65rem);
+    line-height: 1.2;
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__code {
+    width: fit-content;
+    margin: 0;
+    padding: 0.25rem 0.55rem;
+    font-size: 0.8rem;
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__meta span {
+    min-height: 26px;
+    padding: 0.12rem 0.55rem;
+    font-size: 0.78rem;
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__price {
+    margin-top: 0.7rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__price .catalogo-publico-price {
+    font-size: clamp(1.25rem, 2.2vw, 1.8rem);
+}
+
+.catalogo-publico-page .catalogo-publico-lightbox__close {
+    top: 0.65rem;
+    right: 0.65rem;
+    z-index: 2;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    border-color: rgba(255, 255, 255, 0.25);
+    background: rgba(15, 23, 42, 0.68);
+    font-size: 0.9rem;
+}
+
+/* El panel debe ser opaco también en modo claro. Los tokens portal se definieron
+   originalmente para el tema oscuro y pueden no existir en el tema claro. */
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel {
+    background: var(--color-panel-strong, var(--color-panel, #ffffff));
+    color: var(--color-text);
+    border-color: var(--color-border);
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.2);
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel .smart-search__column + .smart-search__column,
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel .smart-search__section--actions {
+    border-color: var(--color-border);
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel h4,
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel .smart-search__section-label {
+    color: var(--color-text);
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel ::deep .alfa-field__label,
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel ::deep .alfa-select__label {
+    color: var(--color-muted);
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel ::deep .alfa-input__control,
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel ::deep .alfa-select__control {
+    background: var(--color-bg);
+    border-color: var(--color-border-input, var(--color-border));
+    color: var(--color-text);
+}
+
+.catalogo-publico-page .catalogo-publico-smart-search .smart-search__panel ::deep .alfa-checkbox {
+    color: var(--color-text);
+}
+
+@media (max-width: 768px) {
+    .catalogo-publico-page .catalogo-publico-lightbox__content {
+        width: 100%;
+        max-width: 100%;
+        max-height: calc(100dvh - 2rem);
+        box-sizing: border-box;
+        padding-top: 2.5rem;
+    }
+
+    .catalogo-publico-toolbar-sticky {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 0.35rem 0.55rem;
+        margin-inline: -0.15rem;
+        padding-inline: 0.15rem;
+    }
+
+    .catalogo-publico-toolbar-sticky > .catalogo-publico-smart-search {
+        grid-column: 1;
+        grid-row: 1;
+    }
+
+    .catalogo-publico-toolbar-sticky > .catalogo-publico-smart-search__footer {
+        grid-column: 1;
+        grid-row: 2;
+        justify-content: space-between;
+        min-width: 0;
+    }
+
+    .catalogo-publico-toolbar__pdf {
+        min-width: 36px;
+        padding-inline: 0.55rem;
+    }
+
+    .catalogo-publico-toolbar__pdf span {
+        display: none;
+    }
+
+    .catalogo-publico-page .catalogo-publico-hero {
+        padding: 0.65rem 0.75rem;
+    }
+
+    .catalogo-publico-page .catalogo-publico-lightbox__stage {
+        grid-template-columns: 1fr;
+        max-height: calc(100dvh - 4.5rem);
+        overflow-y: auto;
+        padding: 0.75rem;
+    }
+
+    .catalogo-publico-page .catalogo-publico-lightbox__close {
+        top: 0.35rem;
+        right: 0.35rem;
+        z-index: 5;
+        width: 34px;
+        height: 34px;
+        border-color: var(--color-border);
+        background: var(--color-panel-strong, var(--color-panel, #ffffff));
+        color: var(--color-text);
+        box-shadow: 0 4px 12px rgba(2, 6, 23, 0.24);
+    }
+
+    .catalogo-publico-page .catalogo-publico-lightbox__media,
+    .catalogo-publico-page .catalogo-publico-lightbox__fallback {
+        min-height: min(42vh, 360px);
+    }
+
+    .catalogo-publico-page .catalogo-publico-lightbox__img {
+        max-height: min(42vh, 360px);
+    }
+
+    .catalogo-publico-page .catalogo-publico-lightbox__details {
+        justify-content: flex-start;
+        padding: 0.85rem;
+    }
 }
