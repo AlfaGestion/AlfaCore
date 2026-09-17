@@ -221,12 +221,19 @@ internal static class WhatsAppSubscriptionInspectionCommand
         }
 
         output.WriteLine("=== CALLBACK SELF-CHECK ===");
+        // Siempre el WhatsAppWabaRoutingProvider real -- el mismo que usa EnsureWabaSubscriptionAsync
+        // en producción. Antes existía una reconstrucción paralela en
+        // RoutingSourceInspection.ToRoutingConfiguration() que armaba el callback sin el WebhookPath
+        // (PublicBaseUrl + "/" + WebhookToken, sin "/api/conversaciones/whatsapp/webhook" en medio) --
+        // eso hacía que el self-check del inspector probara una URL que la app real nunca construye,
+        // produciendo un CALLBACK_SELF_CHECK_FAILED que no reflejaba el comportamiento real (Base4271,
+        // 2026-09). RoutingSourceInspection sigue existiendo sólo para las líneas de presentación
+        // (TENANT_PUBLIC_BASE_URL_*, GLOBAL_CALLBACK_BASE_URL_*, VERIFY_TOKEN_SOURCE, etc.) -- ya no
+        // participa en construir ninguna URL funcional.
         WhatsAppWabaRoutingConfiguration? routing = null;
         try
         {
-            routing = source is null
-                ? await routingProvider.GetAsync(idBase, ct)
-                : source.ToRoutingConfiguration();
+            routing = await routingProvider.GetAsync(idBase, ct);
         }
         catch (Exception ex)
         {
@@ -839,17 +846,6 @@ internal static class WhatsAppSubscriptionInspectionCommand
         bool? WebhookRouteMatched = null)
     {
         public bool EffectivePublicBaseUrlValid => EffectivePublicBaseUrl.IsAbsolute && EffectivePublicBaseUrl.IsHttps;
-
-        public WhatsAppWabaRoutingConfiguration ToRoutingConfiguration()
-        {
-            if (!EffectivePublicBaseUrlValid)
-                throw new InvalidOperationException("La Base publica HTTPS de WhatsApp no es valida (ni la del tenant ni WhatsAppEmbeddedSignup:CallbackBaseUrl).");
-            if (!VerifyTokenPresent)
-                throw new InvalidOperationException("El Verify Token de WhatsApp no esta configurado (ni el del tenant ni el global WhatsApp:VerifyToken).");
-            if (!WebhookTokenPresent)
-                throw new InvalidOperationException("La base central no tiene WebhookToken y el inspector read-only no puede generarlo.");
-            return new WhatsAppWabaRoutingConfiguration($"{EffectivePublicBaseUrl.RawTrimmed.TrimEnd('/')}/{WebhookToken}", VerifyToken);
-        }
     }
 
     internal sealed record UrlInspection(string RawTrimmed, bool Present, string ValueSanitized, bool IsAbsolute, bool IsHttps)
