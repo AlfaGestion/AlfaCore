@@ -32,7 +32,8 @@ public static class ModuleTopNavPresets
             ("rubros", "Rubros", "/ventas/rubros"),
             ("familias", "Familias", "/ventas/familias"),
             ("articulos", "Artículos", "/ventas/articulos"),
-            ("comparativo", "Comparativo", "/ventas/comparativo")
+            ("comparativo", "Comparativo", "/ventas/comparativo"),
+            ("punto-venta", "Punto de Venta", "/ventas/punto-venta")
         ]);
 
     public static IReadOnlyList<PageHeaderTopNavItem> BuildContabilidad(IRouteContextService routeContext, NavigationManager nav, string activeKey)
