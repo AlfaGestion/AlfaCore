@@ -684,6 +684,14 @@ public sealed class ConversacionPlantillaDto
     /// entrada acá es manual (sin mapping). Se carga desde dbo.CONV_PLANTILLAS_VARIABLES.
     /// </summary>
     public Dictionary<int, string> VariableMappings { get; set; } = new();
+
+    /// <summary>
+    /// Array crudo "components" tal como lo devuelve Meta (HEADER/BODY/FOOTER/BUTTONS), preservado
+    /// para que WhatsAppTemplateValidation pueda rechazar plantillas con componentes que AlfaCore
+    /// todavía no sabe completar (HEADER media/variable, botones, variables con nombre) en vez de
+    /// descartar esa información al mapear.
+    /// </summary>
+    public string ComponentesMetaJson { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionPlantillaSaveRequest

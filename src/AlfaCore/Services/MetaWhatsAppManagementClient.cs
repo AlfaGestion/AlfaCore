@@ -341,13 +341,20 @@ public sealed class MetaWhatsAppManagementClient(
     private async Task<IReadOnlyList<T>> GetPagedAsync<T>(WhatsAppCredentialReference tokenReference, string path, string fields, Func<JsonElement, T> map, CancellationToken ct, bool allowUnsupportedEdge = false)
     {
         var result = new List<T>();
-        var visitedPages = new HashSet<string>(StringComparer.Ordinal);
         string? next = BuildGraphUri($"{path}?fields={Uri.EscapeDataString(fields)}&limit=100").ToString();
+        var expected = new Uri(next);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
         while (!string.IsNullOrWhiteSpace(next))
         {
-            if (!visitedPages.Add(next))
-                break;
-
+            // Anti-loop / anti-cross-WABA: una página de paginación de Meta debe seguir apuntando al
+            // mismo host+path del recurso pedido originalmente (scheme/authority/path) y no repetir una
+            // URL ya visitada. Sin esto, una respuesta de Meta corrupta/adversarial con "paging.next"
+            // apuntando a otro recurso (o repitiendo la misma página) podía hacer loop infinito o mezclar
+            // resultados de una WABA distinta a la solicitada.
+            if (!Uri.TryCreate(next, UriKind.Absolute, out var page)
+                || page.Scheme != expected.Scheme || page.Authority != expected.Authority
+                || page.AbsolutePath != expected.AbsolutePath || !visited.Add(next))
+                throw new MetaWhatsAppManagementException("META_INVALID_PAGING", false, false, "Meta devolvió una paginación fuera del recurso solicitado o repetida.");
             using var request = await CreateAbsoluteRequestAsync(HttpMethod.Get, next, tokenReference, ct);
             JsonDocument document;
             try { document = await SendJsonAsync(request, ct); }

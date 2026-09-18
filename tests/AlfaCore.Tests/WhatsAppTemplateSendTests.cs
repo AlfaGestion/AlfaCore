@@ -35,16 +35,17 @@ public sealed class WhatsAppTemplateSendTests
         var graphCallIndex = source.IndexOf("SendTemplateToWhatsAppAsync(config,", methodStart, StringComparison.Ordinal);
         Assert.True(graphCallIndex >= 0, "No se encontró la llamada real a Graph dentro de SendTemplateMessageAsync.");
 
-        var variableGuardIndex = source.IndexOf("requiredVariableCount = CountTemplateVariables(template.CuerpoTexto)", methodStart, StringComparison.Ordinal);
-        Assert.True(variableGuardIndex >= 0, "No se encontró la validación de variables requeridas.");
+        // Hardening (605be66 portado sobre main): la validación de cantidad/orden exacto de variables
+        // y de componentes no soportados se centralizó en WhatsAppTemplateValidation.ValidateSend, que
+        // reemplazó el guard inline "requiredVariableCount < values.Count" (menos estricto: solo
+        // chequeaba "al menos", no cantidad exacta ni consecutividad).
+        var variableGuardIndex = source.IndexOf("WhatsAppTemplateValidation.ValidateSend(template, values)", methodStart, StringComparison.Ordinal);
+        Assert.True(variableGuardIndex >= 0, "No se encontró la validación de variables requeridas (WhatsAppTemplateValidation.ValidateSend).");
 
         // La validación tiene que estar ANTES de la llamada a Graph, no después -- si no, un template
         // con variables faltantes llegaría a Meta y el rechazo se vería como un error de Graph genérico
         // en vez de un mensaje claro y accionable antes de gastar la llamada.
         Assert.True(variableGuardIndex < graphCallIndex, "La validación de variables debe ejecutarse antes de llamar a Graph.");
-
-        var throwIndex = source.IndexOf("throw new InvalidOperationException(", variableGuardIndex, StringComparison.Ordinal);
-        Assert.True(throwIndex >= 0 && throwIndex < graphCallIndex);
     }
 
     [Fact]
