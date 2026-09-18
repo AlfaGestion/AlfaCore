@@ -98,6 +98,19 @@ public class Program
             return;
         }
 
+        // Modo one-shot 100% de prueba manual (Fase 1 de facturación electrónica AFIP/ARCA): autentica
+        // WSAA, consulta último autorizado y opcionalmente pide un CAE de prueba. Nunca toca
+        // V_MV_Cpte/V_MV_CPTE_ELECTRONICOS. Ver ArcaCaeDiagnosticCommand.
+        if (ArcaCaeDiagnosticCommand.IsRequested(args))
+        {
+            var arcaTestExitCode = ArcaCaeDiagnosticCommand
+                .RunAsync(args, Console.Out, CancellationToken.None)
+                .GetAwaiter()
+                .GetResult();
+            Environment.Exit(arcaTestExitCode);
+            return;
+        }
+
         QuestPDF.Settings.License = QuestPDF.Infrastructure.LicenseType.Community;
 
         var webRootCandidates = new[]
@@ -274,6 +287,10 @@ public class Program
         builder.Services.AddScoped<ICotizacionDocumentService, CotizacionDocumentService>();
         builder.Services.AddScoped<IFacturaDocumentService, FacturaDocumentService>();
         builder.Services.AddSingleton<IArcaQrService, ArcaQrService>();
+        builder.Services.AddScoped<IArcaConfigService, ArcaConfigService>();
+        builder.Services.AddScoped<IWsaaClient, WsaaClient>();
+        builder.Services.AddScoped<IWsfev1Client, Wsfev1Client>();
+        builder.Services.AddScoped<IArcaFacturacionElectronicaService, ArcaFacturacionElectronicaService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
@@ -366,6 +383,7 @@ public class Program
         builder.Services.AddSingleton<IIaBackendProxyService, IaBackendProxyService>();
         builder.Services.AddHttpClient("MetaEmbeddedSignupOAuth").RemoveAllLoggers();
         builder.Services.AddHttpClient("MetaEmbeddedSignupManagement").RemoveAllLoggers();
+        builder.Services.AddHttpClient("Arca", client => client.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers();
         builder.Services.AddHttpContextAccessor();
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));

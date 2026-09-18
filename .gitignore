@@ -19,6 +19,13 @@ publish/
 .idea/
 
 # =========================
+# Certificados / claves (AFIP/ARCA y similares -- nunca al repo)
+# =========================
+CERTIFICADOPRUEBA/
+*.key
+*.pfx
+
+# =========================
 # Logs
 # =========================
 *.log

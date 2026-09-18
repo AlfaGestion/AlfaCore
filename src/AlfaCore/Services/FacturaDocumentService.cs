@@ -194,7 +194,7 @@ public sealed class FacturaDocumentService(
         var condIvaSelect = tieneCondIva ? "ISNULL(ci.DESCRIPCION, '')" : "''";
 
         var tieneElectronico = await ExistsAsync(cn, "dbo.V_MV_CPTE_ELECTRONICOS", ct);
-        var electronicoJoin = tieneElectronico ? "LEFT JOIN dbo.V_MV_CPTE_ELECTRONICOS e ON e.TC = v.TC AND e.IdComprobante = v.IDCOMPROBANTE" : string.Empty;
+        var electronicoJoin = tieneElectronico ? "LEFT JOIN dbo.V_MV_CPTE_ELECTRONICOS e ON e.TC = v.TC AND e.IdComprobante = v.IDCOMPROBANTE AND ISNULL(e.Archivado, 0) = 0" : string.Empty;
         var electronicoSelect = tieneElectronico
             ? "e.Tipo_Cpte AS TipoCpte, e.CAE AS Cae, e.VtoCAE AS VtoCae, e.CodigoBarraCAE AS CodigoBarraCae, e.Resultado AS Resultado, ISNULL(CAST(e.Motivo AS nvarchar(500)), '') AS Motivo, e.Fecha_Cpte AS FechaElectronica, e.Punto_Vta AS PuntoVentaElectronico, e.Cpte_Desde AS NumeroElectronico, CAST(e.Imp_Total AS decimal(15,2)) AS TotalElectronico, e.Tipo_Doc AS TipoDocElectronico, e.Nro_Doc AS NumeroDocElectronico"
             : "CAST(NULL AS int) AS TipoCpte, CAST(NULL AS nvarchar(20)) AS Cae, CAST(NULL AS datetime) AS VtoCae, CAST(NULL AS nvarchar(60)) AS CodigoBarraCae, CAST(NULL AS nvarchar(4)) AS Resultado, '' AS Motivo";

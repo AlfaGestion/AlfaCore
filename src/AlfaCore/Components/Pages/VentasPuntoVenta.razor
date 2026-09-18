@@ -5,6 +5,7 @@
 @inject AlfaCore.Services.IPuntoVentaPedidoService PedidoSvc
 @inject AlfaCore.Services.IPuntoVentaConfigService PosConfigSvc
 @inject AlfaCore.Services.IPuntoVentaTurnoService TurnoSvc
+@inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.IRouteContextService RouteCtx
 @inject NavigationManager Nav
@@ -2019,6 +2020,46 @@
         letter-spacing: 0.04em;
     }
 
+    .pos-receipt-modal__cae {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.6rem 0.75rem;
+        border-radius: 10px;
+        font-size: 0.82rem;
+    }
+
+    .pos-receipt-modal__cae--aprobado {
+        background: rgba(34, 197, 94, 0.12);
+        border: 1px solid rgba(34, 197, 94, 0.22);
+        color: #86efac;
+    }
+
+    .pos-receipt-modal__cae--alerta {
+        background: rgba(239, 68, 68, 0.12);
+        border: 1px solid rgba(239, 68, 68, 0.22);
+        color: #fecaca;
+    }
+
+    .pos-receipt-modal__cae--pendiente {
+        background: rgba(251, 191, 36, 0.14);
+        border: 1px solid rgba(251, 191, 36, 0.25);
+        color: #fde68a;
+    }
+
+    .pos-receipt-modal__cae-retry {
+        border: 1px solid currentColor;
+        background: transparent;
+        color: inherit;
+        border-radius: 999px;
+        padding: 0.25rem 0.7rem;
+        font-size: 0.76rem;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+    }
+
     .pos-receipt-modal__preview-header {
         padding: 1rem 1rem 0.65rem;
         border-bottom: 1px solid var(--color-border);
@@ -2285,6 +2326,39 @@
             frame.contentWindow.focus();
             frame.contentWindow.print();
         }, 180);
+    };
+
+    window.alfaPosPrintPdfBytes = function (frameId, base64Pdf) {
+        const frame = document.getElementById(frameId);
+        if (!frame) {
+            return;
+        }
+
+        try {
+            const binary = atob(base64Pdf);
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i++) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            const blob = new Blob([bytes], { type: "application/pdf" });
+            const url = URL.createObjectURL(blob);
+
+            frame.onload = function () {
+                window.setTimeout(() => {
+                    try {
+                        frame.contentWindow.focus();
+                        frame.contentWindow.print();
+                    } catch (e) {
+                        // El visor de PDF nativo del navegador puede tardar en quedar listo --
+                        // si print() falla acá, igual queda el PDF cargado en el iframe para
+                        // que el usuario lo imprima manualmente (Ctrl+P) o lo abra aparte.
+                    }
+                }, 300);
+            };
+            frame.src = url;
+        } catch (e) {
+            console.error("alfaPosPrintPdfBytes", e);
+        }
     };
 
     window.alfaPosCatalogNearBottom = function (element) {
@@ -2821,6 +2895,27 @@
                     <strong>@(_lastSaleResult.IdCobranza == 0 ? "-" : _lastSaleResult.IdCobranza)</strong>
                 </div>
             </div>
+
+            @if (_lastSaleResult.CaeEstado == "Aprobado")
+            {
+                <div class="pos-receipt-modal__cae pos-receipt-modal__cae--aprobado">
+                    <span>CAE: @_lastSaleResult.Cae — Vto @(_lastSaleResult.CaeVencimiento?.ToString("dd/MM/yyyy"))</span>
+                </div>
+            }
+            else if (_lastSaleResult.CaeEstado is "Rechazado" or "Pendiente")
+            {
+                var esRechazado = _lastSaleResult.CaeEstado == "Rechazado";
+                <div class="pos-receipt-modal__cae @(esRechazado ? "pos-receipt-modal__cae--alerta" : "pos-receipt-modal__cae--pendiente")">
+                    <span>
+                        @(esRechazado
+                            ? $"Comprobante SIN autorización AFIP — {_lastSaleResult.CaeMotivo}. No debe entregarse como factura fiscal hasta regularizar."
+                            : "CAE pendiente de autorización (ARCA no respondió). Reintentá en unos minutos.")
+                    </span>
+                    <button type="button" class="pos-receipt-modal__cae-retry" @onclick="RetryCaeAsync" disabled="@_caeRetryInProgress">
+                        @(_caeRetryInProgress ? "Reintentando..." : "Reintentar CAE")
+                    </button>
+                </div>
+            }
 
             <button type="button" class="pos-receipt-modal__new" @onclick="ContinueWithNewReceipt">
                 <span class="pos-receipt-modal__new-icon"><i class="bi bi-arrow-right-circle"></i></span>
@@ -3579,6 +3674,10 @@
     private IReadOnlyList<PuntoVentaPaymentMethodDto> _paymentMethods = [];
     private PuntoVentaSettingsDto _settings = new();
     private PuntoVentaSaleResultDto? _lastSaleResult;
+    private bool _caeRetryInProgress;
+    /// <summary>sp_web_Alta_Comprobante graba siempre UNEGOCIO='   1' (literal) para toda venta de
+    /// POS -- ver el mismo comentario en PuntoVentaService.PosUNegocio.</summary>
+    private const string PosUNegocio = "   1";
     private string? _error;
     private string? _settingsFeedback;
     private string? _settingsError;
@@ -4740,11 +4839,29 @@
 
     private async Task PrintReceiptAsync()
     {
+        if (_lastSaleResult is null) return;
+
+        // Factura A/B/C: imprime el PDF real del Diseñador de Comprobantes (respeta el papel
+        // configurado -- A4 o Ticket80 -- y trae el recuadro de tipo, CAE y QR). El ticket simple
+        // de acá abajo solo se usa para comprobantes no fiscales (Nota de Pedido, etc.).
+        if (TiposDocumentoCore.EsFactura(TiposDocumentoCore.TipoParaComprobante(_lastSaleResult.TipoComprobante, _lastSaleResult.Letra)))
+        {
+            try
+            {
+                var pdf = await FacturaDocumentSvc.GeneratePdfAsync(_lastSaleResult.TipoComprobante, _lastSaleResult.IdComprobanteTexto, PosUNegocio);
+                await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
+                await Js.InvokeVoidAsync("alfaPosPrintPdfBytes", "pos-receipt-frame", Convert.ToBase64String(pdf));
+                _receiptIsReprint = true;
+            }
+            catch (Exception ex)
+            {
+                _error = ex.Message;
+            }
+            return;
+        }
+
         var html = BuildReceiptPrintHtml(_receiptIsReprint);
-
-        if (_lastSaleResult is not null)
-            await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
-
+        await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
         await Js.InvokeVoidAsync("alfaPosPrintHtml", "pos-receipt-frame", html);
         _receiptIsReprint = true;
     }
@@ -4780,6 +4897,40 @@
         finally
         {
             _receiptEmailSending = false;
+        }
+    }
+
+    private async Task RetryCaeAsync()
+    {
+        if (_lastSaleResult is null || _caeRetryInProgress) return;
+
+        try
+        {
+            _caeRetryInProgress = true;
+            var intento = await PuntoVentaSvc.RetryCaeAsync(_lastSaleResult.IdComprobante);
+            _lastSaleResult = new PuntoVentaSaleResultDto
+            {
+                IdComprobante = _lastSaleResult.IdComprobante,
+                IdCobranza = _lastSaleResult.IdCobranza,
+                TipoComprobante = _lastSaleResult.TipoComprobante,
+                Sucursal = _lastSaleResult.Sucursal,
+                Numero = _lastSaleResult.Numero,
+                Letra = _lastSaleResult.Letra,
+                IdComprobanteTexto = _lastSaleResult.IdComprobanteTexto,
+                Total = _lastSaleResult.Total,
+                CaeEstado = intento.Estado.ToString(),
+                Cae = intento.Cae,
+                CaeVencimiento = intento.CaeVencimiento,
+                CaeMotivo = intento.Motivo
+            };
+        }
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
+        finally
+        {
+            _caeRetryInProgress = false;
         }
     }
 

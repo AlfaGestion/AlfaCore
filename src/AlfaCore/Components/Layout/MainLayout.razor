@@ -3798,7 +3798,21 @@ else
         };
     }
 
-    private string GetModuleTitle() => _currentModule switch
+    private string GetModuleTitle()
+    {
+        // _currentModule solo guarda el primer segmento de la ruta ("ventas" para cualquier
+        // /ventas/*), así que un caso puntual como "ventas/punto-venta" en el switch de abajo nunca
+        // matchearía (mismo problema preexistente que "carga-viajes/tipo-vehiculo", etc.) -- para el
+        // POS conviene resolverlo por ruta efectiva antes de caer al switch genérico del módulo.
+        var path = GetEffectiveCurrentPath();
+        if (path.StartsWith("ventas/punto-venta", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(path, "ventas/delivery", StringComparison.OrdinalIgnoreCase))
+            return "Punto de Venta";
+
+        return GetModuleTitleForModule();
+    }
+
+    private string GetModuleTitleForModule() => _currentModule switch
     {
         "" => "Inicio",
         "consultas" => "Diseñador de Consultas",

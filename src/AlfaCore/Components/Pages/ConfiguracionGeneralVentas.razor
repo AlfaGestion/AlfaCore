@@ -1,7 +1,9 @@
 @page "/configuracion-general/ventas"
 @page "/{idweb}/{idbase:int}/configuracion-general/ventas"
 @using AlfaCore.Models
+@using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.IConfiguracionGeneralService ConfigSvc
+@inject AlfaCore.Services.IArcaConfigService ArcaSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
@@ -39,14 +41,177 @@
         </div>
     </section>
 
+    <section class="panel-card">
+        <h3 class="panel-card__title">Facturación electrónica (AFIP/ARCA)</h3>
+        <p class="panel-card__subtitle">
+            Configurá el CAE real para las facturas del Punto de Venta. Se puede facturar con un único
+            CUIT general, o dejar que cada unidad de negocio facture con el suyo propio.
+        </p>
+
+        <div class="cfgventas-checks">
+            <AlfaCheckbox Value="@_arca.UsaFacturacionElectronica" ValueChanged="v => _arca.UsaFacturacionElectronica = v == true">
+                <i class="bi bi-file-earmark-check"></i> Habilitar facturación electrónica
+            </AlfaCheckbox>
+        </div>
+
+        @if (_arca.UsaFacturacionElectronica)
+        {
+            <div class="cfgarca-row">
+                <label class="cfgarca-field">
+                    Ambiente
+                    <select class="cfgarca-select" @bind="_arca.Ambiente">
+                        <option value="HOMOLOGACION">Homologación (pruebas, sin validez fiscal)</option>
+                        <option value="PRODUCCION">Producción</option>
+                    </select>
+                </label>
+                <label class="cfgarca-field">
+                    Si AFIP rechaza o no responde
+                    <select class="cfgarca-select" @bind="_arca.ModoFalloCae">
+                        <option value="ESTRICTO">Cortar la venta (recomendado)</option>
+                        <option value="DEGRADADO">Completar igual, CAE pendiente</option>
+                    </select>
+                </label>
+            </div>
+
+            <h4 class="cfgarca-subtitle">CUIT general (fallback)</h4>
+            <p class="panel-card__subtitle">Se usa para las unidades de negocio que no tengan factura electrónica propia activada abajo.</p>
+            <div class="cfgarca-row">
+                <label class="cfgarca-field">
+                    CUIT
+                    <input class="cfgarca-input" @bind="_arca.Cuit" maxlength="15" placeholder="Sin guiones" />
+                </label>
+                <label class="cfgarca-field">
+                    Punto de venta
+                    <input class="cfgarca-input" @bind="_arca.PuntoVenta" maxlength="4" />
+                </label>
+                <div class="cfgarca-field">
+                    Certificado (.crt)
+                    <div class="cfgarca-cert">
+                        <div class="cfgarca-cert-picker">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-upload" Disabled="@_subiendoCertGlobal">
+                                @(string.IsNullOrEmpty(_arca.NombreArchivoCrt) ? "Subir .crt" : "Reemplazar")
+                            </AlfaButton>
+                            <InputFile class="cfgarca-input-file" OnChange="e => HandleCertificadoSeleccionadoAsync(e, ClaveGlobal, esClave: false)" accept=".crt,.pem" disabled="@_subiendoCertGlobal" />
+                        </div>
+                        <span class="cfgarca-cert-estado">
+                            @if (!string.IsNullOrEmpty(_arca.NombreArchivoCrt))
+                            {
+                                <span><i class="bi bi-shield-check"></i> @_arca.NombreArchivoCrt</span>
+                            }
+                            else
+                            {
+                                <span class="cfgarca-cert-vacio">Sin subir</span>
+                            }
+                        </span>
+                    </div>
+                </div>
+                <div class="cfgarca-field">
+                    Clave privada (.key)
+                    <div class="cfgarca-cert">
+                        <div class="cfgarca-cert-picker">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-upload" Disabled="@_subiendoCertGlobal">
+                                @(string.IsNullOrEmpty(_arca.NombreArchivoKey) ? "Subir .key" : "Reemplazar")
+                            </AlfaButton>
+                            <InputFile class="cfgarca-input-file" OnChange="e => HandleCertificadoSeleccionadoAsync(e, ClaveGlobal, esClave: true)" accept=".key,.pem" disabled="@_subiendoCertGlobal" />
+                        </div>
+                        <span class="cfgarca-cert-estado">
+                            @if (!string.IsNullOrEmpty(_arca.NombreArchivoKey))
+                            {
+                                <span><i class="bi bi-shield-check"></i> @_arca.NombreArchivoKey</span>
+                            }
+                            else
+                            {
+                                <span class="cfgarca-cert-vacio">Sin subir</span>
+                            }
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <h4 class="cfgarca-subtitle">Unidades de negocio con factura electrónica propia</h4>
+            <p class="panel-card__subtitle">
+                Detectadas en <code>V_TA_UnidadNegocio</code>. Activá la que corresponda y subí su
+                certificado -- si no la activás, esa unidad factura con el CUIT general de arriba.
+            </p>
+
+            @if (_arca.Unidades.Count == 0)
+            {
+                <p class="cfgarca-sin-unidades">No hay unidades de negocio cargadas.</p>
+            }
+            else
+            {
+                <div class="cfgarca-table-wrap">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Código</th>
+                                <th>Razón social</th>
+                                <th>Usa eFC</th>
+                                <th>CUIT</th>
+                                <th>PV</th>
+                                <th>Certificado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var unidad in _arca.Unidades)
+                            {
+                                <tr>
+                                    <td>@unidad.Codigo</td>
+                                    <td>@unidad.RazonSocialUnidad</td>
+                                    <td>
+                                        <AlfaCheckbox Value="@unidad.UsaFacturacionElectronica" ValueChanged="v => unidad.UsaFacturacionElectronica = v == true" />
+                                    </td>
+                                    <td><input class="cfgarca-input cfgarca-input--sm" @bind="unidad.Cuit" maxlength="15" /></td>
+                                    <td><input class="cfgarca-input cfgarca-input--xs" @bind="unidad.PuntoVenta" maxlength="4" /></td>
+                                    <td>
+                                        <div class="cfgarca-cert">
+                                            <div class="cfgarca-cert-picker" title="Certificado .crt">
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-filetype-key" Disabled="@(_subiendoCertUnidad == unidad.Codigo)">
+                                                    .crt
+                                                </AlfaButton>
+                                                <InputFile class="cfgarca-input-file" OnChange="e => HandleCertificadoSeleccionadoAsync(e, unidad.Codigo, esClave: false)" accept=".crt,.pem" disabled="@(_subiendoCertUnidad == unidad.Codigo)" />
+                                            </div>
+                                            <div class="cfgarca-cert-picker" title="Clave privada .key">
+                                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-filetype-key" Disabled="@(_subiendoCertUnidad == unidad.Codigo)">
+                                                    .key
+                                                </AlfaButton>
+                                                <InputFile class="cfgarca-input-file" OnChange="e => HandleCertificadoSeleccionadoAsync(e, unidad.Codigo, esClave: true)" accept=".key,.pem" disabled="@(_subiendoCertUnidad == unidad.Codigo)" />
+                                            </div>
+                                            <span class="cfgarca-cert-estado">
+                                                @if (unidad.TieneCertificado)
+                                                {
+                                                    <i class="bi bi-shield-check"></i>
+                                                }
+                                                else
+                                                {
+                                                    <span class="cfgarca-cert-vacio">Sin subir</span>
+                                                }
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        }
+    </section>
+
     <div class="cfgventas-save-bar">
         <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar</AlfaButton>
     </div>
 </div>
 
 @code {
+    private const string ClaveGlobal = "GLOBAL";
+    private const long TamanoMaximoCertificadoBytes = 512 * 1024;
+
     private ConfiguracionVentasPortalClienteDto _portal = new();
+    private ArcaConfiguracionGeneralDto _arca = new();
     private bool _saving;
+    private bool _subiendoCertGlobal;
+    private string? _subiendoCertUnidad;
     private AppUiMessage? _feedback;
 
     protected override void OnInitialized() => UpdatePageHeader();
@@ -64,6 +229,14 @@
         var result = await UiOps.RunAsync(() => ConfigSvc.GetVentasPortalClienteAsync(), "No se pudo cargar la configuración del Portal Cliente.");
         if (result.Success && result.Value is not null)
             _portal = result.Value;
+        else if (!result.Success)
+            _feedback = result.Feedback;
+
+        var arcaResult = await UiOps.RunAsync(() => ArcaSvc.GetConfiguracionGeneralAsync(), "No se pudo cargar la configuración de facturación electrónica.");
+        if (arcaResult.Success && arcaResult.Value is not null)
+            _arca = arcaResult.Value;
+        else if (!arcaResult.Success)
+            _feedback = arcaResult.Feedback;
     }
 
     private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
@@ -78,9 +251,84 @@
     {
         _saving = true;
         var result = await UiOps.RunAsync(async () => { await ConfigSvc.SaveVentasPortalClienteAsync(_portal); return true; }, "No se pudo guardar la configuración del Portal Cliente.");
+        if (!result.Success)
+        {
+            _saving = false;
+            _feedback = result.Feedback;
+            return;
+        }
+
+        var arcaResult = await UiOps.RunAsync(async () =>
+        {
+            await ArcaSvc.GuardarConfiguracionGeneralAsync(_arca);
+            foreach (var unidad in _arca.Unidades)
+                await ArcaSvc.GuardarUnidadAsync(unidad);
+            return true;
+        }, "No se pudo guardar la configuración de facturación electrónica.");
         _saving = false;
-        _feedback = result.Success
-            ? AppUiMessage.Success("Guardado", "La configuración del Portal Cliente se guardó correctamente.")
-            : result.Feedback;
+
+        _feedback = arcaResult.Success
+            ? AppUiMessage.Success("Guardado", "La configuración se guardó correctamente.")
+            : arcaResult.Feedback;
+    }
+
+    private async Task HandleCertificadoSeleccionadoAsync(InputFileChangeEventArgs args, string uNegocioOGlobal, bool esClave)
+    {
+        var file = args.File;
+        if (file is null) return;
+
+        var esGlobal = uNegocioOGlobal == ClaveGlobal;
+        if (esGlobal) _subiendoCertGlobal = true; else _subiendoCertUnidad = uNegocioOGlobal;
+
+        try
+        {
+            byte[] contenido;
+            await using (var stream = file.OpenReadStream(TamanoMaximoCertificadoBytes))
+            using (var ms = new MemoryStream())
+            {
+                await stream.CopyToAsync(ms);
+                contenido = ms.ToArray();
+            }
+
+            var crtBytes = esClave ? null : contenido;
+            var crtNombre = esClave ? null : file.Name;
+            var keyBytes = esClave ? contenido : null;
+            var keyNombre = esClave ? file.Name : null;
+
+            var result = await UiOps.RunAsync(async () =>
+            {
+                await ArcaSvc.SubirCertificadoAsync(uNegocioOGlobal, crtBytes, crtNombre, keyBytes, keyNombre);
+                return true;
+            }, "No se pudo subir el certificado.");
+
+            if (result.Success)
+            {
+                if (esGlobal)
+                {
+                    if (crtNombre is not null) _arca.NombreArchivoCrt = crtNombre;
+                    if (keyNombre is not null) _arca.NombreArchivoKey = keyNombre;
+                    _arca.TieneCertificado = !string.IsNullOrEmpty(_arca.NombreArchivoCrt) && !string.IsNullOrEmpty(_arca.NombreArchivoKey);
+                }
+                else
+                {
+                    var unidad = _arca.Unidades.FirstOrDefault(u => u.Codigo == uNegocioOGlobal);
+                    if (unidad is not null)
+                    {
+                        if (crtNombre is not null) unidad.NombreArchivoCrt = crtNombre;
+                        if (keyNombre is not null) unidad.NombreArchivoKey = keyNombre;
+                        unidad.TieneCertificado = !string.IsNullOrEmpty(unidad.NombreArchivoCrt) && !string.IsNullOrEmpty(unidad.NombreArchivoKey);
+                    }
+                }
+                _feedback = AppUiMessage.Success("Certificado subido", "El certificado se guardó correctamente.");
+            }
+            else
+            {
+                _feedback = result.Feedback;
+            }
+        }
+        finally
+        {
+            if (esGlobal) _subiendoCertGlobal = false; else _subiendoCertUnidad = null;
+        }
     }
 }

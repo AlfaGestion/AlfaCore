@@ -12,7 +12,9 @@ public sealed class PuntoVentaService(
     ISessionService sessionService,
     IAppUserSessionService appUserSession,
     IAppEventService appEvents,
-    IWebHostEnvironment env) : IPuntoVentaService
+    IWebHostEnvironment env,
+    IArcaConfigService arcaConfigService,
+    IArcaFacturacionElectronicaService arcaFacturacion) : IPuntoVentaService
 {
     private const string ModuleName = "PuntoVenta";
     private const string DefaultTc = "FC";
@@ -20,6 +22,9 @@ public sealed class PuntoVentaService(
     private const string DefaultSucursal = "0001";
     private const string DefaultClasePrecio = "1";
     private const string ConfigGroup = "PUNTOVENTA";
+    /// <summary>sp_web_Alta_Comprobante graba siempre UNEGOCIO='   1' (literal, confirmado en el SP)
+    /// para toda venta de POS -- se usa la misma unidad para resolver el emisor de ARCA.</summary>
+    private const string PosUNegocio = "   1";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -260,6 +265,23 @@ public sealed class PuntoVentaService(
             if (string.IsNullOrWhiteSpace(cliente))
                 throw new InvalidOperationException("No se pudo resolver la cuenta de consumidor final para grabar la venta.");
 
+            var modoFalloCae = await arcaConfigService.ResolveModoFalloCaeAsync(cn, token);
+
+            ArcaNumeracionPrevistaDto? numeracion = null;
+            if (TiposDocumentoCore.EsFactura(TiposDocumentoCore.TipoParaComprobante(tc, letra)))
+            {
+                try
+                {
+                    numeracion = await arcaFacturacion.ResolverNumeracionAsync(cn, PosUNegocio, letra, token);
+                }
+                catch when (modoFalloCae == ArcaModoFalloCae.Degradado)
+                {
+                    // AFIP no respondió y el modo es DEGRADADO: se sigue con la auto-numeración local
+                    // de siempre; el CAE quedará "Pendiente" para reintentar después de la venta.
+                    numeracion = null;
+                }
+            }
+
             var comprobante = await CreateReceiptAsync(
                 cn,
                 cliente,
@@ -269,10 +291,28 @@ public sealed class PuntoVentaService(
                 tc,
                 sucursal,
                 letra,
+                numeracion?.NumeroFormateado,
                 token);
 
             foreach (var item in items)
                 await AddReceiptItemAsync(cn, comprobante.IdComprobante, item, token);
+
+            var caeIntento = ArcaCaeIntentoDto.NoAplica;
+            if (TiposDocumentoCore.EsFactura(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
+            {
+                var contextoCae = new PuntoVentaCaeContextoDto(
+                    comprobante.Tc, comprobante.IdComprobanteTexto, comprobante.Sucursal, comprobante.Numero,
+                    comprobante.Letra, PosUNegocio, items, totalItems);
+                caeIntento = await arcaFacturacion.SolicitarCaeYPersistirAsync(cn, contextoCae, token);
+
+                if (caeIntento.Aplica && !caeIntento.Aprobado)
+                {
+                    if (modoFalloCae == ArcaModoFalloCae.Estricto)
+                        throw new InvalidOperationException($"AFIP no autorizó el comprobante ({caeIntento.Motivo}). La venta no se completó -- el comprobante quedó grabado sin cobranza para reintentar.");
+
+                    caeIntento = caeIntento with { Estado = ArcaCaeEstado.Pendiente };
+                }
+            }
 
             var idCobranza = await CreateCollectionAsync(cn, comprobante.IdComprobante, token);
             await NormalizeComprobanteKeysAsync(cn, idCobranza, token);
@@ -308,9 +348,59 @@ public sealed class PuntoVentaService(
                 Numero = comprobante.Numero,
                 Letra = comprobante.Letra,
                 IdComprobanteTexto = comprobante.IdComprobanteTexto,
-                Total = totalItems
+                Total = totalItems,
+                CaeEstado = caeIntento.Estado.ToString(),
+                Cae = caeIntento.Cae,
+                CaeVencimiento = caeIntento.CaeVencimiento,
+                CaeMotivo = caeIntento.Motivo
             };
         }, "No se pudo registrar la venta y su cobranza en el punto de venta.", ct);
+
+    public Task<ArcaCaeIntentoDto> RetryCaeAsync(int idComprobante, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "RetryCae", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var comprobante = await LoadComprobanteAsync(cn, idComprobante, token)
+                ?? throw new InvalidOperationException("No se encontró el comprobante para reintentar el CAE.");
+
+            if (!TiposDocumentoCore.EsFactura(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
+                throw new InvalidOperationException("El comprobante no es una factura -- no corresponde pedir CAE.");
+
+            var items = await LoadReceiptItemsForRetryAsync(cn, comprobante.Tc, comprobante.IdComprobanteTexto, token);
+            var total = items.Sum(x => x.Subtotal);
+
+            var contextoCae = new PuntoVentaCaeContextoDto(
+                comprobante.Tc, comprobante.IdComprobanteTexto, comprobante.Sucursal, comprobante.Numero,
+                comprobante.Letra, PosUNegocio, items, total);
+
+            return await arcaFacturacion.SolicitarCaeYPersistirAsync(cn, contextoCae, token);
+        }, "No se pudo reintentar la solicitud de CAE.", ct);
+
+    private static async Task<IReadOnlyList<PuntoVentaCartItemDto>> LoadReceiptItemsForRetryAsync(SqlConnection cn, string tc, string idComprobanteTexto, CancellationToken ct)
+    {
+        var rows = await cn.QueryAsync<(string IdArticulo, decimal TotalFinal, decimal AlicIva, bool Exento)>(new CommandDefinition(
+            """
+            SELECT ISNULL(LTRIM(RTRIM(IDARTICULO)), '') AS IdArticulo,
+                   ISNULL(CONVERT(decimal(15,2), TOTALFINAL), 0) AS TotalFinal,
+                   ISNULL(CONVERT(decimal(9,4), ALICIVA), 0) AS AlicIva,
+                   CAST(ISNULL(EXENTO, 0) AS bit) AS Exento
+            FROM dbo.V_MV_CPTEINSUMOS
+            WHERE TC = @Tc AND IDCOMPROBANTE = @IdComprobante;
+            """,
+            new { Tc = tc, IdComprobante = idComprobanteTexto },
+            cancellationToken: ct));
+
+        return rows.Select(r => new PuntoVentaCartItemDto
+        {
+            IdArticulo = r.IdArticulo,
+            Cantidad = 1,
+            PrecioUnitario = r.TotalFinal,
+            TasaIva = r.AlicIva,
+            Exento = r.Exento
+        }).ToList();
+    }
 
     public Task SendReceiptByEmailAsync(PuntoVentaReceiptEmailRequestDto request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SendReceiptByEmail", async token =>
@@ -1035,6 +1125,7 @@ public sealed class PuntoVentaService(
         string tc,
         string sucursal,
         string letra,
+        string? numeroOverride,
         CancellationToken ct)
     {
         await using var cmd = new SqlCommand("dbo.sp_web_Alta_Comprobante", cn)
@@ -1050,7 +1141,9 @@ public sealed class PuntoVentaService(
         cmd.Parameters.AddWithValue("@pLng", DBNull.Value);
         cmd.Parameters.AddWithValue("@pTC", tc);
         cmd.Parameters.AddWithValue("@pSucursal", sucursal);
-        cmd.Parameters.AddWithValue("@pNumero", DBNull.Value);
+        // Numerado explícito (viene de ARCA/AFIP para facturas electrónicas, ver ResolverNumeracionAsync)
+        // o DBNull para que el propio SP autonumere (comprobantes no fiscales o ARCA apagado).
+        cmd.Parameters.AddWithValue("@pNumero", (object?)numeroOverride ?? DBNull.Value);
         cmd.Parameters.AddWithValue("@pLetra", letra);
 
         var resultadoParam = new SqlParameter("@pResultado", System.Data.SqlDbType.SmallInt) { Direction = System.Data.ParameterDirection.Output };

@@ -129,6 +129,12 @@ public sealed class PuntoVentaSaleResultDto
     public string Letra { get; init; } = string.Empty;
     public string IdComprobanteTexto { get; init; } = string.Empty;
     public decimal Total { get; init; }
+    /// <summary>"NoAplica" (facturación electrónica apagada/no configurada), "Aprobado", "Rechazado" o
+    /// "Pendiente" (ARCA no respondió y el modo de fallo es DEGRADADO). Ver ArcaCaeEstado.</summary>
+    public string CaeEstado { get; init; } = "NoAplica";
+    public string? Cae { get; init; }
+    public DateTime? CaeVencimiento { get; init; }
+    public string? CaeMotivo { get; init; }
 }
 
 public sealed class PuntoVentaReceiptEmailRequestDto

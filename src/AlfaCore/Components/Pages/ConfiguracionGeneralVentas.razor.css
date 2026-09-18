@@ -24,3 +24,89 @@
     bottom: 0;
     padding-top: .5rem;
 }
+
+.cfgarca-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: .75rem;
+}
+
+.cfgarca-field {
+    display: flex;
+    flex-direction: column;
+    gap: .3rem;
+    font-size: .85rem;
+    color: var(--alfa-text-secondary);
+    flex: 1 1 180px;
+}
+
+.cfgarca-select,
+.cfgarca-input {
+    border: 1px solid var(--alfa-border, #d0d5dd);
+    border-radius: 8px;
+    padding: .45rem .6rem;
+    font-size: .9rem;
+    color: var(--alfa-text);
+    background: var(--alfa-surface, #fff);
+}
+
+.cfgarca-input--sm { width: 110px; }
+.cfgarca-input--xs { width: 60px; }
+
+.cfgarca-subtitle {
+    margin: 1.1rem 0 0;
+    font-size: .95rem;
+    font-weight: 700;
+}
+
+.cfgarca-cert {
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    flex-wrap: wrap;
+}
+
+.cfgarca-cert-picker {
+    position: relative;
+    display: inline-flex;
+}
+
+.cfgarca-input-file {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    cursor: pointer;
+}
+
+.cfgarca-input-file:disabled {
+    cursor: not-allowed;
+}
+
+.cfgarca-cert-estado {
+    font-size: .82rem;
+    color: var(--alfa-text-secondary);
+}
+
+.cfgarca-cert-estado i {
+    color: #16a34a;
+    margin-right: .25rem;
+}
+
+.cfgarca-cert-vacio {
+    color: var(--alfa-text-secondary);
+    font-style: italic;
+}
+
+.cfgarca-table-wrap {
+    overflow-x: auto;
+    margin-top: .5rem;
+}
+
+.cfgarca-sin-unidades {
+    color: var(--alfa-text-secondary);
+    font-style: italic;
+    margin-top: .5rem;
+}
