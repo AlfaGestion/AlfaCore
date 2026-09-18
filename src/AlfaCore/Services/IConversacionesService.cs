@@ -46,6 +46,7 @@ public interface IConversacionesService
     Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesForConversationAsync(long idConversacion, int? expectedBaseId, CancellationToken ct = default);
     Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, CancellationToken ct = default);
     Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, int? expectedBaseId, CancellationToken ct = default);
+    Task<ConversacionPlantillasSyncResultDto> SyncTemplatesCatalogFromMetaAsync(int? idNumeroWhatsApp, int? expectedBaseId = null, CancellationToken ct = default);
     Task<long> SaveTemplateDraftAsync(ConversacionPlantillaSaveRequest request, CancellationToken ct = default);
     Task ArchiveTemplateAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);
     Task SubmitTemplateForApprovalAsync(ConversacionPlantillaSubmitRequest request, CancellationToken ct = default);

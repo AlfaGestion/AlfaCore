@@ -650,6 +650,8 @@ public sealed class ConversacionPlantillaFilters
     public int? IdNumeroWhatsApp { get; set; }
     public string Search { get; set; } = string.Empty;
     public string? EstadoMeta { get; set; }
+    public string? Categoria { get; set; }
+    public string? Idioma { get; set; }
     public bool IncluirInactivas { get; set; }
 }
 
@@ -664,6 +666,7 @@ public sealed class ConversacionPlantillaDto
     public string CuerpoTexto { get; set; } = string.Empty;
     public string PieTexto { get; set; } = string.Empty;
     public string EjemplosVariablesJson { get; set; } = string.Empty;
+    public string ComponentesMetaJson { get; set; } = string.Empty;
     public string EstadoLocal { get; set; } = ConversacionPlantillaEstadosLocales.Borrador;
     public string EstadoMeta { get; set; } = string.Empty;
     public string MetaTemplateId { get; set; } = string.Empty;
@@ -750,6 +753,15 @@ public sealed class ConversacionPlantillaMessageResultDto
     public string WhatsAppMessageId { get; set; } = string.Empty;
 }
 
+public sealed class ConversacionPlantillasSyncResultDto
+{
+    public int TotalMeta { get; set; }
+    public int Insertadas { get; set; }
+    public int Actualizadas { get; set; }
+    public int SinCambios { get; set; }
+    public int ConError { get; set; }
+}
+
 public sealed class ConversacionPlantillaAutoValuesDto
 {
     public List<string> Valores { get; set; } = [];
@@ -762,6 +774,7 @@ public static class ConversacionPlantillaCategorias
 {
     public const string Marketing = "MARKETING";
     public const string Utility = "UTILITY";
+    public const string Authentication = "AUTHENTICATION";
 }
 
 public static class ConversacionPlantillaEstadosLocales

@@ -15,8 +15,8 @@
 
 <PageTitle>Plantillas de WhatsApp | Alfa Gestión</PageTitle>
 
-<section class="page-grid templates-page templates-page--odoo">
-    <div class="page-intro conversations-topbar">
+<section class="templates-v1" @onclick="CloseTemplatesSearchPanel">
+    <div class="page-intro conversations-topbar" hidden>
         <div>
             <h2 class="page-intro__title">Plantillas de WhatsApp</h2>
             <p class="page-intro__text">Creá borradores, envialos a aprobación de Meta y sincronizá su estado para retomar conversaciones fuera de la ventana de 24 horas.</p>
@@ -70,7 +70,7 @@
     }
     else
     {
-        <section class="panel-card templates-filters">
+        <section class="panel-card templates-filters" hidden>
             <div class="conversations-filters__fields">
                 <div class="field">
                     <label for="tpl-whatsapp">WhatsApp</label>
@@ -321,6 +321,8 @@
     private long _selectedId;
     private bool _loading;
     private bool _busy;
+    private bool _syncingMeta;
+    private bool _showTemplatesSearchPanel;
     private string _examplesText = string.Empty;
     private string _formEstadoMeta = "DRAFT";
     private string? _loadError;
@@ -662,6 +664,8 @@
             IdNumeroWhatsApp = _filters.IdNumeroWhatsApp,
             Search = _filters.Search,
             EstadoMeta = _filters.EstadoMeta,
+            Categoria = _filters.Categoria,
+            Idioma = _filters.Idioma,
             IncluirInactivas = _filters.IncluirInactivas
         };
 
@@ -714,13 +718,131 @@
         _lifetimeCts.Dispose();
     }
 
+    private static readonly IReadOnlyList<AlfaSelectOption> TemplateStatusOptions =
+    [
+        new("", "Todos"),
+        new("DRAFT", "Borrador"),
+        new("PENDING", "Pendiente"),
+        new("APPROVED", "Aprobada"),
+        new("REJECTED", "Rechazada"),
+        new("PAUSED", "Pausada"),
+        new("DISABLED", "Deshabilitada")
+    ];
+
+    private static readonly IReadOnlyList<AlfaSelectOption> CategoryOptions =
+    [
+        new("", "Todas"),
+        new(ConversacionPlantillaCategorias.Marketing, "Marketing"),
+        new(ConversacionPlantillaCategorias.Utility, "Utilidad"),
+        new(ConversacionPlantillaCategorias.Authentication, "Autenticación")
+    ];
+
+    private RenderFragment RenderTemplatesSmartSearch() => @<div class="smart-search templates-smart-search" @onclick:stopPropagation @onkeydown="HandleSearchEnter">
+        @{ var activeChips = BuildTemplateFilterChips(); }
+        <div class="smart-search__bar @(_showTemplatesSearchPanel ? "is-open" : string.Empty)">
+            <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
+            <button type="button"
+                    class="smart-search__filter-button @(_showTemplatesSearchPanel || activeChips.Count > 0 ? "is-active" : string.Empty)"
+                    title="Abrir filtros"
+                    aria-label="Abrir filtros"
+                    aria-expanded="@_showTemplatesSearchPanel"
+                    @onclick="ToggleTemplatesSearchPanel">
+                <i class="bi bi-funnel-fill" aria-hidden="true"></i>
+            </button>
+            <div class="smart-search__active-filters" aria-label="Filtros activos">
+                @foreach (var chip in activeChips.Take(2))
+                {
+                    <button type="button"
+                            class="smart-search__active-filter"
+                            title="@($"Quitar filtro {chip.Label}")"
+                            aria-label="@($"Quitar filtro {chip.Label}")"
+                            @onclick="() => RemoveTemplateChipAsync(chip.Key)">
+                        <span>@chip.Label</span>
+                        <span class="smart-search__active-filter-remove" aria-hidden="true"><i class="bi bi-x"></i></span>
+                    </button>
+                }
+                @if (activeChips.Count > 2)
+                {
+                    <span class="smart-search__more-filters" title="@string.Join(", ", activeChips.Skip(2).Select(chip => chip.Label))">+@(activeChips.Count - 2)</span>
+                }
+            </div>
+            <input type="search"
+                   placeholder="Buscar por nombre, ID Meta o texto..."
+                   value="@_filters.Search"
+                   @onfocus="OpenTemplatesSearchPanel"
+                   @oninput="OnTemplatesSearchInput"
+                   @onkeydown="HandleSearchEnter" />
+            <button type="button"
+                    class="smart-search__toggle"
+                    @onclick="ToggleTemplatesSearchPanel"
+                    aria-label="Mostrar filtros"
+                    aria-expanded="@_showTemplatesSearchPanel">
+                <i class="bi @(_showTemplatesSearchPanel ? "bi-caret-up-fill" : "bi-caret-down-fill")"></i>
+            </button>
+        </div>
+
+        @if (_showTemplatesSearchPanel)
+        {
+            <button type="button" class="module-actionbar__search-backdrop" aria-label="Cerrar filtros" @onclick="CloseTemplatesSearchPanel"></button>
+            <div class="smart-search__panel smart-search__panel--compact" @onclick:stopPropagation @onkeydown="HandleSearchEnter">
+                <div class="smart-search__column smart-search__section">
+                    <h4><i class="bi bi-whatsapp"></i> WhatsApp</h4>
+                    <select value="@_filters.IdNumeroWhatsApp" @onchange="OnWhatsAppNumeroChangedAsync" disabled="@_loading">
+                        @foreach (var numero in TemplateWhatsAppNumeros)
+                        {
+                            <option value="@numero.IdNumero">@GetWhatsAppNumeroLabel(numero)</option>
+                        }
+                    </select>
+                </div>
+                <div class="smart-search__column smart-search__section">
+                    <h4><i class="bi bi-check2-circle"></i> Estado</h4>
+                    <AlfaSelect Value="@(_filters.EstadoMeta ?? string.Empty)"
+                                ValueChanged="SetStatusFilterAsync"
+                                Options="@TemplateStatusOptions"
+                                Disabled="@_loading" />
+                    <AlfaSelect Value="@(_filters.Categoria ?? string.Empty)"
+                                ValueChanged="SetCategoryFilterAsync"
+                                Options="@CategoryOptions"
+                                Disabled="@_loading" />
+                </div>
+                <div class="smart-search__column smart-search__section smart-search__section--actions">
+                    <h4><i class="bi bi-lightning-charge-fill"></i> Acciones</h4>
+                    <AlfaCheckbox Value="@_filters.IncluirInactivas" ValueChanged="SetIncludeInactiveFilter" Disabled="@_loading">Incluir inactivas</AlfaCheckbox>
+                    <div class="actions smart-search__actions">
+                        <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" Disabled="@_loading" OnClick="_ => ApplyTemplateFiltersAsync()">Aplicar</AlfaButton>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" Disabled="@_loading" OnClick="_ => ClearTemplateFiltersAsync()">Limpiar</AlfaButton>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>;
+
     private void UpdatePageHeader()
     {
+        var actions = new List<PageHeaderAction>
+        {
+            new() { Key = "nuevo", Label = "Nueva plantilla", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy || _loading, OnClick = () => { CrearPlantillaBase(); UpdatePageHeader(); return Task.CompletedTask; } },
+            new() { Key = "sincronizar-meta", Label = _syncingMeta ? "Sincronizando..." : "Sincronizar con Meta", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _loading || _busy || _syncingMeta || _filters.IdNumeroWhatsApp is not > 0, Busy = _syncingMeta, OnClick = SyncCatalogAsync },
+            new() { Key = "factura", Label = "Factura", Icon = "bi-file-earmark-text", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaFacturaMantenimientoAsync },
+            new() { Key = "cobranza", Label = "Cobranza", Icon = "bi-receipt", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaCobranzaAsync },
+            new() { Key = "tarea-asignada", Label = "Tarea asignada", Icon = "bi-person-check", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaTareaAsignadaAsync },
+            new() { Key = "tarea-finalizada", Label = "Tarea finalizada", Icon = "bi-check2-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaTareaFinalizadaAsync },
+            new() { Key = "guardia", Label = "Guardia", Icon = "bi-calendar-week", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaGuardiaAsync },
+            new() { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loading, OnClick = () => LoadTemplatesAsync() }
+        };
+
         PageHeader.Set(new PageHeaderConfig
         {
+            Title = "Plantillas",
+            Breadcrumb = ["Conversaciones", "Plantillas"],
+            State = _loading || _syncingMeta ? PageHeaderState.Loading : PageHeaderState.List,
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-            TopNavigationItems = BuildTopNavigationItems()
+            TopNavigationItems = BuildTopNavigationItems(),
+            Search = new PageHeaderSearchConfig(),
+            SearchContent = RenderTemplatesSmartSearch(),
+            Actions = actions
         });
+        _ = InvokeAsync(StateHasChanged);
     }
 
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
@@ -969,7 +1091,126 @@
     private async Task ClearTemplateFiltersAsync()
     {
         _filters = new ConversacionPlantillaFilters { ExpectedBaseId = CurrentExpectedBaseIdOrNull(), IdNumeroWhatsApp = _filters.IdNumeroWhatsApp };
+        _showTemplatesSearchPanel = false;
+        UpdatePageHeader();
         await LoadTemplatesAsync();
+    }
+
+    private async Task ApplyTemplateFiltersAsync()
+    {
+        _showTemplatesSearchPanel = false;
+        UpdatePageHeader();
+        await LoadTemplatesAsync();
+    }
+
+    private void OpenTemplatesSearchPanel()
+    {
+        _showTemplatesSearchPanel = true;
+        UpdatePageHeader();
+    }
+
+    private void ToggleTemplatesSearchPanel()
+    {
+        _showTemplatesSearchPanel = !_showTemplatesSearchPanel;
+        UpdatePageHeader();
+    }
+
+    private void CloseTemplatesSearchPanel()
+    {
+        if (!_showTemplatesSearchPanel)
+            return;
+
+        _showTemplatesSearchPanel = false;
+        UpdatePageHeader();
+    }
+
+    private void OnTemplatesSearchInput(ChangeEventArgs e)
+    {
+        _filters.Search = Convert.ToString(e.Value) ?? string.Empty;
+        _showTemplatesSearchPanel = true;
+        UpdatePageHeader();
+    }
+
+    private async Task SetStatusFilterAsync(string? value)
+    {
+        _filters.EstadoMeta = string.IsNullOrWhiteSpace(value) ? null : value;
+        await ApplyTemplateFiltersAsync();
+    }
+
+    private async Task SetCategoryFilterAsync(string? value)
+    {
+        _filters.Categoria = string.IsNullOrWhiteSpace(value) ? null : value;
+        await ApplyTemplateFiltersAsync();
+    }
+
+    private async Task SetIncludeInactiveFilter(bool? value)
+    {
+        _filters.IncluirInactivas = value is true;
+        await ApplyTemplateFiltersAsync();
+    }
+
+    private async Task RemoveTemplateChipAsync(string key)
+    {
+        switch (key)
+        {
+            case "texto":
+                _filters.Search = string.Empty;
+                break;
+            case "estado":
+                _filters.EstadoMeta = null;
+                break;
+            case "categoria":
+                _filters.Categoria = null;
+                break;
+            case "inactivas":
+                _filters.IncluirInactivas = false;
+                break;
+        }
+
+        await ApplyTemplateFiltersAsync();
+    }
+
+    private IReadOnlyList<(string Key, string Label)> BuildTemplateFilterChips()
+    {
+        var chips = new List<(string Key, string Label)>();
+        if (!string.IsNullOrWhiteSpace(_filters.Search))
+            chips.Add(("texto", _filters.Search.Trim()));
+        if (!string.IsNullOrWhiteSpace(_filters.EstadoMeta))
+            chips.Add(("estado", GetMetaStatusLabel(_filters.EstadoMeta)));
+        if (!string.IsNullOrWhiteSpace(_filters.Categoria))
+            chips.Add(("categoria", GetCategoryLabel(_filters.Categoria)));
+        if (_filters.IncluirInactivas)
+            chips.Add(("inactivas", "Inactivas"));
+        return chips;
+    }
+
+    private async Task SyncCatalogAsync()
+    {
+        if (_filters.IdNumeroWhatsApp is not > 0)
+        {
+            SetError("Seleccioná un WhatsApp para sincronizar plantillas.");
+            return;
+        }
+
+        _syncingMeta = true;
+        _feedback = null;
+        ClearError();
+        UpdatePageHeader();
+        try
+        {
+            var result = await ConversacionesSvc.SyncTemplatesCatalogFromMetaAsync(_filters.IdNumeroWhatsApp, CurrentExpectedBaseIdOrNull(), _lifetimeCts.Token);
+            _feedback = BuildSyncFeedback(result);
+            await LoadTemplatesAsync();
+        }
+        catch (Exception ex)
+        {
+            SetError(ex);
+        }
+        finally
+        {
+            _syncingMeta = false;
+            UpdatePageHeader();
+        }
     }
 
     private async Task SelectTemplateAsync(long idPlantilla)
@@ -1196,6 +1437,9 @@
         _errorDetail = null;
         _showErrorDetail = false;
     }
+
+    private void ClearFeedback()
+        => _feedback = null;
 
     private void SetError(string message)
     {
@@ -1603,9 +1847,28 @@
         => estadoMeta?.Trim().ToUpperInvariant() is "PENDING" or "APPROVED" or "REJECTED" or "PAUSED" or "DISABLED";
 
     private static string GetCategoryLabel(string value)
-        => string.Equals(value, ConversacionPlantillaCategorias.Utility, StringComparison.OrdinalIgnoreCase)
-            ? "Utilidad"
-            : "Marketing";
+        => (value ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            ConversacionPlantillaCategorias.Utility => "Utilidad",
+            ConversacionPlantillaCategorias.Authentication => "Autenticación",
+            ConversacionPlantillaCategorias.Marketing => "Marketing",
+            _ => DisplayOrFallback(value)
+        };
+
+    private static string BuildSyncFeedback(ConversacionPlantillasSyncResultDto result)
+    {
+        var parts = new List<string>
+        {
+            $"{result.TotalMeta} en Meta",
+            $"{result.Insertadas} nuevas",
+            $"{result.Actualizadas} actualizadas"
+        };
+        if (result.SinCambios > 0)
+            parts.Add($"{result.SinCambios} sin cambios");
+        if (result.ConError > 0)
+            parts.Add($"{result.ConError} con error");
+        return "Sincronización finalizada: " + string.Join(", ", parts) + ".";
+    }
 
     private void AplicarFiltroModeloSeleccionado()
     {
