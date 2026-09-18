@@ -8481,7 +8481,7 @@
 
         try
         {
-            await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+            var sendResult = await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
                 IdPlantilla = SelectedTemplate.IdPlantilla,
@@ -8506,9 +8506,20 @@
 
             await SelectConversationAsync(selectedConversationId, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
-            _actionMessage = templateAttachmentsToSend.Count == 0
-                ? $"Plantilla enviada correctamente: {previewText}"
-                : $"Plantilla y adjunto(s) enviados correctamente: {previewText}";
+
+            // Meta confirma la aceptación de forma sincrónica (ENVIADO_META); la entrega real puede
+            // fallar después vía webhook de estado. El texto no debe afirmar un resultado definitivo
+            // que todavía no se conoce en este punto.
+            if (WasTemplateAcceptedByMeta(sendResult.EstadoEnvio))
+            {
+                _actionMessage = templateAttachmentsToSend.Count == 0
+                    ? $"Plantilla enviada a Meta: {previewText}"
+                    : $"Plantilla y adjunto(s) enviados a Meta: {previewText}";
+            }
+            else
+            {
+                _actionError = $"Meta no confirmó el envío de la plantilla (estado: {sendResult.EstadoEnvio}). Revisá el mensaje en la conversación.";
+            }
         }
         catch (Exception ex)
         {
@@ -11108,6 +11119,11 @@
         => values.Count == CountTemplateVariables(template.CuerpoTexto)
            && values.All(x => !string.IsNullOrWhiteSpace(x))
            && string.IsNullOrEmpty(WhatsAppTemplateValidation.UnsupportedReason(template));
+
+    // Meta confirma de forma sincrónica la aceptación del envío (ENVIADO_META); la entrega real se
+    // confirma o falla después vía webhook de estado. Solo ENVIADO_META habilita un mensaje de éxito.
+    private static bool WasTemplateAcceptedByMeta(string? estadoEnvio)
+        => string.Equals(estadoEnvio, "ENVIADO_META", StringComparison.OrdinalIgnoreCase);
 
     private static string GetTemplateDefaultVariableValue(ConversacionDetalleDto? conversation)
     {

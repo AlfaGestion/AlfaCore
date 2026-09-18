@@ -201,6 +201,46 @@ public sealed class WhatsAppTemplateTests
         await Assert.ThrowsAsync<HttpRequestException>(() => Invoke(service, "CreateMetaTemplateAsync", Config(), Template("Hola."), CancellationToken.None));
     }
 
+    // Bug reportado: toast de éxito ("Plantilla enviada correctamente") simultáneo a ícono rojo de
+    // fallo en la lista. La causa fue que la UI de Conversaciones.razor ignoraba el resultado real del
+    // envío (SendTemplateMessageAsync) y mostraba éxito incondicionalmente si no hubo excepción. Meta
+    // acepta el envío de forma sincrónica (EstadoEnvio=ENVIADO_META) y la entrega puede fallar después,
+    // de forma asincrónica, vía webhook de estado -- ese fallo posterior nunca puede ni debe volver un
+    // resultado "exitoso" en este método, porque ya no participa del ciclo de envío sincrónico.
+    [Theory]
+    [InlineData("ENVIADO_META", true)]
+    [InlineData("ERROR_ENVIO", false)]
+    [InlineData("PENDIENTE", false)]
+    [InlineData(null, false)]
+    public void ToastOnlyClaimsSuccessWhenMetaAcceptedTheSend(string? estadoEnvio, bool expected)
+    {
+        var method = typeof(AlfaCore.Components.Pages.Conversaciones).GetMethod("WasTemplateAcceptedByMeta", BindingFlags.NonPublic | BindingFlags.Static)!;
+        Assert.Equal(expected, (bool)method.Invoke(null, new object?[] { estadoEnvio })!);
+    }
+
+    [Fact]
+    public async Task SendReturnsAcceptedStateOnlyWhenMetaConfirmsWithMessageId()
+    {
+        var handler = new Handler(_ => Task.FromResult(Json("{\"messages\":[{\"id\":\"wamid.fake\"}]}")));
+        var result = await Invoke(Create(handler), "SendTemplateToWhatsAppAsync", Config(), "recipient", Template("Hola."), Array.Empty<string>(), CancellationToken.None);
+        var estadoEnvio = Property(result, "EstadoEnvio");
+        var accepted = typeof(AlfaCore.Components.Pages.Conversaciones)
+            .GetMethod("WasTemplateAcceptedByMeta", BindingFlags.NonPublic | BindingFlags.Static)!
+            .Invoke(null, new object?[] { estadoEnvio });
+        Assert.True((bool)accepted!);
+    }
+
+    [Fact]
+    public async Task MetaFailureNeverProducesAnAcceptedResult()
+    {
+        var service = Create(new Handler(_ => Task.FromResult(new HttpResponseMessage(HttpStatusCode.BadRequest) { Content = new StringContent("{\"error\":{\"code\":131042,\"message\":\"Business eligibility payment issue\"}}") })));
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            Invoke(service, "SendTemplateToWhatsAppAsync", Config(), "recipient", Template("Hola."), Array.Empty<string>(), CancellationToken.None));
+        // Al lanzar excepción, SendTemplateMessageAsync nunca llega a construir un
+        // ConversacionPlantillaMessageResultDto -- no existe ningún EstadoEnvio que la UI pueda
+        // malinterpretar como éxito para este intento.
+    }
+
     private static ConversacionPlantillaDto Template(string body) => new() { NombreMeta = "saludo", Idioma = "es_AR", CuerpoTexto = body, EstadoMeta = "APPROVED" };
     private static ConversacionWhatsAppConfigDto Config(string phone = "phone-A") => new() { PhoneNumberId = phone, AccessToken = "token-" + phone, BusinessAccountId = "waba-A", ApiVersion = "v26.0" };
     private static HttpResponseMessage Json(string body) => new(HttpStatusCode.OK) { Content = new StringContent(body) };
