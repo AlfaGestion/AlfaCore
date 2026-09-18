@@ -3576,6 +3576,7 @@ public sealed class ConversacionesService(
                 request.TraceStage?.Invoke("PROCESSING_STATUSES");
                 await UpdateWhatsAppMessageStatusAsync(status, token);
                 await TryFlagPaymentSetupRequiredAsync(currentBaseId, status, token);
+                await TryResolvePaymentSetupIfConfirmedAsync(currentBaseId, status, token);
                 processed++;
             }
 
@@ -9461,7 +9462,10 @@ public sealed class ConversacionesService(
     // nunca debe interrumpir el procesamiento del resto del webhook.
     private async Task TryFlagPaymentSetupRequiredAsync(int idBase, IncomingWhatsAppStatus status, CancellationToken ct)
     {
-        if (idBase <= 0 || string.IsNullOrWhiteSpace(status.PhoneNumberId))
+        // Evita acoplar el procesamiento de webhooks de bases 100% legacy (sin Embedded Signup) a la
+        // disponibilidad de ALFA_CENTRAL: si la base no está habilitada para Embedded, no hay ownership
+        // que resolver y esta consulta sería trabajo desperdiciado en el mejor caso.
+        if (idBase <= 0 || string.IsNullOrWhiteSpace(status.PhoneNumberId) || !embeddedSignupOptions.Value.IsAllowedForBase(idBase))
             return;
         if (!WhatsAppMetaErrorClassifier.IsCustomerPaymentSetupRequired(status.RawJson))
             return;
@@ -9482,6 +9486,7 @@ public sealed class ConversacionesService(
                 "Falta configurar moneda/facturación de la cuenta de WhatsApp Business en Meta.",
                 ctaUrl,
                 status.WhatsAppMessageId,
+                status.EventTimestampUtc,
                 ct);
         }
         catch (Exception ex)
@@ -9490,15 +9495,47 @@ public sealed class ConversacionesService(
         }
     }
 
+    // No existe ninguna forma read-only fiable de consultarle a Meta "¿ya configuraste el billing?"
+    // (ni queremos automatizar billing bajo CustomerPaysMeta). Por eso la única señal de recuperación
+    // aceptada es la evidencia operativa real: un webhook posterior de la MISMA integración
+    // confirmando que Meta procesó un envío sin error (sent/delivered/read), y solo si ese evento es
+    // posterior al momento en que se marcó ACTION_REQUIRED. La aceptación sincrónica del POST
+    // /messages (ENVIADO_META devuelto directamente por SendTemplateToWhatsAppAsync) NUNCA pasa por
+    // acá -- ya demostramos que Meta puede aceptar el POST y fallar segundos después.
+    private async Task TryResolvePaymentSetupIfConfirmedAsync(int idBase, IncomingWhatsAppStatus status, CancellationToken ct)
+    {
+        if (idBase <= 0 || string.IsNullOrWhiteSpace(status.PhoneNumberId) || !embeddedSignupOptions.Value.IsAllowedForBase(idBase))
+            return;
+        if (status.EstadoEnvio is not ("ENVIADO_META" or "ENTREGADO" or "LEIDO"))
+            return;
+
+        try
+        {
+            var ownership = await whatsAppAssetOwnershipStore.GetPhoneOwnershipAsync(status.PhoneNumberId, ct);
+            if (ownership is null || ownership.IdBase != idBase)
+                return;
+
+            await whatsAppIntegrationHealthStore.ResolveIfSubsequentAsync(
+                idBase, ownership.WabaId, status.PhoneNumberId, status.EventTimestampUtc, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo evaluar la recuperación del estado de integración para PhoneNumberId {PhoneNumberId}.", status.PhoneNumberId);
+        }
+    }
+
     public Task<WhatsAppIntegrationHealthStatus?> GetWhatsAppIntegrationHealthForConversationAsync(long idConversacion, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppIntegrationHealth", async token =>
         {
+            var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+            if (!embeddedSignupOptions.Value.IsAllowedForBase(idBase))
+                return null;
+
             var conversation = await RequireConversationAsync(idConversacion, token);
             if (conversation.IdNumeroWhatsApp is not > 0 || string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
                 return null;
 
             var ownership = await whatsAppAssetOwnershipStore.GetPhoneOwnershipAsync(conversation.PhoneNumberId, token);
-            var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
             if (ownership is null || ownership.IdBase != idBase)
                 return null;
 
@@ -12180,7 +12217,8 @@ public sealed class ConversacionesService(
                         WhatsAppMessageId = messageId,
                         EstadoEnvio = NormalizeWhatsAppDeliveryStatus(rawStatus, status),
                         RawJson = status.GetRawText(),
-                        PhoneNumberId = phoneNumberId
+                        PhoneNumberId = phoneNumberId,
+                        EventTimestampUtc = ParseWhatsAppStatusTimestamp(status)
                     });
                 }
             }
@@ -12204,6 +12242,26 @@ public sealed class ConversacionesService(
             "failed" => "ERROR_ENVIO",
             _ => "ENVIADO_META"
         };
+    }
+
+    // Meta reporta "timestamp" como epoch de segundos en formato string. Se usa el timestamp del
+    // EVENTO (no la hora local de recepción del webhook) para poder ordenar correctamente eventos que
+    // lleguen tarde o fuera de orden. Si falta o es inválido, se usa la hora de procesamiento como
+    // aproximación conservadora (nunca bloquea el procesamiento del webhook).
+    private static DateTime ParseWhatsAppStatusTimestamp(JsonElement status)
+    {
+        if (status.TryGetProperty("timestamp", out var timestampProp))
+        {
+            var raw = timestampProp.ValueKind switch
+            {
+                JsonValueKind.String => timestampProp.GetString(),
+                JsonValueKind.Number => timestampProp.GetRawText(),
+                _ => null
+            };
+            if (long.TryParse(raw, out var epochSeconds) && epochSeconds > 0)
+                return DateTimeOffset.FromUnixTimeSeconds(epochSeconds).UtcDateTime;
+        }
+        return DateTime.UtcNow;
     }
 
     private static List<IncomingWhatsAppAttachment> ExtractIncomingAttachments(JsonElement message, string type)
@@ -14157,6 +14215,7 @@ public sealed class ConversacionesService(
         public string EstadoEnvio { get; init; } = string.Empty;
         public string RawJson { get; init; } = string.Empty;
         public string PhoneNumberId { get; init; } = string.Empty;
+        public DateTime EventTimestampUtc { get; init; }
     }
 
     private sealed class PendingMediaHydration

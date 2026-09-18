@@ -22,11 +22,26 @@ public sealed record WhatsAppIntegrationHealthStatus(
     string ErrorCode,
     string DetailSummary,
     string? CtaUrl,
+    DateTime? RequiredSinceUtc,
+    DateTime? ResolvedAtUtc,
     DateTime ModifiedAtUtc);
 
 public interface IWhatsAppIntegrationHealthStore
 {
-    Task MarkActionRequiredAsync(int idBase, string wabaId, string phoneNumberId, string reason, string errorCode, string detailSummary, string? ctaUrl, string sourceMessageId, CancellationToken ct = default);
+    /// <param name="eventTimestampUtc">
+    /// Timestamp reportado por Meta para el evento que disparó el problema (no la hora local de
+    /// procesamiento). Se usa como ancla para que solo un evento positivo posterior pueda resolverlo.
+    /// </param>
+    Task MarkActionRequiredAsync(int idBase, string wabaId, string phoneNumberId, string reason, string errorCode, string detailSummary, string? ctaUrl, string sourceMessageId, DateTime eventTimestampUtc, CancellationToken ct = default);
+
+    /// <summary>
+    /// Resuelve el estado ACTION_REQUIRED de (idBase, wabaId, phoneNumberId) únicamente si
+    /// <paramref name="eventTimestampUtc"/> (timestamp de Meta del evento positivo, no la hora local)
+    /// es posterior al RequiredSinceUtc almacenado. Un evento viejo/reordenado nunca limpia un fallo
+    /// más nuevo. No afecta ningún mensaje individual (CONV_MENSAJES no se toca desde acá).
+    /// </summary>
+    Task ResolveIfSubsequentAsync(int idBase, string wabaId, string phoneNumberId, DateTime eventTimestampUtc, CancellationToken ct = default);
+
     Task<WhatsAppIntegrationHealthStatus?> GetAsync(int idBase, string wabaId, string phoneNumberId, CancellationToken ct = default);
 }
 
@@ -34,7 +49,7 @@ public sealed class WhatsAppIntegrationHealthStore(IConfiguration configuration,
 {
     private string ConnectionString => WhatsAppEmbeddedSignupConnection.Resolve(configuration, environment);
 
-    public async Task MarkActionRequiredAsync(int idBase, string wabaId, string phoneNumberId, string reason, string errorCode, string detailSummary, string? ctaUrl, string sourceMessageId, CancellationToken ct = default)
+    public async Task MarkActionRequiredAsync(int idBase, string wabaId, string phoneNumberId, string reason, string errorCode, string detailSummary, string? ctaUrl, string sourceMessageId, DateTime eventTimestampUtc, CancellationToken ct = default)
     {
         if (idBase <= 0) throw new ArgumentOutOfRangeException(nameof(idBase));
         var normalizedWaba = (wabaId ?? string.Empty).Trim();
@@ -42,16 +57,22 @@ public sealed class WhatsAppIntegrationHealthStore(IConfiguration configuration,
         if (normalizedWaba.Length == 0 || normalizedPhone.Length == 0)
             throw new ArgumentException("WabaId y PhoneNumberId son obligatorios para registrar un estado de integración.");
 
+        // RequiredSinceUtc nunca retrocede: si un evento de falla llega desordenado (más viejo que el
+        // ya registrado), se conserva el ancla más reciente para no debilitar la protección temporal
+        // de ResolveIfSubsequentAsync.
         const string sql = """
             MERGE dbo.WhatsAppIntegrationHealth AS target
             USING (SELECT @IdBase AS IdBase, @WabaId AS WabaId, @PhoneNumberId AS PhoneNumberId) AS source
                 ON target.IdBase = source.IdBase AND target.WabaId = source.WabaId AND target.PhoneNumberId = source.PhoneNumberId
             WHEN MATCHED THEN
                 UPDATE SET State = N'ACTION_REQUIRED', Reason = @Reason, ErrorCode = @ErrorCode,
-                    DetailSummary = @DetailSummary, CtaUrl = @CtaUrl, SourceMessageId = @SourceMessageId, ModifiedAtUtc = SYSUTCDATETIME()
+                    DetailSummary = @DetailSummary, CtaUrl = @CtaUrl, SourceMessageId = @SourceMessageId,
+                    RequiredSinceUtc = CASE WHEN target.RequiredSinceUtc IS NULL OR @EventTimestampUtc > target.RequiredSinceUtc THEN @EventTimestampUtc ELSE target.RequiredSinceUtc END,
+                    ResolvedAtUtc = NULL,
+                    ModifiedAtUtc = SYSUTCDATETIME()
             WHEN NOT MATCHED THEN
-                INSERT (IdBase, WabaId, PhoneNumberId, State, Reason, ErrorCode, DetailSummary, CtaUrl, SourceMessageId, CreatedAtUtc, ModifiedAtUtc)
-                VALUES (@IdBase, @WabaId, @PhoneNumberId, N'ACTION_REQUIRED', @Reason, @ErrorCode, @DetailSummary, @CtaUrl, @SourceMessageId, SYSUTCDATETIME(), SYSUTCDATETIME());
+                INSERT (IdBase, WabaId, PhoneNumberId, State, Reason, ErrorCode, DetailSummary, CtaUrl, SourceMessageId, RequiredSinceUtc, ResolvedAtUtc, CreatedAtUtc, ModifiedAtUtc)
+                VALUES (@IdBase, @WabaId, @PhoneNumberId, N'ACTION_REQUIRED', @Reason, @ErrorCode, @DetailSummary, @CtaUrl, @SourceMessageId, @EventTimestampUtc, NULL, SYSUTCDATETIME(), SYSUTCDATETIME());
             """;
         await using var cn = new SqlConnection(ConnectionString);
         await cn.ExecuteAsync(new CommandDefinition(sql, new
@@ -63,14 +84,43 @@ public sealed class WhatsAppIntegrationHealthStore(IConfiguration configuration,
             ErrorCode = errorCode,
             DetailSummary = detailSummary,
             CtaUrl = (object?)ctaUrl ?? DBNull.Value,
-            SourceMessageId = sourceMessageId
+            SourceMessageId = sourceMessageId,
+            EventTimestampUtc = eventTimestampUtc
+        }, cancellationToken: ct));
+    }
+
+    public async Task ResolveIfSubsequentAsync(int idBase, string wabaId, string phoneNumberId, DateTime eventTimestampUtc, CancellationToken ct = default)
+    {
+        if (idBase <= 0) return;
+        var normalizedWaba = (wabaId ?? string.Empty).Trim();
+        var normalizedPhone = (phoneNumberId ?? string.Empty).Trim();
+        if (normalizedWaba.Length == 0 || normalizedPhone.Length == 0)
+            return;
+
+        // El WHERE hace la comparación temporal de forma atómica: si RequiredSinceUtc es NULL (no
+        // debería pasar con State=ACTION_REQUIRED, pero por robustez) se resuelve igual; si el evento
+        // es más viejo o igual que RequiredSinceUtc, la fila no matchea y no se actualiza nada.
+        const string sql = """
+            UPDATE dbo.WhatsAppIntegrationHealth
+            SET State = N'OK', ResolvedAtUtc = SYSUTCDATETIME(), ModifiedAtUtc = SYSUTCDATETIME()
+            WHERE IdBase = @IdBase AND WabaId = @WabaId AND PhoneNumberId = @PhoneNumberId
+              AND State = N'ACTION_REQUIRED'
+              AND (RequiredSinceUtc IS NULL OR @EventTimestampUtc > RequiredSinceUtc);
+            """;
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.ExecuteAsync(new CommandDefinition(sql, new
+        {
+            IdBase = idBase,
+            WabaId = normalizedWaba,
+            PhoneNumberId = normalizedPhone,
+            EventTimestampUtc = eventTimestampUtc
         }, cancellationToken: ct));
     }
 
     public async Task<WhatsAppIntegrationHealthStatus?> GetAsync(int idBase, string wabaId, string phoneNumberId, CancellationToken ct = default)
     {
         const string sql = """
-            SELECT IdBase, WabaId, PhoneNumberId, State, Reason, ErrorCode, DetailSummary, CtaUrl, ModifiedAtUtc
+            SELECT IdBase, WabaId, PhoneNumberId, State, Reason, ErrorCode, DetailSummary, CtaUrl, RequiredSinceUtc, ResolvedAtUtc, ModifiedAtUtc
             FROM dbo.WhatsAppIntegrationHealth
             WHERE IdBase = @IdBase AND WabaId = @WabaId AND PhoneNumberId = @PhoneNumberId;
             """;
