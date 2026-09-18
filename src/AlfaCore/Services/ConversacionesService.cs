@@ -2743,15 +2743,16 @@ public sealed class ConversacionesService(
             await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(idConversacion, token);
             var conversation = await RequireConversationAsync(idConversacion, token);
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
+            var phoneNumberId = await ResolveTemplateConversationPhoneAsync(conversation, config, token);
             var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(sessionService.GetActiveSession()?.BaseId ?? 0,
-                conversation.IdNumeroWhatsApp, conversation.PhoneNumberId, config, token);
+                conversation.IdNumeroWhatsApp, phoneNumberId, config, token);
             if (runtime.Origin == WhatsAppRuntimeCredentialOrigin.Legacy)
                 return await GetTemplatesAsync(new ConversacionPlantillaFilters { EstadoMeta = "APPROVED" }, token);
             var reference = runtime.CredentialReference
                 ?? throw new InvalidOperationException("La referencia segura de Meta no está disponible.");
             var templates = await metaWhatsAppManagementClient.DiscoverTemplatesAsync(runtime.WabaId, reference, token);
             return templates.Where(static x => string.Equals(x.Status, "APPROVED", StringComparison.OrdinalIgnoreCase))
-                .Select(MapRemoteTemplate).OrderBy(static x => x.NombreVisible, StringComparer.OrdinalIgnoreCase).ToArray();
+                .Select(x => { var mapped = MapRemoteTemplate(x); mapped.WabaId = runtime.WabaId; return mapped; }).OrderBy(static x => x.NombreVisible, StringComparer.OrdinalIgnoreCase).ToArray();
         }, "No se pudieron cargar las plantillas aprobadas de este WhatsApp.", ct);
 
     public Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, CancellationToken ct = default)
@@ -2799,6 +2800,7 @@ public sealed class ConversacionesService(
                 var existing = await GetTemplateAsync(normalized.IdPlantilla, token)
                     ?? throw new InvalidOperationException("La plantilla indicada no existe.");
                 EnsureTemplateScope(existing, templateContext);
+                EnsureTemplateHasNotBeenSubmitted(existing);
             }
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -3020,8 +3022,7 @@ public sealed class ConversacionesService(
 
             var values = NormalizeTemplateValues(request.ValoresVariables);
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
-            if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
-                config.PhoneNumberId = conversation.PhoneNumberId;
+            config.PhoneNumberId = await ResolveTemplateConversationPhoneAsync(conversation, config, token);
             var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
                 sessionService.GetActiveSession()?.BaseId ?? 0,
                 conversation.IdNumeroWhatsApp,
@@ -3033,7 +3034,8 @@ public sealed class ConversacionesService(
             config.ApiVersion = runtimeCredential.GraphVersion;
             config.AccessToken = runtimeCredential.AccessToken;
             EnsureWhatsAppMetaProvider(config, "enviar plantillas");
-            if (!template.EsMetaRemota && !string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
+            WhatsAppTemplateValidation.EnsureScope(template, runtimeCredential.Origin == WhatsAppRuntimeCredentialOrigin.EmbeddedSignup ? runtimeCredential.WabaId : null);
+            if (!template.EsMetaRemota)
             {
                 var meta = await GetMetaTemplateStatusAsync(config, template, token);
                 await UpdateTemplateMetaStateAsync(
@@ -3045,6 +3047,11 @@ public sealed class ConversacionesService(
                     meta.RechazoMotivo,
                     token);
 
+                template.ComponentesMetaJson = ExtractTemplateComponents(meta.PayloadJson);
+                using (var components = JsonDocument.Parse(template.ComponentesMetaJson.Length > 0 ? template.ComponentesMetaJson : "[]"))
+                    foreach (var component in components.RootElement.EnumerateArray())
+                        if (component.TryGetProperty("type", out var type) && type.GetString() == "BODY"
+                            && component.TryGetProperty("text", out var text)) template.CuerpoTexto = text.GetString() ?? string.Empty;
                 template.EstadoMeta = meta.EstadoMeta;
                 template.MetaTemplateId = string.IsNullOrWhiteSpace(meta.MetaTemplateId) ? template.MetaTemplateId : meta.MetaTemplateId;
             }
@@ -3053,6 +3060,7 @@ public sealed class ConversacionesService(
                 throw new InvalidOperationException("Solo se pueden enviar plantillas aprobadas por Meta.");
 
             var now = BusinessNow();
+            WhatsAppTemplateValidation.ValidateSend(template, values);
             var previewText = RenderTemplatePreview(template.CuerpoTexto, values);
 
             var messageId = await InsertMessageAsync(new PendingMessageInsert
@@ -9493,6 +9501,8 @@ public sealed class ConversacionesService(
 
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
+        if (!root.TryGetProperty("id", out var createdId) || createdId.ValueKind != JsonValueKind.String || string.IsNullOrWhiteSpace(createdId.GetString()))
+            throw new HttpRequestException("Meta respondió sin ID de plantilla. Sincronizá antes de reintentar la creación.");
         return new MetaTemplateResult
         {
             MetaTemplateId = root.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty,
@@ -9503,36 +9513,49 @@ public sealed class ConversacionesService(
 
     private async Task<MetaTemplateStatusResult> GetMetaTemplateStatusAsync(ConversacionWhatsAppConfigDto config, ConversacionPlantillaDto template, CancellationToken ct)
     {
-        var url = $"https://graph.facebook.com/{config.ApiVersion}/{config.BusinessAccountId}/message_templates?name={Uri.EscapeDataString(template.NombreMeta)}";
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
-
+        var endpoint = $"https://graph.facebook.com/{config.ApiVersion}/{config.BusinessAccountId}/message_templates";
+        var url = endpoint + $"?name={Uri.EscapeDataString(template.NombreMeta)}&fields=id,name,language,status,rejected_reason,components&limit=100";
+        var visited = new HashSet<string>(StringComparer.Ordinal);
         var client = httpClientFactory.CreateClient();
-        using var response = await client.SendAsync(request, ct);
-        var body = await response.Content.ReadAsStringAsync(ct);
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Meta devolvi\u00f3 {(int)response.StatusCode} al sincronizar la plantilla: {body}");
-
-        using var doc = JsonDocument.Parse(body);
-        if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
-            throw new InvalidOperationException("Meta no devolvi\u00f3 informaci\u00f3n de plantillas.");
-
-        foreach (var item in data.EnumerateArray())
+        while (!string.IsNullOrWhiteSpace(url))
         {
-            var language = item.TryGetProperty("language", out var languageProp) ? languageProp.GetString() ?? string.Empty : string.Empty;
-            if (!string.Equals(language, template.Idioma, StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            return new MetaTemplateStatusResult
+            var nextUri = new Uri(url);
+            var expectedUri = new Uri(endpoint);
+            if (nextUri.Scheme != expectedUri.Scheme || nextUri.Authority != expectedUri.Authority || nextUri.AbsolutePath != expectedUri.AbsolutePath || !visited.Add(url))
+                throw new HttpRequestException("Meta devolvió una paginación de plantillas inválida.");
+            using var request = new HttpRequestMessage(HttpMethod.Get, nextUri);
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", config.AccessToken.Trim());
+            using var response = await client.SendAsync(request, ct);
+            var body = await response.Content.ReadAsStringAsync(ct);
+            if (!response.IsSuccessStatusCode)
+                throw new HttpRequestException($"Meta devolvió {(int)response.StatusCode} al sincronizar la plantilla: {body}");
+            using var doc = JsonDocument.Parse(body);
+            if (!doc.RootElement.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Array)
+                throw new HttpRequestException("Meta no devolvió información de plantillas válida.");
+            foreach (var item in data.EnumerateArray())
             {
-                MetaTemplateId = item.TryGetProperty("id", out var id) ? id.GetString() ?? string.Empty : string.Empty,
-                EstadoMeta = item.TryGetProperty("status", out var status) ? status.GetString() ?? string.Empty : string.Empty,
-                RechazoMotivo = item.TryGetProperty("rejected_reason", out var rejected) ? rejected.GetString() ?? string.Empty : string.Empty,
-                PayloadJson = item.GetRawText()
-            };
+                if (!item.TryGetProperty("name", out var name) || name.GetString() != template.NombreMeta
+                    || !item.TryGetProperty("language", out var language) || !string.Equals(language.GetString(), template.Idioma, StringComparison.OrdinalIgnoreCase)) continue;
+                var id = item.GetProperty("id").GetString();
+                var status = item.GetProperty("status").GetString();
+                if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(status))
+                    throw new HttpRequestException("Meta devolvió una plantilla sin ID o estado.");
+                return new MetaTemplateStatusResult
+                {
+                    MetaTemplateId = id, EstadoMeta = status,
+                    RechazoMotivo = item.TryGetProperty("rejected_reason", out var reason) ? reason.GetString() ?? string.Empty : string.Empty,
+                    PayloadJson = item.GetRawText()
+                };
+            }
+            url = doc.RootElement.TryGetProperty("paging", out var paging) && paging.TryGetProperty("next", out var next) ? next.GetString() : null;
         }
+        throw new InvalidOperationException("No se encontró la plantilla en Meta para esta WABA e idioma. Revisá el número seleccionado y si la plantilla fue eliminada.");
+    }
 
-        throw new InvalidOperationException("No se encontro la plantilla en Meta para el idioma configurado.");
+    private static string ExtractTemplateComponents(string payload)
+    {
+        using var document = JsonDocument.Parse(payload);
+        return document.RootElement.TryGetProperty("components", out var components) ? components.GetRawText() : string.Empty;
     }
 
     private async Task<WhatsAppSendResult> SendTemplateToWhatsAppAsync(
@@ -9542,6 +9565,7 @@ public sealed class ConversacionesService(
         IReadOnlyList<string> values,
         CancellationToken ct)
     {
+        WhatsAppTemplateValidation.ValidateSend(template, values);
         if (!config.IsConfiguredForSend)
             throw new InvalidOperationException("Falta configurar WhatsApp para enviar mensajes.");
 
@@ -12926,6 +12950,20 @@ public sealed class ConversacionesService(
 
     private sealed record TemplateContext(string? WabaId, ConversacionWhatsAppConfigDto Config);
 
+    private async Task<string> ResolveTemplateConversationPhoneAsync(ConversationIdentity conversation, ConversacionWhatsAppConfigDto config, CancellationToken ct)
+    {
+        if (conversation.IdNumeroWhatsApp is not > 0)
+            return string.IsNullOrWhiteSpace(conversation.PhoneNumberId) ? config.PhoneNumberId : conversation.PhoneNumberId;
+        var numero = await conversacionesConfigService.GetWhatsAppNumeroAsync(conversation.IdNumeroWhatsApp.Value, ct)
+            ?? throw new InvalidOperationException("El número asociado a la conversación ya no existe. Revisá su integración antes de enviar.");
+        if (!numero.Activo || string.IsNullOrWhiteSpace(numero.PhoneNumberId))
+            throw new InvalidOperationException("El número asociado a la conversación no está operativo.");
+        if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId)
+            && !string.Equals(conversation.PhoneNumberId.Trim(), numero.PhoneNumberId.Trim(), StringComparison.Ordinal))
+            throw new InvalidOperationException("El Phone Number ID de la conversación no coincide con su número configurado. Revisá la asociación antes de enviar.");
+        return numero.PhoneNumberId;
+    }
+
     private async Task<TemplateContext> ResolveTemplateContextAsync(int? idNumeroWhatsApp, CancellationToken ct)
     {
         var config = await conversacionesConfigService.GetWhatsAppConfigAsync(ct);
@@ -12953,8 +12991,7 @@ public sealed class ConversacionesService(
 
     private static void EnsureTemplateScope(ConversacionPlantillaDto template, TemplateContext context)
     {
-        if (!string.Equals(template.WabaId ?? string.Empty, context.WabaId ?? string.Empty, StringComparison.Ordinal))
-            throw new UnauthorizedAccessException("La plantilla no pertenece al WhatsApp seleccionado.");
+        WhatsAppTemplateValidation.EnsureScope(template, context.WabaId);
     }
 
     private static ConversacionPlantillaDto ReadTemplate(SqlDataReader rd)
@@ -13061,6 +13098,7 @@ public sealed class ConversacionesService(
 
         var variableCount = CountTemplateVariables(template.CuerpoTexto);
         var examples = ParseTemplateExamples(template.EjemplosVariablesJson);
+        WhatsAppTemplateValidation.ValidateSend(template, examples);
         if (variableCount > 0 && examples.Count < variableCount)
             throw new InvalidOperationException("Las variables de la plantilla necesitan valores de ejemplo para enviarse a aprobaciÃ³n.");
         if (StartsOrEndsWithTemplateVariable(template.CuerpoTexto))
@@ -13246,7 +13284,6 @@ public sealed class ConversacionesService(
     private static List<string> NormalizeTemplateValues(IEnumerable<string>? values)
         => values?
             .Select(x => (x ?? string.Empty).Trim())
-            .Where(x => x.Length > 0)
             .ToList() ?? [];
 
     private static ConversacionPlantillaDto MapRemoteTemplate(MetaMessageTemplate template)
@@ -13259,7 +13296,8 @@ public sealed class ConversacionesService(
             IdPlantilla = id, NombreVisible = template.Name, NombreMeta = template.Name,
             Categoria = template.Category, Idioma = template.Language, EncabezadoTexto = template.HeaderText,
             CuerpoTexto = template.BodyText, PieTexto = template.FooterText, EstadoLocal = ConversacionPlantillaEstadosLocales.Sincronizada,
-            EstadoMeta = template.Status, MetaTemplateId = template.Id, Activa = true, EsMetaRemota = true
+            EstadoMeta = template.Status, MetaTemplateId = template.Id, Activa = true, EsMetaRemota = true,
+            ComponentesMetaJson = template.ComponentsJson
         };
     }
 
@@ -13756,6 +13794,11 @@ public sealed class ConversacionesService(
         {
             var incidentId = await _appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
             throw new AppUserFacingException(knownMessage, incidentId, ex);
+        }
+        catch (Exception ex) when (action.Contains("Template", StringComparison.Ordinal) && (ex is HttpRequestException or MetaWhatsAppManagementException))
+        {
+            var incidentId = await _appEvents.LogErrorAsync(module, action, ex, userMessage, null, AppEventSeverity.Error, ct);
+            throw new AppUserFacingException(WhatsAppTemplateValidation.MetaErrorMessage(ex), incidentId, ex);
         }
         catch (InvalidOperationException)
         {

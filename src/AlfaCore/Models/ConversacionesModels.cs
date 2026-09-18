@@ -655,6 +655,7 @@ public sealed class ConversacionPlantillaDto
     public DateTime? FechaHoraModificacion { get; set; }
     public DateTime? FechaHoraSincronizacion { get; set; }
     public bool EsMetaRemota { get; set; }
+    public string ComponentesMetaJson { get; set; } = string.Empty;
 }
 
 public sealed class ConversacionPlantillaSaveRequest

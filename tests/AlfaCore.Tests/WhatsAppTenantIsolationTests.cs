@@ -134,6 +134,17 @@ public sealed class WhatsAppTenantIsolationTests
     }
 
     [Fact]
+    public async Task TemplateCredentialFromBaseBIsUnavailableToBaseA()
+    {
+        var vault = new CountingVault();
+        var resolver = new WhatsAppRuntimeCredentialResolver(
+            new OwnershipStore(new("9202", "9102", 2, DateTime.UtcNow)), vault, OptionsFor(1));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => resolver.ResolveAsync(1, 7, "9202", Legacy()));
+        Assert.Equal(0, vault.Finds);
+        Assert.Equal(0, vault.Reads);
+    }
+
+    [Fact]
     public async Task TwoWabasInSameBase_ResolveCredentialByPhoneNumberId()
     {
         var store = new MultiOwnershipStore(new Dictionary<string, WhatsAppPhoneOwnership>

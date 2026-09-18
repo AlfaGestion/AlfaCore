@@ -148,8 +148,14 @@ public sealed class MetaWhatsAppManagementClient(
     {
         var result = new List<T>();
         string? next = BuildGraphUri($"{path}?fields={Uri.EscapeDataString(fields)}&limit=100").ToString();
+        var expected = new Uri(next);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
         while (!string.IsNullOrWhiteSpace(next))
         {
+            if (!Uri.TryCreate(next, UriKind.Absolute, out var page)
+                || page.Scheme != expected.Scheme || page.Authority != expected.Authority
+                || page.AbsolutePath != expected.AbsolutePath || !visited.Add(next))
+                throw new MetaWhatsAppManagementException("META_INVALID_PAGING", false, false, "Meta devolvió una paginación fuera del recurso solicitado o repetida.");
             using var request = await CreateAbsoluteRequestAsync(HttpMethod.Get, next, tokenReference, ct);
             JsonDocument document;
             try { document = await SendJsonAsync(request, ct); }
@@ -301,7 +307,7 @@ public sealed class MetaWhatsAppManagementClient(
                 else if (type == "FOOTER") footer = GetString(component, "text");
             }
         return new(RequiredId(item, "plantilla"), GetString(item, "name"), GetString(item, "language"),
-            GetString(item, "status"), GetString(item, "category"), header, body, footer);
+            GetString(item, "status"), GetString(item, "category"), header, body, footer, components.ValueKind == JsonValueKind.Array ? components.GetRawText() : "");
     }
 
     private static string RequiredId(JsonElement item, string label)

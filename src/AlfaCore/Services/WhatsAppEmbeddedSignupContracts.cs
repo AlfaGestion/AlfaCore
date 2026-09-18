@@ -76,7 +76,7 @@ public sealed record MetaTokenInspectionResult(bool IsValid, DateTime? ExpiresAt
 public sealed record MetaAuthorizedBusiness(string BusinessId, string Name);
 public sealed record MetaWabaAsset(string WabaId, string BusinessId, string Name);
 public sealed record MetaPhoneAsset(string PhoneNumberId, string WabaId, string DisplayPhoneNumber, string VerifiedName, string Status, string QualityRating, MetaPhoneRegistrationStatus RegistrationStatus);
-public sealed record MetaMessageTemplate(string Id, string Name, string Language, string Status, string Category, string HeaderText, string BodyText, string FooterText);
+public sealed record MetaMessageTemplate(string Id, string Name, string Language, string Status, string Category, string HeaderText, string BodyText, string FooterText, string ComponentsJson = "");
 public sealed record WhatsAppWabaRoutingConfiguration(string CallbackUrl, string VerifyToken);
 public interface IWhatsAppWabaRoutingProvider
 {

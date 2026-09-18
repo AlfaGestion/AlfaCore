@@ -145,6 +145,9 @@
                                     <span>@item.NombreMeta</span>
                                     <span>• @item.Idioma</span>
                                 </div>
+                                <div class="conversation-row__meta">
+                                    <span>Última sincronización: @(item.FechaHoraSincronizacion is DateTime sync ? FormatDate(sync) : "Sin sincronizar")</span>
+                                </div>
                                 <div class="conversation-row__badges">
                                     <span class="conversation-badge conversation-badge--state">@GetMetaStatusLabel(item.EstadoMeta)</span>
                                     <span class="conversation-badge">@GetCategoryLabel(item.Categoria)</span>

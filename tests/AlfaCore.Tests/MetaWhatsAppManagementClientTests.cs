@@ -50,6 +50,41 @@ public sealed class MetaWhatsAppManagementClientTests
     }
 
     [Fact]
+    public async Task TemplateDiscoveryPreservesComponentsAndPagesWithoutMixingWabas()
+    {
+        var calls = 0;
+        var client = Create(new RoutingHandler(request =>
+        {
+            Assert.Equal("/v26.0/9102/message_templates", request.RequestUri!.AbsolutePath);
+            return ++calls == 1
+                ? Json("{\"data\":[{\"id\":\"9301\",\"name\":\"saludo\",\"language\":\"es_AR\",\"status\":\"PAUSED\",\"components\":[{\"type\":\"HEADER\",\"format\":\"IMAGE\"}]}],\"paging\":{\"next\":\"https://graph.facebook.com/v26.0/9102/message_templates?after=2\"}}")
+                : Json("{\"data\":[{\"id\":\"9302\",\"name\":\"saludo\",\"language\":\"en_US\",\"status\":\"APPROVED\",\"components\":[{\"type\":\"BUTTONS\",\"buttons\":[]}]}]}");
+        }));
+        var result = await client.DiscoverTemplatesAsync("9102", new("ref"));
+        Assert.Equal(2, result.Count);
+        Assert.Contains("IMAGE", result[0].ComponentsJson);
+        Assert.Contains("BUTTONS", result[1].ComponentsJson);
+        Assert.Equal("PAUSED", result[0].Status);
+        Assert.Equal("en_US", result[1].Language);
+    }
+
+    [Theory]
+    [InlineData("https://graph.facebook.com/v26.0/9103/message_templates")]
+    [InlineData("https://evil.test/message_templates")]
+    public async Task TemplateDiscoveryRejectsPagingToAnotherResource(string next)
+    {
+        var calls = 0;
+        var client = Create(new RoutingHandler(_ =>
+        {
+            calls++;
+            return Json(System.Text.Json.JsonSerializer.Serialize(new { data = Array.Empty<object>(), paging = new { next } }));
+        }));
+        var error = await Assert.ThrowsAsync<MetaWhatsAppManagementException>(() => client.DiscoverTemplatesAsync("9102", new("ref")));
+        Assert.Equal("META_INVALID_PAGING", error.ErrorCode);
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
     public async Task SubscriptionIsIdempotentAndPostsOnlyWhenMissing()
     {
         var subscribed = true;
