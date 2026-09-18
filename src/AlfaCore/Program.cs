@@ -170,6 +170,7 @@ public class Program
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupStore, WhatsAppEmbeddedSignupStore>();
         builder.Services.AddScoped<IWhatsAppAssetOwnershipStore, WhatsAppAssetOwnershipStore>();
+        builder.Services.AddScoped<IWhatsAppIntegrationHealthStore, WhatsAppIntegrationHealthStore>();
         builder.Services.AddScoped<IWhatsAppWebhookTenantGuard, WhatsAppWebhookTenantGuard>();
         builder.Services.AddScoped<IWhatsAppRuntimeCredentialResolver, WhatsAppRuntimeCredentialResolver>();
         builder.Services.AddScoped<IWhatsAppWabaRoutingProvider, WhatsAppWabaRoutingProvider>();

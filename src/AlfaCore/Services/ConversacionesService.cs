@@ -29,6 +29,8 @@ public sealed class ConversacionesService(
     IAlfaKnowledgeSuggestionService alfaKnowledgeService,
     IWhatsAppWebhookTenantGuard whatsAppWebhookTenantGuard,
     IWhatsAppRuntimeCredentialResolver whatsAppRuntimeCredentialResolver,
+    IWhatsAppAssetOwnershipStore whatsAppAssetOwnershipStore,
+    IWhatsAppIntegrationHealthStore whatsAppIntegrationHealthStore,
     IMetaWhatsAppManagementClient metaWhatsAppManagementClient,
     IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
     IWebHostEnvironment environment,
@@ -3573,6 +3575,7 @@ public sealed class ConversacionesService(
             {
                 request.TraceStage?.Invoke("PROCESSING_STATUSES");
                 await UpdateWhatsAppMessageStatusAsync(status, token);
+                await TryFlagPaymentSetupRequiredAsync(currentBaseId, status, token);
                 processed++;
             }
 
@@ -9452,6 +9455,57 @@ public sealed class ConversacionesService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
+    // Un fallo de mensaje individual (ERROR_ENVIO) no implica un problema de la integración. Solo el
+    // código Meta 131042 (falta configurar moneda/facturación de la WABA) se propaga como estado de
+    // integración ACTION_REQUIRED, aislado por IdBase+WabaId+PhoneNumberId. Best-effort: un fallo acá
+    // nunca debe interrumpir el procesamiento del resto del webhook.
+    private async Task TryFlagPaymentSetupRequiredAsync(int idBase, IncomingWhatsAppStatus status, CancellationToken ct)
+    {
+        if (idBase <= 0 || string.IsNullOrWhiteSpace(status.PhoneNumberId))
+            return;
+        if (!WhatsAppMetaErrorClassifier.IsCustomerPaymentSetupRequired(status.RawJson))
+            return;
+
+        try
+        {
+            var ownership = await whatsAppAssetOwnershipStore.GetPhoneOwnershipAsync(status.PhoneNumberId, ct);
+            if (ownership is null || ownership.IdBase != idBase)
+                return;
+
+            var ctaUrl = WhatsAppMetaCtaLinks.ExtractSafeMetaCtaUrl(status.RawJson);
+            await whatsAppIntegrationHealthStore.MarkActionRequiredAsync(
+                idBase,
+                ownership.WabaId,
+                status.PhoneNumberId,
+                WhatsAppEmbeddedErrorCodes.CustomerPaymentSetupRequired,
+                WhatsAppMetaErrorClassifier.PaymentSetupErrorCode,
+                "Falta configurar moneda/facturación de la cuenta de WhatsApp Business en Meta.",
+                ctaUrl,
+                status.WhatsAppMessageId,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo registrar el estado ACTION_REQUIRED de la integración para PhoneNumberId {PhoneNumberId}.", status.PhoneNumberId);
+        }
+    }
+
+    public Task<WhatsAppIntegrationHealthStatus?> GetWhatsAppIntegrationHealthForConversationAsync(long idConversacion, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppIntegrationHealth", async token =>
+        {
+            var conversation = await RequireConversationAsync(idConversacion, token);
+            if (conversation.IdNumeroWhatsApp is not > 0 || string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
+                return null;
+
+            var ownership = await whatsAppAssetOwnershipStore.GetPhoneOwnershipAsync(conversation.PhoneNumberId, token);
+            var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+            if (ownership is null || ownership.IdBase != idBase)
+                return null;
+
+            var status = await whatsAppIntegrationHealthStore.GetAsync(idBase, ownership.WabaId, conversation.PhoneNumberId, token);
+            return status?.State == "ACTION_REQUIRED" ? status : null;
+        }, "No se pudo consultar el estado de la integración de WhatsApp.", ct);
+
     private async Task UpdateTemplateMetaStateAsync(
         long idPlantilla,
         string estadoLocal,
@@ -12108,6 +12162,12 @@ public sealed class ConversacionesService(
                 if (!value.TryGetProperty("statuses", out var statuses) || statuses.ValueKind != JsonValueKind.Array)
                     continue;
 
+                var phoneNumberId = value.TryGetProperty("metadata", out var metadata)
+                    && metadata.TryGetProperty("phone_number_id", out var phoneProp)
+                    && phoneProp.ValueKind == JsonValueKind.String
+                        ? (phoneProp.GetString() ?? string.Empty).Trim()
+                        : string.Empty;
+
                 foreach (var status in statuses.EnumerateArray())
                 {
                     var messageId = status.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
@@ -12119,7 +12179,8 @@ public sealed class ConversacionesService(
                     {
                         WhatsAppMessageId = messageId,
                         EstadoEnvio = NormalizeWhatsAppDeliveryStatus(rawStatus, status),
-                        RawJson = status.GetRawText()
+                        RawJson = status.GetRawText(),
+                        PhoneNumberId = phoneNumberId
                     });
                 }
             }
@@ -14095,6 +14156,7 @@ public sealed class ConversacionesService(
         public string WhatsAppMessageId { get; init; } = string.Empty;
         public string EstadoEnvio { get; init; } = string.Empty;
         public string RawJson { get; init; } = string.Empty;
+        public string PhoneNumberId { get; init; } = string.Empty;
     }
 
     private sealed class PendingMediaHydration

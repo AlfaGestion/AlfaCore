@@ -1464,6 +1464,15 @@
                         <div class="conversations-error conversations-notice @GetConversationNoticeLeavingClass()">@_conversationError</div>
                     }
 
+                    @if (ShowPaymentSetupRequiredBanner && !_showStatusMenu)
+                    {
+                        <div class="conversations-window-banner conversations-window-banner--provider">
+                            <span>WhatsApp requiere completar la configuración de pagos en Meta antes de poder enviar mensajes. No es necesario reconectar WhatsApp ni generar otro token: el problema está en la cuenta de Meta, no en el contacto ni en AlfaCore.</span>
+                            <a class="btn btn--primary btn--sm" href="@PaymentSetupRequiredCtaUrl" target="_blank" rel="noopener noreferrer">
+                                <i class="bi bi-box-arrow-up-right"></i> Completar configuración en Meta
+                            </a>
+                        </div>
+                    }
                     @if (IsWhatsAppWindowExpired && !_showStatusMenu)
                     {
                         <div class="conversations-window-banner">
@@ -3697,6 +3706,7 @@
     private List<ConversacionPlantillaDto> _availableTemplates = [];
     private long _selectedTemplateId;
     private bool _loadingTemplates;
+    private AlfaCore.Services.WhatsAppIntegrationHealthStatus? _whatsAppIntegrationHealth;
     private string _templateValuesText = string.Empty;
     private string? _templateAutoNotice;
     private bool _uploadingTemplateFile;
@@ -5776,6 +5786,7 @@
         CloseMessageSearch();
         CancelTicketSelection();
         await LoadConversationAsync(idConversacion, showLoading: true, clearActionState: true);
+        _whatsAppIntegrationHealth = IsWhatsAppConversation ? await SafeLoadIntegrationHealthAsync(idConversacion) : null;
 
         // Antes, si el panel de IA quedaba abierto mientras el operador navegaba entre
         // conversaciones, cada clic en la bandeja disparaba sugerencia (AlfaKnowledge) + análisis
@@ -8506,6 +8517,7 @@
 
             await SelectConversationAsync(selectedConversationId, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
+            _whatsAppIntegrationHealth = await SafeLoadIntegrationHealthAsync(selectedConversationId);
 
             // Meta confirma la aceptación de forma sincrónica (ENVIADO_META); la entrega real puede
             // fallar después vía webhook de estado. El texto no debe afirmar un resultado definitivo
@@ -9830,6 +9842,28 @@
         _showTemplatePanel = false;
         _templatePendingAttachments.Clear();
     }
+
+    // Falla de forma silenciosa a propósito: el banner de "acción requerida" es informativo, no debe
+    // interrumpir ni retrasar la carga del chat si la consulta de salud de integración falla.
+    private async Task<AlfaCore.Services.WhatsAppIntegrationHealthStatus?> SafeLoadIntegrationHealthAsync(long idConversacion)
+    {
+        try
+        {
+            return await ConversacionesSvc.GetWhatsAppIntegrationHealthForConversationAsync(idConversacion);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private bool ShowPaymentSetupRequiredBanner
+        => _whatsAppIntegrationHealth is { State: "ACTION_REQUIRED", Reason: "CUSTOMER_PAYMENT_SETUP_REQUIRED" };
+
+    private string PaymentSetupRequiredCtaUrl
+        => _whatsAppIntegrationHealth?.CtaUrl is { Length: > 0 } url
+            ? AlfaCore.Services.WhatsAppMetaCtaLinks.ResolveBillingCtaUrl(url) ?? AlfaCore.Services.WhatsAppMetaCtaLinks.DefaultBillingHubUrl
+            : AlfaCore.Services.WhatsAppMetaCtaLinks.DefaultBillingHubUrl;
 
     private async Task CrearHiloInternoAsync()
     {
