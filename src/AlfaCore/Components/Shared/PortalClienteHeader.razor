@@ -1,4 +1,5 @@
 @inject IJSRuntime Js
+@inject NavigationManager Nav
 @implements IAsyncDisposable
 
 <section class="panel-card portal-cliente__headerbar">
@@ -31,40 +32,40 @@
 </section>
 
 <nav class="portal-cliente__tabs" aria-label="Secciones del Portal Cliente">
-    <a class="portal-cliente__tab @(ActiveTab == "inicio" ? "is-active" : "")" href="@RouteInicio" aria-current="@(ActiveTab == "inicio" ? "page" : null)">
+    <a class="portal-cliente__tab @(ActiveTab == "inicio" ? "is-active" : "")" href="@RouteInicio" @onclick:preventDefault="true" @onclick="() => NavigateTo(RouteInicio)" aria-current="@(ActiveTab == "inicio" ? "page" : null)">
         <i class="bi bi-house"></i> Inicio
     </a>
     @if (SeccionesHabilitadas.CuentaCorriente)
     {
-        <a class="portal-cliente__tab @(ActiveTab == "cuenta-corriente" ? "is-active" : "")" href="@RouteCuentaCorriente" aria-current="@(ActiveTab == "cuenta-corriente" ? "page" : null)">
+        <a class="portal-cliente__tab @(ActiveTab == "cuenta-corriente" ? "is-active" : "")" href="@RouteCuentaCorriente" @onclick:preventDefault="true" @onclick="() => NavigateTo(RouteCuentaCorriente)" aria-current="@(ActiveTab == "cuenta-corriente" ? "page" : null)">
             <i class="bi bi-cash-stack"></i> Cuenta corriente
         </a>
     }
     @if (SeccionesHabilitadas.ListaPrecios)
     {
-        <a class="portal-cliente__tab @(ActiveTab == "lista-precios" ? "is-active" : "")" href="@RouteListaPrecios" aria-current="@(ActiveTab == "lista-precios" ? "page" : null)">
+        <a class="portal-cliente__tab @(ActiveTab == "lista-precios" ? "is-active" : "")" href="@RouteListaPrecios" @onclick:preventDefault="true" @onclick="() => NavigateTo(RouteListaPrecios)" aria-current="@(ActiveTab == "lista-precios" ? "page" : null)">
             <i class="bi bi-tags"></i> Lista de precios
         </a>
     }
     @if (SeccionesHabilitadas.Catalogos)
     {
-        <a class="portal-cliente__tab @(ActiveTab == "catalogos" ? "is-active" : "")" href="@RouteCatalogos" aria-current="@(ActiveTab == "catalogos" ? "page" : null)">
+        <a class="portal-cliente__tab @(ActiveTab == "catalogos" ? "is-active" : "")" href="@RouteCatalogos" @onclick:preventDefault="true" @onclick="() => NavigateTo(RouteCatalogos)" aria-current="@(ActiveTab == "catalogos" ? "page" : null)">
             <i class="bi bi-book"></i> Catálogos
         </a>
     }
     @if (SeccionesHabilitadas.Carrito)
     {
-        <a class="portal-cliente__tab @(ActiveTab == "carrito" ? "is-active" : "")" href="@RouteCarrito" aria-current="@(ActiveTab == "carrito" ? "page" : null)">
+        <a class="portal-cliente__tab @(ActiveTab == "carrito" ? "is-active" : "")" href="@RouteCarrito" @onclick:preventDefault="true" @onclick="() => NavigateTo(RouteCarrito)" aria-current="@(ActiveTab == "carrito" ? "page" : null)">
             <i class="bi bi-cart3"></i> Carrito de compra
         </a>
     }
     @if (SeccionesHabilitadas.Pedidos)
     {
-        <a class="portal-cliente__tab @(ActiveTab == "pedidos" ? "is-active" : "")" href="@RoutePedidos" aria-current="@(ActiveTab == "pedidos" ? "page" : null)">
+        <a class="portal-cliente__tab @(ActiveTab == "pedidos" ? "is-active" : "")" href="@RoutePedidos" @onclick:preventDefault="true" @onclick="() => NavigateTo(RoutePedidos)" aria-current="@(ActiveTab == "pedidos" ? "page" : null)">
             <i class="bi bi-receipt"></i> Pedidos
         </a>
     }
-    <a class="portal-cliente__tab @(ActiveTab == "mi-cuenta" ? "is-active" : "")" href="@RouteMiCuenta" aria-current="@(ActiveTab == "mi-cuenta" ? "page" : null)">
+    <a class="portal-cliente__tab @(ActiveTab == "mi-cuenta" ? "is-active" : "")" href="@RouteMiCuenta" @onclick:preventDefault="true" @onclick="() => NavigateTo(RouteMiCuenta)" aria-current="@(ActiveTab == "mi-cuenta" ? "page" : null)">
         <i class="bi bi-person-circle"></i> Mi cuenta
     </a>
 </nav>
@@ -139,6 +140,12 @@
 
     private void ApplyTheme(string? theme)
         => _isDark = !string.Equals(theme, "light", StringComparison.OrdinalIgnoreCase);
+
+    private void NavigateTo(string url)
+    {
+        if (!string.IsNullOrWhiteSpace(url))
+            Nav.NavigateTo(url);
+    }
 
     public async ValueTask DisposeAsync()
     {

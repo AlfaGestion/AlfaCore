@@ -24,7 +24,8 @@ public sealed class PortalClienteInvitacionService(
     ISessionService sessionService,
     IAppEventService appEvents,
     IPortalClienteRecuperarClaveService recuperarClaveSvc,
-    ICompanyBrandingService companyBrandingService) : IPortalClienteInvitacionService
+    ICompanyBrandingService companyBrandingService,
+    IPortalClienteAutoLoginService autoLoginSvc) : IPortalClienteInvitacionService
 {
     private const string ModuleName = "PortalClienteInvitacion";
 
@@ -161,6 +162,15 @@ public sealed class PortalClienteInvitacionService(
             // el email del contacto. La identidad de acceso se fija siempre en servidor con el
             // email de VT_CLIENTES, nunca con el destinatario del mensaje.
             var urlPortalAcceso = ReemplazarEmailDeAcceso(request.UrlPortal, cliente.Email);
+            var urlAutoLogin = await autoLoginSvc.GenerarEnlaceAsync(new PortalClienteGenerarAutoLoginRequestDto
+            {
+                CodigoCliente = cliente.Codigo,
+                RazonSocial = cliente.RazonSocial,
+                Email = cliente.Email,
+                IdWeb = idWeb,
+                IdBase = request.IdBase.Value,
+                UrlBasePortal = urlPortalAcceso
+            }, token);
 
             var enviado = await recuperarClaveSvc.EnviarInvitacionPortalAsync(
                 emailDestino,
@@ -171,7 +181,7 @@ public sealed class PortalClienteInvitacionService(
                 cliente.RazonSocial,
                 esContacto,
                 cliente.Email,
-                urlPortalAcceso,
+                urlAutoLogin,
                 urlCambiarClave,
                 ct: token);
 

@@ -1,0 +1,76 @@
+@page "/portal-cliente/acceso"
+@page "/{idweb}/{idbase:int}/portal-cliente/acceso"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits PortalClientePageBase
+@using AlfaCore.Models
+@inject AlfaCore.Services.IPortalClienteAutoLoginService AutoLoginSvc
+
+<PageTitle>Acceso al Portal Cliente</PageTitle>
+
+@if (_procesando)
+{
+    <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Validando acceso al portal..." />
+}
+else
+{
+    <section class="page-grid">
+        <section class="panel-card empty-state">
+            @if (NotFound)
+            {
+                <h3 class="panel-card__title">Base no disponible</h3>
+                <p class="panel-card__subtitle">No se pudo resolver la base asociada a este enlace.</p>
+            }
+            else
+            {
+                <h3 class="panel-card__title">Enlace no válido</h3>
+                <p class="panel-card__subtitle">@_mensaje</p>
+                <a class="btn btn--primary" href="@BuildPortalRoute("")">Ir al portal</a>
+            }
+        </section>
+    </section>
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery] public string? token { get; set; }
+
+    private bool _procesando = true;
+    private string _mensaje = "El enlace no es válido o ya venció.";
+    private bool _navegando;
+
+    private static string GetLoadingLogoUrl()
+        => AlfaCore.Components.Shared.AuthThemeAssets.GetLoginLogo(isDarkTheme: true);
+
+    protected override async Task OnAfterClientSessionRestoredAsync()
+    {
+        if (_navegando || idbase is not > 0 || string.IsNullOrWhiteSpace(idweb))
+            return;
+
+        // Un enlace generado desde el Maestro de Clientes debe tomar prioridad sobre cualquier
+        // cliente que haya quedado logueado en este navegador. De lo contrario, el acceso podía
+        // conservar la sesión anterior o interferir con la validación del enlace nuevo.
+        CatalogoClienteSession.Logout();
+        try
+        {
+            await Js.InvokeVoidAsync("localStorage.removeItem", "alfacore_catalogo_cliente_token");
+        }
+        catch
+        {
+            // La navegación continúa; el token de sesión se vuelve a guardar al completar el
+            // acceso automático.
+        }
+
+        var result = await AutoLoginSvc.ConsumirAsync(token ?? string.Empty, idweb, idbase.Value);
+        _procesando = false;
+        if (!result.Exito || result.Sesion is null)
+        {
+            _mensaje = result.Mensaje;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        CatalogoClienteSession.LoginTrusted(result.Sesion);
+        await PersistClientSessionAsync();
+        _navegando = true;
+        Nav.NavigateTo(BuildPortalRoute(""), replace: true);
+    }
+}

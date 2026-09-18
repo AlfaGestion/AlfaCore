@@ -11,6 +11,7 @@ public interface ICatalogosClienteSessionService
     string? CurrentToken { get; }
 
     Task<CatalogosClienteSessionInfo> LoginAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct = default);
+    void LoginTrusted(CatalogosClienteSessionInfo client);
     bool TryRestoreFromToken(string token);
     void Logout();
 }

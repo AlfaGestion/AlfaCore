@@ -102,6 +102,7 @@ public sealed class CarritoComprasPrecioClienteDto
     public string OrigenLista { get; set; } = string.Empty;
     public string OrigenClase { get; set; } = string.Empty;
     public string IdLista { get; set; } = string.Empty;
-    public int ClasePrecio { get; set; } = 1;
+    public string NombreLista { get; set; } = string.Empty;
+    public int ClasePrecio { get; set; }
     public string Origen { get; set; } = string.Empty;
 }

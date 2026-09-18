@@ -55,7 +55,7 @@ public sealed class InterfacesCatalogosService(
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
+          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     private string ResolveConnectionString(int? expectedBaseId, string operationName)
         => expectedBaseId is > 0
@@ -65,8 +65,8 @@ public sealed class InterfacesCatalogosService(
     public Task<IReadOnlyList<CatalogosModalidadOptionDto>> GetModalidadesAsync(CancellationToken ct = default)
         => Task.FromResult<IReadOnlyList<CatalogosModalidadOptionDto>>(
             [
-                new() { Clave = "permanente", Nombre = "CatÃ¡logo permanente", Descripcion = "CatÃ¡logo sin vencimiento, preparado para publicar mÃ¡s adelante." },
-                new() { Clave = "vigencia", Nombre = "CatÃ¡logo con vigencia", Descripcion = "CatÃ¡logo publicado con control de fechas y estado, compatible con el modelo nuevo y el legacy temporal." }
+                new() { Clave = "permanente", Nombre = "Catálogo permanente", Descripcion = "Catálogo sin vencimiento, preparado para publicar más adelante." },
+                new() { Clave = "vigencia", Nombre = "Catálogo con vigencia", Descripcion = "Catálogo publicado con control de fechas y estado, compatible con el modelo nuevo y el legacy temporal." }
             ]);
 
     public Task<IReadOnlyList<CatalogosListaPrecioDto>> GetListasPrecioAsync(CancellationToken ct = default)
@@ -121,9 +121,9 @@ public sealed class InterfacesCatalogosService(
             var origen = (filters.Origen ?? string.Empty).Trim();
             var usarLista = string.Equals(origen, CatalogosArticuloOrigenKeys.ListaPrecio, StringComparison.OrdinalIgnoreCase);
             var clasePrecio = ParseClasePrecio(await GetPublicClasePrecioAsync(filters.IdWeb, token));
-            // IDARTICULO en V_MA_ARTICULOS viene con padding (algunos cÃ³digos numÃ©ricos quedan
-            // con espacios a la izquierda) â€” hay que normalizar en mayÃºsculas + trim para que la
-            // exclusiÃ³n matchee igual que el resto de la consulta (LTRIM/RTRIM en SELECT/ORDER BY).
+            // IDARTICULO en V_MA_ARTICULOS viene con padding (algunos códigos numéricos quedan
+            // con espacios a la izquierda) — hay que normalizar en mayúsculas + trim para que la
+            // exclusión matchee igual que el resto de la consulta (LTRIM/RTRIM en SELECT/ORDER BY).
             var excludedIds = (filters.ExcludedIds ?? [])
                 .Where(id => !string.IsNullOrWhiteSpace(id))
                 .Select(id => id.Trim().ToUpperInvariant())
@@ -148,9 +148,9 @@ public sealed class InterfacesCatalogosService(
                 ? "LEFT JOIN dbo.V_TA_FAMILIAS f ON LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))) = LTRIM(RTRIM(f.IdFamilia))"
                 : string.Empty;
             var familiaSelect = tieneFamilias ? "ISNULL(LTRIM(RTRIM(f.Descripcion)), '')" : "''";
-            // Solo se agrega el fragmento si realmente hay IDs a excluir: "NOT IN ()" es invÃ¡lido en
-            // SQL Server, y no tiene sentido pagar el costo del filtro cuando la lista viene vacÃ­a
-            // (catÃ¡logo/carrito reciÃ©n creado, sin artÃ­culos todavÃ­a).
+            // Solo se agrega el fragmento si realmente hay IDs a excluir: "NOT IN ()" es inválido en
+            // SQL Server, y no tiene sentido pagar el costo del filtro cuando la lista viene vacía
+            // (catálogo/carrito recién creado, sin artículos todavía).
             var exclusionFilter = excludedIds.Count > 0
                 ? "AND UPPER(LTRIM(RTRIM(a.IDARTICULO))) NOT IN @ExcludedIds"
                 : string.Empty;
@@ -287,7 +287,7 @@ public sealed class InterfacesCatalogosService(
                 PageNumber = pageNumber,
                 PageSize = pageSize
             };
-        }, "No se pudieron buscar los artÃ­culos.", ct);
+        }, "No se pudieron buscar los artículos.", ct);
 
     public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetRubrosArticuloAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetRubrosArticulo", async token =>
@@ -357,7 +357,7 @@ public sealed class InterfacesCatalogosService(
 
     // Fuente oficial de proveedores confirmada en docs/DATABASE_TABLES_SUMMARY.md: Vt_Proveedores
     // (no consultar el plan de cuentas base). El combo se limita a los proveedores que efectivamente
-    // tienen artÃ­culos vÃ­a V_MA_ARTICULOS.CUENTAPROVEEDOR, igual que Rubro/Familia/Marca.
+    // tienen artículos vía V_MA_ARTICULOS.CUENTAPROVEEDOR, igual que Rubro/Familia/Marca.
     public Task<IReadOnlyList<CatalogosClasificacionOpcionDto>> GetProveedoresArticuloAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetProveedoresArticulo", async token =>
         {
@@ -386,10 +386,10 @@ public sealed class InterfacesCatalogosService(
         }, "No se pudieron cargar los proveedores.", ct);
 
     // Variante sin paginar de SearchArticulosAsync: mismo WHERE/joins, reutilizada tanto por
-    // "Importar todo" (CatÃ¡logo, sin filtros de clasificaciÃ³n) como por "Seleccionar todos los
-    // resultados" (ArticuloPickerDialog, con los filtros activos del modal). Devuelve como mÃ¡ximo
+    // "Importar todo" (Catálogo, sin filtros de clasificación) como por "Seleccionar todos los
+    // resultados" (ArticuloPickerDialog, con los filtros activos del modal). Devuelve como máximo
     // MaxArticulosBatch filas para no cargar un resultado descontrolado en memoria; CountArticulosAllAsync
-    // permite avisar antes si el conjunto excede ese lÃ­mite.
+    // permite avisar antes si el conjunto excede ese límite.
     private const int MaxArticulosBatch = 20000;
 
     public Task<int> CountArticulosAllAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default)
@@ -419,7 +419,7 @@ public sealed class InterfacesCatalogosService(
 
             var sql = $"SELECT COUNT(1) {from} WHERE {whereSql}";
             return await cn.ExecuteScalarAsync<int>(new CommandDefinition(sql, ToDynamicParameters(parameters), cancellationToken: token));
-        }, "No se pudo contar los artÃ­culos.", ct);
+        }, "No se pudo contar los artículos.", ct);
 
     public Task<IReadOnlyList<CatalogosArticuloBusquedaDto>> SearchArticulosAllAsync(CatalogosArticuloBusquedaFiltersDto filters, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchArticulosAll", async token =>
@@ -502,10 +502,10 @@ public sealed class InterfacesCatalogosService(
 
             var items = await cn.QueryAsync<CatalogosArticuloBusquedaDto>(new CommandDefinition(sql, dapperParams, cancellationToken: token));
             return (IReadOnlyList<CatalogosArticuloBusquedaDto>)items.ToList();
-        }, "No se pudieron obtener los artÃ­culos.", ct);
+        }, "No se pudieron obtener los artículos.", ct);
 
     // Arma el WHERE compartido por CountArticulosAllAsync/SearchArticulosAllAsync (mismas reglas que
-    // SearchArticulosAsync: suspendido, rubro/familia/marca/proveedor, texto y exclusiÃ³n de ya agregados).
+    // SearchArticulosAsync: suspendido, rubro/familia/marca/proveedor, texto y exclusión de ya agregados).
     // Devuelve whereSql = null cuando el origen es lista y no hay IdLista (no hay nada para traer).
     private static (string? WhereSql, bool UsarLista, Dictionary<string, object> Parameters) BuildArticulosWhere(CatalogosArticuloBusquedaFiltersDto filters)
     {
@@ -586,8 +586,8 @@ public sealed class InterfacesCatalogosService(
     }
 
     // DynamicParameters no tiene un constructor propio a partir de un Dictionary<string, object>
-    // que garantice el mismo comportamiento de expansiÃ³n de listas ("NOT IN @ExcludedIds") que ya
-    // usan los mÃ©todos con objetos anÃ³nimos: se arma explÃ­citamente con Add() por entrada.
+    // que garantice el mismo comportamiento de expansión de listas ("NOT IN @ExcludedIds") que ya
+    // usan los métodos con objetos anónimos: se arma explícitamente con Add() por entrada.
     private static DynamicParameters ToDynamicParameters(Dictionary<string, object> source)
     {
         var parameters = new DynamicParameters();
@@ -670,7 +670,7 @@ public sealed class InterfacesCatalogosService(
 
             var items = await cn.QueryAsync<CatalogosArticuloBusquedaDto>(new CommandDefinition(sql, new { IdLista = lista }, cancellationToken: token));
             return (IReadOnlyList<CatalogosArticuloBusquedaDto>)items.ToList();
-        }, "No se pudieron importar los artÃ­culos de la lista.", ct);
+        }, "No se pudieron importar los artículos de la lista.", ct);
 
     public Task<PagedResult<CatalogosCatalogoResumenDto>> SearchCatalogosAsync(string? texto, int pageNumber = 1, int pageSize = 50, DateTime? fechaFiltro = null, string? tipoFiltro = null, string? estadoFiltro = null, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SearchCatalogos", async token =>
@@ -711,7 +711,7 @@ public sealed class InterfacesCatalogosService(
                             WHEN c.FechaDesde IS NULL AND c.FechaHasta IS NULL THEN N'Permanente'
                             ELSE N'Con vigencia'
                         END AS Tipo,
-                        ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), CONCAT(N'CatÃ¡logo ', CONVERT(nvarchar(20), c.IdCatalogo))) AS Nombre,
+                        ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IdCatalogo))) AS Nombre,
                         CASE
                             WHEN c.FechaDesde IS NULL AND c.FechaHasta IS NULL THEN N'Sin vigencia'
                             ELSE CONCAT(
@@ -774,7 +774,7 @@ public sealed class InterfacesCatalogosService(
                             WHEN MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL THEN N'Permanente'
                             ELSE N'Con vigencia'
                         END AS Tipo,
-                        MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'CatÃ¡logo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
+                        MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
                         CASE
                             WHEN MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL THEN N'Sin vigencia'
                             ELSE CONCAT(
@@ -847,7 +847,8 @@ public sealed class InterfacesCatalogosService(
                     CantidadArticulos,
                     Finalizado,
                     Anulado,
-                    UsaModeloNuevo
+                    UsaModeloNuevo,
+                    COUNT(1) OVER() AS TotalFiltrados
                 FROM (
                     SELECT
                         IdInsert,
@@ -927,68 +928,7 @@ public sealed class InterfacesCatalogosService(
                     item.Predeterminado = item.IdInsert == predeterminadoId;
             }
 
-            var countSql = $"""
-                WITH SourceRows AS (
-                {sourceSql}
-                ),
-                Dedup AS (
-                    SELECT
-                        *,
-                        ROW_NUMBER() OVER (PARTITION BY IdInsert ORDER BY SourcePriority) AS rn
-                    FROM SourceRows
-                )
-                SELECT COUNT(1)
-                FROM (
-                    SELECT
-                        IdInsert,
-                        Tipo,
-                        Nombre,
-                        Vigencia,
-                        CASE
-                            WHEN Anulado = 1 THEN N'Anulado'
-                            WHEN Finalizado = 1 THEN N'Finalizado'
-                            ELSE N'Publicado'
-                        END AS Estado,
-                        VigenciaDesde,
-                        VigenciaHasta,
-                        IdLista,
-                        Observaciones,
-                        rn
-                    FROM Dedup
-                    WHERE rn = 1
-                ) x
-                WHERE
-                    (
-                        @TextoLike = ''
-                        OR UPPER(LTRIM(RTRIM(ISNULL(Nombre, '')))) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(Observaciones, '')))) LIKE @TextoLike
-                        OR CONVERT(nvarchar(20), IdInsert) LIKE @TextoLike
-                        OR UPPER(LTRIM(RTRIM(ISNULL(IdLista, '')))) LIKE @TextoLike
-                    )
-                    AND (
-                        @TipoFiltro = N'todos'
-                        OR (@TipoFiltro = N'predeterminado' AND VigenciaDesde IS NULL AND VigenciaHasta IS NULL)
-                        OR (@TipoFiltro = N'vigencia' AND (VigenciaDesde IS NOT NULL OR VigenciaHasta IS NOT NULL))
-                    )
-                    AND (
-                        @EstadoFiltro = N'todos'
-                        OR (@EstadoFiltro = N'publicado' AND Estado = N'Publicado')
-                        OR (@EstadoFiltro = N'finalizado' AND Estado = N'Finalizado')
-                        OR (@EstadoFiltro = N'anulado' AND Estado = N'Anulado')
-                    )
-                    AND (
-                        @EstadoFiltro IN (N'finalizado', N'anulado')
-                        OR (
-                            (VigenciaDesde IS NULL OR CONVERT(date, VigenciaDesde) <= @FechaFiltro)
-                            AND (VigenciaHasta IS NULL OR CONVERT(date, VigenciaHasta) >= @FechaFiltro)
-                        )
-                    );
-                """;
-
-            var total = await cn.ExecuteScalarAsync<int>(new CommandDefinition(
-                countSql,
-                new { TextoLike = normalizedText, TipoFiltro = normalizedTipo, EstadoFiltro = normalizedEstado, FechaFiltro = fecha },
-                cancellationToken: token));
+            var total = items.Count == 0 ? 0 : items[0].TotalFiltrados;
 
             return new PagedResult<CatalogosCatalogoResumenDto>
             {
@@ -997,7 +937,7 @@ public sealed class InterfacesCatalogosService(
                 PageNumber = pageNumber,
                 PageSize = pageSize
             };
-        }, "No se pudieron cargar los catÃ¡logos.", ct);
+        }, "No se pudieron cargar los catálogos.", ct);
 
     public Task<CatalogosCatalogoDetalleDto?> GetCatalogoAsync(int idInsert, CancellationToken ct = default)
         => GetCatalogoInternalAsync(idInsert, soloPublico: false, ct);
@@ -1020,10 +960,10 @@ public sealed class InterfacesCatalogosService(
                 .ToList();
 
             if (articulos.Count == 0)
-                throw new InvalidOperationException("SeleccionÃ¡ al menos un artÃ­culo antes de publicar el catÃ¡logo.");
+                throw new InvalidOperationException("Seleccioná al menos un artículo antes de publicar el catálogo.");
 
             if (string.IsNullOrWhiteSpace(request.Nombre))
-                throw new InvalidOperationException("IngresÃ¡ el nombre del catÃ¡logo.");
+                throw new InvalidOperationException("Ingresá el nombre del catálogo.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1034,13 +974,13 @@ public sealed class InterfacesCatalogosService(
                 return await SaveCatalogoNuevoAsync(cn, request, token);
             }
 
-            // IdLista es solo metadata descriptiva en V_MV_INSERT (nvarchar(4), sin FK): un catÃ¡logo
-            // con origen Maestro de artÃ­culos la deja vacÃ­a a propÃ³sito (asÃ­ es como GetCatalogoAsync
-            // ya infiere el origen al reabrir para editar). No exigirla acÃ¡, o "Maestro" nunca podrÃ­a
+            // IdLista es solo metadata descriptiva en V_MV_INSERT (nvarchar(4), sin FK): un catálogo
+            // con origen Maestro de artículos la deja vacía a propósito (así es como GetCatalogoAsync
+            // ya infiere el origen al reabrir para editar). No exigirla acá, o "Maestro" nunca podría
             // publicarse.
 
             if (!availability.HasLegacyModelo)
-                throw new InvalidOperationException("La base activa no tiene soporte de catÃ¡logos legacy ni del nuevo modelo.");
+                throw new InvalidOperationException("La base activa no tiene soporte de catálogos legacy ni del nuevo modelo.");
 
             await using var tx = await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, token);
             try
@@ -1188,7 +1128,7 @@ public sealed class InterfacesCatalogosService(
                     "SaveCatalogoVigencia",
                     "V_MV_INSERT",
                     idInsert.ToString(),
-                    "CatÃ¡logo con vigencia publicado.",
+                    "Catálogo con vigencia publicado.",
                     new { request.Nombre, request.IdLista, request.VigenciaDesde, request.VigenciaHasta, Articulos = articulos.Count, Url = url },
                     token);
 
@@ -1198,7 +1138,7 @@ public sealed class InterfacesCatalogosService(
                     Simulado = false,
                     IdInsert = idInsert,
                     UrlPublica = url,
-                    Mensaje = "CatÃ¡logo publicado correctamente."
+                    Mensaje = "Catálogo publicado correctamente."
                 };
             }
             catch
@@ -1206,7 +1146,7 @@ public sealed class InterfacesCatalogosService(
                 try { await tx.RollbackAsync(token); } catch { }
                 throw;
             }
-        }, "No se pudo publicar el catÃ¡logo con vigencia.", ct);
+        }, "No se pudo publicar el catálogo con vigencia.", ct);
 
     public Task<CatalogosCatalogoAccessUrlsDto> GetCatalogoAccessUrlsAsync(int idInsert, string? idWeb = null, int? idBase = null, CancellationToken ct = default)
         => Task.FromResult(new CatalogosCatalogoAccessUrlsDto
@@ -1225,7 +1165,7 @@ public sealed class InterfacesCatalogosService(
         => ExecuteLoggedAsync(ModuleName, "SetCatalogoPredeterminado", async token =>
         {
             if (string.IsNullOrWhiteSpace(userName))
-                throw new InvalidOperationException("No hay un usuario logueado para marcar el catÃ¡logo predeterminado.");
+                throw new InvalidOperationException("No hay un usuario logueado para marcar el catálogo predeterminado.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1238,10 +1178,10 @@ public sealed class InterfacesCatalogosService(
                 var existe = existeNuevo || existeLegacy;
 
                 if (!existe)
-                    throw new InvalidOperationException("El catÃ¡logo indicado no existe.");
+                    throw new InvalidOperationException("El catálogo indicado no existe.");
 
                 if (existeNuevo && await CatalogoNuevoEstaAnuladoAsync(cn, idInsert, token))
-                    throw new InvalidOperationException("No se puede marcar como predeterminado un catÃ¡logo anulado.");
+                    throw new InvalidOperationException("No se puede marcar como predeterminado un catálogo anulado.");
             }
 
             var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
@@ -1253,12 +1193,12 @@ public sealed class InterfacesCatalogosService(
                 "SetCatalogoPredeterminado",
                 "TA_CONFIGURACION",
                 PredeterminadoConfigKey,
-                idInsert > 0 ? $"CatÃ¡logo #{idInsert} marcado como predeterminado (accesible vÃ­a /catalogo/0)." : "Se quitÃ³ el catÃ¡logo predeterminado.",
+                idInsert > 0 ? $"Catálogo #{idInsert} marcado como predeterminado (accesible vía /catalogo/0)." : "Se quitó el catálogo predeterminado.",
                 new { UserName = userName.Trim(), IdInsert = idInsert },
                 token);
 
             return true;
-        }, "No se pudo actualizar el catÃ¡logo predeterminado.", ct);
+        }, "No se pudo actualizar el catálogo predeterminado.", ct);
 
     private async Task<int> GetCatalogoPredeterminadoIdInternalAsync(SqlConnection cn, CancellationToken ct)
     {
@@ -1294,7 +1234,7 @@ public sealed class InterfacesCatalogosService(
 
         var codigoClienteSesion = (request.CodigoCliente ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(codigoClienteSesion))
-            throw new InvalidOperationException("No se pudo identificar al cliente. VolvÃ© a iniciar sesiÃ³n.");
+            throw new InvalidOperationException("No se pudo identificar al cliente. Volvé a iniciar sesión.");
 
         var lineasSolicitadas = (request.Lineas ?? [])
             .Where(l => !string.IsNullOrWhiteSpace(l.IdArticulo) && l.Cantidad > 0)
@@ -1303,34 +1243,34 @@ public sealed class InterfacesCatalogosService(
             .ToList();
 
         if (lineasSolicitadas.Count == 0)
-            throw new InvalidOperationException("El carrito estÃ¡ vacÃ­o.");
+            throw new InvalidOperationException("El carrito está vacío.");
 
         if (!pedidoProcessingGuard.TryStart(request.IdInsert, codigoClienteSesion))
-            throw new InvalidOperationException("Ya hay un pedido en proceso para este carrito. EsperÃ¡ un momento y verificÃ¡ antes de reintentar.");
+            throw new InvalidOperationException("Ya hay un pedido en proceso para este carrito. Esperá un momento y verificá antes de reintentar.");
 
         try
         {
-            // 1) CatÃ¡logo: existe, publicado/vigente y con carrito habilitado. Nunca confÃ­o en
-            //    lo que venga del navegador para esto, siempre releo el catÃ¡logo real.
+            // 1) Catálogo: existe, publicado/vigente y con carrito habilitado. Nunca confío en
+            //    lo que venga del navegador para esto, siempre releo el catálogo real.
             var catalogo = await GetCatalogoPublicoAsync(request.IdInsert, ct);
             if (catalogo is null)
-                throw new InvalidOperationException("El catÃ¡logo no estÃ¡ disponible, no estÃ¡ publicado o venciÃ³ su vigencia.");
+                throw new InvalidOperationException("El catálogo no está disponible, no está publicado o venció su vigencia.");
 
             if (!catalogo.HabilitarCarrito)
-                throw new InvalidOperationException("Este catÃ¡logo no tiene habilitada la toma de pedidos.");
+                throw new InvalidOperationException("Este catálogo no tiene habilitada la toma de pedidos.");
 
-            // 2) Cada lÃ­nea debe corresponder a un artÃ­culo real de ESTE catÃ¡logo, con el precio
-            //    exactamente como estÃ¡ publicado ahÃ­ (nunca se vuelve a calcular ni se reemplaza
+            // 2) Cada línea debe corresponder a un artículo real de ESTE catálogo, con el precio
+            //    exactamente como está publicado ahí (nunca se vuelve a calcular ni se reemplaza
             //    por el precio vigente del maestro).
             var articulosPorCodigo = catalogo.Articulos.ToDictionary(a => a.IdArticulo.Trim(), a => a, StringComparer.OrdinalIgnoreCase);
             var lineasResueltas = new List<(CatalogosCatalogoItemDto Articulo, decimal Cantidad)>();
             foreach (var linea in lineasSolicitadas)
             {
                 if (!articulosPorCodigo.TryGetValue(linea.IdArticulo, out var articulo))
-                    throw new InvalidOperationException($"El artÃ­culo {linea.IdArticulo} no pertenece a este catÃ¡logo.");
+                    throw new InvalidOperationException($"El artículo {linea.IdArticulo} no pertenece a este catálogo.");
 
                 if (CatalogosPriceDisplayHelper.GetPrecioAplicado(articulo) <= 0m)
-                    throw new InvalidOperationException($"El artÃ­culo {linea.IdArticulo} no tiene un precio vÃ¡lido en este catÃ¡logo.");
+                    throw new InvalidOperationException($"El artículo {linea.IdArticulo} no tiene un precio válido en este catálogo.");
 
                 lineasResueltas.Add((articulo, linea.Cantidad));
             }
@@ -1338,7 +1278,7 @@ public sealed class InterfacesCatalogosService(
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(ct);
 
-            // 3) Revalido al cliente contra la fuente oficial: no confÃ­o Ãºnicamente en la sesiÃ³n.
+            // 3) Revalido al cliente contra la fuente oficial: no confío únicamente en la sesión.
             var cliente = await cn.QuerySingleOrDefaultAsync<(string? Codigo, string RazonSocial, string Email)>(new CommandDefinition(
                 """
                 SELECT TOP (1)
@@ -1353,18 +1293,18 @@ public sealed class InterfacesCatalogosService(
                 cancellationToken: ct));
 
             if (cliente.Codigo is null)
-                throw new InvalidOperationException("No pudimos validar tu cuenta de cliente. VolvÃ© a iniciar sesiÃ³n e intentÃ¡ nuevamente.");
+                throw new InvalidOperationException("No pudimos validar tu cuenta de cliente. Volvé a iniciar sesión e intentá nuevamente.");
 
             var letra = await ResolveLetraPedidoWebAsync(cn, ct);
-            var observaciones = $"Pedido web - CatÃ¡logo #{request.IdInsert}";
+            var observaciones = $"Pedido web - Catálogo #{request.IdInsert}";
             if (observaciones.Length > 250)
                 observaciones = observaciones[..250];
 
-            // 4) TransacciÃ³n con numeraciÃ³n protegida. La numeraciÃ³n legacy (MAX(NUMERO)+1 dentro
-            //    de sp_web_Alta_Comprobante) no tiene ningÃºn candado propio, y confirmamos con datos
-            //    reales que SUCURSAL=9999/NP/X ya la estÃ¡ escribiendo otro proceso en este momento.
+            // 4) Transacción con numeración protegida. La numeración legacy (MAX(NUMERO)+1 dentro
+            //    de sp_web_Alta_Comprobante) no tiene ningún candado propio, y confirmamos con datos
+            //    reales que SUCURSAL=9999/NP/X ya la está escribiendo otro proceso en este momento.
             //    sp_getapplock protege la concurrencia dentro de AlfaCore; si igual choca con ese
-            //    otro proceso (violaciÃ³n de clave), reintentamos con una transacciÃ³n nueva.
+            //    otro proceso (violación de clave), reintentamos con una transacción nueva.
             CabeceraPedidoWeb? cabecera = null;
             const int maxIntentos = 5;
 
@@ -1402,7 +1342,7 @@ public sealed class InterfacesCatalogosService(
             }
 
             if (cabecera is null)
-                throw new InvalidOperationException("No se pudo registrar el pedido por demasiados intentos simultÃ¡neos. EsperÃ¡ unos segundos y volvÃ© a intentar.");
+                throw new InvalidOperationException("No se pudo registrar el pedido por demasiados intentos simultáneos. Esperá unos segundos y volvé a intentar.");
 
             var lineasResultado = lineasResueltas
                 .Select(l => new CatalogoPedidoLineaResultDto
@@ -1436,7 +1376,7 @@ public sealed class InterfacesCatalogosService(
                 "ConfirmarPedidoCarrito",
                 "V_MV_Cpte",
                 resultado.IdComprobanteTexto,
-                "Pedido NP generado desde el carrito de catÃ¡logos.",
+                "Pedido NP generado desde el carrito de catálogos.",
                 new
                 {
                     request.IdInsert,
@@ -1542,7 +1482,7 @@ public sealed class InterfacesCatalogosService(
             cancellationToken: ct));
 
         if (row.IdComprobanteTexto is null)
-            throw new InvalidOperationException("El pedido se generÃ³ pero no se pudo releer el comprobante.");
+            throw new InvalidOperationException("El pedido se generó pero no se pudo releer el comprobante.");
 
         return new CabeceraPedidoWeb(idComprobante, row.IdComprobanteTexto, row.Numero, row.Fecha);
     }
@@ -1574,8 +1514,8 @@ public sealed class InterfacesCatalogosService(
         {
             var mensaje = mensajeParam.Value is null or DBNull ? string.Empty : Convert.ToString(mensajeParam.Value) ?? string.Empty;
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(mensaje)
-                ? $"No se pudo agregar el artÃ­culo {articulo.IdArticulo} al pedido."
-                : $"ArtÃ­culo {articulo.IdArticulo}: {mensaje}");
+                ? $"No se pudo agregar el artículo {articulo.IdArticulo} al pedido."
+                : $"Artículo {articulo.IdArticulo}: {mensaje}");
         }
     }
 
@@ -1630,7 +1570,7 @@ public sealed class InterfacesCatalogosService(
             }
             else
             {
-                throw new InvalidOperationException("La base activa no tiene soporte de catÃ¡logos.");
+                throw new InvalidOperationException("La base activa no tiene soporte de catálogos.");
             }
 
             await appEvents.LogAuditAsync(
@@ -1638,12 +1578,12 @@ public sealed class InterfacesCatalogosService(
                 "FinalizarCatalogo",
                 usaNuevoModelo ? "CATALOGOS" : "V_MV_INSERT",
                 idInsert.ToString(),
-                "CatÃ¡logo finalizado.",
+                "Catálogo finalizado.",
                 new { Usuario = usuario, Pc = pc },
                 token);
 
             return true;
-        }, "No se pudo finalizar el catÃ¡logo.", ct);
+        }, "No se pudo finalizar el catálogo.", ct);
 
     public async Task<bool> GetMenuHabilitadoAsync(CancellationToken ct = default)
     {
@@ -1674,7 +1614,7 @@ public sealed class InterfacesCatalogosService(
                 ModuleName,
                 "GetCatalogosMenuEnabled",
                 ex,
-                "No se pudo leer la configuraciÃ³n de visibilidad del menÃº de catÃ¡logos.",
+                "No se pudo leer la configuración de visibilidad del menú de catálogos.",
                 new { Usuario = appUserSession.GetCurrentUserName(Environment.UserName) },
                 AppEventSeverity.Warning,
                 ct);
@@ -1687,7 +1627,7 @@ public sealed class InterfacesCatalogosService(
         => ExecuteLoggedAsync(ModuleName, "SaveCatalogosMenuEnabled", async token =>
         {
             if (string.IsNullOrWhiteSpace(userName))
-                throw new InvalidOperationException("No hay un usuario logueado para guardar la configuraciÃ³n del menÃº.");
+                throw new InvalidOperationException("No hay un usuario logueado para guardar la configuración del menú.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1742,12 +1682,12 @@ public sealed class InterfacesCatalogosService(
                 "SaveCatalogosMenuEnabled",
                 "TA_CONFIGURACION",
                 MenuEnabledConfigKey,
-                "ConfiguraciÃ³n de visibilidad del menÃº de catÃ¡logos actualizada.",
+                "Configuración de visibilidad del menú de catálogos actualizada.",
                 new { UserName = userName.Trim(), Habilitado = habilitado },
                 token);
 
             return true;
-        }, "No se pudo guardar la configuraciÃ³n del menÃº de catÃ¡logos.", ct);
+        }, "No se pudo guardar la configuración del menú de catálogos.", ct);
 
     public Task<CatalogosPublicIdentityDto> GetPublicIdentityAsync(string? idWeb, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetPublicIdentity", async token =>
@@ -1798,13 +1738,13 @@ public sealed class InterfacesCatalogosService(
                 LogoFormato = logoFormat,
                 TieneLogoPersonalizado = logoPersonalizadoExiste
             };
-        }, "No se pudo cargar la identidad pÃºblica de catÃ¡logos.", ct);
+        }, "No se pudo cargar la identidad pública de catálogos.", ct);
 
     public Task SavePublicIdentityNameAsync(string userName, string? nombreVisible, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SavePublicIdentityName", async token =>
         {
             if (string.IsNullOrWhiteSpace(userName))
-                throw new InvalidOperationException("No hay un usuario logueado para guardar la identidad pÃºblica.");
+                throw new InvalidOperationException("No hay un usuario logueado para guardar la identidad pública.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -1816,12 +1756,12 @@ public sealed class InterfacesCatalogosService(
                 "SavePublicIdentityName",
                 "TA_CONFIGURACION",
                 PublicNameConfigKey,
-                "Nombre visible del catÃ¡logo pÃºblico actualizado.",
+                "Nombre visible del catálogo público actualizado.",
                 new { UserName = userName.Trim(), NombreVisible = nombreVisible?.Trim() ?? string.Empty },
                 token);
 
             return true;
-        }, "No se pudo guardar el nombre visible del catÃ¡logo.", ct);
+        }, "No se pudo guardar el nombre visible del catálogo.", ct);
 
     public Task SavePublicLogoFormatAsync(string userName, string? idWeb, string logoFormat, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SavePublicLogoFormat", async token =>
@@ -1843,12 +1783,12 @@ public sealed class InterfacesCatalogosService(
                 "SavePublicLogoFormat",
                 "TA_CONFIGURACION",
                 configKey,
-                "Formato del logo pÃºblico del catÃ¡logo actualizado.",
+                "Formato del logo público del catálogo actualizado.",
                 new { UserName = userName.Trim(), LogoFormato = normalizedFormat, IdWeb = effectiveIdWeb },
                 token);
 
             return true;
-        }, "No se pudo guardar el formato del logo del catÃ¡logo.", ct);
+        }, "No se pudo guardar el formato del logo del catálogo.", ct);
 
     public Task<string> GetPublicClasePrecioAsync(string? idWeb, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetPublicClasePrecio", async token =>
@@ -1879,7 +1819,7 @@ public sealed class InterfacesCatalogosService(
 
             var values = rows.ToDictionary(x => x.Clave, x => ResolveStoredValue(x.Valor, x.ValorAux), StringComparer.OrdinalIgnoreCase);
             return NormalizeClasePrecio(ReadFirstConfigValue(values, scopedKey, PublicClasePrecioConfigKey));
-        }, "No se pudo cargar la clase de precio del catÃ¡logo.", ct);
+        }, "No se pudo cargar la clase de precio del catálogo.", ct);
 
     private async Task<int> GetOfertaClasePrecioAsync(SqlConnection cn, CancellationToken ct)
     {
@@ -1923,21 +1863,21 @@ public sealed class InterfacesCatalogosService(
                 "SavePublicClasePrecio",
                 "TA_CONFIGURACION",
                 configKey,
-                "Clase de precio del catÃ¡logo pÃºblico actualizada.",
+                "Clase de precio del catálogo público actualizada.",
                 new { UserName = userName.Trim(), ClasePrecio = normalizedClase, IdWeb = effectiveIdWeb },
                 token);
 
             return true;
-        }, "No se pudo guardar la clase de precio del catÃ¡logo.", ct);
+        }, "No se pudo guardar la clase de precio del catálogo.", ct);
 
     public Task<CatalogosPublicIdentityDto> SavePublicIdentityLogoAsync(string userName, string? idWeb, Stream content, string fileName, string contentType, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SavePublicIdentityLogo", async token =>
         {
             if (string.IsNullOrWhiteSpace(userName))
-                throw new InvalidOperationException("No hay un usuario logueado para guardar el logo pÃºblico.");
+                throw new InvalidOperationException("No hay un usuario logueado para guardar el logo público.");
 
             if (content is null || !content.CanRead)
-                throw new InvalidOperationException("No se recibiÃ³ una imagen vÃ¡lida.");
+                throw new InvalidOperationException("No se recibió una imagen válida.");
 
             var effectiveIdWeb = GetEffectiveIdWeb(idWeb);
             var (normalizedContentType, extension) = ResolveLogoType(contentType, fileName);
@@ -1946,30 +1886,30 @@ public sealed class InterfacesCatalogosService(
 
             var ftpCodigoCta = await ResolveFtpCodigoCtaAsync(token);
             if (string.IsNullOrWhiteSpace(ftpCodigoCta))
-                throw new InvalidOperationException("Falta configurar el cÃ³digo de cuenta FTP (FTP_CODIGOCTA) para poder guardar el logo.");
+                throw new InvalidOperationException("Falta configurar el código de cuenta FTP (FTP_CODIGOCTA) para poder guardar el logo.");
 
             var activeBaseId = sessionService.GetActiveSession()?.BaseId;
             var subido = await articuloImagenFtpService.SubirImagenAsync(ftpCodigoCta, activeBaseId, LogoFtpArticuloKey, extension, content, thumbnail: false, ct: token);
             if (!subido)
-                throw new InvalidOperationException("No se pudo subir el logo al servidor de imÃ¡genes. ProbÃ¡ de nuevo en unos minutos.");
+                throw new InvalidOperationException("No se pudo subir el logo al servidor de imágenes. Probá de nuevo en unos minutos.");
 
             await appEvents.LogAuditAsync(
                 ModuleName,
                 "SavePublicIdentityLogo",
                 "TA_CONFIGURACION",
                 ftpCodigoCta,
-                "Logo pÃºblico del catÃ¡logo actualizado.",
+                "Logo público del catálogo actualizado.",
                 new { UserName = userName.Trim(), FileName = fileName, IdWeb = effectiveIdWeb, IdBase = activeBaseId },
                 token);
 
             return await GetPublicIdentityAsync(effectiveIdWeb, token);
-        }, "No se pudo guardar el logo del catÃ¡logo.", ct);
+        }, "No se pudo guardar el logo del catálogo.", ct);
 
     public Task ResetPublicIdentityLogoAsync(string userName, string? idWeb, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "ResetPublicIdentityLogo", async token =>
         {
             if (string.IsNullOrWhiteSpace(userName))
-                throw new InvalidOperationException("No hay un usuario logueado para restaurar el logo pÃºblico.");
+                throw new InvalidOperationException("No hay un usuario logueado para restaurar el logo público.");
 
             var effectiveIdWeb = GetEffectiveIdWeb(idWeb);
             var ftpCodigoCta = await ResolveFtpCodigoCtaAsync(token);
@@ -1982,12 +1922,12 @@ public sealed class InterfacesCatalogosService(
                 "ResetPublicIdentityLogo",
                 "TA_CONFIGURACION",
                 ftpCodigoCta,
-                "Logo pÃºblico del catÃ¡logo restaurado al valor predeterminado.",
+                "Logo público del catálogo restaurado al valor predeterminado.",
                 new { UserName = userName.Trim(), IdWeb = effectiveIdWeb, IdBase = activeBaseId },
                 token);
 
             return true;
-        }, "No se pudo restaurar el logo del catÃ¡logo.", ct);
+        }, "No se pudo restaurar el logo del catálogo.", ct);
 
     public Task<CatalogosPublicLogoServeDto?> GetPublicLogoForServeAsync(string? idWeb, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetPublicLogoForServe", async token =>
@@ -2018,7 +1958,7 @@ public sealed class InterfacesCatalogosService(
                 NombreArchivo = Path.GetFileName(fallbackPath),
                 MimeType = InferImageMimeType(fallbackPath)
             };
-        }, "No se pudo resolver el logo pÃºblico del catÃ¡logo.", ct);
+        }, "No se pudo resolver el logo público del catálogo.", ct);
 
     private async Task<bool> ResolveLogoPersonalizadoExisteAsync(int? idBase, CancellationToken ct)
     {
@@ -2062,7 +2002,7 @@ public sealed class InterfacesCatalogosService(
 
             var parsed = JsonSerializer.Deserialize<CatalogosViewSettingsDto>(raw, JsonOptions);
             return NormalizeViewSettings(parsed);
-        }, "No se pudo cargar la configuraciÃ³n de vista de catÃ¡logos.", ct);
+        }, "No se pudo cargar la configuración de vista de catálogos.", ct);
 
     public Task SaveViewSettingsAsync(string userName, CatalogosViewSettingsDto settings, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "SaveViewSettings", async token =>
@@ -2128,12 +2068,12 @@ public sealed class InterfacesCatalogosService(
                 "SaveViewSettings",
                 "TA_CONFIGURACION",
                 configKey,
-                "ConfiguraciÃ³n de vista de catÃ¡logos actualizada.",
+                "Configuración de vista de catálogos actualizada.",
                 new { UserName = userName.Trim(), normalized.AgruparPor, Columnas = normalized.Columnas },
                 token);
 
             return true;
-        }, "No se pudo guardar la configuraciÃ³n de vista.", ct);
+        }, "No se pudo guardar la configuración de vista.", ct);
 
     private async Task<CatalogosCatalogoDetalleDto?> GetCatalogoInternalAsync(int idInsert, bool soloPublico, CancellationToken ct, int? expectedBaseId = null)
         => await ExecuteLoggedAsync(ModuleName, soloPublico ? "GetCatalogoPublico" : "GetCatalogo", async token =>
@@ -2142,11 +2082,13 @@ public sealed class InterfacesCatalogosService(
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
             var availability = await GetCatalogosAvailabilityAsync(token);
-            var existeNuevo = availability.HasNuevoModelo && idInsert > 0 && await CatalogoNuevoExisteAsync(cn, idInsert, token);
-            var existeLegacy = availability.HasLegacyModelo && idInsert > 0 && await CatalogoLegacyExisteAsync(cn, idInsert, token);
+            var existeNuevo = !soloPublico && availability.HasNuevoModelo && idInsert > 0 && await CatalogoNuevoExisteAsync(cn, idInsert, token);
+            var existeLegacy = !soloPublico && availability.HasLegacyModelo && idInsert > 0 && await CatalogoLegacyExisteAsync(cn, idInsert, token);
             CatalogosSourceKind? selectedSource = null;
 
-            var predeterminadoId = await GetCatalogoPredeterminadoIdInternalAsync(cn, token);
+            var predeterminadoId = soloPublico && idInsert > 0
+                ? 0
+                : await GetCatalogoPredeterminadoIdInternalAsync(cn, token);
             var candidateIds = new List<int>();
             if (idInsert > 0)
             {
@@ -2186,8 +2128,9 @@ public sealed class InterfacesCatalogosService(
                 if (soloPublico && !IsCatalogoPublicoVigente(header))
                     continue;
 
-                header.HabilitarCarrito = await GetCarritoHabilitadoAsync(candidateId, token);
-                header.ModificaPrecio = await GetModificaPrecioAsync(candidateId, token);
+                var flags = await GetCatalogoFlagsAsync(cn, candidateId, token);
+                header.HabilitarCarrito = flags.HabilitarCarrito;
+                header.ModificaPrecio = flags.ModificaPrecio;
                 header.Predeterminado = candidateId == predeterminadoId;
 
                 if (soloPublico && header.ModificaPrecio)
@@ -2198,7 +2141,7 @@ public sealed class InterfacesCatalogosService(
                     soloPublico ? "GetCatalogoPublicoTrace" : "GetCatalogoTrace",
                     "CATALOGOS",
                     candidateId.ToString(),
-                    "CatÃ¡logo cargado con resoluciÃ³n temporal de fuente.",
+                    "Catálogo cargado con resolución temporal de fuente.",
                     new
                     {
                         RequestedId = idInsert,
@@ -2226,7 +2169,7 @@ public sealed class InterfacesCatalogosService(
                 soloPublico ? "GetCatalogoPublicoTrace" : "GetCatalogoTrace",
                 "CATALOGOS",
                 idInsert.ToString(),
-                "CatÃ¡logo no cargado.",
+                "Catálogo no cargado.",
                 new
                 {
                     RequestedId = idInsert,
@@ -2239,7 +2182,40 @@ public sealed class InterfacesCatalogosService(
                 token);
 
             return null;
-        }, soloPublico ? "No se pudo cargar el catÃ¡logo pÃºblico." : "No se pudo cargar el catÃ¡logo.", ct);
+        }, soloPublico ? "No se pudo cargar el catálogo público." : "No se pudo cargar el catálogo.", ct);
+
+    private async Task<(bool HabilitarCarrito, bool ModificaPrecio)> GetCatalogoFlagsAsync(SqlConnection cn, int idInsert, CancellationToken ct)
+    {
+        if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", ct))
+            return (false, false);
+
+        var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
+        var sql = $"""
+            SELECT
+                ISNULL((SELECT TOP (1) VALOR FROM dbo.TA_CONFIGURACION
+                        WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @CarritoClave), ''),
+                ISNULL((SELECT TOP (1) {detailColumn} FROM dbo.TA_CONFIGURACION
+                        WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @CarritoClave), ''),
+                ISNULL((SELECT TOP (1) VALOR FROM dbo.TA_CONFIGURACION
+                        WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @PrecioClave), ''),
+                ISNULL((SELECT TOP (1) {detailColumn} FROM dbo.TA_CONFIGURACION
+                        WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @PrecioClave), '');
+            """;
+
+        var row = await cn.QuerySingleAsync<(string ValorCarrito, string AuxCarrito, string ValorPrecio, string AuxPrecio)>(
+            new CommandDefinition(
+                sql,
+                new
+                {
+                    CarritoClave = BuildCarritoConfigKey(idInsert).ToUpperInvariant(),
+                    PrecioClave = BuildModificaPrecioConfigKey(idInsert).ToUpperInvariant()
+                },
+                cancellationToken: ct));
+
+        var carrito = ResolveStoredValue(row.ValorCarrito ?? string.Empty, row.AuxCarrito ?? string.Empty);
+        var modificaPrecio = ParseModificaPrecioFlag(row.ValorPrecio) || ParseModificaPrecioFlag(row.AuxPrecio);
+        return (string.Equals(carrito.Trim(), "SI", StringComparison.OrdinalIgnoreCase), modificaPrecio);
+    }
 
     private async Task<bool> GetCarritoHabilitadoAsync(int idInsert, CancellationToken ct)
     {
@@ -2281,7 +2257,7 @@ public sealed class InterfacesCatalogosService(
     // Formato pedido por el legacy: Cfg("CATALOGO_" & idCatalogo, "MODIFICAPRECIO", "Catalogo") lee
     // CLAVE=CATALOGO_{id}, GRUPO=catalogo, y el "campo" MODIFICAPRECIO empaquetado como "MODIFICAPRECIO:1"
     // (o ":0") dentro de la columna aux (VALOR_AUX/VALORAUX) -- a diferencia del resto de los flags de
-    // este servicio (Carrito, MenÃº, etc.), que usan su propia CLAVE dedicada con "SI"/"NO" en VALOR.
+    // este servicio (Carrito, Menú, etc.), que usan su propia CLAVE dedicada con "SI"/"NO" en VALOR.
     private const string ModificaPrecioGrupo = "catalogo";
     private const string ModificaPrecioCampo = "MODIFICAPRECIO";
 
@@ -2300,9 +2276,9 @@ public sealed class InterfacesCatalogosService(
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
             """;
 
-        // Lee tanto VALOR como el aux: el checkbox graba en el aux (como pidiÃ³ el usuario), pero una
-        // fila cargada a mano (o algÃºn dÃ­a por el legacy) puede terminar en VALOR -- no importa en
-        // cuÃ¡l de las dos haya quedado el "MODIFICAPRECIO:1", tiene que reconocerse igual.
+        // Lee tanto VALOR como el aux: el checkbox graba en el aux (como pidió el usuario), pero una
+        // fila cargada a mano (o algún día por el legacy) puede terminar en VALOR -- no importa en
+        // cuál de las dos haya quedado el "MODIFICAPRECIO:1", tiene que reconocerse igual.
         var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(
             sql,
             new { Clave = BuildModificaPrecioConfigKey(idInsert).ToUpperInvariant() },
@@ -2323,8 +2299,8 @@ public sealed class InterfacesCatalogosService(
         return resto.Length > 0 && resto[0] == '1';
     }
 
-    // Si CATALOGO_{id}/catalogo ya trae otros "campo:valor" empaquetados en el aux (patrÃ³n Cfg de
-    // varios campos por clave), solo se pisa el dÃ­gito de MODIFICAPRECIO:N y se preserva el resto.
+    // Si CATALOGO_{id}/catalogo ya trae otros "campo:valor" empaquetados en el aux (patrón Cfg de
+    // varios campos por clave), solo se pisa el dígito de MODIFICAPRECIO:N y se preserva el resto.
     private static readonly Regex ModificaPrecioFlagPattern =
         new($@"{ModificaPrecioCampo}:\d+", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
@@ -2388,11 +2364,11 @@ public sealed class InterfacesCatalogosService(
     private static string BuildModificaPrecioConfigKey(int idInsert)
         => $"CATALOGO_{idInsert}";
 
-    // Legacy: Cfg("CATALOGO_" & idCatalogo, "MODIFICAPRECIO", "Catalogo") = "S" -- cuando estÃ¡ activo,
-    // los artÃ­culos cuya V_MA_ARTICULOS.MONEDA no sea '1' (pesos) se muestran convertidos a pesos con
-    // la cotizaciÃ³n del dÃ­a (misma fÃ³rmula que FN_PRECIO_LISTA: precio * TA_COTIZACION.MONEDAn). Solo
-    // se aplica en la vista pÃºblica/carrito (soloPublico=true) -- el editor sigue mostrando y guardando
-    // el precio tal cual estÃ¡ en la base, para no ir multiplicando la cotizaciÃ³n en cada re-guardado.
+    // Legacy: Cfg("CATALOGO_" & idCatalogo, "MODIFICAPRECIO", "Catalogo") = "S" -- cuando está activo,
+    // los artículos cuya V_MA_ARTICULOS.MONEDA no sea '1' (pesos) se muestran convertidos a pesos con
+    // la cotización del día (misma fórmula que FN_PRECIO_LISTA: precio * TA_COTIZACION.MONEDAn). Solo
+    // se aplica en la vista pública/carrito (soloPublico=true) -- el editor sigue mostrando y guardando
+    // el precio tal cual está en la base, para no ir multiplicando la cotización en cada re-guardado.
     private async Task ApplyModificaPrecioAsync(SqlConnection cn, IReadOnlyList<CatalogosCatalogoItemDto> items, CancellationToken ct)
     {
         if (items.Count == 0 || items.All(i => string.IsNullOrWhiteSpace(i.Moneda) || i.Moneda.Trim() == "1"))
@@ -2411,9 +2387,9 @@ public sealed class InterfacesCatalogosService(
                 new CommandDefinition(sql, cancellationToken: ct));
         }
 
-        // "2" = dÃ³lar. Si no hay cotizaciÃ³n del dÃ­a cargada en TA_COTIZACION, se busca la del dÃ­a por
-        // internet (dolarapi.com, oficial) -- el catÃ¡logo pÃºblico siempre tiene que quedar en pesos,
-        // no puede depender de que alguien haya cargado la cotizaciÃ³n manualmente ese dÃ­a.
+        // "2" = dólar. Si no hay cotización del día cargada en TA_COTIZACION, se busca la del día por
+        // internet (dolarapi.com, oficial) -- el catálogo público siempre tiene que quedar en pesos,
+        // no puede depender de que alguien haya cargado la cotización manualmente ese día.
         var cotizDolar = cotiz.Moneda2;
         if (cotizDolar is not > 0 && items.Any(i => i.Moneda.Trim() == "2"))
             cotizDolar = await FetchCotizacionDolarInternetAsync(ct);
@@ -2580,7 +2556,7 @@ public sealed class InterfacesCatalogosService(
         if (!string.IsNullOrWhiteSpace(sessionFallback))
             return sessionFallback.Trim();
 
-        return "CatÃ¡logos";
+        return "Catálogos";
     }
 
     private static string ReadFirstConfigValue(IReadOnlyDictionary<string, string> values, params string[] keys)
@@ -2896,7 +2872,7 @@ public sealed class InterfacesCatalogosService(
                     WHEN c.FechaDesde IS NULL AND c.FechaHasta IS NULL THEN N'Permanente'
                     ELSE N'Con vigencia'
                 END AS Tipo,
-                ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), CONCAT(N'CatÃ¡logo ', CONVERT(nvarchar(20), c.IdCatalogo))) AS Nombre,
+                ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IdCatalogo))) AS Nombre,
                 ISNULL(LTRIM(RTRIM(c.IdLista)), '') AS IdLista,
                 ISNULL(LTRIM(RTRIM(c.Nombre)), '') AS Grupo,
                 CAST(N'' AS nvarchar(250)) AS Observaciones,
@@ -3030,7 +3006,7 @@ public sealed class InterfacesCatalogosService(
                      AND MAX(c.VigenciaHasta) IS NULL THEN N'Permanente'
                     ELSE N'Con vigencia'
                 END AS Tipo,
-                MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'CatÃ¡logo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
+                MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), ''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
                 MAX(ISNULL(LTRIM(RTRIM(c.IDLISTA)), '')) AS IdLista,
                 MAX(ISNULL(LTRIM(RTRIM(c.GRUPO)), '')) AS Grupo,
                 MAX(ISNULL(LTRIM(RTRIM(c.Observaciones)), '')) AS Observaciones,
@@ -3102,10 +3078,10 @@ public sealed class InterfacesCatalogosService(
             .ToList();
 
         if (articulos.Count == 0)
-            throw new InvalidOperationException("SeleccionÃ¡ al menos un artÃ­culo antes de guardar el catÃ¡logo.");
+            throw new InvalidOperationException("Seleccioná al menos un artículo antes de guardar el catálogo.");
 
         if (string.IsNullOrWhiteSpace(request.Nombre))
-            throw new InvalidOperationException("IngresÃ¡ el nombre del catÃ¡logo.");
+            throw new InvalidOperationException("Ingresá el nombre del catálogo.");
 
         await using var tx = await cn.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
         try
@@ -3320,7 +3296,7 @@ public sealed class InterfacesCatalogosService(
                 "SaveCatalogoVigencia",
                 "CATALOGOS",
                 idInsert.ToString(),
-                estadoBloqueado ? "CatÃ¡logo actualizado sin tocar el detalle bloqueado." : "CatÃ¡logo nuevo publicado.",
+                estadoBloqueado ? "Catálogo actualizado sin tocar el detalle bloqueado." : "Catálogo nuevo publicado.",
                 new { request.Nombre, request.IdLista, request.VigenciaDesde, request.VigenciaHasta, Articulos = articulos.Count, Url = url },
                 ct);
 
@@ -3331,8 +3307,8 @@ public sealed class InterfacesCatalogosService(
                 IdInsert = idInsert,
                 UrlPublica = url,
                 Mensaje = estadoBloqueado
-                    ? "CatÃ¡logo actualizado."
-                    : "CatÃ¡logo publicado correctamente."
+                    ? "Catálogo actualizado."
+                    : "Catálogo publicado correctamente."
             };
         }
         catch
@@ -3466,8 +3442,8 @@ public sealed class InterfacesCatalogosService(
         public string NumeroDocumento { get; set; } = string.Empty;
     }
 
-    private const string CredencialesInvalidasMensaje = "CÃ³digo/email o contraseÃ±a incorrectos.";
-    private const string EmailAmbiguoMensaje = "El email estÃ¡ asociado a mÃ¡s de una cuenta. IngresÃ¡ con tu cÃ³digo de cliente.";
+    private const string CredencialesInvalidasMensaje = "Código/email o contraseña incorrectos.";
+    private const string EmailAmbiguoMensaje = "El email está asociado a más de una cuenta. Ingresá con tu código de cliente.";
 
     private async Task<CatalogosClienteSessionInfo> ExecuteCatalogoClienteLoginAsync(CatalogosClienteLoginRequestDto request, CancellationToken ct)
     {
@@ -3570,7 +3546,7 @@ public sealed class InterfacesCatalogosService(
                 AppEventSeverity.Warning,
                 ct);
 
-            throw new AppUserFacingException("No pudimos validar el acceso en este momento. IntentÃ¡ nuevamente.", incidentId, ex);
+            throw new AppUserFacingException("No pudimos validar el acceso en este momento. Intentá nuevamente.", incidentId, ex);
         }
     }
 
@@ -3599,8 +3575,8 @@ public sealed class InterfacesCatalogosService(
         }
         catch (Exception ex)
         {
-            // No debe romper la respuesta de la imagen: en el peor caso, el prÃ³ximo pedido va a
-            // seguir forzando la redescarga (mÃ¡s lento para ese artÃ­culo, pero no incorrecto).
+            // No debe romper la respuesta de la imagen: en el peor caso, el próximo pedido va a
+            // seguir forzando la redescarga (más lento para ese artículo, pero no incorrecto).
             await appEvents.LogErrorAsync(ModuleName, "ClearImagenModificada", ex, "No se pudo apagar ModificoImagen.", new { IdArticulo = articuloId }, AppEventSeverity.Warning, ct);
         }
     }
@@ -3650,8 +3626,8 @@ public sealed class InterfacesCatalogosService(
         }
         catch (InvalidOperationException validationEx)
         {
-            // ValidaciÃ³n funcional esperable (ej. "IngresÃ¡ el nombre del catÃ¡logo"): se muestra
-            // tal cual al usuario en vez de reemplazarla por el mensaje genÃ©rico de friendlyMessage.
+            // Validación funcional esperable (ej. "Ingresá el nombre del catálogo"): se muestra
+            // tal cual al usuario en vez de reemplazarla por el mensaje genérico de friendlyMessage.
             // Igual queda registrada para trazabilidad.
             await appEvents.LogErrorAsync(
                 module,
@@ -3683,7 +3659,7 @@ public sealed class InterfacesCatalogosService(
                 AppEventSeverity.Warning,
                 ct);
 
-            throw new AppUserFacingException($"{friendlyMessage} CÃ³digo: {incidentId}", incidentId, ex);
+            throw new AppUserFacingException($"{friendlyMessage} Código: {incidentId}", incidentId, ex);
         }
     }
 }

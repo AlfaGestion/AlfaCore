@@ -11,6 +11,10 @@
 @inject AlfaCore.Services.IConversacionesConfigService ConfigSvc
 @inject AlfaCore.Services.IContactosService ContactosSvc
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
+@inject AlfaCore.Services.IPortalClienteRecuperarClaveService PortalClienteRecuperarClaveSvc
+@inject AlfaCore.Services.IPortalClienteRegistrarEmailService PortalClienteRegistrarEmailSvc
+@inject AlfaCore.Services.IPortalClienteAutoLoginService PortalClienteAutoLoginSvc
+@inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.ITicketsService TicketsSvc
 @inject AlfaCore.Services.IPartesHorasService PartesHorasSvc
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
@@ -433,6 +437,14 @@
                     {
                         <span style="width:.55rem;height:.55rem;border-radius:999px;background:#22d3ee;box-shadow:0 0 0 4px rgba(34,211,238,.16),0 0 14px rgba(34,211,238,.9);display:inline-block;margin-left:.15rem;" title="Hay observaciones del cliente o contacto"></span>
                     }
+                </button>
+                <button type="button"
+                        class="btn btn--ghost btn--sm conversations-portal-invitation-button"
+                        @onclick="PrepararInvitacionPortalAsync"
+                        disabled="@(_preparandoInvitacionPortal || _selectedConversation is null || string.IsNullOrWhiteSpace(_selectedConversation.ClienteCodigo) || _busyAction)"
+                        title="Preparar invitación del Portal Cliente"
+                        aria-label="Preparar invitación del Portal Cliente">
+                    <i class="bi @(_preparandoInvitacionPortal ? "bi-hourglass-split" : "bi-person-badge")"></i>
                 </button>
                 @if (_ticketsModuloActivo)
                 {
@@ -3777,6 +3789,7 @@
     private DateTime _noticeSetAtUtc = DateTime.MinValue;
     private string _noticeSignature = string.Empty;
     private string _replyText = string.Empty;
+    private bool _preparandoInvitacionPortal;
 
     // Mensajes programados (envío diferido)
     private bool _programarBusy;
@@ -7974,6 +7987,128 @@
     {
         _replyText = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
         await NotifyTypingAsync(HasReplyText);
+    }
+
+    private async Task PrepararInvitacionPortalAsync()
+    {
+        if (_preparandoInvitacionPortal || _selectedConversation is null)
+            return;
+
+        var codigoCliente = _selectedConversation.ClienteCodigo.Trim();
+        if (string.IsNullOrWhiteSpace(codigoCliente))
+        {
+            _actionError = "Primero vinculá la conversación con un cliente.";
+            return;
+        }
+
+        _preparandoInvitacionPortal = true;
+        _actionError = null;
+        _actionMessage = null;
+
+        try
+        {
+            var detalle = await CuentasSvc.GetByIdAsync(CuentaComercialTipo.Cliente, codigoCliente);
+            if (detalle is null || !detalle.Activo)
+                throw new InvalidOperationException("No se encontró un cliente activo para esta conversación.");
+
+            var idWeb = AppUserSession.CurrentUser?.IdWeb;
+            var idBase = GetRouteBaseId() ?? SessionSvc.GetActiveSession()?.BaseId;
+            var relativa = CatalogosUrlHelper.BuildRelativePortalClienteUrl(
+                null,
+                null,
+                Nav.Uri,
+                fallbackIdWeb: idWeb,
+                fallbackIdBase: idBase);
+
+            if (string.IsNullOrWhiteSpace(idWeb))
+            {
+                var segmentos = relativa.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                if (segmentos.Length >= 3 && int.TryParse(segmentos[1], out _))
+                    idWeb = Uri.UnescapeDataString(segmentos[0]);
+            }
+
+            if (string.IsNullOrWhiteSpace(idWeb) || idBase is not > 0)
+                throw new InvalidOperationException("No se pudo determinar el enlace del Portal Cliente para la base activa.");
+
+            var urlPortal = CatalogosUrlHelper.BuildAbsoluteUrl(Nav, relativa);
+
+            string texto;
+            if (string.IsNullOrWhiteSpace(detalle.Mail))
+            {
+                var urlRegistroEmail = CatalogosUrlHelper.BuildAbsoluteUrl(
+                    Nav,
+                    $"{relativa.TrimEnd('/')}/registrar-email");
+                var enlace = await PortalClienteRegistrarEmailSvc.GenerarEnlaceAsync(
+                    new PortalClienteGenerarEnlaceEmailRequestDto
+                    {
+                        CodigoCliente = detalle.Codigo,
+                        IdWeb = idWeb.Trim(),
+                        IdBase = idBase.Value,
+                        UrlBaseRegistro = urlRegistroEmail
+                    });
+
+                texto = $"Hola, te compartimos el acceso al Portal Cliente:\n\n" +
+                        $"Enlace: {urlPortal}\n" +
+                        $"ID cliente: {detalle.Codigo}\n\n" +
+                        $"Como todavía no tenemos un email registrado, registralo desde este enlace:\n{enlace}\n\n" +
+                        "Desde el mismo enlace también vas a poder crear tu contraseña y luego ingresar al portal.";
+            }
+            else
+            {
+                urlPortal = QueryHelpers.AddQueryString(urlPortal, "email", detalle.Mail.Trim());
+                var urlAutoLogin = await PortalClienteAutoLoginSvc.GenerarEnlaceAsync(
+                    new PortalClienteGenerarAutoLoginRequestDto
+                    {
+                        CodigoCliente = detalle.Codigo,
+                        RazonSocial = detalle.RazonSocial,
+                        Email = detalle.Mail.Trim(),
+                        IdWeb = idWeb.Trim(),
+                        IdBase = idBase.Value,
+                        UrlBasePortal = urlPortal
+                    });
+                if (!string.IsNullOrWhiteSpace(detalle.ClavePortal))
+                {
+                texto = $"Hola, te compartimos el acceso al Portal Cliente:\n\n" +
+                        $"Enlace de acceso automático: {urlAutoLogin}\n" +
+                        $"ID cliente: {detalle.Codigo}\n" +
+                        $"Email: {detalle.Mail.Trim()}\n\n" +
+                        "El enlace es personal, temporal y te permite ingresar sin escribir la contraseña.\n\n" +
+                        "Si necesitás ayuda, escribinos por este medio.";
+                }
+                else
+                {
+                var urlRestablecer = CatalogosUrlHelper.BuildAbsoluteUrl(
+                    Nav,
+                    $"{relativa.TrimEnd('/')}/restablecer-clave");
+                var enlace = await PortalClienteRecuperarClaveSvc.GenerarEnlaceInvitacionAsync(
+                    new PortalClienteGenerarEnlaceRequestDto
+                    {
+                        CodigoCliente = detalle.Codigo,
+                        IdWeb = idWeb.Trim(),
+                        IdBase = idBase,
+                        UrlBaseRestablecer = urlRestablecer
+                    });
+
+                texto = $"Hola, te compartimos el acceso al Portal Cliente:\n\n" +
+                        $"Enlace de acceso automático: {urlAutoLogin}\n" +
+                        $"ID cliente: {detalle.Codigo}\n" +
+                        $"Email: {detalle.Mail.Trim()}\n\n" +
+                        $"Como todavía no tenés una contraseña, creala desde este enlace:\n{enlace}\n\n" +
+                        "Si necesitás ayuda, escribinos por este medio.";
+                }
+            }
+
+            await SetReplyTextareaValueAsync(texto, focus: true);
+            _actionMessage = "Invitación del Portal Cliente preparada en el mensaje.";
+        }
+        catch (Exception ex)
+        {
+            _actionError = UiOps.BuildMessage(ex, "No se pudo preparar la invitación del Portal Cliente.").Message;
+        }
+        finally
+        {
+            _preparandoInvitacionPortal = false;
+        }
     }
 
     private async Task HandleReplyKeyDownAsync(KeyboardEventArgs args)

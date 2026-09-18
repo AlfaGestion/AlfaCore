@@ -1,0 +1,103 @@
+@page "/portal-cliente/registrar-email"
+@page "/{idweb}/{idbase:int}/portal-cliente/registrar-email"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits PortalClientePageBase
+@using AlfaCore.Models
+@using AlfaCore.Components.Shared
+@inject AlfaCore.Services.IPortalClienteRegistrarEmailService RegistrarEmailSvc
+
+<PageTitle>Registrar email | Portal Cliente</PageTitle>
+
+@if (NotFound)
+{
+    <section class="page-grid">
+        <section class="panel-card empty-state">
+            <h3 class="panel-card__title">Base no disponible</h3>
+            <p class="panel-card__subtitle">No se pudo resolver la base asociada a esta URL.</p>
+        </section>
+    </section>
+}
+else
+{
+    <div class="auth-page">
+        <LoginShell RootClass="auth-shell auth-shell--carrito">
+            <HeroContent>
+                <div class="auth-hero__brand">
+                    <img class="central-brand-logo central-login-logo" src="@GetBrandingLogoUrl()" alt="@GetBrandingName()" loading="eager" decoding="async" />
+                </div>
+                <div class="auth-hero__copy">
+                    <p class="auth-card__eyebrow">@GetBrandingName()</p>
+                    <h2 class="auth-hero__title">Registrar email</h2>
+                    <p class="auth-hero__text">Ingresá el email que vas a usar para acceder y recuperar tu cuenta.</p>
+                </div>
+            </HeroContent>
+            <FormContent>
+                <div class="auth-form-panel__surface">
+                    <header class="auth-form-panel__header">
+                        <h1 class="auth-card__title">Tu email de contacto</h1>
+                        <p class="auth-card__subtitle">El enlace es temporal y solo puede usarse una vez. Completá también una contraseña para ingresar.</p>
+                    </header>
+                    @if (!string.IsNullOrWhiteSpace(_mensaje))
+                    {
+                        <div class="editor-msg @(_exito ? "editor-msg--success" : "editor-msg--error") auth-card__error"><p>@_mensaje</p></div>
+                    }
+                    @if (!_exito)
+                    {
+                        <form class="auth-form" @onsubmit="GuardarAsync" @onsubmit:preventDefault="true">
+                            <div class="auth-field">
+                                <label for="registrar-email">Email</label>
+                                <input id="registrar-email" class="central-login-input" type="email" @bind="_email" autocomplete="email" placeholder="nombre@empresa.com" disabled="@_guardando" required />
+                            </div>
+                            <div class="auth-field">
+                                <label for="registrar-clave">Contraseña</label>
+                                <input id="registrar-clave" class="central-login-input" type="password" @bind="_nuevaClave" autocomplete="new-password" placeholder="Entre 4 y 15 caracteres" maxlength="15" disabled="@_guardando" required />
+                            </div>
+                            <div class="auth-field">
+                                <label for="registrar-confirmar-clave">Confirmar contraseña</label>
+                                <input id="registrar-confirmar-clave" class="central-login-input" type="password" @bind="_confirmarClave" autocomplete="new-password" placeholder="Repetí la contraseña" maxlength="15" disabled="@_guardando" required />
+                            </div>
+                            <AuthActionButton Type="submit" CssClass="btn btn--primary auth-card__submit" Text="Registrar email" BusyText="Guardando..." IconClass="bi bi-envelope-check" BusyIconClass="spinner-border spinner-border-sm" IsBusy="@_guardando" Disabled="@_guardando" />
+                        </form>
+                    }
+                    else
+                    {
+                        <div class="actions"><a class="btn btn--primary" href="@BuildPortalRoute("")"><i class="bi bi-box-arrow-in-right"></i> Ir a iniciar sesión</a></div>
+                    }
+                </div>
+            </FormContent>
+        </LoginShell>
+    </div>
+}
+
+@code {
+    [Parameter, SupplyParameterFromQuery] public string? token { get; set; }
+
+    private string _email = string.Empty;
+    private string _nuevaClave = string.Empty;
+    private string _confirmarClave = string.Empty;
+    private string? _mensaje;
+    private bool _guardando;
+    private bool _exito;
+
+    private async Task GuardarAsync()
+    {
+        _guardando = true;
+        _mensaje = null;
+        try
+        {
+            var result = await RegistrarEmailSvc.RegistrarAsync(new PortalClienteRegistrarEmailRequestDto
+            {
+                Token = token ?? string.Empty,
+                Email = _email,
+                NuevaClave = _nuevaClave,
+                ConfirmarClave = _confirmarClave
+            });
+            _exito = result.Exito;
+            _mensaje = result.Mensaje;
+        }
+        finally
+        {
+            _guardando = false;
+        }
+    }
+}

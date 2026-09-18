@@ -32,6 +32,11 @@
     background: var(--alfa-bg-surface);
 }
 
+/* La búsqueda del listado vive en la barra superior AlfaDesign, igual que Clientes. */
+.catalogos-toolbar-card--legacy {
+    display: none;
+}
+
 .catalogos-toolbar-card__head,
 .catalogos-data-view__header {
     display: flex;
