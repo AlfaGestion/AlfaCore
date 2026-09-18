@@ -217,6 +217,16 @@ public sealed class CatalogosCatalogoDetalleDto
     public bool HabilitarCarrito { get; set; }
     public bool ModificaPrecio { get; set; }
     public bool Predeterminado { get; set; }
+    // Contexto comercial únicamente para el carrito general (IdInsert = 0).
+    // Los carritos de catálogo mantienen sus precios snapshot y no lo utilizan.
+    public bool EsCarritoGeneral { get; set; }
+    public string CodigoCliente { get; set; } = string.Empty;
+    public string IdWebCliente { get; set; } = string.Empty;
+    public int IdBaseCliente { get; set; }
+    public string OrigenArticulosGeneral { get; set; } = string.Empty;
+    public string NombreListaGeneral { get; set; } = string.Empty;
+    public int? ClasePrecioGeneral { get; set; }
+    public string DescripcionClasePrecioGeneral { get; set; } = string.Empty;
     public IReadOnlyList<CatalogosCatalogoItemDto> Articulos { get; set; } = [];
 }
 

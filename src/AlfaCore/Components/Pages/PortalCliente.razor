@@ -132,13 +132,52 @@ else
                 }
                 else
                 {
-                    <div class="portal-cliente__pedidos-list">
-                        @foreach (var pedido in _pedidosRecientes)
-                        {
-                            <PortalClientePedidoRow Pedido="pedido" DetalleUrl="@BuildPortalRoute($"pedidos/{pedido.IdComprobante}")" />
-                        }
+                    <div class="table-wrap portal-cliente__recent-table-wrap">
+                        <table class="data-table portal-cliente__ctacte-table portal-cliente__recent-table">
+                            <thead>
+                                <tr>
+                                    <th>Fecha</th>
+                                    <th>Comprobante</th>
+                                    <th>Origen</th>
+                                    <th class="text-end">Importe</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var pedido in _pedidosRecientes)
+                                {
+                                    <tr>
+                                        <td data-label="Fecha">@pedido.Fecha.ToString("dd/MM/yyyy")</td>
+                                        <td data-label="Comprobante"><strong>@pedido.Tc @pedido.IdComprobanteTexto</strong></td>
+                                        <td data-label="Origen">
+                                            @if (pedido.EsPedidoWeb)
+                                            {
+                                                <AlfaTag Tone="AlfaTagTone.Accent">Pedido web</AlfaTag>
+                                            }
+                                            @if (pedido.IdCatalogoWeb is not null)
+                                            {
+                                                <AlfaTag Tone="AlfaTagTone.Neutral">Catálogo #@pedido.IdCatalogoWeb</AlfaTag>
+                                            }
+                                            @if (!pedido.EsPedidoWeb && pedido.IdCatalogoWeb is null)
+                                            {
+                                                <span>Registrado</span>
+                                            }
+                                        </td>
+                                        <td data-label="Importe" class="text-end"><strong>@MoneyResumen(pedido.Total)</strong></td>
+                                        <td data-label="Estado">
+                                            <AlfaTag Tone="@(pedido.Anulada ? AlfaTagTone.Danger : AlfaTagTone.Success)">@(pedido.Anulada ? "Anulado" : "Registrado")</AlfaTag>
+                                        </td>
+                                        <td data-label="Acciones">
+                                            <a class="btn btn--ghost btn--sm" href="@BuildPortalRoute($"pedidos/{pedido.IdComprobante}")">
+                                                <i class="bi bi-eye"></i> Ver comprobante
+                                            </a>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
                     </div>
-
                 }
             </section>
         }

@@ -21,12 +21,13 @@ public sealed class CarritoComprasService(
     private const string SucursalPedidoWeb = "9999";
     private const string LetraPedidoWebDefault = "X";
     private const string OfertaClasePrecioConfigKey = "CLASEPRECIOOFERTA";
-    private const string DefaultClasePrecio = "1";
+    private const string ClaseVentaConfigKey = "CLASEPRECIOVENTA";
+    private const string ClaseVentaLegacyConfigKey = "CLASEDEPRECIODEFAULT";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
+          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     private string ResolveConnectionString(int? expectedBaseId, string operationName)
         => expectedBaseId is > 0
@@ -274,24 +275,36 @@ public sealed class CarritoComprasService(
             await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(token);
 
-            var general = await GetGeneralAsync(0, expectedBaseId, token);
-            if (general is null || !general.Activo)
-                return null;
-
-            var items = await LoadGeneralItemsAsync(cn, general, idWeb, codigoCliente, token);
+            var codigoClienteNormalizado = (codigoCliente ?? string.Empty).Trim();
+            var pricing = string.IsNullOrWhiteSpace(codigoClienteNormalizado)
+                ? null
+                : await ResolvePrecioClienteAsync(codigoClienteNormalizado, token);
+            var items = pricing is null
+                ? []
+                : await LoadGeneralItemsAsync(cn, pricing, token);
             return new CatalogosCatalogoDetalleDto
             {
                 IdInsert = 0,
+                EsCarritoGeneral = true,
+                CodigoCliente = codigoClienteNormalizado,
+                IdWebCliente = (idWeb ?? string.Empty).Trim(),
+                IdBaseCliente = expectedBaseId ?? 0,
                 Tipo = "General",
-                Nombre = general.Nombre,
-                IdLista = general.IdListaPrecios ?? string.Empty,
-                Grupo = general.Nombre,
-                Observaciones = general.Descripcion,
+                Nombre = "Carrito general",
+                IdLista = pricing?.IdLista ?? string.Empty,
+                Grupo = "Carrito general",
+                Observaciones = "Artículos disponibles según la configuración comercial del cliente.",
                 Finalizado = false,
-                HabilitarCarrito = general.Activo,
+                HabilitarCarrito = true,
+                OrigenArticulosGeneral = pricing?.OrigenLista == CarritoComprasPrecioOrigenKeys.Maestro
+                    ? "Maestro de artículos"
+                    : "Lista de precios",
+                NombreListaGeneral = pricing?.NombreLista ?? string.Empty,
+                ClasePrecioGeneral = pricing?.ClasePrecio,
+                DescripcionClasePrecioGeneral = pricing is null ? string.Empty : "Clase de precio de venta",
                 Articulos = items
             };
-        }, "No se pudo cargar el carrito pÃºblico.", ct);
+        }, "No se pudo cargar el carrito público.", ct);
 
     public Task<CatalogoPedidoResultDto> ConfirmarPedidoPublicoAsync(CatalogoPedidoConfirmarRequestDto request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "ConfirmarPedidoPublico", async token =>
@@ -303,7 +316,7 @@ public sealed class CarritoComprasService(
 
             var codigoClienteSesion = (request.CodigoCliente ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(codigoClienteSesion))
-                throw new InvalidOperationException("No se pudo identificar al cliente. VolvÃ© a iniciar sesiÃ³n.");
+                throw new InvalidOperationException("No se pudo identificar al cliente. Volvé a iniciar sesión.");
 
             var lineasSolicitadas = (request.Lineas ?? [])
                 .Where(l => !string.IsNullOrWhiteSpace(l.IdArticulo) && l.Cantidad > 0)
@@ -312,16 +325,16 @@ public sealed class CarritoComprasService(
                 .ToList();
 
             if (lineasSolicitadas.Count == 0)
-                throw new InvalidOperationException("El carrito estÃ¡ vacÃ­o.");
+                throw new InvalidOperationException("El carrito está vacío.");
 
             if (!pedidoProcessingGuard.TryStart(0, codigoClienteSesion))
-                throw new InvalidOperationException("Ya hay un pedido en proceso para este carrito. EsperÃ¡ un momento y verificÃ¡ antes de reintentar.");
+                throw new InvalidOperationException("Ya hay un pedido en proceso para este carrito. Esperá un momento y verificá antes de reintentar.");
 
             try
             {
                 var carrito = await GetPublicCartAsync(0, request.IdWeb, codigoClienteSesion, request.IdBase, token);
                 if (carrito is null)
-                    throw new InvalidOperationException("El carrito general no estÃ¡ disponible.");
+                    throw new InvalidOperationException("El carrito general no está disponible.");
 
                 if (!carrito.HabilitarCarrito)
                     throw new InvalidOperationException("Este carrito no tiene habilitada la toma de pedidos.");
@@ -332,10 +345,10 @@ public sealed class CarritoComprasService(
                 foreach (var linea in lineasSolicitadas)
                 {
                     if (!articulosPorCodigo.TryGetValue(linea.IdArticulo, out var articulo))
-                        throw new InvalidOperationException($"El artÃ­culo {linea.IdArticulo} no pertenece a este carrito.");
+                        throw new InvalidOperationException($"El artículo {linea.IdArticulo} no pertenece a este carrito.");
 
                     if (CatalogosPriceDisplayHelper.GetPrecioAplicado(articulo) <= 0m)
-                        throw new InvalidOperationException($"El artÃ­culo {linea.IdArticulo} no tiene un precio vÃ¡lido en este carrito.");
+                        throw new InvalidOperationException($"El artículo {linea.IdArticulo} no tiene un precio válido en este carrito.");
 
                     lineasResueltas.Add((articulo, linea.Cantidad));
                 }
@@ -358,7 +371,7 @@ public sealed class CarritoComprasService(
                     cancellationToken: token));
 
                 if (cliente.Codigo is null)
-                    throw new InvalidOperationException("No pudimos validar tu cuenta de cliente. VolvÃ© a iniciar sesiÃ³n e intentÃ¡ nuevamente.");
+                    throw new InvalidOperationException("No pudimos validar tu cuenta de cliente. Volvé a iniciar sesión e intentá nuevamente.");
 
                 var letra = await ResolveLetraPedidoWebAsync(cn, token);
                 var observaciones = "Pedido web - Carrito general";
@@ -402,7 +415,7 @@ public sealed class CarritoComprasService(
                 }
 
                 if (cabecera is null)
-                    throw new InvalidOperationException("No se pudo registrar el pedido por demasiados intentos simultÃ¡neos. EsperÃ¡ unos segundos y volvÃ© a intentar.");
+                    throw new InvalidOperationException("No se pudo registrar el pedido por demasiados intentos simultáneos. Esperá unos segundos y volvé a intentar.");
 
                 var lineasResultado = lineasResueltas
                     .Select(l => new CatalogoPedidoLineaResultDto
@@ -607,7 +620,7 @@ public sealed class CarritoComprasService(
                         cancellationToken: token));
 
                     if (affected == 0)
-                        throw new InvalidOperationException("No se encontrÃ³ el carrito general indicado.");
+                        throw new InvalidOperationException("No se encontró el carrito general indicado.");
                 }
 
                 await cn.ExecuteAsync(new CommandDefinition(
@@ -686,7 +699,7 @@ public sealed class CarritoComprasService(
             var detailColumn = await ResolveConfigDetailColumnAsync(cn, token);
             await UpsertConfigValueAsync(cn, detailColumn, BuildCarritoConfigKey(idCatalogo), activo ? "SI" : "NO", ConfigGroup, token);
             return true;
-        }, "No se pudo actualizar el estado del carrito de catÃ¡logo.", ct);
+        }, "No se pudo actualizar el estado del carrito de catálogo.", ct);
 
     public Task<bool> ToggleGeneralAsync(int idCarrito, bool activo, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "ToggleGeneral", async token =>
@@ -728,52 +741,43 @@ public sealed class CarritoComprasService(
                 OrigenLista = CarritoComprasPrecioOrigenKeys.Maestro,
                 OrigenClase = "ClaseMaestro",
                 IdLista = string.Empty,
-                ClasePrecio = 1,
+                ClasePrecio = 0,
                 Origen = "MaestroPrecios"
             };
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            if (!await TableExistsAsync(cn, "MA_CUENTASADIC", token))
+            if (!await SqlObjectExistsAsync(cn, "VT_CLIENTES", token))
                 return result;
 
             var defaultClase = await ReadDefaultClasePrecioValueAsync(cn, token);
-            var clientRow = await cn.QuerySingleOrDefaultAsync<(string Nombre, string IdLista, string Clase)>(new CommandDefinition(
+            var clientRow = await cn.QuerySingleOrDefaultAsync<(string Nombre, string IdLista, int Clase)>(new CommandDefinition(
                 """
                 SELECT TOP (1)
                     ISNULL(LTRIM(RTRIM(cli.RAZON_SOCIAL)), N'') AS Nombre,
-                    ISNULL(LTRIM(RTRIM(adic.IdLista)), N'') AS IdLista,
-                    ISNULL(LTRIM(RTRIM(adic.Clase)), N'') AS Clase
+                    ISNULL(LTRIM(RTRIM(cli.IdLista)), N'') AS IdLista,
+                    ISNULL(cli.Clase, 0) AS Clase
                 FROM dbo.VT_CLIENTES cli
-                LEFT JOIN dbo.MA_CUENTASADIC adic
-                    ON UPPER(LTRIM(RTRIM(adic.CODIGO))) = UPPER(LTRIM(RTRIM(cli.CODIGO)))
-                WHERE UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)));
+                WHERE UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(@Codigo)))
+                  AND ISNULL(cli.Dada_De_Baja, 0) = 0;
                 """,
                 new { Codigo = codigo },
                 cancellationToken: token));
 
             result.NombreCliente = clientRow.Nombre;
-            var claseCliente = NormalizeClasePrecioValue(clientRow.Clase, defaultClase);
+            var claseCliente = NormalizeClasePrecioValue(clientRow.Clase.ToString(), defaultClase);
+            if (claseCliente <= 0)
+                throw new InvalidOperationException("No está configurada la Clase Precio de Venta para este cliente.");
 
             if (!string.IsNullOrWhiteSpace(clientRow.IdLista))
             {
                 result.IdLista = clientRow.IdLista.Trim();
+                result.NombreLista = await ObtenerNombreListaAsync(cn, result.IdLista, token) ?? string.Empty;
                 result.ClasePrecio = claseCliente;
                 result.OrigenLista = "ListaCliente";
                 result.OrigenClase = "ClaseCliente";
                 result.Origen = "ListaCliente";
-                return result;
-            }
-
-            var listaVentas = await ReadFirstSalesListAsync(cn, token);
-            if (!string.IsNullOrWhiteSpace(listaVentas.IdLista))
-            {
-                result.IdLista = listaVentas.IdLista;
-                result.ClasePrecio = claseCliente;
-                result.OrigenLista = "ListaVentas";
-                result.OrigenClase = "ClaseVenta";
-                result.Origen = "ListaVentas";
                 return result;
             }
 
@@ -813,57 +817,26 @@ public sealed class CarritoComprasService(
 
     private async Task<IReadOnlyList<CatalogosCatalogoItemDto>> LoadGeneralItemsAsync(
         SqlConnection cn,
-        CarritoComprasGeneralDetalleDto general,
-        string? idWeb,
-        string? codigoCliente,
+        CarritoComprasPrecioClienteDto pricing,
         CancellationToken ct)
     {
-        if (general.IdCarrito <= 0)
-            return [];
-
-        if (general.Articulos.Count == 0)
-            return [];
-
-        var publicClase = NormalizeClasePrecioValue(await catalogosService.GetPublicClasePrecioAsync(idWeb, ct), int.Parse(DefaultClasePrecio));
         var ofertaClase = await GetOfertaClasePrecioAsync(cn, ct);
-        var pricing = await ResolvePrecioClienteAsync(codigoCliente, ct);
-        var itemIds = general.Articulos.Select(a => a.IdArticulo.Trim()).Where(a => !string.IsNullOrWhiteSpace(a)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var idLista = pricing.IdLista.Trim();
+        var clasePrecio = pricing.ClasePrecio;
+        var usarLista = !string.IsNullOrWhiteSpace(idLista)
+            && !string.Equals(pricing.OrigenLista, CarritoComprasPrecioOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase);
 
-        if (itemIds.Length == 0)
+        if (usarLista && !await SqlObjectExistsAsync(cn, "V_MA_Precios", ct))
             return [];
-
-        var idLista = string.Empty;
-        var clasePrecio = general.ClasePrecio ?? publicClase;
-        var usarLista = false;
-
-        if (string.Equals(general.OrigenPrecios, CarritoComprasPrecioOrigenKeys.ListaFija, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(general.IdListaPrecios))
-        {
-            usarLista = true;
-            idLista = general.IdListaPrecios.Trim();
-            clasePrecio = general.ClasePrecio ?? pricing.ClasePrecio;
-        }
-        else if (string.Equals(general.OrigenPrecios, CarritoComprasPrecioOrigenKeys.SegunCliente, StringComparison.OrdinalIgnoreCase))
-        {
-            idLista = pricing.IdLista;
-            if (!string.IsNullOrWhiteSpace(idLista))
-            {
-                usarLista = true;
-                clasePrecio = pricing.ClasePrecio;
-            }
-            else
-            {
-                clasePrecio = pricing.ClasePrecio;
-            }
-        }
 
         clasePrecio = Math.Max(1, Math.Min(clasePrecio, 8));
 
         var sql = usarLista
             ? $"""
                 SELECT
-                    d.Orden,
-                    d.IdArticulo AS IdArticulo,
-                    COALESCE(NULLIF(LTRIM(RTRIM(a.DESCRIPCION)), N''), NULLIF(LTRIM(RTRIM(d.DescripcionArticulo)), N''), N'') AS DescripcionArticulo,
+                    ROW_NUMBER() OVER (ORDER BY a.DESCRIPCION, a.IDARTICULO) AS Orden,
+                    a.IDARTICULO AS IdArticulo,
+                    ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), N'') AS DescripcionArticulo,
                     COALESCE(
                         NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA, N''))), N''),
                         NULLIF(LTRIM(RTRIM(ISNULL(a.CODIGOBARRA1, N''))), N''),
@@ -873,9 +846,9 @@ public sealed class CarritoComprasService(
                         N''
                     ) AS CodigoBarra,
                     ISNULL(LTRIM(RTRIM(a.RutaImagen)), N'') AS RutaImagen,
-                    COALESCE(NULLIF(LTRIM(RTRIM(a.Presentacion)), N''), NULLIF(LTRIM(RTRIM(d.Presentacion)), N''), N'') AS Presentacion,
-                    COALESCE(NULLIF(LTRIM(RTRIM(t.Descripcion)), N''), NULLIF(LTRIM(RTRIM(d.Marca)), N''), N'') AS Marca,
-                    COALESCE(NULLIF(LTRIM(RTRIM(r.Descripcion)), N''), NULLIF(LTRIM(RTRIM(d.Rubro)), N''), N'') AS Rubro,
+                    ISNULL(LTRIM(RTRIM(a.Presentacion)), N'') AS Presentacion,
+                    ISNULL(LTRIM(RTRIM(t.Descripcion)), N'') AS Marca,
+                    ISNULL(LTRIM(RTRIM(r.Descripcion)), N'') AS Rubro,
                     ISNULL(p.Precio{clasePrecio}, 0) AS Precio,
                     CASE
                         WHEN p.FhOfertaDesde IS NOT NULL
@@ -889,47 +862,43 @@ public sealed class CarritoComprasService(
                          AND (p.FhOfertaHasta IS NULL OR GETDATE() <= p.FhOfertaHasta) THEN p.FhOfertaHasta
                         ELSE NULL
                     END AS OfertaHasta
-                FROM dbo.ALFACORE_CARRITOS_WEB_DET d
-                LEFT JOIN dbo.V_MA_ARTICULOS a
-                    ON UPPER(LTRIM(RTRIM(a.IDARTICULO))) = UPPER(LTRIM(RTRIM(d.IdArticulo)))
+                FROM dbo.V_MA_Precios p
+                INNER JOIN dbo.V_MA_ARTICULOS a
+                    ON UPPER(LTRIM(RTRIM(a.IDARTICULO))) = UPPER(LTRIM(RTRIM(p.IdArticulo)))
                 LEFT JOIN dbo.V_TA_TipoArticulo t
                     ON UPPER(LTRIM(RTRIM(ISNULL(a.IDTIPO, N'')))) = UPPER(LTRIM(RTRIM(ISNULL(t.IdTipo, N''))))
                 LEFT JOIN dbo.V_TA_Rubros r
                     ON UPPER(LTRIM(RTRIM(ISNULL(a.IDRUBRO, N'')))) = UPPER(LTRIM(RTRIM(ISNULL(r.IdRubro, N''))))
-                LEFT JOIN dbo.V_MA_Precios p
-                    ON UPPER(LTRIM(RTRIM(p.IdArticulo))) = UPPER(LTRIM(RTRIM(d.IdArticulo)))
-                   AND UPPER(LTRIM(RTRIM(ISNULL(p.IdLista, N'')))) = UPPER(LTRIM(RTRIM(@IdLista)))
-                   AND UPPER(LTRIM(RTRIM(ISNULL(p.TipoLista, N'V')))) = N'V'
-                WHERE d.IdCarrito = @IdCarrito
-                  AND UPPER(LTRIM(RTRIM(d.IdArticulo))) IN @Ids
-                ORDER BY d.Orden, d.IdArticulo;
+                WHERE UPPER(LTRIM(RTRIM(ISNULL(p.IdLista, N'')))) = UPPER(LTRIM(RTRIM(@IdLista)))
+                  AND UPPER(LTRIM(RTRIM(ISNULL(p.TipoLista, N'V')))) = N'V'
+                  AND ISNULL(a.Suspendido, 0) <> 1
+                  AND ISNULL(a.SuspendidoV, 0) <> 1
+                ORDER BY a.DESCRIPCION, a.IDARTICULO;
                 """
             : $"""
                 SELECT
-                    d.Orden,
-                    d.IdArticulo AS IdArticulo,
-                    COALESCE(NULLIF(LTRIM(RTRIM(a.DESCRIPCION)), N''), NULLIF(LTRIM(RTRIM(d.DescripcionArticulo)), N''), N'') AS DescripcionArticulo,
-                    COALESCE(NULLIF(LTRIM(RTRIM(a.Presentacion)), N''), NULLIF(LTRIM(RTRIM(d.Presentacion)), N''), N'') AS Presentacion,
-                    COALESCE(NULLIF(LTRIM(RTRIM(t.Descripcion)), N''), NULLIF(LTRIM(RTRIM(d.Marca)), N''), N'') AS Marca,
-                    COALESCE(NULLIF(LTRIM(RTRIM(r.Descripcion)), N''), NULLIF(LTRIM(RTRIM(d.Rubro)), N''), N'') AS Rubro,
+                    ROW_NUMBER() OVER (ORDER BY a.DESCRIPCION, a.IDARTICULO) AS Orden,
+                    a.IDARTICULO AS IdArticulo,
+                    ISNULL(LTRIM(RTRIM(a.DESCRIPCION)), N'') AS DescripcionArticulo,
+                    ISNULL(LTRIM(RTRIM(a.Presentacion)), N'') AS Presentacion,
+                    ISNULL(LTRIM(RTRIM(t.Descripcion)), N'') AS Marca,
+                    ISNULL(LTRIM(RTRIM(r.Descripcion)), N'') AS Rubro,
                     ISNULL(a.Precio{clasePrecio}, 0) AS Precio,
                     CAST(NULL AS decimal(18,4)) AS PrecioOferta,
                     CAST(NULL AS datetime) AS OfertaHasta
-                FROM dbo.ALFACORE_CARRITOS_WEB_DET d
-                LEFT JOIN dbo.V_MA_ARTICULOS a
-                    ON UPPER(LTRIM(RTRIM(a.IDARTICULO))) = UPPER(LTRIM(RTRIM(d.IdArticulo)))
+                FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.V_TA_TipoArticulo t
                     ON UPPER(LTRIM(RTRIM(ISNULL(a.IDTIPO, N'')))) = UPPER(LTRIM(RTRIM(ISNULL(t.IdTipo, N''))))
                 LEFT JOIN dbo.V_TA_Rubros r
                     ON UPPER(LTRIM(RTRIM(ISNULL(a.IDRUBRO, N'')))) = UPPER(LTRIM(RTRIM(ISNULL(r.IdRubro, N''))))
-                WHERE d.IdCarrito = @IdCarrito
-                  AND UPPER(LTRIM(RTRIM(d.IdArticulo))) IN @Ids
-                ORDER BY d.Orden, d.IdArticulo;
+                WHERE ISNULL(a.Suspendido, 0) <> 1
+                  AND ISNULL(a.SuspendidoV, 0) <> 1
+                ORDER BY a.DESCRIPCION, a.IDARTICULO;
                 """;
 
         var rows = await cn.QueryAsync<GeneralPublicCartRow>(new CommandDefinition(
             sql,
-            new { IdCarrito = general.IdCarrito, IdLista = idLista, Ids = itemIds },
+            new { IdLista = idLista },
             cancellationToken: ct));
 
             return rows.Select(row => new CatalogosCatalogoItemDto
@@ -953,7 +922,7 @@ public sealed class CarritoComprasService(
             ? $"Lista fija{(string.IsNullOrWhiteSpace(general.IdListaPrecios) ? string.Empty : $" {general.IdListaPrecios}")}"
             : string.Equals(general.OrigenPrecios, CarritoComprasPrecioOrigenKeys.Maestro, StringComparison.OrdinalIgnoreCase)
                 ? "Maestro"
-                : "SegÃºn cliente";
+                : "Según cliente";
 
     private async Task<int> GetOfertaClasePrecioAsync(SqlConnection cn, CancellationToken ct)
     {
@@ -1044,7 +1013,7 @@ public sealed class CarritoComprasService(
             cancellationToken: ct));
 
         if (row.IdComprobanteTexto is null)
-            throw new InvalidOperationException("El pedido se generÃ³ pero no se pudo releer el comprobante.");
+            throw new InvalidOperationException("El pedido se generó pero no se pudo releer el comprobante.");
 
         return new CabeceraPedidoWeb(idComprobante, row.IdComprobanteTexto, row.Numero, row.Fecha);
     }
@@ -1076,8 +1045,8 @@ public sealed class CarritoComprasService(
         {
             var mensaje = mensajeParam.Value is null or DBNull ? string.Empty : Convert.ToString(mensajeParam.Value) ?? string.Empty;
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(mensaje)
-                ? $"No se pudo agregar el artÃ­culo {articulo.IdArticulo} al pedido."
-                : $"ArtÃ­culo {articulo.IdArticulo}: {mensaje}");
+                ? $"No se pudo agregar el artículo {articulo.IdArticulo} al pedido."
+                : $"Artículo {articulo.IdArticulo}: {mensaje}");
         }
     }
 
@@ -1105,8 +1074,8 @@ public sealed class CarritoComprasService(
                     c.IdCatalogo AS IdCatalogo,
                     CAST(NULL AS int) AS IdCarrito,
                     N'catalogo' AS TipoClave,
-                    N'CatÃ¡logo' AS Tipo,
-                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), N''), CONCAT(N'CatÃ¡logo ', CONVERT(nvarchar(20), c.IdCatalogo)))) AS Nombre,
+                    N'Catálogo' AS Tipo,
+                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.Nombre)), N''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IdCatalogo)))) AS Nombre,
                     CASE
                         WHEN MIN(c.FechaDesde) IS NULL AND MAX(c.FechaHasta) IS NULL THEN N'Sin vigencia'
                         ELSE CONCAT(
@@ -1123,7 +1092,7 @@ public sealed class CarritoComprasService(
                         ELSE N'Inactivo'
                     END AS Estado,
                     COUNT(d.IdArticulo) AS CantidadArticulos,
-                    N'CatÃ¡logo' AS Precios,
+                    N'Catálogo' AS Precios,
                     CAST(CASE WHEN MAX(CASE WHEN ISNULL(c.Anulado, 0) = 0
                                               AND (c.FechaDesde IS NULL OR CONVERT(date, c.FechaDesde) <= CONVERT(date, GETDATE()))
                                               AND (c.FechaHasta IS NULL OR CONVERT(date, c.FechaHasta) >= CONVERT(date, GETDATE()))
@@ -1144,8 +1113,8 @@ public sealed class CarritoComprasService(
                     c.IDINSERT AS IdCatalogo,
                     CAST(NULL AS int) AS IdCarrito,
                     N'catalogo' AS TipoClave,
-                    N'CatÃ¡logo' AS Tipo,
-                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), N''), CONCAT(N'CatÃ¡logo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
+                    N'Catálogo' AS Tipo,
+                    MAX(ISNULL(NULLIF(LTRIM(RTRIM(c.GRUPO)), N''), CONCAT(N'Catálogo ', CONVERT(nvarchar(20), c.IDINSERT)))) AS Nombre,
                     CASE
                         WHEN MIN(c.VigenciaDesde) IS NULL AND MAX(c.VigenciaHasta) IS NULL THEN N'Sin vigencia'
                         ELSE CONCAT(
@@ -1159,7 +1128,7 @@ public sealed class CarritoComprasService(
                         ELSE N'Inactivo'
                     END AS Estado,
                     COUNT(1) AS CantidadArticulos,
-                    N'CatÃ¡logo' AS Precios,
+                    N'Catálogo' AS Precios,
                     CAST(CASE WHEN MAX(CASE WHEN ISNULL(c.FINALIZADO, 0) = 0 THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END AS bit) AS Activo,
                     0 AS OrdenTipo
                 FROM dbo.V_MV_INSERT c
@@ -1181,10 +1150,10 @@ public sealed class CarritoComprasService(
                     CASE WHEN ISNULL(g.Activo, 0) = 1 THEN N'Activo' ELSE N'Inactivo' END AS Estado,
                     COUNT(d.IdArticulo) AS CantidadArticulos,
                     CASE
-                        WHEN g.OrigenPrecios = N'segun-cliente' THEN N'SegÃºn cliente'
+                        WHEN g.OrigenPrecios = N'segun-cliente' THEN N'Según cliente'
                         WHEN g.OrigenPrecios = N'lista-fija' THEN CONCAT(N'Lista fija', CASE WHEN ISNULL(g.IdListaPrecios, N'') <> N'' THEN CONCAT(N' ', g.IdListaPrecios) ELSE N'' END, CASE WHEN g.ClasePrecio IS NOT NULL THEN CONCAT(N' / Clase ', CONVERT(nvarchar(10), g.ClasePrecio)) ELSE N'' END)
                         WHEN g.OrigenPrecios = N'maestro' THEN CONCAT(N'Maestro', CASE WHEN g.ClasePrecio IS NOT NULL THEN CONCAT(N' / Clase ', CONVERT(nvarchar(10), g.ClasePrecio)) ELSE N'' END)
-                        ELSE N'SegÃºn cliente'
+                        ELSE N'Según cliente'
                     END AS Precios,
                     CAST(ISNULL(g.Activo, 0) AS bit) AS Activo,
                     1 AS OrdenTipo
@@ -1213,10 +1182,10 @@ public sealed class CarritoComprasService(
         return string.IsNullOrWhiteSpace(column) ? "VALOR_AUX" : column;
     }
 
-    private async Task<int> ReadDefaultClasePrecioValueAsync(SqlConnection cn, CancellationToken ct)
+    private async Task<int?> ReadDefaultClasePrecioValueAsync(SqlConnection cn, CancellationToken ct)
     {
         if (!await SqlObjectExistsAsync(cn, "TA_CONFIGURACION", ct))
-            return int.Parse(DefaultClasePrecio);
+            return null;
 
         var detailColumn = await ResolveConfigDetailColumnAsync(cn, ct);
         var sql = $"""
@@ -1224,44 +1193,40 @@ public sealed class CarritoComprasService(
                 ISNULL(VALOR, N'') AS Valor,
                 ISNULL({detailColumn}, N'') AS ValorAux
             FROM dbo.TA_CONFIGURACION
-            WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'CLASEDEPRECIODEFAULT';
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (@ClaseVenta, @ClaseVentaLegacy)
+            ORDER BY CASE WHEN UPPER(LTRIM(RTRIM(CLAVE))) = @ClaseVenta THEN 0 ELSE 1 END;
             """;
 
-        var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(sql, cancellationToken: ct));
-        var raw = ResolveStoredValue(row.Valor, row.ValorAux);
-        return NormalizeClasePrecioValue(raw, int.Parse(DefaultClasePrecio));
-    }
-
-    private async Task<(string IdLista, string Nombre)> ReadFirstSalesListAsync(SqlConnection cn, CancellationToken ct)
-    {
-        if (!await SqlObjectExistsAsync(cn, "V_MA_PreciosCab", ct))
-            return (string.Empty, string.Empty);
-
-        var row = await cn.QuerySingleOrDefaultAsync<(string IdLista, string Nombre)>(new CommandDefinition(
-            """
-            SELECT TOP (1)
-                ISNULL(LTRIM(RTRIM(IdLista)), N'') AS IdLista,
-                ISNULL(LTRIM(RTRIM(Nombre)), N'') AS Nombre
-            FROM dbo.V_MA_PreciosCab
-            WHERE UPPER(LTRIM(RTRIM(ISNULL(TipoLista, N'V')))) = N'V'
-            ORDER BY
-                CASE
-                    WHEN (VigenciaDesde IS NULL OR VigenciaDesde <= GETDATE())
-                     AND (VigenciaHasta IS NULL OR VigenciaHasta >= GETDATE()) THEN 0
-                    ELSE 1
-                END,
-                Nombre,
-                IdLista;
-            """,
+        var row = await cn.QuerySingleOrDefaultAsync<(string Valor, string ValorAux)>(new CommandDefinition(
+            sql,
+            new { ClaseVenta = ClaseVentaConfigKey, ClaseVentaLegacyConfigKey = ClaseVentaLegacyConfigKey, ClaseVentaLegacy = ClaseVentaLegacyConfigKey },
             cancellationToken: ct));
-
-        return (row.IdLista.Trim(), row.Nombre.Trim());
+        var raw = ResolveStoredValue(row.Valor, row.ValorAux);
+        return NormalizeClasePrecioValue(raw, null);
     }
 
-    private static int NormalizeClasePrecioValue(string? value, int fallback)
+    private async Task<string?> ObtenerNombreListaAsync(SqlConnection cn, string idLista, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) LTRIM(RTRIM(Nombre))
+            FROM dbo.V_MA_PreciosCab
+            WHERE UPPER(LTRIM(RTRIM(IdLista))) = UPPER(LTRIM(RTRIM(@IdLista)))
+              AND UPPER(LTRIM(RTRIM(ISNULL(TipoLista, N'V')))) = N'V';
+            """;
+
+        if (!await SqlObjectExistsAsync(cn, "V_MA_PreciosCab", ct))
+            return null;
+
+        return await cn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            sql,
+            new { IdLista = idLista },
+            cancellationToken: ct));
+    }
+
+    private static int NormalizeClasePrecioValue(string? value, int? fallback)
         => int.TryParse((value ?? string.Empty).Trim(), out var parsed) && parsed is >= 1 and <= 8
             ? parsed
-            : fallback;
+            : fallback ?? 0;
 
     private static string ResolveStoredValue(string valor, string valorAux)
         => !string.IsNullOrWhiteSpace(valor) ? valor : valorAux;
@@ -1359,7 +1324,7 @@ public sealed class CarritoComprasService(
                 AppEventSeverity.Warning,
                 ct);
 
-            throw new AppUserFacingException($"{friendlyMessage} CÃ³digo: {incidentId}", incidentId, ex);
+            throw new AppUserFacingException($"{friendlyMessage} Código: {incidentId}", incidentId, ex);
         }
     }
 

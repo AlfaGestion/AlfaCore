@@ -18,6 +18,7 @@
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPedidosEmailService PedidosEmailSvc
 @inject AlfaCore.Services.ICuentasComercialesService CuentasSvc
+@inject AlfaCore.Services.IPortalClienteAutoLoginService PortalAutoLoginSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppModeService AppMode
 @inject AlfaCore.Services.ISessionService SessionSvc
@@ -92,6 +93,9 @@ else
                 {
                     <div class="carrito-page__hero-actions">
                         <AlfaTag Tone="AlfaTagTone.Neutral">Cliente: @GetCurrentClientLabel()</AlfaTag>
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-person-vcard" Disabled="@_abriendoPortalCliente" OnClick="AbrirPortalClienteAsync">
+                            Portal Cliente
+                        </AlfaButton>
                         <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-box-arrow-right" Disabled="@_sessionBusy" OnClick="LogoutClienteAsync">
                             Cerrar sesión
                         </AlfaButton>
@@ -480,10 +484,12 @@ else
     private bool _hasRendered;
     private bool _restoreAttempted;
     private bool _cartRestoreAttempted;
+    private string _cartContextKey = string.Empty;
     private bool _isDark = true;
 
     private AppUiMessage? _loginFeedback;
     private bool _sessionBusy;
+    private bool _abriendoPortalCliente;
     private bool _showPassword;
     private string _clienteCodigo = string.Empty;
     private string _clientePassword = string.Empty;
@@ -558,6 +564,14 @@ else
         {
             _restoreAttempted = true;
             await RestoreClientSessionAsync();
+        }
+
+        var newCartContextKey = BuildCartContextKey();
+        if (!string.Equals(_cartContextKey, newCartContextKey, StringComparison.Ordinal))
+        {
+            _cartContextKey = newCartContextKey;
+            _carrito.Clear();
+            _cartRestoreAttempted = false;
         }
 
         await LoadPublicIdentityAsync();
@@ -894,6 +908,9 @@ else
             await Js.InvokeVoidAsync("localStorage.setItem", ClientTokenStorageKey, CatalogoClienteSession.CurrentToken ?? string.Empty);
             _clientePassword = string.Empty;
             await RefreshCatalogoAsync();
+            _carrito.Clear();
+            _cartRestoreAttempted = false;
+            await RestoreCarritoAsync();
         }
         finally
         {
@@ -910,6 +927,8 @@ else
         try
         {
             CatalogoClienteSession.Logout();
+            _carrito.Clear();
+            _cartRestoreAttempted = false;
             await Js.InvokeVoidAsync("localStorage.removeItem", ClientTokenStorageKey);
         }
         finally
@@ -1099,6 +1118,48 @@ else
         return InvokeAsync(StateHasChanged);
     }
 
+    private async Task AbrirPortalClienteAsync()
+    {
+        if (_abriendoPortalCliente || !IsAuthenticated || CatalogoClienteSession.CurrentClient is not { } cliente)
+            return;
+
+        _abriendoPortalCliente = true;
+        const string nombrePestana = "alfacore_portal_cliente";
+        try
+        {
+            var idWeb = NormalizeRouteSegment(idweb);
+            var idBase = _effectiveIdBase ?? cliente.IdBase;
+            if (string.IsNullOrWhiteSpace(idWeb) || idBase <= 0)
+                throw new InvalidOperationException("No se pudo identificar la base del Portal Cliente.");
+
+            var ventanaAbierta = await Js.InvokeAsync<bool>("alfaCorePortalWindow.openPlaceholder", nombrePestana);
+            if (!ventanaAbierta)
+                throw new InvalidOperationException("El navegador bloqueó la nueva pestaña del Portal Cliente.");
+
+            var urlPortal = Nav.ToAbsoluteUri($"/{Uri.EscapeDataString(idWeb)}/{idBase}/portal-cliente").ToString();
+            var result = await UiOps.RunAsync(() => PortalAutoLoginSvc.GenerarEnlaceAsync(new PortalClienteGenerarAutoLoginRequestDto
+            {
+                CodigoCliente = cliente.CodigoCliente,
+                RazonSocial = cliente.RazonSocial,
+                Email = cliente.Email,
+                IdWeb = idWeb,
+                IdBase = idBase,
+                UrlBasePortal = urlPortal
+            }), "No pudimos abrir el Portal Cliente.");
+
+            if (!result.Success || string.IsNullOrWhiteSpace(result.Value))
+                return;
+
+            var ventanaNavegada = await Js.InvokeAsync<bool>("alfaCorePortalWindow.navigate", result.Value, nombrePestana);
+            if (!ventanaNavegada)
+                throw new InvalidOperationException("No se pudo abrir el Portal Cliente en la nueva pestaña.");
+        }
+        finally
+        {
+            _abriendoPortalCliente = false;
+        }
+    }
+
     private Task LimpiarFiltrosAsync()
     {
         _textoBusqueda = string.Empty;
@@ -1155,6 +1216,9 @@ else
 
     private string CarritoStorageKey
         => $"alfacore_catalogo_carrito_{NormalizeRouteSegment(idweb)}_{(_effectiveIdBase ?? 0).ToString(CultureInfo.InvariantCulture)}_{IdInsert}_{(CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty).Trim().ToUpperInvariant()}";
+
+    private string BuildCartContextKey()
+        => $"{NormalizeRouteSegment(idweb)}|{_effectiveIdBase ?? 0}|{IdInsert}|{(CatalogoClienteSession.CurrentClient?.CodigoCliente ?? string.Empty).Trim().ToUpperInvariant()}";
 
     private async Task RestoreCarritoAsync()
     {
