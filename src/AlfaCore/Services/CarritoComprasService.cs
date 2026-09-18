@@ -219,48 +219,23 @@ public sealed class CarritoComprasService(
         }, "No se pudo cargar el carrito general.", ct);
 
     public Task<CarritoComprasResumenDto?> ResolvePortalCarritoAsync(string? idWeb, CancellationToken ct = default)
-        => ExecuteLoggedAsync(ModuleName, "ResolvePortalCarrito", async token =>
-        {
-            var catalogos = await SearchAsync(new CarritoComprasFiltroDto
+        => ExecuteLoggedAsync(ModuleName, "ResolvePortalCarrito", token => Task.FromResult<CarritoComprasResumenDto?>(new CarritoComprasResumenDto
             {
-                Tipo = CarritoComprasTipoKeys.Catalogo,
-                Estado = CarritoComprasEstadoKeys.Activo,
-                PageNumber = 1,
-                PageSize = 200
-            }, token);
-
-            foreach (var item in catalogos.Items
-                .OrderBy(x => x.OrdenTipo)
-                .ThenBy(x => x.Nombre, StringComparer.OrdinalIgnoreCase))
-            {
-                if (item.IdCatalogo is not { } idCatalogo || idCatalogo <= 0)
-                    continue;
-
-                if (await CatalogoPublicoDisponibleAsync(idCatalogo, idWeb, token))
-                    return item;
-            }
-
-            var general = await GetGeneralAsync(0, token);
-            if (general is null || !general.Activo)
-                return null;
-
-            return new CarritoComprasResumenDto
-            {
+                // Portal Cliente abre siempre el carrito comercial del cliente. Un catálogo
+                // concreto sólo se conserva cuando la navegación viene explícitamente desde
+                // ese catálogo (/carrito/{IdCatalogo}).
                 Id = "0",
-                IdCarrito = general.IdCarrito,
                 TipoClave = CarritoComprasTipoKeys.General,
-                Nombre = general.Nombre,
+                Nombre = "Carrito general",
                 Tipo = "General",
                 Vigencia = "Sin vigencia",
-                Estado = general.Activo ? "Activo" : "Inactivo",
-                CantidadArticulos = general.Articulos.Count,
-                Precios = DescribeGeneralPriceOrigin(general),
-                Activo = general.Activo,
+                Estado = "Activo",
+                Precios = "Según cliente",
+                Activo = true,
                 UrlCarrito = string.Empty,
                 UrlEdicion = string.Empty,
                 OrdenTipo = 1
-            };
-        }, "No se pudo resolver el carrito disponible del portal.", ct);
+            }), "No se pudo resolver el carrito disponible del portal.", ct);
 
     public Task<CatalogosCatalogoDetalleDto?> GetPublicCartAsync(int idInsert, string? idWeb = null, string? codigoCliente = null, CancellationToken ct = default)
         => GetPublicCartAsync(idInsert, idWeb, codigoCliente, null, ct);
