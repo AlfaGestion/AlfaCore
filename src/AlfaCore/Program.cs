@@ -305,6 +305,7 @@ public class Program
         builder.Services.AddSingleton<IArticuloImagenFtpService, ArticuloImagenFtpService>();
         builder.Services.AddScoped<ICatalogoPublicoPdfService, CatalogoPublicoPdfService>();
         builder.Services.AddScoped<ICentralCompraIaService, CentralCompraIaService>();
+        builder.Services.AddScoped<IConversacionesHabilitacionService, ConversacionesHabilitacionService>();
         builder.Services.AddSingleton<InterfacesCompraIaWorkerState>();
         builder.Services.AddSingleton<RouteSessionUpdatesGuard>();
         builder.Services.AddSingleton<DatabaseUpdatesRuntimeState>();

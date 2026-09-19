@@ -3,10 +3,13 @@
 @layout AlfaCore.Components.Layout.MainLayout
 @using AlfaCore.Models
 @using Microsoft.AspNetCore.Components.Web
+@implements IDisposable
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
 @inject AlfaCore.Services.ICentralCompraIaService CompraIaSvc
+@inject AlfaCore.Services.IConversacionesHabilitacionService ConversacionesHabilitacionSvc
 @inject AlfaCore.Services.IPlanesService PlanesSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -14,36 +17,23 @@
 <PageTitle>Administrar | AlfaNet</PageTitle>
 
 <div class="page-grid admin-home-page">
-    <section class="panel-card">
-        <div class="panel-card__header">
-            <div>
-                <h1 class="panel-card__title">Administrar</h1>
-                <p class="panel-card__subtitle">Ficha única para clientes, usuarios y bases centrales.</p>
-            </div>
-            <div class="d-flex gap-2 flex-wrap">
-                <button type="button" class="btn btn-outline-light" @onclick="GoModulos">Módulos</button>
-                <button type="button" class="btn btn-outline-light" @onclick="GoCargos">Cargos</button>
-                <button type="button" class="btn btn-outline-light" @onclick="GoPagos">Pagos</button>
-                <button type="button" class="btn btn-primary" @onclick="StartNewAccount">Nueva cuenta</button>
-                <button type="button" class="btn btn-outline-light" @onclick="() => ReloadAsync()">Actualizar</button>
-            </div>
-        </div>
-
-        @if (!IsSuperAdmin)
-        {
+    @if (!IsSuperAdmin)
+    {
+        <section class="panel-card">
             <div class="editor-msg editor-msg--warning">
                 <strong>Acceso restringido</strong>
                 <p>Solo los superadmin pueden acceder a esta sección.</p>
             </div>
+        </section>
+    }
+    else
+    {
+        @if (_loading)
+        {
+            <p>Cargando administraci&oacute;n central...</p>
         }
         else
         {
-            @if (_loading)
-            {
-                <p>Cargando administraci&oacute;n central...</p>
-            }
-            else
-            {
                 @if (!string.IsNullOrWhiteSpace(_message))
                 {
                     <div class="editor-msg editor-msg--success">
@@ -65,15 +55,25 @@
                         <div class="panel-card h-100">
                             <div class="panel-card__header">
                                 <div>
-                                    <h2 class="panel-card__title">Buscador de clientes</h2>
-                                    <p class="panel-card__subtitle">Seleccioná un cliente central para cargar sus usuarios y bases.</p>
+                                    <h2 class="panel-card__title">Clientes</h2>
+                                    <p class="panel-card__subtitle">Buscá arriba en el encabezado. Seleccioná un cliente para cargar sus usuarios y bases.</p>
                                 </div>
                             </div>
 
-                            <input class="form-control admin-modal-input mb-3"
-                                   placeholder="Buscar cliente por código, razón social o host..."
-                                   @bind="_clientSearch"
-                                   @bind:event="oninput" />
+                            <div class="mb-3">
+                                <label class="form-label mb-1" for="admin-filtro-modulo">Filtrar por módulo activo</label>
+                                <select id="admin-filtro-modulo" class="form-select admin-modal-input" @onchange="OnFiltroModuloChangedAsync" disabled="@_cargandoFiltroModulo">
+                                    <option value="">Todos los clientes</option>
+                                    @foreach (var modulo in _modulosDisponibles)
+                                    {
+                                        <option value="@modulo.Id" selected="@(_filtroModuloId == modulo.Id.ToString())">@modulo.Nombre</option>
+                                    }
+                                </select>
+                                @if (_cargandoFiltroModulo)
+                                {
+                                    <span class="shell-empty-state__eyebrow">Buscando clientes con el módulo activo...</span>
+                                }
+                            </div>
 
                             @if (FilteredClients.Count == 0)
                             {
@@ -179,7 +179,7 @@
                 </div>
 
                 <div class="row g-3 mt-1">
-                    <div class="col-12 col-xxl-6">
+                    <div class="col-12">
                         <div class="panel-card h-100">
                             <div class="panel-card__header">
                                 <div>
@@ -237,8 +237,10 @@
                             }
                         </div>
                     </div>
+                </div>
 
-                    <div class="col-12 col-xxl-6">
+                <div class="row g-3 mt-1">
+                    <div class="col-12">
                         <div class="panel-card h-100">
                             <div class="panel-card__header">
                                 <div>
@@ -277,6 +279,7 @@
                                                     <th>Usuario</th>
                                                     <th>Password</th>
                                                     <th>Lectura con IA</th>
+                                                    <th>Conversaciones</th>
                                                     <th></th>
                                                 </tr>
                                             </thead>
@@ -295,6 +298,14 @@
                                                                 <input type="checkbox" class="form-check-input" checked="@_basesCompraIa.Contains(item.IdBase)"
                                                                     disabled="@(_guardandoBaseIa || !_seleccionIaDisponible)"
                                                                     @onchange="e => CambiarBaseIaAsync(item, e.Value is true)" />
+                                                                Incluir
+                                                            </label>
+                                                        </td>
+                                                        <td>
+                                                            <label class="d-flex gap-2 align-items-center">
+                                                                <input type="checkbox" class="form-check-input" checked="@_basesConversaciones.Contains(item.IdBase)"
+                                                                    disabled="@(_guardandoBaseConversaciones || !_seleccionConversacionesDisponible)"
+                                                                    @onchange="e => CambiarBaseConversacionesAsync(item, e.Value is true)" />
                                                                 Incluir
                                                             </label>
                                                         </td>
@@ -451,7 +462,7 @@
                 </div>
             }
         }
-    </section>
+    }
 </div>
 
 @if (_showPlanModal && _planModalItem is not null)
@@ -818,6 +829,70 @@
     private HashSet<int> _basesCompraIa = [];
     private bool _guardandoBaseIa, _seleccionIaDisponible;
 
+    private IReadOnlyList<AlfaCore.Models.ModuloDto> _modulosDisponibles = [];
+    private string? _filtroModuloId;
+    private HashSet<string>? _clientesConModuloActivo;
+    private bool _cargandoFiltroModulo;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Administrar",
+        Breadcrumb = ["Administrar"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "clientes"),
+        Search = new PageHeaderSearchConfig
+        {
+            Placeholder = "Buscar cliente por código, razón social o host...",
+            Text = _clientSearch,
+            OnTextChanged = text =>
+            {
+                _clientSearch = text;
+                UpdatePageHeader();
+                StateHasChanged();
+                return Task.CompletedTask;
+            }
+        },
+        Actions =
+        [
+            new PageHeaderAction { Key = "nueva-cuenta", Label = "Nueva cuenta", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, OnClick = () => { StartNewAccount(); UpdatePageHeader(); return Task.CompletedTask; } },
+            new PageHeaderAction { Key = "actualizar", Label = "Actualizar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => ReloadAsync() }
+        ]
+    });
+
+    private async Task OnFiltroModuloChangedAsync(ChangeEventArgs e)
+    {
+        _filtroModuloId = e.Value?.ToString();
+        _error = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(_filtroModuloId) || !int.TryParse(_filtroModuloId, out var idModulo))
+        {
+            _clientesConModuloActivo = null;
+            return;
+        }
+
+        _cargandoFiltroModulo = true;
+        try
+        {
+            var clientes = await AdminSvc.GetClientesPorModuloAsync(idModulo);
+            _clientesConModuloActivo = clientes
+                .Where(c => c.EstaActivo)
+                .Select(c => c.IdCliente)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+        catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
+        finally { _cargandoFiltroModulo = false; }
+    }
+
     private async Task CambiarBaseIaAsync(AdminBaseDto item, bool incluir)
     {
         if (_guardandoBaseIa) return;
@@ -833,6 +908,26 @@
         }
         catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
         finally { _guardandoBaseIa = false; }
+    }
+
+    private HashSet<int> _basesConversaciones = [];
+    private bool _guardandoBaseConversaciones, _seleccionConversacionesDisponible;
+
+    private async Task CambiarBaseConversacionesAsync(AdminBaseDto item, bool incluir)
+    {
+        if (_guardandoBaseConversaciones) return;
+        _guardandoBaseConversaciones = true;
+        _error = string.Empty;
+        try
+        {
+            await ConversacionesHabilitacionSvc.SetBaseSeleccionadaAsync(item.IdBase, item.IdCliente, incluir);
+            if (incluir) _basesConversaciones.Add(item.IdBase); else _basesConversaciones.Remove(item.IdBase);
+            _message = incluir
+                ? "Base incluida. Se procesará cuando el cliente tenga activo Conversaciones y esté habilitado acá."
+                : "Base excluida. El job de Conversaciones dejará de consultarla a partir del próximo ciclo.";
+        }
+        catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
+        finally { _guardandoBaseConversaciones = false; }
     }
 
     private readonly List<AlfaCore.Models.AdminUserDto> _users = [];
@@ -871,15 +966,24 @@
     private AlfaCore.Models.ClienteModuloDto? _planModalItem;
     private int _planModalIdPlanSeleccionado;
 
-    private IReadOnlyList<AlfaCore.Models.AdminClienteDto> FilteredClients => string.IsNullOrWhiteSpace(_clientSearch)
-        ? _clients
-        : _clients.Where(item =>
-                Contains(item.IdCliente, _clientSearch)
-                || Contains(item.RazonSocial, _clientSearch)
-                || Contains(item.IdWeb, _clientSearch))
-            .OrderBy(item => item.RazonSocial)
-            .ThenBy(item => item.IdCliente)
-            .ToArray();
+    private IReadOnlyList<AlfaCore.Models.AdminClienteDto> FilteredClients
+    {
+        get
+        {
+            IEnumerable<AlfaCore.Models.AdminClienteDto> query = _clients;
+
+            if (!string.IsNullOrWhiteSpace(_clientSearch))
+                query = query.Where(item =>
+                    Contains(item.IdCliente, _clientSearch)
+                    || Contains(item.RazonSocial, _clientSearch)
+                    || Contains(item.IdWeb, _clientSearch));
+
+            if (_clientesConModuloActivo is not null)
+                query = query.Where(item => _clientesConModuloActivo.Contains(item.IdCliente));
+
+            return query.OrderBy(item => item.RazonSocial).ThenBy(item => item.IdCliente).ToArray();
+        }
+    }
 
     private IReadOnlyList<AlfaCore.Models.AdminBaseDto> CurrentBases => string.IsNullOrWhiteSpace(_selectedClientId)
         ? []
@@ -923,7 +1027,8 @@
             var clientsTask = AdminSvc.GetClientesAsync();
             var basesTask = AdminSvc.GetBasesAsync();
             var usersTask = AdminSvc.GetUsersAsync();
-            await Task.WhenAll(clientsTask, basesTask, usersTask);
+            var modulosTask = AdminSvc.GetModulosAsync();
+            await Task.WhenAll(clientsTask, basesTask, usersTask, modulosTask);
 
             _clients.Clear();
             _bases.Clear();
@@ -932,11 +1037,20 @@
             _clients.AddRange(await clientsTask);
             _bases.AddRange(await basesTask);
             _users.AddRange(await usersTask);
+            _modulosDisponibles = await modulosTask;
             _seleccionIaDisponible = false;
             try
             {
                 _basesCompraIa = (await CompraIaSvc.GetBasesSeleccionadasAsync()).ToHashSet();
                 _seleccionIaDisponible = true;
+            }
+            catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
+
+            _seleccionConversacionesDisponible = false;
+            try
+            {
+                _basesConversaciones = (await ConversacionesHabilitacionSvc.GetBasesSeleccionadasAsync()).ToHashSet();
+                _seleccionConversacionesDisponible = true;
             }
             catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
 
@@ -1005,12 +1119,6 @@
 
     private void GoSolicitudes()
         => Nav.NavigateTo(RouteContext.BuildRoute("/admin/solicitudes"));
-
-    private void GoCargos()
-        => Nav.NavigateTo(RouteContext.BuildRoute("/admin/cargos"));
-
-    private void GoPagos()
-        => Nav.NavigateTo(RouteContext.BuildRoute("/admin/pagos"));
 
     private async Task LoadClienteModulosAsync(string idCliente)
     {

@@ -882,6 +882,56 @@ public sealed class CentralAdminService(
             .ToArray();
     }
 
+    /// <summary>Mismas 3 ramas que GetClienteModulosAsync (legacy/explícito/prueba vigente), pivotadas
+    /// por módulo: 3 consultas (clientes+legacy, el módulo, ClienteModulos de ese módulo) en vez de
+    /// N+1 -- una por cliente.</summary>
+    public async Task<IReadOnlyList<AdminClienteConModuloDto>> GetClientesPorModuloAsync(int idModulo, CancellationToken ct = default)
+    {
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct).ConfigureAwait(false);
+
+        const string clientesSql = """
+            SELECT idcliente AS IdCliente, ISNULL(nombre,'') AS RazonSocial, ISNULL(idweb,'') AS IdWeb,
+                   ISNULL(EsClienteLegacy,0) AS EsClienteLegacy
+            FROM dbo.Clientes
+            ORDER BY ISNULL(nombre, ''), idcliente;
+            """;
+        var clientes = (await cn.QueryAsync<ClienteLegacyRow>(
+            new CommandDefinition(clientesSql, cancellationToken: ct)).ConfigureAwait(false)).ToArray();
+
+        var modulo = (await QueryModulosAsync(cn, ct).ConfigureAwait(false)).FirstOrDefault(m => m.Id == idModulo);
+        if (modulo is null)
+            return [];
+
+        const string activosSql = "SELECT IdCliente, Estado, ActivadoUtc, PruebaVenceUtc FROM dbo.ClienteModulos WHERE IdModulo = @IdModulo;";
+        var activos = (await cn.QueryAsync<ClienteModuloPorModuloRow>(new CommandDefinition(activosSql, new { IdModulo = idModulo }, cancellationToken: ct)).ConfigureAwait(false))
+            .ToDictionary(x => x.IdCliente, StringComparer.OrdinalIgnoreCase);
+
+        var explicito = CompraIaHabilitacion.RequiereActivacionExplicita(modulo.Codigo);
+
+        return clientes.Select(c =>
+        {
+            activos.TryGetValue(c.IdCliente, out var activoRow);
+            var legacyHabilita = c.EsClienteLegacy && !explicito;
+            var estaActivo = legacyHabilita || (explicito
+                ? CompraIaHabilitacion.EstaActivo(activoRow?.Estado, activoRow?.PruebaVenceUtc, DateTime.UtcNow)
+                : string.Equals(activoRow?.Estado, ClienteModuloEstados.Activo, StringComparison.OrdinalIgnoreCase)
+                  || EstaEnPruebaVigente(activoRow?.Estado, activoRow?.PruebaVenceUtc));
+
+            return new AdminClienteConModuloDto
+            {
+                IdCliente = c.IdCliente,
+                RazonSocial = c.RazonSocial,
+                IdWeb = c.IdWeb,
+                EsClienteLegacy = c.EsClienteLegacy,
+                EstaActivo = estaActivo,
+                Estado = legacyHabilita ? ClienteModuloEstados.Activo : (activoRow?.Estado ?? string.Empty),
+                ActivadoUtc = activoRow?.ActivadoUtc,
+                PruebaVenceUtc = activoRow?.PruebaVenceUtc
+            };
+        }).ToArray();
+    }
+
     public async Task ActivarModuloAsync(ActivarModuloRequest request, CancellationToken ct = default)
     {
         var idCliente = NormalizeKey(request.IdCliente);
@@ -1839,6 +1889,22 @@ public sealed class CentralAdminService(
         public string Codigo { get; set; } = string.Empty;
         public string Nombre { get; set; } = string.Empty;
         public bool EsObligatoria { get; set; }
+    }
+
+    private sealed class ClienteLegacyRow
+    {
+        public string IdCliente { get; set; } = string.Empty;
+        public string RazonSocial { get; set; } = string.Empty;
+        public string IdWeb { get; set; } = string.Empty;
+        public bool EsClienteLegacy { get; set; }
+    }
+
+    private sealed class ClienteModuloPorModuloRow
+    {
+        public string IdCliente { get; set; } = string.Empty;
+        public string Estado { get; set; } = string.Empty;
+        public DateTime? ActivadoUtc { get; set; }
+        public DateTime? PruebaVenceUtc { get; set; }
     }
 
     private sealed class ClienteModuloRow
