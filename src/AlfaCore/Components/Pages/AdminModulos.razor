@@ -1,8 +1,10 @@
 @page "/admin/modulos"
 @page "/{idweb}/{idbase:int}/admin/modulos"
 @layout AlfaCore.Components.Layout.MainLayout
+@implements IDisposable
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 
@@ -10,16 +12,7 @@
 
 <div class="page-grid admin-home-page">
 <div class="panel-card">
-    <div class="panel-card__header">
-        <div>
-            <h1 class="panel-card__title">Catálogo de módulos</h1>
-            <p class="panel-card__subtitle">Un módulo es un nodo raíz del menú (con todo lo que cuelga de él) más los módulos de los que depende. La base de datos sigue siendo completa para todos los clientes — esto solo controla qué ve cada uno.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-light" @onclick="GoHome">Inicio</button>
-            <button type="button" class="btn btn-primary" @onclick="StartNew">Nuevo módulo</button>
-        </div>
-    </div>
+    <p class="panel-card__subtitle">Un módulo es un nodo raíz del menú (con todo lo que cuelga de él) más los módulos de los que depende. La base de datos sigue siendo completa para todos los clientes — esto solo controla qué ve cada uno.</p>
 
     @if (_loading)
     {
@@ -262,6 +255,28 @@
     private IReadOnlyList<AlfaCore.Models.ModuloDto> _dependenciaOptions
         => _editing ? _items.Where(m => m.Id != _form.Id).ToArray() : _items;
 
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new AlfaCore.Models.PageHeaderConfig
+    {
+        Title = "Módulos",
+        Breadcrumb = ["Administrar", "Módulos"],
+        ShellMode = AlfaCore.Models.PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "modulos"),
+        Actions =
+        [
+            new AlfaCore.Models.PageHeaderAction { Key = "nuevo-modulo", Label = "Nuevo módulo", Icon = "bi-plus-circle", Style = AlfaCore.Models.PageHeaderActionStyle.Primary, Priority = AlfaCore.Models.PageHeaderActionPriority.Essential, OnClick = () => { StartNew(); return Task.CompletedTask; } }
+        ]
+    });
+
     protected override async Task OnInitializedAsync()
     {
         if (!IsSuperAdmin)
@@ -272,9 +287,6 @@
 
         await LoadAsync();
     }
-
-    private void GoHome()
-        => Nav.NavigateTo(RouteContext.BuildRoute("/admin"));
 
     private void GoPlanes(int idModulo)
         => Nav.NavigateTo(RouteContext.BuildRoute($"/admin/modulos/{idModulo}/planes"));

@@ -6,9 +6,10 @@ namespace AlfaCore.Services;
 /// Job en segundo plano del auto-cierre por inactividad de Conversaciones. A diferencia de las
 /// otras automatizaciones (disparadas por un mensaje entrante en el webhook), esta corre por
 /// tiempo: cada tanto recorre las bases activas y, en cada una, procesa avisos y cierres.
-/// En SaaS itera todas las bases (fijando la conexión de cada una como hace el webhook); en una
-/// instalación local corre sobre la base configurada. El auto-cierre viene apagado por config, así
-/// que si nadie lo activó, cada ciclo no hace nada.
+/// En SaaS itera solo las bases habilitadas para Conversaciones (mismo criterio de activación
+/// explícita que Compra IA, ver IConversacionesHabilitacionService); en una instalación local
+/// corre sobre la base configurada. El auto-cierre viene apagado por config, así que si nadie lo
+/// activó, cada ciclo no hace nada.
 /// </summary>
 public sealed class ConversacionesAutoCierreHostedService(
     IServiceProvider services,
@@ -55,8 +56,8 @@ public sealed class ConversacionesAutoCierreHostedService(
             IReadOnlyList<BaseCentralDto> bases;
             using (var scope = services.CreateScope())
             {
-                var basesSvc = scope.ServiceProvider.GetRequiredService<ICentralBasesService>();
-                bases = await basesSvc.GetAllAsync(ct);
+                var habilitacionSvc = scope.ServiceProvider.GetRequiredService<IConversacionesHabilitacionService>();
+                bases = await habilitacionSvc.GetBasesHabilitadasAsync(ct);
             }
 
             foreach (var b in bases)

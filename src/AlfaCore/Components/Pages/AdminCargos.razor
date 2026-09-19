@@ -2,9 +2,11 @@
 @page "/{idweb}/{idbase:int}/admin/cargos"
 @layout AlfaCore.Components.Layout.MainLayout
 @using AlfaCore.Models
+@implements IDisposable
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
 @inject AlfaCore.Services.IBillingService BillingSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 
@@ -12,16 +14,7 @@
 
 <div class="page-grid admin-home-page">
 <div class="panel-card">
-    <div class="panel-card__header">
-        <div>
-            <h1 class="panel-card__title">Cargos</h1>
-            <p class="panel-card__subtitle">Cargos de suscripción generados por el sistema (período facturado de cada módulo contratado). No se cargan a mano acá — los genera el job diario de facturación.</p>
-        </div>
-        <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-light" @onclick="AbrirConfiguracionVista">Configurar vista</button>
-            <button type="button" class="btn btn-outline-light" @onclick="GoHome">Inicio</button>
-        </div>
-    </div>
+    <p class="panel-card__subtitle">Cargos de suscripción generados por el sistema (período facturado de cada módulo contratado). No se cargan a mano acá — los genera el job diario de facturación.</p>
 
     @if (!IsSuperAdmin)
     {
@@ -209,8 +202,27 @@
         await BuscarAsync(resetPage: true);
     }
 
-    private void GoHome()
-        => Nav.NavigateTo(RouteContext.BuildRoute("/admin"));
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Cargos",
+        Breadcrumb = ["Administrar", "Cargos"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "cargos"),
+        Actions =
+        [
+            new PageHeaderAction { Key = "configurar-vista", Label = "Configurar vista", Icon = "bi-sliders", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, OnClick = () => { AbrirConfiguracionVista(); return Task.CompletedTask; } }
+        ]
+    });
 
     private string CurrentUserName()
         => AppUserSession.CurrentUser?.UserName ?? string.Empty;

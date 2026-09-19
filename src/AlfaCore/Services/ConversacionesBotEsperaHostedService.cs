@@ -5,8 +5,9 @@ namespace AlfaCore.Services;
 /// <summary>
 /// Job en segundo plano de la espera del Asistente IA de Conversaciones ("esperar N minutos antes de
 /// responder", para darle margen a un agente humano). Cada minuto recorre las bases activas y retoma
-/// las conversaciones encoladas cuya espera ya se cumplió. En SaaS itera todas las bases (fijando la
-/// conexión de cada una, como el webhook); en una instalación local corre sobre la base configurada.
+/// las conversaciones encoladas cuya espera ya se cumplió. En SaaS itera solo las bases habilitadas
+/// para Conversaciones (mismo criterio de activación explícita que Compra IA, ver
+/// IConversacionesHabilitacionService); en una instalación local corre sobre la base configurada.
 /// </summary>
 public sealed class ConversacionesBotEsperaHostedService(
     IServiceProvider services,
@@ -53,8 +54,8 @@ public sealed class ConversacionesBotEsperaHostedService(
             IReadOnlyList<BaseCentralDto> bases;
             using (var scope = services.CreateScope())
             {
-                var basesSvc = scope.ServiceProvider.GetRequiredService<ICentralBasesService>();
-                bases = await basesSvc.GetAllAsync(ct);
+                var habilitacionSvc = scope.ServiceProvider.GetRequiredService<IConversacionesHabilitacionService>();
+                bases = await habilitacionSvc.GetBasesHabilitadasAsync(ct);
             }
 
             foreach (var b in bases)

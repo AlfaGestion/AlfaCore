@@ -4,8 +4,9 @@ namespace AlfaCore.Services;
 
 /// <summary>
 /// Job en segundo plano de los mensajes programados de Conversaciones. Cada minuto recorre las bases
-/// activas y envía los mensajes cuya hora ya llegó. En SaaS itera todas las bases (fijando la conexión
-/// de cada una, como el webhook); en una instalación local corre sobre la base configurada.
+/// activas y envía los mensajes cuya hora ya llegó. En SaaS itera solo las bases habilitadas para
+/// Conversaciones (mismo criterio de activación explícita que Compra IA, ver
+/// IConversacionesHabilitacionService); en una instalación local corre sobre la base configurada.
 /// </summary>
 public sealed class ConversacionesProgramadosHostedService(
     IServiceProvider services,
@@ -52,8 +53,8 @@ public sealed class ConversacionesProgramadosHostedService(
             IReadOnlyList<BaseCentralDto> bases;
             using (var scope = services.CreateScope())
             {
-                var basesSvc = scope.ServiceProvider.GetRequiredService<ICentralBasesService>();
-                bases = await basesSvc.GetAllAsync(ct);
+                var habilitacionSvc = scope.ServiceProvider.GetRequiredService<IConversacionesHabilitacionService>();
+                bases = await habilitacionSvc.GetBasesHabilitadasAsync(ct);
             }
 
             foreach (var b in bases)
