@@ -91,7 +91,7 @@ public sealed class ConversacionesService(
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configurÃ³ la cadena de conexiÃ³n 'ConnectionStrings:AlfaGestion'.");
+          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
     private string GetConnectionStringForExpectedTenant(int? expectedBaseId, string operation)
         => ResolveTenantConnection(expectedBaseId, operation).ConnectionString;
@@ -279,7 +279,7 @@ public sealed class ConversacionesService(
             }
 
             return (IReadOnlyList<ConversacionTecnicoOptionDto>)items;
-        }, "No se pudieron cargar los tÃ©cnicos.", ct);
+        }, "No se pudieron cargar los técnicos.", ct);
 
     public Task<IReadOnlyList<ConversacionEstadoOptionDto>> GetStatesAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetStates", async token =>
@@ -313,7 +313,7 @@ public sealed class ConversacionesService(
             }
 
             return (IReadOnlyList<ConversacionEstadoOptionDto>)items;
-        }, "No se pudieron cargar los estados de conversaciÃ³n.", ct);
+        }, "No se pudieron cargar los estados de conversación.", ct);
 
     public Task<ConversacionesEstadisticasDto> GetEstadisticasAsync(ConversacionesEstadisticasFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetEstadisticas", async token =>
@@ -1501,7 +1501,7 @@ public sealed class ConversacionesService(
             }
 
             return (IReadOnlyList<ConversacionAuditoriaMensajeDto>)items;
-        }, "No se pudieron cargar los mensajes de auditorÃ­a.", ct);
+        }, "No se pudieron cargar los mensajes de auditoría.", ct);
 
     public Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetConversation", async token =>
@@ -1640,7 +1640,7 @@ public sealed class ConversacionesService(
                 ) clienteClasificacion
                 OUTER APPLY (
                     -- Abonado al mantenimiento: cualquier fila de la cuenta en MA_CUENTAS_AUTOCPTES (sin
-                    -- filtrar por Concepto), la mÃ¡s reciente por FechaUltMov si hay varias (distintas
+                    -- filtrar por Concepto), la más reciente por FechaUltMov si hay varias (distintas
                     -- sucursales/conceptos). Sin fila = NULL = "sin abono" (se resuelve en C#).
                     SELECT TOP (1)
                         CASE
@@ -1747,7 +1747,7 @@ public sealed class ConversacionesService(
             await TryRefreshFacebookConversationProfileAsync(item, token);
             ApplyWhatsAppWindow(item);
             return item;
-        }, "No se pudo cargar la conversaciÃ³n.", ct);
+        }, "No se pudo cargar la conversación.", ct);
 
     public Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetMessages", async token =>
@@ -2085,9 +2085,9 @@ public sealed class ConversacionesService(
             ArgumentNullException.ThrowIfNull(request);
             var clienteCodigo = request.ClienteCodigo?.Trim().ToUpperInvariant() ?? string.Empty;
             if (request.IdConversacion <= 0)
-                throw new InvalidOperationException("No se recibiÃ³ la conversaciÃ³n a relacionar.");
+                throw new InvalidOperationException("No se recibió la conversación a relacionar.");
             if (string.IsNullOrWhiteSpace(clienteCodigo))
-                throw new InvalidOperationException("No se recibiÃ³ el cliente a relacionar.");
+                throw new InvalidOperationException("No se recibió el cliente a relacionar.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -2131,7 +2131,7 @@ public sealed class ConversacionesService(
                 existsCmd.Parameters.AddWithValue("@IdConversacion", request.IdConversacion);
                 var exists = Convert.ToInt32(await existsCmd.ExecuteScalarAsync(token), CultureInfo.InvariantCulture);
                 if (exists == 0)
-                    throw new InvalidOperationException("La conversaciÃ³n seleccionada ya no existe.");
+                    throw new InvalidOperationException("La conversación seleccionada ya no existe.");
             }
 
             const string updateConversationSql = """
@@ -2187,11 +2187,11 @@ public sealed class ConversacionesService(
                 "RelacionarCliente",
                 "CONV_CONVERSACIONES",
                 request.IdConversacion.ToString(CultureInfo.InvariantCulture),
-                "Cliente relacionado manualmente desde contexto de conversaciÃ³n.",
+                "Cliente relacionado manualmente desde contexto de conversación.",
                 new { request.IdConversacion, ClienteCodigo = clienteCodigo, ClienteNombre = clienteNombre, IdContacto = idContacto },
                 token);
             return true;
-        }, "No se pudo relacionar el cliente con la conversaciÃ³n.", ct);
+        }, "No se pudo relacionar el cliente con la conversación.", ct);
     }
 
     public async Task RenameConversationAsync(ConversacionRenameRequest request, CancellationToken ct = default)
@@ -2200,11 +2200,11 @@ public sealed class ConversacionesService(
         {
             ArgumentNullException.ThrowIfNull(request);
             if (request.IdConversacion <= 0)
-                throw new InvalidOperationException("No se recibiÃ³ la conversaciÃ³n a renombrar.");
+                throw new InvalidOperationException("No se recibió la conversación a renombrar.");
 
             var nombre = request.NombreVisible?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(nombre))
-                throw new InvalidOperationException("El nombre de la conversaciÃ³n no puede quedar vacÃ­o.");
+                throw new InvalidOperationException("El nombre de la conversación no puede quedar vacío.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
@@ -2220,19 +2220,19 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@NombreVisible", nombre);
             var affected = await cmd.ExecuteNonQueryAsync(token);
             if (affected == 0)
-                throw new InvalidOperationException("La conversaciÃ³n seleccionada ya no existe.");
+                throw new InvalidOperationException("La conversación seleccionada ya no existe.");
 
             await _appEvents.LogAuditAsync(
                 "Conversaciones",
                 "RenameConversation",
                 "CONV_CONVERSACIONES",
                 request.IdConversacion.ToString(CultureInfo.InvariantCulture),
-                "Nombre visible de conversaciÃ³n actualizado.",
+                "Nombre visible de conversación actualizado.",
                 new { request.IdConversacion, NombreVisible = nombre },
                 token);
 
             return true;
-        }, "No se pudo actualizar el nombre de la conversaciÃ³n.", ct);
+        }, "No se pudo actualizar el nombre de la conversación.", ct);
     }
 
     public Task<IReadOnlyList<ConversacionTypingDto>> GetTypingAsync(long conversationId, string? clienteIdActual = null, CancellationToken ct = default)
@@ -2316,7 +2316,7 @@ public sealed class ConversacionesService(
             var isFacebook = string.Equals(conversation.Canal, "FACEBOOK", StringComparison.OrdinalIgnoreCase);
             var isMercadoLibre = string.Equals(conversation.Canal, "MERCADOLIBRE", StringComparison.OrdinalIgnoreCase);
             if (!isInternal && !isWhatsApp && !isInstagram && !isFacebook && !isMercadoLibre)
-                throw new InvalidOperationException($"El canal {conversation.Canal} todavÃ­a no tiene envÃ­o habilitado.");
+                throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío habilitado.");
             var now = BusinessNow();
 
             string initialState;
@@ -2381,7 +2381,7 @@ public sealed class ConversacionesService(
                 var isWhatsAppWebDelivery = string.Equals(whatsAppDeliveryProvider, ConversacionWhatsAppProviders.WhatsAppWeb, StringComparison.OrdinalIgnoreCase);
                 var windowActive = isWhatsAppWebDelivery || await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
                 if (!windowActive)
-                    throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
+                    throw new InvalidOperationException("La ventana de WhatsApp está vencida. Para retomar la conversación tenés que enviar una plantilla aprobada.");
 
                 // Si no hay sesión Web activa NI configuración de API válida para el número resuelto,
                 // antes esto quedaba en silencio: el mensaje se guardaba como "PENDIENTE_CONFIG" y el
@@ -2400,33 +2400,33 @@ public sealed class ConversacionesService(
             else if (isInstagram)
             {
                 if (string.IsNullOrWhiteSpace(conversation.IdentificadorExternoContacto))
-                    throw new InvalidOperationException("La conversaciÃ³n de Instagram no tiene identificado al destinatario.");
+                    throw new InvalidOperationException("La conversación de Instagram no tiene identificado al destinatario.");
 
                 instagramConfig = await conversacionesConfigService.GetInstagramConfigAsync(token);
                 if (!instagramConfig.IsConfiguredForSend)
                     throw new InvalidOperationException("Falta configurar el token o el ID de cuenta de Instagram.");
                 if (!await IsInstagramWindowActiveAsync(request.IdConversacion, token))
-                    throw new InvalidOperationException("La ventana estÃ¡ndar de 24 horas de Instagram estÃ¡ vencida.");
+                    throw new InvalidOperationException("La ventana estándar de 24 horas de Instagram está vencida.");
 
                 initialState = "PENDIENTE";
             }
             else if (isFacebook)
             {
                 if (string.IsNullOrWhiteSpace(conversation.IdentificadorExternoContacto))
-                    throw new InvalidOperationException("La conversaciÃ³n de Facebook no tiene identificado al destinatario.");
+                    throw new InvalidOperationException("La conversación de Facebook no tiene identificado al destinatario.");
 
                 facebookConfig = await conversacionesConfigService.GetFacebookConfigAsync(token);
                 if (!facebookConfig.IsConfiguredForSend)
                     throw new InvalidOperationException("Falta configurar el token o el Page ID de Facebook Messenger.");
                 if (!await IsInstagramWindowActiveAsync(request.IdConversacion, token))
-                    throw new InvalidOperationException("La ventana estÃ¡ndar de 24 horas de Messenger estÃ¡ vencida.");
+                    throw new InvalidOperationException("La ventana estándar de 24 horas de Messenger está vencida.");
 
                 initialState = "PENDIENTE";
             }
             else
             {
                 if (string.IsNullOrWhiteSpace(conversation.IdentificadorExternoConversacion))
-                    throw new InvalidOperationException("La conversaciÃ³n de Mercado Libre no tiene identificada la pregunta a responder.");
+                    throw new InvalidOperationException("La conversación de Mercado Libre no tiene identificada la pregunta a responder.");
 
                 mercadoLibreConfig = await conversacionesConfigService.GetMercadoLibreConfigAsync(token);
                 if (!mercadoLibreConfig.IsConfiguredForApi)
@@ -2512,7 +2512,7 @@ public sealed class ConversacionesService(
                     await UpdateInstagramMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
                     await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
 
-                    throw new InvalidOperationException("No se pudo enviar el mensaje por Instagram. QuedÃ³ marcado con error en la conversaciÃ³n.", ex);
+                    throw new InvalidOperationException("No se pudo enviar el mensaje por Instagram. Quedó marcado con error en la conversación.", ex);
                 }
             }
 
@@ -2534,7 +2534,7 @@ public sealed class ConversacionesService(
                     await UpdateInstagramMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
                     await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
 
-                    throw new InvalidOperationException("No se pudo enviar el mensaje por Facebook Messenger. QuedÃ³ marcado con error en la conversaciÃ³n.", ex);
+                    throw new InvalidOperationException("No se pudo enviar el mensaje por Facebook Messenger. Quedó marcado con error en la conversación.", ex);
                 }
             }
 
@@ -2557,7 +2557,7 @@ public sealed class ConversacionesService(
                     await UpdateInstagramMessageDeliveryAsync(messageId, "ERROR_ENVIO", string.Empty, BuildDeliveryErrorPayload(ex), token);
                     await RefreshConversationAsync(request.IdConversacion, now, request.Texto.Trim(), token);
 
-                    throw new InvalidOperationException("No se pudo responder la pregunta en Mercado Libre. QuedÃ³ marcada con error en la conversaciÃ³n.", ex);
+                    throw new InvalidOperationException("No se pudo responder la pregunta en Mercado Libre. Quedó marcada con error en la conversación.", ex);
                 }
             }
             if (isInstagram || isFacebook || isMercadoLibre)
@@ -2592,13 +2592,13 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "SetMensajeMarcaInterna", async token =>
         {
             if (idConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
             if (idMensaje <= 0)
                 throw new InvalidOperationException("El mensaje es obligatorio.");
 
             var normalizada = (marca ?? string.Empty).Trim().ToUpperInvariant();
             if (normalizada.Length > 0 && !MarcasInternasValidas.Contains(normalizada))
-                throw new InvalidOperationException("Marca interna invÃ¡lida.");
+                throw new InvalidOperationException("Marca interna inválida.");
 
             const string sql = """
                 UPDATE dbo.CONV_MENSAJES
@@ -2621,7 +2621,7 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "SendReaction", async token =>
         {
             if (request.IdConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
             if (request.IdMensaje <= 0)
                 throw new InvalidOperationException("El mensaje a reaccionar es obligatorio.");
 
@@ -2632,7 +2632,7 @@ public sealed class ConversacionesService(
             // Emoji vacío por error/bug de cliente siga rechazándose como antes.
             var emoji = request.RemoveReaction ? string.Empty : NormalizeReactionEmoji(request.Emoji);
             if (!request.RemoveReaction && string.IsNullOrWhiteSpace(emoji))
-                throw new InvalidOperationException("ElegÃ­ una reacciÃ³n vÃ¡lida.");
+                throw new InvalidOperationException("Elegí una reacción válida.");
 
             var conversationTask = RequireConversationAsync(request.IdConversacion, token);
             var targetTask = RequireMessageForReactionAsync(request.IdConversacion, request.IdMensaje, token);
@@ -2641,11 +2641,11 @@ public sealed class ConversacionesService(
 
             var conversation = await conversationTask;
             if (!string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Las reacciones solo se envÃ­an por WhatsApp.");
+                throw new InvalidOperationException("Las reacciones solo se envían por WhatsApp.");
 
             var target = await targetTask;
             if (string.IsNullOrWhiteSpace(target.WhatsAppMessageId))
-                throw new InvalidOperationException("Este mensaje todavÃ­a no tiene ID de WhatsApp para reaccionar.");
+                throw new InvalidOperationException("Este mensaje todavía no tiene ID de WhatsApp para reaccionar.");
 
             var config = await configTask;
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
@@ -2694,7 +2694,7 @@ public sealed class ConversacionesService(
                 "SendReaction",
                 "CONV_MENSAJES",
                 messageId.ToString(CultureInfo.InvariantCulture),
-                "ReacciÃ³n de WhatsApp enviada.",
+                "Reacción de WhatsApp enviada.",
                 new { request.IdConversacion, request.IdMensaje, emoji, sendResult.EstadoEnvio },
                 token);
 
@@ -2704,7 +2704,7 @@ public sealed class ConversacionesService(
                 EstadoEnvio = sendResult.EstadoEnvio,
                 WhatsAppMessageId = sendResult.WhatsAppMessageId
             };
-        }, "No se pudo enviar la reacciÃ³n por WhatsApp.", ct);
+        }, "No se pudo enviar la reacción por WhatsApp.", ct);
 
     public Task<string?> GetLastOutboundDeliveryErrorAsync(int idNumero, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetLastOutboundDeliveryError", async token =>
@@ -3175,12 +3175,12 @@ public sealed class ConversacionesService(
                 "SubmitTemplateForApproval",
                 "CONV_PLANTILLAS",
                 template.IdPlantilla.ToString(CultureInfo.InvariantCulture),
-                "Plantilla enviada a aprobaciÃ³n de Meta.",
+                "Plantilla enviada a aprobación de Meta.",
                 new { template.NombreMeta, submitResult.EstadoMeta },
                 token);
 
             return true;
-        }, "No se pudo enviar la plantilla a aprobaciÃ³n de Meta.", ct);
+        }, "No se pudo enviar la plantilla a aprobación de Meta.", ct);
 
     public Task SyncTemplateStatusAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SyncTemplateStatus", async token =>
@@ -3211,7 +3211,7 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "SendTemplateMessage", async token =>
         {
             if (request.IdConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
             if (request.IdPlantilla <= 0)
                 throw new InvalidOperationException("La plantilla es obligatoria.");
 
@@ -3219,9 +3219,9 @@ public sealed class ConversacionesService(
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             if (!string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase))
-                throw new InvalidOperationException("Las plantillas solo se envÃ­an por WhatsApp.");
+                throw new InvalidOperationException("Las plantillas solo se envían por WhatsApp.");
             if (string.IsNullOrWhiteSpace(conversation.TelefonoWhatsApp))
-                throw new InvalidOperationException("La conversaciÃ³n no tiene telÃ©fono WhatsApp.");
+                throw new InvalidOperationException("La conversación no tiene teléfono WhatsApp.");
 
             ConversacionPlantillaDto template;
             if (request.EsMetaRemota)
@@ -3458,9 +3458,9 @@ public sealed class ConversacionesService(
         {
             await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
             if (string.IsNullOrWhiteSpace(request.Texto))
-                throw new InvalidOperationException("La nota interna no puede estar vacÃ­a.");
+                throw new InvalidOperationException("La nota interna no puede estar vacía.");
 
             var conversation = await RequireConversationAsync(request.IdConversacion, token);
             var text = request.Texto.Trim();
@@ -3487,7 +3487,7 @@ public sealed class ConversacionesService(
                 "AddInternalNote",
                 "CONV_MENSAJES",
                 messageId.ToString(CultureInfo.InvariantCulture),
-                "Nota interna agregada a la conversaciÃ³n.",
+                "Nota interna agregada a la conversación.",
                 new { request.IdConversacion },
                 token);
 
@@ -3519,7 +3519,7 @@ public sealed class ConversacionesService(
         {
             await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
 
             var technicianId = await ResolveTechnicianIdOrNullAsync(request.IdTecnico, token);
             var previousTechnicianId = await GetConversationTechnicianIdAsync(request.IdConversacion, token);
@@ -3601,12 +3601,12 @@ public sealed class ConversacionesService(
                 "AssignConversation",
                 "CONV_CONVERSACIONES",
                 request.IdConversacion.ToString(CultureInfo.InvariantCulture),
-                "AsignaciÃ³n de conversaciÃ³n actualizada.",
+                "Asignación de conversación actualizada.",
                 new { IdTecnico = technicianId },
                 token);
 
             return true;
-        }, "No se pudo asignar la conversaciÃ³n.", ct);
+        }, "No se pudo asignar la conversación.", ct);
     }
 
     public async Task ChangeStatusAsync(ConversacionEstadoRequest request, CancellationToken ct = default)
@@ -3615,7 +3615,7 @@ public sealed class ConversacionesService(
         {
             await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
             if (string.IsNullOrWhiteSpace(request.CodigoEstado))
                 throw new InvalidOperationException("El estado es obligatorio.");
 
@@ -3705,12 +3705,12 @@ public sealed class ConversacionesService(
                 "ChangeStatus",
                 "CONV_CONVERSACIONES",
                 request.IdConversacion.ToString(CultureInfo.InvariantCulture),
-                "Estado de conversaciÃ³n actualizado.",
+                "Estado de conversación actualizado.",
                 new { CodigoEstado = state, request.Observaciones, request.UsuarioAccion, request.SistemaAccion },
                 token);
 
             return true;
-        }, "No se pudo cambiar el estado de la conversaciÃ³n.", ct);
+        }, "No se pudo cambiar el estado de la conversación.", ct);
     }
 
     public Task SetConversationPinAsync(long idConversacion, string usuario, string? sistema, bool fijada, CancellationToken ct = default)
@@ -3778,11 +3778,11 @@ public sealed class ConversacionesService(
         => ExecuteLoggedAsync("Conversaciones", "MarkConversationRead", async token =>
         {
             if (idConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
 
             var normalizedUser = NormalizePinUser(usuario);
             if (string.IsNullOrWhiteSpace(normalizedUser))
-                throw new InvalidOperationException("No se pudo identificar el usuario actual para marcar la conversaciÃ³n como leÃ­da.");
+                throw new InvalidOperationException("No se pudo identificar el usuario actual para marcar la conversación como leída.");
 
             var normalizedSystem = NormalizePinSystem(sistema);
 
@@ -3831,7 +3831,7 @@ public sealed class ConversacionesService(
             await cmd.ExecuteNonQueryAsync(token);
 
             return true;
-        }, "No se pudo marcar la conversaciÃ³n como leÃ­da.", ct);
+        }, "No se pudo marcar la conversación como leída.", ct);
 
     public Task<ConversacionWebhookResultDto> RegisterIncomingWebhookAsync(ConversacionWebhookRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "RegisterIncomingWebhook", async token =>
@@ -4823,7 +4823,7 @@ public sealed class ConversacionesService(
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Mercado Libre devolviÃ³ {(int)response.StatusCode} al renovar el token: {body}");
+            throw new InvalidOperationException($"Mercado Libre devolvió {(int)response.StatusCode} al renovar el token: {body}");
 
         using var doc = JsonDocument.Parse(body);
         var root = doc.RootElement;
@@ -4887,7 +4887,7 @@ public sealed class ConversacionesService(
                     "CreateOrGetWhatsAppConversation",
                     "CONV_CONVERSACIONES",
                     existing.IdConversacion.ToString(CultureInfo.InvariantCulture),
-                    "ConversaciÃ³n de WhatsApp existente abierta desde bÃºsqueda.",
+                    "Conversación de WhatsApp existente abierta desde búsqueda.",
                     new { TelefonoWhatsApp = phone, ContactoAsociado = contact.IdContact.HasValue, IdNumeroWhatsApp = idNumeroWhatsApp },
                     token);
 
@@ -4954,7 +4954,7 @@ public sealed class ConversacionesService(
                 "CreateOrGetWhatsAppConversation",
                 "CONV_CONVERSACIONES",
                 id.ToString(CultureInfo.InvariantCulture),
-                "ConversaciÃ³n de WhatsApp creada manualmente.",
+                "Conversación de WhatsApp creada manualmente.",
                 new { TelefonoWhatsApp = phone, ContactoAsociado = contact.IdContact.HasValue, contact.ClientCode, IdTecnico = technicianId, IdNumeroWhatsApp = idNumeroWhatsApp },
                 token);
 
@@ -4966,17 +4966,17 @@ public sealed class ConversacionesService(
                 TelefonoWhatsApp = phone,
                 NombreVisible = displayName
             };
-        }, "No se pudo crear la conversaciÃ³n de WhatsApp.", ct);
+        }, "No se pudo crear la conversación de WhatsApp.", ct);
 
     public Task<ConversacionAdjuntoDto> UploadAttachmentAsync(ConversacionUploadAdjuntoRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "UploadAttachment", async token =>
         {
             if (request.IdConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
             if (string.IsNullOrWhiteSpace(request.NombreArchivo))
                 throw new InvalidOperationException("El nombre del archivo es obligatorio.");
             if (request.TamanoBytes <= 0)
-                throw new InvalidOperationException("El archivo estÃ¡ vacÃ­o.");
+                throw new InvalidOperationException("El archivo está vacío.");
 
             await conversacionesAuthorizationService.EnsureCanAttendConversationAsync(request.IdConversacion, token);
             if (request.IdNumeroWhatsApp is > 0)
@@ -4987,7 +4987,7 @@ public sealed class ConversacionesService(
             var isInternal = string.Equals(conversation.Canal, "INTERNO", StringComparison.OrdinalIgnoreCase);
             var isWhatsApp = string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase);
             if (!isInternal && !isWhatsApp)
-                throw new InvalidOperationException($"El canal {conversation.Canal} todavÃ­a no tiene envÃ­o de adjuntos habilitado.");
+                throw new InvalidOperationException($"El canal {conversation.Canal} todavía no tiene envío de adjuntos habilitado.");
             var messageType = NormalizeMessageType(request.TipoArchivo);
             var mimeType = NormalizeOutgoingMime(request.MimeType, request.NombreArchivo, messageType);
             var nombreArchivo = request.NombreArchivo.Trim();
@@ -5022,7 +5022,7 @@ public sealed class ConversacionesService(
                 EnsureWhatsAppProviderImplemented(deliveryProvider, "enviar adjuntos");
                 var windowActive = await IsWhatsAppWindowActiveAsync(request.IdConversacion, token);
                 if (!windowActive)
-                    throw new InvalidOperationException("La ventana de WhatsApp estÃ¡ vencida. Para retomar la conversaciÃ³n tenÃ©s que enviar una plantilla aprobada.");
+                    throw new InvalidOperationException("La ventana de WhatsApp está vencida. Para retomar la conversación tenés que enviar una plantilla aprobada.");
 
                 initialState = whatsAppConfig.IsConfiguredForSend ? "PENDIENTE" : "PENDIENTE_CONFIG";
             }
@@ -5279,7 +5279,7 @@ public sealed class ConversacionesService(
 
             result.AdjuntosRecuperados = Math.Max(0, result.AdjuntosDisponibles - (attachmentIds.Count - pendingMedia.Count));
             return result;
-        }, "No se pudieron recuperar los adjuntos de la conversaciÃ³n.", ct);
+        }, "No se pudieron recuperar los adjuntos de la conversación.", ct);
 
     public Task<IReadOnlyList<ConversacionStickerFavoritoDto>> GetFavoriteStickersAsync(CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetFavoriteStickers", async token =>
@@ -5333,7 +5333,7 @@ public sealed class ConversacionesService(
             cmd.Parameters.AddWithValue("@IdAdjunto", idAdjunto);
             var rows = await cmd.ExecuteNonQueryAsync(token);
             if (rows == 0)
-                throw new InvalidOperationException("El sticker ya estaba en favoritos o no es un sticker vÃ¡lido.");
+                throw new InvalidOperationException("El sticker ya estaba en favoritos o no es un sticker válido.");
 
             return true;
         }, "No se pudo guardar el sticker favorito.", ct);
@@ -6378,7 +6378,7 @@ public sealed class ConversacionesService(
         return new DebtTemplateDetail
         {
             DetailText = string.Empty,
-            Observation = "No se encontrÃ³ una vista de saldos compatible para calcular deuda automÃ¡tica."
+            Observation = "No se encontró una vista de saldos compatible para calcular deuda automática."
         };
     }
 
@@ -7073,7 +7073,7 @@ public sealed class ConversacionesService(
     private async Task<long> EnsureMercadoLibreConversationAsync(MercadoLibreQuestion question, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(question.QuestionId))
-            throw new InvalidOperationException("Mercado Libre no informÃ³ el ID de la pregunta.");
+            throw new InvalidOperationException("Mercado Libre no informó el ID de la pregunta.");
 
         var targetState = question.IsAnswered
             ? await GetFirstClosedConversationStateAsync(ct)
@@ -7380,7 +7380,7 @@ public sealed class ConversacionesService(
     {
         var normalized = senderId.Trim();
         var suffix = normalized.Length <= 6 ? normalized : normalized[^6..];
-        return string.IsNullOrWhiteSpace(suffix) ? "Contacto de Instagram" : $"Instagram â€¦{suffix}";
+        return string.IsNullOrWhiteSpace(suffix) ? "Contacto de Instagram" : $"Instagram …{suffix}";
     }
 
     private static string BuildFacebookFallbackName(string senderId)
@@ -7464,7 +7464,7 @@ public sealed class ConversacionesService(
         await using var rd = await cmd.ExecuteReaderAsync(ct);
 
         if (!await rd.ReadAsync(ct))
-            throw new InvalidOperationException("La conversaciÃ³n indicada no existe.");
+            throw new InvalidOperationException("La conversación indicada no existe.");
 
         return new ConversationIdentity
         {
@@ -7498,7 +7498,7 @@ public sealed class ConversacionesService(
         await using var rd = await cmd.ExecuteReaderAsync(ct);
 
         if (!await rd.ReadAsync(ct))
-            throw new InvalidOperationException("El mensaje indicado no existe en esta conversaciÃ³n.");
+            throw new InvalidOperationException("El mensaje indicado no existe en esta conversación.");
 
         return new MessageReactionTarget
         {
@@ -7672,10 +7672,10 @@ public sealed class ConversacionesService(
     }
 
     /// <summary>
-    /// Automatizaciones "Nivel 0": si el mÃ³dulo estÃ¡ contratado, estÃ¡ activo en la configuraciÃ³n
-    /// y el mensaje entrante llegÃ³ fuera del horario configurado, manda una respuesta fija â€”
-    /// sin IA, sin aprobaciÃ³n de operador. No repite el mensaje mientras la Ãºltima salida de la
-    /// conversaciÃ³n ya haya sido esta misma respuesta automÃ¡tica (evita spamear si el cliente
+    /// Automatizaciones "Nivel 0": si el módulo está contratado, está activo en la configuración
+    /// y el mensaje entrante llegó fuera del horario configurado, manda una respuesta fija —
+    /// sin IA, sin aprobación de operador. No repite el mensaje mientras la última salida de la
+    /// conversación ya haya sido esta misma respuesta automática (evita spamear si el cliente
     /// sigue escribiendo fuera de horario). Nunca bloquea el procesamiento del webhook si falla.
     /// </summary>
     private async Task TryAutoReplyOutOfHoursAsync(long idConversacion, CancellationToken ct)
@@ -7723,7 +7723,7 @@ public sealed class ConversacionesService(
                 "Conversaciones",
                 "AutoReplyOutOfHours",
                 ex,
-                "No se pudo enviar la respuesta automÃ¡tica fuera de horario.",
+                "No se pudo enviar la respuesta automática fuera de horario.",
                 new { idConversacion },
                 AppEventSeverity.Warning,
                 ct).ConfigureAwait(false);
@@ -9719,7 +9719,7 @@ public sealed class ConversacionesService(
                 "Conversaciones",
                 "NotifyIncomingMessage",
                 ex,
-                "No se pudo enviar la notificaciÃ³n push del mensaje entrante.",
+                "No se pudo enviar la notificación push del mensaje entrante.",
                 new { IdConversacion = conversationId, IdMensaje = messageId },
                 AppEventSeverity.Warning,
                 ct);
@@ -10245,7 +10245,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta devolviÃ³ {(int)response.StatusCode}: {responseBody}");
+            throw new InvalidOperationException($"Meta devolvió {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar mensaje");
         return new WhatsAppSendResult
@@ -10287,7 +10287,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta Instagram devolviÃ³ {(int)response.StatusCode}: {responseBody}");
+            throw new InvalidOperationException($"Meta Instagram devolvió {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar mensaje de Instagram");
         return new WhatsAppSendResult
@@ -10323,7 +10323,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Meta Messenger devolviÃ³ {(int)response.StatusCode}: {responseBody}");
+            throw new InvalidOperationException($"Meta Messenger devolvió {(int)response.StatusCode}: {responseBody}");
 
         var messageId = RequireSentMessageId(responseBody, "enviar mensaje de Messenger");
         return new WhatsAppSendResult
@@ -10366,7 +10366,7 @@ public sealed class ConversacionesService(
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Mercado Libre devolviÃ³ {(int)response.StatusCode}: {responseBody}");
+            throw new InvalidOperationException($"Mercado Libre devolvió {(int)response.StatusCode}: {responseBody}");
 
         var messageId = $"meli-answer-{questionId.Trim()}-{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
 
@@ -11041,7 +11041,7 @@ public sealed class ConversacionesService(
                 "LinkUnassociatedWhatsAppConversationsByPhone",
                 "CONV_CONVERSACIONES",
                 idConversacion?.ToString(CultureInfo.InvariantCulture) ?? "AUTO",
-                "Conversaciones vinculadas automÃ¡ticamente a contactos por telÃ©fono equivalente.",
+                "Conversaciones vinculadas automáticamente a contactos por teléfono equivalente.",
                 new { ConversacionesVinculadas = linked, IdConversacion = idConversacion },
                 ct);
         }
@@ -11059,7 +11059,7 @@ public sealed class ConversacionesService(
                 "MergeDuplicateWhatsAppConversation",
                 "CONV_CONVERSACIONES",
                 canonicalId.ToString(CultureInfo.InvariantCulture),
-                "ConversaciÃ³n duplicada consolidada por telÃ©fono equivalente.",
+                "Conversación duplicada consolidada por teléfono equivalente.",
                 new { ConversacionConservada = canonicalId, ConversacionDuplicada = duplicateId, TelefonoWhatsApp = NormalizePhone(phone), IdContacto = idContact, IdNumeroWhatsApp = idNumeroWhatsApp },
                 ct);
         }
@@ -11087,7 +11087,7 @@ public sealed class ConversacionesService(
                     "ConsolidateExistingDuplicateWhatsAppConversations",
                     "CONV_CONVERSACIONES",
                     canonical.IdConversacion.ToString(CultureInfo.InvariantCulture),
-                    "ConversaciÃ³n duplicada existente consolidada al cargar inbox.",
+                    "Conversación duplicada existente consolidada al cargar inbox.",
                     new { ConversacionConservada = canonical.IdConversacion, ConversacionDuplicada = duplicate.IdConversacion, canonical.TelefonoWhatsApp, canonical.IdContacto },
                     ct);
             }
@@ -11336,7 +11336,7 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@IdTecnico", idTecnico.Trim());
         var result = await cmd.ExecuteScalarAsync(ct);
         if (result is null || result is DBNull)
-            throw new InvalidOperationException("El tÃ©cnico indicado no existe o estÃ¡ dado de baja.");
+            throw new InvalidOperationException("El técnico indicado no existe o está dado de baja.");
         return Convert.ToString(result, CultureInfo.InvariantCulture) ?? string.Empty;
     }
 
@@ -11517,7 +11517,7 @@ public sealed class ConversacionesService(
 
         item.RutaLocal = ToAbsoluteAttachmentPath(item.RutaLocal);
         if (string.IsNullOrWhiteSpace(item.RutaLocal) || !File.Exists(item.RutaLocal))
-            throw new InvalidOperationException("El archivo local del sticker favorito no estÃ¡ disponible.");
+            throw new InvalidOperationException("El archivo local del sticker favorito no está disponible.");
 
         return item;
     }
@@ -11853,7 +11853,7 @@ public sealed class ConversacionesService(
                         MessageId = messageId,
                         MessageType = "TEXT",
                         Timestamp = timestamp,
-                        Text = FirstNonEmpty(title, payload, "InteracciÃ³n recibida desde Instagram."),
+                        Text = FirstNonEmpty(title, payload, "Interacción recibida desde Instagram."),
                         RawJson = item.GetRawText()
                     });
                 }
@@ -11935,7 +11935,7 @@ public sealed class ConversacionesService(
                         MessageId = messageId,
                         MessageType = "TEXT",
                         Timestamp = timestamp,
-                        Text = FirstNonEmpty(title, payload, "InteracciÃ³n recibida desde Facebook Messenger."),
+                        Text = FirstNonEmpty(title, payload, "Interacción recibida desde Facebook Messenger."),
                         RawJson = BuildFacebookIncomingPayloadJson(item, pageId)
                     });
                 }
@@ -12153,7 +12153,7 @@ public sealed class ConversacionesService(
         using var response = await client.SendAsync(request, ct);
         var body = await response.Content.ReadAsStringAsync(ct);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"Mercado Libre devolviÃ³ {(int)response.StatusCode} al sincronizar preguntas {status}: {body}");
+            throw new InvalidOperationException($"Mercado Libre devolvió {(int)response.StatusCode} al sincronizar preguntas {status}: {body}");
 
         using var doc = JsonDocument.Parse(body);
         if (!doc.RootElement.TryGetProperty("questions", out var questions) || questions.ValueKind != JsonValueKind.Array)
@@ -13365,7 +13365,7 @@ public sealed class ConversacionesService(
     private static string ExtractLocationText(JsonElement message)
     {
         if (!message.TryGetProperty("location", out var location))
-            return "UbicaciÃ³n compartida.";
+            return "Ubicación compartida.";
 
         var name = location.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? string.Empty : string.Empty;
         var address = location.TryGetProperty("address", out var addressProp) ? addressProp.GetString() ?? string.Empty : string.Empty;
@@ -13376,10 +13376,10 @@ public sealed class ConversacionesService(
             : $"{latitude}, {longitude}";
 
         return FirstNonEmpty(
-            JoinText("UbicaciÃ³n compartida", name),
-            JoinText("UbicaciÃ³n compartida", address),
-            JoinText("UbicaciÃ³n compartida", coordinates),
-            "UbicaciÃ³n compartida.");
+            JoinText("Ubicación compartida", name),
+            JoinText("Ubicación compartida", address),
+            JoinText("Ubicación compartida", coordinates),
+            "Ubicación compartida.");
     }
 
     private static string ExtractContactsText(JsonElement message)
@@ -13438,11 +13438,11 @@ public sealed class ConversacionesService(
     private static string ExtractButtonText(JsonElement message)
     {
         if (!message.TryGetProperty("button", out var button))
-            return "BotÃ³n seleccionado.";
+            return "Botón seleccionado.";
 
         var text = button.TryGetProperty("text", out var textProp) ? textProp.GetString() ?? string.Empty : string.Empty;
         var payload = button.TryGetProperty("payload", out var payloadProp) ? payloadProp.GetString() ?? string.Empty : string.Empty;
-        return JoinText("BotÃ³n seleccionado", FirstNonEmpty(text, payload));
+        return JoinText("Botón seleccionado", FirstNonEmpty(text, payload));
     }
 
     private static string ExtractInteractiveText(JsonElement message)
@@ -13475,7 +13475,7 @@ public sealed class ConversacionesService(
     private static string ExtractOrderText(JsonElement message)
     {
         if (!message.TryGetProperty("order", out var order))
-            return "Pedido de catÃ¡logo recibido.";
+            return "Pedido de catálogo recibido.";
 
         var catalog = order.TryGetProperty("catalog_id", out var catalogProp) ? catalogProp.GetString() ?? string.Empty : string.Empty;
         var count = 0;
@@ -13483,7 +13483,7 @@ public sealed class ConversacionesService(
             count = items.GetArrayLength();
 
         var detail = count > 0 ? $"{count} producto(s)" : catalog;
-        return JoinText("Pedido de catÃ¡logo recibido", detail);
+        return JoinText("Pedido de catálogo recibido", detail);
     }
 
     private static string ExtractSystemText(JsonElement message)
@@ -14569,16 +14569,16 @@ public sealed class ConversacionesService(
     private static void ValidateTemplateCanSubmit(ConversacionPlantillaDto template)
     {
         if (!template.Activa)
-            throw new InvalidOperationException("No se puede enviar a aprobaciÃ³n una plantilla inactiva.");
+            throw new InvalidOperationException("No se puede enviar a aprobación una plantilla inactiva.");
         if (string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
-            throw new InvalidOperationException("La plantilla ya estÃ¡ aprobada por Meta.");
+            throw new InvalidOperationException("La plantilla ya está aprobada por Meta.");
 
         var variableCount = CountTemplateVariables(template.CuerpoTexto);
         var examples = ParseTemplateExamples(template.EjemplosVariablesJson);
         if (variableCount > 0 && examples.Count < variableCount)
-            throw new InvalidOperationException("Las variables de la plantilla necesitan valores de ejemplo para enviarse a aprobaciÃ³n.");
+            throw new InvalidOperationException("Las variables de la plantilla necesitan valores de ejemplo para enviarse a aprobación.");
         if (StartsOrEndsWithTemplateVariable(template.CuerpoTexto))
-            throw new InvalidOperationException("Meta no permite variables al principio ni al final del cuerpo. AgregÃ¡ texto fijo antes y despuÃ©s de la variable.");
+            throw new InvalidOperationException("Meta no permite variables al principio ni al final del cuerpo. Agregá texto fijo antes y después de la variable.");
     }
 
     private static void EnsureTemplateHasNotBeenSubmitted(ConversacionPlantillaDto template)
@@ -14799,7 +14799,7 @@ public sealed class ConversacionesService(
     private static void ValidateOutgoingRequest(ConversacionSendMessageRequest request)
     {
         if (request.IdConversacion <= 0)
-            throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+            throw new InvalidOperationException("La conversación es obligatoria.");
         if (string.IsNullOrWhiteSpace(request.Texto))
             throw new InvalidOperationException("El texto del mensaje es obligatorio.");
     }
@@ -14821,9 +14821,9 @@ public sealed class ConversacionesService(
         var direction = incoming ? "recibida" : "enviada";
         var value = emoji?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(value))
-            return "ReacciÃ³n eliminada.";
+            return "Reacción eliminada.";
 
-        return $"ReacciÃ³n {direction}: {value}";
+        return $"Reacción {direction}: {value}";
     }
 
     private static string NormalizeMode(string? mode)
@@ -14840,11 +14840,11 @@ public sealed class ConversacionesService(
     }
 
     /// <summary>
-    /// "recientes" (de siempre): fijadas primero, despuÃ©s la actividad mÃ¡s nueva. "cola_espera":
-    /// las conversaciones donde el Ãºltimo mensaje es del cliente (esperando respuesta) van primero,
+    /// "recientes" (de siempre): fijadas primero, después la actividad más nueva. "cola_espera":
+    /// las conversaciones donde el último mensaje es del cliente (esperando respuesta) van primero,
     /// agrupadas por prioridad (Clasifica1/2/3 configurados, el resto al final) y dentro de cada
-    /// grupo por cuÃ¡nto tiempo llevan esperando (mÃ¡s viejas primero); lo que ya se respondiÃ³ queda
-    /// despuÃ©s, ordenado como siempre.
+    /// grupo por cuánto tiempo llevan esperando (más viejas primero); lo que ya se respondió queda
+    /// después, ordenado como siempre.
     /// </summary>
     private static string BuildInboxOrderByClause(string? orden)
     {
@@ -15241,7 +15241,7 @@ public sealed class ConversacionesService(
 
         var objectName = ExtractMissingObjectName(rawMessage);
         var objectLabel = string.IsNullOrWhiteSpace(objectName) ? "CONV_*" : objectName;
-        message = $"El mÃ³dulo Conversaciones todavÃ­a no estÃ¡ inicializado en la base activa. Falta crear el objeto {objectLabel}. EjecutÃ¡ el script docs/conversaciones_modelo_inicial.sql y recargÃ¡ el mÃ³dulo.";
+        message = $"El módulo Conversaciones todavía no está inicializado en la base activa. Falta crear el objeto {objectLabel}. Ejecutá el script docs/conversaciones_modelo_inicial.sql y recargá el módulo.";
         return true;
     }
 
@@ -15376,9 +15376,9 @@ public sealed class ConversacionesService(
         public string IdentificadorExternoConversacion { get; init; } = string.Empty;
 
         /// <summary>
-        /// Phone Number ID de dbo.CONV_WHATSAPP_NUMEROS fijado para esta conversaciÃ³n (vacÃ­o si la
-        /// conversaciÃ³n no tiene un nÃºmero propio asignado -- cliente sin migrar a multi-nÃºmero, o
-        /// canal que no es WhatsApp). Cuando estÃ¡ vacÃ­o, el envÃ­o usa el Ãºnico nÃºmero configurado
+        /// Phone Number ID de dbo.CONV_WHATSAPP_NUMEROS fijado para esta conversación (vacío si la
+        /// conversación no tiene un número propio asignado -- cliente sin migrar a multi-número, o
+        /// canal que no es WhatsApp). Cuando está vacío, el envío usa el único número configurado
         /// en TA_CONFIGURACION, igual que antes de esta funcionalidad.
         /// </summary>
         public string PhoneNumberId { get; init; } = string.Empty;
