@@ -46,13 +46,15 @@ public sealed class PuntoVentaService(
 
             var currentSystem = appUserSession.CurrentUser?.SystemCode?.Trim() ?? string.Empty;
             var hasAdministrador = await ColumnExistsAsync(cn, "TA_USUARIOS", "Administrador", token);
+            var hasVerProforma = await ColumnExistsAsync(cn, "TA_USUARIOS", "VerProforma", token);
 
             var userRow = await cn.QuerySingleOrDefaultAsync<UserCajaRow>(new CommandDefinition(
                 $"""
                 SELECT TOP (1)
                     ISNULL(LTRIM(RTRIM(NOMBRE)), '') AS UserName,
                     ISNULL(LTRIM(RTRIM(IDCAJA)), '') AS IdCaja,
-                    {(hasAdministrador ? "CASE WHEN ISNULL(Administrador, 0) = 0 THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END" : "CAST(0 AS bit)")} AS Administrador
+                    {(hasAdministrador ? "CASE WHEN ISNULL(Administrador, 0) = 0 THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END" : "CAST(0 AS bit)")} AS Administrador,
+                    {(hasVerProforma ? "CASE WHEN ISNULL(VerProforma, 1) = 0 THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END" : "CAST(1 AS bit)")} AS VerProforma
                 FROM dbo.TA_USUARIOS
                 WHERE UPPER(LTRIM(RTRIM(NOMBRE))) = @UserName
                   AND (@SystemCode = '' OR UPPER(LTRIM(RTRIM(SISTEMA))) = @SystemCode);
@@ -71,11 +73,12 @@ public sealed class PuntoVentaService(
             if (userRow is null && !string.IsNullOrWhiteSpace(currentSystem))
             {
                 userRow = await cn.QuerySingleOrDefaultAsync<UserCajaRow>(new CommandDefinition(
-                    """
+                    $"""
                     SELECT TOP (1)
                         ISNULL(LTRIM(RTRIM(NOMBRE)), '') AS UserName,
                         ISNULL(LTRIM(RTRIM(IDCAJA)), '') AS IdCaja,
-                        CASE WHEN ISNULL(Administrador, 0) = 0 THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS Administrador
+                        {(hasAdministrador ? "CASE WHEN ISNULL(Administrador, 0) = 0 THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END" : "CAST(0 AS bit)")} AS Administrador,
+                        {(hasVerProforma ? "CASE WHEN ISNULL(VerProforma, 1) = 0 THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END" : "CAST(1 AS bit)")} AS VerProforma
                     FROM dbo.TA_USUARIOS
                     WHERE UPPER(LTRIM(RTRIM(NOMBRE))) = @UserName;
                     """,
@@ -90,6 +93,12 @@ public sealed class PuntoVentaService(
             var usaCajaDefault = string.IsNullOrWhiteSpace(userRow.IdCaja);
 
             var tcConfig = await GetTipoComprobanteConfigAsync(cn, token);
+            var comprobanteHabitual = await TryReadConfigValueAsync(
+                cn,
+                $"{Environment.MachineName.Trim()}_GOUR_CPTE_PC",
+                token);
+            var usaProforma = ParseBooleanConfig(await TryReadConfigValueAsync(cn, "USAPROFORMA", token), true);
+            var verProformaUsuario = userRow.VerProforma;
             var sucursalConfigurada = await TryReadConfigValueAsync(cn, "TPV_SUCURSAL", token);
             var sucursal = !string.IsNullOrWhiteSpace(sucursalConfigurada)
                 ? (Code: NormalizeSucursal(sucursalConfigurada), Source: "TA_CONFIGURACION · TPV_SUCURSAL")
@@ -102,7 +111,9 @@ public sealed class PuntoVentaService(
                 SesionSqlActiva = sessionService.GetActiveSession()?.Nombre ?? string.Empty,
                 CajaActual = cajaActual,
                 EsAdministrador = userRow.Administrador,
-                TipoComprobanteDefault = DefaultTc,
+                UsaProforma = usaProforma,
+                VerProformaUsuario = verProformaUsuario,
+                TipoComprobanteDefault = ResolveComprobanteHabitual(comprobanteHabitual, usaProforma, verProformaUsuario),
                 SucursalDefault = sucursal.Code,
                 LetrasDisponibles = tcConfig?.Letras?.Trim() ?? string.Empty,
                 FuenteSucursal = sucursal.Source,
@@ -287,6 +298,23 @@ public sealed class PuntoVentaService(
             return (IReadOnlyList<PuntoVentaFamilyDto>)rows.ToList();
         }, "No se pudieron cargar las familias del punto de venta.", ct);
 
+    public Task<IReadOnlyList<PuntoVentaRubroDto>> GetRubrosAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetRubros", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+            if (!await ObjectExistsAsync(cn, "V_TA_Rubros", null, token))
+                return [];
+
+            var rows = await cn.QueryAsync<PuntoVentaRubroDto>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(IdRubro)) AS IdRubro,
+                       ISNULL(LTRIM(RTRIM(Descripcion)), '') AS Descripcion
+                FROM dbo.V_TA_Rubros
+                ORDER BY Descripcion, IdRubro;
+                """, cancellationToken: token));
+            return (IReadOnlyList<PuntoVentaRubroDto>)rows.ToList();
+        }, "No se pudieron cargar los rubros del punto de venta.", ct);
+
     public Task<PuntoVentaSaleResultDto> CreateSaleAsync(PuntoVentaSaleRequestDto request, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "CreateSale", async token =>
         {
@@ -336,13 +364,17 @@ public sealed class PuntoVentaService(
                 cliente,
                 settings.CuentaConsumidorFinal.Trim(),
                 StringComparison.OrdinalIgnoreCase);
+            var ivaCliente = await GetClienteIvaAsync(cn, cliente, token);
             var letra = tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
+                || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase)
                 ? "X"
-                : !string.IsNullOrWhiteSpace(request.Letra)
-                    ? request.Letra.Trim()
-                    : esConsumidorFinal
-                        ? "B"
-                        : ResolveLetraDefault(tcConfig, sucursal);
+                : ResolveLetraForCliente(
+                    tc,
+                    request.Letra,
+                    esConsumidorFinal,
+                    ivaCliente,
+                    tcConfig,
+                    sucursal);
 
             var modoFalloCae = await arcaConfigService.ResolveModoFalloCaeAsync(cn, token);
 
@@ -381,6 +413,13 @@ public sealed class PuntoVentaService(
                     numeroComprobante,
                     token);
             }
+
+            // Si el comprobante quedó creado por un intento anterior que AFIP rechazó,
+            // puede conservar los datos del cliente anterior. Se sincroniza la cabecera
+            // antes de volver a solicitar el CAE para que documento y condición de IVA
+            // coincidan con el cliente seleccionado en la venta actual.
+            if (comprobanteExistente)
+                await RefreshReceiptCustomerDataAsync(cn, comprobante.IdComprobanteTexto, comprobante.Tc, cliente, token);
 
             // Si AFIP rechazó un comprobante, el número ya quedó creado en la base.
             // Al reintentar se reutiliza ese comprobante para no duplicar la clave ni sus artículos.
@@ -763,6 +802,7 @@ public sealed class PuntoVentaService(
             var pricing = await ResolvePricingContextAsync(cn, token);
             var clasePrecio = ParseClasePrecio(pricing.ClasePrecioActual);
             var familyFilter = filters.IdFamilia.Trim();
+            var rubroFilter = filters.IdRubro.Trim();
             var search = filters.Texto.Trim();
             var take = filters.TamanioPagina <= 0 ? 24 : Math.Min(filters.TamanioPagina, 100);
             var pagina = filters.Pagina <= 0 ? 1 : filters.Pagina;
@@ -795,6 +835,7 @@ public sealed class PuntoVentaService(
             parameters.Add("Fetch", fetch);
             parameters.Add("IdLista", pricing.ListaPrecioActual);
             parameters.Add("IdFamilia", familyFilter);
+            parameters.Add("IdRubro", rubroFilter);
             for (var i = 0; i < palabras.Length; i++)
                 parameters.Add($"Like{i}", $"%{palabras[i]}%");
 
@@ -826,6 +867,8 @@ public sealed class PuntoVentaService(
                 FROM dbo.V_MA_ARTICULOS a
                 LEFT JOIN dbo.V_TA_FAMILIAS f
                     ON LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = LTRIM(RTRIM(f.IdFamilia))
+                LEFT JOIN dbo.V_TA_Rubros r
+                    ON LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = LTRIM(RTRIM(r.IdRubro))
                 LEFT JOIN dbo.V_MA_Precios p
                     ON p.IdArticulo = a.IDARTICULO
                    AND p.IdLista = @IdLista
@@ -833,6 +876,7 @@ public sealed class PuntoVentaService(
                 WHERE ISNULL(a.Suspendido, 0) <> 1
                   AND ISNULL(a.SuspendidoV, 0) <> 1
                   AND (@IdFamilia = '' OR LEFT(LTRIM(RTRIM(ISNULL(a.IdFamilia, ''))), 3) = @IdFamilia)
+                  AND (@IdRubro = '' OR LTRIM(RTRIM(ISNULL(a.IDRUBRO, ''))) = @IdRubro)
                   {wordFilters}
                 ORDER BY a.DESCRIPCION, a.IDARTICULO
                 OFFSET @Skip ROWS
@@ -1163,6 +1207,21 @@ public sealed class PuntoVentaService(
             cancellationToken: ct));
     }
 
+    private async Task<string> GetClienteIvaAsync(SqlConnection cn, string cliente, CancellationToken ct)
+    {
+        if (!await ObjectExistsAsync(cn, "VT_CLIENTES", null, ct))
+            return string.Empty;
+
+        return await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition(
+            """
+            SELECT TOP (1) ISNULL(LTRIM(RTRIM(IVA)), '')
+            FROM dbo.VT_CLIENTES
+            WHERE UPPER(LTRIM(RTRIM(CODIGO))) = UPPER(LTRIM(RTRIM(@Cliente)));
+            """,
+            new { Cliente = cliente },
+            cancellationToken: ct)) ?? string.Empty;
+    }
+
     private async Task<PricingContext> ResolvePricingContextAsync(SqlConnection cn, CancellationToken ct)
     {
         var clasePrecio = DefaultClasePrecio;
@@ -1267,6 +1326,33 @@ public sealed class PuntoVentaService(
             throw new InvalidOperationException("La venta se grabó pero no se pudo releer el comprobante generado.");
 
         return row;
+    }
+
+    private static async Task RefreshReceiptCustomerDataAsync(
+        SqlConnection cn,
+        string idComprobante,
+        string tc,
+        string cliente,
+        CancellationToken ct)
+    {
+        await using var cmd = new SqlCommand(
+            """
+            UPDATE v
+               SET v.CUENTA = c.CODIGO,
+                   v.NOMBRE = ISNULL(c.RAZON_SOCIAL, ''),
+                   v.DOCUMENTOTIPO = c.DOCUMENTO_TIPO,
+                   v.DOCUMENTONUMERO = LTRIM(RTRIM(ISNULL(c.NUMERO_DOCUMENTO, ''))),
+                   v.CONDICIONIVA = c.IVA
+            FROM dbo.V_MV_Cpte v
+            INNER JOIN dbo.VT_CLIENTES c
+                ON UPPER(LTRIM(RTRIM(c.CODIGO))) = UPPER(LTRIM(RTRIM(@Cliente)))
+            WHERE v.TC = @Tc
+              AND v.IDCOMPROBANTE = @IdComprobante;
+            """, cn);
+        cmd.Parameters.AddWithValue("@IdComprobante", idComprobante);
+        cmd.Parameters.AddWithValue("@Tc", tc);
+        cmd.Parameters.AddWithValue("@Cliente", cliente);
+        await cmd.ExecuteNonQueryAsync(ct);
     }
 
     private static async Task EnsureRequiredSaleProceduresAsync(SqlConnection cn, CancellationToken ct)
@@ -1537,6 +1623,29 @@ public sealed class PuntoVentaService(
 
     private static string NormalizeClasePrecio(string clasePrecio)
         => ParseClasePrecio(clasePrecio).ToString();
+
+    private static bool ParseBooleanConfig(string? value, bool defaultValue)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return defaultValue;
+
+        return value.Trim().ToUpperInvariant() switch
+        {
+            "1" or "S" or "SI" or "SÍ" or "Y" or "YES" or "TRUE" or "T" => true,
+            "0" or "N" or "NO" or "FALSE" or "F" => false,
+            _ => defaultValue
+        };
+    }
+
+    private static string ResolveComprobanteHabitual(string? value, bool usaProforma, bool verProformaUsuario)
+    {
+        var comprobante = (value ?? string.Empty).Trim().ToUpperInvariant();
+        var esProforma = comprobante is "FP" or "NCFP";
+        if (esProforma && (!usaProforma || !verProformaUsuario))
+            return DefaultTc;
+
+        return comprobante is "FC" or "NC" or "FP" or "NCFP" ? comprobante : DefaultTc;
+    }
 
     private async Task<string> TryReadConfigValueAsync(SqlConnection cn, string clave, CancellationToken ct)
     {
@@ -1962,6 +2071,35 @@ public sealed class PuntoVentaService(
         return "B";
     }
 
+    private static string ResolveLetraForCliente(
+        string tc,
+        string? requestedLetter,
+        bool esConsumidorFinal,
+        string ivaCliente,
+        TipoComprobanteRow? config,
+        string sucursal)
+    {
+        if (tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
+            || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase))
+            return "X";
+
+        // Para comprobantes fiscales la letra depende de la condición de IVA del cliente:
+        // RI (código 1) requiere A; consumidor final y las demás condiciones requieren B.
+        var codigoIva = (ivaCliente ?? string.Empty).Trim().TrimStart('0');
+        var letraPreferida = !esConsumidorFinal && codigoIva == "1" ? "A" : "B";
+        var letrasDisponibles = config?.Letras?.ToUpperInvariant() ?? string.Empty;
+
+        if (letrasDisponibles.Contains(letraPreferida, StringComparison.Ordinal))
+            return letraPreferida;
+
+        // Si la base no informa las letras configuradas, conservamos la selección explícita
+        // y finalmente el comportamiento histórico como respaldo.
+        if (!string.IsNullOrWhiteSpace(requestedLetter))
+            return requestedLetter.Trim().ToUpperInvariant();
+
+        return ResolveLetraDefault(config, sucursal);
+    }
+
     private async Task<T> ExecuteLoggedAsync<T>(
         string module,
         string action,
@@ -2039,6 +2177,7 @@ public sealed class PuntoVentaService(
         public string UserName { get; init; } = string.Empty;
         public string IdCaja { get; init; } = string.Empty;
         public bool Administrador { get; init; }
+        public bool VerProforma { get; init; } = true;
     }
 
     private sealed class TipoComprobanteRow

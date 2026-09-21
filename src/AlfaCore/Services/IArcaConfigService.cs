@@ -11,6 +11,7 @@ public interface IArcaConfigService
     /// <summary>Null si la facturación electrónica no aplica (apagada globalmente, o la unidad/config
     /// no tiene certificado y punto de venta resueltos) -- el llamador sigue el flujo normal sin CAE.</summary>
     Task<ArcaEmisorConfig?> ResolveEmisorAsync(SqlConnection cn, string? uNegocio, CancellationToken ct);
+    Task<ArcaEmisorConfig?> ResolvePadronEmisorAsync(SqlConnection cn, CancellationToken ct);
 
     Task<ArcaModoFalloCae> ResolveModoFalloCaeAsync(SqlConnection cn, CancellationToken ct);
 

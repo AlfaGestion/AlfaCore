@@ -9,6 +9,7 @@ public interface IPuntoVentaService
     Task SaveSettingsAsync(PuntoVentaSettingsDto settings, CancellationToken ct = default);
     Task<IReadOnlyList<PuntoVentaPaymentMethodDto>> GetPaymentMethodsAsync(CancellationToken ct = default);
     Task<IReadOnlyList<PuntoVentaFamilyDto>> GetFamiliasAsync(CancellationToken ct = default);
+    Task<IReadOnlyList<PuntoVentaRubroDto>> GetRubrosAsync(CancellationToken ct = default);
     Task<PuntoVentaCatalogDto> SearchArticulosAsync(PuntoVentaCatalogFiltersDto filters, CancellationToken ct = default);
     Task<PuntoVentaArticleDto?> GetArticuloPorCodigoAsync(string codigo, CancellationToken ct = default);
     Task<PuntoVentaSaleResultDto> CreateSaleAsync(PuntoVentaSaleRequestDto request, CancellationToken ct = default);

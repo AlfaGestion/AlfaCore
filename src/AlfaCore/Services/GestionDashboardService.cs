@@ -1063,24 +1063,31 @@ public sealed class GestionDashboardService(
 
             const string sql = """
                 SELECT
-                    LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) AS Codigo,
-                    ISNULL(NULLIF(LTRIM(RTRIM(u.Descripcion)), ''), LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO)))) AS Descripcion,
-                    ISNULL(SUM(l.IMPORTE), 0) AS TotalFacturado,
-                    COUNT(DISTINCT l.TC + l.IdComprobante) AS Comprobantes,
-                    ISNULL(CASE WHEN COUNT(DISTINCT l.TC + l.IdComprobante) = 0 THEN 0
-                                ELSE SUM(l.IMPORTE) / COUNT(DISTINCT l.TC + l.IdComprobante) END, 0) AS TicketPromedio,
-                    COUNT(DISTINCT l.CUENTA) AS ClientesActivos
-                FROM dbo.Libro_VentasConFP l
-                LEFT JOIN dbo.V_TA_UnidadNegocio u ON LTRIM(RTRIM(u.Codigo)) = LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO)))
-                WHERE (@FechaDesde IS NULL OR l.FECHA >= @FechaDesde)
-                  AND (@FechaHastaExclusive IS NULL OR l.FECHA < @FechaHastaExclusive)
-                  AND (@ClienteLike IS NULL OR l.CUENTA LIKE @ClienteLike OR l.CABNOMBRE LIKE @ClienteLike)
-                  AND (@Usuario IS NULL OR l.USUARIO_LOGEADO = @Usuario)
-                  AND (@Sucursales IS NULL OR ',' + @Sucursales + ',' LIKE '%,' + LTRIM(RTRIM(CONVERT(varchar(50), l.UNEGOCIO))) + ',%')
-                  AND (@TipoComprobante IS NULL OR l.TC = @TipoComprobante)
-                  AND l.UNEGOCIO IS NOT NULL
-                GROUP BY l.UNEGOCIO, u.Descripcion
-                ORDER BY SUM(l.IMPORTE) DESC
+                    ISNULL(NULLIF(LTRIM(RTRIM(p.CODIGO)), ''), LTRIM(RTRIM(CONVERT(varchar(50), c.SUCURSAL)))) AS Codigo,
+                    ISNULL(NULLIF(LTRIM(RTRIM(p.NOMBRE)), ''), 'Sucursal ' + LTRIM(RTRIM(CONVERT(varchar(50), c.SUCURSAL)))) AS Descripcion,
+                    ISNULL(SUM(c.IMPORTE), 0) AS TotalFacturado,
+                    COUNT(DISTINCT c.TC + c.IDCOMPROBANTE) AS Comprobantes,
+                    ISNULL(CASE WHEN COUNT(DISTINCT c.TC + c.IDCOMPROBANTE) = 0 THEN 0
+                                ELSE SUM(c.IMPORTE) / COUNT(DISTINCT c.TC + c.IDCOMPROBANTE) END, 0) AS TicketPromedio,
+                    COUNT(DISTINCT c.CUENTA) AS ClientesActivos
+                FROM dbo.V_MV_Cpte c
+                LEFT JOIN dbo.POS_PUNTOVENTA p
+                    ON LTRIM(RTRIM(p.SUCURSAL)) = LTRIM(RTRIM(CONVERT(varchar(50), c.SUCURSAL)))
+                   AND p.ACTIVO = 1
+                WHERE (
+                        c.TC LIKE 'FC%'
+                        OR c.TC LIKE 'NC%'
+                        OR c.TC LIKE 'ND%'
+                        OR c.TC LIKE 'FP%'
+                      )
+                  AND (@FechaDesde IS NULL OR c.FECHA >= @FechaDesde)
+                  AND (@FechaHastaExclusive IS NULL OR c.FECHA < @FechaHastaExclusive)
+                  AND (@ClienteLike IS NULL OR c.CUENTA LIKE @ClienteLike OR c.NOMBRE LIKE @ClienteLike)
+                  AND (@Usuario IS NULL OR c.Usuario = @Usuario)
+                  AND (@TipoComprobante IS NULL OR c.TC = @TipoComprobante)
+                  AND c.SUCURSAL IS NOT NULL
+                GROUP BY p.CODIGO, p.NOMBRE, c.SUCURSAL
+                ORDER BY SUM(c.IMPORTE) DESC
                 """;
 
             var items = new List<VentasUnidadNegocioResumenDto>();

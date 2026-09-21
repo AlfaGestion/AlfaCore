@@ -1,0 +1,159 @@
+@page "/{idweb}/comprobante/{PublicToken}"
+@layout AlfaCore.Components.Layout.PublicLayout
+@inherits SaaSRoutePageBase
+@using AlfaCore.Models
+@inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.ISessionService SessionSvc
+@inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
+@inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
+@inject ILogger<ComprobantePublico> Logger
+
+<PageTitle>Comprobante | Alfa Gestión</PageTitle>
+
+@if (_loading)
+{
+    <div class="public-document-state">Cargando comprobante...</div>
+}
+else if (!string.IsNullOrWhiteSpace(_error))
+{
+    <div class="public-document-state public-document-state--error">
+        <h1>Comprobante no disponible</h1>
+        <p>@_error</p>
+    </div>
+}
+else
+{
+    <main class="public-pdf-page">
+        @if (!string.IsNullOrWhiteSpace(_pdfDataUrl))
+        {
+            <iframe class="public-pdf-frame" src="@_pdfDataUrl" title="Comprobante en PDF"></iframe>
+        }
+    </main>
+}
+
+<style>
+    .public-document-state {
+        min-height: 100vh;
+        display: grid;
+        place-content: center;
+        gap: .4rem;
+        padding: 2rem;
+        text-align: center;
+        color: #dbeafe;
+        background: #071426;
+    }
+
+    .public-document-state h1 {
+        margin: 0;
+        font-size: 1.5rem;
+    }
+
+    .public-document-state p {
+        margin: 0;
+        color: #93a4bd;
+    }
+
+    .public-document-state--error h1 {
+        color: #fda4af;
+    }
+
+    .public-pdf-page {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: #071426;
+    }
+
+    .public-pdf-frame {
+        width: 100%;
+        flex: 1;
+        min-height: 100vh;
+        border: 0;
+        background: #fff;
+    }
+</style>
+
+@code {
+    [Parameter] public string PublicToken { get; set; } = string.Empty;
+    [SupplyParameterFromQuery(Name = "tc")] public string? TcQuery { get; set; }
+
+    private bool _loading = true;
+    private string? _error;
+    private string _tc = string.Empty;
+    private string _idComprobante = string.Empty;
+    private string? _pdfDataUrl;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loading = true;
+        _error = null;
+        _pdfDataUrl = null;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(idweb) || string.IsNullOrWhiteSpace(PublicToken))
+            {
+                _error = "Este enlace no es válido.";
+                return;
+            }
+
+            var link = await PublicLinkSvc.ResolveAsync(idweb, PublicLinkTipos.Comprobante, PublicToken);
+            if (link is null)
+            {
+                _error = "Este enlace no es válido o ya no está disponible.";
+                return;
+            }
+
+            var routeBase = await CentralBasesSvc.GetByIdAsync(link.IdBase);
+            if (routeBase is null)
+            {
+                _error = "Este enlace no es válido o ya no está disponible.";
+                return;
+            }
+
+            SessionSvc.SetWebhookOverride(new SessionDto
+            {
+                Id = SessionDto.BuildGuidFromBaseId(routeBase.IdBase),
+                BaseId = routeBase.IdBase,
+                Nombre = routeBase.Nombre,
+                Servidor = routeBase.DbServer,
+                BaseDatos = routeBase.DbName,
+                Usuario = routeBase.DbUser,
+                Password = routeBase.DbPassword,
+                TrustServerCertificate = true,
+                Activa = true
+            });
+
+            // ALFA_PUBLIC_LINK guarda el ID entero interno. El visor, en cambio, consulta
+            // V_MV_CPTE por el identificador textual (por ejemplo 001000000012B).
+            var receipt = await PuntoVentaSvc.GetReceiptDataAsync(link.IdReferencia);
+            if (receipt?.Resultado is null || string.IsNullOrWhiteSpace(receipt.Resultado.IdComprobanteTexto))
+            {
+                _error = "No se encontró el comprobante solicitado.";
+                return;
+            }
+
+            _tc = receipt.Resultado.TipoComprobante.Trim().ToUpperInvariant();
+            _idComprobante = receipt.Resultado.IdComprobanteTexto.Trim();
+
+            var pdf = await FacturaDocumentSvc.GeneratePdfAsync(_tc, _idComprobante, null);
+            if (pdf.Length == 0)
+            {
+                _error = "No se pudo generar el PDF del comprobante.";
+                return;
+            }
+
+            _pdfDataUrl = $"data:application/pdf;base64,{Convert.ToBase64String(pdf)}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "No se pudo abrir el comprobante público {Token} de {IdWeb}.", PublicToken, idweb);
+            _error = "No se pudo cargar el comprobante.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

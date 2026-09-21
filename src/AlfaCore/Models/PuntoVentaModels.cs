@@ -7,6 +7,8 @@ public sealed class PuntoVentaContextDto
     public string SesionSqlActiva { get; init; } = string.Empty;
     public string CajaActual { get; init; } = string.Empty;
     public bool EsAdministrador { get; init; }
+    public bool UsaProforma { get; init; } = true;
+    public bool VerProformaUsuario { get; init; } = true;
     public string TipoComprobanteDefault { get; init; } = "FC";
     public string SucursalDefault { get; init; } = "0001";
     public string LetrasDisponibles { get; init; } = string.Empty;
@@ -18,6 +20,7 @@ public sealed class PuntoVentaCatalogFiltersDto
 {
     public string Texto { get; set; } = string.Empty;
     public string IdFamilia { get; set; } = string.Empty;
+    public string IdRubro { get; set; } = string.Empty;
     public int TamanioPagina { get; set; } = 24;
     public int Pagina { get; set; } = 1;
 }
@@ -90,6 +93,12 @@ public sealed class PuntoVentaSettingsDto
     public string EmailSsl { get; set; } = string.Empty;
     public string FtpCodigoCta { get; set; } = string.Empty;
     public string MedioDePagoContado { get; set; } = string.Empty;
+}
+
+public sealed class PuntoVentaRubroDto
+{
+    public string IdRubro { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
 }
 
 public sealed class PuntoVentaPaymentMethodDto

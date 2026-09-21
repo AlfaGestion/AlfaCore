@@ -17,13 +17,28 @@
         justify-content: flex-end;
         margin-bottom: 1rem;
     }
+
+    .pv-admin-page-intro {
+        align-items: flex-start;
+    }
+
+    .pv-admin-page-intro__actions {
+        display: flex;
+        justify-content: flex-end;
+        margin-left: auto;
+    }
 </style>
 
 <section class="page-grid">
-    <div class="page-intro">
+    <div class="page-intro pv-admin-page-intro">
         <div>
             <h2 class="page-intro__title">Puntos de Venta</h2>
             <p class="page-intro__text">Administrá los puntos de venta (Mostrador, Salón, Delivery) y, para Salón, sus sectores y mesas.</p>
+        </div>
+        <div class="pv-admin-page-intro__actions">
+            <button type="button" class="btn btn--ghost btn--sm" @onclick="VolverAlDashboardVentas">
+                <i class="bi bi-arrow-left"></i> Volver
+            </button>
         </div>
     </div>
 
@@ -95,6 +110,16 @@
                             <option value="@PuntoVentaModoKeys.Salon">Salón</option>
                             <option value="@PuntoVentaModoKeys.Delivery">Delivery / Take Away</option>
                         </select>
+                    </div>
+                    <div class="field">
+                        <label>Comprobante habitual de esta PC</label>
+                        <select @bind="_comprobanteHabitual">
+                            <option value="FC">Factura electrónica (eFC)</option>
+                            <option value="NC">Nota de crédito (NC)</option>
+                            <option value="FP">Factura proforma (FP)</option>
+                            <option value="NCFP">Nota de crédito proforma (NCFP)</option>
+                        </select>
+                        <small>Se guarda en la configuración existente de esta PC.</small>
                     </div>
                     <div class="field">
                         <label>Unidad de negocio</label>
@@ -305,6 +330,7 @@
     private bool _showPuntoVentaForm;
     private PuntoVentaEntidadSaveRequest _puntoVentaForm = new();
     private PuntoVentaCatalogosDto _catalogos = new();
+    private string _comprobanteHabitual = "FC";
 
     private List<PuntoVentaSectorDto> _sectores = [];
     private PuntoVentaSectorDto? _selectedSector;
@@ -330,8 +356,11 @@
     private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
     {
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = ModuleTopNavPresets.BuildVentas(RouteContext, Nav, "punto-venta")
+        TopNavigationItems = ModuleTopNavPresets.BuildPuntoVenta(RouteContext, Nav, "puntos-venta")
     });
+
+    private void VolverAlDashboardVentas()
+        => Nav.NavigateTo(RouteContext.BuildRoute("/ventas"));
 
     protected override async Task OnInitializedAsync() => await LoadPuntosVentaAsync();
 
@@ -345,6 +374,11 @@
             _catalogos = catalogos.Value;
         if (!result.Success)
             _feedback = result.Feedback;
+        var comprobante = await UiOps.RunAsync(() => PosConfigSvc.GetComprobanteHabitualAsync(), "No se pudo cargar el comprobante habitual.");
+        if (comprobante.Success && !string.IsNullOrWhiteSpace(comprobante.Value))
+            _comprobanteHabitual = comprobante.Value;
+        else if (!comprobante.Success)
+            _feedback = comprobante.Feedback;
         _loading = false;
     }
 
@@ -395,6 +429,15 @@
         if (!result.Success)
         {
             _feedback = result.Feedback;
+            return;
+        }
+
+        var comprobante = await UiOps.RunAsync(
+            () => PosConfigSvc.SaveComprobanteHabitualAsync(_comprobanteHabitual),
+            "No se pudo guardar el comprobante habitual.");
+        if (!comprobante.Success)
+        {
+            _feedback = comprobante.Feedback;
             return;
         }
 

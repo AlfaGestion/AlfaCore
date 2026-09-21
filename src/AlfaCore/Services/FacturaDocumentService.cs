@@ -174,6 +174,9 @@ public sealed class FacturaDocumentService(
             FROM dbo.V_MV_CPTE_ELECTRONICOS e
             JOIN dbo.V_MV_Cpte v ON v.TC = e.TC AND v.IDCOMPROBANTE = e.IdComprobante
             WHERE e.Tipo_Cpte = @TipoCpte
+              AND ISNULL(e.Archivado, 0) = 0
+              AND UPPER(LTRIM(RTRIM(ISNULL(e.Resultado, '')))) = 'A'
+              AND NULLIF(LTRIM(RTRIM(ISNULL(e.CAE, ''))), '') IS NOT NULL
             ORDER BY e.Fecha_Cpte DESC;
             """, new { Top = Math.Clamp(top, 1, 200), TipoCpte = tipoCpte }, cancellationToken: ct));
         return rows.AsList();

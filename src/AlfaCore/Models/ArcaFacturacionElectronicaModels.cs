@@ -32,6 +32,9 @@ public sealed class ArcaConfiguracionGeneralDto
     public bool TieneCertificado { get; set; }
     public string? NombreArchivoCrt { get; set; }
     public string? NombreArchivoKey { get; set; }
+    public bool TieneCertificadoPadron { get; set; }
+    public string? NombreArchivoCrtPadron { get; set; }
+    public string? NombreArchivoKeyPadron { get; set; }
     public List<ArcaUnidadNegocioConfigDto> Unidades { get; set; } = [];
 }
 
@@ -97,6 +100,19 @@ public sealed record ArcaCaeResultadoDto(
 public sealed record WsaaTicket(string Token, string Sign, DateTime ExpirationTimeUtc)
 {
     public bool VigentePara(DateTime nowUtc, TimeSpan margen) => ExpirationTimeUtc - margen > nowUtc;
+}
+
+public sealed class ArcaPadronPersonaDto
+{
+    public string Cuit { get; init; } = string.Empty;
+    public string RazonSocial { get; init; } = string.Empty;
+    public string Nombre { get; init; } = string.Empty;
+    public string Apellido { get; init; } = string.Empty;
+    public string CondicionIva { get; init; } = string.Empty;
+    public string Calle { get; init; } = string.Empty;
+    public string Localidad { get; init; } = string.Empty;
+    public string Provincia { get; init; } = string.Empty;
+    public string CodigoPostal { get; init; } = string.Empty;
 }
 
 /// <summary>Numeración a usar para el próximo comprobante, resuelta contra AFIP ANTES de crear el

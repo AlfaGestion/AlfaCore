@@ -92,6 +92,63 @@ public sealed class PuntoVentaConfigService(
             : texto;
     }
 
+    public Task<string> GetComprobanteHabitualAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetComprobanteHabitual", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var clave = BuildComprobanteHabitualKey();
+            var valor = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition("""
+                SELECT TOP (1) ISNULL(LTRIM(RTRIM(VALOR)), '')
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+                """, new { Clave = clave }, cancellationToken: token));
+
+            return NormalizeComprobanteHabitual(valor);
+        }, "No se pudo leer el comprobante habitual del punto de venta.", ct);
+
+    public Task SaveComprobanteHabitualAsync(string comprobante, CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "SaveComprobanteHabitual", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var clave = BuildComprobanteHabitualKey();
+            var valor = NormalizeComprobanteHabitual(comprobante) switch
+            {
+                "FP" => "FP",
+                "NCFP" => "NCFP",
+                "NC" => "NC",
+                _ => "eFC"
+            };
+            var affected = await cn.ExecuteAsync(new CommandDefinition("""
+                UPDATE dbo.TA_CONFIGURACION
+                SET VALOR = @Valor, FechaHora_Modificacion = GETDATE()
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+
+                IF @@ROWCOUNT = 0
+                BEGIN
+                    INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, FechaHora_Grabacion)
+                    VALUES (N'DATOS', @Clave, @Valor, GETDATE());
+                END;
+                """, new { Clave = clave, Valor = valor }, cancellationToken: token));
+
+            return affected;
+        }, "No se pudo guardar el comprobante habitual del punto de venta.", ct);
+
+    private static string BuildComprobanteHabitualKey()
+        => $"{Environment.MachineName.Trim()}_GOUR_CPTE_PC".ToUpperInvariant();
+
+    private static string NormalizeComprobanteHabitual(string? value)
+        => (value ?? string.Empty).Trim().ToUpperInvariant() switch
+        {
+            "FP" => "FP",
+            "NCFP" => "NCFP",
+            "NC" => "NC",
+            _ => "FC"
+        };
+
     public Task<IReadOnlyList<PuntoVentaEntidadDto>> GetPuntosVentaAsync(bool soloActivos = false, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetPuntosVenta", async token =>
         {

@@ -10,24 +10,27 @@ namespace AlfaCore.Services;
 public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventService appEvents) : IWsaaClient
 {
     private const string ModuleName = "ArcaFacturacionElectronica";
-    private const string Servicio = "wsfe";
     private static readonly TimeSpan MargenRenovacion = TimeSpan.FromMinutes(10);
 
     private const string UrlWsaaHomologacion = "https://wsaahomo.afip.gov.ar/ws/services/LoginCms";
     private const string UrlWsaaProduccion = "https://wsaa.afip.gov.ar/ws/services/LoginCms";
 
-    public async Task<WsaaTicket> ObtenerTicketAsync(SqlConnection cn, ArcaEmisorConfig emisor, CancellationToken ct)
+    public async Task<WsaaTicket> ObtenerTicketAsync(SqlConnection cn, ArcaEmisorConfig emisor, CancellationToken ct, string servicio = "wsfe")
     {
+        servicio = string.IsNullOrWhiteSpace(servicio) ? "wsfe" : servicio.Trim();
         var ambienteTexto = emisor.Ambiente == ArcaAmbiente.Produccion ? "PRODUCCION" : "HOMOLOGACION";
 
-        var cacheado = await LeerCacheAsync(cn, emisor.Cuit, ambienteTexto, ct);
+        var cacheado = string.Equals(servicio, "wsfe", StringComparison.OrdinalIgnoreCase)
+            ? await LeerCacheAsync(cn, emisor.Cuit, ambienteTexto, ct)
+            : null;
         if (cacheado is not null && cacheado.VigentePara(DateTime.UtcNow, MargenRenovacion))
             return cacheado;
 
         try
         {
-            var ticket = await AutenticarAsync(emisor, ct);
-            await GuardarCacheAsync(cn, emisor.Cuit, ambienteTexto, ticket, ct);
+            var ticket = await AutenticarAsync(emisor, servicio, ct);
+            if (string.Equals(servicio, "wsfe", StringComparison.OrdinalIgnoreCase))
+                await GuardarCacheAsync(cn, emisor.Cuit, ambienteTexto, ticket, ct);
             return ticket;
         }
         catch (Exception ex) when (ex is not ArcaAutenticacionException)
@@ -37,7 +40,7 @@ public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventSe
         }
     }
 
-    private async Task<WsaaTicket> AutenticarAsync(ArcaEmisorConfig emisor, CancellationToken ct)
+    private async Task<WsaaTicket> AutenticarAsync(ArcaEmisorConfig emisor, string servicio, CancellationToken ct)
     {
         var ahora = DateTime.UtcNow;
         var uniqueId = ((long)(ahora - DateTime.UnixEpoch).TotalSeconds).ToString();
@@ -52,7 +55,7 @@ public sealed class WsaaClient(IHttpClientFactory httpClientFactory, IAppEventSe
                 <generationTime>{generationTime}</generationTime>
                 <expirationTime>{expirationTime}</expirationTime>
               </header>
-              <service>{Servicio}</service>
+              <service>{System.Security.SecurityElement.Escape(servicio)}</service>
             </loginTicketRequest>
             """;
 

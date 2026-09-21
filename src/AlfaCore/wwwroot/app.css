@@ -26868,6 +26868,19 @@ body:has(.cuentas-modal .usuarios-view-settings) {
     background: transparent;
 }
 
+.qcm-cuit-label-row {
+    align-items: center;
+    display: flex;
+    gap: .5rem;
+    justify-content: space-between;
+}
+
+.qcm-cuit-search {
+    font-size: .75rem;
+    padding: .25rem .5rem;
+    white-space: nowrap;
+}
+
 .qcm-form-grid input,
 .qcm-form-grid select {
     padding: 0.5rem 0.65rem;

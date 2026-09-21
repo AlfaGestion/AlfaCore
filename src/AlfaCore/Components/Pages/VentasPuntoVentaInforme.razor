@@ -1,0 +1,168 @@
+@page "/ventas/punto-venta/informe"
+@page "/{idweb}/{idbase:int}/ventas/punto-venta/informe"
+@using AlfaCore.Models
+@using AlfaCore.Services
+@inject IGestionDashboardService GestionSvc
+@inject IRouteContextService RouteCtx
+@inject IPageHeaderService PageHeader
+@inject NavigationManager Nav
+@implements IDisposable
+
+<PageTitle>Informe de punto de venta | Ventas</PageTitle>
+
+<section class="page-grid">
+    <div class="page-intro">
+        <div>
+            <h2 class="page-intro__title">Informe de punto de venta</h2>
+            <p class="page-intro__text">Ventas agrupadas por punto de venta operativo dentro del período seleccionado.</p>
+        </div>
+    </div>
+
+    <section class="panel-card filters-card">
+        <div class="panel-card__header">
+            <div>
+                <h3 class="panel-card__title">Filtros</h3>
+                <p class="panel-card__subtitle">Elegí el período que querés consultar.</p>
+            </div>
+            <button type="button" class="btn btn--primary btn--sm" @onclick="CargarAsync" disabled="@_loading">
+                <i class="bi bi-search"></i> Buscar
+            </button>
+        </div>
+        <div class="filters-grid filters-grid--dates">
+            <div class="field">
+                <label>Desde</label>
+                <InputDate @bind-Value="_fechaDesde" />
+            </div>
+            <div class="field">
+                <label>Hasta</label>
+                <InputDate @bind-Value="_fechaHasta" />
+            </div>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(_error))
+    {
+        <div class="panel-card empty-state"><p>@_error</p></div>
+    }
+    else if (_loading)
+    {
+        <div class="loading">Cargando informe...</div>
+    }
+    else
+    {
+        <div class="kpi-grid">
+            <KpiCard Titulo="Total vendido" Valor="@Moneda(_total)" Icono="$" />
+            <KpiCard Titulo="Comprobantes" Valor="@_comprobantes.ToString("N0")" Icono="#" />
+            <KpiCard Titulo="Puntos de venta" Valor="@_rows.Count.ToString("N0")" Icono="P" />
+        </div>
+
+        <DataTable Titulo="Ventas por punto de venta" Subtitulo="Resumen agrupado por el punto de venta configurado.">
+            <Header>
+                <tr>
+                    <th>Código</th>
+                    <th>Punto de venta</th>
+                    <th style="text-align:right;">Comprobantes</th>
+                    <th style="text-align:right;">Clientes</th>
+                    <th style="text-align:right;">Ticket promedio</th>
+                    <th style="text-align:right;">Total vendido</th>
+                </tr>
+            </Header>
+            <Rows>
+                @if (_rows.Count == 0)
+                {
+                    <tr><td colspan="6">No hay ventas para el período seleccionado.</td></tr>
+                }
+                else
+                {
+                    @foreach (var row in _rows)
+                    {
+                        <tr>
+                            <td>@row.Codigo</td>
+                            <td><strong>@row.Descripcion</strong></td>
+                            <td style="text-align:right;">@row.Comprobantes.ToString("N0")</td>
+                            <td style="text-align:right;">@row.ClientesActivos.ToString("N0")</td>
+                            <td style="text-align:right;">@Moneda(row.TicketPromedio)</td>
+                            <td style="text-align:right;"><strong>@Moneda(row.TotalFacturado)</strong></td>
+                        </tr>
+                    }
+                    <tr class="data-table__totals">
+                        <td colspan="2"><strong>Total</strong></td>
+                        <td style="text-align:right;"><strong>@_comprobantes.ToString("N0")</strong></td>
+                        <td></td>
+                        <td></td>
+                        <td style="text-align:right;"><strong>@Moneda(_total)</strong></td>
+                    </tr>
+                }
+            </Rows>
+        </DataTable>
+    }
+</section>
+
+@code {
+    private DateTime? _fechaDesde = DateTime.Today;
+    private DateTime? _fechaHasta = DateTime.Today;
+    private IReadOnlyList<VentasUnidadNegocioResumenDto> _rows = [];
+    private decimal _total;
+    private int _comprobantes;
+    private string? _error;
+    private bool _loading = true;
+
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override async Task OnInitializedAsync() => await CargarAsync();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = ModuleTopNavPresets.BuildPuntoVenta(RouteCtx, Nav, "informe-punto-venta")
+    });
+
+    private async Task CargarAsync()
+    {
+        _error = null;
+        if (_fechaDesde.HasValue && _fechaHasta.HasValue && _fechaDesde.Value.Date > _fechaHasta.Value.Date)
+        {
+            _rows = [];
+            _total = 0;
+            _comprobantes = 0;
+            _error = "La fecha desde no puede ser posterior a la fecha hasta.";
+            _loading = false;
+            return;
+        }
+
+        _loading = true;
+        try
+        {
+            var filters = new VentasDashboardFilters
+            {
+                FechaDesde = _fechaDesde?.Date,
+                FechaHasta = _fechaHasta?.Date
+            };
+            _rows = await GestionSvc.GetVentasPorUnidadNegocioAsync(filters);
+            _total = _rows.Sum(x => x.TotalFacturado);
+            _comprobantes = _rows.Sum(x => x.Comprobantes);
+        }
+        catch (Exception ex)
+        {
+            _rows = [];
+            _total = 0;
+            _comprobantes = 0;
+            _error = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private static string Moneda(decimal value)
+        => value.ToString("$ #,##0.00", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+}

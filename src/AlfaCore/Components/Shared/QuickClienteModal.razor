@@ -2,6 +2,7 @@
 @using AlfaCore.Services
 @using System.Text.RegularExpressions
 @inject ICuentasComercialesService ClientesSvc
+@inject IArcaPadronService ArcaPadronSvc
 
 @if (Open)
 {
@@ -33,12 +34,13 @@
             <div class="qcm-search">
                 <div class="qcm-search__bar">
                     <input class="qcm-search__input"
-                           @bind="_busqueda"
-                           @bind:event="oninput"
+                           @ref="_busquedaInput"
+                           value="@_busqueda"
+                           @oninput="OnBusquedaInputAsync"
                            @onkeydown="HandleBusquedaKeyAsync"
                            placeholder="Código, CUIT, nombre o teléfono..."
                            autocomplete="off" />
-                    <button class="qcm-search__btn" type="button" @onclick="BuscarAsync" disabled="@_buscando">
+                    <button class="qcm-search__btn" type="button" @onclick="() => BuscarAsync()" disabled="@_buscando">
                         @(_buscando ? "Buscando..." : "Buscar")
                     </button>
                 </div>
@@ -77,7 +79,7 @@
                 }
                 else
                 {
-                    <p class="qcm-msg qcm-msg--hint">Ingrese un código, CUIT, nombre o teléfono y presione Buscar.</p>
+                    <p class="qcm-msg qcm-msg--hint">Escribí al menos 2 caracteres para buscar.</p>
                 }
             </div>
         }
@@ -142,15 +144,29 @@
 
                 <div class="qcm-form-grid">
                     <div class="field qcm-col-2">
-                        <label>CUIT / DNI @RequiredMark(!_eventual)</label>
+                        <div class="qcm-cuit-label-row">
+                            <label>CUIT / DNI @RequiredMark(!_eventual)</label>
+                            <button type="button"
+                                    class="btn btn--ghost btn--sm qcm-cuit-search"
+                                    @onclick="ConsultarArcaAsync"
+                                    disabled="@(_arcaBuscando || _eventual || StripNonNumeric(_nuevo.NumeroDocumento).Length != 11)">
+                                <i class="bi bi-cloud-search"></i>
+                                @(_arcaBuscando ? "Consultando..." : "Consultar ARCA")
+                            </button>
+                        </div>
                         <input @bind="_nuevo.NumeroDocumento"
                                @bind:event="oninput"
                                @onblur="HandleCuitBlurAsync"
+                               @onkeydown="HandleNuevoCuitKeyAsync"
                                placeholder="20-12345678-9"
                                class="@(HasFieldError("numero-documento") ? "qcm-input--error" : "")" />
                         @if (_cuitBuscando)
                         {
                             <span class="qcm-field-hint">Verificando CUIT...</span>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(_arcaConsultaMensaje))
+                        {
+                            <span class="qcm-field-hint">@_arcaConsultaMensaje</span>
                         }
                         @FieldError("numero-documento")
                     </div>
@@ -276,20 +292,47 @@
     private string _busqueda = string.Empty;
     private string _busquedaError = string.Empty;
     private bool _buscando;
+    private CancellationTokenSource? _busquedaCts;
     private IReadOnlyList<CuentaComercialGridItemDto>? _resultados;
     private CuentaComercialSaveRequest _nuevo = new();
     private CuentaComercialLookupDataDto? _lookupData;
     private bool _guardando;
     private string _guardadoError = string.Empty;
     private bool _cuitBuscando;
+    private bool _arcaBuscando;
+    private string _arcaConsultaMensaje = string.Empty;
     private CuentaComercialGridItemDto? _cuitDuplicado;
     private Dictionary<string, string> _fieldErrors = [];
     private bool _eventual;
+    private ElementReference _busquedaInput;
+    private bool _focusBusquedaPendiente;
+    private bool _modalEstabaAbierto;
 
     protected override async Task OnParametersSetAsync()
     {
+        if (Open && !_modalEstabaAbierto && _vista == "buscar")
+            _focusBusquedaPendiente = true;
+
+        _modalEstabaAbierto = Open;
+
         if (Open && _lookupData is null)
             await LoadLookupDataAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_focusBusquedaPendiente || !Open || _vista != "buscar")
+            return;
+
+        _focusBusquedaPendiente = false;
+        try
+        {
+            await _busquedaInput.FocusAsync(preventScroll: true);
+        }
+        catch
+        {
+            // El elemento todavía puede no estar disponible durante una transición de render.
+        }
     }
 
     private async Task LoadLookupDataAsync()
@@ -317,11 +360,14 @@
         _guardadoError = string.Empty;
         _fieldErrors = [];
         _cuitDuplicado = null;
+        _arcaConsultaMensaje = string.Empty;
     }
 
     private void CambiarVista(string vista)
     {
         _vista = vista;
+        if (vista == "buscar")
+            _focusBusquedaPendiente = true;
         _guardadoError = string.Empty;
         _fieldErrors = [];
     }
@@ -368,6 +414,70 @@
         }
     }
 
+    private async Task ConsultarArcaAsync()
+    {
+        _guardadoError = string.Empty;
+        _arcaConsultaMensaje = string.Empty;
+
+        var cuit = StripNonNumeric(_nuevo.NumeroDocumento);
+        if (cuit.Length != 11)
+        {
+            _guardadoError = "Ingresá un CUIT válido de 11 dígitos.";
+            return;
+        }
+
+        try
+        {
+            _arcaBuscando = true;
+            var persona = await ArcaPadronSvc.ConsultarPersonaAsync(cuit);
+            _nuevo.NumeroDocumento = persona.Cuit;
+            _nuevo.RazonSocial = persona.RazonSocial;
+            _nuevo.Calle = persona.Calle;
+            _nuevo.Localidad = persona.Localidad;
+            _nuevo.CodigoPostal = persona.CodigoPostal;
+
+            var provincia = _lookupData?.Provincias.FirstOrDefault(x =>
+                x.Descripcion.Contains(persona.Provincia, StringComparison.OrdinalIgnoreCase)
+                || persona.Provincia.Contains(x.Descripcion, StringComparison.OrdinalIgnoreCase));
+            if (provincia is not null)
+                _nuevo.ProvinciaCodigo = provincia.Codigo;
+
+            var iva = _lookupData?.CondicionesIva.FirstOrDefault(x =>
+                x.Descripcion.Contains(persona.CondicionIva, StringComparison.OrdinalIgnoreCase)
+                || persona.CondicionIva.Contains(x.Descripcion, StringComparison.OrdinalIgnoreCase));
+            if (iva is not null)
+                _nuevo.IvaCodigo = iva.Codigo;
+
+            var tipoCuit = _lookupData?.TiposDocumento.FirstOrDefault(x =>
+                x.Descripcion.Contains("CUIT", StringComparison.OrdinalIgnoreCase));
+            if (tipoCuit is not null)
+                _nuevo.DocumentoTipoCodigo = tipoCuit.Codigo;
+
+            _arcaConsultaMensaje = "Datos completados desde ARCA.";
+            _fieldErrors.Remove("numero-documento");
+        }
+        catch (Exception ex)
+        {
+            _guardadoError = ex.Message;
+        }
+        finally
+        {
+            _arcaBuscando = false;
+        }
+    }
+
+    private async Task HandleNuevoCuitKeyAsync(KeyboardEventArgs e)
+    {
+        if (!string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase)
+            || _eventual
+            || _arcaBuscando)
+            return;
+
+        var cuit = StripNonNumeric(_nuevo.NumeroDocumento);
+        if (cuit.Length == 11)
+            await ConsultarArcaAsync();
+    }
+
     private async Task<CuentaComercialGridItemDto?> FindByCuitAsync(string numericCuit)
     {
         var formatted = $"{numericCuit[..2]}-{numericCuit[2..10]}-{numericCuit[10]}";
@@ -392,7 +502,32 @@
 
     // ── Search tab ───────────────────────────────────────────────────────────
 
-    private async Task BuscarAsync()
+    private async Task OnBusquedaInputAsync(ChangeEventArgs e)
+    {
+        _busqueda = e.Value?.ToString() ?? string.Empty;
+        _busquedaError = string.Empty;
+        _resultados = null;
+
+        _busquedaCts?.Cancel();
+        _busquedaCts?.Dispose();
+        _busquedaCts = new CancellationTokenSource();
+        var token = _busquedaCts.Token;
+
+        if (_busqueda.Trim().Length < 2)
+            return;
+
+        try
+        {
+            await Task.Delay(250, token);
+            await BuscarAsync(token);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // Se cancela la búsqueda anterior cuando el usuario sigue escribiendo.
+        }
+    }
+
+    private async Task BuscarAsync(CancellationToken cancellationToken = default)
     {
         _busquedaError = string.Empty;
         var texto = _busqueda.Trim();
@@ -406,8 +541,13 @@
             _buscando = true;
             var result = await ClientesSvc.SearchAsync(
                 CuentaComercialTipo.Cliente,
-                new CuentaComercialFilters { Texto = texto, Activo = null, PageSize = 30, PageNumber = 1 });
+                new CuentaComercialFilters { Texto = texto, Activo = null, PageSize = 30, PageNumber = 1 },
+                cancellationToken);
             _resultados = result.Items;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return;
         }
         catch (Exception ex)
         {
@@ -422,7 +562,10 @@
     private async Task HandleBusquedaKeyAsync(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
+        {
+            _busquedaCts?.Cancel();
             await BuscarAsync();
+        }
     }
 
     // ── Save ─────────────────────────────────────────────────────────────────
@@ -511,6 +654,7 @@
         _guardadoError = string.Empty;
         _fieldErrors = [];
         _cuitDuplicado = null;
+        _arcaConsultaMensaje = string.Empty;
         _eventual = false;
         _vista = "buscar";
     }

@@ -9,6 +9,7 @@
 @inject IPageHeaderService PageHeader
 @inject ISessionService SessionSvc
 @inject IInterfacesCatalogosService CatalogosSvc
+@inject IArcaPadronService ArcaPadronSvc
 @inject IPortalClienteInvitacionService PortalInvitacionSvc
 @inject IPortalClienteAutoLoginService PortalAutoLoginSvc
 @inject NavigationManager Nav
@@ -650,8 +651,21 @@ else
                         }
                     </div>
                     <div class="field field--md">
-                        <label>CUIT / Nro. documento</label>
+                        <div class="qcm-cuit-label-row">
+                            <label>CUIT / Nro. documento</label>
+                            <button type="button"
+                                    class="btn btn--ghost btn--sm qcm-cuit-search"
+                                    @onclick="ConsultarArcaAsync"
+                                    disabled="@(_arcaBuscando || _saving || new string((_form.NumeroDocumento ?? string.Empty).Where(char.IsDigit).ToArray()).Length != 11)">
+                                <i class="bi bi-cloud-search"></i>
+                                @(_arcaBuscando ? "Consultando..." : "Consultar ARCA")
+                            </button>
+                        </div>
                         <input type="text" class="@GetFieldInputClass("numero-documento")" maxlength="13" @bind="_form.NumeroDocumento" disabled="@_saving" />
+                        @if (!string.IsNullOrWhiteSpace(_arcaConsultaMensaje))
+                        {
+                            <small class="qcm-field-hint">@_arcaConsultaMensaje</small>
+                        }
                         @if (HasFieldError("numero-documento"))
                         {
                             <small class="usuarios-field-error">@GetFieldError("numero-documento")</small>
@@ -1687,6 +1701,7 @@ else
     private bool _notesEditorsReady;
     private bool _listLoadFailed;
     private bool _savingViewSettings;
+    private bool _arcaBuscando;
     private bool _dataViewColumnsInitialized;
     private bool _savingColumnWidths;
     private bool _isNewMode = true;
@@ -1700,6 +1715,7 @@ else
     private string _activoFiltro = "1";
     private string _bloqueoFiltro = string.Empty;
     private string _contactoError = string.Empty;
+    private string _arcaConsultaMensaje = string.Empty;
     private string _viewSettingsUserName = string.Empty;
     private bool _viewSettingsLoaded;
     private int _pagedTotal;
@@ -2416,6 +2432,7 @@ else
         _activeTab = CuentaComercialTab.Datos;
         _notesEditorsReady = false;
         _showSearchPanel = false;
+        _arcaConsultaMensaje = string.Empty;
         ResetContactosState();
         UpdatePageHeader();
 
@@ -2439,6 +2456,56 @@ else
 
         _form.Codigo = result.Value;
         UpdatePageHeader();
+    }
+
+    private async Task ConsultarArcaAsync()
+    {
+        _arcaConsultaMensaje = string.Empty;
+        ClearFieldErrors();
+
+        var cuit = new string((_form.NumeroDocumento ?? string.Empty).Where(char.IsDigit).ToArray());
+        if (cuit.Length != 11)
+        {
+            SetFeedback(AppUiMessage.Error("Consulta ARCA", "Ingresá un CUIT válido de 11 dígitos."));
+            return;
+        }
+
+        try
+        {
+            _arcaBuscando = true;
+            var persona = await ArcaPadronSvc.ConsultarPersonaAsync(cuit);
+            _form.NumeroDocumento = persona.Cuit;
+            _form.RazonSocial = persona.RazonSocial;
+            _form.Calle = persona.Calle;
+            _form.Localidad = persona.Localidad;
+            _form.CodigoPostal = persona.CodigoPostal;
+
+            var provincia = _lookups.Provincias.FirstOrDefault(x =>
+                x.Descripcion.Contains(persona.Provincia, StringComparison.OrdinalIgnoreCase)
+                || persona.Provincia.Contains(x.Descripcion, StringComparison.OrdinalIgnoreCase));
+            if (provincia is not null)
+                _form.ProvinciaCodigo = provincia.Codigo;
+
+            var iva = _lookups.CondicionesIva.FirstOrDefault(x =>
+                x.Descripcion.Contains(persona.CondicionIva, StringComparison.OrdinalIgnoreCase)
+                || persona.CondicionIva.Contains(x.Descripcion, StringComparison.OrdinalIgnoreCase));
+            if (iva is not null)
+                _form.IvaCodigo = iva.Codigo;
+
+            var tipoCuit = _lookups.TiposDocumento.FirstOrDefault(x => x.Descripcion.Contains("CUIT", StringComparison.OrdinalIgnoreCase));
+            if (tipoCuit is not null)
+                _form.DocumentoTipoCodigo = tipoCuit.Codigo;
+
+            _arcaConsultaMensaje = "Datos completados desde ARCA.";
+        }
+        catch (Exception ex)
+        {
+            SetFeedback(AppUiMessage.Error("Consulta ARCA", ex.Message));
+        }
+        finally
+        {
+            _arcaBuscando = false;
+        }
     }
 
     private async Task SeleccionarAsync(string codigo)

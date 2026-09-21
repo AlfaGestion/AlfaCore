@@ -6,6 +6,8 @@ public interface IPuntoVentaConfigService
 {
     Task<IReadOnlyList<PuntoVentaEntidadDto>> GetPuntosVentaAsync(bool soloActivos = false, CancellationToken ct = default);
     Task<PuntoVentaCatalogosDto> GetCatalogosAsync(CancellationToken ct = default);
+    Task<string> GetComprobanteHabitualAsync(CancellationToken ct = default);
+    Task SaveComprobanteHabitualAsync(string comprobante, CancellationToken ct = default);
     Task<PuntoVentaEntidadDto?> GetPuntoVentaByIdAsync(int id, CancellationToken ct = default);
     Task<int> SavePuntoVentaAsync(PuntoVentaEntidadSaveRequest request, CancellationToken ct = default);
 

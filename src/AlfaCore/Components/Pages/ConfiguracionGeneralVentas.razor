@@ -196,18 +196,56 @@
                 </div>
             }
         }
+
+        <h4 class="cfgarca-subtitle">Consulta de padrón ARCA (certificado independiente)</h4>
+        <p class="panel-card__subtitle">
+            Este certificado se usa solamente para consultar clientes/proveedores en ARCA y no reemplaza
+            el certificado de facturación electrónica.
+        </p>
+        <div class="cfgarca-row cfgarca-row--fallback">
+            <div class="cfgarca-field cfgarca-field--certificate">
+                Certificado padrón (.crt)
+                <div class="cfgarca-cert">
+                    <div class="cfgarca-cert-picker">
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-upload" Disabled="@_subiendoCertPadron">
+                            @(string.IsNullOrEmpty(_arca.NombreArchivoCrtPadron) ? "Subir .crt" : "Reemplazar")
+                        </AlfaButton>
+                        <InputFile class="cfgarca-input-file" OnChange="e => HandleCertificadoSeleccionadoAsync(e, ClavePadron, esClave: false)" accept=".crt,.pem" disabled="@_subiendoCertPadron" />
+                    </div>
+                    <span class="cfgarca-cert-estado">
+                        @(string.IsNullOrEmpty(_arca.NombreArchivoCrtPadron) ? "Sin subir" : _arca.NombreArchivoCrtPadron)
+                    </span>
+                </div>
+            </div>
+            <div class="cfgarca-field cfgarca-field--certificate">
+                Clave padrón (.key)
+                <div class="cfgarca-cert">
+                    <div class="cfgarca-cert-picker">
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-upload" Disabled="@_subiendoCertPadron">
+                            @(string.IsNullOrEmpty(_arca.NombreArchivoKeyPadron) ? "Subir .key" : "Reemplazar")
+                        </AlfaButton>
+                        <InputFile class="cfgarca-input-file" OnChange="e => HandleCertificadoSeleccionadoAsync(e, ClavePadron, esClave: true)" accept=".key,.pem" disabled="@_subiendoCertPadron" />
+                    </div>
+                    <span class="cfgarca-cert-estado">
+                        @(string.IsNullOrEmpty(_arca.NombreArchivoKeyPadron) ? "Sin subir" : _arca.NombreArchivoKeyPadron)
+                    </span>
+                </div>
+            </div>
+        </div>
     </section>
 
 </div>
 
 @code {
     private const string ClaveGlobal = "GLOBAL";
+    private const string ClavePadron = "PADRON";
     private const long TamanoMaximoCertificadoBytes = 512 * 1024;
 
     private ConfiguracionVentasPortalClienteDto _portal = new();
     private ArcaConfiguracionGeneralDto _arca = new();
     private bool _saving;
     private bool _subiendoCertGlobal;
+    private bool _subiendoCertPadron;
     private string? _subiendoCertUnidad;
     private AppUiMessage? _feedback;
 
@@ -322,7 +360,10 @@
         if (file is null) return;
 
         var esGlobal = uNegocioOGlobal == ClaveGlobal;
-        if (esGlobal) _subiendoCertGlobal = true; else _subiendoCertUnidad = uNegocioOGlobal;
+        var esPadron = uNegocioOGlobal == ClavePadron;
+        if (esGlobal) _subiendoCertGlobal = true;
+        else if (esPadron) _subiendoCertPadron = true;
+        else _subiendoCertUnidad = uNegocioOGlobal;
 
         try
         {
@@ -353,6 +394,12 @@
                     if (keyNombre is not null) _arca.NombreArchivoKey = keyNombre;
                     _arca.TieneCertificado = !string.IsNullOrEmpty(_arca.NombreArchivoCrt) && !string.IsNullOrEmpty(_arca.NombreArchivoKey);
                 }
+                else if (esPadron)
+                {
+                    if (crtNombre is not null) _arca.NombreArchivoCrtPadron = crtNombre;
+                    if (keyNombre is not null) _arca.NombreArchivoKeyPadron = keyNombre;
+                    _arca.TieneCertificadoPadron = !string.IsNullOrEmpty(_arca.NombreArchivoCrtPadron) && !string.IsNullOrEmpty(_arca.NombreArchivoKeyPadron);
+                }
                 else
                 {
                     var unidad = _arca.Unidades.FirstOrDefault(u => u.Codigo == uNegocioOGlobal);
@@ -372,7 +419,9 @@
         }
         finally
         {
-            if (esGlobal) _subiendoCertGlobal = false; else _subiendoCertUnidad = null;
+            if (esGlobal) _subiendoCertGlobal = false;
+            else if (esPadron) _subiendoCertPadron = false;
+            else _subiendoCertUnidad = null;
         }
     }
 }

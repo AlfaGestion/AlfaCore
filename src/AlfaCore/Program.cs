@@ -290,6 +290,7 @@ public class Program
         builder.Services.AddScoped<IArcaConfigService, ArcaConfigService>();
         builder.Services.AddScoped<IWsaaClient, WsaaClient>();
         builder.Services.AddScoped<IWsfev1Client, Wsfev1Client>();
+        builder.Services.AddScoped<IArcaPadronService, ArcaPadronService>();
         builder.Services.AddScoped<IArcaFacturacionElectronicaService, ArcaFacturacionElectronicaService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();

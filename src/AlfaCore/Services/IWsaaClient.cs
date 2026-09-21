@@ -9,5 +9,5 @@ namespace AlfaCore.Services;
 /// workers de IIS/Kestrel) respetando su expiración real, no una ventana fija.</summary>
 public interface IWsaaClient
 {
-    Task<WsaaTicket> ObtenerTicketAsync(SqlConnection cn, ArcaEmisorConfig emisor, CancellationToken ct);
+    Task<WsaaTicket> ObtenerTicketAsync(SqlConnection cn, ArcaEmisorConfig emisor, CancellationToken ct, string servicio = "wsfe");
 }

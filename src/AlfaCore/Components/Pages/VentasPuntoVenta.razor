@@ -1,6 +1,8 @@
 @page "/ventas/punto-venta/mostrador"
 @page "/{idweb}/{idbase:int}/ventas/punto-venta/mostrador"
+@inherits SaaSRoutePageBase
 @implements IAsyncDisposable
+@using QRCoder
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPuntoVentaCartStateService CartState
 @inject AlfaCore.Services.IPuntoVentaPedidoService PedidoSvc
@@ -10,8 +12,10 @@
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IRouteContextService RouteCtx
+@inject AlfaCore.Services.ICentralPublicLinkService PublicLinkSvc
 @inject NavigationManager Nav
 @inject IJSRuntime Js
+@inject ILogger<VentasPuntoVenta> Logger
 
 <PageTitle>Punto de Venta | Ventas</PageTitle>
 
@@ -117,6 +121,13 @@
         border-color: rgba(56, 189, 248, 0.7);
         background: rgba(56, 189, 248, 0.18);
         color: #ffffff;
+    }
+
+    .pos-catalog__document-select {
+        min-width: 14rem;
+        min-height: 2.35rem;
+        font-size: 0.8rem;
+        font-weight: 800;
     }
 
     .pos-topbar__ghost,
@@ -270,10 +281,8 @@
     }
 
     .pos-line__details {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 0.45rem;
+        display: grid;
+        gap: 0.35rem;
     }
 
     .pos-line__details > span {
@@ -289,6 +298,8 @@
         align-items: center;
         gap: 0.2rem;
         flex: 0 0 auto;
+        justify-self: end;
+        max-width: 100%;
     }
 
     .pos-line__controls button {
@@ -1929,16 +1940,28 @@
 
     .pos-charge-modal__actions {
         display: flex;
-        justify-content: flex-end;
+        justify-content: flex-start;
         gap: 0.7rem;
+        flex-wrap: wrap;
     }
 
     .pos-charge-modal__ghost,
-    .pos-charge-modal__save {
+    .pos-charge-modal__save,
+    .pos-charge-modal__accept-print {
         min-height: 3rem;
         padding: 0.75rem 1rem;
         border-radius: 14px;
         font-weight: 800;
+    }
+
+    .pos-charge-modal__accept-print {
+        border: 2px solid #f5b400;
+        background: rgba(245, 180, 0, 0.12);
+        color: #fef3c7;
+    }
+
+    .pos-charge-modal__accept-print:hover:not(:disabled) {
+        background: rgba(245, 180, 0, 0.22);
     }
 
     .pos-charge-modal__save {
@@ -2167,6 +2190,128 @@
         font-size: 2rem;
     }
 
+    .pos-receipt-modal__contact-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 12rem;
+        gap: 0.8rem;
+        align-items: stretch;
+    }
+
+    .pos-receipt-modal__public-qr {
+        width: 100%;
+        border: 1px solid rgba(34, 211, 238, 0.2);
+        border-radius: 12px;
+        background: rgba(15, 23, 42, 0.58);
+        color: inherit;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.35rem;
+        padding: 0.55rem;
+        text-align: center;
+    }
+
+    .pos-receipt-modal__public-qr:hover {
+        border-color: rgba(34, 211, 238, 0.7);
+        background: rgba(14, 116, 144, 0.24);
+    }
+
+    .pos-public-qr-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 1200;
+        border: 0;
+        background: rgba(2, 8, 23, 0.78);
+    }
+
+    .pos-public-qr-modal {
+        position: fixed;
+        inset: 50% auto auto 50%;
+        z-index: 1201;
+        transform: translate(-50%, -50%);
+        display: grid;
+        justify-items: center;
+        gap: 1rem;
+        width: min(90vw, 27rem);
+        padding: 1.25rem;
+        border: 1px solid rgba(34, 211, 238, 0.28);
+        border-radius: 20px;
+        background: #0d1d33;
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.5);
+        text-align: center;
+    }
+
+    .pos-public-qr-modal__close {
+        position: absolute;
+        top: 0.65rem;
+        right: 0.65rem;
+        width: 2.2rem;
+        height: 2.2rem;
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.72);
+        color: var(--color-text);
+        font-weight: 800;
+    }
+
+    .pos-public-qr-modal img {
+        width: min(70vw, 18rem);
+        height: min(70vw, 18rem);
+        padding: 0.7rem;
+        border-radius: 12px;
+        background: #fff;
+    }
+
+    .pos-public-qr-modal h4,
+    .pos-public-qr-modal p {
+        margin: 0;
+    }
+
+    .pos-public-qr-modal h4 {
+        color: var(--color-text);
+        font-size: 1.1rem;
+    }
+
+    .pos-public-qr-modal p {
+        color: var(--color-muted);
+        font-size: 0.9rem;
+    }
+
+    .pos-public-qr-modal__link {
+        max-width: 100%;
+        color: #67e8f9;
+        font-size: 0.78rem;
+        overflow-wrap: anywhere;
+        text-decoration: underline;
+    }
+
+    .pos-receipt-modal__public-qr img {
+        width: 64px;
+        height: 64px;
+        flex: 0 0 64px;
+        padding: 0.25rem;
+        border-radius: 8px;
+        background: #fff;
+    }
+
+    .pos-receipt-modal__public-qr strong,
+    .pos-receipt-modal__public-qr span {
+        display: block;
+    }
+
+    .pos-receipt-modal__public-qr strong {
+        color: var(--color-text);
+        font-size: 0.78rem;
+    }
+
+    .pos-receipt-modal__public-qr span {
+        margin-top: 0.2rem;
+        color: var(--color-muted);
+        font-size: 0.7rem;
+    }
+
     .pos-receipt-modal__print {
         width: 100%;
         min-height: 3.2rem;
@@ -2181,6 +2326,17 @@
     .pos-receipt-modal__mail {
         display: grid;
         gap: 0.65rem;
+    }
+
+    @@media (max-width: 760px) {
+        .pos-receipt-modal__contact-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .pos-receipt-modal__public-qr {
+            flex-direction: row;
+            text-align: left;
+        }
     }
 
     .pos-receipt-modal__mail label {
@@ -2220,8 +2376,14 @@
         display: grid;
         place-items: center;
         gap: 0.8rem;
-        background: linear-gradient(135deg, rgba(14, 165, 233, 0.82), rgba(59, 130, 246, 0.88));
+        background: linear-gradient(135deg, #12354d, #155e75);
+        border: 1px solid rgba(34, 211, 238, 0.34);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
         font-size: 1.15rem;
+    }
+
+    .pos-receipt-modal__new:hover {
+        background: linear-gradient(135deg, #16445f, #176b82);
     }
 
     .pos-receipt-modal__new-icon {
@@ -2631,7 +2793,7 @@
     window.alfaPosPrintHtml = function (frameId, html) {
         const frame = document.getElementById(frameId);
         if (!frame || !frame.contentWindow) {
-            return;
+            return Promise.resolve(false);
         }
 
         const doc = frame.contentWindow.document;
@@ -2639,10 +2801,13 @@
         doc.write(html || "");
         doc.close();
 
-        window.setTimeout(() => {
-            frame.contentWindow.focus();
-            frame.contentWindow.print();
-        }, 180);
+        return new Promise(resolve => {
+            window.setTimeout(() => {
+                frame.contentWindow.focus();
+                frame.contentWindow.print();
+                resolve(true);
+            }, 180);
+        });
     };
 
     window.alfaPosPrintPdfBytes = function (frameId, base64Pdf) {
@@ -2957,18 +3122,19 @@
 
             <div class="pos-catalog">
                 <section class="pos-catalog__toolbar">
-                    <div class="pos-catalog__document" aria-label="Factura a utilizar">
-                        <span class="pos-catalog__document-label">Factura:</span>
-                        <button type="button"
-                                class="@(string.Equals(_tipoComprobanteSeleccionado, "FC", StringComparison.OrdinalIgnoreCase) ? "pos-catalog__document-btn pos-catalog__document-btn--active" : "pos-catalog__document-btn")"
-                                @onclick='() => SeleccionarTipoComprobante("FC")'>
-                            EFC
-                        </button>
-                        <button type="button"
-                                class="@(string.Equals(_tipoComprobanteSeleccionado, "FP", StringComparison.OrdinalIgnoreCase) ? "pos-catalog__document-btn pos-catalog__document-btn--active" : "pos-catalog__document-btn")"
-                                @onclick='() => SeleccionarTipoComprobante("FP")'>
-                            FP
-                        </button>
+                    <div class="pos-catalog__document" aria-label="Comprobante a utilizar">
+                        <span class="pos-catalog__document-label">Comprobante:</span>
+                        <select class="pos-select pos-catalog__document-select"
+                                value="@_tipoComprobanteSeleccionado"
+                                @onchange="OnTipoComprobanteChanged">
+                            <option value="FC">EFC · Factura electrónica</option>
+                            <option value="NC">NC · Nota de crédito</option>
+                            @if (PuedeUsarProforma)
+                            {
+                                <option value="FP">FP · Factura proforma</option>
+                                <option value="NCFP">NCFP · Nota de crédito proforma</option>
+                            }
+                        </select>
                     </div>
 
                     <div class="pos-catalog__search">
@@ -2979,11 +3145,11 @@
                     </div>
 
                     <div class="pos-catalog__filters">
-                        <select class="pos-select" @bind="_filters.IdFamilia">
-                            <option value="">Todas las familias</option>
-                            @foreach (var family in _familias)
+                        <select class="pos-select" @bind="_filters.IdRubro">
+                            <option value="">Todos los rubros</option>
+                            @foreach (var rubro in _rubros)
                             {
-                                <option value="@family.IdFamilia">@FamilyLabel(family)</option>
+                                <option value="@rubro.IdRubro">@RubroLabel(rubro)</option>
                             }
                         </select>
                     </div>
@@ -3185,7 +3351,7 @@
                    @bind:event="oninput"
                    @onkeydown="HandleChargeAmountKeyDown"
                    placeholder="Importe" />
-            <button type="button" class="pos-charge-modal__action" @onclick="AddSelectedPaymentAsync" disabled="@_paymentMethodsLoading">Agregar</button>
+            <button type="button" class="pos-charge-modal__action" @onclick="() => AddSelectedPaymentAsync()" disabled="@_paymentMethodsLoading">Agregar</button>
         </div>
 
         <div class="pos-charge-modal__body">
@@ -3267,10 +3433,13 @@
         </div>
 
         <div class="pos-charge-modal__actions">
-            <button type="button" class="pos-charge-modal__ghost" @onclick="CloseChargeModal" disabled="@_chargeSaving">Cancelar</button>
-            <button type="button" class="pos-charge-modal__save" @onclick="ConfirmChargeAsync" disabled="@(_chargeSaving || !_cartItems.Any())">
-                @(_chargeSaving ? "Grabando..." : "Confirmar cobro")
+            <button type="button" class="pos-charge-modal__accept-print" @onclick="() => ConfirmChargeAsync(true)" disabled="@(_chargeSaving || !_cartItems.Any())">
+                ACEPTAR E IMPRIMIR
             </button>
+            <button type="button" class="pos-charge-modal__save" @onclick="() => ConfirmChargeAsync(false)" disabled="@(_chargeSaving || !_cartItems.Any())">
+                @(_chargeSaving ? "Grabando..." : "ACEPTAR")
+            </button>
+            <button type="button" class="pos-charge-modal__ghost" @onclick="CloseChargeModal" disabled="@_chargeSaving">CANCELAR</button>
         </div>
     </section>
 }
@@ -3298,23 +3467,36 @@
                 Imprimir recibo
             </button>
 
-            <div class="pos-receipt-modal__mail">
-                <label for="pos-receipt-email">Enviar por email</label>
-                <div class="pos-receipt-modal__mail-row">
-                    <input id="pos-receipt-email" type="email" @bind="_receiptEmail" placeholder="cliente@email.com" />
-                    <button type="button" @onclick="SendReceiptEmailAsync" disabled="@_receiptEmailSending">
-                        @(_receiptEmailSending ? "Enviando..." : "Enviar")
-                    </button>
+            <div class="pos-receipt-modal__contact-grid">
+                <div class="pos-receipt-modal__mail">
+                    <label for="pos-receipt-email">Enviar por email</label>
+                    <div class="pos-receipt-modal__mail-row">
+                        <input id="pos-receipt-email" type="email" @bind="_receiptEmail" placeholder="cliente@email.com" />
+                        <button type="button" @onclick="SendReceiptEmailAsync" disabled="@_receiptEmailSending">
+                            @(_receiptEmailSending ? "Enviando..." : "Enviar")
+                        </button>
+                    </div>
+
+                    @if (!string.IsNullOrWhiteSpace(_receiptEmailFeedback))
+                    {
+                        <div class="pos-receipt-modal__mail-feedback pos-receipt-modal__mail-feedback--ok">@_receiptEmailFeedback</div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(_receiptEmailError))
+                    {
+                        <div class="pos-receipt-modal__mail-feedback pos-receipt-modal__mail-feedback--error">@_receiptEmailError</div>
+                    }
                 </div>
 
-                @if (!string.IsNullOrWhiteSpace(_receiptEmailFeedback))
+                @if (!string.IsNullOrWhiteSpace(_receiptPublicQrDataUrl))
                 {
-                    <div class="pos-receipt-modal__mail-feedback pos-receipt-modal__mail-feedback--ok">@_receiptEmailFeedback</div>
-                }
-
-                @if (!string.IsNullOrWhiteSpace(_receiptEmailError))
-                {
-                    <div class="pos-receipt-modal__mail-feedback pos-receipt-modal__mail-feedback--error">@_receiptEmailError</div>
+                    <button type="button" class="pos-receipt-modal__public-qr" @onclick="OpenPublicQrModal" aria-label="Ampliar código QR del comprobante">
+                        <img src="@_receiptPublicQrDataUrl" alt="Código QR para ver el comprobante" />
+                        <div>
+                            <strong>Ver desde el celular</strong>
+                            <span>Escaneá para consultar la factura.</span>
+                        </div>
+                    </button>
                 }
             </div>
 
@@ -3392,6 +3574,23 @@
             <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" title="Impresión ticket POS"></iframe>
         </section>
     </section>
+
+    @if (_showPublicQrModal && !string.IsNullOrWhiteSpace(_receiptPublicQrDataUrl))
+    {
+        <button type="button" class="pos-public-qr-backdrop" aria-label="Cerrar QR ampliado" @onclick="ClosePublicQrModal"></button>
+        <section class="pos-public-qr-modal" aria-label="Código QR ampliado" @onclick:stopPropagation="true">
+            <button type="button" class="pos-public-qr-modal__close" @onclick="ClosePublicQrModal">X</button>
+            <h4>Escaneá para ver el comprobante</h4>
+            <img src="@_receiptPublicQrDataUrl" alt="Código QR ampliado para ver el comprobante" />
+            <p>Acercá la cámara del celular al código QR.</p>
+            @if (!string.IsNullOrWhiteSpace(_receiptPublicUrl))
+            {
+                <a class="pos-public-qr-modal__link" href="@_receiptPublicUrl" target="_blank" rel="noopener noreferrer">
+                    Abrir enlace del comprobante
+                </a>
+            }
+        </section>
+    }
 }
 
 @if (_showReprintModal)
@@ -4072,6 +4271,7 @@
 @code {
     private PuntoVentaContextDto? _context;
     private IReadOnlyList<PuntoVentaFamilyDto> _familias = [];
+    private IReadOnlyList<PuntoVentaRubroDto> _rubros = [];
     private PuntoVentaCatalogDto _catalog = new();
     private PuntoVentaCatalogFiltersDto _filters = new();
     private IReadOnlyList<PuntoVentaReceiptListItemDto> _recentReceipts = [];
@@ -4133,6 +4333,11 @@
     private bool _receiptEmailSending;
     private bool _reprintLoading;
     private bool _receiptIsReprint;
+    private bool _showPublicQrModal;
+    private string? _receiptPublicQrDataUrl;
+    private string? _receiptPublicUrl;
+    private bool _printReceiptAfterRender;
+    private bool _closeReceiptAfterPrint;
     private string? _selectedCartItemId;
     private string _descriptionBeingEdited = string.Empty;
     private string _scanCode = string.Empty;
@@ -4228,11 +4433,16 @@
         {
             _loading = true;
             _context = await PuntoVentaSvc.GetContextAsync();
-            _tipoComprobanteSeleccionado = string.Equals(_context.TipoComprobanteDefault, "FP", StringComparison.OrdinalIgnoreCase)
-                ? "FP"
-                : "FC";
+            _tipoComprobanteSeleccionado = _context.TipoComprobanteDefault.ToUpperInvariant() switch
+            {
+                "NC" => "NC",
+                "FP" when _context.UsaProforma && _context.VerProformaUsuario => "FP",
+                "NCFP" when _context.UsaProforma && _context.VerProformaUsuario => "NCFP",
+                _ => "FC"
+            };
             _settings = await PuntoVentaSvc.GetSettingsAsync();
             _familias = await PuntoVentaSvc.GetFamiliasAsync();
+            _rubros = await PuntoVentaSvc.GetRubrosAsync();
             await LoadCatalogAsync();
 
             if (IdPuntoVentaQuery is > 0)
@@ -4583,6 +4793,19 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_printReceiptAfterRender && _showReceiptModal && _lastSaleResult is not null)
+        {
+            _printReceiptAfterRender = false;
+            var closeAfterPrint = _closeReceiptAfterPrint;
+            _closeReceiptAfterPrint = false;
+            await PrintReceiptAsync();
+            if (closeAfterPrint && string.IsNullOrWhiteSpace(_receiptPreviewError))
+            {
+                CloseReceiptAfterAutomaticPrint();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+
         if (firstRender)
         {
             await Js.InvokeVoidAsync("alfaPosRegisterShortcuts");
@@ -4675,6 +4898,7 @@
         {
             Texto = _filters.Texto,
             IdFamilia = _filters.IdFamilia,
+            IdRubro = _filters.IdRubro,
             TamanioPagina = _filters.TamanioPagina,
             Pagina = pagina
         };
@@ -4847,6 +5071,13 @@
     private void LimpiarCliente()
     {
         _cuentaCliente = string.Empty;
+        _cuentaClienteNombre = string.Empty;
+        _needScanFocus = true;
+    }
+
+    private void SetClienteConsumidorFinal()
+    {
+        _cuentaCliente = _settings.CuentaConsumidorFinal?.Trim() ?? string.Empty;
         _cuentaClienteNombre = string.Empty;
         _needScanFocus = true;
     }
@@ -5117,15 +5348,32 @@
 
     private void SeleccionarTipoComprobante(string tipo)
     {
-        _tipoComprobanteSeleccionado = string.Equals(tipo, "FP", StringComparison.OrdinalIgnoreCase)
-            ? "FP"
+        var comprobante = (tipo ?? string.Empty).Trim().ToUpperInvariant();
+        if (comprobante is "FP" or "NCFP")
+        {
+            if (!PuedeUsarProforma)
+                comprobante = "FC";
+        }
+
+        _tipoComprobanteSeleccionado = comprobante is "FC" or "NC" or "FP" or "NCFP"
+            ? comprobante
             : "FC";
     }
 
+    private void OnTipoComprobanteChanged(ChangeEventArgs args)
+        => SeleccionarTipoComprobante(args.Value?.ToString() ?? "FC");
+
     private string TipoComprobanteSeleccionadoLabel()
-        => string.Equals(_tipoComprobanteSeleccionado, "FP", StringComparison.OrdinalIgnoreCase)
-            ? "FP · Factura proforma"
-            : "EFC · Factura electrónica (FC)";
+        => _tipoComprobanteSeleccionado switch
+        {
+            "NC" => "NC · Nota de crédito",
+            "FP" => "FP · Factura proforma",
+            "NCFP" => "NCFP · Nota de crédito proforma",
+            _ => "EFC · Factura electrónica (FC)"
+        };
+
+    private bool PuedeUsarProforma
+        => _context?.UsaProforma == true && _context.VerProformaUsuario;
 
     private void SelectPaymentMethod(string codigo)
     {
@@ -5215,7 +5463,7 @@
         await FocusChargeAmountAsync();
     }
 
-    private async Task AddSelectedPaymentAsync()
+    private async Task AddSelectedPaymentAsync(bool focusFilterAfterAdd = true)
     {
         _chargeError = null;
 
@@ -5261,7 +5509,8 @@
         _chargeAmountInput = TotalPagado >= TotalCarrito
             ? FmtInputAmount(importe)
             : PendingAmountInput();
-        await FocusPaymentMethodFilterAsync();
+        if (focusFilterAfterAdd)
+            await FocusPaymentMethodFilterAsync();
     }
 
     private static bool IsCashPaymentMethod(PuntoVentaPaymentMethodDto method)
@@ -5295,7 +5544,7 @@
         _chargeAmountInput = PendingAmountInput();
     }
 
-    private async Task ConfirmChargeAsync()
+    private async Task ConfirmChargeAsync(bool imprimir = false)
     {
         _chargeError = null;
         _chargeSuccess = null;
@@ -5306,11 +5555,21 @@
             return;
         }
 
+        // Si todavía no hay líneas cargadas, aprovechamos el medio seleccionado
+        // y el importe del formulario. Así ACEPTAR y ACEPTAR E IMPRIMIR también
+        // funcionan como una carga rápida del primer medio de pago.
+        if (!_paymentLines.Any())
+            await AddSelectedPaymentAsync(focusFilterAfterAdd: false);
+
         if (!_paymentLines.Any())
         {
-            _chargeError = "Agregá al menos un medio de pago.";
+            if (string.IsNullOrWhiteSpace(_chargeError))
+                _chargeError = "Seleccioná un medio de pago e ingresá un importe válido.";
             return;
         }
+
+        if (!string.IsNullOrWhiteSpace(_chargeError))
+            return;
 
         if (PendienteCobro > 0.01m)
         {
@@ -5399,6 +5658,15 @@
             _paymentLines.Clear();
             _showChargeModal = false;
             await OpenReceiptModalAsync(result, soldItems, soldPayments);
+            // La próxima venta debe iniciar nuevamente con Consumidor Final.
+            // Se hace después de preparar el comprobante para no alterar el cliente
+            // de la venta recién grabada.
+            SetClienteConsumidorFinal();
+            if (imprimir)
+            {
+                _closeReceiptAfterPrint = true;
+                _printReceiptAfterRender = true;
+            }
         }
         catch (Exception ex)
         {
@@ -5427,6 +5695,7 @@
         _receiptPreviewHtml = null;
         _receiptPreviewError = null;
         _receiptIsReprint = false;
+        await PrepareReceiptPublicQrAsync(result);
         _showReceiptModal = true;
         await LoadReceiptDesignerPreviewAsync();
     }
@@ -5449,6 +5718,7 @@
             _receiptPreviewHtml = null;
             _receiptPreviewError = null;
             _receiptIsReprint = receipt.Impreso;
+            await PrepareReceiptPublicQrAsync(receipt.Resultado);
             _showReceiptModal = true;
             await LoadReceiptDesignerPreviewAsync();
         }
@@ -5461,11 +5731,14 @@
     private void CloseReceiptModal()
     {
         _showReceiptModal = false;
+        _showPublicQrModal = false;
         _receiptEmailFeedback = null;
         _receiptEmailError = null;
         _receiptPreviewHtml = null;
         _receiptPreviewError = null;
         _receiptIsReprint = false;
+        _receiptPublicQrDataUrl = null;
+        _receiptPublicUrl = null;
 
         // Si el comprobante se generó cerrando un pedido de Delivery/Take Away,
         // no tiene sentido quedarse en Mostrador: se vuelve al tablero de pedidos.
@@ -5489,6 +5762,50 @@
 
         var reimpresion = _receiptIsReprint ? "&reimpresion=1" : string.Empty;
         return $"/comprobantes/viewer/{Uri.EscapeDataString(_lastSaleResult.TipoComprobante)}/{Uri.EscapeDataString(_lastSaleResult.IdComprobanteTexto)}?returnUrl=%2Fventas%2Fpunto-venta{reimpresion}";
+    }
+
+    private void OpenPublicQrModal()
+        => _showPublicQrModal = true;
+
+    private void ClosePublicQrModal()
+        => _showPublicQrModal = false;
+
+    private async Task PrepareReceiptPublicQrAsync(PuntoVentaSaleResultDto result)
+    {
+        _receiptPublicQrDataUrl = null;
+        _receiptPublicUrl = null;
+
+        // El POS también puede abrirse por la ruta corta. En ese caso los parámetros de la
+        // ruta no existen, pero la sesión y el usuario ya contienen el contexto SaaS.
+        var effectiveIdWeb = idweb?.Trim();
+        var effectiveIdBase = idbase ?? SessionSvc.GetActiveSession()?.BaseId;
+        if (string.IsNullOrWhiteSpace(effectiveIdWeb))
+            effectiveIdWeb = AppUserSession.CurrentUser?.IdWeb?.Trim();
+
+        if (string.IsNullOrWhiteSpace(effectiveIdWeb) || !effectiveIdBase.HasValue || effectiveIdBase.Value <= 0 || result.IdComprobante <= 0)
+            return;
+
+        try
+        {
+            var link = await PublicLinkSvc.GetOrCreateAsync(
+                effectiveIdWeb,
+                effectiveIdBase.Value,
+                PublicLinkTipos.Comprobante,
+                result.IdComprobante,
+                result.TipoComprobante);
+
+            _receiptPublicUrl = $"{Nav.BaseUri.TrimEnd('/')}/{Uri.EscapeDataString(effectiveIdWeb)}/comprobante/{link.RouteSegment}?tc={Uri.EscapeDataString(result.TipoComprobante)}";
+            using var generator = new QRCodeGenerator();
+            using var qr = generator.CreateQrCode(_receiptPublicUrl, QRCodeGenerator.ECCLevel.M);
+            using var png = new PngByteQRCode(qr);
+            _receiptPublicQrDataUrl = $"data:image/png;base64,{Convert.ToBase64String(png.GetGraphic(8))}";
+        }
+        catch (Exception ex)
+        {
+            // El QR es complementario: si la base central no está disponible, no se bloquea
+            // la visualización ni la impresión del comprobante.
+            Logger.LogWarning(ex, "No se pudo preparar el QR público del comprobante {Tipo} {Id}.", result.TipoComprobante, result.IdComprobante);
+        }
     }
 
     private async Task LoadReceiptDesignerPreviewAsync()
@@ -5529,13 +5846,27 @@
                 throw new InvalidOperationException(_receiptPreviewError ?? "No se pudo preparar el comprobante para imprimir.");
 
             await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
-            await Js.InvokeVoidAsync("alfaPosPrintHtml", "pos-receipt-frame", _receiptPreviewHtml);
+            var printed = await Js.InvokeAsync<bool>("alfaPosPrintHtml", "pos-receipt-frame", _receiptPreviewHtml);
+            if (!printed)
+                throw new InvalidOperationException("No se encontró el visor del comprobante para imprimir.");
             _receiptIsReprint = true;
         }
         catch (Exception ex)
         {
             _error = ex.Message;
         }
+    }
+
+    private void CloseReceiptAfterAutomaticPrint()
+    {
+        _showReceiptModal = false;
+        _lastSaleResult = null;
+        _receiptItems.Clear();
+        _receiptPayments.Clear();
+        _receiptContext = null;
+        _receiptPreviewHtml = null;
+        _receiptPreviewError = null;
+        _receiptIsReprint = false;
     }
 
     private async Task SendReceiptEmailAsync()
@@ -5650,6 +5981,11 @@
         => string.IsNullOrWhiteSpace(family.Descripcion)
             ? family.IdFamilia
             : $"{family.IdFamilia} · {family.Descripcion}";
+
+    private static string RubroLabel(PuntoVentaRubroDto rubro)
+        => string.IsNullOrWhiteSpace(rubro.Descripcion)
+            ? rubro.IdRubro
+            : $"{rubro.IdRubro} · {rubro.Descripcion}";
 
     private static string ProductInitials(string descripcion)
     {

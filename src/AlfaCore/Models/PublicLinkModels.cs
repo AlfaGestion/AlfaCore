@@ -7,6 +7,8 @@ public static class PublicLinkTipos
 {
     public const string Catalogo = "CATALOGO";
     public const string Carrito = "CARRITO";
+    // Código corto para compatibilidad con bases centrales antiguas donde Tipo es varchar(10).
+    public const string Comprobante = "CPTE";
 }
 
 /// <summary>

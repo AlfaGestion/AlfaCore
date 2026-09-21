@@ -1,4 +1,5 @@
 using System.Text;
+using System.Security.Cryptography.X509Certificates;
 using AlfaCore.Models;
 using Microsoft.Data.SqlClient;
 
@@ -97,6 +98,88 @@ public sealed class ArcaConfigService(
             : ArcaModoFalloCae.Estricto;
     }
 
+    public async Task<ArcaEmisorConfig?> ResolvePadronEmisorAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var global = await ReadConfigAsync(cn, ct);
+        var cuit = new string(ReadValue(global, "WSFE_CUIT", ReadValue(global, "CUIT", string.Empty))
+            .Where(char.IsDigit).ToArray());
+        if (cuit.Length != 11)
+            throw new InvalidOperationException("No se configuró un CUIT válido para la consulta de padrón ARCA.");
+
+        var certificadoConfigurado = await ReadCertificadoAsync(cn, "PADRON", ct);
+        var certificado = certificadoConfigurado is not null
+            ? (certificadoConfigurado.Value.Crt, certificadoConfigurado.Value.Key, Ambiente: string.Equals(ReadValue(global, "ARCA_PADRON_AMBIENTE", ReadValue(global, "ARCA_AMBIENTE", "HOMOLOGACION")), "PRODUCCION", StringComparison.OrdinalIgnoreCase) ? ArcaAmbiente.Produccion : ArcaAmbiente.Homologacion)
+            : ReadCertificadoPadronPorDefecto();
+        if (certificado is null || certificado.Value.Crt is null || certificado.Value.Key is null)
+            throw new InvalidOperationException("No hay un certificado propio configurado para consultar el padrón ARCA.");
+
+        return new ArcaEmisorConfig(
+            cuit,
+            ReadValue(global, "NOMBRE", string.Empty),
+            certificado.Value.Ambiente,
+            0,
+            Encoding.UTF8.GetString(certificado.Value.Crt),
+            Encoding.UTF8.GetString(certificado.Value.Key),
+            ReadValue(global, "CONDIVA", ReadValue(global, "CONDIVAEMPRESA", string.Empty)));
+    }
+
+    private (byte[]? Crt, byte[]? Key, ArcaAmbiente Ambiente)? ReadCertificadoPadronPorDefecto()
+    {
+        var carpetas = new[]
+        {
+            configuration["ArcaPadron:DirectorioCertificados"],
+            Path.Combine(Directory.GetCurrentDirectory(), "certificado"),
+            Path.GetFullPath(Path.Combine(Directory.GetCurrentDirectory(), "..", "certificado")),
+            @"C:\dev\AlfaCore\certificado"
+        }.Where(x => !string.IsNullOrWhiteSpace(x))
+         .Select(x => x!)
+         .Distinct(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var carpeta in carpetas)
+        {
+            if (!Directory.Exists(carpeta))
+                continue;
+
+            foreach (var crt in Directory.GetFiles(carpeta, "CONSULTA PADRON*.crt").OrderBy(x => x, StringComparer.OrdinalIgnoreCase))
+            {
+                var key = Path.Combine(carpeta, "Cprivada_CONSULTAPADRON.key");
+                if (File.Exists(key) && CertificadoVigente(crt))
+                    return (File.ReadAllBytes(crt), File.ReadAllBytes(key), ArcaAmbiente.Homologacion);
+            }
+
+            // En instalaciones antiguas de VB6 el padrón se consultaba con el
+            // certificado productivo general, separado del certificado de WSFE.
+            var certificadoProductivo = Path.Combine(carpeta, "certificado.crt");
+            var clavesProductivas = new[] { "CPrivada.key", "privada.key", "clave.key" };
+            if (File.Exists(certificadoProductivo) && CertificadoVigente(certificadoProductivo))
+            {
+                foreach (var nombreKey in clavesProductivas)
+                {
+                    var key = Path.Combine(carpeta, nombreKey);
+                    if (File.Exists(key))
+                        return (File.ReadAllBytes(certificadoProductivo), File.ReadAllBytes(key), ArcaAmbiente.Produccion);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool CertificadoVigente(string archivo)
+    {
+        try
+        {
+            using var certificado = new X509Certificate2(archivo);
+            var ahora = DateTime.UtcNow;
+            return certificado.NotBefore.ToUniversalTime() <= ahora
+                && certificado.NotAfter.ToUniversalTime() > ahora;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     // ---- Pantalla de configuración (Configuración General > Ventas > Facturación electrónica) ----
 
     public Task<ArcaConfiguracionGeneralDto> GetConfiguracionGeneralAsync(CancellationToken ct = default)
@@ -107,6 +190,7 @@ public sealed class ArcaConfigService(
 
             var global = await ReadConfigAsync(cn, token);
             var certGlobal = await ReadCertificadoNombresAsync(cn, ClaveGlobal, token);
+            var certPadron = await ReadCertificadoNombresAsync(cn, "PADRON", token);
 
             var dto = new ArcaConfiguracionGeneralDto
             {
@@ -117,7 +201,10 @@ public sealed class ArcaConfigService(
                 PuntoVenta = ReadValue(global, "PV_EFACTURA", string.Empty),
                 TieneCertificado = certGlobal.TieneCrt && certGlobal.TieneKey,
                 NombreArchivoCrt = certGlobal.NombreCrt,
-                NombreArchivoKey = certGlobal.NombreKey
+                NombreArchivoKey = certGlobal.NombreKey,
+                TieneCertificadoPadron = certPadron.TieneCrt && certPadron.TieneKey,
+                NombreArchivoCrtPadron = certPadron.NombreCrt,
+                NombreArchivoKeyPadron = certPadron.NombreKey
             };
 
             if (await ExistsAsync(cn, "dbo.V_TA_UnidadNegocio", token))

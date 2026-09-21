@@ -36,6 +36,14 @@ public static class ModuleTopNavPresets
             ("punto-venta", "Punto de Venta", "/ventas/punto-venta")
         ]);
 
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildPuntoVenta(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("punto-venta", "Punto de Venta", "/ventas/punto-venta"),
+            ("puntos-venta", "Agregar o editar puntos", "/ventas/puntos-venta"),
+            ("informe-punto-venta", "Informe punto de venta", "/ventas/punto-venta/informe")
+        ]);
+
     public static IReadOnlyList<PageHeaderTopNavItem> BuildContabilidad(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [

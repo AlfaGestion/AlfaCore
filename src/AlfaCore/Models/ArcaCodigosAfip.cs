@@ -19,9 +19,13 @@ public static class ArcaCodigosAfip
     public static (int DocTipo, string DocNro) ResolverDocumento(string? descripcionLocal, string? documentoNumero)
     {
         var descripcion = (descripcionLocal ?? string.Empty).Trim().ToUpperInvariant();
+        // Las tablas legacy suelen guardar los tipos como "C.U.I.T", "C.U.I.L" o
+        // "D.N.I.". Se compacta la descripción para que esos formatos no terminen
+        // interpretándose como DNI por el caso default.
+        var descripcionCompacta = new string(descripcion.Where(char.IsLetterOrDigit).ToArray());
         var numero = (documentoNumero ?? string.Empty).Trim();
 
-        var docTipo = descripcion switch
+        var docTipo = descripcionCompacta switch
         {
             var d when d.Contains("CUIT") => DocTipoCuit,
             var d when d.Contains("CUIL") => DocTipoCuil,
