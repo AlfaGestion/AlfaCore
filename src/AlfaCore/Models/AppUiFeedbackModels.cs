@@ -82,13 +82,14 @@ public sealed class AppUiMessage
             Message = message
         };
 
-    public static AppUiMessage ActionRequired(string title, string message, string suggestion = "")
+    public static AppUiMessage ActionRequired(string title, string message, string suggestion = "", string code = "")
         => new()
         {
             Severity = AppUiFeedbackSeverity.ActionRequired,
             Title = title,
             Message = message,
-            Suggestion = suggestion
+            Suggestion = suggestion,
+            Code = code
         };
 }
 

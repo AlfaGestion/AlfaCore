@@ -2892,7 +2892,7 @@
                                 <option value="0">Seleccioná una plantilla</option>
                                 @foreach (var template in _availableTemplates)
                                 {
-                                    <option value="@template.IdPlantilla">@template.NombreVisible (@GetTemplateStatusLabel(template.EstadoMeta))</option>
+                                    <option value="@template.IdPlantilla">@template.NombreVisible · @template.Idioma · @template.Categoria (@GetTemplateStatusLabel(template.EstadoMeta))</option>
                                 }
                             }
                         </select>
@@ -2912,6 +2912,11 @@
                     @if (IsSelectedTemplateUnavailable)
                     {
                         <AlfaFeedbackPanel Message="@AppUiMessage.Warning("Plantilla no disponible", "Esta plantilla todavía no está aprobada por Meta.")" Dismissible="false" />
+                    }
+
+                    @if (SelectedTemplate is not null && !string.IsNullOrEmpty(WhatsAppTemplateValidation.UnsupportedReason(SelectedTemplate)))
+                    {
+                        <p role="alert">@WhatsAppTemplateValidation.UnsupportedReason(SelectedTemplate)</p>
                     }
 
                     @if (SelectedTemplate is not null && CountTemplateVariables(SelectedTemplate.CuerpoTexto) > 0)
@@ -6244,17 +6249,11 @@
             _ticketError = "Ingresá el nombre del ticket.";
             return;
         }
+        // El creador del ticket queda identificado por UsuarioAlta (CurrentUserNameForAudit), no por
+        // IdTecnico: un usuario autorizado sin Técnico asociado puede crear tickets igual. El técnico
+        // responsable (IdTecnico / "Asignado a") es independiente del creador y puede quedar vacío
+        // ("Sin técnico" ya es una opción válida del selector), porque TICK_TICKETS.IdTecnico es nullable.
         var creatorTechnicianId = CurrentMessageTechnicianId;
-        if (string.IsNullOrWhiteSpace(creatorTechnicianId))
-        {
-            _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(_ticketAssignedTechnicianId))
-        {
-            _ticketError = "Seleccioná a qué técnico se asigna el ticket.";
-            return;
-        }
 
         if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
@@ -8688,7 +8687,7 @@
         {
             try
             {
-                var autoValues = await ConversacionesSvc.GetTemplateAutoValuesAsync(_selectedConversation.IdConversacion, required);
+                var autoValues = await ConversacionesSvc.GetTemplateAutoValuesAsync(_selectedConversation.IdConversacion, selectedTemplate.IdPlantilla, required);
                 if (_selectedTemplateId != selectedTemplateId || _selectedConversation?.IdConversacion != selectedConversationId)
                     return;
 
@@ -8709,13 +8708,18 @@
         var fallback = GetTemplateDefaultVariableValue(_selectedConversation);
         current = forceReload ? [] : current;
 
-        while (current.Count < required)
-        {
-            if (automaticValues.Count > current.Count && !string.IsNullOrWhiteSpace(automaticValues[current.Count]))
-                current.Add(automaticValues[current.Count]);
-            else
-                current.Add(current.Count == 0 ? fallback : $"Dato {current.Count + 1}");
-        }
+        // El servicio ya devuelve, en orden, únicamente las posiciones que pudo resolver
+        // automáticamente (mapping resuelto o heurístico legacy) -- se corta en la primera posición sin
+        // resolver, si la hay. Ya no se inventa texto de relleno tipo "Dato N" acá: si el servidor no
+        // llegó a completar todas las posiciones requeridas, el resto queda intencionalmente afuera de
+        // _templateValuesText para que el mecanismo existente (MissingTemplateVariablesMessage/"Completá:
+        // {{N}}") le avise al operador que tiene que completarlas a mano -- así se evita rellenar en
+        // silencio con un valor inventado una variable que no se pudo resolver de verdad.
+        while (current.Count < required && automaticValues.Count > current.Count)
+            current.Add(automaticValues[current.Count]);
+
+        if (current.Count == 0 && automaticValues.Count == 0 && required > 0)
+            current.Add(fallback);
 
         _templateValuesText = JoinTemplateValuesForEditing(current.Take(required));
     }
@@ -8734,7 +8738,7 @@
 
         try
         {
-            await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+            var sendResult = await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
                 IdPlantilla = SelectedTemplate.IdPlantilla,
@@ -8763,9 +8767,19 @@
 
             await SelectConversationAsync(selectedConversationId, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
-            _actionMessage = templateAttachmentsToSend.Count == 0
-                ? $"Plantilla enviada correctamente: {previewText}"
-                : $"Plantilla y adjunto(s) enviados correctamente: {previewText}";
+            // Antes: "Plantilla enviada correctamente" sin condicionar a EstadoEnvio -- confundía "Meta
+            // aceptó el POST (ENVIADO_META, wamid recibido)" con "el destinatario la recibió". Mismo
+            // criterio que GetSendSuccessMessage (mensajes libres): ENVIADO_META es aceptación, no
+            // entrega confirmada -- la entrega real llega después vía webhook de estado y se refleja en
+            // el ícono/estado del mensaje dentro del hilo, no acá.
+            var wasOnlyAcceptedByMeta = string.Equals(sendResult?.EstadoEnvio, "ENVIADO_META", StringComparison.OrdinalIgnoreCase);
+            _actionMessage = (templateAttachmentsToSend.Count == 0, wasOnlyAcceptedByMeta) switch
+            {
+                (true, true) => $"Plantilla aceptada por Meta: {previewText}. La entrega se confirma cuando llega el estado de WhatsApp.",
+                (true, false) => $"Plantilla enviada correctamente: {previewText}",
+                (false, true) => $"Plantilla y adjunto(s) aceptados por Meta: {previewText}. La entrega se confirma cuando llega el estado de WhatsApp.",
+                (false, false) => $"Plantilla y adjunto(s) enviados correctamente: {previewText}"
+            };
         }
         catch (Exception ex)
         {
@@ -11489,7 +11503,9 @@
     }
 
     private static bool HasRequiredTemplateValues(ConversacionPlantillaDto template, IReadOnlyList<string> values)
-        => values.Count >= CountTemplateVariables(template.CuerpoTexto);
+        => values.Count == CountTemplateVariables(template.CuerpoTexto)
+           && values.All(x => !string.IsNullOrWhiteSpace(x))
+           && string.IsNullOrEmpty(WhatsAppTemplateValidation.UnsupportedReason(template));
 
     private static string GetTemplateDefaultVariableValue(ConversacionDetalleDto? conversation)
     {

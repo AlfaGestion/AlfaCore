@@ -270,6 +270,16 @@ public sealed class MetaWhatsAppManagementClient(
         return GetPagedAsync(tokenReference, $"{normalizedWabaId}/message_templates", "id,name,language,status,category,components", MapTemplate, ct);
     }
 
+    public Task<IReadOnlyList<MetaMessageTemplate>> DiscoverTemplatesAsync(string wabaId, string accessToken, string graphVersion, CancellationToken ct = default)
+    {
+        var normalizedWabaId = RequiredMetaId(wabaId, nameof(wabaId));
+        var normalizedToken = accessToken?.Trim() ?? string.Empty;
+        if (normalizedToken.Length == 0)
+            throw new MetaWhatsAppManagementException("META_AUTH_EXPIRED", false, true, "La credencial de Meta no está disponible.");
+
+        return GetPagedAsync(normalizedToken, graphVersion, $"{normalizedWabaId}/message_templates", "id,name,language,status,category,components", MapTemplate, ct);
+    }
+
     public async Task<MetaPhoneRegistrationStatus> GetPhoneRegistrationStatusAsync(string phoneNumberId, WhatsAppCredentialReference tokenReference, CancellationToken ct = default)
     {
         var normalizedPhoneId = RequiredMetaId(phoneNumberId, nameof(phoneNumberId));
@@ -332,8 +342,19 @@ public sealed class MetaWhatsAppManagementClient(
     {
         var result = new List<T>();
         string? next = BuildGraphUri($"{path}?fields={Uri.EscapeDataString(fields)}&limit=100").ToString();
+        var expected = new Uri(next);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
         while (!string.IsNullOrWhiteSpace(next))
         {
+            // Anti-loop / anti-cross-WABA: una página de paginación de Meta debe seguir apuntando al
+            // mismo host+path del recurso pedido originalmente (scheme/authority/path) y no repetir una
+            // URL ya visitada. Sin esto, una respuesta de Meta corrupta/adversarial con "paging.next"
+            // apuntando a otro recurso (o repitiendo la misma página) podía hacer loop infinito o mezclar
+            // resultados de una WABA distinta a la solicitada.
+            if (!Uri.TryCreate(next, UriKind.Absolute, out var page)
+                || page.Scheme != expected.Scheme || page.Authority != expected.Authority
+                || page.AbsolutePath != expected.AbsolutePath || !visited.Add(next))
+                throw new MetaWhatsAppManagementException("META_INVALID_PAGING", false, false, "Meta devolvió una paginación fuera del recurso solicitado o repetida.");
             using var request = await CreateAbsoluteRequestAsync(HttpMethod.Get, next, tokenReference, ct);
             JsonDocument document;
             try { document = await SendJsonAsync(request, ct); }
@@ -352,6 +373,35 @@ public sealed class MetaWhatsAppManagementClient(
         return result;
     }
 
+    private async Task<IReadOnlyList<T>> GetPagedAsync<T>(string accessToken, string graphVersion, string path, string fields, Func<JsonElement, T> map, CancellationToken ct)
+    {
+        var result = new List<T>();
+        string? next = BuildGraphUri($"{path}?fields={Uri.EscapeDataString(fields)}&limit=100", graphVersion).ToString();
+        var expected = new Uri(next);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
+        while (!string.IsNullOrWhiteSpace(next))
+        {
+            // Mismo anti-loop/anti-cross-WABA que el overload por WhatsAppCredentialReference -- este
+            // overload por accessToken/graphVersion plano se usa desde el mismo DiscoverTemplatesAsync
+            // (ver overload de arriba) y necesita idéntica protección.
+            if (!Uri.TryCreate(next, UriKind.Absolute, out var page)
+                || page.Scheme != expected.Scheme || page.Authority != expected.Authority
+                || page.AbsolutePath != expected.AbsolutePath || !visited.Add(next))
+                throw new MetaWhatsAppManagementException("META_INVALID_PAGING", false, false, "Meta devolvió una paginación fuera del recurso solicitado o repetida.");
+
+            using var request = CreateAbsoluteRequest(HttpMethod.Get, next, accessToken);
+            using var document = await SendJsonAsync(request, ct);
+            if (document.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+                foreach (var item in data.EnumerateArray()) result.Add(map(item));
+            next = document.RootElement.TryGetProperty("paging", out var paging)
+                && paging.TryGetProperty("next", out var nextElement)
+                && nextElement.ValueKind == JsonValueKind.String
+                ? nextElement.GetString()
+                : null;
+        }
+        return result;
+    }
+
     private async Task<HttpRequestMessage> CreateRequestAsync(HttpMethod method, string relativePath, WhatsAppCredentialReference tokenReference, CancellationToken ct)
         => await CreateAbsoluteRequestAsync(method, BuildGraphUri(relativePath).ToString(), tokenReference, ct);
 
@@ -359,16 +409,24 @@ public sealed class MetaWhatsAppManagementClient(
     {
         var token = await credentialVault.GetAsync(tokenReference, ct);
         if (token.IsEmpty) throw new MetaWhatsAppManagementException("META_AUTH_EXPIRED", false, true, "La credencial de Meta no está disponible.");
+        return CreateAbsoluteRequest(method, uri, token.ToString());
+    }
+
+    private static HttpRequestMessage CreateAbsoluteRequest(HttpMethod method, string uri, string accessToken)
+    {
         var request = new HttpRequestMessage(method, uri);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token.ToString());
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         return request;
     }
 
     private Uri BuildGraphUri(string relativePath)
+        => BuildGraphUri(relativePath, _options.GraphApiVersion);
+
+    private Uri BuildGraphUri(string relativePath, string? graphVersion)
     {
         var baseUrl = _options.GraphBaseUrl.TrimEnd('/');
-        var version = _options.GraphApiVersion.Trim('/');
+        var version = string.IsNullOrWhiteSpace(graphVersion) ? _options.GraphApiVersion.Trim('/') : graphVersion.Trim('/');
         return new Uri($"{baseUrl}/{version}/{relativePath.TrimStart('/')}", UriKind.Absolute);
     }
 
@@ -570,7 +628,10 @@ public sealed class MetaWhatsAppManagementClient(
     private static MetaMessageTemplate MapTemplate(JsonElement item)
     {
         var header = string.Empty; var body = string.Empty; var footer = string.Empty;
+        var componentsJson = string.Empty;
         if (item.TryGetProperty("components", out var components) && components.ValueKind == JsonValueKind.Array)
+        {
+            componentsJson = components.GetRawText();
             foreach (var component in components.EnumerateArray())
             {
                 var type = GetString(component, "type").ToUpperInvariant();
@@ -578,8 +639,9 @@ public sealed class MetaWhatsAppManagementClient(
                 else if (type == "BODY") body = GetString(component, "text");
                 else if (type == "FOOTER") footer = GetString(component, "text");
             }
+        }
         return new(RequiredId(item, "plantilla"), GetString(item, "name"), GetString(item, "language"),
-            GetString(item, "status"), GetString(item, "category"), header, body, footer);
+            GetString(item, "status"), GetString(item, "category"), header, body, footer, componentsJson);
     }
 
     private static string RequiredId(JsonElement item, string label)

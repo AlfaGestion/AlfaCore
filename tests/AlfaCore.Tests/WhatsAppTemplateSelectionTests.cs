@@ -94,7 +94,68 @@ public sealed class WhatsAppTemplateSelectionTests
 
         Assert.Contains("MapRemoteTemplate(runtime.WabaId, template)", service, StringComparison.Ordinal);
         Assert.Contains("HashData(Encoding.UTF8.GetBytes($\"{wabaId}|{template.Id}|{template.Name}|{template.Language}\"))", service, StringComparison.Ordinal);
-        Assert.Contains("MetaTemplateId = template.Id, WabaId = wabaId, Activa = true, EsMetaRemota = true", service, StringComparison.Ordinal);
+        Assert.Contains("MetaTemplateId = template.Id, ComponentesMetaJson = template.ComponentsJson", service, StringComparison.Ordinal);
+        Assert.Contains("WabaId = wabaId, Activa = true, EsMetaRemota = true", service, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TemplateCatalogSyncIsTenantAndWabaScoped()
+    {
+        var service = Read("src", "AlfaCore", "Services", "ConversacionesService.cs");
+        var sync = service.IndexOf("SyncTemplatesCatalogFromMetaAsync(int? idNumeroWhatsApp", StringComparison.Ordinal);
+        var tenant = service.IndexOf("ResolveTenantConnection(expectedBaseId, \"SyncTemplatesCatalogFromMeta\")", sync, StringComparison.Ordinal);
+        var listContext = service.IndexOf("ResolveTemplateListContextAsync(idNumeroWhatsApp, expectedBaseId, tenant.ConnectionString", tenant, StringComparison.Ordinal);
+        var runtime = service.IndexOf("whatsAppRuntimeCredentialResolver.ResolveAsync", listContext, StringComparison.Ordinal);
+        var resolvedWaba = service.IndexOf("var resolvedWabaId = (runtime.WabaId ?? string.Empty).Trim();", runtime, StringComparison.Ordinal);
+        var wabaGuard = service.IndexOf("!string.IsNullOrWhiteSpace(listContext.WabaId) && !string.Equals(resolvedWabaId, listContext.WabaId", resolvedWaba, StringComparison.Ordinal);
+        var referenceDiscovery = service.IndexOf("DiscoverTemplatesAsync(resolvedWabaId, reference", wabaGuard, StringComparison.Ordinal);
+        var runtimeDiscovery = service.IndexOf("DiscoverTemplatesAsync(resolvedWabaId, runtime.AccessToken, runtime.GraphVersion", referenceDiscovery, StringComparison.Ordinal);
+        var connection = service.IndexOf("new SqlConnection(tenant.ConnectionString)", runtimeDiscovery, StringComparison.Ordinal);
+
+        Assert.True(sync >= 0);
+        Assert.True(tenant > sync);
+        Assert.True(listContext > tenant);
+        Assert.True(runtime > listContext);
+        Assert.True(resolvedWaba > runtime);
+        Assert.True(wabaGuard > resolvedWaba);
+        Assert.True(referenceDiscovery > wabaGuard);
+        Assert.True(runtimeDiscovery > referenceDiscovery);
+        Assert.True(connection > runtimeDiscovery);
+        Assert.DoesNotContain("La sincronizaci\u00f3n de cat\u00e1logo requiere un WhatsApp conectado por Embedded Signup.", service, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TemplateCatalogSyncMatchesByMetaIdThenNameLanguageAndPreservesLocalFlags()
+    {
+        var service = Read("src", "AlfaCore", "Services", "ConversacionesService.cs");
+        var upsert = service.IndexOf("UpsertRemoteTemplateAsync(SqlConnection cn, string wabaId, MetaMessageTemplate template", StringComparison.Ordinal);
+        var select = service.IndexOf("SELECT TOP 1", upsert, StringComparison.Ordinal);
+        var metaIdMatch = service.IndexOf("MetaTemplateId = @MetaTemplateId", select, StringComparison.Ordinal);
+        var nameLanguageMatch = service.IndexOf("NombreMeta = @NombreMeta AND Idioma = @Idioma", metaIdMatch, StringComparison.Ordinal);
+        var update = service.IndexOf("UPDATE dbo.CONV_PLANTILLAS", nameLanguageMatch, StringComparison.Ordinal);
+        var insert = service.IndexOf("INSERT INTO dbo.CONV_PLANTILLAS", update, StringComparison.Ordinal);
+        var updateBlock = service.Substring(update, insert - update);
+
+        Assert.True(upsert >= 0);
+        Assert.True(metaIdMatch > select);
+        Assert.True(nameLanguageMatch > metaIdMatch);
+        Assert.DoesNotContain("Activa =", updateBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("NombreVisible =", updateBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("EjemplosVariablesJson", updateBlock, StringComparison.Ordinal);
+        Assert.Contains("MetaPayloadJson = @MetaPayloadJson", updateBlock, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TemplateCatalogSyncDoesNotDeleteOrMarkMissingRemoteTemplates()
+    {
+        var service = Read("src", "AlfaCore", "Services", "ConversacionesService.cs");
+        var sync = service.IndexOf("SyncTemplatesCatalogFromMetaAsync(int? idNumeroWhatsApp", StringComparison.Ordinal);
+        var saveDraft = service.IndexOf("SaveTemplateDraftAsync(ConversacionPlantillaSaveRequest request", sync, StringComparison.Ordinal);
+        var syncBlock = service.Substring(sync, saveDraft - sync);
+
+        Assert.DoesNotContain("DELETE FROM dbo.CONV_PLANTILLAS", syncBlock, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Activa = 0", syncBlock, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("result.ConError++", syncBlock, StringComparison.Ordinal);
     }
 
     [Fact]

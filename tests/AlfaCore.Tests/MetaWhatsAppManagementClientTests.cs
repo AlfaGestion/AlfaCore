@@ -48,6 +48,93 @@ public sealed class MetaWhatsAppManagementClientTests
         Assert.Equal("/v26.0/9102/message_templates", requestedPath);
         Assert.Single(result);
         Assert.Equal("APPROVED", result[0].Status);
+        Assert.Contains("\"type\":\"BODY\"", result[0].ComponentsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TemplateDiscoverySupportsRuntimeTokenForLegacyCloudApiNumbers()
+    {
+        string? authorization = null;
+        string? requestedPath = null;
+        var client = Create(new RoutingHandler(request =>
+        {
+            authorization = request.Headers.Authorization?.ToString();
+            requestedPath = request.RequestUri!.AbsolutePath;
+            return Json("{\"data\":[{\"id\":\"9302\",\"name\":\"manual\",\"language\":\"es_AR\",\"status\":\"APPROVED\",\"category\":\"AUTHENTICATION\",\"components\":[{\"type\":\"BODY\",\"text\":\"Tu c\\u00f3digo es {{1}}\"},{\"type\":\"BUTTONS\",\"buttons\":[{\"type\":\"OTP\",\"otp_type\":\"COPY_CODE\",\"text\":\"Copiar\"}]}]}]}");
+        }));
+
+        var result = await client.DiscoverTemplatesAsync("9102", "runtime-token", "v26.0");
+
+        Assert.Equal("/v26.0/9102/message_templates", requestedPath);
+        Assert.Equal("Bearer runtime-token", authorization);
+        Assert.Single(result);
+        Assert.Equal("AUTHENTICATION", result[0].Category);
+        Assert.Contains("\"type\":\"BUTTONS\"", result[0].ComponentsJson, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TemplateDiscoveryThrowsWhenMetaRepeatsNextPage()
+    {
+        // Hardening anti-loop/anti-cross-WABA (GetPagedAsync): antes, una página repetida se cortaba en
+        // silencio y devolvía el resultado parcial obtenido hasta ahí -- eso puede esconder que faltó
+        // sincronizar el resto de las plantillas sin ninguna señal de error. Ahora se trata como una
+        // respuesta de Meta inválida/adversarial y se aborta con una excepción explícita en vez de
+        // devolver una lista incompleta como si estuviera completa.
+        var calls = 0;
+        var client = Create(new RoutingHandler(request =>
+        {
+            calls++;
+            var next = "https://graph.facebook.com/v26.0/9102/message_templates?fields=id%2Cname%2Clanguage%2Cstatus%2Ccategory%2Ccomponents&limit=100";
+            return Json($$"""
+                {
+                  "data":[{"id":"9301","name":"bienvenida","language":"es_AR","status":"APPROVED","category":"UTILITY","components":[{"type":"BODY","text":"Hola"}]}],
+                  "paging":{"next":"{{next}}"}
+                }
+                """);
+        }));
+
+        await Assert.ThrowsAsync<MetaWhatsAppManagementException>(() => client.DiscoverTemplatesAsync("9102", new("ref")));
+        Assert.Equal(1, calls);
+    }
+
+    [Fact]
+    public async Task TemplateDiscoveryThrowsWhenMetaPointsPaginationOutsideResource()
+    {
+        // Anti-cross-WABA: paging.next apuntando a otro path (otra WABA/recurso) también debe abortar,
+        // no solo la repetición exacta de la misma URL.
+        var calls = 0;
+        var client = Create(new RoutingHandler(request =>
+        {
+            calls++;
+            return Json("""
+                {
+                  "data":[{"id":"9301","name":"bienvenida","language":"es_AR","status":"APPROVED","category":"UTILITY","components":[{"type":"BODY","text":"Hola"}]}],
+                  "paging":{"next":"https://graph.facebook.com/v26.0/OTHER_WABA/message_templates?fields=id&limit=100"}
+                }
+                """);
+        }));
+
+        await Assert.ThrowsAsync<MetaWhatsAppManagementException>(() => client.DiscoverTemplatesAsync("9102", new("ref")));
+        Assert.Equal(1, calls);
+    }
+
+    [Theory]
+    [InlineData("https://graph.facebook.com/v26.0/9103/message_templates")]
+    [InlineData("https://evil.test/message_templates")]
+    public async Task TemplateDiscoveryRejectsPagingToAnotherResource(string next)
+    {
+        // Cubre explícitamente el contrato de error (código y que no siga paginando) para las dos
+        // variantes de "paging.next" adversarial: otra WABA en el mismo Graph, y un host totalmente
+        // distinto -- ambas ya las bloquea GetPagedAsync, este test agrega el assert de ErrorCode.
+        var calls = 0;
+        var client = Create(new RoutingHandler(_ =>
+        {
+            calls++;
+            return Json(JsonSerializer.Serialize(new { data = Array.Empty<object>(), paging = new { next } }));
+        }));
+        var error = await Assert.ThrowsAsync<MetaWhatsAppManagementException>(() => client.DiscoverTemplatesAsync("9102", new("ref")));
+        Assert.Equal("META_INVALID_PAGING", error.ErrorCode);
+        Assert.Equal(1, calls);
     }
 
     [Fact]
