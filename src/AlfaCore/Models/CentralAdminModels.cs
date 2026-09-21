@@ -15,6 +15,21 @@ public sealed class AdminClienteDto
     public bool SuperAdmin { get; init; }
 }
 
+/// <summary>Fila del filtro "clientes con el módulo X" del buscador de Administrar -- misma
+/// semántica de EstaActivo que ClienteModuloDto (legacy/explícito/prueba vigente), pivotada por
+/// módulo en vez de por cliente.</summary>
+public sealed class AdminClienteConModuloDto
+{
+    public string IdCliente { get; init; } = string.Empty;
+    public string RazonSocial { get; init; } = string.Empty;
+    public string IdWeb { get; init; } = string.Empty;
+    public bool EsClienteLegacy { get; init; }
+    public bool EstaActivo { get; init; }
+    public string Estado { get; init; } = string.Empty;
+    public DateTime? ActivadoUtc { get; init; }
+    public DateTime? PruebaVenceUtc { get; init; }
+}
+
 public sealed class AdminBaseDto
 {
     public int IdBase { get; init; }

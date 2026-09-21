@@ -5,6 +5,10 @@ namespace AlfaCore.Services;
 public interface ICentralAdminService
 {
     Task<IReadOnlyList<AdminClienteDto>> GetClientesAsync(CancellationToken ct = default);
+    /// <summary>Para el filtro "clientes con este módulo" del buscador de Administrar -- misma
+    /// semántica de EstaActivo que GetClienteModulosAsync (legacy/explícito/prueba vigente), pero
+    /// en una sola pasada para todos los clientes en vez de uno por uno.</summary>
+    Task<IReadOnlyList<AdminClienteConModuloDto>> GetClientesPorModuloAsync(int idModulo, CancellationToken ct = default);
     Task<AdminClienteDto?> GetClienteAsync(string idCliente, CancellationToken ct = default);
     Task<IReadOnlyList<ClienteAlfaLookupDto>> SearchVtClientesAsync(string term, int take = 25, CancellationToken ct = default);
     Task CreateClienteAsync(CrearClienteRequest request, CancellationToken ct = default);

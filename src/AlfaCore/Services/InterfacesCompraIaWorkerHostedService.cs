@@ -50,6 +50,10 @@ public sealed class InterfacesCompraIaWorkerHostedService(
     internal async Task<int> RunCycleAsync(CancellationToken stoppingToken)
     {
                 using var scope = services.CreateScope();
+                var workerAssignment = scope.ServiceProvider.GetRequiredService<IWorkerAssignmentService>();
+                if (!await workerAssignment.DebeEjecutarWorkersAsync(stoppingToken))
+                    return DefaultDelaySeconds;
+
                 var basesSvc = scope.ServiceProvider.GetRequiredService<ICentralCompraIaService>();
 
                 var bases = await basesSvc.GetBasesHabilitadasAsync(stoppingToken);

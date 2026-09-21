@@ -92,6 +92,16 @@ public static class ModuleTopNavPresets
             ("email", "Email saliente", "/configuracion-general/email")
         ]);
 
+    public static IReadOnlyList<PageHeaderTopNavItem> BuildAdministrar(IRouteContextService routeContext, NavigationManager nav, string activeKey)
+        => Build(routeContext, nav, activeKey,
+        [
+            ("clientes", "Clientes", "/admin"),
+            ("modulos", "Módulos", "/admin/modulos"),
+            ("cargos", "Cargos", "/admin/cargos"),
+            ("pagos", "Pagos", "/admin/pagos"),
+            ("solicitudes", "Solicitudes", "/admin/solicitudes")
+        ]);
+
     public static IReadOnlyList<PageHeaderTopNavItem> BuildDocumentos(IRouteContextService routeContext, NavigationManager nav, string activeKey)
         => Build(routeContext, nav, activeKey,
         [

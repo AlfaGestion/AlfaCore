@@ -2,8 +2,10 @@
 @page "/{idweb}/{idbase:int}/admin/solicitudes"
 @layout AlfaCore.Components.Layout.MainLayout
 @using AlfaCore.Models
+@implements IDisposable
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
+@inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
 @inject IJSRuntime JS
@@ -11,13 +13,7 @@
 <PageTitle>Solicitudes de módulos | AlfaNet</PageTitle>
 
 <div class="panel-card">
-    <div class="panel-card__header">
-        <div>
-            <h1 class="panel-card__title">Solicitudes pendientes</h1>
-            <p class="panel-card__subtitle">Módulos que un cliente pidió y todavía no se aprobaron ni rechazaron — se cargan desde el panel Cliente → Módulos con "Solicitar".</p>
-        </div>
-        <button type="button" class="btn btn-outline-light" @onclick="GoHome">Inicio</button>
-    </div>
+    <p class="panel-card__subtitle">Módulos que un cliente pidió y todavía no se aprobaron ni rechazaron — se cargan desde el panel Cliente → Módulos con "Solicitar".</p>
 
     @if (_loading)
     {
@@ -124,8 +120,23 @@
         await LoadAsync();
     }
 
-    private void GoHome()
-        => Nav.NavigateTo(RouteContext.BuildRoute("/admin"));
+    protected override void OnInitialized() => UpdatePageHeader();
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender)
+            UpdatePageHeader();
+    }
+
+    public void Dispose() => PageHeader.Clear();
+
+    private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
+    {
+        Title = "Solicitudes",
+        Breadcrumb = ["Administrar", "Solicitudes"],
+        ShellMode = PageHeaderShellMode.AlfaDesignPilot,
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildAdministrar(RouteContext, Nav, "solicitudes")
+    });
 
     private async Task LoadAsync()
     {

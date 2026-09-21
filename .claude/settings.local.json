@@ -36,7 +36,8 @@
       "Bash(grep -viE \"test|//|///\")",
       "Bash(kill %1)",
       "Bash(pkill -f \"grep -rn\")",
-      "Bash(rm -rf /tmp/alfacore_verify_build && grep -rl \"class PagedResult\" \"c:/dev/AlfaCore/src/AlfaCore/Models/\" 2>&1)"
+      "Bash(rm -rf /tmp/alfacore_verify_build && grep -rl \"class PagedResult\" \"c:/dev/AlfaCore/src/AlfaCore/Models/\" 2>&1)",
+      "Bash(taskkill //PID 33672 //F)"
     ],
     "additionalDirectories": [
       "C:\\Users\\albert\\AppData\\Local\\Temp\\claude\\c--dev-AlfaCore\\03136413-ace2-40ae-a12b-139e0543fe29\\scratchpad",
