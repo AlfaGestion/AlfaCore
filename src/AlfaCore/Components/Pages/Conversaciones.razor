@@ -6244,17 +6244,11 @@
             _ticketError = "Ingresá el nombre del ticket.";
             return;
         }
+        // El creador del ticket queda identificado por UsuarioAlta (CurrentUserNameForAudit), no por
+        // IdTecnico: un usuario autorizado sin Técnico asociado puede crear tickets igual. El técnico
+        // responsable (IdTecnico / "Asignado a") es independiente del creador y puede quedar vacío
+        // ("Sin técnico" ya es una opción válida del selector), porque TICK_TICKETS.IdTecnico es nullable.
         var creatorTechnicianId = CurrentMessageTechnicianId;
-        if (string.IsNullOrWhiteSpace(creatorTechnicianId))
-        {
-            _ticketError = "No se pudo crear el ticket porque tu usuario no tiene un técnico asociado.";
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(_ticketAssignedTechnicianId))
-        {
-            _ticketError = "Seleccioná a qué técnico se asigna el ticket.";
-            return;
-        }
 
         if (_relatedTicketMatches.Count > 0 && !_allowCreateDespiteRelated)
         {
