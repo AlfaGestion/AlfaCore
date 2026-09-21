@@ -1,5 +1,6 @@
 using System.Text.Json;
 using AlfaCore.Models;
+using Microsoft.AspNetCore.Components;
 using Microsoft.Data.SqlClient;
 
 namespace AlfaCore.Services;
@@ -10,23 +11,28 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
     private readonly IAppUserSessionService _appUserSession;
     private readonly ICentralBasesService _basesService;
     private readonly IHostEnvironment _hostEnvironment;
+    private readonly NavigationManager _navigationManager;
     private readonly object _lock = new();
     private readonly JsonSerializerOptions _jsonOptions = new() { WriteIndented = true };
     private IReadOnlyList<SessionDto> _cachedSessions = [];
     private Guid? _activeSessionId;
     private string? _cacheKey;
     private SessionDto? _webhookOverride;
+    private SessionDto? _routeSessionOverride;
+    private string? _routeSessionKey;
 
     public ConexionClienteService(
         IAppModeService appMode,
         IAppUserSessionService appUserSession,
         ICentralBasesService basesService,
-        IHostEnvironment hostEnvironment)
+        IHostEnvironment hostEnvironment,
+        NavigationManager navigationManager)
     {
         _appMode = appMode;
         _appUserSession = appUserSession;
         _basesService = basesService;
         _hostEnvironment = hostEnvironment;
+        _navigationManager = navigationManager;
         _appUserSession.StateChanged += OnUserStateChanged;
     }
 
@@ -74,6 +80,13 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
 
     public SessionDto? GetActiveSession()
     {
+        if (_appMode.IsSaaSMode)
+        {
+            var routeSession = ResolveRouteSessionOverride();
+            if (routeSession is not null)
+                return Clone(routeSession, true);
+        }
+
         lock (_lock)
         {
             if (_webhookOverride is not null)
@@ -241,6 +254,8 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
                 // scope después de cerrar sesión.
                 _webhookOverride = null;
             }
+            _routeSessionOverride = null;
+            _routeSessionKey = null;
             _cacheKey = null;
         }
 
@@ -265,6 +280,70 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         _cacheKey = clientKey;
         _cachedSessions = Task.Run(() => LoadSaaSSessionsAsync(currentUser)).GetAwaiter().GetResult();
         _activeSessionId = ResolveActiveSessionId(_cachedSessions, previousActiveId);
+    }
+
+    /// <summary>
+    /// En SaaS, una ruta /{idweb}/{idbase}/... identifica la base efectiva desde el primer
+    /// acceso. Esto se resuelve de forma síncrona porque los servicios de dominio pueden pedir
+    /// la conexión durante el primer ciclo de vida de una página, antes de que MainLayout haya
+    /// podido restaurar el token del navegador y ejecutar su activación posterior a F5.
+    /// El override queda en este servicio scoped: dos circuitos/pestañas no lo comparten.
+    /// </summary>
+    private SessionDto? ResolveRouteSessionOverride()
+    {
+        var path = _navigationManager.ToBaseRelativePath(_navigationManager.Uri)
+            .Split('?')[0]
+            .Split('#')[0]
+            .Trim('/');
+        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (segments.Length < 2
+            || !int.TryParse(segments[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var baseId)
+            || baseId <= 0)
+        {
+            lock (_lock)
+            {
+                _routeSessionOverride = null;
+                _routeSessionKey = null;
+            }
+
+            return null;
+        }
+
+        var routeKey = $"{segments[0]}|{baseId}";
+        lock (_lock)
+        {
+            if (string.Equals(_routeSessionKey, routeKey, StringComparison.OrdinalIgnoreCase))
+                return _routeSessionOverride;
+        }
+
+        // GetActiveSession es una API síncrona porque la consumen servicios de dominio durante
+        // sus constructores/ciclos iniciales. Ejecutamos la consulta central fuera del contexto
+        // de Blazor para no bloquearlo si la resolución ocurre durante un render inicial.
+        var routeBase = Task.Run(() => _basesService.GetByIdAsync(baseId))
+            .GetAwaiter()
+            .GetResult();
+        var resolved = routeBase is null
+            ? null
+            : new SessionDto
+            {
+                Id = SessionDto.BuildGuidFromBaseId(routeBase.IdBase),
+                BaseId = routeBase.IdBase,
+                Nombre = routeBase.Nombre,
+                Servidor = routeBase.DbServer,
+                BaseDatos = routeBase.DbName,
+                Usuario = routeBase.DbUser,
+                Password = routeBase.DbPassword,
+                TrustServerCertificate = true,
+                Activa = true
+            };
+
+        lock (_lock)
+        {
+            _routeSessionKey = routeKey;
+            _routeSessionOverride = resolved;
+        }
+
+        return resolved;
     }
 
     private async Task<IReadOnlyList<SessionDto>> LoadSaaSSessionsAsync(AppUserSessionInfo user)

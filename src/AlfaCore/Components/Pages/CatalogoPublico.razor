@@ -23,7 +23,7 @@
 
 <PageTitle>Catálogo público | AlfaCore</PageTitle>
 
-<section class="@(Embedded ? "catalogo-publico-page catalogo-publico-page--embedded" : "page-grid catalogo-publico-page")">
+<section class="@(Embedded ? "catalogo-publico-page catalogo-publico-page--embedded" : "page-grid catalogo-publico-page")" data-catalog-toolbar-root>
     @if (ShowBlockingLoadingState)
     {
         @* Un único estado de carga, sin encabezado: mientras se resuelve el link seguro o se
@@ -95,7 +95,8 @@
         <section class="panel-card">
             @if (_catalogo.Articulos.Count > 0)
             {
-            <div class="catalogo-publico-toolbar-sticky">
+            <span class="catalog-toolbar-sentinel" aria-hidden="true"></span>
+            <div @ref="_toolbarRef" class="catalogo-publico-toolbar-sticky">
                 <div class="smart-search catalogo-publico-smart-search" @onclick:stopPropagation>
                     <div class="smart-search__bar @(_mostrarFiltros ? "is-open" : string.Empty)">
                         <span class="smart-search__search-icon" aria-hidden="true"><i class="bi bi-search"></i></span>
@@ -177,7 +178,16 @@
                 </div>
 
                 <div class="catalogo-publico-smart-search__footer">
-                    <span class="catalogo-publico-smart-search__count">@GetResultadoTexto()</span>
+                    @if (GetTotalPaginas() > 1)
+                    {
+                        <div class="catalogo-publico-pagination catalogo-publico-pagination--toolbar">
+                            <span class="text-muted">Página @_paginaActual de @GetTotalPaginas()</span>
+                            <div class="catalogo-publico-pagination__actions">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_paginaActual <= 1)" OnClick="() => CambiarPaginaAsync(_paginaActual - 1)"><i class="bi bi-chevron-left"></i></AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_paginaActual >= GetTotalPaginas())" OnClick="() => CambiarPaginaAsync(_paginaActual + 1)"><i class="bi bi-chevron-right"></i></AlfaButton>
+                            </div>
+                        </div>
+                    }
                     <div class="catalogo-publico-view-switch" role="group" aria-label="Selector de vista de artículos">
                         <AlfaIconButton Icon="bi bi-list-ul" Label="Vista de lista" Active="@(_viewMode == CatalogoViewMode.Lista)" Class="catalogo-publico-view-switch__btn" OnClick="() => SetViewModeAsync(CatalogoViewMode.Lista)" />
                         <AlfaIconButton Icon="bi bi-grid-3x3-gap" Label="Vista de cuadrícula" Active="@(_viewMode == CatalogoViewMode.Cuadricula)" Class="catalogo-publico-view-switch__btn" OnClick="() => SetViewModeAsync(CatalogoViewMode.Cuadricula)" />
@@ -361,6 +371,18 @@
                         </div>
                     }
                 }
+
+                @if (GetTotalPaginas() > 1)
+                {
+                    <div class="catalogo-publico-pagination catalogo-publico-pagination--bottom">
+                        <span class="text-muted">Página @_paginaActual de @GetTotalPaginas()</span>
+                        <div class="catalogo-publico-pagination__actions">
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_paginaActual <= 1)" OnClick="() => CambiarPaginaAsync(_paginaActual - 1)"><i class="bi bi-chevron-left"></i></AlfaButton>
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_paginaActual >= GetTotalPaginas())" OnClick="() => CambiarPaginaAsync(_paginaActual + 1)"><i class="bi bi-chevron-right"></i></AlfaButton>
+                        </div>
+                    </div>
+                }
+
             }
         </section>
         }
@@ -461,6 +483,7 @@
     private CatalogoLoadPhase _loadPhase = CatalogoLoadPhase.Connecting;
     private bool _redirecting;
     private bool _hasRendered;
+    private ElementReference _toolbarRef;
     private bool _sessionBusy;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
     private bool _restoreAttempted;
@@ -479,6 +502,8 @@
     private string _filtroMarca = string.Empty;
     private string _ordenPrecio = string.Empty;
     private bool _agruparPorMarca;
+    private const int ArticulosPorPagina = 100;
+    private int _paginaActual = 1;
 
     private const string PrecioMenorMayor = "menor";
     private const string PrecioMayorMenor = "mayor";
@@ -546,6 +571,12 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         _hasRendered = true;
+
+        if (_catalogo is not null && _catalogo.Articulos.Count > 0)
+        {
+            try { await Js.InvokeVoidAsync("catalogToolbar.init", _toolbarRef); }
+            catch { }
+        }
 
         if (firstRender)
         {
@@ -1033,8 +1064,12 @@
         if (string.IsNullOrWhiteSpace(ftpCodigoCta))
             return;
 
-        var idArticulos = _catalogo.Articulos.Select(a => a.IdArticulo).ToArray();
-        var idArticulosForzados = _catalogo.Articulos
+        var articulosPagina = GetArticulosFiltrados()
+            .Skip((_paginaActual - 1) * ArticulosPorPagina)
+            .Take(ArticulosPorPagina)
+            .ToList();
+        var idArticulos = articulosPagina.Select(a => a.IdArticulo).ToArray();
+        var idArticulosForzados = articulosPagina
             .Where(a => a.ImagenModificada)
             .Select(a => a.IdArticulo)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -1470,30 +1505,35 @@
     private Task ApplyFiltrosAsync()
     {
         _mostrarFiltros = false;
+        _paginaActual = 1;
         return InvokeAsync(StateHasChanged);
     }
 
     private Task ClearFiltroRubroAsync()
     {
         _filtroRubro = string.Empty;
+        _paginaActual = 1;
         return InvokeAsync(StateHasChanged);
     }
 
     private Task ClearTextoBusquedaAsync()
     {
         _textoBusqueda = string.Empty;
+        _paginaActual = 1;
         return InvokeAsync(StateHasChanged);
     }
 
     private Task ClearFiltroMarcaAsync()
     {
         _filtroMarca = string.Empty;
+        _paginaActual = 1;
         return InvokeAsync(StateHasChanged);
     }
 
     private Task ClearOrdenPrecioAsync()
     {
         _ordenPrecio = string.Empty;
+        _paginaActual = 1;
         return InvokeAsync(StateHasChanged);
     }
 
@@ -1503,6 +1543,7 @@
         _filtroRubro = string.Empty;
         _filtroMarca = string.Empty;
         _ordenPrecio = string.Empty;
+        _paginaActual = 1;
         _mostrarFiltros = false;
         return InvokeAsync(StateHasChanged);
     }
@@ -1580,13 +1621,26 @@
         return query.ToList();
     }
 
+    private int GetTotalPaginas()
+        => Math.Max(1, (int)Math.Ceiling(GetArticulosFiltrados().Count / (double)ArticulosPorPagina));
+
+    private async Task CambiarPaginaAsync(int pagina)
+    {
+        _paginaActual = Math.Clamp(pagina, 1, GetTotalPaginas());
+        await Js.InvokeVoidAsync("window.scrollTo", new { top = 0, behavior = "smooth" });
+        await InvokeAsync(StateHasChanged);
+    }
+
     private static bool ContainsText(string? value, string texto)
         => !string.IsNullOrWhiteSpace(value)
            && value.Contains(texto, StringComparison.OrdinalIgnoreCase);
 
     private IReadOnlyList<CatalogoPublicoGrupoMarca> GetGruposVisibles()
     {
-        var articulos = GetArticulosFiltrados();
+        var articulos = GetArticulosFiltrados()
+            .Skip((_paginaActual - 1) * ArticulosPorPagina)
+            .Take(ArticulosPorPagina)
+            .ToList();
         if (articulos.Count == 0)
             return [];
 

@@ -64,7 +64,7 @@ else if (!_notFound && !_carritoDeshabilitado && !IsAuthenticated)
 }
 else
 {
-    <section class="page-grid carrito-page">
+    <section class="page-grid @(Embedded ? "carrito-page carrito-page--embedded" : "carrito-page")" data-catalog-toolbar-root>
         @if (!Embedded)
         {
             <section class="carrito-page__hero">
@@ -130,7 +130,8 @@ else
             <section class="panel-card">
                 @if (_catalogo.Articulos.Count > 0)
                 {
-                    <div class="carrito-smart-search" @onclick:stopPropagation>
+                    <span class="catalog-toolbar-sentinel" aria-hidden="true"></span>
+                    <div @ref="_toolbarRef" class="carrito-smart-search" @onclick:stopPropagation>
                         <div class="carrito-smart-search__bar @(_mostrarFiltros ? "is-open" : string.Empty)">
                             <i class="bi bi-search" aria-hidden="true"></i>
                             <button type="button" class="carrito-smart-search__filter-button @(HasCarritoFilters ? "is-active" : string.Empty)" title="Abrir filtros" aria-label="Abrir filtros" @onclick="ToggleFiltros"><i class="bi bi-funnel-fill"></i></button>
@@ -162,12 +163,24 @@ else
                                 <div class="carrito-smart-search__actions"><AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-search" OnClick="AplicarFiltrosAsync">Aplicar</AlfaButton><AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-eraser" OnClick="LimpiarFiltrosAsync">Limpiar</AlfaButton></div>
                             </div>
                         }
-                        <div class="carrito-smart-search__footer"><span>@GetArticulosFiltrados().Count artículos</span>@if (HasCarritoFilters){<button type="button" class="carrito-smart-search__clear" @onclick="LimpiarFiltrosAsync">Limpiar filtros</button>}</div>
+                        <div class="carrito-smart-search__footer">
+                            @if (GetTotalPaginas() > 1)
+                            {
+                                <div class="catalogo-publico-pagination catalogo-publico-pagination--toolbar">
+                                    <span class="text-muted">Página @_paginaActual de @GetTotalPaginas()</span>
+                                    <div class="catalogo-publico-pagination__actions">
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_paginaActual <= 1)" OnClick="() => CambiarPaginaAsync(_paginaActual - 1)"><i class="bi bi-chevron-left"></i></AlfaButton>
+                                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_paginaActual >= GetTotalPaginas())" OnClick="() => CambiarPaginaAsync(_paginaActual + 1)"><i class="bi bi-chevron-right"></i></AlfaButton>
+                                    </div>
+                                </div>
+                            }
+                            @if (HasCarritoFilters){<button type="button" class="carrito-smart-search__clear" @onclick="LimpiarFiltrosAsync">Limpiar filtros</button>}
+                        </div>
                     </div>
                     <div class="carrito-grid">
-                        @foreach (var item in GetArticulosFiltrados())
+                        @foreach (var item in GetArticulosPagina())
                         {
-                            <article class="carrito-card">
+                            <article class="carrito-card" @onclick="() => OpenLightbox(item)">
                                 <div class="carrito-card__media">
                                     @if (ShouldShowImage(item))
                                     {
@@ -201,7 +214,7 @@ else
 
                                     @RenderPrecio(item)
 
-                                    <div class="carrito-card__actions">
+                                    <div class="carrito-card__actions" @onclick:stopPropagation="true">
                                         @if (GetCantidad(item.IdArticulo) <= 0m)
                                         {
                                             <AlfaButton Variant="AlfaButtonVariant.Primary" Size="AlfaSize.Sm" Icon="bi bi-cart-plus" Class="carrito-card__add" OnClick="() => AgregarAsync(item)">
@@ -224,6 +237,16 @@ else
                             </article>
                         }
                     </div>
+                    @if (GetTotalPaginas() > 1)
+                    {
+                        <div class="catalogo-publico-pagination catalogo-publico-pagination--bottom">
+                            <span class="text-muted">Página @_paginaActual de @GetTotalPaginas()</span>
+                            <div class="catalogo-publico-pagination__actions">
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_paginaActual <= 1)" OnClick="() => CambiarPaginaAsync(_paginaActual - 1)"><i class="bi bi-chevron-left"></i></AlfaButton>
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Disabled="@(_paginaActual >= GetTotalPaginas())" OnClick="() => CambiarPaginaAsync(_paginaActual + 1)"><i class="bi bi-chevron-right"></i></AlfaButton>
+                            </div>
+                        </div>
+                    }
                 }
                 else
                 {
@@ -241,6 +264,89 @@ else
             }
         }
     </section>
+}
+
+@if (_lightboxItem is not null)
+{
+    <div class="carrito-product-lightbox" @onclick="CloseLightbox">
+        <div class="carrito-product-lightbox__content" @onclick:stopPropagation="true" @onkeydown="HandleLightboxKeyDown">
+            <button type="button" class="carrito-product-lightbox__close" autofocus @onclick="CloseLightbox" title="Cerrar" aria-label="Cerrar">
+                <i class="bi bi-x-lg"></i>
+            </button>
+
+            <div class="carrito-product-lightbox__stage">
+                <div class="carrito-product-lightbox__media">
+                    @if (_lightboxLoading)
+                    {
+                        <PublicCatalogLoadingScreen LogoUrl="@GetLoadingLogoUrl()" Text="Cargando imagen..." Compact="true" />
+                    }
+                    @if (ShouldShowImage(_lightboxItem) && !_lightboxError)
+                    {
+                        <img class="carrito-product-lightbox__img @(_lightboxLoading ? "carrito-product-lightbox__img--hidden" : string.Empty)"
+                             src="@GetProductImageUrl(_lightboxItem)"
+                             alt="@_lightboxItem.DescripcionArticulo"
+                             loading="eager"
+                             fetchpriority="high"
+                             decoding="async"
+                             @onload="OnLightboxImageLoaded"
+                             @onerror="OnLightboxImageError" />
+                    }
+                    else
+                    {
+                        <div class="carrito-product-lightbox__fallback">
+                            <i class="bi bi-image" aria-hidden="true"></i>
+                            <span>Sin imagen</span>
+                        </div>
+                    }
+                </div>
+
+                <aside class="carrito-product-lightbox__details" aria-label="Detalles del artículo">
+                    <p class="carrito-product-lightbox__eyebrow">Artículo</p>
+                    <h3>@_lightboxItem.DescripcionArticulo</h3>
+                    <p class="carrito-product-lightbox__code">Código: @_lightboxItem.IdArticulo</p>
+                    @if (!string.IsNullOrWhiteSpace(_lightboxItem.Presentacion))
+                    {
+                        <p class="carrito-product-lightbox__presentation">@_lightboxItem.Presentacion</p>
+                    }
+                    <div class="carrito-product-lightbox__meta">
+                        <span>@Display(_lightboxItem.Marca)</span>
+                        <span>@Display(_lightboxItem.Rubro)</span>
+                    </div>
+                    <div class="carrito-product-lightbox__price">
+                        @RenderPrecio(_lightboxItem)
+                    </div>
+
+                    <div class="carrito-product-lightbox__quantity">
+                        <span>Cantidad</span>
+                        <div class="carrito-stepper">
+                            <button type="button" class="carrito-stepper__btn" @onclick="() => DecrementarAsync(_lightboxItem)" title="Restar" aria-label="Restar una unidad">−</button>
+                            <input class="carrito-stepper__input"
+                                   value="@GetCantidad(_lightboxItem.IdArticulo).ToString("N2", CultureEsAr)"
+                                   @onchange="args => OnCantidadInputAsync(_lightboxItem, args)"
+                                   inputmode="decimal"
+                                   aria-label="Cantidad" />
+                            <button type="button" class="carrito-stepper__btn" @onclick="() => IncrementarAsync(_lightboxItem)" title="Sumar" aria-label="Sumar una unidad">+</button>
+                        </div>
+                    </div>
+
+                    <div class="carrito-product-lightbox__actions">
+                        @if (GetCantidad(_lightboxItem.IdArticulo) <= 0m)
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-cart-plus" OnClick="() => AgregarAsync(_lightboxItem)">
+                                Agregar al carrito
+                            </AlfaButton>
+                        }
+                        else
+                        {
+                            <AlfaButton Variant="AlfaButtonVariant.Ghost" Icon="bi bi-trash3" OnClick="() => QuitarAsync(_lightboxItem)">
+                                Eliminar del carrito
+                            </AlfaButton>
+                        }
+                    </div>
+                </aside>
+            </div>
+        </div>
+    </div>
 }
 
 @if (_showCarritoDrawer)
@@ -482,6 +588,7 @@ else
     private bool _carritoDeshabilitado;
     private bool _redirecting;
     private bool _hasRendered;
+    private ElementReference _toolbarRef;
     private bool _restoreAttempted;
     private bool _cartRestoreAttempted;
     private string _cartContextKey = string.Empty;
@@ -503,7 +610,13 @@ else
     private string _filtroMarca = string.Empty;
     private string _textoBusqueda = string.Empty;
     private bool _mostrarFiltros;
+    private const int ArticulosPorPagina = 100;
+    private int _paginaActual = 1;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
+
+    private CatalogosCatalogoItemDto? _lightboxItem;
+    private bool _lightboxLoading;
+    private bool _lightboxError;
 
     private readonly Dictionary<string, decimal> _carrito = new(StringComparer.OrdinalIgnoreCase);
     private bool _showCarritoDrawer;
@@ -750,6 +863,12 @@ else
     {
         _hasRendered = true;
 
+        if (_catalogo is not null && _catalogo.Articulos.Count > 0)
+        {
+            try { await Js.InvokeVoidAsync("catalogToolbar.init", _toolbarRef); }
+            catch { }
+        }
+
         if (firstRender)
         {
             try
@@ -807,11 +926,16 @@ else
         await InvokeAsync(StateHasChanged);
 
         var codigoCliente = CatalogoClienteSession.CurrentClient?.CodigoCliente;
-        var catalogo = PortalCatalogoState.GetCarrito(idweb, _effectiveIdBase, IdInsert, codigoCliente);
+        // El carrito general resuelve siempre la configuración comercial actual del cliente.
+        // No reutilizar una resolución anterior de /0; los carritos de catálogo sí conservan
+        // su estado para mantener artículos y precios definidos por el catálogo.
+        var catalogo = IdInsert > 0
+            ? PortalCatalogoState.GetCarrito(idweb, _effectiveIdBase, IdInsert, codigoCliente)
+            : null;
         if (catalogo is null)
         {
             catalogo = await CarritoComprasSvc.GetPublicCartAsync(IdInsert, idweb, codigoCliente, _effectiveIdBase);
-            if (catalogo is not null)
+            if (catalogo is not null && IdInsert > 0)
                 PortalCatalogoState.SetCarrito(idweb, _effectiveIdBase, IdInsert, codigoCliente, catalogo);
         }
         _catalogo = catalogo;
@@ -838,8 +962,9 @@ else
         if (string.IsNullOrWhiteSpace(ftpCodigoCta))
             return;
 
-        var idArticulos = _catalogo.Articulos.Select(a => a.IdArticulo).ToArray();
-        var idArticulosForzados = _catalogo.Articulos
+        var articulosPagina = GetArticulosPagina();
+        var idArticulos = articulosPagina.Select(a => a.IdArticulo).ToArray();
+        var idArticulosForzados = articulosPagina
             .Where(a => a.ImagenModificada)
             .Select(a => a.IdArticulo)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -1048,6 +1173,38 @@ else
     private string GetProductThumbUrl(CatalogosCatalogoItemDto item)
         => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), thumbnail: true, forzarRecarga: item.ImagenModificada);
 
+    private string GetProductImageUrl(CatalogosCatalogoItemDto item)
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_puntoVentaSettings.FtpCodigoCta, item.IdArticulo, GetEffectiveIdBase(), forzarRecarga: item.ImagenModificada);
+
+    private void OpenLightbox(CatalogosCatalogoItemDto item)
+    {
+        _lightboxItem = item;
+        _lightboxError = false;
+        _lightboxLoading = ShouldShowImage(item);
+    }
+
+    private void CloseLightbox()
+    {
+        _lightboxItem = null;
+        _lightboxLoading = false;
+        _lightboxError = false;
+    }
+
+    private void HandleLightboxKeyDown(KeyboardEventArgs args)
+    {
+        if (string.Equals(args.Key, "Escape", StringComparison.OrdinalIgnoreCase))
+            CloseLightbox();
+    }
+
+    private void OnLightboxImageLoaded()
+        => _lightboxLoading = false;
+
+    private void OnLightboxImageError()
+    {
+        _lightboxLoading = false;
+        _lightboxError = true;
+    }
+
     private static string ProductInitials(string descripcion)
     {
         if (string.IsNullOrWhiteSpace(descripcion))
@@ -1137,6 +1294,7 @@ else
                 throw new InvalidOperationException("El navegador bloqueó la nueva pestaña del Portal Cliente.");
 
             var urlPortal = Nav.ToAbsoluteUri($"/{Uri.EscapeDataString(idWeb)}/{idBase}/portal-cliente").ToString();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var result = await UiOps.RunAsync(() => PortalAutoLoginSvc.GenerarEnlaceAsync(new PortalClienteGenerarAutoLoginRequestDto
             {
                 CodigoCliente = cliente.CodigoCliente,
@@ -1145,14 +1303,28 @@ else
                 IdWeb = idWeb,
                 IdBase = idBase,
                 UrlBasePortal = urlPortal
-            }), "No pudimos abrir el Portal Cliente.");
+            }, timeout.Token), "No pudimos abrir el Portal Cliente.");
 
             if (!result.Success || string.IsNullOrWhiteSpace(result.Value))
+            {
+                await Js.InvokeVoidAsync("alfaCorePortalWindow.setMessage", "No pudimos generar el acceso automático. Intentá nuevamente.", nombrePestana);
                 return;
+            }
 
             var ventanaNavegada = await Js.InvokeAsync<bool>("alfaCorePortalWindow.navigate", result.Value, nombrePestana);
             if (!ventanaNavegada)
                 throw new InvalidOperationException("No se pudo abrir el Portal Cliente en la nueva pestaña.");
+        }
+        catch
+        {
+            try
+            {
+                await Js.InvokeVoidAsync("alfaCorePortalWindow.setMessage", "No pudimos abrir el Portal Cliente. Intentá nuevamente.", nombrePestana);
+            }
+            catch
+            {
+                // El mensaje de la pestaña es solo informativo; el flujo principal ya informó el error.
+            }
         }
         finally
         {
@@ -1166,24 +1338,28 @@ else
         _filtroRubro = string.Empty;
         _filtroMarca = string.Empty;
         _mostrarFiltros = false;
+        _paginaActual = 1;
         return InvokeAsync(StateHasChanged);
     }
 
     private Task ClearTextoBusquedaAsync()
     {
         _textoBusqueda = string.Empty;
+        _paginaActual = 1;
         return InvokeAsync(StateHasChanged);
     }
 
     private Task ClearFiltroRubroAsync()
     {
         _filtroRubro = string.Empty;
+        _paginaActual = 1;
         return InvokeAsync(StateHasChanged);
     }
 
     private Task ClearFiltroMarcaAsync()
     {
         _filtroMarca = string.Empty;
+        _paginaActual = 1;
         return InvokeAsync(StateHasChanged);
     }
 
@@ -1210,6 +1386,22 @@ else
             query = query.Where(x => string.Equals((x.Marca ?? string.Empty).Trim(), _filtroMarca, StringComparison.OrdinalIgnoreCase));
 
         return query.ToList();
+    }
+
+    private int GetTotalPaginas()
+        => Math.Max(1, (int)Math.Ceiling(GetArticulosFiltrados().Count / (double)ArticulosPorPagina));
+
+    private IReadOnlyList<CatalogosCatalogoItemDto> GetArticulosPagina()
+        => GetArticulosFiltrados()
+            .Skip((_paginaActual - 1) * ArticulosPorPagina)
+            .Take(ArticulosPorPagina)
+            .ToList();
+
+    private async Task CambiarPaginaAsync(int pagina)
+    {
+        _paginaActual = Math.Clamp(pagina, 1, GetTotalPaginas());
+        await Js.InvokeVoidAsync("window.scrollTo", new { top = 0, behavior = "smooth" });
+        await InvokeAsync(StateHasChanged);
     }
 
     // --- Estado del carrito: en memoria + localStorage (por catálogo y cliente), sin tablas nuevas ---

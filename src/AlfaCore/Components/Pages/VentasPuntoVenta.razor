@@ -7,6 +7,7 @@
 @inject AlfaCore.Services.IPuntoVentaTurnoService TurnoSvc
 @inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IRouteContextService RouteCtx
 @inject NavigationManager Nav
 @inject IJSRuntime Js
@@ -79,6 +80,38 @@
         gap: 1rem;
         flex-wrap: wrap;
         justify-content: flex-end;
+    }
+
+    .pos-catalog__document {
+        display: flex;
+        align-items: center;
+        gap: 0.55rem;
+        flex: 0 0 auto;
+    }
+
+    .pos-catalog__document-label {
+        color: var(--color-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+        white-space: nowrap;
+    }
+
+    .pos-catalog__document-btn {
+        min-height: 2.35rem;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        font-size: 0.8rem;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .pos-catalog__document-btn--active {
+        border-color: rgba(56, 189, 248, 0.7);
+        background: rgba(56, 189, 248, 0.18);
+        color: #ffffff;
     }
 
     .pos-topbar__ghost,
@@ -213,17 +246,74 @@
     .pos-line__main {
         display: grid;
         gap: 0.22rem;
+        min-width: 0;
     }
 
     .pos-line__main strong {
         color: #243447;
         font-size: 0.94rem;
         line-height: 1.25;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     .pos-line__main span {
         color: #667483;
         font-size: 0.88rem;
+    }
+
+    .pos-line__details {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.45rem;
+    }
+
+    .pos-line__details > span {
+        white-space: nowrap;
+        font-size: 0.78rem;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .pos-line__controls {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.2rem;
+        flex: 0 0 auto;
+    }
+
+    .pos-line__controls button {
+        display: grid;
+        place-items: center;
+        width: 1.55rem;
+        height: 1.55rem;
+        padding: 0;
+        border: 1px solid #c8cfda;
+        border-radius: 6px;
+        background: #ffffff;
+        color: #3b5e86;
+        cursor: pointer;
+    }
+
+    .pos-line__controls button:hover {
+        background: #e7f1fb;
+    }
+
+    .pos-line__controls strong {
+        min-width: 1.8rem;
+        text-align: center;
+        color: #243447;
+        font-size: 0.8rem;
+    }
+
+    .pos-line__controls .pos-line__remove {
+        margin-left: 0.2rem;
+        border-color: rgba(220, 53, 69, 0.28);
+        color: #c0394b;
     }
 
     .pos-line__price {
@@ -338,9 +428,9 @@
     .pos-catalog__toolbar {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        gap: 1rem;
-        padding: 0.85rem 0.95rem 0.55rem;
+        justify-content: flex-start;
+        gap: 0.7rem;
+        padding: 0.45rem 0.7rem;
         background: #f3f4f7;
         border-bottom: 1px solid #d6dce6;
     }
@@ -350,11 +440,13 @@
         align-items: center;
         gap: 0.8rem;
         min-width: 0;
+        flex: 0 0 17rem;
     }
 
     .pos-select {
-        min-width: 20rem;
-        min-height: 2.9rem;
+        min-width: 0;
+        width: 100%;
+        min-height: 2.5rem;
         border: 1px solid #c8cfda;
         border-radius: 0.28rem;
         background: #ffffff;
@@ -386,30 +478,32 @@
     .pos-catalog__search {
         display: flex;
         align-items: center;
-        justify-content: flex-end;
-        gap: 0.65rem;
-        min-width: min(34rem, 100%);
+        justify-content: flex-start;
+        gap: 0.5rem;
+        flex: 1 1 auto;
+        min-width: 0;
     }
 
     .pos-search-input {
-        min-height: 2.9rem;
+        min-height: 2.5rem;
         border: 1px solid #c8cfda;
         border-radius: 0.28rem;
         background: #ffffff;
         padding: 0.75rem 0.9rem;
         font-size: 1rem;
         flex: 1 1 auto;
+        min-width: 0;
     }
 
     .pos-search-btn {
-        min-height: 2.9rem;
+        min-height: 2.5rem;
         border: 0;
         border-radius: 0.28rem;
         background: #5c94cf;
         color: #ffffff;
         font-size: 0.95rem;
         font-weight: 700;
-        padding: 0.75rem 1.1rem;
+        padding: 0.55rem 0.9rem;
     }
 
     .pos-catalog__meta {
@@ -657,6 +751,29 @@
         color: var(--color-muted);
         font-size: 0.76rem;
         line-height: 1.1;
+    }
+
+    .pos-line__details > span {
+        color: var(--color-muted);
+    }
+
+    .pos-line__controls button {
+        border-color: var(--color-border);
+        background: var(--color-panel);
+        color: var(--color-text);
+    }
+
+    .pos-line__controls button:hover {
+        background: rgba(56, 189, 248, 0.12);
+    }
+
+    .pos-line__controls strong {
+        color: var(--color-text);
+    }
+
+    .pos-line__controls .pos-line__remove {
+        border-color: rgba(248, 113, 113, 0.28);
+        color: #fda4af;
     }
 
     .pos-sidebar__checkout {
@@ -948,6 +1065,41 @@
         line-height: 1.25;
     }
 
+    .pos-item-modal__description-edit {
+        display: grid;
+        gap: 0.4rem;
+    }
+
+    .pos-item-modal__description-edit label {
+        color: var(--color-muted);
+        font-size: 0.78rem;
+        font-weight: 700;
+    }
+
+    .pos-item-modal__description-edit input {
+        min-height: 2.7rem;
+        width: 100%;
+        padding: 0.65rem 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        background: var(--color-panel);
+        color: var(--color-text);
+    }
+
+    .pos-item-modal__description-save {
+        min-height: 2.5rem;
+        border: 1px solid rgba(56, 189, 248, 0.4);
+        border-radius: 10px;
+        background: rgba(56, 189, 248, 0.14);
+        color: var(--color-text);
+        font-weight: 800;
+    }
+
+    .pos-item-modal__description-save:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
     .pos-item-modal__price {
         color: var(--color-text);
         font-size: 1.9rem;
@@ -957,7 +1109,8 @@
     .pos-item-modal__close,
     .pos-item-modal__danger,
     .pos-item-modal__qty-btn,
-    .pos-item-modal__qty-value {
+    .pos-item-modal__qty-value,
+    .pos-item-modal__qty-input {
         min-height: 3rem;
         border-radius: 12px;
         border: 1px solid var(--color-border);
@@ -997,6 +1150,16 @@
         font-size: 1rem;
         font-weight: 700;
         min-width: 8rem;
+    }
+
+    .pos-item-modal__qty-input {
+        width: 100%;
+        min-width: 0;
+        padding: 0 0.9rem;
+        color: var(--color-text);
+        font-size: 1rem;
+        font-weight: 700;
+        text-align: center;
     }
 
     .pos-item-modal__qty-btn {
@@ -1510,6 +1673,70 @@
         color: #fecaca;
     }
 
+    .pos-charge-modal__totals-head {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.55rem;
+    }
+
+    .pos-charge-modal__totals-head > div {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.55rem 0.8rem;
+        border-radius: 10px;
+        background: rgba(2, 6, 23, 0.75);
+        color: var(--color-text);
+    }
+
+    .pos-charge-modal__totals-head span {
+        font-size: 0.85rem;
+        font-weight: 700;
+    }
+
+    .pos-charge-modal__totals-head strong {
+        font-size: 1.25rem;
+    }
+
+    .pos-charge-modal__totals-head--pending strong {
+        color: #38bdf8;
+    }
+
+    .pos-charge-modal__totals-head--change strong,
+    .pos-charge-modal__summary-row--change strong {
+        color: #f87171;
+    }
+
+    .pos-charge-modal__payment-entry {
+        display: grid;
+        grid-template-columns: minmax(10rem, 1fr) minmax(10rem, 1.2fr) minmax(8rem, 0.7fr) auto;
+        gap: 0.55rem;
+        align-items: center;
+    }
+
+    .pos-charge-modal__selected-method {
+        display: grid;
+        gap: 0.1rem;
+        min-height: 2.7rem;
+        padding: 0.35rem 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: var(--color-panel);
+    }
+
+    .pos-charge-modal__selected-method span {
+        color: var(--color-muted);
+        font-size: 0.68rem;
+    }
+
+    .pos-charge-modal__selected-method strong {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.84rem;
+    }
+
     .pos-charge-modal__body {
         display: grid;
         grid-template-columns: minmax(0, 1.1fr) minmax(20rem, 0.9fr);
@@ -1541,7 +1768,7 @@
 
     .pos-charge-modal__method-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+        grid-template-columns: 1fr;
         gap: 0.65rem;
     }
 
@@ -1555,9 +1782,11 @@
     }
 
     .pos-charge-modal__method-btn {
-        display: grid;
-        gap: 0.15rem;
-        min-height: 4rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        min-height: 2.8rem;
         padding: 0.7rem 0.8rem;
         text-align: left;
         transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
@@ -1603,6 +1832,20 @@
         color: var(--color-text);
         padding: 0.8rem 0.9rem;
         font-size: 1rem;
+    }
+
+    .pos-charge-modal__code-filter {
+        min-height: 2.7rem;
+        width: 100%;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: var(--color-panel);
+        color: var(--color-text);
+        padding: 0.7rem 0.85rem;
+    }
+
+    .pos-charge-modal__code-filter::placeholder {
+        color: var(--color-muted);
     }
 
     .pos-charge-modal__action {
@@ -1764,6 +2007,15 @@
 
         .pos-item-modal {
             grid-template-columns: 1fr;
+        }
+
+        .pos-charge-modal__totals-head,
+        .pos-charge-modal__payment-entry {
+            grid-template-columns: 1fr;
+        }
+
+        .pos-charge-modal__payment-entry .pos-charge-modal__action {
+            width: 100%;
         }
     }
 
@@ -2072,6 +2324,24 @@
         background: #ffffff;
     }
 
+    .pos-receipt-modal__designer-frame {
+        display: block;
+        width: 100%;
+        min-height: 38rem;
+        flex: 1 1 auto;
+        border: 0;
+        border-radius: 0 0 0.8rem 0.8rem;
+        background: #ffffff;
+    }
+
+    .pos-receipt-modal__preview-loading {
+        display: grid;
+        min-height: 38rem;
+        place-items: center;
+        color: var(--color-muted);
+        background: #ffffff;
+    }
+
     .pos-receipt-modal__frame--hidden {
         position: absolute;
         left: -9999px;
@@ -2368,6 +2638,15 @@
 
         return (element.scrollTop + element.clientHeight) >= (element.scrollHeight - 120);
     };
+
+    window.alfaPosFocusSelect = function (element) {
+        if (!element) {
+            return;
+        }
+
+        element.focus();
+        element.select();
+    };
 </script>
 
 <section class="pos-shell">
@@ -2506,8 +2785,25 @@
                         {
                             <article class="pos-line" @onclick="() => OpenCartItemModal(item.IdArticulo)">
                                 <div class="pos-line__main">
-                                    <strong>@item.Descripcion</strong>
-                                    <span>(@item.IdArticulo) @FmtQty(item.Cantidad) a @FmtMoney(item.PrecioUnitario)</span>
+                                    <strong>@(string.IsNullOrWhiteSpace(item.Descripcion) ? "Artículo sin descripción" : item.Descripcion)</strong>
+                                    <div class="pos-line__details">
+                                        <span>Código: @item.IdArticulo · Precio ud.: @FmtMoney(item.PrecioUnitario)</span>
+                                        <div class="pos-line__controls" @onclick:stopPropagation="true">
+                                            <button type="button" title="Disminuir cantidad"
+                                                    @onclick="() => ChangeQty(item.IdArticulo, -1m)">
+                                                <i class="bi bi-dash"></i>
+                                            </button>
+                                            <strong>@FmtQty(item.Cantidad)</strong>
+                                            <button type="button" title="Aumentar cantidad"
+                                                    @onclick="() => ChangeQty(item.IdArticulo, 1m)">
+                                                <i class="bi bi-plus"></i>
+                                            </button>
+                                            <button type="button" class="pos-line__remove" title="Eliminar artículo"
+                                                    @onclick="() => RemoveItem(item.IdArticulo)">
+                                                <i class="bi bi-trash3"></i>
+                                            </button>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="pos-line__price">@FmtMoney(item.Subtotal)</div>
                             </article>
@@ -2582,6 +2878,27 @@
 
             <div class="pos-catalog">
                 <section class="pos-catalog__toolbar">
+                    <div class="pos-catalog__document" aria-label="Factura a utilizar">
+                        <span class="pos-catalog__document-label">Factura:</span>
+                        <button type="button"
+                                class="@(string.Equals(_tipoComprobanteSeleccionado, "FC", StringComparison.OrdinalIgnoreCase) ? "pos-catalog__document-btn pos-catalog__document-btn--active" : "pos-catalog__document-btn")"
+                                @onclick='() => SeleccionarTipoComprobante("FC")'>
+                            EFC
+                        </button>
+                        <button type="button"
+                                class="@(string.Equals(_tipoComprobanteSeleccionado, "FP", StringComparison.OrdinalIgnoreCase) ? "pos-catalog__document-btn pos-catalog__document-btn--active" : "pos-catalog__document-btn")"
+                                @onclick='() => SeleccionarTipoComprobante("FP")'>
+                            FP
+                        </button>
+                    </div>
+
+                    <div class="pos-catalog__search">
+                        <InputText @bind-Value="_filters.Texto" class="pos-search-input" placeholder="Buscar articulos..." />
+                        <button type="button" class="pos-search-btn" @onclick="BuscarArticulosAsync" disabled="@_catalogLoading">
+                            @( _catalogLoading ? "Buscando..." : "Buscar" )
+                        </button>
+                    </div>
+
                     <div class="pos-catalog__filters">
                         <select class="pos-select" @bind="_filters.IdFamilia">
                             <option value="">Todas las familias</option>
@@ -2590,13 +2907,6 @@
                                 <option value="@family.IdFamilia">@FamilyLabel(family)</option>
                             }
                         </select>
-                    </div>
-
-                    <div class="pos-catalog__search">
-                        <InputText @bind-Value="_filters.Texto" class="pos-search-input" placeholder="Buscar articulos..." />
-                        <button type="button" class="pos-search-btn" @onclick="BuscarArticulosAsync" disabled="@_catalogLoading">
-                            @( _catalogLoading ? "Buscando..." : "Buscar" )
-                        </button>
                     </div>
                 </section>
 
@@ -2629,7 +2939,7 @@
                                     @if (ShouldShowImage(article))
                                     {
                                         <img class="pos-product__image"
-                                             src="@GetProductImageUrl(article)"
+                                             src="@GetProductThumbUrl(article)"
                                              alt="@article.Descripcion"
                                              loading="lazy"
                                              @onerror="@EventCallback.Factory.Create(this, () => HandleImageError(article.IdArticulo))" />
@@ -2697,10 +3007,33 @@
             <div class="pos-item-modal__top">
                 <div>
                     <div class="pos-item-modal__code"># @SelectedCartItem.IdArticulo</div>
-                    <h3 class="pos-item-modal__title">@SelectedCartItem.Descripcion</h3>
+                    @if (string.IsNullOrWhiteSpace(SelectedCartItem.Descripcion))
+                    {
+                        <h3 class="pos-item-modal__title">Artículo sin descripción</h3>
+                    }
+                    else
+                    {
+                        <h3 class="pos-item-modal__title">@SelectedCartItem.Descripcion</h3>
+                    }
                 </div>
                 <button type="button" class="pos-item-modal__close" @onclick="CloseCartItemModal">X</button>
             </div>
+
+            @if (string.IsNullOrWhiteSpace(SelectedCartItem.Descripcion))
+            {
+                <div class="pos-item-modal__description-edit">
+                    <label for="pos-item-description">Descripción del artículo</label>
+                    <input id="pos-item-description"
+                           @bind="_descriptionBeingEdited"
+                           @onkeydown="HandleDescriptionKeyDown"
+                           placeholder="Ingresá una descripción" />
+                    <button type="button" class="pos-item-modal__description-save"
+                            @onclick="SaveItemDescription"
+                            disabled="@string.IsNullOrWhiteSpace(_descriptionBeingEdited)">
+                        Guardar descripción
+                    </button>
+                </div>
+            }
 
             <div class="pos-item-modal__price">@FmtMoney(SelectedCartItem.Subtotal)</div>
 
@@ -2708,7 +3041,12 @@
 
             <div class="pos-item-modal__qty-label">Cantidad</div>
             <div class="pos-item-modal__qty">
-                <div class="pos-item-modal__qty-value">@FmtQty(SelectedCartItem.Cantidad)</div>
+                <input class="pos-item-modal__qty-input"
+                       type="number"
+                       min="0.01"
+                       step="0.01"
+                       @bind="SelectedCartItem.Cantidad"
+                       @onkeydown="HandleQuantityKeyDown" />
                 <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem.IdArticulo, -1m)">-</button>
                 <button type="button" class="pos-item-modal__qty-btn" @onclick="() => ChangeQtyAndRefreshModal(SelectedCartItem.IdArticulo, 1m)">+</button>
             </div>
@@ -2723,7 +3061,6 @@
         <div class="pos-charge-modal__header">
             <div>
                 <h3>Cobranza</h3>
-                <p>Registrá los medios de pago y confirmá la venta actual sin salir del facturador.</p>
             </div>
             <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal"><i class="bi bi-x-lg"></i></button>
         </div>
@@ -2733,9 +3070,47 @@
             <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">@_chargeError</div>
         }
 
+        <div class="pos-charge-modal__totals-head">
+            <div>
+                <span>Total</span>
+                <strong>@FmtMoney(TotalCarrito)</strong>
+            </div>
+            <div class="@(VueltoCobro > 0 ? "pos-charge-modal__totals-head--change" : "pos-charge-modal__totals-head--pending")">
+                @if (VueltoCobro > 0)
+                {
+                    <span>Vuelto</span>
+                    <strong>@FmtMoney(VueltoCobro)</strong>
+                }
+                else
+                {
+                    <span>Faltante</span>
+                    <strong>@FmtMoney(PendienteCobro)</strong>
+                }
+            </div>
+        </div>
+
+        <div class="pos-charge-modal__payment-entry">
+            <input class="pos-charge-modal__code-filter"
+                   @ref="_paymentMethodCodeFilterRef"
+                   @bind="_paymentMethodCodeFilter"
+                   @bind:event="oninput"
+                   placeholder="Código o descripción" />
+            <div class="pos-charge-modal__selected-method">
+                <span>Medio seleccionado</span>
+                <strong>@SelectedPaymentMethodLabel()</strong>
+            </div>
+            <input class="pos-charge-modal__amount"
+                   @ref="_chargeAmountRef"
+                   @bind="_chargeAmountInput"
+                   @bind:event="oninput"
+                   @onkeydown="HandleChargeAmountKeyDown"
+                   placeholder="Importe" />
+            <button type="button" class="pos-charge-modal__action" @onclick="AddSelectedPaymentAsync" disabled="@_paymentMethodsLoading">Agregar</button>
+        </div>
+
         <div class="pos-charge-modal__body">
             <section class="pos-charge-modal__section">
-                <h4>Agregar medio de pago</h4>
+                <h4>Medios de pago</h4>
 
                 @if (_paymentMethodsLoading)
                 {
@@ -2749,37 +3124,19 @@
                 {
                     <div class="pos-charge-modal__methods-scroll">
                         <div class="pos-charge-modal__method-grid">
-                            @foreach (var method in _paymentMethods)
+                            @foreach (var method in PaymentMethodsFiltrados)
                             {
                                 <button type="button"
                                         class="@(method.Codigo == _selectedPaymentCode ? "pos-charge-modal__method-btn pos-charge-modal__method-btn--active" : "pos-charge-modal__method-btn")"
                                         @onclick="() => HandlePaymentMethodClickAsync(method.Codigo)">
                                     <strong>@method.Descripcion</strong>
-                                    <span>@method.Codigo @(!string.IsNullOrWhiteSpace(method.MedioDePago) ? $"· {method.MedioDePago}" : string.Empty)</span>
+                                    <span>@(string.IsNullOrWhiteSpace(method.CodigoOpcional) ? method.Codigo : method.CodigoOpcional) @(!string.IsNullOrWhiteSpace(method.MedioDePago) ? $"· {method.MedioDePago}" : string.Empty)</span>
                                 </button>
                             }
                         </div>
                     </div>
                 }
 
-                <div class="pos-charge-modal__entry">
-                    <input class="pos-charge-modal__amount" @bind="_chargeAmountInput" placeholder="Importe" />
-                    <button type="button" class="pos-charge-modal__action" @onclick="AddSelectedPaymentAsync" disabled="@_paymentMethodsLoading">Agregar</button>
-                </div>
-                <div class="pos-charge-modal__hint">
-                    Tocá un medio de pago para cargar el importe pendiente completo. Si querés dividir el cobro, cambiá el importe y después tocá el medio.
-                </div>
-
-                <div class="pos-charge-modal__summary">
-                    <div class="pos-charge-modal__summary-row">
-                        <span>Cliente actual</span>
-                        <strong>@DisplayValueOrDash(_settings.CuentaConsumidorFinal)</strong>
-                    </div>
-                    <div class="pos-charge-modal__summary-row">
-                        <span>Método seleccionado</span>
-                        <strong>@SelectedPaymentMethodLabel()</strong>
-                    </div>
-                </div>
             </section>
 
             <section class="pos-charge-modal__section">
@@ -2808,10 +3165,6 @@
 
                 <div class="pos-charge-modal__summary">
                     <div class="pos-charge-modal__summary-row">
-                        <span>Total carrito</span>
-                        <strong>@FmtMoney(TotalCarrito)</strong>
-                    </div>
-                    <div class="pos-charge-modal__summary-row">
                         <span>Total cobrado</span>
                         <strong>@FmtMoney(TotalPagado)</strong>
                     </div>
@@ -2819,9 +3172,13 @@
                         <span>Pendiente</span>
                         <strong>@FmtMoney(PendienteCobro)</strong>
                     </div>
-                    <div class="pos-charge-modal__summary-row">
+                    <div class="@(VueltoCobro > 0 ? "pos-charge-modal__summary-row pos-charge-modal__summary-row--change" : "pos-charge-modal__summary-row")">
                         <span>Vuelto</span>
                         <strong>@FmtMoney(VueltoCobro)</strong>
+                    </div>
+                    <div class="pos-charge-modal__summary-row">
+                        <span>Comprobante</span>
+                        <strong>@TipoComprobanteSeleccionadoLabel()</strong>
                     </div>
                 </div>
             </section>
@@ -2936,62 +3293,20 @@
                     </p>
                 </div>
             </div>
-            <div class="pos-ticket-preview">
-                <div class="pos-ticket-preview__brand">
-                    <strong>@DisplayValueOrDash(_receiptContext?.Empresa)</strong>
-                    @if (!string.IsNullOrWhiteSpace(_receiptContext?.Telefono))
-                    {
-                        <span>@_receiptContext.Telefono</span>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(_receiptContext?.Direccion))
-                    {
-                        <span>@_receiptContext.Direccion</span>
-                    }
-                </div>
-
-                <div class="pos-ticket-preview__header">
-                    <div class="pos-ticket-preview__line">
-                        <span>Comprobante</span>
-                        <strong>@($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}")</strong>
-                    </div>
-                    <div class="pos-ticket-preview__line">
-                        <span>Fecha</span>
-                        <strong>@DateTime.Now.ToString("dd/MM/yyyy HH:mm")</strong>
-                    </div>
-                </div>
-
-                <div class="pos-ticket-preview__items">
-                    @foreach (var item in _receiptItems)
-                    {
-                        <div class="pos-ticket-preview__item">
-                            <strong>@item.Descripcion</strong>
-                            <span>@($"{FmtQty(item.Cantidad)} x {FmtMoney(item.PrecioUnitario)}")</span>
-                            <div class="pos-ticket-preview__line">
-                                <span>@item.IdArticulo</span>
-                                <strong>@FmtMoney(item.Subtotal)</strong>
-                            </div>
-                        </div>
-                    }
-                </div>
-
-                <div class="pos-ticket-preview__payments">
-                    <strong>Medios de pago</strong>
-                    <ul>
-                        @foreach (var payment in _receiptPayments)
-                        {
-                            <li class="pos-ticket-preview__line">
-                                <span>@payment.DescripcionMedioPago</span>
-                                <strong>@FmtMoney(payment.Importe)</strong>
-                            </li>
-                        }
-                    </ul>
-
-                    <div class="pos-ticket-preview__total">
-                        <span>Total</span>
-                        <strong>@FmtMoney(_lastSaleResult.Total)</strong>
-                    </div>
-                </div>
-            </div>
+            @if (!string.IsNullOrWhiteSpace(_receiptPreviewHtml))
+            {
+                <iframe class="pos-receipt-modal__designer-frame"
+                        title="Vista previa del comprobante diseñado"
+                        srcdoc="@_receiptPreviewHtml"></iframe>
+            }
+            else if (!string.IsNullOrWhiteSpace(_receiptPreviewError))
+            {
+                <div class="pos-receipt-modal__preview-loading">@_receiptPreviewError</div>
+            }
+            else
+            {
+                <div class="pos-receipt-modal__preview-loading">Cargando la plantilla del diseñador...</div>
+            }
             <iframe id="pos-receipt-frame" class="pos-receipt-modal__frame pos-receipt-modal__frame--hidden" title="Impresión ticket POS"></iframe>
         </section>
     </section>
@@ -3685,6 +4000,8 @@
     private string? _chargeSuccess;
     private string? _receiptEmailFeedback;
     private string? _receiptEmailError;
+    private string? _receiptPreviewHtml;
+    private string? _receiptPreviewError;
     private PuntoVentaReceiptContextDto? _receiptContext;
     private bool _loading = true;
     private bool _catalogLoading;
@@ -3720,6 +4037,7 @@
     private bool _reprintLoading;
     private bool _receiptIsReprint;
     private string? _selectedCartItemId;
+    private string _descriptionBeingEdited = string.Empty;
     private string _scanCode = string.Empty;
     private string _scanError = string.Empty;
     private bool _scanLoading;
@@ -3727,7 +4045,11 @@
     private string _cuentaClienteNombre = string.Empty;
     private bool _showClienteModal;
     private string _chargeAmountInput = string.Empty;
+    private ElementReference _chargeAmountRef;
+    private ElementReference _paymentMethodCodeFilterRef;
     private string _selectedPaymentCode = string.Empty;
+    private string _paymentMethodCodeFilter = string.Empty;
+    private string _tipoComprobanteSeleccionado = "FC";
     private string _receiptEmail = string.Empty;
 
     [SupplyParameterFromQuery(Name = "idPedido")]
@@ -3786,6 +4108,15 @@
     private decimal PendienteCobro => Math.Max(decimal.Round(TotalCarrito - TotalPagado, 2), 0m);
     private decimal VueltoCobro => Math.Max(decimal.Round(TotalPagado - TotalCarrito, 2), 0m);
     private PuntoVentaCartItemDto? SelectedCartItem => _cartItems.FirstOrDefault(x => x.IdArticulo == _selectedCartItemId);
+    private IReadOnlyList<PuntoVentaPaymentMethodDto> PaymentMethodsFiltrados
+        => string.IsNullOrWhiteSpace(_paymentMethodCodeFilter)
+            ? _paymentMethods
+            : _paymentMethods
+                .Where(x =>
+                    (x.Codigo ?? string.Empty).Contains(_paymentMethodCodeFilter.Trim(), StringComparison.OrdinalIgnoreCase)
+                    || (x.CodigoOpcional ?? string.Empty).Contains(_paymentMethodCodeFilter.Trim(), StringComparison.OrdinalIgnoreCase)
+                    || (x.Descripcion ?? string.Empty).Contains(_paymentMethodCodeFilter.Trim(), StringComparison.OrdinalIgnoreCase))
+                .ToList();
 
     protected override async Task OnInitializedAsync()
     {
@@ -3793,6 +4124,9 @@
         {
             _loading = true;
             _context = await PuntoVentaSvc.GetContextAsync();
+            _tipoComprobanteSeleccionado = string.Equals(_context.TipoComprobanteDefault, "FP", StringComparison.OrdinalIgnoreCase)
+                ? "FP"
+                : "FC";
             _settings = await PuntoVentaSvc.GetSettingsAsync();
             _familias = await PuntoVentaSvc.GetFamiliasAsync();
             await LoadCatalogAsync();
@@ -4267,25 +4601,55 @@
     }
 
     private void OpenCartItemModal(string idArticulo)
-        => _selectedCartItemId = idArticulo;
+    {
+        _selectedCartItemId = idArticulo;
+        var item = _cartItems.FirstOrDefault(x => x.IdArticulo == idArticulo);
+        _descriptionBeingEdited = string.IsNullOrWhiteSpace(item?.Descripcion)
+            ? string.Empty
+            : item.Descripcion;
+    }
 
     private void CloseCartItemModal()
     {
         _selectedCartItemId = null;
+        _descriptionBeingEdited = string.Empty;
         _needScanFocus = true;
+    }
+
+    private void SaveItemDescription()
+    {
+        var item = SelectedCartItem;
+        var descripcion = _descriptionBeingEdited.Trim();
+        if (item is null || !string.IsNullOrWhiteSpace(item.Descripcion) || descripcion.Length == 0)
+            return;
+
+        item.Descripcion = descripcion;
+        CloseCartItemModal();
+    }
+
+    private void HandleQuantityKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            CloseCartItemModal();
+    }
+
+    private void HandleDescriptionKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            SaveItemDescription();
     }
 
     private void ChangeQtyAndRefreshModal(string idArticulo, decimal delta)
     {
         ChangeQty(idArticulo, delta);
         if (!_cartItems.Any(x => x.IdArticulo == idArticulo))
-            _selectedCartItemId = null;
+            CloseCartItemModal();
     }
 
     private void RemoveItemAndClose(string idArticulo)
     {
         RemoveItem(idArticulo);
-        _selectedCartItemId = null;
+        CloseCartItemModal();
     }
 
     private void VaciarCarrito()
@@ -4564,16 +4928,21 @@
         _showPosMenu = false;
         _showChargeModal = true;
         _selectedPaymentCode = string.Empty;
-        _chargeAmountInput = PendingAmountInput();
+        _paymentMethodCodeFilter = string.Empty;
+            _chargeAmountInput = PendingAmountInput();
+        SelectDefaultPaymentMethod();
 
         if (_paymentMethods.Any())
+        {
+            await FocusChargeAmountAsync();
             return;
+        }
 
         try
         {
             _paymentMethodsLoading = true;
             _paymentMethods = await PuntoVentaSvc.GetPaymentMethodsAsync();
-            _selectedPaymentCode = _paymentMethods.FirstOrDefault()?.Codigo ?? string.Empty;
+            SelectDefaultPaymentMethod();
         }
         catch (Exception ex)
         {
@@ -4583,6 +4952,9 @@
         {
             _paymentMethodsLoading = false;
         }
+
+        SelectDefaultPaymentMethod();
+        await FocusChargeAmountAsync();
     }
 
     private void CloseChargeModal()
@@ -4591,8 +4963,21 @@
         _chargeError = null;
         _chargeAmountInput = string.Empty;
         _selectedPaymentCode = string.Empty;
+        _paymentMethodCodeFilter = string.Empty;
         _paymentLines.Clear();
     }
+
+    private void SeleccionarTipoComprobante(string tipo)
+    {
+        _tipoComprobanteSeleccionado = string.Equals(tipo, "FP", StringComparison.OrdinalIgnoreCase)
+            ? "FP"
+            : "FC";
+    }
+
+    private string TipoComprobanteSeleccionadoLabel()
+        => string.Equals(_tipoComprobanteSeleccionado, "FP", StringComparison.OrdinalIgnoreCase)
+            ? "FP · Factura proforma"
+            : "EFC · Factura electrónica (FC)";
 
     private void SelectPaymentMethod(string codigo)
     {
@@ -4604,30 +4989,67 @@
     private async Task HandlePaymentMethodClickAsync(string codigo)
     {
         SelectPaymentMethod(codigo);
-        await AddSelectedPaymentAsync();
+        await FocusChargeAmountAsync();
     }
 
-    private Task AddSelectedPaymentAsync()
+    private void SelectDefaultPaymentMethod()
+    {
+        var configurado = _settings.MedioDePagoContado?.Trim() ?? string.Empty;
+        var medio = _paymentMethods.FirstOrDefault(x => configurado.Length > 0
+            && (string.Equals(x.CodigoOpcional?.Trim(), configurado, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x.Codigo?.Trim(), configurado, StringComparison.OrdinalIgnoreCase)));
+
+        medio ??= _paymentMethods.FirstOrDefault(x =>
+            string.Equals(x.CodigoOpcional?.Trim(), "EF", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(x.Codigo?.Trim(), "EF", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(x.MedioDePago?.Trim(), "EF", StringComparison.OrdinalIgnoreCase));
+
+        medio ??= _paymentMethods.FirstOrDefault(x =>
+        {
+            var descripcion = x.Descripcion?.Trim() ?? string.Empty;
+            return descripcion.Contains("EFECTIVO", StringComparison.OrdinalIgnoreCase)
+                || (descripcion.Contains("CAJA", StringComparison.OrdinalIgnoreCase)
+                    && descripcion.Contains("EF", StringComparison.OrdinalIgnoreCase));
+        });
+
+        _selectedPaymentCode = medio?.Codigo ?? _paymentMethods.FirstOrDefault()?.Codigo ?? string.Empty;
+    }
+
+    private async Task FocusChargeAmountAsync()
+    {
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try { await Js.InvokeVoidAsync("alfaPosFocusSelect", _chargeAmountRef); } catch { }
+    }
+
+    private async Task FocusPaymentMethodFilterAsync()
+    {
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try { await Js.InvokeVoidAsync("alfaPosFocusSelect", _paymentMethodCodeFilterRef); } catch { }
+    }
+
+    private async Task AddSelectedPaymentAsync()
     {
         _chargeError = null;
 
         if (string.IsNullOrWhiteSpace(_selectedPaymentCode))
         {
             _chargeError = "Seleccioná un medio de pago antes de agregarlo.";
-            return Task.CompletedTask;
+            return;
         }
 
         if (!TryParseMoney(_chargeAmountInput, out var importe) || importe <= 0)
         {
             _chargeError = "Ingresá un importe válido para el medio de pago.";
-            return Task.CompletedTask;
+            return;
         }
 
         var method = _paymentMethods.FirstOrDefault(x => x.Codigo == _selectedPaymentCode);
         if (method is null)
         {
             _chargeError = "El medio de pago seleccionado ya no está disponible.";
-            return Task.CompletedTask;
+            return;
         }
 
         _paymentLines.Add(new PuntoVentaPaymentLineDto
@@ -4637,8 +5059,16 @@
             Importe = decimal.Round(importe, 2)
         });
 
-        _chargeAmountInput = PendingAmountInput();
-        return Task.CompletedTask;
+        _chargeAmountInput = TotalPagado >= TotalCarrito
+            ? FmtInputAmount(importe)
+            : PendingAmountInput();
+        await FocusPaymentMethodFilterAsync();
+    }
+
+    private async Task HandleChargeAmountKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+            await AddSelectedPaymentAsync();
     }
 
     private void RemovePaymentLine(PuntoVentaPaymentLineDto line)
@@ -4710,8 +5140,11 @@
             {
                 CuentaCliente = !string.IsNullOrEmpty(_cuentaCliente) ? _cuentaCliente : _settings.CuentaConsumidorFinal,
                 Fecha = DateTime.Today,
-                TipoComprobante = _context?.TipoComprobanteDefault ?? "FC",
-                Sucursal = _pedidoSucursalOverride ?? _context?.SucursalDefault ?? "0001",
+                TipoComprobante = _tipoComprobanteSeleccionado,
+                // En una venta normal la sucursal se resuelve nuevamente desde
+                // TA_CONFIGURACION.TPV_SUCURSAL al grabar. Solo un pedido puede
+                // enviar una sucursal explícita.
+                Sucursal = _pedidoSucursalOverride ?? string.Empty,
                 Items = soldItems,
                 Pagos = soldPayments
             });
@@ -4778,8 +5211,11 @@
         _receiptEmail = _receiptContext.EmailSugerido;
         _receiptEmailFeedback = null;
         _receiptEmailError = null;
+        _receiptPreviewHtml = null;
+        _receiptPreviewError = null;
         _receiptIsReprint = false;
         _showReceiptModal = true;
+        await LoadReceiptDesignerPreviewAsync();
     }
 
     private async Task OpenExistingReceiptAsync(int idComprobante)
@@ -4797,8 +5233,11 @@
             _receiptEmail = receipt.Contexto.EmailSugerido;
             _receiptEmailFeedback = null;
             _receiptEmailError = null;
+            _receiptPreviewHtml = null;
+            _receiptPreviewError = null;
             _receiptIsReprint = receipt.Impreso;
             _showReceiptModal = true;
+            await LoadReceiptDesignerPreviewAsync();
         }
         catch (Exception ex)
         {
@@ -4811,6 +5250,8 @@
         _showReceiptModal = false;
         _receiptEmailFeedback = null;
         _receiptEmailError = null;
+        _receiptPreviewHtml = null;
+        _receiptPreviewError = null;
         _receiptIsReprint = false;
 
         // Si el comprobante se generó cerrando un pedido de Delivery/Take Away,
@@ -4837,33 +5278,41 @@
         return $"/comprobantes/viewer/{Uri.EscapeDataString(_lastSaleResult.TipoComprobante)}/{Uri.EscapeDataString(_lastSaleResult.IdComprobanteTexto)}?returnUrl=%2Fventas%2Fpunto-venta{reimpresion}";
     }
 
+    private async Task LoadReceiptDesignerPreviewAsync()
+    {
+        if (_lastSaleResult is null)
+            return;
+
+        try
+        {
+            var rendered = await FacturaDocumentSvc.RenderAsync(
+                _lastSaleResult.TipoComprobante,
+                _lastSaleResult.IdComprobanteTexto,
+                PosUNegocio);
+            _receiptPreviewHtml = rendered.Html;
+        }
+        catch (Exception ex)
+        {
+            _receiptPreviewHtml = null;
+            _receiptPreviewError = $"No se pudo cargar la plantilla del diseñador: {ex.Message}";
+        }
+    }
+
     private async Task PrintReceiptAsync()
     {
         if (_lastSaleResult is null) return;
 
-        // Factura A/B/C: imprime el PDF real del Diseñador de Comprobantes (respeta el papel
-        // configurado -- A4 o Ticket80 -- y trae el recuadro de tipo, CAE y QR). El ticket simple
-        // de acá abajo solo se usa para comprobantes no fiscales (Nota de Pedido, etc.).
-        if (TiposDocumentoCore.EsFactura(TiposDocumentoCore.TipoParaComprobante(_lastSaleResult.TipoComprobante, _lastSaleResult.Letra)))
+        try
         {
-            try
-            {
-                var pdf = await FacturaDocumentSvc.GeneratePdfAsync(_lastSaleResult.TipoComprobante, _lastSaleResult.IdComprobanteTexto, PosUNegocio);
-                await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
-                await Js.InvokeVoidAsync("alfaPosPrintPdfBytes", "pos-receipt-frame", Convert.ToBase64String(pdf));
-                _receiptIsReprint = true;
-            }
-            catch (Exception ex)
-            {
-                _error = ex.Message;
-            }
-            return;
+            var pdf = await FacturaDocumentSvc.GeneratePdfAsync(_lastSaleResult.TipoComprobante, _lastSaleResult.IdComprobanteTexto, PosUNegocio);
+            await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
+            await Js.InvokeVoidAsync("alfaPosPrintPdfBytes", "pos-receipt-frame", Convert.ToBase64String(pdf));
+            _receiptIsReprint = true;
         }
-
-        var html = BuildReceiptPrintHtml(_receiptIsReprint);
-        await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
-        await Js.InvokeVoidAsync("alfaPosPrintHtml", "pos-receipt-frame", html);
-        _receiptIsReprint = true;
+        catch (Exception ex)
+        {
+            _error = ex.Message;
+        }
     }
 
     private async Task SendReceiptEmailAsync()
@@ -5055,7 +5504,21 @@
         => GetProductImageUrl(article.IdArticulo);
 
     private string GetProductImageUrl(string idArticulo)
-        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(_settings.FtpCodigoCta, idArticulo);
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(
+            _settings.FtpCodigoCta,
+            idArticulo,
+            SessionSvc.GetActiveSession()?.BaseId,
+            thumbnail: false);
+
+    private string GetProductThumbUrl(PuntoVentaArticleDto article)
+        => GetProductThumbUrl(article.IdArticulo);
+
+    private string GetProductThumbUrl(string idArticulo)
+        => AlfaCore.Services.ArticuloImagenUrlHelper.BuildPublicImageUrl(
+            _settings.FtpCodigoCta,
+            idArticulo,
+            SessionSvc.GetActiveSession()?.BaseId,
+            thumbnail: true);
 
     private string BuildReceiptPrintHtml(bool showReprint)
     {

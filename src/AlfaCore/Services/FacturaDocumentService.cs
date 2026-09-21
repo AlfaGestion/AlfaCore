@@ -375,6 +375,7 @@ public sealed class FacturaDocumentService(
             "A" => ("A", "001"),
             "B" => ("B", "006"),
             "C" => ("C", "011"),
+            "X" => ("X", string.Empty),
             _ => (null, string.Empty)
         };
     }

@@ -88,7 +88,8 @@
 
                     <div class="auth-field">
                         <label for="app-login-password">Contraseña</label>
-                        <AuthInputField Id="app-login-password"
+                    <AuthInputField @ref="_passwordField"
+                                    Id="app-login-password"
                                         Value="@Password"
                                         ValueChanged="OnPasswordChangedAsync"
                                         Placeholder="Contraseña"
@@ -166,6 +167,7 @@
     [Parameter] public bool IsSwitchUserMode { get; set; }
 
     private AuthInputField? _userNameField;
+    private AuthInputField? _passwordField;
     private bool _shouldFocusUserName;
     private bool _lastOpenState;
 
@@ -185,7 +187,9 @@
         _shouldFocusUserName = false;
         try
         {
-            if (_userNameField is not null)
+            if (!string.IsNullOrWhiteSpace(UserName) && _passwordField is not null)
+                await _passwordField.FocusAsync(preventScroll: true);
+            else if (_userNameField is not null)
                 await _userNameField.FocusAsync(preventScroll: true);
         }
         catch
@@ -210,7 +214,22 @@
     }
 
     private Task OnRememberCredentialsChangedAsync(ChangeEventArgs args)
-        => RememberCredentialsChanged.InvokeAsync(args.Value is bool value && value);
+    {
+        // Según el modo de renderizado/navegador, el checkbox puede llegar como bool
+        // o como texto. Si se acepta únicamente bool, la opción queda siempre en false
+        // en algunos escenarios y nunca se persiste el usuario recordado.
+        var value = args.Value switch
+        {
+            bool booleanValue => booleanValue,
+            string textValue => bool.TryParse(textValue, out var parsedValue)
+                ? parsedValue
+                : string.Equals(textValue, "on", StringComparison.OrdinalIgnoreCase)
+                  || string.Equals(textValue, "1", StringComparison.OrdinalIgnoreCase),
+            _ => false
+        };
+
+        return RememberCredentialsChanged.InvokeAsync(value);
+    }
 
     private string GetSessionName()
     {

@@ -253,7 +253,7 @@ public sealed class CarritoComprasService(
             var codigoClienteNormalizado = (codigoCliente ?? string.Empty).Trim();
             var pricing = string.IsNullOrWhiteSpace(codigoClienteNormalizado)
                 ? null
-                : await ResolvePrecioClienteAsync(codigoClienteNormalizado, token);
+                : await ResolvePrecioClienteEnBaseAsync(codigoClienteNormalizado, expectedBaseId, token);
             var items = pricing is null
                 ? []
                 : await LoadGeneralItemsAsync(cn, pricing, token);
@@ -706,6 +706,12 @@ public sealed class CarritoComprasService(
         }, "No se pudo actualizar el carrito general.", ct);
 
     public Task<CarritoComprasPrecioClienteDto> ResolvePrecioClienteAsync(string? codigoCliente, CancellationToken ct = default)
+        => ResolvePrecioClienteEnBaseAsync(codigoCliente, null, ct);
+
+    private Task<CarritoComprasPrecioClienteDto> ResolvePrecioClienteEnBaseAsync(
+        string? codigoCliente,
+        int? expectedBaseId,
+        CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "ResolvePrecioCliente", async token =>
         {
             var codigo = (codigoCliente ?? string.Empty).Trim();
@@ -720,7 +726,7 @@ public sealed class CarritoComprasService(
                 Origen = "MaestroPrecios"
             };
 
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(ResolveConnectionString(expectedBaseId, "CarritoCompras.ResolvePrecioCliente"));
             await cn.OpenAsync(token);
 
             if (!await SqlObjectExistsAsync(cn, "VT_CLIENTES", token))
@@ -753,6 +759,21 @@ public sealed class CarritoComprasService(
                 result.OrigenLista = "ListaCliente";
                 result.OrigenClase = "ClaseCliente";
                 result.Origen = "ListaCliente";
+                return result;
+            }
+
+            // Mantener el mismo criterio que la Lista de precios del Portal Cliente:
+            // si el cliente no tiene una lista propia, usar la primera lista de ventas
+            // vigente configurada. Sólo caer al maestro si no existe ninguna lista.
+            var listaGeneral = await ResolveListaGeneralAsync(cn, token);
+            if (listaGeneral is not null)
+            {
+                result.IdLista = listaGeneral.Value.IdLista;
+                result.NombreLista = listaGeneral.Value.Nombre;
+                result.ClasePrecio = claseCliente;
+                result.OrigenLista = "ListaGeneral";
+                result.OrigenClase = "ClaseVenta";
+                result.Origen = "ListaGeneral";
                 return result;
             }
 
@@ -1196,6 +1217,31 @@ public sealed class CarritoComprasService(
             sql,
             new { IdLista = idLista },
             cancellationToken: ct));
+    }
+
+    private async Task<(string IdLista, string Nombre)?> ResolveListaGeneralAsync(SqlConnection cn, CancellationToken ct)
+    {
+        if (!await SqlObjectExistsAsync(cn, "V_MA_PreciosCab", ct))
+            return null;
+
+        var lista = await cn.QuerySingleOrDefaultAsync<(string IdLista, string Nombre)>(new CommandDefinition(
+            """
+            SELECT TOP (1)
+                ISNULL(LTRIM(RTRIM(IdLista)), N'') AS IdLista,
+                ISNULL(LTRIM(RTRIM(Nombre)), N'') AS Nombre
+            FROM dbo.V_MA_PreciosCab
+            WHERE UPPER(LTRIM(RTRIM(TipoLista))) = N'V'
+            ORDER BY
+                CASE
+                    WHEN (VigenciaDesde IS NULL OR VigenciaDesde <= GETDATE())
+                     AND (VigenciaHasta IS NULL OR VigenciaHasta >= GETDATE()) THEN 0
+                    ELSE 1
+                END,
+                IdLista;
+            """,
+            cancellationToken: ct));
+
+        return string.IsNullOrWhiteSpace(lista.IdLista) ? null : lista;
     }
 
     private static int NormalizeClasePrecioValue(string? value, int? fallback)

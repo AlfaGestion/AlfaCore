@@ -152,6 +152,7 @@
     [Parameter] public int? RouteBaseId { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnLogout { get; set; }
+    [Parameter] public EventCallback<SessionDto> OnSessionSelected { get; set; }
 
     private List<SessionDto> _sesiones = [];
     private string _searchText = string.Empty;
@@ -317,6 +318,10 @@
 
     private async Task ConectarAsync(Guid id)
     {
+        var selectedSession = SessionSvc.GetAllSessions().FirstOrDefault(x => x.Id == id);
+        if (selectedSession is null)
+            return;
+
         SessionSvc.SwitchSession(id);
 
         try
@@ -335,6 +340,7 @@
 
         await JS.InvokeVoidAsync("alfaCoreSqlSession.setActive", id.ToString());
         await ReloadAsync();
+        await OnSessionSelected.InvokeAsync(selectedSession);
     }
 
     private async Task HandleSearchInputAsync(ChangeEventArgs args)

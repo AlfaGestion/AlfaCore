@@ -2981,6 +2981,7 @@ else
             if (!ventanaAbierta)
                 throw new InvalidOperationException("El navegador bloqueó la nueva pestaña del Portal Cliente.");
             var request = await BuildInvitacionRequestAsync(idContacto: null, emailAcceso: _form.Mail);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             var url = await PortalAutoLoginSvc.GenerarEnlaceAsync(new PortalClienteGenerarAutoLoginRequestDto
             {
                 CodigoCliente = _selectedCodigo,
@@ -2989,7 +2990,7 @@ else
                 IdWeb = request.IdWeb ?? string.Empty,
                 IdBase = request.IdBase ?? 0,
                 UrlBasePortal = request.UrlPortal
-            });
+            }, timeout.Token);
 
             var ventanaNavegada = await Js.InvokeAsync<bool>("alfaCorePortalWindow.navigate", url, nombrePestana);
             if (!ventanaNavegada)
@@ -2998,6 +2999,14 @@ else
         }
         catch (Exception ex)
         {
+            try
+            {
+                await Js.InvokeVoidAsync("alfaCorePortalWindow.setMessage", "No pudimos abrir el Portal Cliente. Intentá nuevamente.", nombrePestana);
+            }
+            catch
+            {
+                // El mensaje de la pestaña es solo informativo.
+            }
             SetFeedback(UiOps.BuildMessage(ex, "No pudimos abrir el Portal Cliente."));
         }
         finally

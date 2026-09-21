@@ -71,7 +71,10 @@ public sealed class PuntoVentaService(
             var usaCajaDefault = string.IsNullOrWhiteSpace(userRow.IdCaja);
 
             var tcConfig = await GetTipoComprobanteConfigAsync(cn, token);
-            var sucursal = ResolveSucursalDefault(tcConfig);
+            var sucursalConfigurada = await TryReadConfigValueAsync(cn, "TPV_SUCURSAL", token);
+            var sucursal = !string.IsNullOrWhiteSpace(sucursalConfigurada)
+                ? (Code: NormalizeSucursal(sucursalConfigurada), Source: "TA_CONFIGURACION · TPV_SUCURSAL")
+                : ResolveSucursalDefault(tcConfig);
 
             return new PuntoVentaContextDto
             {
@@ -107,7 +110,8 @@ public sealed class PuntoVentaService(
                 EmailCuenta = await TryReadConfigValueAsync(cn, "EMAIL_CTA", token),
                 EmailPassword = await TryReadConfigValueAsync(cn, "EMAIL_PASS", token),
                 EmailSsl = await TryReadConfigValueAsync(cn, "EMAIL_SSL", token),
-                FtpCodigoCta = await TryReadConfigValueAsync(cn, "FTP_CODIGOCTA", token)
+                FtpCodigoCta = await TryReadConfigValueAsync(cn, "FTP_CODIGOCTA", token),
+                MedioDePagoContado = await TryReadConfigValueAsync(cn, "MedioDePagoContado", token)
             };
         }, "No se pudo cargar la configuración del punto de venta.", ct);
 
@@ -170,14 +174,53 @@ public sealed class PuntoVentaService(
                 """
                 SELECT
                     LTRIM(RTRIM(CODIGO)) AS Codigo,
+                    ISNULL(LTRIM(RTRIM(CodigoOpcional)), '') AS CodigoOpcional,
                     ISNULL(LTRIM(RTRIM(DESCRIPCION)), '') AS Descripcion,
                     ISNULL(LTRIM(RTRIM(MEDIODEPAGO)), '') AS MedioDePago,
                     ISNULL(LTRIM(RTRIM(MONEDA)), '') AS Moneda
                 FROM dbo.MA_CUENTAS
                 WHERE ISNULL(LTRIM(RTRIM(MEDIODEPAGO)), '') <> ''
+                  AND ISNULL(LTRIM(RTRIM(CodigoOpcional)), '') <> ''
                 ORDER BY DESCRIPCION, CODIGO;
                 """,
                 cancellationToken: token))).ToList();
+
+            // Paridad con el POS VB6: si hay medios configurados como más utilizados,
+            // mostrar esos primero y respetar el orden MpMasUtilizados0..9.
+            var masUtilizados = new List<PuntoVentaPaymentMethodDto>();
+            var codigosMasUtilizados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i <= 9; i++)
+            {
+                var codigoOpcional = (await TryReadConfigValueAsync(cn, $"MpMasUtilizados{i}", token)).Trim();
+                if (codigoOpcional.Length == 0 || !codigosMasUtilizados.Add(codigoOpcional))
+                    continue;
+
+                var metodo = rows.FirstOrDefault(x => string.Equals(
+                    x.CodigoOpcional.Trim(), codigoOpcional, StringComparison.OrdinalIgnoreCase));
+
+                if (metodo is null)
+                {
+                    metodo = await cn.QuerySingleOrDefaultAsync<PuntoVentaPaymentMethodDto>(new CommandDefinition(
+                        """
+                        SELECT TOP (1)
+                            LTRIM(RTRIM(CODIGO)) AS Codigo,
+                            ISNULL(LTRIM(RTRIM(CodigoOpcional)), '') AS CodigoOpcional,
+                            ISNULL(LTRIM(RTRIM(DESCRIPCION)), '') AS Descripcion,
+                            ISNULL(LTRIM(RTRIM(MEDIODEPAGO)), '') AS MedioDePago,
+                            ISNULL(LTRIM(RTRIM(MONEDA)), '') AS Moneda
+                        FROM dbo.MA_CUENTAS
+                        WHERE UPPER(LTRIM(RTRIM(CodigoOpcional))) = UPPER(@CodigoOpcional);
+                        """,
+                        new { CodigoOpcional = codigoOpcional },
+                        cancellationToken: token));
+                }
+
+                if (metodo is not null)
+                    masUtilizados.Add(metodo);
+            }
+
+            if (masUtilizados.Count > 0)
+                return masUtilizados;
 
             if (rows.Count > 0)
                 return (IReadOnlyList<PuntoVentaPaymentMethodDto>)rows;
@@ -189,6 +232,7 @@ public sealed class PuntoVentaService(
                 """
                 SELECT TOP (1)
                     LTRIM(RTRIM(b.CODIGO)) AS Codigo,
+                    ISNULL(LTRIM(RTRIM(b.CodigoOpcional)), '') AS CodigoOpcional,
                     ISNULL(LTRIM(RTRIM(b.DESCRIPCION)), '') AS Descripcion,
                     ISNULL(LTRIM(RTRIM(b.MEDIODEPAGO)), '') AS MedioDePago,
                     ISNULL(LTRIM(RTRIM(b.MONEDA)), '') AS Moneda
@@ -256,8 +300,15 @@ public sealed class PuntoVentaService(
             var settings = await GetSettingsAsync(token);
             var tcConfig = await GetTipoComprobanteConfigAsync(cn, token);
             var tc = string.IsNullOrWhiteSpace(request.TipoComprobante) ? context.TipoComprobanteDefault : request.TipoComprobante.Trim();
-            var sucursal = string.IsNullOrWhiteSpace(request.Sucursal) ? context.SucursalDefault : request.Sucursal.Trim();
-            var letra = string.IsNullOrWhiteSpace(request.Letra) ? ResolveLetraDefault(tcConfig, sucursal) : request.Letra.Trim();
+            var sucursalConfigurada = await TryReadConfigValueAsync(cn, "TPV_SUCURSAL", token);
+            var sucursal = !string.IsNullOrWhiteSpace(request.Sucursal)
+                ? NormalizeSucursal(request.Sucursal)
+                : !string.IsNullOrWhiteSpace(sucursalConfigurada)
+                    ? NormalizeSucursal(sucursalConfigurada)
+                    : context.SucursalDefault;
+            var letra = tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
+                ? "X"
+                : string.IsNullOrWhiteSpace(request.Letra) ? ResolveLetraDefault(tcConfig, sucursal) : request.Letra.Trim();
             var cliente = !string.IsNullOrWhiteSpace(request.CuentaCliente)
                 ? request.CuentaCliente.Trim()
                 : settings.CuentaConsumidorFinal.Trim();
@@ -268,7 +319,7 @@ public sealed class PuntoVentaService(
             var modoFalloCae = await arcaConfigService.ResolveModoFalloCaeAsync(cn, token);
 
             ArcaNumeracionPrevistaDto? numeracion = null;
-            if (TiposDocumentoCore.EsFactura(TiposDocumentoCore.TipoParaComprobante(tc, letra)))
+            if (TiposDocumentoCore.EsFiscal(TiposDocumentoCore.TipoParaComprobante(tc, letra)))
             {
                 try
                 {
@@ -298,7 +349,7 @@ public sealed class PuntoVentaService(
                 await AddReceiptItemAsync(cn, comprobante.IdComprobante, item, token);
 
             var caeIntento = ArcaCaeIntentoDto.NoAplica;
-            if (TiposDocumentoCore.EsFactura(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
+            if (TiposDocumentoCore.EsFiscal(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
             {
                 var contextoCae = new PuntoVentaCaeContextoDto(
                     comprobante.Tc, comprobante.IdComprobanteTexto, comprobante.Sucursal, comprobante.Numero,
@@ -365,7 +416,7 @@ public sealed class PuntoVentaService(
             var comprobante = await LoadComprobanteAsync(cn, idComprobante, token)
                 ?? throw new InvalidOperationException("No se encontró el comprobante para reintentar el CAE.");
 
-            if (!TiposDocumentoCore.EsFactura(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
+            if (!TiposDocumentoCore.EsFiscal(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
                 throw new InvalidOperationException("El comprobante no es una factura -- no corresponde pedir CAE.");
 
             var items = await LoadReceiptItemsForRetryAsync(cn, comprobante.Tc, comprobante.IdComprobanteTexto, token);
@@ -1785,6 +1836,14 @@ public sealed class PuntoVentaService(
             return (row.SucursalX.ToString("0000"), "V_TA_CPTE · sucursal X");
 
         return (DefaultSucursal, "Default general");
+    }
+
+    private static string NormalizeSucursal(string value)
+    {
+        var trimmed = (value ?? string.Empty).Trim();
+        return int.TryParse(trimmed, out var number) && number >= 0 && number <= 9999
+            ? number.ToString("0000")
+            : trimmed.Length <= 4 ? trimmed.PadLeft(4, '0') : trimmed[..4];
     }
 
     private static string ResolveLetraDefault(TipoComprobanteRow? row, string sucursal)

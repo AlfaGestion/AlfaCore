@@ -84,13 +84,13 @@
             window.setTimeout(tryReconnect, 250);
         } else if (state === 'rejected') {
             // El servidor descartó el circuito (reinicio, deploy, crash): no hay sesión que
-            // reconectar, así que en vez de esperar a que el usuario note el cartel y apriete
-            // "Recargar", recargamos solos después de darle un instante para leer el mensaje.
-            setStatus(modal, 'La sesión anterior ya no está disponible. Vamos a recargar la página automáticamente...');
+            // reconectar. No recargar automáticamente: hacerlo genera un bucle de recargas y
+            // vuelve a ejecutar toda la carga del catálogo sin resolver la causa del corte.
+            setStatus(modal, 'La sesión anterior ya no está disponible. Podés reintentar o recargar manualmente.');
             var reloadButton = modal.querySelector('[data-reconnect-action="reload"]');
             if (reloadButton && typeof reloadButton.focus === 'function')
                 window.setTimeout(function () { reloadButton.focus({ preventScroll: true }); }, 0);
-            scheduleReload(2000);
+            clearReloadTimer();
         }
     }
 

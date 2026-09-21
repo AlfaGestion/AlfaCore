@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using AlfaCore.Models;
@@ -14,6 +15,8 @@ public sealed class PortalClienteAutoLoginService(
 {
     private const string ModuleName = "PortalClienteAutoLogin";
     private const int ExpiracionMinutos = 60;
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> TableLocks = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, byte> ReadyTables = new(StringComparer.Ordinal);
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -32,7 +35,7 @@ public sealed class PortalClienteAutoLoginService(
 
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
-        await EnsureTableAsync(cn, ct);
+        await EnsureTableOnceAsync(cn, ct);
 
         var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
         await cn.ExecuteAsync(new CommandDefinition(
@@ -120,6 +123,28 @@ public sealed class PortalClienteAutoLoginService(
         => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
             "SELECT COUNT(1) FROM sys.objects WHERE object_id = OBJECT_ID(@ObjectName) AND type = 'U';",
             new { ObjectName = $"dbo.{objectName}" }, cancellationToken: ct)) > 0;
+
+    private async Task EnsureTableOnceAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(cn.ConnectionString)));
+        if (ReadyTables.ContainsKey(key))
+            return;
+
+        var gate = TableLocks.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            if (ReadyTables.ContainsKey(key))
+                return;
+
+            await EnsureTableAsync(cn, ct);
+            ReadyTables[key] = 0;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
 
     private static async Task EnsureTableAsync(SqlConnection cn, CancellationToken ct)
     {

@@ -959,7 +959,8 @@ else
                DarkTheme="_drawerDarkTheme"
                RouteBaseId="_drawerRouteBaseId"
                OnClose="() => _drawerOpen = false"
-               OnLogout="FullLogoutAsync" />
+               OnLogout="FullLogoutAsync"
+               OnSessionSelected="OnSessionSelectedAsync" />
 
 @if (CanShowTasksPanel && _tasksPanelOpen)
 {
@@ -1586,6 +1587,7 @@ else
         var wasAuthenticated = AppUserSession.IsAuthenticated;
         AppUserSession.HandleSqlSessionChanged();
         EnsureLoginDraftPrimedForInternalContext();
+        _ = InvokeAsync(RestoreRememberedLoginForCurrentContextAsync);
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
             _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (wasAuthenticated && !AppUserSession.IsAuthenticated)
@@ -1609,6 +1611,7 @@ else
     {
         ResetMenuSearchCatalog();
         EnsureLoginDraftPrimedForInternalContext();
+        _ = InvokeAsync(RestoreRememberedLoginForCurrentContextAsync);
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
             _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (!AppUserSession.IsAuthenticated)
@@ -1685,6 +1688,7 @@ else
         if (IsLauncherRoute)
             _sidebarCollapsedOverride = null;
         UpdateCurrentModule();
+        _ = InvokeAsync(RestoreRememberedLoginForCurrentContextAsync);
         // Páginas que setean su propio PageHeader (AlfaDesignPilot) y navegan internamente vía
         // query string dentro de la misma ruta (ej. Conversaciones: seleccionar un chat cambia
         // ?id=X sin cambiar de componente) -- sin este preservado, cada click volvía a mostrar el
@@ -1857,27 +1861,21 @@ else
 
                 try
                 {
-                    var isInternalLoginPrompt = IsInternalSqlLoginContext || (AppMode.IsSaaSMode && !IsActiveSessionAuthorized && !IsLoginRoute);
-                    if (!isInternalLoginPrompt)
-                    {
-                        _loginRememberCredentials = string.Equals(
-                            await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_remember"),
-                            "true",
-                            StringComparison.OrdinalIgnoreCase);
+                    // También se lee durante el login interno de una ruta SaaS. La clave queda
+                    // aislada por idweb/idbase, por lo que no mezcla usuarios entre bases.
+                    var loginRememberStorageKey = GetLoginRememberStorageKey();
+                    var loginUserStorageKey = GetLoginUserStorageKey();
+                    _loginRememberCredentials = string.Equals(
+                        await JS.InvokeAsync<string?>("localStorage.getItem", loginRememberStorageKey),
+                        "true",
+                        StringComparison.OrdinalIgnoreCase);
 
-                        if (_loginRememberCredentials)
-                        {
-                            // Sólo se recuerda el usuario: la contraseña nunca se persiste en el
-                            // cliente (localStorage no es HttpOnly y queda accesible desde JS/XSS).
-                            _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", "alfacore_login_user") ?? string.Empty;
-                            await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
-                        }
-                    }
-                    else
+                    if (_loginRememberCredentials)
                     {
-                        _loginRememberCredentials = false;
-                        _loginUserName = string.Empty;
-                        _loginPassword = string.Empty;
+                        // Sólo se recuerda el usuario: la contraseña nunca se persiste en el
+                        // cliente (localStorage no es HttpOnly y queda accesible desde JS/XSS).
+                        _loginUserName = await JS.InvokeAsync<string?>("localStorage.getItem", loginUserStorageKey) ?? string.Empty;
+                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
                     }
                 }
                 catch { }
@@ -2700,17 +2698,22 @@ else
 
         try
         {
+            var loginWasInternalContext = IsInternalSqlLoginContext;
+            var rememberCredentialsAtLogin = _loginRememberCredentials;
+            var rememberStorageKeyAtLogin = loginWasInternalContext ? GetLoginRememberStorageKey() : string.Empty;
+            var userStorageKeyAtLogin = loginWasInternalContext ? GetLoginUserStorageKey() : string.Empty;
+
             Logger.LogInformation(
                 "LoginAsync: start. SaaS={SaaS}, InternalContext={InternalContext}, Route={Route}, User={User}, HasRouteBase={HasRouteBase}, ActiveSession={ActiveSession}",
                 AppMode.IsSaaSMode,
-                IsInternalSqlLoginContext,
+                loginWasInternalContext,
                 GetNormalizedCurrentPath(),
                 _loginUserName,
                 TryGetRouteBaseId(out var debugRouteBaseId),
                 SessionSvc.GetActiveSession()?.BaseId);
 
             AppUserSessionInfo session;
-            if (IsInternalSqlLoginContext)
+            if (loginWasInternalContext)
             {
                 var selectedSession = SessionSvc.GetActiveSession();
                 if (selectedSession is not null)
@@ -2840,21 +2843,26 @@ else
                 AppUserSession.AdoptInternalUser(session);
             }
 
-            if (IsInternalSqlLoginContext)
+            if (loginWasInternalContext)
             {
                 _loginUserName = string.Empty;
                 _loginPassword = string.Empty;
-                _loginRememberCredentials = false;
-                _ = InvokeAsync(async () =>
+                try
                 {
-                    try
+                    if (rememberCredentialsAtLogin)
                     {
-                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
-                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
-                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                        await JS.InvokeVoidAsync("localStorage.setItem", rememberStorageKeyAtLogin, "true");
+                        await JS.InvokeVoidAsync("localStorage.setItem", userStorageKeyAtLogin, session.UserName);
                     }
-                    catch { }
-                });
+                    else
+                    {
+                        await JS.InvokeVoidAsync("localStorage.removeItem", userStorageKeyAtLogin);
+                        await JS.InvokeVoidAsync("localStorage.setItem", rememberStorageKeyAtLogin, "false");
+                    }
+
+                    await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
+                }
+                catch { }
             }
             else
             {
@@ -2864,8 +2872,8 @@ else
                     _loginPassword = string.Empty;
                     try
                     {
-                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
-                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName);
+                        await JS.InvokeVoidAsync("localStorage.setItem", GetLoginRememberStorageKey(), "true");
+                        await JS.InvokeVoidAsync("localStorage.setItem", GetLoginUserStorageKey(), _loginUserName);
                         await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
                     }
                     catch { }
@@ -2875,9 +2883,9 @@ else
                     _loginPassword = string.Empty;
                     try
                     {
-                        await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                        await JS.InvokeVoidAsync("localStorage.removeItem", GetLoginUserStorageKey());
                         await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
-                        await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                        await JS.InvokeVoidAsync("localStorage.setItem", GetLoginRememberStorageKey(), "false");
                     }
                     catch { }
                 }
@@ -2934,6 +2942,7 @@ else
             _internalLoginDraftPrimed = true;
         }
 
+        await RestoreRememberedLoginForCurrentContextAsync();
         await InvokeAsync(StateHasChanged);
     }
 
@@ -3629,9 +3638,9 @@ else
             _loginPassword = string.Empty;
             try
             {
-                await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_user");
+                await JS.InvokeVoidAsync("localStorage.removeItem", GetLoginUserStorageKey());
                 await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
-                await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "false");
+                await JS.InvokeVoidAsync("localStorage.setItem", GetLoginRememberStorageKey(), "false");
             }
             catch { }
             return;
@@ -3639,8 +3648,8 @@ else
 
         try
         {
-            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_remember", "true");
-            await JS.InvokeVoidAsync("localStorage.setItem", "alfacore_login_user", _loginUserName ?? string.Empty);
+            await JS.InvokeVoidAsync("localStorage.setItem", GetLoginRememberStorageKey(), "true");
+            await JS.InvokeVoidAsync("localStorage.setItem", GetLoginUserStorageKey(), _loginUserName ?? string.Empty);
             await JS.InvokeVoidAsync("localStorage.removeItem", "alfacore_login_password");
         }
         catch { }
@@ -3694,6 +3703,79 @@ else
         _loginPassword = string.Empty;
         _loginShowPassword = false;
         _loginUseUserList = true;
+    }
+
+    private async Task RestoreRememberedLoginForCurrentContextAsync()
+    {
+        if (!ShowLoginOverlay
+            || !AppMode.IsSaaSMode
+            || !AppUserSession.RequiresInternalLogin
+            || SessionSvc.GetActiveSession() is null)
+            return;
+
+        try
+        {
+            var rememberKey = GetLoginRememberStorageKey();
+            var userKey = GetLoginUserStorageKey();
+            _loginRememberCredentials = string.Equals(
+                await JS.InvokeAsync<string?>("localStorage.getItem", rememberKey),
+                "true",
+                StringComparison.OrdinalIgnoreCase);
+
+            _loginUserName = _loginRememberCredentials
+                ? await JS.InvokeAsync<string?>("localStorage.getItem", userKey) ?? string.Empty
+                : string.Empty;
+            _internalLoginDraftPrimed = true;
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+        }
+    }
+
+    private async Task OnSessionSelectedAsync(SessionDto selectedSession)
+    {
+        // La selección de base ocurre sin recarga ni cambio de ruta. Se usa explícitamente la
+        // base recibida desde el drawer para no depender de que la ruta o la sesión ya se hayan
+        // actualizado en este mismo ciclo de renderizado.
+        try
+        {
+            var idWeb = AppUserSession.CurrentUser?.IdWeb ?? GetRouteIdWeb();
+            var (rememberKey, userKey) = BuildLoginStorageKeys(idWeb, selectedSession.BaseId);
+            _loginRememberCredentials = string.Equals(
+                await JS.InvokeAsync<string?>("localStorage.getItem", rememberKey),
+                "true",
+                StringComparison.OrdinalIgnoreCase);
+            _loginUserName = _loginRememberCredentials
+                ? await JS.InvokeAsync<string?>("localStorage.getItem", userKey) ?? string.Empty
+                : string.Empty;
+            _loginPassword = string.Empty;
+            _internalLoginDraftPrimed = true;
+            await InvokeAsync(StateHasChanged);
+        }
+        catch
+        {
+        }
+    }
+
+    private string GetLoginRememberStorageKey()
+        => BuildLoginStorageKeys(
+            IsLoginRoute ? AppUserSession.CurrentUser?.IdWeb : GetRouteIdWeb(),
+            TryGetRouteBaseId(out var routeBaseId) ? routeBaseId : SessionSvc.GetActiveSession()?.BaseId ?? 0).RememberKey;
+
+    private string GetLoginUserStorageKey()
+        => BuildLoginStorageKeys(
+            IsLoginRoute ? AppUserSession.CurrentUser?.IdWeb : GetRouteIdWeb(),
+            TryGetRouteBaseId(out var routeBaseId) ? routeBaseId : SessionSvc.GetActiveSession()?.BaseId ?? 0).UserKey;
+
+    private (string RememberKey, string UserKey) BuildLoginStorageKeys(string? idWeb, int idBase)
+    {
+        if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(idWeb) || idBase <= 0)
+            return ("alfacore_login_remember", "alfacore_login_user");
+
+        var scope = $"{Uri.EscapeDataString(idWeb.Trim().ToLowerInvariant())}_{idBase}";
+        return ($"alfacore_login_remember_{scope}", $"alfacore_login_user_{scope}");
     }
 
     private string GetSqlSessionLabel()

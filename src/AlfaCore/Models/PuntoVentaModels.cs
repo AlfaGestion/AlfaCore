@@ -89,11 +89,13 @@ public sealed class PuntoVentaSettingsDto
     public string EmailPassword { get; set; } = string.Empty;
     public string EmailSsl { get; set; } = string.Empty;
     public string FtpCodigoCta { get; set; } = string.Empty;
+    public string MedioDePagoContado { get; set; } = string.Empty;
 }
 
 public sealed class PuntoVentaPaymentMethodDto
 {
     public string Codigo { get; init; } = string.Empty;
+    public string CodigoOpcional { get; init; } = string.Empty;
     public string Descripcion { get; init; } = string.Empty;
     public string MedioDePago { get; init; } = string.Empty;
     public string Moneda { get; init; } = string.Empty;

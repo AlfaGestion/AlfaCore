@@ -83,7 +83,7 @@ public static class TiposDocumentoCore
             CobranzaA => "Cobranza A",
             CobranzaB => "Cobranza B",
             CobranzaC => "Cobranza C",
-            CobranzaProforma => "Cobranza Proforma",
+            CobranzaProforma => "Factura proforma",
             CobranzaContado => "Cobranza contado",
             NotaDebitoA => "Nota de débito A",
             NotaDebitoB => "Nota de débito B",
@@ -101,6 +101,9 @@ public static class TiposDocumentoCore
     {
         var codigo = (tc ?? string.Empty).Trim().ToUpperInvariant();
         var l = (letra ?? string.Empty).Trim().ToUpperInvariant();
+        // El POS usa FP para una factura proforma. No es una factura fiscal:
+        // se representa como cobranza/proforma y siempre conserva letra X.
+        if (codigo == "FP") return CobranzaProforma;
         if (l.Length == 0)
         {
             if (codigo is "FA" or "FVA") return FacturaA;
@@ -379,7 +382,8 @@ public sealed class FacturaDocumentData
 public sealed class FacturaComprobanteDocumentData
 {
     public string TipoDocumento { get; set; } = TiposDocumentoCore.FacturaA;
-    public string Denominacion => TiposDocumentoCore.Fiscal(TipoDocumento)?.Nombre ?? "Factura";
+    public string Denominacion => TiposDocumentoCore.Fiscal(TipoDocumento)?.Nombre
+        ?? TiposDocumentoCore.NombrePredeterminado(TipoDocumento);
     public string Tc { get; set; } = string.Empty;
     /// <summary>"A" | "B" | "C" -- determina si Totales discrimina IVA por alícuota en el cuerpo.</summary>
     public string Letra { get; set; } = string.Empty;

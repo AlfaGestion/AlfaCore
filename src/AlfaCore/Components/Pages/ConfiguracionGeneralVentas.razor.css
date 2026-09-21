@@ -1,41 +1,85 @@
 .cfgventas-page {
     display: flex;
     flex-direction: column;
+    position: static;
     gap: var(--alfa-space-16);
     padding: var(--alfa-space-16) var(--alfa-space-16) 3rem;
-    max-width: 700px;
+    width: min(100%, 1120px);
+    max-width: 1120px;
     margin: 0 auto;
+}
+
+.cfgventas-page > .panel-card,
+.cfgventas-checks {
+    position: static !important;
+    inset: auto;
+    z-index: auto;
+}
+
+.cfgventas-page > .panel-card {
+    flex: 0 0 auto;
+    height: auto;
+    max-height: none;
+    overflow: visible;
 }
 
 .cfgventas-checks {
     display: flex;
-    flex-direction: column;
-    gap: .6rem;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: .55rem 1rem;
     margin-top: .6rem;
 }
 
-.cfgventas-checks i {
+.cfgventas-checks ::deep .alfa-checkbox {
+    width: max-content;
+    min-height: 2.35rem;
+    padding: .35rem .55rem;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    transition: background-color .15s ease, border-color .15s ease;
+}
+
+.cfgventas-checks ::deep .alfa-checkbox:hover {
+    background: rgba(14, 165, 233, .08);
+    border-color: rgba(14, 165, 233, .2);
+}
+
+.cfgventas-checks ::deep .alfa-checkbox i {
     color: var(--alfa-text-secondary);
     margin-right: .3rem;
 }
 
 .cfgventas-save-bar {
-    position: sticky;
-    bottom: 0;
-    padding-top: .5rem;
+    display: flex;
+    align-items: center;
+    gap: .65rem;
+    padding: .75rem 1rem;
+    border: 1px solid rgba(125, 211, 252, .16);
+    border-radius: 10px;
+    background: #071426;
 }
 
 .cfgarca-row {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
     gap: 1rem;
     margin-top: .75rem;
+}
+
+.cfgarca-row--general {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cfgarca-row--fallback {
+    grid-template-columns: minmax(150px, .8fr) minmax(130px, .65fr) minmax(250px, 1.4fr) minmax(250px, 1.4fr);
+    align-items: start;
 }
 
 .cfgarca-field {
     display: flex;
     flex-direction: column;
     gap: .3rem;
+    min-width: 0;
     font-size: .85rem;
     color: var(--alfa-text-secondary);
     flex: 1 1 180px;
@@ -48,7 +92,31 @@
     padding: .45rem .6rem;
     font-size: .9rem;
     color: var(--alfa-text);
-    background: var(--alfa-surface, #fff);
+    min-height: 2.35rem;
+    color-scheme: dark;
+    background: #101d30;
+    border-color: rgba(125, 211, 252, .28);
+    color: #e2e8f0;
+}
+
+.cfgarca-select {
+    appearance: auto;
+}
+
+.cfgarca-select option {
+    background: #101d30;
+    color: #e2e8f0;
+}
+
+.cfgarca-select:focus,
+.cfgarca-input:focus {
+    outline: none;
+    border-color: rgba(56, 189, 248, .8);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, .16);
+}
+
+.cfgarca-input::placeholder {
+    color: #94a3b8;
 }
 
 .cfgarca-input--sm { width: 110px; }
@@ -64,24 +132,28 @@
     display: flex;
     align-items: center;
     gap: .6rem;
-    flex-wrap: wrap;
+    min-width: 0;
 }
 
 .cfgarca-cert-picker {
     position: relative;
     display: inline-flex;
+    flex: 0 0 auto;
 }
 
-.cfgarca-input-file {
+.cfgarca-cert-picker .cfgarca-input-file {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
-    opacity: 0;
+    z-index: 2;
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    opacity: 0 !important;
+    appearance: none;
     cursor: pointer;
 }
 
-.cfgarca-input-file:disabled {
+.cfgarca-cert-picker .cfgarca-input-file:disabled {
     cursor: not-allowed;
 }
 
@@ -109,4 +181,22 @@
     color: var(--alfa-text-secondary);
     font-style: italic;
     margin-top: .5rem;
+}
+
+@media (max-width: 700px) {
+    .cfgventas-page {
+        padding-inline: .85rem;
+    }
+
+    .cfgarca-row--general,
+    .cfgarca-row--fallback {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+@media (max-width: 430px) {
+    .cfgarca-row--general,
+    .cfgarca-row--fallback {
+        grid-template-columns: 1fr;
+    }
 }

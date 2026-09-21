@@ -113,9 +113,6 @@
         </div>
     </section>
 
-    <div class="cfggral-save-bar">
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar</AlfaButton>
-    </div>
 </div>
 
 @code {
@@ -150,17 +147,40 @@
         Title = "Empresa",
         Breadcrumb = ["Configuración General", "Empresa"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "empresa")
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "empresa"),
+        Actions = BuildHeaderActions()
     });
+
+    private IReadOnlyList<PageHeaderAction> BuildHeaderActions() =>
+    [
+        new PageHeaderAction { Key = "guardar-empresa", Label = "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, Busy = _saving, OnClick = GuardarAsync },
+        new PageHeaderAction { Key = "cancelar-empresa", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, OnClick = CancelarAsync }
+    ];
 
     private async Task GuardarAsync()
     {
         _saving = true;
+        UpdatePageHeader();
         var usuario = AppUserSession.CurrentUser?.UserName ?? Environment.UserName;
         var result = await UiOps.RunAsync(async () => { await ConfigSvc.SaveEmpresaAsync(_empresa, usuario); return true; }, "No se pudieron guardar los datos de la empresa.");
         _saving = false;
+        UpdatePageHeader();
         _feedback = result.Success
             ? AppUiMessage.Success("Guardado", "Los datos de la empresa se guardaron correctamente.")
+            : result.Feedback;
+    }
+
+    private async Task CancelarAsync()
+    {
+        if (_saving)
+            return;
+
+        var result = await UiOps.RunAsync(() => ConfigSvc.GetEmpresaAsync(), "No se pudieron restaurar los datos de la empresa.");
+        if (result.Success && result.Value is not null)
+            _empresa = result.Value;
+
+        _feedback = result.Success
+            ? AppUiMessage.Info("Cambios cancelados", "Se restauraron los últimos datos guardados.")
             : result.Feedback;
     }
 }

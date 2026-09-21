@@ -275,6 +275,54 @@
     font-size: 0.82rem;
 }
 
+.catalogo-publico-pagination {
+    position: sticky;
+    bottom: 0.75rem;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin: 1rem 0 0;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--color-border);
+    border-radius: 0.75rem;
+    background: color-mix(in srgb, var(--color-panel) 92%, transparent);
+    box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.18);
+    backdrop-filter: blur(10px);
+}
+
+.catalogo-publico-pagination__actions {
+    display: inline-flex;
+    gap: 0.5rem;
+}
+
+.catalogo-publico-pagination--toolbar {
+    position: static;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+    backdrop-filter: none;
+}
+
+.catalogo-publico-pagination--bottom {
+    position: static;
+    margin-top: 1.25rem;
+}
+
+@media (max-width: 640px) {
+    .catalogo-publico-pagination {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .catalogo-publico-pagination__actions {
+        justify-content: space-between;
+    }
+}
+
 .catalogo-publico-filters {
     display: flex;
     flex-wrap: wrap;
@@ -1171,10 +1219,8 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
 }
 
 .catalogo-publico-toolbar-sticky {
-    position: sticky !important;
-    top: 0;
-    z-index: 860;
     align-self: start;
+    width: auto;
     height: max-content;
     overflow: visible;
     display: grid;
@@ -1187,6 +1233,53 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
     background: var(--color-bg);
     box-shadow: 0 5px 12px rgba(2, 6, 23, 0.16);
     isolation: isolate;
+}
+
+.catalog-toolbar-sentinel {
+    display: block;
+    width: 100%;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    pointer-events: none;
+    visibility: hidden;
+}
+
+.catalogo-publico-page.is-toolbar-collapsed .catalogo-publico-toolbar-sticky {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1200;
+    width: auto;
+    margin: 0;
+    padding: .5rem 1rem .65rem;
+    background: var(--color-bg);
+    box-shadow: 0 5px 12px rgba(2, 6, 23, .16);
+    display: grid;
+}
+
+.catalogo-publico-page > .panel-card:has(.catalogo-publico-toolbar-sticky) {
+    padding-top: 1rem !important;
+}
+
+/* En el Portal Cliente el catálogo está embebido debajo de la barra de navegación. */
+.catalogo-publico-page--embedded .catalogo-publico-toolbar-sticky {
+    position: relative;
+}
+
+.catalogo-publico-page--embedded > .panel-card:has(.catalogo-publico-toolbar-sticky) {
+    padding-top: 1rem !important;
+    overflow: visible !important;
+}
+
+.catalogo-publico-page--embedded {
+    overflow: visible !important;
+}
+
+.catalogo-publico-toolbar-sticky > .catalogo-publico-smart-search__footer {
+    position: relative;
+    z-index: 1;
 }
 
 .catalogo-publico-toolbar-sticky .catalogo-publico-smart-search {
@@ -1327,17 +1420,22 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
     width: min(80vw, 1100px);
     max-width: calc(100vw - 2rem);
     max-height: min(90vh, 900px);
+    padding: .85rem;
+    border: 1px solid var(--color-border);
+    border-radius: 1rem;
+    background: var(--color-panel);
+    box-shadow: 0 28px 90px rgba(0, 0, 0, .42);
 }
 
 .catalogo-publico-page .catalogo-publico-lightbox__stage {
     grid-template-columns: minmax(0, 1.04fr) minmax(0, 0.96fr);
     align-items: stretch;
     gap: 0.9rem;
-    padding: 0.85rem;
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    border-radius: 20px;
-    background: var(--color-panel);
-    box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
 .catalogo-publico-page .catalogo-publico-lightbox__media {
@@ -1381,10 +1479,11 @@ html[data-theme="dark"] .catalogo-publico-page ::deep .alfa-icon-button.is-activ
     justify-content: center;
     gap: 0.7rem;
     padding: 1.3rem 1.45rem;
-    border: 0;
+    border: 0 !important;
     border-radius: 0;
-    background: transparent;
-    box-shadow: none;
+    background: transparent !important;
+    box-shadow: none !important;
+    color: var(--color-text);
 }
 
 .catalogo-publico-page .catalogo-publico-lightbox__title {

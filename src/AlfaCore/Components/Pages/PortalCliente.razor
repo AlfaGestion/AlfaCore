@@ -200,16 +200,18 @@ else
 
         if (IsAuthenticated)
         {
-            await LoadPedidosRecientesAsync();
-            await LoadResumenCuentaCorrienteAsync();
+            await Task.WhenAll(
+                LoadPedidosRecientesAsync(),
+                LoadResumenCuentaCorrienteAsync());
             await InvokeAsync(StateHasChanged);
         }
     }
 
     protected override async Task OnAfterLoginAsync()
     {
-        await LoadPedidosRecientesAsync();
-        await LoadResumenCuentaCorrienteAsync();
+        await Task.WhenAll(
+            LoadPedidosRecientesAsync(),
+            LoadResumenCuentaCorrienteAsync());
     }
 
     private async Task LoadPedidosRecientesAsync()

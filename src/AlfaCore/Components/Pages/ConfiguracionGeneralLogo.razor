@@ -67,9 +67,6 @@
         </div>
     </section>
 
-    <div class="cfglogo-save-bar">
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar</AlfaButton>
-    </div>
 </div>
 
 @code {
@@ -107,8 +104,15 @@
         Title = "Logo y Estilo",
         Breadcrumb = ["Configuración General", "Logo y Estilo"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "logo")
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "logo"),
+        Actions = BuildHeaderActions()
     });
+
+    private IReadOnlyList<PageHeaderAction> BuildHeaderActions() =>
+    [
+        new PageHeaderAction { Key = "guardar-logo", Label = "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, Busy = _saving, OnClick = GuardarAsync },
+        new PageHeaderAction { Key = "cancelar-logo", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _saving || _subiendo, OnClick = CancelarAsync }
+    ];
 
     private async Task HandleLogoSelectedAsync(InputFileChangeEventArgs args)
     {
@@ -162,10 +166,30 @@
     private async Task GuardarAsync()
     {
         _saving = true;
+        UpdatePageHeader();
         var result = await UiOps.RunAsync(async () => { await ConfigSvc.SaveLogoOpcionesAsync(_logo); return true; }, "No se pudo guardar la configuración del logo.");
         _saving = false;
+        UpdatePageHeader();
         _feedback = result.Success
             ? AppUiMessage.Success("Guardado", "La configuración del logo se guardó correctamente.")
+            : result.Feedback;
+    }
+
+    private async Task CancelarAsync()
+    {
+        if (_saving || _subiendo)
+            return;
+
+        var result = await UiOps.RunAsync(() => ConfigSvc.GetLogoInfoAsync(), "No se pudo restaurar la configuración del logo.");
+        if (result.Success && result.Value is not null)
+        {
+            _logo = result.Value;
+            _tieneLogo = _logo.TieneLogo;
+            _previewUrl = _tieneLogo ? $"/api/configuracion-general/logo?v={Guid.NewGuid():N}" : null;
+        }
+
+        _feedback = result.Success
+            ? AppUiMessage.Info("Cambios cancelados", "Se restauró la última configuración guardada.")
             : result.Feedback;
     }
 

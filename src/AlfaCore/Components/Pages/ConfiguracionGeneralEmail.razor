@@ -44,9 +44,6 @@
         </AlfaCheckbox>
     </section>
 
-    <div class="cfgemail-save-bar">
-        <AlfaButton Variant="AlfaButtonVariant.Primary" Icon="bi bi-floppy" Loading="@_saving" OnClick="GuardarAsync">Guardar</AlfaButton>
-    </div>
 </div>
 
 @code {
@@ -76,16 +73,39 @@
         Title = "Email",
         Breadcrumb = ["Configuración General", "Email"],
         ShellMode = PageHeaderShellMode.AlfaDesignPilot,
-        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "email")
+        TopNavigationItems = AlfaCore.Services.ModuleTopNavPresets.BuildConfiguracionGeneral(RouteContext, Nav, "email"),
+        Actions = BuildHeaderActions()
     });
+
+    private IReadOnlyList<PageHeaderAction> BuildHeaderActions() =>
+    [
+        new PageHeaderAction { Key = "guardar-email", Label = "Guardar", Icon = "bi-floppy", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, Busy = _saving, OnClick = GuardarAsync },
+        new PageHeaderAction { Key = "cancelar-email", Label = "Cancelar", Icon = "bi-x-lg", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _saving, OnClick = CancelarAsync }
+    ];
 
     private async Task GuardarAsync()
     {
         _saving = true;
+        UpdatePageHeader();
         var result = await UiOps.RunAsync(async () => { await ConfigSvc.SaveEmailAsync(_email); return true; }, "No se pudo guardar la configuración de correo saliente.");
         _saving = false;
+        UpdatePageHeader();
         _feedback = result.Success
             ? AppUiMessage.Success("Guardado", "La configuración de correo saliente se guardó correctamente.")
+            : result.Feedback;
+    }
+
+    private async Task CancelarAsync()
+    {
+        if (_saving)
+            return;
+
+        var result = await UiOps.RunAsync(() => ConfigSvc.GetEmailAsync(), "No se pudo restaurar la configuración de correo saliente.");
+        if (result.Success && result.Value is not null)
+            _email = result.Value;
+
+        _feedback = result.Success
+            ? AppUiMessage.Info("Cambios cancelados", "Se restauró la última configuración guardada.")
             : result.Feedback;
     }
 }
