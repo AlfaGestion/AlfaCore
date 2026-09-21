@@ -379,3 +379,110 @@
         padding: var(--alfa-space-12);
     }
 }
+
+/* Chip de "Variables usadas": el chip en sí queda de solo lectura (ver
+   .templates-variable-chip--readonly en app.css), pero cuando la posición es
+   manual (sin mapping) se agrega la acción "Asignar variable" al lado -- el
+   wrapper es lo que agrupa ambos visualmente sin romper el pointer-events:none
+   del chip. */
+.templates-v1 .templates-variable-chip-group {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-4);
+}
+
+.templates-v1 .templates-variable-chip__assign {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--alfa-accent);
+    font-size: var(--alfa-font-small);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.templates-v1 .templates-variable-chip__assign:hover:not(:disabled) {
+    text-decoration: underline;
+}
+
+.templates-v1 .templates-variable-chip__assign:disabled {
+    color: var(--alfa-text-secondary);
+    cursor: not-allowed;
+}
+
+/* Selector de variables (AlfaDialog): catálogo agrupado por Group, con las
+   variables de Tareas/Guardia (CanResolveAutomaticallyInManualSend == false)
+   en una sección aparte, no clickeable -- ver FilteredContextualVariables. */
+.templates-v1 .variable-picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12);
+}
+
+.templates-v1 .variable-picker__filter {
+    margin: 0;
+}
+
+.templates-v1 .variable-picker__group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-4);
+}
+
+.templates-v1 .variable-picker__group-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .variable-picker__option {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: var(--alfa-space-8) var(--alfa-space-12);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+
+button.variable-picker__option:hover {
+    border-color: var(--alfa-accent);
+    background: var(--alfa-bg-raised);
+}
+
+.templates-v1 .variable-picker__option-label {
+    font-size: var(--alfa-font-body);
+    font-weight: 600;
+}
+
+.templates-v1 .variable-picker__option-description {
+    font-size: var(--alfa-font-small);
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .variable-picker__option-detail {
+    font-size: 11px;
+    color: var(--alfa-text-secondary);
+    opacity: .8;
+}
+
+.templates-v1 .variable-picker__group--contextual .variable-picker__option {
+    cursor: default;
+    background: transparent;
+    border-style: dashed;
+    opacity: .75;
+}
+
+.templates-v1 .variable-picker__empty {
+    margin: 0;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}

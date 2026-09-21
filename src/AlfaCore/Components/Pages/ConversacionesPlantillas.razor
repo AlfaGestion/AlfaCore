@@ -71,17 +71,15 @@
                         <div class="templates-body-label-row">
                             <label class="alfa-field__label" for="tpl-body">Cuerpo<span aria-hidden="true">*</span></label>
                             <div class="templates-insert-variable">
-                                <span class="templates-insert-variable__label">Insertar variable</span>
-                                <AlfaActionMenu Items="@BuildInsertVariableMenuItems()"
-                                                TriggerLabel="Insertar variable"
-                                                MenuLabel="Variables disponibles"
-                                                TriggerIcon="bi bi-plus-lg"
-                                                Disabled="@_busy"
-                                                Align="AlfaActionMenuAlign.End" />
+                                <AlfaButton Variant="AlfaButtonVariant.Ghost"
+                                            Size="AlfaSize.Sm"
+                                            Icon="bi bi-plus-lg"
+                                            Disabled="@_busy"
+                                            OnClick="_ => OpenVariablePickerAsync(null)">Insertar variable</AlfaButton>
                             </div>
                         </div>
                         <textarea id="tpl-body" class="alfa-textarea__control" rows="6" disabled="@_busy" @bind="_form.CuerpoTexto" @bind:after="PruneOrphanVariableMappings"
-                                  placeholder="Hola {{1}}, te escribimos para continuar con la conversación pendiente."></textarea>
+                                  placeholder="Escribí el contenido de la plantilla..."></textarea>
                         <div class="templates-body-limit @(IsBodyTooLong ? "is-danger" : string.Empty)">
                             <span>@BodyLength / @MetaBodyMaxLength caracteres</span>
                         </div>
@@ -96,7 +94,16 @@
                                 <span class="context-card__label">Variables usadas</span>
                                 @foreach (var used in usedVariables)
                                 {
-                                    <span class="templates-variable-chip templates-variable-chip--readonly">@($"{{{{{used.Posicion}}}}} {used.Label}")</span>
+                                    <span class="templates-variable-chip-group">
+                                        <span class="templates-variable-chip templates-variable-chip--readonly">@($"{{{{{used.Posicion}}}}} {used.Label}")</span>
+                                        @if (!used.HasMapping)
+                                        {
+                                            <button type="button"
+                                                    class="templates-variable-chip__assign"
+                                                    disabled="@_busy"
+                                                    @onclick="() => OpenVariablePickerAsync(used.Posicion)">Asignar variable</button>
+                                        }
+                                    </span>
                                 }
                             </div>
                         }
@@ -300,6 +307,61 @@
                         Loading="@_busy"
                         OnConfirm="ArchiveAsync"
                         OnCancel="CloseArchiveConfirm" />
+
+    <AlfaDialog Open="@_showVariablePicker"
+                Title="Insertar variable"
+                Description="@VariablePickerDescription"
+                Size="AlfaDialogSize.Sm"
+                OnClose="CloseVariablePicker">
+        <div class="variable-picker">
+            <AlfaInput Class="variable-picker__filter"
+                       Placeholder="Buscar variable..."
+                       Value="@_variablePickerFilter"
+                       ValueChanged="OnVariablePickerFilterChangedAsync" />
+
+            @{ var selectableGroups = FilteredSelectableVariableGroups(); }
+            @{ var contextualVariables = FilteredContextualVariables(); }
+
+            @if (selectableGroups.Count == 0 && contextualVariables.Count == 0)
+            {
+                <p class="variable-picker__empty">No se encontraron variables que coincidan con la búsqueda.</p>
+            }
+
+            @foreach (var group in selectableGroups)
+            {
+                <div class="variable-picker__group">
+                    <h4 class="variable-picker__group-title">@group.Key</h4>
+                    @foreach (var definition in group)
+                    {
+                        <button type="button"
+                                class="variable-picker__option"
+                                @onclick="() => SelectVariableFromPicker(definition.Key)">
+                            <span class="variable-picker__option-label">@definition.Label</span>
+                            <span class="variable-picker__option-description">@definition.Description</span>
+                            @if (!string.IsNullOrWhiteSpace(definition.Detail))
+                            {
+                                <span class="variable-picker__option-detail">@definition.Detail</span>
+                            }
+                        </button>
+                    }
+                </div>
+            }
+
+            @if (contextualVariables.Count > 0)
+            {
+                <div class="variable-picker__group variable-picker__group--contextual">
+                    <h4 class="variable-picker__group-title">No disponibles desde este envío</h4>
+                    @foreach (var definition in contextualVariables)
+                    {
+                        <div class="variable-picker__option" aria-disabled="true">
+                            <span class="variable-picker__option-label">@definition.Label</span>
+                            <span class="variable-picker__option-description">@definition.RequiredContext</span>
+                        </div>
+                    }
+                </div>
+            }
+        </div>
+    </AlfaDialog>
 </section>
 
 @code {
@@ -324,6 +386,9 @@
     private bool _showTemplatesSearchPanel;
     private bool _attemptedSave;
     private bool _showArchiveConfirm;
+    private bool _showVariablePicker;
+    private string _variablePickerFilter = string.Empty;
+    private int? _variablePickerTargetPosition;
     private string _examplesText = string.Empty;
     private string _formEstadoMeta = "DRAFT";
     private string? _loadError;
@@ -335,7 +400,7 @@
     private const string MultiValueSeparator = "---";
     private const int MetaBodyMaxLength = 550;
 
-    private string PreviewBody => RenderPreview(_form.CuerpoTexto, ParseExamples(_examplesText));
+    private string PreviewBody => RenderPreview(_form.CuerpoTexto, ParseExamples(_examplesText), _form.VariableMappings);
     private int BodyLength => _form.CuerpoTexto?.Length ?? 0;
     private bool IsBodyTooLong => BodyLength > MetaBodyMaxLength;
 
@@ -545,6 +610,9 @@
         _formEstadoMeta = "DRAFT";
         _feedback = null;
         _showArchiveConfirm = false;
+        _showVariablePicker = false;
+        _variablePickerFilter = string.Empty;
+        _variablePickerTargetPosition = null;
         _attemptedSave = false;
     }
 
@@ -1084,7 +1152,7 @@
         _selectedId = 0;
         _mode = PageMode.Create;
         _form = NewForm();
-        _examplesText = "Evelyn";
+        _examplesText = string.Empty;
         _formEstadoMeta = "DRAFT";
         _feedback = null;
         _attemptedSave = false;
@@ -1123,49 +1191,91 @@
     /// <summary>
     /// Variables efectivamente presentes en el cuerpo actual (no todo el catálogo): para cada {{N}} que
     /// aparece en el texto, su Label si tiene mapping o "Valor manual" si no lo tiene (placeholder
-    /// tipeado a mano o huérfano de una edición anterior).
+    /// tipeado a mano o huérfano de una edición anterior). HasMapping habilita la acción "Asignar
+    /// variable" en el markup para las posiciones manuales.
     /// </summary>
-    private IReadOnlyList<(int Posicion, string Label)> UsedBodyVariables
+    private IReadOnlyList<(int Posicion, string Label, bool HasMapping)> UsedBodyVariables
         => ParseBodyPlaceholderPositions(_form.CuerpoTexto)
-            .Select(position => (
-                Posicion: position,
-                Label: _form.VariableMappings.TryGetValue(position, out var key)
-                    ? WhatsAppTemplateVariableCatalog.Find(key)?.Label ?? key
-                    : "Valor manual"))
+            .Select(position => _form.VariableMappings.TryGetValue(position, out var key)
+                ? (Posicion: position, Label: WhatsAppTemplateVariableCatalog.Find(key)?.Label ?? key, HasMapping: true)
+                : (Posicion: position, Label: "Valor manual", HasMapping: false))
             .ToList();
 
     /// <summary>
-    /// Ítems del selector "Insertar variable", agrupados por Group del catálogo. Solo BODY: este
-    /// control no existe para el campo Encabezado (Meta/el runtime de envío no soportan parámetros de
-    /// header hoy).
+    /// Solo BODY: el selector de variables no existe para el campo Encabezado (Meta/el runtime de envío
+    /// no soportan parámetros de header hoy).
     /// </summary>
-    private List<AlfaActionMenuItem> BuildInsertVariableMenuItems()
+    private string VariablePickerDescription
+        => _variablePickerTargetPosition is int position
+            ? $"Elegí la variable que corresponde a {{{{{position}}}}}. El texto del cuerpo no se modifica."
+            : "Elegí una variable para agregar al cuerpo de la plantilla.";
+
+    /// <summary>
+    /// Abre el selector de variables. Sin posición (null): "Insertar variable" agrega un {{N}} nuevo al
+    /// final del cuerpo. Con posición: "Asignar variable" sobre un placeholder manual existente -- solo
+    /// escribe el mapping en memoria para esa posición, nunca toca el texto del BODY.
+    /// </summary>
+    private Task OpenVariablePickerAsync(int? targetPosition)
     {
-        var items = new List<AlfaActionMenuItem>();
-        var firstGroup = true;
-        foreach (var group in WhatsAppTemplateVariableCatalog.GroupedForSelector())
-        {
-            var firstInGroup = true;
-            foreach (var definition in group)
-            {
-                var secondary = string.IsNullOrWhiteSpace(definition.RequiredContext)
-                    ? definition.Description
-                    : $"{definition.Description} {definition.RequiredContext}";
-                items.Add(new AlfaActionMenuItem
-                {
-                    Key = definition.Key,
-                    Label = definition.Label,
-                    SecondaryText = secondary,
-                    SeparatorBefore = firstInGroup && !firstGroup,
-                    OnClick = () => { InsertCatalogVariable(definition.Key); return Task.CompletedTask; }
-                });
-                firstInGroup = false;
-            }
+        _variablePickerTargetPosition = targetPosition;
+        _variablePickerFilter = string.Empty;
+        _showVariablePicker = true;
+        return Task.CompletedTask;
+    }
 
-            firstGroup = false;
-        }
+    private Task CloseVariablePicker()
+    {
+        _showVariablePicker = false;
+        return Task.CompletedTask;
+    }
 
-        return items;
+    private Task OnVariablePickerFilterChangedAsync(string? value)
+    {
+        _variablePickerFilter = value ?? string.Empty;
+        return Task.CompletedTask;
+    }
+
+    private void SelectVariableFromPicker(string variableKey)
+    {
+        if (_variablePickerTargetPosition is int position)
+            _form.VariableMappings[position] = variableKey;
+        else
+            InsertCatalogVariable(variableKey);
+
+        _showVariablePicker = false;
+    }
+
+    /// <summary>
+    /// Grupos del catálogo que aparecen en el selector como seleccionables (solo
+    /// CanResolveAutomaticallyInManualSend == true), filtrados por el texto de búsqueda contra Label y
+    /// Description. Nunca incluye variables de Tareas/Guardia: esas quedan en
+    /// <see cref="FilteredContextualVariables"/>, no seleccionables desde este flujo manual.
+    /// </summary>
+    private List<IGrouping<string, WhatsAppTemplateVariableDefinition>> FilteredSelectableVariableGroups()
+        => WhatsAppTemplateVariableCatalog.All
+            .Where(x => x.CanResolveAutomaticallyInManualSend && MatchesVariablePickerFilter(x))
+            .GroupBy(x => x.Group)
+            .ToList();
+
+    /// <summary>
+    /// Variables con CanResolveAutomaticallyInManualSend == false (Tareas/Guardia): se muestran en una
+    /// sección aparte, no clickeable, con su RequiredContext explicando cuándo se resuelven -- nunca
+    /// insertables desde Plantillas para que el usuario no crea que son automáticas acá.
+    /// </summary>
+    private List<WhatsAppTemplateVariableDefinition> FilteredContextualVariables()
+        => WhatsAppTemplateVariableCatalog.All
+            .Where(x => !x.CanResolveAutomaticallyInManualSend && MatchesVariablePickerFilter(x))
+            .ToList();
+
+    private bool MatchesVariablePickerFilter(WhatsAppTemplateVariableDefinition definition)
+    {
+        var filter = _variablePickerFilter.Trim();
+        if (filter.Length == 0)
+            return true;
+
+        return definition.Label.Contains(filter, StringComparison.OrdinalIgnoreCase)
+               || definition.Description.Contains(filter, StringComparison.OrdinalIgnoreCase)
+               || definition.Group.Contains(filter, StringComparison.OrdinalIgnoreCase);
     }
 
     private void InsertCatalogVariable(string variableKey)
@@ -1606,6 +1716,12 @@
         string? FbTraceId,
         bool? IsTransient);
 
+    /// <summary>
+    /// Plantilla nueva: arranca completamente vacía (sin texto precargado ni mapping inicial), salvo
+    /// los defaults legítimos del producto (idioma fijo, categoría por defecto y activa). Antes de esta
+    /// pasada el BODY traía un cuerpo de ejemplo hardcodeado -- residual de cuando existían presets --
+    /// que quedó obsoleto al eliminarse esos presets.
+    /// </summary>
     private static ConversacionPlantillaDto NewForm()
         => new()
         {
@@ -1613,7 +1729,7 @@
             Idioma = "es_AR",
             Activa = true,
             EstadoMeta = "DRAFT",
-            CuerpoTexto = "Hola {{1}}, te escribimos para continuar con la conversación pendiente. Respondé este mensaje y seguimos desde donde quedamos."
+            CuerpoTexto = string.Empty
         };
 
     private static ConversacionPlantillaDto CloneTemplate(ConversacionPlantillaDto source)
@@ -1643,17 +1759,41 @@
         };
 
 
-    private static string RenderPreview(string text, IReadOnlyList<string> values)
+    /// <summary>
+    /// Vista previa del cuerpo: nunca modifica el BODY real ni lo persistido, solo el texto mostrado en
+    /// el bloque "Vista previa". Para cada {{N}} presente en el texto, en orden de prioridad: (1) el
+    /// ejemplo cargado si existe (comportamiento histórico, sin cambios), (2) si no hay ejemplo pero la
+    /// posición tiene mapping automático, el Label del catálogo entre llaves (ej. "{{Nombre del
+    /// contacto}}"), (3) si es manual sin mapping, "{{Valor N}}". El textarea de edición sigue mostrando
+    /// siempre la sintaxis Meta real ({{1}}, {{2}}) -- este tratamiento "humanizado" es exclusivo de la
+    /// preview.
+    /// </summary>
+    private static string RenderPreview(string text, IReadOnlyList<string> values, IReadOnlyDictionary<int, string> mappings)
     {
-        var result = string.IsNullOrWhiteSpace(text) ? "Escribí el cuerpo de la plantilla." : text;
-        for (var i = 0; i < values.Count; i++)
-            result = result.Replace("{{" + (i + 1) + "}}", values[i], StringComparison.Ordinal);
+        if (string.IsNullOrWhiteSpace(text))
+            return "La vista previa aparecerá cuando escribas el contenido.";
+
+        var result = text;
+        foreach (var position in ParseBodyPlaceholderPositions(text))
+        {
+            var placeholder = $"{{{{{position}}}}}";
+            var hasExample = position >= 1 && position <= values.Count && !string.IsNullOrWhiteSpace(values[position - 1]);
+            string replacement;
+            if (hasExample)
+                replacement = values[position - 1];
+            else if (mappings.TryGetValue(position, out var key) && WhatsAppTemplateVariableCatalog.Find(key) is { } definition)
+                replacement = $"{{{{{definition.Label}}}}}";
+            else
+                replacement = $"{{{{Valor {position}}}}}";
+
+            result = result.Replace(placeholder, replacement, StringComparison.Ordinal);
+        }
 
         return result;
     }
 
     private static string RenderPreviewFor(ConversacionPlantillaDto dto)
-        => RenderPreview(dto.CuerpoTexto, ParseExamples(ExamplesToText(dto.EjemplosVariablesJson)));
+        => RenderPreview(dto.CuerpoTexto, ParseExamples(ExamplesToText(dto.EjemplosVariablesJson)), dto.VariableMappings);
 
     private static List<string> ParseExamples(string value)
         => ParseMultilineValues(value);

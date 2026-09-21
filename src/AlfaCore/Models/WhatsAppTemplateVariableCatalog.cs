@@ -9,7 +9,9 @@ namespace AlfaCore.Models;
 /// publicada: es lo que vincula una posición <c>{{N}}</c> del cuerpo con su significado.
 /// </param>
 /// <param name="Label">Etiqueta corta mostrada en el selector y debajo del cuerpo.</param>
-/// <param name="Description">Descripción visible en el selector de variables.</param>
+/// <param name="Description">
+/// Descripción corta (una línea) visible en el selector de variables, debajo del Label.
+/// </param>
 /// <param name="Group">Agrupador visual del selector (Contacto, Cobranza, Tareas, Guardia).</param>
 /// <param name="RequiredContext">
 /// Texto secundario que explica qué contexto hace falta para resolver la variable (ej: "Requiere una
@@ -21,13 +23,19 @@ namespace AlfaCore.Models;
 /// false acá: sus resolvers viven dentro de TareasService/CalendarioService, que no se tocan en esta
 /// función y no se les construye un puente hacia el envío manual.
 /// </param>
+/// <param name="Detail">
+/// Nota técnica opcional (fallback, configuración, etc.) que no entra en la línea de Description para
+/// no alargarla. Se muestra, cuando existe, como texto terciario más chico debajo de Description en el
+/// selector -- nunca reemplaza a Description ni a RequiredContext.
+/// </param>
 public sealed record WhatsAppTemplateVariableDefinition(
     string Key,
     string Label,
     string Description,
     string Group,
     string? RequiredContext,
-    bool CanResolveAutomaticallyInManualSend);
+    bool CanResolveAutomaticallyInManualSend,
+    string? Detail = null);
 
 /// <summary>
 /// Catálogo centralizado y tipado de variables de plantillas de WhatsApp. Única fuente de verdad de
@@ -60,24 +68,26 @@ public static class WhatsAppTemplateVariableCatalog
     [
         new(ContactName,
             "Nombre del contacto",
-            "Nombre visible del contacto de la conversación (cliente, contacto o, en su defecto, el teléfono).",
+            "Nombre visible del contacto de la conversación.",
             GroupContacto,
             RequiredContext: null,
-            CanResolveAutomaticallyInManualSend: true),
+            CanResolveAutomaticallyInManualSend: true,
+            Detail: "Si no hay nombre cargado, se usa el teléfono."),
 
         new(CobranzaDetalleDeuda,
             "Detalle de deuda",
-            "Resumen de saldo, comprobantes pendientes y atraso, calculado desde la cuenta corriente del cliente.",
+            "Resumen de saldo y comprobantes pendientes del cliente.",
             GroupCobranza,
             RequiredContext: "Requiere que el contacto tenga un cliente vinculado con cuenta corriente resoluble.",
             CanResolveAutomaticallyInManualSend: true),
 
         new(PagoFormaPago,
             "Forma de pago",
-            "Datos de transferencia/pago configurados para cobranza (CONV_COBRANZA_FORMA_PAGO).",
+            "Datos de transferencia o pago configurados para cobranza.",
             GroupCobranza,
             RequiredContext: null,
-            CanResolveAutomaticallyInManualSend: true),
+            CanResolveAutomaticallyInManualSend: true,
+            Detail: "Configuración: CONV_COBRANZA_FORMA_PAGO."),
 
         new(TareaTitulo,
             "Título de la tarea",

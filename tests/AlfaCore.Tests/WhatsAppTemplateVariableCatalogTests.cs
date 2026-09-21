@@ -268,18 +268,39 @@ public sealed class WhatsAppTemplateVariableCatalogTests
 
     // ---------------------------------------------------------------------------------------------
     // UI: Insertar variable (BODY únicamente), variables usadas, presets removidos.
+    //
+    // El selector dejó de ser un AlfaActionMenu (pensado para acciones cortas tipo menú, no para un
+    // catálogo con descripciones -- se montaba sobre el header y no clampaba ancho/alto) y pasó a un
+    // AlfaDialog (modal contenido, ancho limitado, backdrop propio, cierre con Escape/backdrop ya
+    // resuelto por el componente compartido). Ver docs/ui/alfadesign-components.md.
     // ---------------------------------------------------------------------------------------------
 
     [Fact]
-    public void TemplatesPage_BodyField_OffersInsertVariableMenu()
+    public void TemplatesPage_BodyField_OffersInsertVariableButton()
     {
         var source = ReadPageSource();
         var bodyFieldStart = source.IndexOf("id=\"tpl-body\"", StringComparison.Ordinal);
         Assert.True(bodyFieldStart >= 0);
 
         var window = source[Math.Max(0, bodyFieldStart - 1500)..bodyFieldStart];
-        Assert.Contains("BuildInsertVariableMenuItems()", window, StringComparison.Ordinal);
-        Assert.Contains("AlfaActionMenu", window, StringComparison.Ordinal);
+        Assert.Contains("OpenVariablePickerAsync(null)", window, StringComparison.Ordinal);
+        Assert.Contains("AlfaButton", window, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TemplatesPage_UsesAlfaDialog_NotAlfaActionMenu_ForTheVariablePicker()
+    {
+        var source = ReadPageSource();
+
+        // El picker no puede seguir siendo AlfaActionMenu (demasiado ancho, se monta sobre el
+        // header/navegación, no pensado para un catálogo con descripciones largas).
+        Assert.DoesNotContain("AlfaActionMenu", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("AlfaActionMenuItem", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("BuildInsertVariableMenuItems", source, StringComparison.Ordinal);
+
+        Assert.Contains("<AlfaDialog Open=\"@_showVariablePicker\"", source, StringComparison.Ordinal);
+        Assert.Contains("Size=\"AlfaDialogSize.Sm\"", source, StringComparison.Ordinal);
+        Assert.Contains("class=\"variable-picker\"", source, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -295,14 +316,13 @@ public sealed class WhatsAppTemplateVariableCatalogTests
         Assert.True(headerFieldEnd > headerFieldStart);
 
         var headerBlock = source[headerFieldStart..headerFieldEnd];
-        Assert.DoesNotContain("BuildInsertVariableMenuItems", headerBlock, StringComparison.Ordinal);
-        Assert.DoesNotContain("AlfaActionMenu", headerBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("OpenVariablePickerAsync", headerBlock, StringComparison.Ordinal);
         Assert.DoesNotContain("InsertCatalogVariable", headerBlock, StringComparison.Ordinal);
 
-        // Y en general, la página ofrece un único control "Insertar variable" (el de BODY) -- Meta y el
+        // Y en general, la página ofrece un único botón "Insertar variable" (el de BODY) -- Meta y el
         // runtime de envío no soportan parámetros de header hoy, así que no hay un segundo control.
-        var menuOccurrences = CountOccurrences(source, "<AlfaActionMenu Items=\"@BuildInsertVariableMenuItems()\"");
-        Assert.Equal(1, menuOccurrences);
+        var triggerOccurrences = CountOccurrences(source, "OpenVariablePickerAsync(null)");
+        Assert.Equal(1, triggerOccurrences);
     }
 
     [Fact]
@@ -314,6 +334,169 @@ public sealed class WhatsAppTemplateVariableCatalogTests
         // presentes en el texto actual), nunca WhatsAppTemplateVariableCatalog.All directo en el markup.
         Assert.Contains("UsedBodyVariables", source, StringComparison.Ordinal);
         Assert.DoesNotContain("@foreach (var definition in WhatsAppTemplateVariableCatalog.All)", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VariablePicker_OnlySelectableVariables_AppearInTheSelectableGroups()
+    {
+        var selectableKeys = WhatsAppTemplateVariableCatalog.All
+            .Where(x => x.CanResolveAutomaticallyInManualSend)
+            .Select(x => x.Key)
+            .ToList();
+
+        Assert.Equal(
+            new[] { WhatsAppTemplateVariableCatalog.ContactName, WhatsAppTemplateVariableCatalog.CobranzaDetalleDeuda, WhatsAppTemplateVariableCatalog.PagoFormaPago }
+                .OrderBy(x => x, StringComparer.Ordinal),
+            selectableKeys.OrderBy(x => x, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public void VariablePicker_ContextualVariables_AreNeverInTheSelectableGroupsMethod()
+    {
+        // FilteredSelectableVariableGroups/FilteredContextualVariables son métodos expression-bodied
+        // (sin llaves), así que se acotan por texto en vez de por balanceo de llaves.
+        var source = ReadPageSource();
+
+        var selectableStart = source.IndexOf(
+            "private List<IGrouping<string, WhatsAppTemplateVariableDefinition>> FilteredSelectableVariableGroups()",
+            StringComparison.Ordinal);
+        Assert.True(selectableStart >= 0);
+        var selectableEnd = source.IndexOf(".ToList();", selectableStart, StringComparison.Ordinal);
+        Assert.True(selectableEnd > selectableStart);
+        var selectableBody = source[selectableStart..selectableEnd];
+
+        // Las de Tareas/Guardia se resuelven vía FilteredContextualVariables (sección separada, no
+        // clickeable) para que nunca se puedan insertar desde el flujo manual de Plantillas.
+        Assert.Contains("x.CanResolveAutomaticallyInManualSend && MatchesVariablePickerFilter(x)", selectableBody, StringComparison.Ordinal);
+        Assert.DoesNotContain("!x.CanResolveAutomaticallyInManualSend", selectableBody, StringComparison.Ordinal);
+
+        var contextualStart = source.IndexOf(
+            "private List<WhatsAppTemplateVariableDefinition> FilteredContextualVariables()",
+            StringComparison.Ordinal);
+        Assert.True(contextualStart >= 0);
+        var contextualEnd = source.IndexOf(".ToList();", contextualStart, StringComparison.Ordinal);
+        Assert.True(contextualEnd > contextualStart);
+        var contextualBody = source[contextualStart..contextualEnd];
+
+        Assert.Contains("!x.CanResolveAutomaticallyInManualSend && MatchesVariablePickerFilter(x)", contextualBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VariablePicker_ContextualOptions_AreRenderedWithoutAnOnClickHandler()
+    {
+        var source = ReadPageSource();
+        var contextualStart = source.IndexOf("variable-picker__group--contextual", StringComparison.Ordinal);
+        Assert.True(contextualStart >= 0);
+        var contextualEnd = source.IndexOf("</AlfaDialog>", contextualStart, StringComparison.Ordinal);
+        Assert.True(contextualEnd > contextualStart);
+
+        var contextualBlock = source[contextualStart..contextualEnd];
+        Assert.DoesNotContain("@onclick", contextualBlock, StringComparison.Ordinal);
+        Assert.Contains("aria-disabled=\"true\"", contextualBlock, StringComparison.Ordinal);
+        Assert.Contains("definition.RequiredContext", contextualBlock, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void VariablePicker_SelectingAVariable_WithATargetPosition_AssignsMappingWithoutTouchingTheBody()
+    {
+        var body = ReadPageMethodBody("private void SelectVariableFromPicker(string variableKey)");
+
+        // Con posición objetivo (viene de "Asignar variable" sobre un placeholder manual), solo escribe
+        // el mapping para ESA posición -- nunca llama a InsertCatalogVariable, que es lo único que toca
+        // _form.CuerpoTexto.
+        Assert.Contains("_form.VariableMappings[position] = variableKey;", body, StringComparison.Ordinal);
+        Assert.Contains("InsertCatalogVariable(variableKey);", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UsedBodyVariables_ManualPlaceholder_OffersAssignVariableAction()
+    {
+        var source = ReadPageSource();
+        Assert.Contains("!used.HasMapping", source, StringComparison.Ordinal);
+        Assert.Contains("OpenVariablePickerAsync(used.Posicion)", source, StringComparison.Ordinal);
+        Assert.Contains("Asignar variable", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void UsedBodyVariables_ManualPlaceholder_ReportsValorManualLabel()
+    {
+        // UsedBodyVariables es una propiedad expression-bodied (sin llaves), así que se valida sobre el
+        // código fuente completo en vez de intentar delimitar un "cuerpo de método" con balanceo de
+        // llaves (que no existen acá).
+        var source = ReadPageSource();
+        var propertyStart = source.IndexOf(
+            "private IReadOnlyList<(int Posicion, string Label, bool HasMapping)> UsedBodyVariables",
+            StringComparison.Ordinal);
+        Assert.True(propertyStart >= 0);
+
+        var propertyEnd = source.IndexOf(".ToList();", propertyStart, StringComparison.Ordinal);
+        Assert.True(propertyEnd > propertyStart);
+        var propertyText = source[propertyStart..propertyEnd];
+
+        Assert.Contains("\"Valor manual\"", propertyText, StringComparison.Ordinal);
+        Assert.Contains("HasMapping: false", propertyText, StringComparison.Ordinal);
+        Assert.Contains("HasMapping: true", propertyText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void NewForm_StartsWithEmptyBodyAndNoResidualPresetText()
+    {
+        var body = ReadPageMethodBody("private static ConversacionPlantillaDto NewForm()");
+
+        Assert.Contains("CuerpoTexto = string.Empty", body, StringComparison.Ordinal);
+        // Nunca el cuerpo de ejemplo hardcodeado histórico (residual de cuando existían presets).
+        Assert.DoesNotContain("Hola {{1}}", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("te escribimos para continuar", body, StringComparison.Ordinal);
+
+        // NewForm() no toca VariableMappings -- el DTO ya nace con un Dictionary vacío (ver su
+        // inicializador en ConversacionesModels.cs), así que una plantilla nueva nunca arranca con
+        // mapping preexistente.
+        Assert.DoesNotContain("VariableMappings", body, StringComparison.Ordinal);
+
+        // NuevaPlantilla() (quien llama a NewForm() al entrar en modo Create) tampoco precarga texto de
+        // ejemplos -- antes dejaba "Evelyn" cargado por defecto.
+        var nuevaPlantillaBody = ReadPageMethodBody("private void NuevaPlantilla()");
+        Assert.Contains("_examplesText = string.Empty;", nuevaPlantillaBody, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BodyTextarea_UsesAUiPlaceholderAttribute_NeverRealPrecannedText()
+    {
+        var source = ReadPageSource();
+        Assert.Contains("placeholder=\"Escribí el contenido de la plantilla...\"", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("placeholder=\"Hola {{1}}", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderPreview_EmptyBody_ShowsAppropriateEmptyState()
+    {
+        var body = ReadPageMethodBody(
+            "private static string RenderPreview(string text, IReadOnlyList<string> values, IReadOnlyDictionary<int, string> mappings)");
+        Assert.Contains("\"La vista previa aparecerá cuando escribas el contenido.\"", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RenderPreview_PrefersExample_ThenMappedLabel_ThenManualPlaceholder_NeverEditsTheRealBody()
+    {
+        var body = ReadPageMethodBody(
+            "private static string RenderPreview(string text, IReadOnlyList<string> values, IReadOnlyDictionary<int, string> mappings)");
+
+        // Prioridad 1: ejemplo cargado (comportamiento histórico sin cambios).
+        Assert.Contains("hasExample", body, StringComparison.Ordinal);
+        Assert.Contains("replacement = values[position - 1];", body, StringComparison.Ordinal);
+
+        // Prioridad 2: sin ejemplo pero con mapping automático -- Label del catálogo humanizado entre
+        // llaves, solo en la preview.
+        Assert.Contains("mappings.TryGetValue(position, out var key)", body, StringComparison.Ordinal);
+        Assert.Contains("replacement = $\"{{{{{definition.Label}}}}}\";", body, StringComparison.Ordinal);
+
+        // Prioridad 3: manual sin mapping -- "{{Valor N}}".
+        Assert.Contains("replacement = $\"{{{{Valor {position}}}}}\";", body, StringComparison.Ordinal);
+
+        // Nunca reasigna text/_form.CuerpoTexto -- solo arma "result" (variable local) para mostrar, el
+        // parámetro "text" de entrada no se muta.
+        Assert.DoesNotContain("text =", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("_form.CuerpoTexto =", body, StringComparison.Ordinal);
     }
 
     [Fact]
