@@ -64,6 +64,25 @@ public sealed class PuntoVentaService(
                 },
                 cancellationToken: token));
 
+            // Algunas bases legacy tienen SISTEMA vacío o guardan un código distinto
+            // al de la sesión central. Si el usuario no apareció con el filtro de
+            // sistema, se vuelve a buscar por nombre para no perder la marca de
+            // administrador del sistema.
+            if (userRow is null && !string.IsNullOrWhiteSpace(currentSystem))
+            {
+                userRow = await cn.QuerySingleOrDefaultAsync<UserCajaRow>(new CommandDefinition(
+                    """
+                    SELECT TOP (1)
+                        ISNULL(LTRIM(RTRIM(NOMBRE)), '') AS UserName,
+                        ISNULL(LTRIM(RTRIM(IDCAJA)), '') AS IdCaja,
+                        CASE WHEN ISNULL(Administrador, 0) = 0 THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS Administrador
+                    FROM dbo.TA_USUARIOS
+                    WHERE UPPER(LTRIM(RTRIM(NOMBRE))) = @UserName;
+                    """,
+                    new { UserName = currentUser.ToUpperInvariant() },
+                    cancellationToken: token));
+            }
+
             if (userRow is null)
                 throw new InvalidOperationException("El usuario actual no existe en TA_USUARIOS de la base activa.");
 
@@ -306,15 +325,24 @@ public sealed class PuntoVentaService(
                 : !string.IsNullOrWhiteSpace(sucursalConfigurada)
                     ? NormalizeSucursal(sucursalConfigurada)
                     : context.SucursalDefault;
-            var letra = tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
-                ? "X"
-                : string.IsNullOrWhiteSpace(request.Letra) ? ResolveLetraDefault(tcConfig, sucursal) : request.Letra.Trim();
             var cliente = !string.IsNullOrWhiteSpace(request.CuentaCliente)
                 ? request.CuentaCliente.Trim()
                 : settings.CuentaConsumidorFinal.Trim();
 
             if (string.IsNullOrWhiteSpace(cliente))
                 throw new InvalidOperationException("No se pudo resolver la cuenta de consumidor final para grabar la venta.");
+
+            var esConsumidorFinal = string.Equals(
+                cliente,
+                settings.CuentaConsumidorFinal.Trim(),
+                StringComparison.OrdinalIgnoreCase);
+            var letra = tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
+                ? "X"
+                : !string.IsNullOrWhiteSpace(request.Letra)
+                    ? request.Letra.Trim()
+                    : esConsumidorFinal
+                        ? "B"
+                        : ResolveLetraDefault(tcConfig, sucursal);
 
             var modoFalloCae = await arcaConfigService.ResolveModoFalloCaeAsync(cn, token);
 
@@ -333,20 +361,34 @@ public sealed class PuntoVentaService(
                 }
             }
 
-            var comprobante = await CreateReceiptAsync(
-                cn,
-                cliente,
-                request.Vendedor.Trim(),
-                request.Fecha == default ? DateTime.Today : request.Fecha,
-                request.Observaciones.Trim(),
-                tc,
-                sucursal,
-                letra,
-                numeracion?.NumeroFormateado,
-                token);
+            var numeroComprobante = numeracion?.NumeroFormateado;
+            var comprobante = !string.IsNullOrWhiteSpace(numeroComprobante)
+                ? await LoadComprobanteByKeysAsync(cn, tc, sucursal, numeroComprobante!, letra, token)
+                : null;
 
-            foreach (var item in items)
-                await AddReceiptItemAsync(cn, comprobante.IdComprobante, item, token);
+            var comprobanteExistente = comprobante is not null;
+            if (comprobante is null)
+            {
+                comprobante = await CreateReceiptAsync(
+                    cn,
+                    cliente,
+                    request.Vendedor.Trim(),
+                    request.Fecha == default ? DateTime.Today : request.Fecha,
+                    request.Observaciones.Trim(),
+                    tc,
+                    sucursal,
+                    letra,
+                    numeroComprobante,
+                    token);
+            }
+
+            // Si AFIP rechazó un comprobante, el número ya quedó creado en la base.
+            // Al reintentar se reutiliza ese comprobante para no duplicar la clave ni sus artículos.
+            if (!comprobanteExistente || !await ReceiptHasItemsAsync(cn, comprobante.IdComprobanteTexto, comprobante.Tc, token))
+            {
+                foreach (var item in items)
+                    await AddReceiptItemAsync(cn, comprobante.IdComprobante, item, token);
+            }
 
             var caeIntento = ArcaCaeIntentoDto.NoAplica;
             if (TiposDocumentoCore.EsFiscal(TiposDocumentoCore.TipoParaComprobante(comprobante.Tc, comprobante.Letra)))
@@ -566,7 +608,7 @@ public sealed class PuntoVentaService(
             };
         }, "No se pudo cargar el contexto de cierre del comprobante.", ct);
 
-    public Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string tipoComprobante, CancellationToken ct = default)
+    public Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string tipoComprobante, string? sucursal = null, DateTime? fechaDesde = null, DateTime? fechaHasta = null, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetRecentReceipts", async token =>
         {
             await using var cn = new SqlConnection(ConnectionString);
@@ -575,7 +617,7 @@ public sealed class PuntoVentaService(
             var tc = string.IsNullOrWhiteSpace(tipoComprobante) ? DefaultTc : tipoComprobante.Trim();
             var rows = await cn.QueryAsync<PuntoVentaReceiptListItemDto>(new CommandDefinition(
                 """
-                SELECT TOP (40)
+                SELECT TOP (10)
                     ID AS IdComprobante,
                     ISNULL(LTRIM(RTRIM(TC)), '') AS TipoComprobante,
                     ISNULL(LTRIM(RTRIM(IDCOMPROBANTE)), '') AS IdComprobanteTexto,
@@ -585,10 +627,19 @@ public sealed class PuntoVentaService(
                     CAST(ISNULL(Impreso, 0) AS bit) AS Impreso
                 FROM dbo.V_MV_CPTE
                 WHERE UPPER(LTRIM(RTRIM(TC))) = @Tc
+                  AND (@Sucursal IS NULL OR LTRIM(RTRIM(SUCURSAL)) = @Sucursal)
+                  AND (@FechaDesde IS NULL OR ISNULL(FechaHora_Grabacion, FECHA) >= @FechaDesde)
+                  AND (@FechaHasta IS NULL OR ISNULL(FechaHora_Grabacion, FECHA) < DATEADD(day, 1, @FechaHasta))
                   AND ISNULL(ANULADA, 0) = 0
                 ORDER BY ISNULL(FechaHora_Grabacion, FECHA) DESC, ID DESC;
                 """,
-                new { Tc = tc.ToUpperInvariant() },
+                new
+                {
+                    Tc = tc.ToUpperInvariant(),
+                    Sucursal = string.IsNullOrWhiteSpace(sucursal) ? null : NormalizeSucursal(sucursal),
+                    FechaDesde = fechaDesde?.Date,
+                    FechaHasta = fechaHasta?.Date
+                },
                 cancellationToken: token));
 
             return (IReadOnlyList<PuntoVentaReceiptListItemDto>)rows.ToList();
@@ -1398,6 +1449,47 @@ public sealed class PuntoVentaService(
             """,
             new { IdComprobante = idComprobante },
             cancellationToken: ct));
+
+    private static async Task<ComprobanteCreadoRow?> LoadComprobanteByKeysAsync(
+        SqlConnection cn,
+        string tc,
+        string sucursal,
+        string numero,
+        string letra,
+        CancellationToken ct)
+        => await cn.QuerySingleOrDefaultAsync<ComprobanteCreadoRow>(new CommandDefinition(
+            """
+            SELECT TOP (1)
+                ID AS IdComprobante,
+                ISNULL(LTRIM(RTRIM(TC)), '') AS Tc,
+                ISNULL(LTRIM(RTRIM(SUCURSAL)), '') AS Sucursal,
+                ISNULL(LTRIM(RTRIM(NUMERO)), '') AS Numero,
+                ISNULL(LTRIM(RTRIM(LETRA)), '') AS Letra,
+                ISNULL(LTRIM(RTRIM(IDCOMPROBANTE)), '') AS IdComprobanteTexto
+            FROM dbo.V_MV_CPTE
+            WHERE UPPER(LTRIM(RTRIM(TC))) = UPPER(@Tc)
+              AND LTRIM(RTRIM(SUCURSAL)) = @Sucursal
+              AND LTRIM(RTRIM(NUMERO)) = @Numero
+              AND UPPER(LTRIM(RTRIM(LETRA))) = UPPER(@Letra)
+            ORDER BY ID DESC;
+            """,
+            new { Tc = tc, Sucursal = sucursal, Numero = numero, Letra = letra },
+            cancellationToken: ct));
+
+    private static async Task<bool> ReceiptHasItemsAsync(
+        SqlConnection cn,
+        string idComprobante,
+        string tc,
+        CancellationToken ct)
+        => await cn.ExecuteScalarAsync<int>(new CommandDefinition(
+            """
+            SELECT COUNT(1)
+            FROM dbo.V_MV_CPTEINSUMOS
+            WHERE IDCOMPROBANTE = @IdComprobante
+              AND UPPER(LTRIM(RTRIM(TC))) = UPPER(@Tc);
+            """,
+            new { IdComprobante = idComprobante, Tc = tc },
+            cancellationToken: ct)) > 0;
 
     private static void ValidateSpResult(int resultado, string mensaje)
     {

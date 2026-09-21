@@ -1,5 +1,6 @@
 @page "/ventas/punto-venta/mostrador"
 @page "/{idweb}/{idbase:int}/ventas/punto-venta/mostrador"
+@implements IAsyncDisposable
 @inject AlfaCore.Services.IPuntoVentaService PuntoVentaSvc
 @inject AlfaCore.Services.IPuntoVentaCartStateService CartState
 @inject AlfaCore.Services.IPuntoVentaPedidoService PedidoSvc
@@ -23,6 +24,10 @@
         margin: 0;
         background: linear-gradient(180deg, #eef1f6 0%, #e4e8ef 100%);
         color: #1f2d3d;
+    }
+
+    .pos-shortcut-trigger {
+        display: none;
     }
 
     .pos-shell .empty-state,
@@ -1225,6 +1230,11 @@
         box-shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
     }
 
+    .pos-reprint-modal {
+        overflow: hidden;
+        grid-template-rows: auto auto minmax(0, 1fr);
+    }
+
     .pos-settings-modal__header {
         display: flex;
         align-items: flex-start;
@@ -1570,14 +1580,16 @@
         width: min(860px, calc(100vw - 2rem));
         max-height: calc(100dvh - 2rem);
         display: grid;
-        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        /* header, error opcional, totales, carga, listado y acciones */
+        grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;
         gap: 1rem;
         padding: 1rem;
         border-radius: 20px;
         border: 1px solid var(--color-border);
         background: var(--color-panel-strong);
         box-shadow: 0 28px 60px rgba(0, 0, 0, 0.38);
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: auto;
     }
 
     .pos-charge-modal__header {
@@ -2354,8 +2366,43 @@
     .pos-reprint-list {
         display: grid;
         gap: 0.8rem;
-        max-height: min(70vh, 720px);
+        min-height: 0;
+        max-height: min(22rem, calc(100vh - 18rem));
         overflow-y: auto;
+    }
+
+    .pos-reprint-filters {
+        display: flex;
+        align-items: flex-end;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.85rem;
+        padding: 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: 14px;
+        background: var(--color-panel);
+    }
+
+    .pos-reprint-filters label {
+        display: grid;
+        gap: 0.25rem;
+        color: var(--color-muted);
+        font-size: 0.8rem;
+    }
+
+    .pos-reprint-filters input {
+        min-height: 2.5rem;
+        padding: 0.45rem 0.65rem;
+        border: 1px solid var(--color-border);
+        border-radius: 9px;
+        background: var(--color-input);
+        color: var(--color-text);
+    }
+
+    .pos-reprint-filters small {
+        align-self: center;
+        margin-left: auto;
+        color: var(--color-muted);
     }
 
     .pos-reprint-item {
@@ -2647,9 +2694,41 @@
         element.focus();
         element.select();
     };
+
+    window.alfaPosFocusPaymentMethodList = function (element) {
+        if (!element) {
+            return;
+        }
+
+        const firstButton = element.querySelector("button");
+        (firstButton || element).focus();
+    };
+
+    window.alfaPosRegisterShortcuts = function () {
+        window.alfaPosUnregisterShortcuts();
+        window._alfaPosShortcutHandler = function (event) {
+            if (event.ctrlKey && (event.key === "p" || event.key === "P")) {
+                event.preventDefault();
+                event.stopPropagation();
+                const trigger = document.getElementById("pos-reprint-shortcut-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+            }
+        };
+        document.addEventListener("keydown", window._alfaPosShortcutHandler, true);
+    };
+
+    window.alfaPosUnregisterShortcuts = function () {
+        if (window._alfaPosShortcutHandler) {
+            document.removeEventListener("keydown", window._alfaPosShortcutHandler, true);
+            window._alfaPosShortcutHandler = null;
+        }
+    };
 </script>
 
 <section class="pos-shell">
+    <button id="pos-reprint-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="OpenReprintModalAsync" tabindex="-1" aria-hidden="true"></button>
     @if (!string.IsNullOrWhiteSpace(_error))
     {
         <section class="panel-card empty-state">
@@ -3094,6 +3173,7 @@
                    @ref="_paymentMethodCodeFilterRef"
                    @bind="_paymentMethodCodeFilter"
                    @bind:event="oninput"
+                   @onkeydown="HandlePaymentMethodFilterKeyDown"
                    placeholder="Código o descripción" />
             <div class="pos-charge-modal__selected-method">
                 <span>Medio seleccionado</span>
@@ -3122,7 +3202,9 @@
                 }
                 else
                 {
-                    <div class="pos-charge-modal__methods-scroll">
+                    <div class="pos-charge-modal__methods-scroll"
+                         @ref="_paymentMethodListRef"
+                         tabindex="0">
                         <div class="pos-charge-modal__method-grid">
                             @foreach (var method in PaymentMethodsFiltrados)
                             {
@@ -3315,13 +3397,26 @@
 @if (_showReprintModal)
 {
     <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar reimpresión" @onclick="CloseReprintModal"></button>
-    <section class="pos-settings-modal" aria-label="Reimprimir comprobantes">
+    <section class="pos-settings-modal pos-reprint-modal" aria-label="Reimprimir comprobantes">
         <div class="pos-settings-modal__header">
             <div>
                 <h3>Reimprimir comprobantes</h3>
                 <p>Se listan del más reciente al más viejo.</p>
             </div>
             <button type="button" class="pos-settings-modal__close" @onclick="CloseReprintModal">X</button>
+        </div>
+
+        <div class="pos-reprint-filters">
+            <label>
+                <span>Desde</span>
+                <input type="date" value="@_reprintDateDesdeText" @onchange="OnReprintDateDesdeChanged" />
+            </label>
+            <label>
+                <span>Hasta</span>
+                <input type="date" value="@_reprintDateHastaText" @onchange="OnReprintDateHastaChanged" />
+            </label>
+            <button type="button" class="btn btn--primary" @onclick="LoadReprintAsync" disabled="@_reprintLoading">Buscar</button>
+            <small>Se muestran hasta 10. Punto de venta: @SucursalOperativa</small>
         </div>
 
         @if (_reprintLoading)
@@ -3447,7 +3542,7 @@
                 </div>
                 <div class="pos-settings-modal__field">
                     <label>TC / sucursal</label>
-                    <div class="pos-settings-modal__readonly">@(_context?.TipoComprobanteDefault ?? "FC") / @(_context?.SucursalDefault ?? "0001")</div>
+                    <div class="pos-settings-modal__readonly">@(_context?.TipoComprobanteDefault ?? "FC") / @SucursalOperativa</div>
                 </div>
                 <div class="pos-settings-modal__field">
                     <label>RUTAIMAGENES heredada</label>
@@ -3980,6 +4075,8 @@
     private PuntoVentaCatalogDto _catalog = new();
     private PuntoVentaCatalogFiltersDto _filters = new();
     private IReadOnlyList<PuntoVentaReceiptListItemDto> _recentReceipts = [];
+    private string _reprintDateDesdeText = string.Empty;
+    private string _reprintDateHastaText = string.Empty;
     private List<PuntoVentaCartItemDto> _cartItems => CartState.CartItems;
     private List<PuntoVentaPaymentLineDto> _paymentLines => CartState.PaymentLines;
     private readonly HashSet<string> _imageFallbacks = new(StringComparer.OrdinalIgnoreCase);
@@ -4047,10 +4144,16 @@
     private string _chargeAmountInput = string.Empty;
     private ElementReference _chargeAmountRef;
     private ElementReference _paymentMethodCodeFilterRef;
+    private ElementReference _paymentMethodListRef;
     private string _selectedPaymentCode = string.Empty;
     private string _paymentMethodCodeFilter = string.Empty;
     private string _tipoComprobanteSeleccionado = "FC";
     private string _receiptEmail = string.Empty;
+
+    private string SucursalOperativa
+        => !string.IsNullOrWhiteSpace(_puntoVentaSucursal)
+            ? _puntoVentaSucursal.Trim()
+            : _context?.SucursalDefault ?? "0001";
 
     [SupplyParameterFromQuery(Name = "idPedido")]
     public int? IdPedidoQuery { get; set; }
@@ -4066,6 +4169,7 @@
     private PuntoVentaPedidoDto? _pedidoContexto;
     private string? _pedidoError;
     private string? _pedidoSucursalOverride;
+    private string? _puntoVentaSucursal;
 
     private int _idPuntoVentaActual;
     private string _idCajaActual = string.Empty;
@@ -4131,6 +4235,14 @@
             _familias = await PuntoVentaSvc.GetFamiliasAsync();
             await LoadCatalogAsync();
 
+            if (IdPuntoVentaQuery is > 0)
+            {
+                var puntoVenta = await PosConfigSvc.GetPuntoVentaByIdAsync(IdPuntoVentaQuery.Value);
+                _puntoVentaSucursal = string.IsNullOrWhiteSpace(puntoVenta?.Sucursal)
+                    ? null
+                    : puntoVenta!.Sucursal.Trim();
+            }
+
             if (IdPedidoQuery is > 0)
             {
                 _pedidoContexto = await PedidoSvc.GetPedidoByIdAsync(IdPedidoQuery.Value);
@@ -4166,6 +4278,9 @@
                     }
 
                     var puntoVentaPedido = await PosConfigSvc.GetPuntoVentaByIdAsync(_pedidoContexto.IdPuntoVenta);
+                    _puntoVentaSucursal = string.IsNullOrWhiteSpace(puntoVentaPedido?.Sucursal)
+                        ? null
+                        : puntoVentaPedido!.Sucursal.Trim();
                     _pedidoSucursalOverride = string.IsNullOrWhiteSpace(puntoVentaPedido?.Sucursal) ? null : puntoVentaPedido!.Sucursal;
 
                     if (EsCierrePedido)
@@ -4468,6 +4583,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (firstRender)
+        {
+            await Js.InvokeVoidAsync("alfaPosRegisterShortcuts");
+        }
+
         if (_needScanFocus && _context is not null && !_loading && !_scanLoading)
         {
             _needScanFocus = false;
@@ -4750,12 +4870,34 @@
 
     private async Task OpenReprintModalAsync()
     {
+        _showPosMenu = false;
+        _showReprintModal = true;
+        _reprintLoading = true;
+        _recentReceipts = [];
+        var hoy = DateTime.Today.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        _reprintDateDesdeText = hoy;
+        _reprintDateHastaText = hoy;
+        await InvokeAsync(StateHasChanged);
+        await Task.Delay(1);
+        await LoadReprintAsync();
+    }
+
+    private async Task LoadReprintAsync()
+    {
         try
         {
-            _showPosMenu = false;
             _reprintLoading = true;
-            _recentReceipts = await PuntoVentaSvc.GetRecentReceiptsAsync(_context?.TipoComprobanteDefault ?? "FC");
-            _showReprintModal = true;
+            DateTime? fechaDesde = DateTime.TryParse(_reprintDateDesdeText, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var desde)
+                ? desde.Date
+                : null;
+            DateTime? fechaHasta = DateTime.TryParse(_reprintDateHastaText, System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var hasta)
+                ? hasta.Date
+                : null;
+            _recentReceipts = await PuntoVentaSvc.GetRecentReceiptsAsync(
+                _context?.TipoComprobanteDefault ?? "FC",
+                SucursalOperativa,
+                fechaDesde,
+                fechaHasta);
         }
         catch (Exception ex)
         {
@@ -4769,6 +4911,12 @@
 
     private void CloseReprintModal()
         => _showReprintModal = false;
+
+    private void OnReprintDateDesdeChanged(ChangeEventArgs args)
+        => _reprintDateDesdeText = args.Value?.ToString() ?? string.Empty;
+
+    private void OnReprintDateHastaChanged(ChangeEventArgs args)
+        => _reprintDateHastaText = args.Value?.ToString() ?? string.Empty;
 
     private async Task OpenSettingsAsync()
     {
@@ -5029,6 +5177,44 @@
         try { await Js.InvokeVoidAsync("alfaPosFocusSelect", _paymentMethodCodeFilterRef); } catch { }
     }
 
+    private async Task FocusPaymentMethodListAsync()
+    {
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+        try { await Js.InvokeVoidAsync("alfaPosFocusPaymentMethodList", _paymentMethodListRef); } catch { }
+    }
+
+    private async Task HandlePaymentMethodFilterKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "ArrowDown")
+        {
+            await FocusPaymentMethodListAsync();
+            return;
+        }
+
+        if (e.Key != "Enter")
+            return;
+
+        var filtrados = PaymentMethodsFiltrados;
+        var texto = _paymentMethodCodeFilter.Trim();
+        var coincidenciaCodigo = !string.IsNullOrWhiteSpace(texto)
+            ? _paymentMethods.FirstOrDefault(x =>
+                string.Equals(x.Codigo?.Trim(), texto, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x.CodigoOpcional?.Trim(), texto, StringComparison.OrdinalIgnoreCase))
+            : null;
+        var medio = coincidenciaCodigo ?? (filtrados.Count == 1 ? filtrados[0] : null);
+
+        if (medio is null)
+        {
+            if (filtrados.Count > 1)
+                await FocusPaymentMethodListAsync();
+            return;
+        }
+
+        SelectPaymentMethod(medio.Codigo);
+        await FocusChargeAmountAsync();
+    }
+
     private async Task AddSelectedPaymentAsync()
     {
         _chargeError = null;
@@ -5052,6 +5238,19 @@
             return;
         }
 
+        var esEfectivo = IsCashPaymentMethod(method);
+        if (!esEfectivo && TotalPagado >= TotalCarrito)
+        {
+            _chargeError = "No podés agregar otro medio de pago: el total ya está cubierto. Solo efectivo puede generar vuelto.";
+            return;
+        }
+
+        if (!esEfectivo && decimal.Round(TotalPagado + importe - TotalCarrito, 2) > 0)
+        {
+            _chargeError = $"El importe no puede superar el pendiente de {FmtMoney(PendienteCobro)} para este medio de pago.";
+            return;
+        }
+
         _paymentLines.Add(new PuntoVentaPaymentLineDto
         {
             CodigoMedioPago = method.Codigo,
@@ -5063,6 +5262,21 @@
             ? FmtInputAmount(importe)
             : PendingAmountInput();
         await FocusPaymentMethodFilterAsync();
+    }
+
+    private static bool IsCashPaymentMethod(PuntoVentaPaymentMethodDto method)
+    {
+        var codigo = method.Codigo?.Trim() ?? string.Empty;
+        var codigoOpcional = method.CodigoOpcional?.Trim() ?? string.Empty;
+        var medio = method.MedioDePago?.Trim() ?? string.Empty;
+        var descripcion = method.Descripcion?.Trim() ?? string.Empty;
+
+        return string.Equals(codigo, "EF", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(codigoOpcional, "EF", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(medio, "EF", StringComparison.OrdinalIgnoreCase)
+            || descripcion.Contains("EFECTIVO", StringComparison.OrdinalIgnoreCase)
+            || (descripcion.Contains("CAJA", StringComparison.OrdinalIgnoreCase)
+                && descripcion.Contains("EF", StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task HandleChargeAmountKeyDown(KeyboardEventArgs e)
@@ -5141,10 +5355,9 @@
                 CuentaCliente = !string.IsNullOrEmpty(_cuentaCliente) ? _cuentaCliente : _settings.CuentaConsumidorFinal,
                 Fecha = DateTime.Today,
                 TipoComprobante = _tipoComprobanteSeleccionado,
-                // En una venta normal la sucursal se resuelve nuevamente desde
-                // TA_CONFIGURACION.TPV_SUCURSAL al grabar. Solo un pedido puede
-                // enviar una sucursal explícita.
-                Sucursal = _pedidoSucursalOverride ?? string.Empty,
+                // La sucursal del punto seleccionado tiene prioridad. La configuración
+                // general se usa dentro del servicio únicamente si el punto no tiene una.
+                Sucursal = _pedidoSucursalOverride ?? _puntoVentaSucursal ?? string.Empty,
                 Items = soldItems,
                 Pagos = soldPayments
             });
@@ -5298,15 +5511,25 @@
         }
     }
 
+    public async ValueTask DisposeAsync()
+    {
+        try { await Js.InvokeVoidAsync("alfaPosUnregisterShortcuts"); } catch { }
+    }
+
     private async Task PrintReceiptAsync()
     {
         if (_lastSaleResult is null) return;
 
         try
         {
-            var pdf = await FacturaDocumentSvc.GeneratePdfAsync(_lastSaleResult.TipoComprobante, _lastSaleResult.IdComprobanteTexto, PosUNegocio);
+            if (string.IsNullOrWhiteSpace(_receiptPreviewHtml))
+                await LoadReceiptDesignerPreviewAsync();
+
+            if (string.IsNullOrWhiteSpace(_receiptPreviewHtml))
+                throw new InvalidOperationException(_receiptPreviewError ?? "No se pudo preparar el comprobante para imprimir.");
+
             await PuntoVentaSvc.MarkReceiptPrintedAsync(_lastSaleResult.IdComprobante);
-            await Js.InvokeVoidAsync("alfaPosPrintPdfBytes", "pos-receipt-frame", Convert.ToBase64String(pdf));
+            await Js.InvokeVoidAsync("alfaPosPrintHtml", "pos-receipt-frame", _receiptPreviewHtml);
             _receiptIsReprint = true;
         }
         catch (Exception ex)

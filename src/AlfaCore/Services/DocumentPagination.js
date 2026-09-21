@@ -3,6 +3,7 @@ window.alfaDocumentReady = (async () => {
     await document.fonts.ready;
     await Promise.all(Array.from(document.images, img => img.decode().catch(() => {})));
     const root = document.querySelector('.doc-content');
+    if (!root) return;
     const closing = root.querySelector(':scope > .document-closing');
     if (!closing) return;
     const blocks = Array.from(root.children).filter(node => node !== closing);
@@ -56,7 +57,13 @@ window.alfaDocumentReady = (async () => {
                     progress += lo;
                     return text.slice(lo);
                 });
-                if (!progress) throw new Error('Una fila no cabe en el área imprimible.');
+                // Si una celda individual no puede partirse, conservamos la fila
+                // completa para no dejar el comprobante en blanco.
+                if (!progress) {
+                    part.remove();
+                    target.tbody.append(row);
+                    break;
+                }
                 if (remaining.some(text => text.length)) {
                     newPage(); target = freshTable(source);
                 }
@@ -82,14 +89,19 @@ window.alfaDocumentReady = (async () => {
             }
             return;
         }
-        throw new Error('Un bloque supera el alto imprimible.');
+        // Hay bloques del diseñador que no admiten fragmentación (por ejemplo una
+        // imagen o una tabla). Se deja el bloque completo en una hoja nueva para
+        // que la vista previa y el PDF sigan mostrando el comprobante.
+        body.append(block);
     }
     newPage();
     for (const block of blocks) addBlock(block);
     sheet.append(closing);
     const closingHeight = closing.getBoundingClientRect().height;
     const pageHeight = sheet.getBoundingClientRect().height;
-    if (closingHeight > pageHeight - 1) throw new Error('El cierre supera el alto imprimible.');
+    if (closingHeight > pageHeight - 1) {
+        closing.style.marginTop = '0';
+    }
     if (body.getBoundingClientRect().height + closingHeight > pageHeight - 1) {
         closing.remove(); newPage(); sheet.append(closing);
     }

@@ -9,6 +9,19 @@ public static class PuntoVentaModoKeys
     public static readonly string[] All = [Mostrador, Salon, Delivery];
 }
 
+public sealed class PuntoVentaCatalogoOpcionDto
+{
+    public string Valor { get; init; } = string.Empty;
+    public string Descripcion { get; init; } = string.Empty;
+}
+
+public sealed class PuntoVentaCatalogosDto
+{
+    public IReadOnlyList<PuntoVentaCatalogoOpcionDto> Sucursales { get; init; } = [];
+    public IReadOnlyList<PuntoVentaCatalogoOpcionDto> Cajas { get; init; } = [];
+    public IReadOnlyList<PuntoVentaCatalogoOpcionDto> UnidadesNegocio { get; init; } = [];
+}
+
 public sealed class PuntoVentaEntidadDto
 {
     public int Id { get; set; }

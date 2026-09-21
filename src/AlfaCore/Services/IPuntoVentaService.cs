@@ -16,7 +16,7 @@ public interface IPuntoVentaService
     /// No vuelve a tocar V_MV_Cpte/cobranza -- solo pide de nuevo el CAE y persiste el nuevo intento.</summary>
     Task<ArcaCaeIntentoDto> RetryCaeAsync(int idComprobante, CancellationToken ct = default);
     Task<PuntoVentaReceiptContextDto> GetReceiptContextAsync(string cuentaCliente, CancellationToken ct = default);
-    Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string tipoComprobante, CancellationToken ct = default);
+    Task<IReadOnlyList<PuntoVentaReceiptListItemDto>> GetRecentReceiptsAsync(string tipoComprobante, string? sucursal = null, DateTime? fechaDesde = null, DateTime? fechaHasta = null, CancellationToken ct = default);
     Task<PuntoVentaReceiptDataDto> GetReceiptDataAsync(int idComprobante, CancellationToken ct = default);
     Task MarkReceiptPrintedAsync(int idComprobante, CancellationToken ct = default);
     Task SendReceiptByEmailAsync(PuntoVentaReceiptEmailRequestDto request, CancellationToken ct = default);

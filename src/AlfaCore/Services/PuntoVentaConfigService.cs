@@ -18,6 +18,80 @@ public sealed class PuntoVentaConfigService(
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
+    public Task<PuntoVentaCatalogosDto> GetCatalogosAsync(CancellationToken ct = default)
+        => ExecuteLoggedAsync(ModuleName, "GetCatalogos", async token =>
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(token);
+
+            var unidades = (await cn.QueryAsync<PuntoVentaCatalogoOpcionDto>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(Codigo)) AS Valor, LTRIM(RTRIM(Descripcion)) AS Descripcion
+                FROM dbo.V_TA_UnidadNegocio
+                WHERE LTRIM(RTRIM(ISNULL(Codigo, ''))) <> ''
+                ORDER BY Codigo;
+                """, cancellationToken: token))).ToList();
+
+            var cajas = (await cn.QueryAsync<PuntoVentaCatalogoOpcionDto>(new CommandDefinition("""
+                SELECT LTRIM(RTRIM(IdCajas)) AS Valor,
+                       LTRIM(RTRIM(IdCajas)) + CASE WHEN LTRIM(RTRIM(ISNULL(Descripcion, ''))) = '' THEN '' ELSE ' · ' + LTRIM(RTRIM(Descripcion)) END AS Descripcion
+                FROM dbo.V_Ta_Cajas
+                WHERE LTRIM(RTRIM(ISNULL(IdCajas, ''))) <> ''
+                ORDER BY IdCajas;
+                """, cancellationToken: token))).ToList();
+
+            var sucursales = (await cn.QueryAsync<PuntoVentaCatalogoOpcionDto>(new CommandDefinition("""
+                SELECT DISTINCT RIGHT('0000' + CONVERT(varchar(20), Sucursal), 4) AS Valor,
+                       RIGHT('0000' + CONVERT(varchar(20), Sucursal), 4) AS Descripcion
+                FROM (
+                    SELECT A_SUC_DEFAULT AS Sucursal FROM dbo.V_TA_CPTE
+                    UNION ALL SELECT B_SUC_DEFAULT FROM dbo.V_TA_CPTE
+                    UNION ALL SELECT C_SUC_DEFAULT FROM dbo.V_TA_CPTE
+                    UNION ALL SELECT X_SUC_DEFAULT FROM dbo.V_TA_CPTE
+                ) AS sucursales
+                WHERE ISNULL(Sucursal, 0) > 0
+                ORDER BY Valor;
+                """, cancellationToken: token))).ToList();
+
+            var sucursalConfigurada = await cn.QuerySingleOrDefaultAsync<string>(new CommandDefinition("""
+                SELECT TOP (1) LTRIM(RTRIM(ISNULL(VALOR, '')))
+                FROM dbo.TA_CONFIGURACION
+                WHERE UPPER(LTRIM(RTRIM(CLAVE))) = 'TPV_SUCURSAL';
+                """, cancellationToken: token));
+            AgregarOpcion(sucursales, sucursalConfigurada, NormalizarCodigo(sucursalConfigurada));
+
+            var sucursalesGuardadas = await cn.QueryAsync<string>(new CommandDefinition("""
+                SELECT DISTINCT LTRIM(RTRIM(ISNULL(SUCURSAL, '')))
+                FROM dbo.POS_PUNTOVENTA
+                WHERE LTRIM(RTRIM(ISNULL(SUCURSAL, ''))) <> '';
+                """, cancellationToken: token));
+            foreach (var sucursal in sucursalesGuardadas)
+                AgregarOpcion(sucursales, sucursal, NormalizarCodigo(sucursal));
+
+            return new PuntoVentaCatalogosDto
+            {
+                Sucursales = sucursales.OrderBy(x => x.Valor).ToList(),
+                Cajas = cajas,
+                UnidadesNegocio = unidades
+            };
+        }, "No se pudieron cargar los catálogos de puntos de venta.", ct);
+
+    private static void AgregarOpcion(List<PuntoVentaCatalogoOpcionDto> opciones, string? valor, string? descripcion)
+    {
+        var normalizado = NormalizarCodigo(valor);
+        if (normalizado.Length == 0 || opciones.Any(x => string.Equals(x.Valor, normalizado, StringComparison.OrdinalIgnoreCase)))
+            return;
+
+        opciones.Add(new PuntoVentaCatalogoOpcionDto { Valor = normalizado, Descripcion = descripcion?.Trim() is { Length: > 0 } texto ? texto : normalizado });
+    }
+
+    private static string NormalizarCodigo(string? valor)
+    {
+        var texto = (valor ?? string.Empty).Trim();
+        return int.TryParse(texto, out var numero) && numero >= 0 && numero <= 9999
+            ? numero.ToString("0000")
+            : texto;
+    }
+
     public Task<IReadOnlyList<PuntoVentaEntidadDto>> GetPuntosVentaAsync(bool soloActivos = false, CancellationToken ct = default)
         => ExecuteLoggedAsync(ModuleName, "GetPuntosVenta", async token =>
         {

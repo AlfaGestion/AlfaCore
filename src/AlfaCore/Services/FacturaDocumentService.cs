@@ -419,7 +419,7 @@ public sealed class FacturaDocumentService(
                    CASE WHEN ISNULL(LTRIM(RTRIM(VALOR)), '') <> '' THEN LTRIM(RTRIM(VALOR))
                         ELSE ISNULL(CAST(ValorAux AS nvarchar(max)), '') END AS Valor
             FROM dbo.TA_CONFIGURACION
-            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (N'NOMBRE', N'CUIT', N'WSFE_CUIT', N'DOMICILIO', N'DIRECCION', N'TELEFONO', N'TEL', N'EMAIL', N'MAIL', N'CONDIVAEMPRESA', N'NROINGRESOSBRUTOS', N'INICIOACTIVIDADES');
+            WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (N'NOMBRE', N'RAZONSOCIAL', N'RAZON_SOCIAL', N'NOMBREEMPRESA', N'CUIT', N'WSFE_CUIT', N'DOMICILIO', N'DIRECCION', N'CALLE', N'NUMERO', N'PISO', N'DEPARTAMENTO', N'CPOSTAL', N'LOCALIDAD', N'PROVINCIA', N'TELEFONO', N'TEL', N'EMAIL', N'MAIL', N'CONDIVAEMPRESA', N'NROINGRESOSBRUTOS', N'INICIOACTIVIDADES');
             """, cancellationToken: ct))).ToDictionary(x => x.Clave, x => x.Valor ?? string.Empty, StringComparer.OrdinalIgnoreCase);
 
         var unidad = string.IsNullOrWhiteSpace(uNegocio) ? null
@@ -429,8 +429,10 @@ public sealed class FacturaDocumentService(
                 FROM dbo.V_TA_UnidadNegocio
                 WHERE LTRIM(RTRIM(Codigo)) = @UNegocio;
                 """, new { UNegocio = uNegocio.Trim() }, cancellationToken: ct));
+        var nombreGeneral = First(config, "NOMBRE", "RAZONSOCIAL", "RAZON_SOCIAL", "NOMBREEMPRESA");
+        var cuitGeneral = First(config, "CUIT", "WSFE_CUIT");
         var emisor = ResolveEmisor(unidad?.UsaEfc == true, unidad?.RazonSocial, unidad?.Cuit,
-            Value(config, "NOMBRE"), Value(config, "CUIT"), Value(config, "WSFE_CUIT"));
+            nombreGeneral, cuitGeneral, Value(config, "WSFE_CUIT"));
 
         byte[]? logo = null;
         if (await ExistsAsync(cn, "dbo.TA_LOGOS", ct))
@@ -447,10 +449,24 @@ public sealed class FacturaDocumentService(
         DateTime? inicioActividades = DateTime.TryParseExact(inicioActividadesTexto, "dd/MM/yyyy",
             System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsed) ? parsed : null;
 
+        var domicilio = First(config, "DOMICILIO", "DIRECCION");
+        if (string.IsNullOrWhiteSpace(domicilio))
+        {
+            var calle = string.Join(" ", new[]
+            {
+                Value(config, "CALLE"), Value(config, "NUMERO"), Value(config, "PISO"), Value(config, "DEPARTAMENTO")
+            }.Where(x => !string.IsNullOrWhiteSpace(x)));
+            var localidad = string.Join(" · ", new[]
+            {
+                Value(config, "LOCALIDAD"), Value(config, "PROVINCIA"), Value(config, "CPOSTAL")
+            }.Where(x => !string.IsNullOrWhiteSpace(x)));
+            domicilio = string.Join(" · ", new[] { calle, localidad }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        }
+
         var empresa = new EmpresaDocumentData
         {
             Nombre = emisor.Nombre, Cuit = emisor.Cuit,
-            Domicilio = First(config, "DOMICILIO", "DIRECCION"), Telefono = First(config, "TELEFONO", "TEL"),
+            Domicilio = domicilio, Telefono = First(config, "TELEFONO", "TEL"),
             Email = First(config, "EMAIL", "MAIL"), Logo = logo
         };
         return (empresa, condicionIva, Value(config, "NROINGRESOSBRUTOS"), inicioActividades, emisor.CuitQr);
@@ -461,10 +477,22 @@ public sealed class FacturaDocumentService(
         bool usaEfc, string? razonSocialUnidad, string? cuitUnidad,
         string nombreGeneral, string cuitGeneral, string cuitWsfe)
     {
-        if (!usaEfc) return (nombreGeneral.Trim(), cuitGeneral.Trim(), cuitWsfe.Trim());
-        if (string.IsNullOrWhiteSpace(razonSocialUnidad) || string.IsNullOrWhiteSpace(cuitUnidad))
-            throw new ArgumentException("La unidad de negocio usa factura electrónica pero le falta razón social o CUIT.");
-        return (razonSocialUnidad.Trim(), cuitUnidad.Trim(), cuitUnidad.Trim());
+        if (usaEfc)
+        {
+            if (string.IsNullOrWhiteSpace(razonSocialUnidad) || string.IsNullOrWhiteSpace(cuitUnidad))
+                throw new ArgumentException("La unidad de negocio usa factura electrónica pero le falta razón social o CUIT.");
+            return (razonSocialUnidad.Trim(), cuitUnidad.Trim(), cuitUnidad.Trim());
+        }
+
+        // En bases antiguas la unidad puede contener los datos reales aunque
+        // USAEFC todavía esté en 0. Se usa como respaldo antes de mostrar un
+        // encabezado vacío o genérico.
+        if (string.IsNullOrWhiteSpace(nombreGeneral) && !string.IsNullOrWhiteSpace(razonSocialUnidad))
+            nombreGeneral = razonSocialUnidad;
+        if (string.IsNullOrWhiteSpace(cuitGeneral) && !string.IsNullOrWhiteSpace(cuitUnidad))
+            cuitGeneral = cuitUnidad;
+
+        return (nombreGeneral.Trim(), cuitGeneral.Trim(), string.IsNullOrWhiteSpace(cuitWsfe) ? cuitGeneral.Trim() : cuitWsfe.Trim());
     }
 
     private sealed class UnidadEmisorRow

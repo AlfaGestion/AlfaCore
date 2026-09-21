@@ -3,6 +3,7 @@
 @using AlfaCore.Models
 @using AlfaCore.Services
 @inject IPuntoVentaConfigService PosConfigSvc
+@inject IPuntoVentaService PuntoVentaSvc
 @inject IAppUiOperationService UiOps
 @inject IRouteContextService RouteCtx
 @inject IPageHeaderService PageHeader
@@ -17,6 +18,12 @@
             <h2 class="page-intro__title">Punto de Venta</h2>
             <p class="page-intro__text">Elegí en qué punto de venta querés trabajar.</p>
         </div>
+        @if (_esAdministrador)
+        {
+            <a class="btn btn--ghost btn--sm" href="@RouteCtx.BuildRoute("/ventas/puntos-venta")">
+                <i class="bi bi-gear"></i> Administrar puntos de venta
+            </a>
+        }
     </div>
 
     @if (_feedback is not null)
@@ -35,12 +42,27 @@
     {
         <div class="panel-card empty-state">
             <p>Todavía no hay ningún punto de venta configurado.</p>
-            <a class="btn btn--primary btn--sm" href="@RouteCtx.BuildRoute("/ventas/puntos-venta")">Crear punto de venta</a>
+            @if (_esAdministrador)
+            {
+                <a class="btn btn--primary btn--sm" href="@RouteCtx.BuildRoute("/ventas/puntos-venta")">Crear punto de venta</a>
+            }
         </div>
     }
     else
     {
         <section class="panel-card">
+            @if (_esAdministrador)
+            {
+                <div class="panel-card__header">
+                    <div>
+                        <h3 class="panel-card__title">Puntos de venta disponibles</h3>
+                        <p class="panel-card__subtitle">Seleccioná uno para comenzar a trabajar.</p>
+                    </div>
+                    <a class="btn btn--ghost btn--sm" href="@RouteCtx.BuildRoute("/ventas/puntos-venta")">
+                        <i class="bi bi-pencil-square"></i> Agregar o editar puntos
+                    </a>
+                </div>
+            }
             <div class="launcher__grid">
                 @foreach (var pv in _puntosVenta)
                 {
@@ -63,6 +85,7 @@
 
 @code {
     private bool _loading = true;
+    private bool _esAdministrador;
     private List<PuntoVentaEntidadDto> _puntosVenta = [];
     private AppUiMessage? _feedback;
 
@@ -85,6 +108,9 @@
     protected override async Task OnInitializedAsync()
     {
         _loading = true;
+        var contexto = await UiOps.RunAsync(() => PuntoVentaSvc.GetContextAsync(), "No se pudo validar el usuario del punto de venta.");
+        _esAdministrador = contexto.Success && contexto.Value?.EsAdministrador == true;
+
         var result = await UiOps.RunAsync(() => PosConfigSvc.GetPuntosVentaAsync(soloActivos: true), "No se pudieron cargar los puntos de venta.");
         if (result.Success && result.Value is not null)
         {

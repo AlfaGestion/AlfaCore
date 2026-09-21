@@ -12,6 +12,13 @@
 
 <PageTitle>Puntos de Venta | Configuración</PageTitle>
 
+<style>
+    .pv-admin-form-actions {
+        justify-content: flex-end;
+        margin-bottom: 1rem;
+    }
+</style>
+
 <section class="page-grid">
     <div class="page-intro">
         <div>
@@ -69,6 +76,10 @@
             @if (_showPuntoVentaForm)
             {
                 <DetailCard Titulo="@(_puntoVentaForm.Id.HasValue ? "Editar punto de venta" : "Nuevo punto de venta")" Subtitulo="Código, nombre y modo de operación.">
+                    <div class="actions pv-admin-form-actions">
+                        <button type="button" class="btn btn--primary btn--sm" @onclick="GuardarPuntoVentaAsync">Guardar</button>
+                        <button type="button" class="btn btn--ghost btn--sm" @onclick="CancelarPuntoVentaForm">Cancelar</button>
+                    </div>
                     <div class="field">
                         <label>Código</label>
                         <input maxlength="4" @bind="_puntoVentaForm.Codigo" placeholder="Ej: 001" />
@@ -87,15 +98,33 @@
                     </div>
                     <div class="field">
                         <label>Unidad de negocio</label>
-                        <input maxlength="4" @bind="_puntoVentaForm.Unegocio" placeholder="Opcional" />
+                        <select @bind="_puntoVentaForm.Unegocio">
+                            <option value="">Sin unidad de negocio</option>
+                            @foreach (var item in _catalogos.UnidadesNegocio)
+                            {
+                                <option value="@item.Valor">@item.Valor · @item.Descripcion</option>
+                            }
+                        </select>
                     </div>
                     <div class="field">
                         <label>Caja</label>
-                        <input maxlength="4" @bind="_puntoVentaForm.IdCaja" placeholder="Opcional" />
+                        <select @bind="_puntoVentaForm.IdCaja">
+                            <option value="">Sin caja</option>
+                            @foreach (var item in _catalogos.Cajas)
+                            {
+                                <option value="@item.Valor">@item.Descripcion</option>
+                            }
+                        </select>
                     </div>
                     <div class="field">
                         <label>Sucursal</label>
-                        <input maxlength="4" @bind="_puntoVentaForm.Sucursal" placeholder="Opcional" />
+                        <select @bind="_puntoVentaForm.Sucursal">
+                            <option value="">Usar configuración general</option>
+                            @foreach (var item in _catalogos.Sucursales)
+                            {
+                                <option value="@item.Valor">@item.Descripcion</option>
+                            }
+                        </select>
                     </div>
                     <label class="carga-viajes-check">
                         <input class="carga-viajes-check__input" type="checkbox" checked="@_puntoVentaForm.Activo" @onchange="args => _puntoVentaForm.Activo = args.Value is bool flag && flag" />
@@ -103,10 +132,6 @@
                         <span class="carga-viajes-check__text">Activo</span>
                     </label>
 
-                    <div class="actions">
-                        <button type="button" class="btn btn--primary" @onclick="GuardarPuntoVentaAsync">Guardar</button>
-                        <button type="button" class="btn btn--ghost" @onclick="CancelarPuntoVentaForm">Cancelar</button>
-                    </div>
                 </DetailCard>
             }
         </div>
@@ -279,6 +304,7 @@
     private PuntoVentaEntidadDto? _selectedPuntoVenta;
     private bool _showPuntoVentaForm;
     private PuntoVentaEntidadSaveRequest _puntoVentaForm = new();
+    private PuntoVentaCatalogosDto _catalogos = new();
 
     private List<PuntoVentaSectorDto> _sectores = [];
     private PuntoVentaSectorDto? _selectedSector;
@@ -314,6 +340,9 @@
         _loading = true;
         var result = await UiOps.RunAsync(() => PosConfigSvc.GetPuntosVentaAsync(), "No se pudieron cargar los puntos de venta.");
         _puntosVenta = result.Success && result.Value is not null ? result.Value.ToList() : [];
+        var catalogos = await UiOps.RunAsync(() => PosConfigSvc.GetCatalogosAsync(), "No se pudieron cargar los catálogos de puntos de venta.");
+        if (catalogos.Success && catalogos.Value is not null)
+            _catalogos = catalogos.Value;
         if (!result.Success)
             _feedback = result.Feedback;
         _loading = false;
