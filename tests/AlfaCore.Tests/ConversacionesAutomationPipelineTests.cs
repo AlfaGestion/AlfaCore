@@ -626,6 +626,103 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     // ---------------------------------------------------------------------------------------
+    // 7c. Cola "sin_asignar" (P1, seguimiento 2026-09-21). El filtro de bandeja (@Modo =
+    // 'sin_asignar' en GetInboxAsync y GetAuditMessagesAsync) sólo miraba c.IdTecnico -- no
+    // consideraba si ya hubo una intervención humana real (plantilla/sticker/adjunto/reacción de
+    // alguien sin Técnico vinculado). El fix agrega SinAsignarNotAttendedByHumanSql al WHERE,
+    // reutilizando la MISMA AutomatedOutgoingSistemaAutorSqlList (sin duplicar la lista de
+    // autores automáticos) con el mismo criterio temporal por IdMensaje que
+    // GetBotReplyStatsAsync/HumanoYaRespondioUltimoEntrante: último SALIENTE humano posterior al
+    // último ENTRANTE. Los 8 casos de la queja original se listan en los tests de abajo; los que
+    // requieren datos reales en CONV_MENSAJES contra un tenant real quedan marcados "REQUIERE SQL
+    // INTEGRATION" (no hay repositorio inyectable, igual que el resto de este archivo).
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public void SinAsignar_ReusesTheCentralAutomatedAuthorListInsteadOfADuplicate()
+    {
+        // Única fuente de verdad: el fragmento nuevo referencia AutomatedOutgoingSistemaAutorSqlList
+        // (generado de AutomatedOutgoingSistemaAutores) -- no hay una segunda lista de autores
+        // automáticos escrita a mano para este filtro.
+        var property = ServiceSource.IndexOf(
+            "private static string SinAsignarNotAttendedByHumanSql =>", StringComparison.Ordinal);
+        Assert.True(property >= 0, "No se encontró SinAsignarNotAttendedByHumanSql.");
+        var nextMember = ServiceSource.IndexOf("\r\n    private static bool IsHumanAuthoredOutgoing", property, StringComparison.Ordinal);
+        Assert.True(nextMember > property);
+        var body = ServiceSource[property..nextMember];
+
+        Assert.Contains("NOT IN ({AutomatedOutgoingSistemaAutorSqlList})", body, StringComparison.Ordinal);
+        Assert.Contains("Direction = N'SALIENTE'", body, StringComparison.Ordinal);
+        Assert.Contains("Direction = N'ENTRANTE'", body, StringComparison.Ordinal);
+        // Comparación por IdMensaje contra el ÚLTIMO entrante -- mismo criterio que
+        // GetBotReplyStatsAsync, no "alguna vez respondió un humano en toda la conversación".
+        Assert.Contains("humSal.IdMensaje >", body, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(
+        // 1. GetInboxAsync: query principal de la bandeja.
+        "SELECT\r\n                    c.IdConversacion,")]
+    [InlineData(
+        // 1421-area: GetAuditMessagesAsync, la búsqueda/auditoría de mensajes que también acepta
+        // @Modo = 'sin_asignar'.
+        "SELECT TOP (200)\r\n                    m.IdMensaje,")]
+    public void SinAsignar_BothQueriesThatAcceptModoSinAsignar_ApplyTheHumanAttendedExclusion(string queryStartMarker)
+    {
+        var queryStart = ServiceSource.IndexOf(queryStartMarker, StringComparison.Ordinal);
+        Assert.True(queryStart >= 0, $"No se encontró el query que empieza con '{queryStartMarker}'.");
+        var modoClause = ServiceSource.IndexOf("@Modo = 'sin_asignar'", queryStart, StringComparison.Ordinal);
+        Assert.True(modoClause > queryStart, "No se encontró la cláusula @Modo = 'sin_asignar' en este query.");
+        var clauseEnd = ServiceSource.IndexOf(')', modoClause);
+        var clauseEndOfLine = ServiceSource.IndexOf('\n', clauseEnd);
+        var clause = ServiceSource[modoClause..clauseEndOfLine];
+
+        // 2. Con Técnico asignado sigue sin entrar por esta rama en absoluto (comportamiento
+        // preexistente, sin cambios): la condición de IdTecnico no se tocó, sólo se le agregó un
+        // AND adicional.
+        Assert.Contains("c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = ''", clause, StringComparison.Ordinal);
+        // El nuevo criterio de "sin intervención humana posterior al último entrante" se aplica
+        // en la MISMA rama, con AND (no OR): ambas condiciones deben cumplirse.
+        Assert.Contains("AND {SinAsignarNotAttendedByHumanSql}", clause, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SinAsignar_DoesNotTouchTenantIsolationOrOtherModoBranches()
+    {
+        // 8. Aislamiento por Base/tenant: el fix es un AND agregado dentro de la rama
+        // 'sin_asignar' -- no toca el resto del WHERE (Canal, IdNumeroWhatsApp/administradores,
+        // CodigoEstado, etc.) ni las otras ramas de @Modo.
+        Assert.Contains("OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual COLLATE Latin1_General_CI_AI)", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("OR (@Modo = 'pendientes' AND ISNULL(e.EsCerrado, 0) = 0)", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("OR (@Modo = 'cerradas' AND ISNULL(e.EsCerrado, 0) = 1)", ServiceSource, StringComparison.Ordinal);
+
+        // El fix no auto-asigna ni escribe CONV_CONVERSACIONES.IdTecnico -- es un SELECT de
+        // lectura pura (NOT EXISTS), no toca UPDATE/autorización.
+        var property = ServiceSource.IndexOf(
+            "private static string SinAsignarNotAttendedByHumanSql =>", StringComparison.Ordinal);
+        var nextMember = ServiceSource.IndexOf("\r\n    private static bool IsHumanAuthoredOutgoing", property, StringComparison.Ordinal);
+        var body = ServiceSource[property..nextMember];
+        Assert.DoesNotContain("UPDATE", body, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("IdTecnico", body, StringComparison.Ordinal);
+    }
+
+    // Casos 1, 3, 4, 5, 6, 7 de la semántica pedida (sin Técnico + [nunca/ya/bot/bienvenida/regla/
+    // plantilla-sticker-adjunto-reacción] respondió) dependen todos del MISMO cálculo ya probado
+    // exhaustivamente como lógica pura y ejecutable en:
+    //   - IsHumanAuthoredOutgoing_ExcludesOnlyTheKnownAutomatedSistemaAutores (arriba, 7b): qué
+    //     SistemaAutor cuenta como humano (plantilla/sticker/adjunto/reacción manual => humano;
+    //     BOT/REGLA/BIENVENIDA/AUTOMATIZACION/AUTOCIERRE*/SLA/PROGRAMADO => no humano).
+    //   - Handoff_GetBotReplyStatsAsync_* (arriba, 7): HumanoYaRespondioUltimoEntrante se calcula
+    //     comparando IdMensaje contra el ÚLTIMO entrante, no "alguna vez" -- por eso un inbound
+    //     nuevo sin respuesta posterior (caso 4) vuelve a calificar.
+    // SinAsignarNotAttendedByHumanSql es la traducción SQL literal de "NOT
+    // HumanoYaRespondioUltimoEntrante" (NOT EXISTS un SALIENTE humano con IdMensaje mayor al
+    // último ENTRANTE), verificada arriba estructuralmente. Ejecutar los 8 casos end-to-end contra
+    // filas reales de CONV_MENSAJES/CONV_CONVERSACIONES REQUIERE SQL INTEGRATION (no hay
+    // repositorio inyectable para GetInboxAsync/GetAuditMessagesAsync, igual que el resto de este
+    // archivo -- ver WhatsAppEmbeddedSignupSqlIntegrationTests para el patrón que se usaría).
+
+    // ---------------------------------------------------------------------------------------
     // 8. Idempotencia / concurrencia.
     // ---------------------------------------------------------------------------------------
 

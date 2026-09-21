@@ -1178,7 +1178,7 @@ public sealed class ConversacionesService(
                     AND (@IdTecnicoActual IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual COLLATE Latin1_General_CI_AI)
                     AND (
                         @Modo = 'todas'
-                        OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = ''))
+                        OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = '') AND {SinAsignarNotAttendedByHumanSql})
                         OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual COLLATE Latin1_General_CI_AI)
                         OR (@Modo = 'pendientes' AND ISNULL(e.EsCerrado, 0) = 0)
                         OR (@Modo = 'cerradas' AND ISNULL(e.EsCerrado, 0) = 1)
@@ -1418,7 +1418,7 @@ public sealed class ConversacionesService(
                     )
                     AND (
                         @Modo = 'todas'
-                        OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = ''))
+                        OR (@Modo = 'sin_asignar' AND (c.IdTecnico IS NULL OR LTRIM(RTRIM(c.IdTecnico)) = '') AND {SinAsignarNotAttendedByHumanSql})
                         OR (@Modo = 'asignadas_a_mi' AND LTRIM(RTRIM(c.IdTecnico)) = @IdTecnicoActual)
                         OR (@Modo = 'pendientes' AND ISNULL(e.EsCerrado, 0) = 0)
                         OR (@Modo = 'cerradas' AND ISNULL(e.EsCerrado, 0) = 1)
@@ -8889,6 +8889,30 @@ public sealed class ConversacionesService(
 
     private static readonly string AutomatedOutgoingSistemaAutorSqlList =
         string.Join(", ", AutomatedOutgoingSistemaAutores.Select(a => $"N'{a}'"));
+
+    /// <summary>
+    /// Fragmento SQL para usar en el WHERE del filtro de bandeja "sin_asignar" (GetInboxAsync /
+    /// GetAuditMessagesAsync): además de no tener Técnico, la conversación no debe tener un SALIENTE
+    /// humano (SistemaAutor fuera de <see cref="AutomatedOutgoingSistemaAutorSqlList"/>) posterior al
+    /// último ENTRANTE -- mismo criterio por IdMensaje que <see cref="GetBotReplyStatsAsync"/>
+    /// (HumanoYaRespondioUltimoEntrante), sin duplicar la lista de autores automáticos. Asume que la
+    /// conversación está aliaseada como "c" en el query que la usa (c.IdConversacion visible).
+    /// </summary>
+    private static string SinAsignarNotAttendedByHumanSql => $"""
+        NOT EXISTS (
+            SELECT 1
+            FROM dbo.CONV_MENSAJES humSal
+            WHERE humSal.IdConversacion = c.IdConversacion
+              AND humSal.Direction = N'SALIENTE'
+              AND ISNULL(humSal.SistemaAutor, N'') NOT IN ({AutomatedOutgoingSistemaAutorSqlList})
+              AND humSal.IdMensaje > ISNULL((
+                    SELECT MAX(ent.IdMensaje)
+                    FROM dbo.CONV_MENSAJES ent
+                    WHERE ent.IdConversacion = c.IdConversacion
+                      AND ent.Direction = N'ENTRANTE'
+              ), 0)
+        )
+        """;
 
     /// <summary>
     /// ¿Este SistemaAutor de un mensaje SALIENTE corresponde a una persona (no al pipeline de
