@@ -134,6 +134,7 @@
                     </div>
                 </aside>
             </div>
+            <div class="templates-scroll-spacer" aria-hidden="true"></div>
         </section>
     }
     else
@@ -230,7 +231,10 @@
                                 <AlfaTag Tone="@GetMetaStatusTone(selected.EstadoMeta)">@GetMetaStatusLabel(selected.EstadoMeta)</AlfaTag>
                                 <AlfaTag>@GetCategoryLabel(selected.Categoria)</AlfaTag>
                                 <AlfaTag Tone="@(selected.Activa ? AlfaTagTone.Success : AlfaTagTone.Neutral)">@(selected.Activa ? "Activa" : "Archivada")</AlfaTag>
-                                <AlfaTag Tone="AlfaTagTone.Neutral">@(selected.EsMetaRemota ? "Origen: Meta" : "Origen: Local")</AlfaTag>
+                                @* Mismo criterio que la etiqueta de origen en el listado (Meta/Local, sin
+                                   prefijo "Origen:"): el contexto (agrupada junto a Estado/Categoría/Activa)
+                                   ya es inequívoco, y repetir la palabra sumaba ruido visual sin aportar info. *@
+                                <AlfaTag Tone="AlfaTagTone.Neutral">@(selected.EsMetaRemota ? "Meta" : "Local")</AlfaTag>
                             </div>
                         </header>
 
@@ -273,6 +277,7 @@
                             </aside>
                         </div>
                     </article>
+                    <div class="templates-scroll-spacer" aria-hidden="true"></div>
                 }
             </section>
         </div>
@@ -853,11 +858,15 @@
 
         if (_selected is not null)
         {
+            // Con una plantilla seleccionada, "Editar" es la acción principal del registro y
+            // queda visible. "Sincronizar estado" y "Archivar" son secundarias/menos frecuentes
+            // (Archivar además es destructiva) y bajan al menú "..." junto con los accesos
+            // rápidos, para no acumular 4 botones simultáneos en la toolbar (ver auditoría visual).
             if (CanEditSelected)
                 actions.Add(new() { Key = "editar", Label = "Editar", Icon = "bi-pencil", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = () => EnterEditModeAsync() });
-            actions.Add(new() { Key = "sincronizar-item", Label = "Sincronizar estado", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Normal, Disabled = _busy, OnClick = SyncAsync });
+            actions.Add(new() { Key = "sincronizar-item", Label = "Sincronizar estado", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = SyncAsync });
             if (_selected.Activa)
-                actions.Add(new() { Key = "archivar", Label = "Archivar", Icon = "bi-archive", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Normal, Disabled = _busy, OnClick = () => { OpenArchiveConfirm(); return Task.CompletedTask; } });
+                actions.Add(new() { Key = "archivar", Label = "Archivar", Icon = "bi-archive", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = () => { OpenArchiveConfirm(); return Task.CompletedTask; } });
         }
 
         actions.Add(new() { Key = "factura", Label = "Factura", Icon = "bi-file-earmark-text", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaFacturaMantenimientoAsync });

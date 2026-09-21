@@ -44,11 +44,30 @@
 .templates-v1 .templates-main {
     display: flex;
     flex-direction: column;
-    padding: var(--alfa-space-16);
+    /* Sin padding-bottom acá a propósito: este es el elemento con
+       overflow:auto (el scroll owner). Cromium/Firefox pueden excluir el
+       padding-bottom de un contenedor overflow:auto del scroll range
+       cuando ese contenedor es también un flex item cuya altura la resuelve
+       el layout (no una altura fija) -- es un bug de motor conocido, no
+       corregible agregando más padding sobre el mismo elemento. El respiro
+       inferior real lo da .templates-scroll-spacer, un elemento de flujo
+       normal dentro del contenido scrolleado. */
+    padding: var(--alfa-space-16) var(--alfa-space-16) 0;
 }
 
 .templates-v1 .templates-main > .alfa-empty-state {
     margin: auto;
+    padding-bottom: var(--alfa-space-16);
+}
+
+/* Elemento de flujo real (no padding) al final del contenido scrolleable:
+   el alto de un elemento normal siempre entra en scrollHeight, a diferencia
+   del padding-bottom de un contenedor overflow:auto+flex (ver comentario
+   arriba). Presente tanto en READ (dentro de .templates-main) como en
+   CREATE/EDIT (dentro de .templates-form-shell). */
+.templates-v1 .templates-scroll-spacer {
+    flex: 0 0 auto;
+    height: var(--alfa-space-24);
 }
 
 .templates-v1 .conversation-row {
@@ -114,16 +133,22 @@
     align-items: center;
 }
 
+.templates-v1 .templates-record {
+    /* Se pisa el min-height:0 heredado del selector compartido de más
+       arriba (pensado para los contenedores flex/grid que SÍ deben poder
+       encogerse para caber en el viewport, p.ej. .templates-main). Este
+       elemento es el contenido dentro del scroll owner, no el scroll owner:
+       necesita su min-height auto (el default) para no dejarse comprimir
+       por debajo de su alto real cuando .templates-main no tiene lugar --
+       si se encoge acá, el contenido se ve "cortado" en vez de scrollear. */
+    min-height: auto;
+}
+
 .templates-v1 .templates-record__layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
     gap: var(--alfa-space-24);
     align-items: start;
-    /* El panel padre (.templates-main) hace overflow:auto; algunos motores
-       recortan el padding-bottom del contenedor cuando el scrollport se
-       calcula sobre un hijo flex que desborda. Reforzar el espacio acá
-       asegura que la última fila de campos no quede pegada al borde. */
-    padding-bottom: var(--alfa-space-24);
 }
 
 .templates-v1 .templates-record__fields {
@@ -178,7 +203,10 @@
     flex: 1 1 auto;
     min-height: 0;
     margin: var(--alfa-space-12);
-    padding: var(--alfa-space-16);
+    /* Sin padding-bottom acá: mismo motivo que .templates-main (ver
+       comentario ahí). El respiro inferior real lo da
+       .templates-scroll-spacer al final de .templates-form-shell__body. */
+    padding: var(--alfa-space-16) var(--alfa-space-16) 0;
     display: flex;
     flex-direction: column;
     gap: var(--alfa-space-12);
