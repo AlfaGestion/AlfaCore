@@ -192,6 +192,8 @@ public interface IMetaWhatsAppManagementClient
     Task EnsureWabaSubscriptionAsync(string wabaId, int idBase, WhatsAppCredentialReference tokenReference, CancellationToken ct = default);
     Task<IReadOnlyList<MetaPhoneAsset>> DiscoverPhoneNumbersAsync(string wabaId, WhatsAppCredentialReference tokenReference, CancellationToken ct = default);
     Task<IReadOnlyList<MetaMessageTemplate>> DiscoverTemplatesAsync(string wabaId, WhatsAppCredentialReference tokenReference, CancellationToken ct = default);
+    Task<IReadOnlyList<MetaMessageTemplate>> DiscoverTemplatesAsync(string wabaId, string accessToken, string graphVersion, CancellationToken ct = default)
+        => throw new NotSupportedException("Este cliente de administración de Meta no admite consultar plantillas con credencial runtime.");
     Task<MetaPhoneRegistrationStatus> GetPhoneRegistrationStatusAsync(string phoneNumberId, WhatsAppCredentialReference tokenReference, CancellationToken ct = default);
     Task RegisterPhoneAsync(string phoneNumberId, WhatsAppPhonePinReference pinReference, WhatsAppCredentialReference tokenReference, CancellationToken ct = default);
     Task<MetaCustomerPaymentReadiness> GetCustomerPaymentReadinessAsync(string wabaId, WhatsAppCredentialReference tokenReference, CancellationToken ct = default);
@@ -235,7 +237,16 @@ public sealed record MetaTokenInspectionResult(bool IsValid, DateTime? ExpiresAt
 public sealed record MetaAuthorizedBusiness(string BusinessId, string Name);
 public sealed record MetaWabaAsset(string WabaId, string BusinessId, string Name);
 public sealed record MetaPhoneAsset(string PhoneNumberId, string WabaId, string DisplayPhoneNumber, string VerifiedName, string Status, string QualityRating, MetaPhoneRegistrationStatus RegistrationStatus, bool IsOnBizApp = false);
-public sealed record MetaMessageTemplate(string Id, string Name, string Language, string Status, string Category, string HeaderText, string BodyText, string FooterText);
+public sealed record MetaMessageTemplate(
+    string Id,
+    string Name,
+    string Language,
+    string Status,
+    string Category,
+    string HeaderText,
+    string BodyText,
+    string FooterText,
+    string ComponentsJson = "");
 public sealed record WhatsAppWabaRoutingConfiguration(string CallbackUrl, string VerifyToken);
 public interface IWhatsAppWabaRoutingProvider
 {

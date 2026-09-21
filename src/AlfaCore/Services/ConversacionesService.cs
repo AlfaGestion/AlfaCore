@@ -2816,10 +2816,13 @@ public sealed class ConversacionesService(
                     (@IncluirInactivas = 1 OR ISNULL(Activa, 1) = 1)
                     AND (@EstadoMeta IS NULL OR EstadoMeta = @EstadoMeta)
                     AND ((@WabaId IS NULL AND WabaId IS NULL) OR WabaId = @WabaId)
+                    AND (@Categoria IS NULL OR Categoria = @Categoria)
+                    AND (@Idioma IS NULL OR Idioma = @Idioma)
                     AND (
                         @Search IS NULL
                         OR NombreVisible LIKE @Search
                         OR NombreMeta LIKE @Search
+                        OR MetaTemplateId LIKE @Search
                         OR CuerpoTexto LIKE @Search
                     )
                 ORDER BY FechaHora_Grabacion DESC, IdPlantilla DESC
@@ -2831,6 +2834,8 @@ public sealed class ConversacionesService(
             await using var cmd = new SqlCommand(sql, cn);
             cmd.Parameters.AddWithValue("@IncluirInactivas", filters.IncluirInactivas);
             cmd.Parameters.AddWithValue("@EstadoMeta", DbNullable(filters.EstadoMeta));
+            cmd.Parameters.AddWithValue("@Categoria", DbNullable(filters.Categoria?.Trim().ToUpperInvariant()));
+            cmd.Parameters.AddWithValue("@Idioma", DbNullable(filters.Idioma));
             cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
             cmd.Parameters.AddWithValue("@WabaId", DbNullable(templateContext.WabaId));
             await using var rd = await cmd.ExecuteReaderAsync(token);
@@ -2904,11 +2909,93 @@ public sealed class ConversacionesService(
 
             await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
-            await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
-            await using var rd = await cmd.ExecuteReaderAsync(token);
-            return await rd.ReadAsync(token) ? ReadTemplate(rd) : null;
+            ConversacionPlantillaDto? template;
+            await using (var cmd = new SqlCommand(sql, cn))
+            {
+                cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+                await using var rd = await cmd.ExecuteReaderAsync(token);
+                template = await rd.ReadAsync(token) ? ReadTemplate(rd) : null;
+            }
+
+            if (template is not null)
+                template.VariableMappings = await LoadTemplateVariableMappingsAsync(cn, template.IdPlantilla, WhatsAppTemplateVariableCatalog.ComponenteBody, token);
+
+            return template;
         }, "No se pudo cargar la plantilla de WhatsApp.", ct);
+
+    public Task<ConversacionPlantillasSyncResultDto> SyncTemplatesCatalogFromMetaAsync(int? idNumeroWhatsApp, int? expectedBaseId = null, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "SyncTemplatesCatalogFromMeta", async token =>
+        {
+            if (idNumeroWhatsApp is not > 0)
+                throw new InvalidOperationException("Selecciona un WhatsApp para sincronizar plantillas.");
+
+            var tenant = ResolveTenantConnection(expectedBaseId, "SyncTemplatesCatalogFromMeta");
+            var listContext = await ResolveTemplateListContextAsync(idNumeroWhatsApp, expectedBaseId, tenant.ConnectionString, token);
+            if (string.IsNullOrWhiteSpace(listContext.WabaId))
+                throw new InvalidOperationException("El WhatsApp seleccionado no tiene una WABA asociada para consultar plantillas en Meta.");
+
+            var config = await conversacionesConfigService.GetWhatsAppConfigAsync(tenant.ConnectionString, token);
+            var numero = expectedBaseId is > 0
+                ? await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, expectedBaseId, token)
+                : await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumeroWhatsApp.Value, token);
+            if (numero is null)
+                throw new InvalidOperationException("El WhatsApp seleccionado ya no est\u00e1 disponible.");
+
+            var runtime = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+                tenant.BaseId ?? expectedBaseId ?? sessionService.GetActiveSession()?.BaseId ?? 0,
+                numero.IdNumero,
+                numero.PhoneNumberId,
+                config,
+                token);
+            var resolvedWabaId = (runtime.WabaId ?? string.Empty).Trim();
+            if (resolvedWabaId.Length == 0)
+                throw new InvalidOperationException("El WhatsApp seleccionado no tiene una WABA asociada para consultar plantillas en Meta.");
+            if (!string.IsNullOrWhiteSpace(listContext.WabaId) && !string.Equals(resolvedWabaId, listContext.WabaId, StringComparison.Ordinal))
+                throw new UnauthorizedAccessException("La WABA resuelta no coincide con el WhatsApp seleccionado.");
+
+            var remoteTemplates = runtime.CredentialReference is { } reference
+                ? await metaWhatsAppManagementClient.DiscoverTemplatesAsync(resolvedWabaId, reference, token)
+                : await metaWhatsAppManagementClient.DiscoverTemplatesAsync(resolvedWabaId, runtime.AccessToken, runtime.GraphVersion, token);
+            var result = new ConversacionPlantillasSyncResultDto { TotalMeta = remoteTemplates.Count };
+
+            await using var cn = new SqlConnection(tenant.ConnectionString);
+            await cn.OpenAsync(token);
+            foreach (var template in remoteTemplates)
+            {
+                try
+                {
+                    var action = await UpsertRemoteTemplateAsync(cn, resolvedWabaId, template, token);
+                    if (action == TemplateCatalogSyncAction.Inserted)
+                        result.Insertadas++;
+                    else if (action == TemplateCatalogSyncAction.Updated)
+                        result.Actualizadas++;
+                    else
+                        result.SinCambios++;
+                }
+                catch (Exception ex)
+                {
+                    result.ConError++;
+                    await _appEvents.LogErrorAsync(
+                        "Conversaciones",
+                        "SyncTemplatesCatalogFromMeta.Row",
+                        ex,
+                        "No se pudo sincronizar una plantilla de Meta.",
+                        new { WabaId = resolvedWabaId, template.Id, template.Name, template.Language },
+                        ct: token);
+                }
+            }
+
+            await _appEvents.LogAuditAsync(
+                "Conversaciones",
+                "SyncTemplatesCatalogFromMeta",
+                "CONV_PLANTILLAS",
+                resolvedWabaId,
+                "Cat\u00e1logo de plantillas sincronizado desde Meta.",
+                result,
+                token);
+
+            return result;
+        }, "No se pudo sincronizar el cat\u00e1logo de plantillas con Meta.", ct);
 
     public Task<long> SaveTemplateDraftAsync(ConversacionPlantillaSaveRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "SaveTemplateDraft", async token =>
@@ -2968,13 +3055,19 @@ public sealed class ConversacionesService(
                     SELECT CAST(SCOPE_IDENTITY() AS bigint);
                     """;
 
-                await using var cmd = new SqlCommand(insertSql, cn);
-                AddTemplateParameters(cmd, normalized);
-                cmd.Parameters.AddWithValue("@WabaId", DbNullable(templateContext.WabaId));
-                cmd.Parameters.AddWithValue("@EstadoLocal", ConversacionPlantillaEstadosLocales.Borrador);
-                cmd.Parameters.AddWithValue("@EstadoMeta", "DRAFT");
-                var result = await cmd.ExecuteScalarAsync(token);
-                return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+                long insertedId;
+                await using (var cmd = new SqlCommand(insertSql, cn))
+                {
+                    AddTemplateParameters(cmd, normalized);
+                    cmd.Parameters.AddWithValue("@WabaId", DbNullable(templateContext.WabaId));
+                    cmd.Parameters.AddWithValue("@EstadoLocal", ConversacionPlantillaEstadosLocales.Borrador);
+                    cmd.Parameters.AddWithValue("@EstadoMeta", "DRAFT");
+                    var result = await cmd.ExecuteScalarAsync(token);
+                    insertedId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+                }
+
+                await SaveTemplateVariableMappingsAsync(cn, insertedId, normalized.CuerpoTexto, request.VariableMappings, token);
+                return insertedId;
             }
 
             const string updateSql = """
@@ -3007,6 +3100,7 @@ public sealed class ConversacionesService(
             if (affected == 0)
                 throw new InvalidOperationException("La plantilla indicada no existe.");
 
+            await SaveTemplateVariableMappingsAsync(cn, normalized.IdPlantilla, normalized.CuerpoTexto, request.VariableMappings, token);
             return normalized.IdPlantilla;
         }, "No se pudo guardar la plantilla de WhatsApp.", ct);
 
@@ -3222,54 +3316,125 @@ public sealed class ConversacionesService(
             };
         }, "No se pudo enviar la plantilla por WhatsApp.", ct);
 
-    public Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, int variableCount, CancellationToken ct = default)
+    /// <summary>
+    /// Valor de contact.name: reusa exactamente la misma fuente que el heurístico histórico (posición 1
+    /// = nombre), factorizada para que tanto el path "con mapping" como el path "legacy sin mapping"
+    /// (más abajo) llamen a la misma función en vez de duplicar la lógica.
+    /// </summary>
+    internal static string ResolveContactNameAutoValue(ConversacionDetalleDto conversation)
+        => FirstNonEmpty(
+            conversation.ClienteNombre,
+            conversation.ContactoNombre,
+            conversation.NombreVisible,
+            conversation.TelefonoWhatsApp);
+
+    /// <summary>Resolver real de cobranza.detalleDeuda -- reusa TryBuildDebtDetailAsync, no lo reimplementa.</summary>
+    private async Task<(bool Resolved, string Value, string? Observation)> ResolveCobranzaDetalleDeudaAutoValueAsync(SqlConnection cn, ConversacionDetalleDto conversation, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
+            return (false, string.Empty, "La conversación no tiene cliente vinculado; no se pudo calcular deuda automática.");
+
+        var debt = await TryBuildDebtDetailAsync(cn, conversation.ClienteCodigo, ct);
+        if (string.IsNullOrWhiteSpace(debt.DetailText))
+            return (false, string.Empty, string.IsNullOrWhiteSpace(debt.Observation) ? "No se pudo calcular el detalle de deuda del cliente." : debt.Observation);
+
+        return (true, debt.DetailText, debt.Observation);
+    }
+
+    /// <summary>Resolver real de pago.formaPago -- reusa la misma config CONV_COBRANZA_FORMA_PAGO de siempre.</summary>
+    private async Task<(bool Resolved, string Value, string? Observation)> ResolvePagoFormaPagoAutoValueAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var payment = await ReadConversationConfigValueAsync(cn, "CONV_COBRANZA_FORMA_PAGO", ct);
+        if (string.IsNullOrWhiteSpace(payment))
+            return (false, string.Empty, "Falta configurar CONV_COBRANZA_FORMA_PAGO en TA_CONFIGURACION.");
+
+        return (true, payment, null);
+    }
+
+    public Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTemplateAutoValues", async token =>
         {
             if (idConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
 
             var conversation = await GetConversationAsync(idConversacion, token)
-                ?? throw new InvalidOperationException("La conversaciÃ³n indicada no existe.");
-
-            var displayName = FirstNonEmpty(
-                conversation.ClienteNombre,
-                conversation.ContactoNombre,
-                conversation.NombreVisible,
-                conversation.TelefonoWhatsApp);
-
-            var detail = string.Empty;
-            var payment = string.Empty;
-            var observations = new List<string>();
+                ?? throw new InvalidOperationException("La conversación indicada no existe.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            if (!string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
-            {
-                var debt = await TryBuildDebtDetailAsync(cn, conversation.ClienteCodigo, token);
-                detail = debt.DetailText;
-                if (!string.IsNullOrWhiteSpace(debt.Observation))
-                    observations.Add(debt.Observation);
-            }
-            else
-            {
-                observations.Add("La conversaciÃ³n no tiene cliente vinculado; no se pudo calcular deuda automÃ¡tica.");
-            }
-
-            payment = await ReadConversationConfigValueAsync(cn, "CONV_COBRANZA_FORMA_PAGO", token);
-            if (string.IsNullOrWhiteSpace(payment))
-                observations.Add("Falta configurar CONV_COBRANZA_FORMA_PAGO en TA_CONFIGURACION.");
+            var mappings = await LoadTemplateVariableMappingsAsync(cn, idPlantilla, WhatsAppTemplateVariableCatalog.ComponenteBody, token);
 
             var values = new List<string>();
-            if (variableCount >= 1)
-                values.Add(displayName);
-            if (variableCount >= 2)
-                values.Add(string.IsNullOrWhiteSpace(detail) ? "Detalle de deuda pendiente de completar." : detail);
-            if (variableCount >= 3)
-                values.Add(string.IsNullOrWhiteSpace(payment) ? "Datos de transferencia pendientes de configurar." : payment);
+            var observations = new List<string>();
+            var stopped = false;
 
-            while (values.Count < variableCount)
-                values.Add($"Dato {values.Count + 1}");
+            for (var pos = 1; pos <= variableCount && !stopped; pos++)
+            {
+                if (mappings.TryGetValue(pos, out var variableKey))
+                {
+                    var definition = WhatsAppTemplateVariableCatalog.Find(variableKey);
+                    if (definition is { CanResolveAutomaticallyInManualSend: true })
+                    {
+                        var (resolved, value, observation) = variableKey switch
+                        {
+                            WhatsAppTemplateVariableCatalog.ContactName => (true, ResolveContactNameAutoValue(conversation), (string?)null),
+                            WhatsAppTemplateVariableCatalog.CobranzaDetalleDeuda => await ResolveCobranzaDetalleDeudaAutoValueAsync(cn, conversation, token),
+                            WhatsAppTemplateVariableCatalog.PagoFormaPago => await ResolvePagoFormaPagoAutoValueAsync(cn, token),
+                            _ => (false, string.Empty, $"No hay resolución automática implementada para '{variableKey}'.")
+                        };
+
+                        if (observation is not null)
+                            observations.Add(observation);
+
+                        if (resolved)
+                        {
+                            values.Add(value);
+                            continue;
+                        }
+
+                        stopped = true;
+                    }
+                    else
+                    {
+                        var context = definition?.RequiredContext;
+                        observations.Add(string.IsNullOrWhiteSpace(context)
+                            ? $"La variable {{{{{pos}}}}} ({definition?.Label ?? variableKey}) no tiene resolución automática disponible en el envío manual; completála a mano."
+                            : $"La variable {{{{{pos}}}}} ({definition?.Label ?? variableKey}) {context} No se puede completar automáticamente desde el envío manual; completála a mano.");
+                        stopped = true;
+                    }
+
+                    continue;
+                }
+
+                // Sin mapping para esta posición: heurístico histórico previo a esta feature, preservado
+                // bit a bit para que las plantillas ya existentes sin mapping sigan funcionando igual.
+                switch (pos)
+                {
+                    case 1:
+                        values.Add(ResolveContactNameAutoValue(conversation));
+                        break;
+                    case 2:
+                    {
+                        var (resolved, value, observation) = await ResolveCobranzaDetalleDeudaAutoValueAsync(cn, conversation, token);
+                        if (observation is not null)
+                            observations.Add(observation);
+                        values.Add(resolved ? value : "Detalle de deuda pendiente de completar.");
+                        break;
+                    }
+                    case 3:
+                    {
+                        var (resolved, value, observation) = await ResolvePagoFormaPagoAutoValueAsync(cn, token);
+                        if (observation is not null)
+                            observations.Add(observation);
+                        values.Add(resolved ? value : "Datos de transferencia pendientes de configurar.");
+                        break;
+                    }
+                    default:
+                        values.Add($"Dato {pos}");
+                        break;
+                }
+            }
 
             return new ConversacionPlantillaAutoValuesDto
             {
@@ -3278,7 +3443,7 @@ public sealed class ConversacionesService(
                 ClienteNombre = conversation.ClienteNombre,
                 Observaciones = string.Join(" ", observations)
             };
-        }, "No se pudieron preparar las variables automÃ¡ticas.", ct);
+        }, "No se pudieron preparar las variables automáticas.", ct);
 
     public Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "AddInternalNote", async token =>
@@ -13662,6 +13827,7 @@ public sealed class ConversacionesService(
 
     private sealed record TemplateContext(string? WabaId, ConversacionWhatsAppConfigDto Config);
     private sealed record TemplateListContext(string? WabaId);
+    private enum TemplateCatalogSyncAction { Inserted, Updated, Unchanged }
 
     private async Task<TemplateListContext> ResolveTemplateListContextAsync(int? idNumeroWhatsApp, int? expectedBaseId, string? connectionString, CancellationToken ct)
     {
@@ -13718,7 +13884,8 @@ public sealed class ConversacionesService(
         config.BusinessAccountId = runtime.WabaId;
         config.ApiVersion = runtime.GraphVersion;
         config.AccessToken = runtime.AccessToken;
-        return new(runtime.Origin == WhatsAppRuntimeCredentialOrigin.EmbeddedSignup ? runtime.WabaId : null, config);
+        var wabaId = (runtime.WabaId ?? string.Empty).Trim();
+        return new(wabaId.Length == 0 ? null : wabaId, config);
     }
 
     private static void EnsureTemplateScope(ConversacionPlantillaDto template, TemplateContext context)
@@ -13745,6 +13912,214 @@ public sealed class ConversacionesService(
         {
             throw new UnauthorizedAccessException("La plantilla seleccionada no pertenece a este número de WhatsApp.");
         }
+    }
+
+    private static async Task<TemplateCatalogSyncAction> UpsertRemoteTemplateAsync(SqlConnection cn, string wabaId, MetaMessageTemplate template, CancellationToken ct)
+    {
+        var normalized = NormalizeRemoteTemplate(template);
+        var payloadJson = BuildRemoteTemplatePayloadJson(wabaId, normalized);
+
+        const string selectSql = """
+            SELECT TOP 1
+                IdPlantilla,
+                ISNULL(Categoria, N''),
+                ISNULL(Idioma, N''),
+                ISNULL(EncabezadoTexto, N''),
+                ISNULL(CuerpoTexto, N''),
+                ISNULL(PieTexto, N''),
+                ISNULL(EstadoLocal, N''),
+                ISNULL(EstadoMeta, N''),
+                ISNULL(MetaTemplateId, N''),
+                ISNULL(MetaPayloadJson, N'')
+            FROM dbo.CONV_PLANTILLAS
+            WHERE WabaId = @WabaId
+              AND (
+                    (NULLIF(@MetaTemplateId, N'') IS NOT NULL AND MetaTemplateId = @MetaTemplateId)
+                    OR (NombreMeta = @NombreMeta AND Idioma = @Idioma)
+                  )
+            ORDER BY
+                CASE WHEN NULLIF(@MetaTemplateId, N'') IS NOT NULL AND MetaTemplateId = @MetaTemplateId THEN 0 ELSE 1 END,
+                IdPlantilla;
+            """;
+
+        await using var selectCmd = new SqlCommand(selectSql, cn);
+        AddRemoteTemplateParameters(selectCmd, wabaId, normalized, payloadJson);
+        long idPlantilla = 0;
+        var current = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["Categoria"] = string.Empty,
+            ["Idioma"] = string.Empty,
+            ["EncabezadoTexto"] = string.Empty,
+            ["CuerpoTexto"] = string.Empty,
+            ["PieTexto"] = string.Empty,
+            ["EstadoLocal"] = string.Empty,
+            ["EstadoMeta"] = string.Empty,
+            ["MetaTemplateId"] = string.Empty,
+            ["MetaPayloadJson"] = string.Empty
+        };
+        await using (var rd = await selectCmd.ExecuteReaderAsync(ct))
+        {
+            if (await rd.ReadAsync(ct))
+            {
+                idPlantilla = rd.GetInt64(0);
+                current["Categoria"] = GetString(rd, 1);
+                current["Idioma"] = GetString(rd, 2);
+                current["EncabezadoTexto"] = GetString(rd, 3);
+                current["CuerpoTexto"] = GetString(rd, 4);
+                current["PieTexto"] = GetString(rd, 5);
+                current["EstadoLocal"] = GetString(rd, 6);
+                current["EstadoMeta"] = GetString(rd, 7);
+                current["MetaTemplateId"] = GetString(rd, 8);
+                current["MetaPayloadJson"] = GetString(rd, 9);
+            }
+        }
+
+        if (idPlantilla > 0)
+        {
+            var unchanged =
+                string.Equals(current["Categoria"], normalized.Category, StringComparison.Ordinal)
+                && string.Equals(current["Idioma"], normalized.Language, StringComparison.Ordinal)
+                && string.Equals(current["EncabezadoTexto"], normalized.HeaderText, StringComparison.Ordinal)
+                && string.Equals(current["CuerpoTexto"], normalized.BodyText, StringComparison.Ordinal)
+                && string.Equals(current["PieTexto"], normalized.FooterText, StringComparison.Ordinal)
+                && string.Equals(current["EstadoLocal"], ConversacionPlantillaEstadosLocales.Sincronizada, StringComparison.Ordinal)
+                && string.Equals(current["EstadoMeta"], normalized.Status, StringComparison.Ordinal)
+                && string.Equals(current["MetaTemplateId"], normalized.Id, StringComparison.Ordinal)
+                && string.Equals(current["MetaPayloadJson"], payloadJson, StringComparison.Ordinal);
+            if (unchanged)
+                return TemplateCatalogSyncAction.Unchanged;
+
+            const string updateSql = """
+                UPDATE dbo.CONV_PLANTILLAS
+                SET
+                    Categoria = @Categoria,
+                    Idioma = @Idioma,
+                    EncabezadoTexto = @EncabezadoTexto,
+                    CuerpoTexto = @CuerpoTexto,
+                    PieTexto = @PieTexto,
+                    EstadoLocal = @EstadoLocal,
+                    EstadoMeta = @EstadoMeta,
+                    MetaTemplateId = @MetaTemplateId,
+                    MetaPayloadJson = @MetaPayloadJson,
+                    MetaRechazoMotivo = NULL,
+                    FechaHoraSincronizacion = GETDATE(),
+                    FechaHora_Modificacion = GETDATE()
+                WHERE IdPlantilla = @IdPlantilla;
+                """;
+
+            await using var updateCmd = new SqlCommand(updateSql, cn);
+            AddRemoteTemplateParameters(updateCmd, wabaId, normalized, payloadJson);
+            updateCmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+            await updateCmd.ExecuteNonQueryAsync(ct);
+            return TemplateCatalogSyncAction.Updated;
+        }
+
+        const string insertSql = """
+            INSERT INTO dbo.CONV_PLANTILLAS
+            (
+                NombreVisible,
+                NombreMeta,
+                Categoria,
+                Idioma,
+                EncabezadoTexto,
+                CuerpoTexto,
+                PieTexto,
+                WabaId,
+                EstadoLocal,
+                EstadoMeta,
+                MetaTemplateId,
+                MetaPayloadJson,
+                Activa,
+                FechaHora_Grabacion,
+                FechaHoraSincronizacion
+            )
+            VALUES
+            (
+                @NombreVisible,
+                @NombreMeta,
+                @Categoria,
+                @Idioma,
+                @EncabezadoTexto,
+                @CuerpoTexto,
+                @PieTexto,
+                @WabaId,
+                @EstadoLocal,
+                @EstadoMeta,
+                @MetaTemplateId,
+                @MetaPayloadJson,
+                1,
+                GETDATE(),
+                GETDATE()
+            );
+            """;
+
+        await using var insertCmd = new SqlCommand(insertSql, cn);
+        AddRemoteTemplateParameters(insertCmd, wabaId, normalized, payloadJson);
+        await insertCmd.ExecuteNonQueryAsync(ct);
+        return TemplateCatalogSyncAction.Inserted;
+    }
+
+    private static MetaMessageTemplate NormalizeRemoteTemplate(MetaMessageTemplate template)
+    {
+        var name = string.IsNullOrWhiteSpace(template.Name) ? template.Id : template.Name.Trim();
+        var language = NormalizeTemplateLanguage(template.Language);
+        var status = string.IsNullOrWhiteSpace(template.Status) ? "UNKNOWN" : template.Status.Trim().ToUpperInvariant();
+        var category = NormalizeRemoteTemplateCategory(template.Category);
+        return template with
+        {
+            Name = name,
+            Language = language,
+            Status = status,
+            Category = category,
+            HeaderText = template.HeaderText?.Trim() ?? string.Empty,
+            BodyText = template.BodyText?.Trim() ?? string.Empty,
+            FooterText = template.FooterText?.Trim() ?? string.Empty,
+            ComponentsJson = template.ComponentsJson?.Trim() ?? string.Empty
+        };
+    }
+
+    private static void AddRemoteTemplateParameters(SqlCommand cmd, string wabaId, MetaMessageTemplate template, string payloadJson)
+    {
+        cmd.Parameters.AddWithValue("@WabaId", wabaId);
+        cmd.Parameters.AddWithValue("@NombreVisible", template.Name);
+        cmd.Parameters.AddWithValue("@NombreMeta", template.Name);
+        cmd.Parameters.AddWithValue("@Categoria", template.Category);
+        cmd.Parameters.AddWithValue("@Idioma", template.Language);
+        cmd.Parameters.AddWithValue("@EncabezadoTexto", DbNullable(template.HeaderText));
+        cmd.Parameters.AddWithValue("@CuerpoTexto", DbNullable(template.BodyText));
+        cmd.Parameters.AddWithValue("@PieTexto", DbNullable(template.FooterText));
+        cmd.Parameters.AddWithValue("@EstadoLocal", ConversacionPlantillaEstadosLocales.Sincronizada);
+        cmd.Parameters.AddWithValue("@EstadoMeta", template.Status);
+        cmd.Parameters.AddWithValue("@MetaTemplateId", DbNullable(template.Id));
+        cmd.Parameters.AddWithValue("@MetaPayloadJson", DbNullable(payloadJson));
+    }
+
+    internal static string BuildRemoteTemplatePayloadJson(string wabaId, MetaMessageTemplate template)
+    {
+        object? components = null;
+        if (!string.IsNullOrWhiteSpace(template.ComponentsJson))
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(template.ComponentsJson);
+                components = doc.RootElement.Clone();
+            }
+            catch (JsonException)
+            {
+                components = template.ComponentsJson;
+            }
+        }
+
+        return JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["waba_id"] = wabaId,
+            ["id"] = template.Id,
+            ["name"] = template.Name,
+            ["language"] = template.Language,
+            ["status"] = template.Status,
+            ["category"] = template.Category,
+            ["components"] = components
+        });
     }
 
     private static ConversacionPlantillaDto ReadTemplate(SqlDataReader rd)
@@ -13842,6 +14217,90 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@SistemaAccion", DbNullable(request.SistemaAccion));
     }
 
+    /// <summary>
+    /// Carga el mapping posición -> VariableKey persistido para una plantilla y componente
+    /// (hoy solo se usa/acepta BODY). Una plantilla sin filas devuelve un diccionario vacío
+    /// (comportamiento 100% manual, igual que antes de que existiera esta tabla).
+    /// </summary>
+    private static async Task<Dictionary<int, string>> LoadTemplateVariableMappingsAsync(SqlConnection cn, long idPlantilla, string componente, CancellationToken ct)
+    {
+        var result = new Dictionary<int, string>();
+        if (idPlantilla <= 0)
+            return result;
+
+        const string sql = """
+            SELECT Posicion, VariableKey
+            FROM dbo.CONV_PLANTILLAS_VARIABLES
+            WHERE IdPlantilla = @IdPlantilla AND Componente = @Componente
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+        cmd.Parameters.AddWithValue("@Componente", componente);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+            result[rd.GetInt32(0)] = rd.GetString(1);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Persiste el mapping BODY de una plantilla ya guardada. Recalcula qué posiciones {{N}} existen
+    /// realmente en <paramref name="cuerpoTexto"/> (el texto final, después de normalizar) y descarta
+    /// como huérfano cualquier mapping cuya posición ya no aparezca en el cuerpo -- nunca infiere una
+    /// VariableKey nueva a partir del texto, solo filtra lo que el llamador propone. Claves inválidas
+    /// (que no existen en el catálogo) también se descartan defensivamente. Estrategia
+    /// delete-then-insert dentro de la misma conexión: simple e idempotente para el volumen de filas
+    /// esperado (unas pocas variables por plantilla).
+    /// </summary>
+    private static async Task SaveTemplateVariableMappingsAsync(SqlConnection cn, long idPlantilla, string cuerpoTexto, IReadOnlyDictionary<int, string>? proposedMappings, CancellationToken ct)
+    {
+        if (idPlantilla <= 0)
+            return;
+
+        var maxPosition = CountTemplateVariables(cuerpoTexto);
+        var existingPositions = new HashSet<int>();
+        foreach (Match match in Regex.Matches(cuerpoTexto ?? string.Empty, @"\{\{\s*(\d+)\s*\}\}"))
+        {
+            if (int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index) && index >= 1 && index <= maxPosition)
+                existingPositions.Add(index);
+        }
+
+        var toPersist = (proposedMappings ?? new Dictionary<int, string>())
+            .Where(kv => existingPositions.Contains(kv.Key) && WhatsAppTemplateVariableCatalog.IsValidKey(kv.Value))
+            .ToList();
+
+        const string deleteSql = """
+            DELETE FROM dbo.CONV_PLANTILLAS_VARIABLES
+            WHERE IdPlantilla = @IdPlantilla AND Componente = @Componente
+            """;
+
+        await using (var deleteCmd = new SqlCommand(deleteSql, cn))
+        {
+            deleteCmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+            deleteCmd.Parameters.AddWithValue("@Componente", WhatsAppTemplateVariableCatalog.ComponenteBody);
+            await deleteCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (toPersist.Count == 0)
+            return;
+
+        const string insertSql = """
+            INSERT INTO dbo.CONV_PLANTILLAS_VARIABLES (IdPlantilla, Componente, Posicion, VariableKey, FechaHora_Grabacion)
+            VALUES (@IdPlantilla, @Componente, @Posicion, @VariableKey, GETDATE())
+            """;
+
+        foreach (var (posicion, variableKey) in toPersist)
+        {
+            await using var insertCmd = new SqlCommand(insertSql, cn);
+            insertCmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+            insertCmd.Parameters.AddWithValue("@Componente", WhatsAppTemplateVariableCatalog.ComponenteBody);
+            insertCmd.Parameters.AddWithValue("@Posicion", posicion);
+            insertCmd.Parameters.AddWithValue("@VariableKey", variableKey);
+            await insertCmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
     private static void ValidateTemplateCanSubmit(ConversacionPlantillaDto template)
     {
         if (!template.Activa)
@@ -13936,10 +14395,15 @@ public sealed class ConversacionesService(
     private static string NormalizeTemplateCategory(string? value)
     {
         var normalized = string.IsNullOrWhiteSpace(value) ? ConversacionPlantillaCategorias.Marketing : value.Trim().ToUpperInvariant();
-        return normalized == ConversacionPlantillaCategorias.Utility || normalized == ConversacionPlantillaCategorias.Marketing
+        return normalized == ConversacionPlantillaCategorias.Utility
+               || normalized == ConversacionPlantillaCategorias.Marketing
+               || normalized == ConversacionPlantillaCategorias.Authentication
             ? normalized
             : ConversacionPlantillaCategorias.Marketing;
     }
+
+    private static string NormalizeRemoteTemplateCategory(string? value)
+        => NormalizeTemplateCategory(value);
 
     private static string NormalizeTemplateLanguage(string? value)
         => string.IsNullOrWhiteSpace(value) ? "es_AR" : value.Trim();
@@ -14049,7 +14513,8 @@ public sealed class ConversacionesService(
             IdPlantilla = id, NombreVisible = template.Name, NombreMeta = template.Name,
             Categoria = template.Category, Idioma = template.Language, EncabezadoTexto = template.HeaderText,
             CuerpoTexto = template.BodyText, PieTexto = template.FooterText, EstadoLocal = ConversacionPlantillaEstadosLocales.Sincronizada,
-            EstadoMeta = template.Status, MetaTemplateId = template.Id, WabaId = wabaId, Activa = true, EsMetaRemota = true
+            EstadoMeta = template.Status, MetaTemplateId = template.Id, ComponentesMetaJson = template.ComponentsJson,
+            WabaId = wabaId, Activa = true, EsMetaRemota = true
         };
     }
 

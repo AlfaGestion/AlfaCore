@@ -8624,6 +8624,30 @@ html[data-theme="light"] .conversations-context::-webkit-scrollbar-thumb {
     background: rgba(8, 145, 178, .28);
 }
 
+.templates-variable-chip--readonly {
+    cursor: default;
+    pointer-events: none;
+}
+
+.templates-body-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+}
+
+.templates-insert-variable {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+}
+
+.templates-insert-variable__label {
+    font-size: .78rem;
+    font-weight: 600;
+    color: var(--color-muted);
+}
+
 .templates-body-limit {
     display: flex;
     flex-wrap: wrap;

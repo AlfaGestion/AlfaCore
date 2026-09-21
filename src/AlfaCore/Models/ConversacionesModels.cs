@@ -650,6 +650,8 @@ public sealed class ConversacionPlantillaFilters
     public int? IdNumeroWhatsApp { get; set; }
     public string Search { get; set; } = string.Empty;
     public string? EstadoMeta { get; set; }
+    public string? Categoria { get; set; }
+    public string? Idioma { get; set; }
     public bool IncluirInactivas { get; set; }
 }
 
@@ -664,6 +666,7 @@ public sealed class ConversacionPlantillaDto
     public string CuerpoTexto { get; set; } = string.Empty;
     public string PieTexto { get; set; } = string.Empty;
     public string EjemplosVariablesJson { get; set; } = string.Empty;
+    public string ComponentesMetaJson { get; set; } = string.Empty;
     public string EstadoLocal { get; set; } = ConversacionPlantillaEstadosLocales.Borrador;
     public string EstadoMeta { get; set; } = string.Empty;
     public string MetaTemplateId { get; set; } = string.Empty;
@@ -674,6 +677,13 @@ public sealed class ConversacionPlantillaDto
     public DateTime? FechaHoraModificacion { get; set; }
     public DateTime? FechaHoraSincronizacion { get; set; }
     public bool EsMetaRemota { get; set; }
+
+    /// <summary>
+    /// Mapping persistido posición (1-based, coincide con {{N}}) -> VariableKey del catálogo
+    /// (<see cref="WhatsAppTemplateVariableCatalog"/>), solo para el componente BODY. Una posición sin
+    /// entrada acá es manual (sin mapping). Se carga desde dbo.CONV_PLANTILLAS_VARIABLES.
+    /// </summary>
+    public Dictionary<int, string> VariableMappings { get; set; } = new();
 }
 
 public sealed class ConversacionPlantillaSaveRequest
@@ -691,6 +701,13 @@ public sealed class ConversacionPlantillaSaveRequest
     public bool Activa { get; set; } = true;
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
+
+    /// <summary>
+    /// Mapping posición -> VariableKey a persistir para el componente BODY. El servicio recalcula qué
+    /// posiciones existen realmente en el CuerpoTexto final y descarta como huérfanas las que ya no
+    /// aparecen; nunca infiere una VariableKey nueva a partir del texto.
+    /// </summary>
+    public Dictionary<int, string> VariableMappings { get; set; } = new();
 }
 
 public sealed class ConversacionPlantillaSubmitRequest
@@ -750,6 +767,15 @@ public sealed class ConversacionPlantillaMessageResultDto
     public string WhatsAppMessageId { get; set; } = string.Empty;
 }
 
+public sealed class ConversacionPlantillasSyncResultDto
+{
+    public int TotalMeta { get; set; }
+    public int Insertadas { get; set; }
+    public int Actualizadas { get; set; }
+    public int SinCambios { get; set; }
+    public int ConError { get; set; }
+}
+
 public sealed class ConversacionPlantillaAutoValuesDto
 {
     public List<string> Valores { get; set; } = [];
@@ -762,6 +788,7 @@ public static class ConversacionPlantillaCategorias
 {
     public const string Marketing = "MARKETING";
     public const string Utility = "UTILITY";
+    public const string Authentication = "AUTHENTICATION";
 }
 
 public static class ConversacionPlantillaEstadosLocales

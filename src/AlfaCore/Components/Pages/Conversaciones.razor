@@ -8688,7 +8688,7 @@
         {
             try
             {
-                var autoValues = await ConversacionesSvc.GetTemplateAutoValuesAsync(_selectedConversation.IdConversacion, required);
+                var autoValues = await ConversacionesSvc.GetTemplateAutoValuesAsync(_selectedConversation.IdConversacion, selectedTemplate.IdPlantilla, required);
                 if (_selectedTemplateId != selectedTemplateId || _selectedConversation?.IdConversacion != selectedConversationId)
                     return;
 
@@ -8709,13 +8709,18 @@
         var fallback = GetTemplateDefaultVariableValue(_selectedConversation);
         current = forceReload ? [] : current;
 
-        while (current.Count < required)
-        {
-            if (automaticValues.Count > current.Count && !string.IsNullOrWhiteSpace(automaticValues[current.Count]))
-                current.Add(automaticValues[current.Count]);
-            else
-                current.Add(current.Count == 0 ? fallback : $"Dato {current.Count + 1}");
-        }
+        // El servicio ya devuelve, en orden, únicamente las posiciones que pudo resolver
+        // automáticamente (mapping resuelto o heurístico legacy) -- se corta en la primera posición sin
+        // resolver, si la hay. Ya no se inventa texto de relleno tipo "Dato N" acá: si el servidor no
+        // llegó a completar todas las posiciones requeridas, el resto queda intencionalmente afuera de
+        // _templateValuesText para que el mecanismo existente (MissingTemplateVariablesMessage/"Completá:
+        // {{N}}") le avise al operador que tiene que completarlas a mano -- así se evita rellenar en
+        // silencio con un valor inventado una variable que no se pudo resolver de verdad.
+        while (current.Count < required && automaticValues.Count > current.Count)
+            current.Add(automaticValues[current.Count]);
+
+        if (current.Count == 0 && automaticValues.Count == 0 && required > 0)
+            current.Add(fallback);
 
         _templateValuesText = JoinTemplateValuesForEditing(current.Take(required));
     }

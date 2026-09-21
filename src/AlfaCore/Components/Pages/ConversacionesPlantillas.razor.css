@@ -1,0 +1,488 @@
+.templates-v1 {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    height: 100%;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--alfa-bg-canvas);
+    color: var(--alfa-text-primary);
+}
+
+.templates-v1 .templates-layout--alfadesign {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(280px, 360px) minmax(420px, 1fr);
+    gap: var(--alfa-space-12);
+    padding: var(--alfa-space-12);
+    overflow: hidden;
+}
+
+.templates-v1 ::deep .panel-card,
+.templates-v1 .conversations-list,
+.templates-v1 .templates-main,
+.templates-v1 .templates-record,
+.templates-v1 .templates-form-shell,
+.templates-v1 .templates-preview {
+    min-width: 0;
+    min-height: 0;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-md);
+    background: var(--alfa-bg-surface);
+    color: var(--alfa-text-primary);
+}
+
+.templates-v1 .conversations-list,
+.templates-v1 .templates-main,
+.templates-v1 .templates-preview {
+    overflow: auto;
+}
+
+.templates-v1 .templates-main {
+    display: flex;
+    flex-direction: column;
+    /* Sin padding-bottom acá a propósito: este es el elemento con
+       overflow:auto (el scroll owner). Cromium/Firefox pueden excluir el
+       padding-bottom de un contenedor overflow:auto del scroll range
+       cuando ese contenedor es también un flex item cuya altura la resuelve
+       el layout (no una altura fija) -- es un bug de motor conocido, no
+       corregible agregando más padding sobre el mismo elemento. El respiro
+       inferior real lo da .templates-scroll-spacer, un elemento de flujo
+       normal dentro del contenido scrolleado. */
+    padding: var(--alfa-space-16) var(--alfa-space-16) 0;
+}
+
+.templates-v1 .templates-main > .alfa-empty-state {
+    margin: auto;
+    padding-bottom: var(--alfa-space-16);
+}
+
+/* Elemento de flujo real (no padding) al final del contenido scrolleable:
+   el alto de un elemento normal siempre entra en scrollHeight, a diferencia
+   del padding-bottom de un contenedor overflow:auto+flex (ver comentario
+   arriba). Presente tanto en READ (dentro de .templates-main) como en
+   CREATE/EDIT (dentro de .templates-form-shell). */
+.templates-v1 .templates-scroll-spacer {
+    flex: 0 0 auto;
+    height: var(--alfa-space-24);
+}
+
+.templates-v1 .conversation-row {
+    border-radius: var(--alfa-radius-sm);
+    border-color: var(--alfa-border-subtle);
+    background: var(--alfa-bg-surface);
+}
+
+.templates-v1 .conversation-row:hover {
+    background: var(--alfa-bg-row-hover);
+}
+
+.templates-v1 .conversation-row.is-selected {
+    background: color-mix(in srgb, var(--alfa-state-selected) 44%, var(--alfa-bg-surface));
+    box-shadow: inset 3px 0 0 color-mix(in srgb, var(--alfa-accent) 72%, transparent);
+}
+
+.templates-v1 .conversation-row__badges {
+    flex-wrap: wrap;
+    gap: var(--alfa-space-4);
+}
+
+.templates-v1 .templates-empty-secondary {
+    display: flex;
+    justify-content: center;
+    padding: var(--alfa-space-8) 0 var(--alfa-space-4);
+}
+
+/* Data View Footer */
+.templates-v1 .alfa-data-view-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-8);
+    padding: var(--alfa-space-8) var(--alfa-space-12);
+    border-top: 1px solid var(--alfa-border-subtle);
+    color: var(--alfa-text-secondary);
+    font-weight: 500;
+    font-size: var(--alfa-font-small);
+}
+
+/* Record (read-only) view */
+.templates-v1 .templates-record__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    flex-wrap: wrap;
+    padding-bottom: var(--alfa-space-12);
+    border-bottom: 1px solid var(--alfa-border-subtle);
+    margin-bottom: var(--alfa-space-12);
+}
+
+.templates-v1 .templates-record__header h2 {
+    margin: 0 0 var(--alfa-space-4);
+    font-size: 1.05rem;
+}
+
+.templates-v1 .templates-record__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-8);
+    align-items: center;
+}
+
+.templates-v1 .templates-record {
+    /* Se pisa el min-height:0 heredado del selector compartido de más
+       arriba (pensado para los contenedores flex/grid que SÍ deben poder
+       encogerse para caber en el viewport, p.ej. .templates-main). Este
+       elemento es el contenido dentro del scroll owner, no el scroll owner:
+       necesita su min-height auto (el default) para no dejarse comprimir
+       por debajo de su alto real cuando .templates-main no tiene lugar --
+       si se encoge acá, el contenido se ve "cortado" en vez de scrollear. */
+    min-height: auto;
+}
+
+.templates-v1 .templates-record__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    gap: var(--alfa-space-24);
+    align-items: start;
+}
+
+.templates-v1 .templates-record__fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--alfa-space-16);
+    align-content: start;
+}
+
+.templates-v1 .templates-record-field {
+    display: grid;
+    gap: var(--alfa-space-4);
+    min-width: 0;
+}
+
+.templates-v1 .templates-record-field--long {
+    grid-column: 1 / -1;
+}
+
+.templates-v1 .templates-record-field span {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .01em;
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .templates-record-field strong,
+.templates-v1 .templates-record-field p {
+    color: var(--alfa-text-primary);
+    word-break: break-word;
+    margin: 0;
+    line-height: 1.45;
+    white-space: pre-wrap;
+}
+
+.templates-v1 .templates-record-field strong.is-empty,
+.templates-v1 .templates-record-field p.is-empty {
+    color: var(--alfa-text-disabled);
+    font-style: italic;
+}
+
+.templates-v1 .templates-record-field--danger span {
+    color: var(--alfa-danger);
+}
+
+.templates-v1 .templates-record-field--danger p {
+    color: var(--alfa-danger);
+}
+
+/* Create / Edit form shell */
+.templates-v1 .templates-form-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: var(--alfa-space-12);
+    /* Sin padding-bottom acá: mismo motivo que .templates-main (ver
+       comentario ahí). El respiro inferior real lo da
+       .templates-scroll-spacer al final de .templates-form-shell__body. */
+    padding: var(--alfa-space-16) var(--alfa-space-16) 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12);
+    overflow: auto;
+}
+
+.templates-v1 .templates-form-shell__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    flex-wrap: wrap;
+}
+
+.templates-v1 .templates-form-shell__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    gap: var(--alfa-space-16);
+    align-items: start;
+}
+
+.templates-v1 .templates-form {
+    gap: var(--alfa-space-12);
+}
+
+/* El grid de 2 columnas del formulario (heredado de .templates-form global)
+   solo debe partir en dos los campos cortos; los bloques largos (textarea,
+   guía de variables, checkbox final) ocupan todo el ancho. */
+.templates-v1 .alfa-field:has(textarea),
+.templates-v1 .templates-variable-guide,
+.templates-v1 .templates-form > .alfa-checkbox {
+    grid-column: 1 / -1;
+}
+
+.templates-v1 .templates-body-limit {
+    font-size: var(--alfa-font-small);
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .templates-body-limit.is-danger {
+    color: var(--alfa-danger);
+}
+
+/* Field primitives shared with AlfaInput's visual language (no dedicated
+   AlfaTextarea component exists yet; these classes intentionally mirror
+   AlfaInput.razor.css tokens so native <textarea> fields stay visually
+   consistent without duplicating the component). */
+.templates-v1 .alfa-field {
+    display: grid;
+    gap: var(--alfa-space-4);
+    color: var(--alfa-text-primary);
+}
+
+.templates-v1 .alfa-field__label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .alfa-textarea__control {
+    width: 100%;
+    resize: vertical;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+    padding: var(--alfa-space-8) var(--alfa-space-12);
+    font: inherit;
+}
+
+.templates-v1 .alfa-textarea__control:focus {
+    border-color: var(--alfa-accent);
+    outline: 2px solid color-mix(in srgb, var(--alfa-accent) 34%, transparent);
+    outline-offset: 0;
+}
+
+.templates-v1 .has-error .alfa-textarea__control {
+    border-color: var(--alfa-danger);
+}
+
+.templates-v1 .alfa-field__message {
+    font-size: 12px;
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .alfa-field__message--error {
+    color: var(--alfa-danger);
+}
+
+.templates-v1 .templates-variable-guide,
+.templates-v1 .context-card,
+.templates-v1 .message-card {
+    border-radius: var(--alfa-radius-md);
+    border-color: var(--alfa-border-default);
+    background: var(--alfa-bg-raised);
+}
+
+/* La vista previa es una sección de la misma ficha, no un panel aparte:
+   se le quita el borde/superficie de panel-card y se integra con un
+   separador vertical sutil, en vez de quedar "pegada de costado". */
+.templates-v1 .templates-record__layout .templates-preview,
+.templates-v1 .templates-form-shell__body .templates-preview {
+    border: none;
+    border-left: 1px solid var(--alfa-border-subtle);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0 0 0 var(--alfa-space-16);
+}
+
+.templates-v1 .templates-preview .conversations-context__section {
+    padding-top: 0;
+}
+
+.templates-v1 .templates-preview .panel-card__title {
+    font-size: .95rem;
+}
+
+.templates-v1 .templates-preview .message-card {
+    padding: var(--alfa-space-12);
+}
+
+.templates-v1 .templates-variable-chip {
+    border-color: var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+}
+
+.templates-smart-search select {
+    width: 100%;
+    min-height: 32px;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+    font-size: var(--alfa-font-small);
+}
+
+@media (max-width: 1200px) {
+    .templates-v1 .templates-record__layout,
+    .templates-v1 .templates-form-shell__body {
+        grid-template-columns: 1fr;
+    }
+
+    .templates-v1 .templates-preview {
+        max-width: 480px;
+    }
+
+    .templates-v1 .templates-record__layout .templates-preview,
+    .templates-v1 .templates-form-shell__body .templates-preview {
+        border-left: none;
+        border-top: 1px solid var(--alfa-border-subtle);
+        padding: var(--alfa-space-16) 0 0;
+    }
+}
+
+@media (max-width: 860px) {
+    .templates-v1 .templates-layout--alfadesign {
+        grid-template-columns: 1fr;
+        overflow: auto;
+    }
+
+    .templates-v1 .templates-record__fields {
+        grid-template-columns: 1fr;
+    }
+
+    .templates-v1 .templates-form-shell {
+        margin: var(--alfa-space-8);
+        padding: var(--alfa-space-12);
+    }
+}
+
+/* Chip de "Variables usadas": el chip en sí queda de solo lectura (ver
+   .templates-variable-chip--readonly en app.css), pero cuando la posición es
+   manual (sin mapping) se agrega la acción "Asignar variable" al lado -- el
+   wrapper es lo que agrupa ambos visualmente sin romper el pointer-events:none
+   del chip. */
+.templates-v1 .templates-variable-chip-group {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--alfa-space-4);
+}
+
+.templates-v1 .templates-variable-chip__assign {
+    border: none;
+    background: none;
+    padding: 0;
+    color: var(--alfa-accent);
+    font-size: var(--alfa-font-small);
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.templates-v1 .templates-variable-chip__assign:hover:not(:disabled) {
+    text-decoration: underline;
+}
+
+.templates-v1 .templates-variable-chip__assign:disabled {
+    color: var(--alfa-text-secondary);
+    cursor: not-allowed;
+}
+
+/* Selector de variables (AlfaDialog): catálogo agrupado por Group, con las
+   variables de Tareas/Guardia (CanResolveAutomaticallyInManualSend == false)
+   en una sección aparte, no clickeable -- ver FilteredContextualVariables. */
+.templates-v1 .variable-picker {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12);
+}
+
+.templates-v1 .variable-picker__filter {
+    margin: 0;
+}
+
+.templates-v1 .variable-picker__group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-4);
+}
+
+.templates-v1 .variable-picker__group-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 650;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .variable-picker__option {
+    display: flex;
+    width: 100%;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: var(--alfa-space-8) var(--alfa-space-12);
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+    text-align: left;
+    cursor: pointer;
+}
+
+button.variable-picker__option:hover {
+    border-color: var(--alfa-accent);
+    background: var(--alfa-bg-raised);
+}
+
+.templates-v1 .variable-picker__option-label {
+    font-size: var(--alfa-font-body);
+    font-weight: 600;
+}
+
+.templates-v1 .variable-picker__option-description {
+    font-size: var(--alfa-font-small);
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .variable-picker__option-detail {
+    font-size: 11px;
+    color: var(--alfa-text-secondary);
+    opacity: .8;
+}
+
+.templates-v1 .variable-picker__group--contextual .variable-picker__option {
+    cursor: default;
+    background: transparent;
+    border-style: dashed;
+    opacity: .75;
+}
+
+.templates-v1 .variable-picker__empty {
+    margin: 0;
+    color: var(--alfa-text-secondary);
+    font-size: var(--alfa-font-small);
+}
