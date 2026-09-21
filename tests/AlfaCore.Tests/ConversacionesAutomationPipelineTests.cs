@@ -463,6 +463,169 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     // ---------------------------------------------------------------------------------------
+    // 7b. Handoff -- P0 seguimiento 2026-09-21. Helper central IsHumanAuthoredOutgoing y su
+    // reutilización en el guard de SoloSinAsignar (TryAutoReplyReglasAsync). Ver
+    // GetBotReplyStatsAsync (7.) para el fix original del bot, que esta sección NO modifica.
+    // ---------------------------------------------------------------------------------------
+
+    // Reflexión sobre el predicado central, puro y sin SQL -- ejecutable de verdad (mismo patrón
+    // que ContienePalabraEscalado/CoincideRegla más arriba).
+    [Theory]
+    [InlineData("BOT", false)]
+    [InlineData("bot", false)] // case-insensitive, igual que el SQL (ISNULL(...) IN (...))
+    [InlineData("REGLA", false)] // una regla automática previa NO cuenta como intervención humana
+    [InlineData("BIENVENIDA", false)] // la bienvenida NO cuenta como humana
+    [InlineData("AUTOMATIZACION", false)] // el aviso de fuera de horario (SistemaAccion="AUTOMATIZACION") NO cuenta como humana
+    [InlineData("AUTOCIERRE_AVISO", false)]
+    [InlineData("AUTOCIERRE", false)]
+    [InlineData("SLA", false)]
+    [InlineData("PROGRAMADO", false)]
+    [InlineData(null, true)] // NULL/'' -- envío manual sin SistemaAccion completo -- cuenta como humano
+    [InlineData("", true)]
+    [InlineData("  ", true)] // solo espacios -- Trim() lo deja vacío -- humano
+    [InlineData("alfanetar@gmail.com", true)] // identidad real de un usuario (ej. UsuarioAutor/SistemaAutor manual) -- humano
+    [InlineData("AlfaCore", true)] // "AlfaCore" (UsuarioAccion genérico de reglas/SLA en otros flujos) no es un SistemaAutor automatizado -- fuera de la lista, cuenta como humano por diseño del predicado
+    public void IsHumanAuthoredOutgoing_ExcludesOnlyTheKnownAutomatedSistemaAutores(string? sistemaAutor, bool esperadoHumano)
+        => Assert.Equal(esperadoHumano, InvokeStatic<bool>("IsHumanAuthoredOutgoing", sistemaAutor));
+
+    [Fact]
+    public void IsHumanAuthoredOutgoing_IsTheSingleSourceOfTruthSharedWithTheSqlAutomatedList()
+    {
+        // AutomatedOutgoingSistemaAutorSqlList (usado por GetBotReplyStatsAsync, ver 7.) ya NO es
+        // una segunda lista paralela en sintaxis SQL -- se genera del mismo array C# que usa
+        // IsHumanAuthoredOutgoing. Si algún día se agrega/saca un autor automatizado, alcanza con
+        // tocar UN solo array.
+        Assert.Contains(
+            "private static readonly string[] AutomatedOutgoingSistemaAutores =",
+            ServiceSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "private static readonly string AutomatedOutgoingSistemaAutorSqlList =\r\n        string.Join(\", \", AutomatedOutgoingSistemaAutores.Select(a => $\"N'{a}'\"));",
+            ServiceSource, StringComparison.Ordinal);
+        Assert.Contains(
+            "!AutomatedOutgoingSistemaAutores.Contains(\r\n            (sistemaAutor ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase);",
+            ServiceSource, StringComparison.Ordinal);
+
+        // El fix del bot (GetBotReplyStatsAsync, commit 66dc7046) sigue exactamente igual: misma
+        // consulta SQL, mismo return -- este trabajo no lo tocó, solo unificó de dónde sale
+        // AutomatedOutgoingSistemaAutorSqlList. Ver también Handoff_Fix_* más arriba.
+        Assert.Contains("return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId);", ServiceSource, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SoloSinAsignar_NowAlsoChecksHumanInterventionOnTheCurrentIncomingMessage_NotOnlyTechnicianAssignment()
+    {
+        // Bug P0 corregido en este trabajo: antes, `if (regla.SoloSinAsignar)` sólo miraba
+        // GetConversationTechnicianIdAsync (CONV_CONVERSACIONES.IdTecnico). Un humano sin Técnico
+        // vinculado que ya respondió (plantilla/sticker/reacción/adjunto/texto) al mismo entrante
+        // NO deja la conversación "asignada" -- AutoAssignIfUnassignedAsync no corre sin
+        // IdTecnicoAutor -- así que una regla SoloSinAsignar posterior seguía disparando sobre un
+        // mensaje que un humano YA atendió. Ahora, tras el chequeo de técnico, se reutiliza la
+        // MISMA consulta que ya usa el guard del bot (GetBotReplyStatsAsync) para el mismo criterio
+        // de ventana: último SALIENTE no-automatizado posterior al último ENTRANTE.
+        var block = ServiceSource.IndexOf("if (regla.SoloSinAsignar)", StringComparison.Ordinal);
+        var techLookup = ServiceSource.IndexOf("tecnicoActual ??= await GetConversationTechnicianIdAsync(idConversacion, ct)", block, StringComparison.Ordinal);
+        var techSkip = ServiceSource.IndexOf("continue;", techLookup, StringComparison.Ordinal);
+        var humanLookup = ServiceSource.IndexOf(
+            "humanoYaRespondioUltimoEntrante ??=\r\n                        (await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false)).HumanoYaRespondioUltimoEntrante;",
+            techSkip, StringComparison.Ordinal);
+        var humanSkip = ServiceSource.IndexOf("continue;", humanLookup, StringComparison.Ordinal);
+
+        Assert.True(block >= 0, "No se encontró el bloque SoloSinAsignar.");
+        Assert.True(techLookup > block && techSkip > techLookup, "El chequeo de técnico asignado sigue primero (no se cambió).");
+        Assert.True(humanLookup > techSkip, "El chequeo de intervención humana debe correr DESPUÉS del chequeo de técnico, dentro del mismo bloque SoloSinAsignar.");
+        Assert.True(humanSkip > humanLookup);
+
+        // Sigue siendo un guard de SOLO LECTURA: GetBotReplyStatsAsync es una consulta SELECT pura
+        // (ver 7.), y el bloque SoloSinAsignar en sí no ejecuta ningún UPDATE/asignación -- eso
+        // sigue pasando más abajo, fuera de este bloque, sólo si regla.AsignarTecnico viene
+        // configurado explícitamente (comportamiento preexistente, no tocado acá).
+        var blockEnd = ServiceSource.IndexOf("// Etiquetar: fijar prioridad", block, StringComparison.Ordinal);
+        Assert.True(blockEnd > humanSkip);
+        var blockText = ServiceSource[block..blockEnd];
+        Assert.DoesNotContain("await AssignConversationAsync", blockText, StringComparison.Ordinal);
+        Assert.DoesNotContain("await AutoAssignIfUnassignedAsync", blockText, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SoloSinAsignar_HumanCheckIsLazilyCachedOncePerRuleEvaluation_NotOncePerRule()
+    {
+        // humanoYaRespondioUltimoEntrante se declara UNA vez, fuera del foreach de reglas (mismo
+        // patrón que tecnicoActual/entrantes/autoConfig ya usados) -- si varias reglas activas
+        // tienen SoloSinAsignar=true, GetBotReplyStatsAsync no se re-consulta para cada una.
+        var foreachStart = ServiceSource.IndexOf("foreach (var regla in reglas.Where(r => r.Activa)", StringComparison.Ordinal);
+        var declaration = ServiceSource.IndexOf("bool? humanoYaRespondioUltimoEntrante = null;", StringComparison.Ordinal);
+        Assert.True(declaration >= 0 && declaration < foreachStart, "La variable de caché debe declararse antes del foreach, no dentro.");
+    }
+
+    [Fact]
+    public void SoloSinAsignar_NoRegressionWhenTrulyUnassignedAndNoHumanReplied()
+    {
+        // No-regresión explícita: si tecnicoActual queda vacío Y GetBotReplyStatsAsync devuelve
+        // HumanoYaRespondioUltimoEntrante=false (nadie respondió el último entrante), ninguno de
+        // los dos `continue;` se ejecuta -- la regla sigue evaluándose y puede disparar su acción
+        // exactamente como antes del fix. Esto es una propiedad del código (ambos son guards que
+        // sólo saltan la regla con `continue;` bajo su propia condición), verificada arriba en
+        // SoloSinAsignar_NowAlsoChecksHumanInterventionOnTheCurrentIncomingMessage_*; documentado
+        // acá porque el escenario "sin técnico y sin humano" requiere ejecutar
+        // GetBotReplyStatsAsync contra una conversación real (abre su propio SqlConnection, sin
+        // repositorio inyectable) -- REQUIERE SQL INTEGRATION para un test end-to-end; la lógica en
+        // sí (dos condiciones independientes, cada una con su propio `continue`) es estructuralmente
+        // verificable y ya lo está.
+        Assert.Contains("if (!string.IsNullOrWhiteSpace(tecnicoActual))\r\n                        continue;", ServiceSource, StringComparison.Ordinal);
+        Assert.Contains("if (humanoYaRespondioUltimoEntrante == true)\r\n                        continue;", ServiceSource, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("SendTemplateMessageAsync")]
+    [InlineData("SendReactionAsync")]
+    [InlineData("UploadAttachmentAsync")]
+    public void ManualSendPaths_PlantillaReaccionYAdjunto_NeverAutoAssignAndAlwaysWriteDirectionSaliente(string methodName)
+    {
+        // Precondición del bug P0 (auditoría 2026-09-18), reconfirmada acá: los tres caminos de
+        // envío manual que NO son texto plano (plantilla, reacción, adjunto -- éste último también
+        // cubre sticker, ver SendFavoriteStickerAsync -> UploadAttachmentAsync) insertan
+        // Direction="SALIENTE" con el SistemaAutor real del usuario, pero NINGUNO llama a
+        // AutoAssignIfUnassignedAsync (a diferencia de SendMessageAsync de texto plano). Por eso
+        // una conversación puede tener una respuesta humana real sin quedar "asignada" -- el hueco
+        // exacto que el guard nuevo de SoloSinAsignar y el fix del bot cubren mirando SistemaAutor
+        // en vez de IdTecnico.
+        var startMarker = ServiceSource.IndexOf($" {methodName}(", StringComparison.Ordinal);
+        Assert.True(startMarker > 0, $"No se encontró {methodName}.");
+        var nextMethod = ServiceSource.IndexOf("\r\n    public ", startMarker + 1, StringComparison.Ordinal);
+        Assert.True(nextMethod > startMarker, $"No se pudo acotar el cuerpo de {methodName}.");
+        var body = ServiceSource[startMarker..nextMethod];
+
+        Assert.Contains("Direction = \"SALIENTE\"", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("AutoAssignIfUnassignedAsync", body, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ManualSendPaths_Sticker_ReusesUploadAttachmentAsync_SoItInheritsTheSameHumanSignal()
+    {
+        // SendFavoriteStickerAsync no inserta su propio CONV_MENSAJES -- delega en
+        // UploadAttachmentAsync (ya cubierto arriba), con SistemaAccion pasado tal cual desde el
+        // caller. Un sticker manual enviado por un usuario sin Técnico vinculado cuenta como
+        // intervención humana por el mismo motivo que un adjunto común.
+        var method = ServiceSource.IndexOf("public Task<ConversacionAdjuntoDto> SendFavoriteStickerAsync", StringComparison.Ordinal);
+        Assert.True(method >= 0);
+        var call = ServiceSource.IndexOf("return await UploadAttachmentAsync(new ConversacionUploadAdjuntoRequest", method, StringComparison.Ordinal);
+        Assert.True(call > method);
+    }
+
+    [Fact]
+    public void ManualSendPaths_Reaction_IsDirectionSalienteSoItParticipatesInTheHumanGuard()
+    {
+        // Nota de scope: SendReactionAsync SÍ es Direction=SALIENTE (a diferencia de, por ejemplo,
+        // un evento de sistema en NOTA_INTERNA) -- por eso participa del criterio de ventana
+        // "último SALIENTE posterior al último ENTRANTE" igual que texto/plantilla/sticker/adjunto.
+        // No requería un caso especial en el helper ni en el guard.
+        var method = ServiceSource.IndexOf("public Task<ConversacionMessageResultDto> SendReactionAsync", StringComparison.Ordinal);
+        var nextMethod = ServiceSource.IndexOf("\r\n    public ", method + 1, StringComparison.Ordinal);
+        var body = ServiceSource[method..nextMethod];
+        Assert.Contains("MessageType = \"REACTION\",\r\n                Direction = \"SALIENTE\",", body, StringComparison.Ordinal);
+    }
+
+    // ---------------------------------------------------------------------------------------
     // 8. Idempotencia / concurrencia.
     // ---------------------------------------------------------------------------------------
 

@@ -8878,10 +8878,29 @@ public sealed class ConversacionesService(
     // Autores de SALIENTE que el pipeline de automatizaciones genera él mismo. Cualquier SALIENTE
     // cuyo SistemaAutor NO esté en esta lista (incluye NULL/'' -- el envío manual desde la UI no
     // siempre completa SistemaAccion, ver CurrentUserSystemForAudit) se interpreta como intervención
-    // humana. Ver EjecutarRespuestaBotAsync: un humano que ya respondió el último entrante frena al
-    // bot para ESE mensaje, sin importar si la conversación quedó técnicamente "sin asignar".
-    private const string AutomatedOutgoingSistemaAutorSqlList =
-        "N'AUTOMATIZACION', N'BIENVENIDA', N'BOT', N'AUTOCIERRE_AVISO', N'AUTOCIERRE', N'REGLA', N'SLA', N'PROGRAMADO'";
+    // humana. ÚNICA fuente de verdad: tanto el SQL (AutomatedOutgoingSistemaAutorSqlList, generado
+    // de este mismo array) como el predicado en memoria (IsHumanAuthoredOutgoing) leen de acá -- no
+    // dupliques esta lista en otro lado. Consumido por EjecutarRespuestaBotAsync (un humano que ya
+    // respondió el último entrante frena al bot para ESE mensaje, sin importar si la conversación
+    // quedó técnicamente "sin asignar") y por TryAutoReplyReglasAsync/SoloSinAsignar (mismo criterio,
+    // ver auditoría 2026-09-18 y su seguimiento 2026-09-21).
+    private static readonly string[] AutomatedOutgoingSistemaAutores =
+        ["AUTOMATIZACION", "BIENVENIDA", "BOT", "AUTOCIERRE_AVISO", "AUTOCIERRE", "REGLA", "SLA", "PROGRAMADO"];
+
+    private static readonly string AutomatedOutgoingSistemaAutorSqlList =
+        string.Join(", ", AutomatedOutgoingSistemaAutores.Select(a => $"N'{a}'"));
+
+    /// <summary>
+    /// ¿Este SistemaAutor de un mensaje SALIENTE corresponde a una persona (no al pipeline de
+    /// automatizaciones)? Único predicado central para "intervención humana" -- reutiliza
+    /// <see cref="AutomatedOutgoingSistemaAutores"/>, la misma lista que ya usa el SQL de
+    /// GetBotReplyStatsAsync. NULL/'' cuenta como humano (envío manual sin SistemaAccion completo).
+    /// El caller es responsable de filtrar Direction = SALIENTE antes de llamar a esto (viene ya
+    /// filtrado por el WHERE de la consulta en todos los usos actuales).
+    /// </summary>
+    private static bool IsHumanAuthoredOutgoing(string? sistemaAutor) =>
+        !AutomatedOutgoingSistemaAutores.Contains(
+            (sistemaAutor ?? string.Empty).Trim(), StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Cuenta de respuestas del bot (para el tope <c>BotMaxRespuestas</c>), si el último mensaje
@@ -9160,6 +9179,7 @@ public sealed class ConversacionesService(
             string? tecnicoActual = null;
             ConversacionAutomatizacionesConfigDto? autoConfig = null;
             int? entrantes = null;
+            bool? humanoYaRespondioUltimoEntrante = null;
 
             foreach (var regla in reglas.Where(r => r.Activa).OrderBy(r => r.Orden).ThenBy(r => r.IdRegla))
             {
@@ -9196,6 +9216,22 @@ public sealed class ConversacionesService(
                 {
                     tecnicoActual ??= await GetConversationTechnicianIdAsync(idConversacion, ct).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(tecnicoActual))
+                        continue;
+
+                    // Bug P0 (auditoría 2026-09-18, seguimiento 2026-09-21): igual que el guard del
+                    // bot (EjecutarRespuestaBotAsync/GetBotReplyStatsAsync), un usuario sin Técnico
+                    // vinculado que ya respondió manualmente el mismo entrante actual (plantilla,
+                    // sticker, reacción, adjunto o texto) NO deja la conversación "asignada" --
+                    // AutoAssignIfUnassignedAsync sólo corre si IdTecnicoAutor viene no vacío. Sin
+                    // este chequeo, una regla SoloSinAsignar seguía disparando (auto-responder/
+                    // auto-asignar) sobre un mensaje que un humano YA atendió por otro canal. Mismo
+                    // criterio de ventana que el bot, reutilizando la MISMA consulta (single source
+                    // of truth): último SALIENTE no-automatizado posterior al último ENTRANTE (por
+                    // IdMensaje) -- no "alguna vez hubo un humano en la conversación". Es un guard de
+                    // sólo lectura: no asigna técnico ni cambia el estado "sin asignar" en DB.
+                    humanoYaRespondioUltimoEntrante ??=
+                        (await GetBotReplyStatsAsync(idConversacion, ct).ConfigureAwait(false)).HumanoYaRespondioUltimoEntrante;
+                    if (humanoYaRespondioUltimoEntrante == true)
                         continue;
                 }
 
