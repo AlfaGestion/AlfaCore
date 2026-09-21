@@ -8,6 +8,7 @@
 @inject AlfaCore.Services.ICentralAdminService AdminSvc
 @inject AlfaCore.Services.ICentralCompraIaService CompraIaSvc
 @inject AlfaCore.Services.IConversacionesHabilitacionService ConversacionesHabilitacionSvc
+@inject AlfaCore.Services.IWorkerAssignmentService WorkerAssignmentSvc
 @inject AlfaCore.Services.IPlanesService PlanesSvc
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
@@ -49,6 +50,43 @@
                         <p>@_error</p>
                     </div>
                 }
+
+                <section class="panel-card">
+                    <div class="panel-card__header">
+                        <div>
+                            <h2 class="panel-card__title">Infraestructura</h2>
+                            <p class="panel-card__subtitle">Cuando AlfaCore corre en más de un web service, solo uno debe procesar los workers en segundo plano (Compra IA, Conversaciones, WhatsApp, facturación) para no duplicar trabajo. Vacío = sin restricción, todos los servidores los ejecutan.</p>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 align-items-end">
+                        <div class="col-12 col-lg-4">
+                            <div class="shell-empty-state">
+                                <strong>Este servidor</strong>
+                                <span>@NombreServidorLocal</span>
+                            </div>
+                        </div>
+                        <div class="col-12 col-lg-4">
+                            <label class="form-label mb-1" for="admin-servidor-workers">Servidor autorizado a correr los workers</label>
+                            <input id="admin-servidor-workers" class="form-control admin-modal-input" @bind="_servidorWorkersInput" @bind:event="oninput" placeholder="Vacío = todos los servidores" disabled="@_guardandoServidorWorkers" />
+                        </div>
+                        <div class="col-12 col-lg-4 d-flex gap-2">
+                            <button type="button" class="btn btn-primary" disabled="@_guardandoServidorWorkers" @onclick="GuardarServidorWorkersAsync">Guardar</button>
+                            <button type="button" class="btn btn-outline-light" disabled="@(_guardandoServidorWorkers || string.IsNullOrWhiteSpace(_servidorWorkersActivo))" @onclick="QuitarRestriccionServidorWorkersAsync">Quitar restricción</button>
+                        </div>
+                    </div>
+                    <div class="form-text mt-2">
+                        Activo hoy:
+                        @if (string.IsNullOrWhiteSpace(_servidorWorkersActivo))
+                        {
+                            <strong>todos los servidores (sin restricción)</strong>
+                        }
+                        else
+                        {
+                            <strong>@_servidorWorkersActivo</strong>
+                        }
+                    </div>
+                </section>
 
                 <div class="row g-3">
                     <div class="col-12 col-xxl-4">
@@ -930,6 +968,47 @@
         finally { _guardandoBaseConversaciones = false; }
     }
 
+    private string NombreServidorLocal => WorkerAssignmentSvc.NombreServidorLocal;
+    private string? _servidorWorkersActivo;
+    private string _servidorWorkersInput = string.Empty;
+    private bool _guardandoServidorWorkers;
+
+    private async Task GuardarServidorWorkersAsync()
+    {
+        if (_guardandoServidorWorkers) return;
+        _guardandoServidorWorkers = true;
+        _error = string.Empty;
+        _message = string.Empty;
+        try
+        {
+            await WorkerAssignmentSvc.SetServidorActivoAsync(_servidorWorkersInput);
+            _servidorWorkersActivo = await WorkerAssignmentSvc.GetServidorActivoAsync();
+            _servidorWorkersInput = _servidorWorkersActivo ?? string.Empty;
+            _message = string.IsNullOrWhiteSpace(_servidorWorkersActivo)
+                ? "Sin restricción: todos los servidores corren los workers."
+                : $"Solo {_servidorWorkersActivo} va a correr los workers en segundo plano.";
+        }
+        catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
+        finally { _guardandoServidorWorkers = false; }
+    }
+
+    private async Task QuitarRestriccionServidorWorkersAsync()
+    {
+        if (_guardandoServidorWorkers) return;
+        _guardandoServidorWorkers = true;
+        _error = string.Empty;
+        _message = string.Empty;
+        try
+        {
+            await WorkerAssignmentSvc.SetServidorActivoAsync(null);
+            _servidorWorkersActivo = null;
+            _servidorWorkersInput = string.Empty;
+            _message = "Sin restricción: todos los servidores corren los workers.";
+        }
+        catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
+        finally { _guardandoServidorWorkers = false; }
+    }
+
     private readonly List<AlfaCore.Models.AdminUserDto> _users = [];
     private readonly List<AlfaCore.Models.ClienteModuloDto> _clienteModulos = [];
     private readonly List<AlfaCore.Models.PlanDto> _planModalOpciones = [];
@@ -1054,6 +1133,12 @@
             }
             catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
 
+            try
+            {
+                _servidorWorkersActivo = await WorkerAssignmentSvc.GetServidorActivoAsync();
+                _servidorWorkersInput = _servidorWorkersActivo ?? string.Empty;
+            }
+            catch (AlfaCore.Services.AppUserFacingException ex) { _error = ex.UserMessage; }
 
             var targetClientId = !string.IsNullOrWhiteSpace(preferredClientId)
                 ? preferredClientId.Trim()

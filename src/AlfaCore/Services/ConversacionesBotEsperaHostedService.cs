@@ -51,6 +51,13 @@ public sealed class ConversacionesBotEsperaHostedService(
     {
         if (appMode.IsSaaSMode && !string.IsNullOrWhiteSpace(configuration.GetConnectionString("AlfaCentral")))
         {
+            using (var assignmentScope = services.CreateScope())
+            {
+                var workerAssignment = assignmentScope.ServiceProvider.GetRequiredService<IWorkerAssignmentService>();
+                if (!await workerAssignment.DebeEjecutarWorkersAsync(ct))
+                    return;
+            }
+
             IReadOnlyList<BaseCentralDto> bases;
             using (var scope = services.CreateScope())
             {

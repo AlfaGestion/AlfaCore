@@ -55,6 +55,10 @@ public sealed class ModuloPruebaRecordatorioHostedService(
     private async Task EjecutarCicloAsync(CancellationToken ct)
     {
         using var scope = services.CreateScope();
+        var workerAssignment = scope.ServiceProvider.GetRequiredService<IWorkerAssignmentService>();
+        if (!await workerAssignment.DebeEjecutarWorkersAsync(ct))
+            return;
+
         var adminService = scope.ServiceProvider.GetRequiredService<ICentralAdminService>();
 
         var expiradas = await adminService.ExpirarPruebasVencidasAsync(ct);
