@@ -4,6 +4,7 @@ using AlfaCore.Services;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Configuration;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using System.Security.Cryptography;
 using System.Text;
 using System.Reflection;
@@ -318,6 +319,76 @@ public sealed class WhatsAppTenantIsolationTests
         Assert.Contains("OWNERSHIP_RESOLVED", serviceSource, StringComparison.Ordinal);
         Assert.Contains("BEFORE_WEBHOOK_LOG", serviceSource, StringComparison.Ordinal);
         Assert.Contains("WEBHOOK_LOG_INSERTED", serviceSource, StringComparison.Ordinal);
+    }
+
+    // El 500 de este webhook casi nunca es una excepción -- HandleWhatsAppMessageAsync devuelve
+    // Results.Problem(500) normalmente (p. ej. App Secret sin resolver, ver el comentario de
+    // TenantizedWebhook_ResolvedBaseIdSelectsEsAppSecret_EvenWhenSessionHasNoActiveTenant más abajo),
+    // así que ese camino no pasa por el catch/TryWriteWebhookFailureDiagnostic. El endpoint POST no es
+    // invocable directamente en un test unitario (delegate de minimal API), así que esto verifica por
+    // texto que el resultado devuelto por HandleWhatsAppMessageAsync se inspecciona y se registra antes
+    // de devolverlo, sin alterarlo.
+    [Fact]
+    public void TenantizedWebhook_Returned5xxWithoutExceptionIsAlsoDiagnosed()
+    {
+        var programSource = File.ReadAllText(Path.Combine(RepositoryRoot, "src", "AlfaCore", "Program.cs"));
+        var route = programSource.IndexOf("app.MapPost(\"/api/conversaciones/whatsapp/webhook/{token}\"", StringComparison.Ordinal);
+        var outcomeCapture = programSource.IndexOf("var outcome = await HandleWhatsAppMessageAsync(", route, StringComparison.Ordinal);
+        var outcomeCheck = programSource.IndexOf("if (outcome is IStatusCodeHttpResult { StatusCode: int returnedStatus } && returnedStatus >= 500)", outcomeCapture, StringComparison.Ordinal);
+        var diagnosticCall = programSource.IndexOf("TryWriteWebhookOutcomeDiagnostic(correlationId, stage, returnedStatus, reasonCode)", outcomeCheck, StringComparison.Ordinal);
+        var returnOutcome = programSource.IndexOf("return outcome;", diagnosticCall, StringComparison.Ordinal);
+
+        Assert.True(route >= 0);
+        Assert.True(outcomeCapture > route);
+        Assert.True(outcomeCheck > outcomeCapture);
+        Assert.True(diagnosticCall > outcomeCheck);
+        Assert.True(returnOutcome > diagnosticCall);
+        Assert.Contains("\"APP_SECRET_NOT_CONFIGURED\"", programSource, StringComparison.Ordinal);
+        Assert.Contains("\"UNCLASSIFIED_5XX\"", programSource, StringComparison.Ordinal);
+
+        var diagnosticMethod = programSource.IndexOf("private static void TryWriteWebhookOutcomeDiagnostic(", StringComparison.Ordinal);
+        Assert.True(diagnosticMethod >= 0);
+        var diagnosticDirectory = programSource.IndexOf("Path.Combine(Path.GetTempPath(), \"AlfaCore\", \"webhook-diagnostics\")", diagnosticMethod, StringComparison.Ordinal);
+        Assert.True(diagnosticDirectory > diagnosticMethod);
+    }
+
+    // Complemento comportamental de la prueba estructural de arriba: HandleWhatsAppMessageAsync en sí
+    // mismo (sin excepción) ya devuelve un Results.Problem(500) real cuando no hay App Secret resuelto
+    // -- exactamente el resultado que el endpoint POST ahora inspecciona para diagnosticar.
+    [Fact]
+    public async Task HandleWhatsAppMessageAsync_ReturnsProblem500_WhenAppSecretIsNotConfigured()
+    {
+        const string phoneNumberId = "1233329726536711";
+        var session = new SessionlessWebhookService();
+        var config = CreateProxy<IConversacionesConfigService, WebhookConfigProxy>();
+        ((WebhookConfigProxy)(object)config).Config = new ConversacionWhatsAppConfigDto(); // AppSecret legacy vacío
+        var service = CreateProxy<IConversacionesService, WebhookServiceProxy>();
+        var body = BuildWebhookPayload("messages", phoneNumberId);
+        var requestContext = new DefaultHttpContext();
+        requestContext.Request.Body = new MemoryStream(Encoding.UTF8.GetBytes(body));
+
+        var result = await AlfaCore.Program.HandleWhatsAppMessageAsync(
+            requestContext.Request,
+            config,
+            service,
+            Options.Create(new WhatsAppEmbeddedSignupOptions
+            {
+                Enabled = true,
+                AllowedBaseIds = [84],
+                WorkerEnabled = false,
+                WebhookRoutingEnabled = false,
+                UseApplicationCentralConnection = true,
+                AppSecret = string.Empty
+            }),
+            session,
+            new OwnershipStore(null),
+            CancellationToken.None,
+            resolvedBaseId: 84);
+
+        var statusResult = Assert.IsAssignableFrom<IStatusCodeHttpResult>(result);
+        Assert.Equal(StatusCodes.Status500InternalServerError, statusResult.StatusCode);
+        var problem = Assert.IsType<ProblemHttpResult>(result);
+        Assert.Equal("WhatsApp App Secret no está configurado.", problem.ProblemDetails.Detail);
     }
 
     [Fact]
