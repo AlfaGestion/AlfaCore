@@ -118,6 +118,25 @@ public sealed class MetaWhatsAppManagementClientTests
         Assert.Equal(1, calls);
     }
 
+    [Theory]
+    [InlineData("https://graph.facebook.com/v26.0/9103/message_templates")]
+    [InlineData("https://evil.test/message_templates")]
+    public async Task TemplateDiscoveryRejectsPagingToAnotherResource(string next)
+    {
+        // Cubre explícitamente el contrato de error (código y que no siga paginando) para las dos
+        // variantes de "paging.next" adversarial: otra WABA en el mismo Graph, y un host totalmente
+        // distinto -- ambas ya las bloquea GetPagedAsync, este test agrega el assert de ErrorCode.
+        var calls = 0;
+        var client = Create(new RoutingHandler(_ =>
+        {
+            calls++;
+            return Json(JsonSerializer.Serialize(new { data = Array.Empty<object>(), paging = new { next } }));
+        }));
+        var error = await Assert.ThrowsAsync<MetaWhatsAppManagementException>(() => client.DiscoverTemplatesAsync("9102", new("ref")));
+        Assert.Equal("META_INVALID_PAGING", error.ErrorCode);
+        Assert.Equal(1, calls);
+    }
+
     [Fact]
     public async Task SubscriptionIsIdempotentAndPostsOnlyWhenMissing()
     {

@@ -3239,8 +3239,7 @@ public sealed class ConversacionesService(
             var values = NormalizeTemplateValues(request.ValoresVariables);
 
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
-            if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
-                config.PhoneNumberId = conversation.PhoneNumberId;
+            config.PhoneNumberId = await ResolveTemplateConversationPhoneAsync(conversation, config, token);
             var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
                 sessionService.GetActiveSession()?.BaseId ?? 0,
                 conversation.IdNumeroWhatsApp,
@@ -7517,6 +7516,31 @@ public sealed class ConversacionesService(
         {
             throw new InvalidOperationException("La conversación está asociada a otro número de WhatsApp. Cambiá el número de la conversación antes de enviar.");
         }
+    }
+
+    /// <summary>
+    /// Resuelve el PhoneNumberId a usar para enviar una plantilla, sin confiar ciegamente en lo que
+    /// traiga la conversación o el config global. Si la conversación tiene un número propio asignado
+    /// (IdNumeroWhatsApp), se relee ese número desde CONV_WHATSAPP_NUMEROS -- debe existir, estar
+    /// activo y, si la conversación ya traía un PhoneNumberId propio, coincidir con el del número
+    /// configurado -- antes de dejar salir la plantilla por ese Phone Number ID.
+    /// </summary>
+    private async Task<string> ResolveTemplateConversationPhoneAsync(ConversationIdentity conversation, ConversacionWhatsAppConfigDto config, CancellationToken ct)
+    {
+        if (conversation.IdNumeroWhatsApp is not > 0)
+            return string.IsNullOrWhiteSpace(conversation.PhoneNumberId) ? config.PhoneNumberId : conversation.PhoneNumberId;
+
+        var numero = await conversacionesConfigService.GetWhatsAppNumeroAsync(conversation.IdNumeroWhatsApp.Value, ct)
+            ?? throw new InvalidOperationException("El número asociado a la conversación ya no existe. Revisá su integración antes de enviar.");
+
+        if (!numero.Activo || string.IsNullOrWhiteSpace(numero.PhoneNumberId))
+            throw new InvalidOperationException("El número asociado a la conversación no está operativo.");
+
+        if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId)
+            && !string.Equals(conversation.PhoneNumberId.Trim(), numero.PhoneNumberId.Trim(), StringComparison.Ordinal))
+            throw new InvalidOperationException("El Phone Number ID de la conversación no coincide con su número configurado. Revisá la asociación antes de enviar.");
+
+        return numero.PhoneNumberId;
     }
 
     private async Task<bool> IsWhatsAppWindowActiveAsync(long idConversacion, CancellationToken ct)

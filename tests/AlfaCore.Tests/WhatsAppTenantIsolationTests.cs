@@ -126,6 +126,23 @@ public sealed class WhatsAppTenantIsolationTests
     }
 
     [Fact]
+    public async Task TemplateCredentialFromBaseBIsUnavailableToBaseA()
+    {
+        // El guard de envío de plantillas resuelve la credencial runtime por PhoneNumberId antes de
+        // dejar salir un mensaje: si ese número quedó registrado con ownership de otra base (WABA de
+        // la base B), la base A tiene que fallar cerrado (UnauthorizedAccessException) sin tocar el
+        // vault -- nunca debe caer a legacy ni exponer la credencial de la base B.
+        var vault = new CountingVault();
+        var resolver = new WhatsAppRuntimeCredentialResolver(
+            new OwnershipStore(new("9202", "9102", 2, DateTime.UtcNow)), vault, OptionsFor(1));
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => resolver.ResolveAsync(1, 7, "9202", Legacy()));
+
+        Assert.Equal(0, vault.Finds);
+        Assert.Equal(0, vault.Reads);
+    }
+
+    [Fact]
     public async Task BaseWithNoOwnershipForPhone_ResolvesLegacyWithoutTouchingVault()
     {
         var store = new CountingOwnershipStore();   // GetPhoneOwnershipAsync -> null

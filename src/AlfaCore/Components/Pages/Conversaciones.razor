@@ -2892,7 +2892,7 @@
                                 <option value="0">Seleccioná una plantilla</option>
                                 @foreach (var template in _availableTemplates)
                                 {
-                                    <option value="@template.IdPlantilla">@template.NombreVisible (@GetTemplateStatusLabel(template.EstadoMeta))</option>
+                                    <option value="@template.IdPlantilla">@template.NombreVisible · @template.Idioma · @template.Categoria (@GetTemplateStatusLabel(template.EstadoMeta))</option>
                                 }
                             }
                         </select>
@@ -2912,6 +2912,11 @@
                     @if (IsSelectedTemplateUnavailable)
                     {
                         <AlfaFeedbackPanel Message="@AppUiMessage.Warning("Plantilla no disponible", "Esta plantilla todavía no está aprobada por Meta.")" Dismissible="false" />
+                    }
+
+                    @if (SelectedTemplate is not null && !string.IsNullOrEmpty(WhatsAppTemplateValidation.UnsupportedReason(SelectedTemplate)))
+                    {
+                        <p role="alert">@WhatsAppTemplateValidation.UnsupportedReason(SelectedTemplate)</p>
                     }
 
                     @if (SelectedTemplate is not null && CountTemplateVariables(SelectedTemplate.CuerpoTexto) > 0)
@@ -11498,7 +11503,9 @@
     }
 
     private static bool HasRequiredTemplateValues(ConversacionPlantillaDto template, IReadOnlyList<string> values)
-        => values.Count >= CountTemplateVariables(template.CuerpoTexto);
+        => values.Count == CountTemplateVariables(template.CuerpoTexto)
+           && values.All(x => !string.IsNullOrWhiteSpace(x))
+           && string.IsNullOrEmpty(WhatsAppTemplateValidation.UnsupportedReason(template));
 
     private static string GetTemplateDefaultVariableValue(ConversacionDetalleDto? conversation)
     {
