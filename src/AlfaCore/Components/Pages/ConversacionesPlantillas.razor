@@ -16,46 +16,6 @@
 <PageTitle>Plantillas de WhatsApp | Alfa Gestión</PageTitle>
 
 <section class="templates-v1" @onclick="CloseTemplatesSearchPanel">
-    <div class="page-intro conversations-topbar" hidden>
-        <div>
-            <h2 class="page-intro__title">Plantillas de WhatsApp</h2>
-            <p class="page-intro__text">Creá borradores, envialos a aprobación de Meta y sincronizá su estado para retomar conversaciones fuera de la ventana de 24 horas.</p>
-        </div>
-        <div class="actions">
-            <a class="btn btn--ghost" href="/conversaciones">
-                <i class="bi bi-inbox-fill"></i> Inbox
-            </a>
-            <div style="position: relative;">
-                <button type="button" class="btn btn--primary" style="@CrearButtonStyle" @onclick="HandleCrearPrincipalAsync">
-                    <i class="bi @CrearButtonIcon"></i> @CrearButtonLabel
-                </button>
-                @if (_mostrarMenuCrear)
-                {
-                    <div style="position: absolute; right: 0; top: calc(100% + .45rem); z-index: 40; min-width: 220px; padding: .35rem; border: 1px solid rgba(71, 85, 105, .95); border-radius: 12px; background: #0f172a; box-shadow: 0 16px 36px rgba(0, 0, 0, .32);">
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="CrearPlantillaBase">
-                            <i class="bi bi-file-text"></i> Plantilla
-                        </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="AplicarPlantillaFacturaMantenimientoAsync">
-                            <i class="bi bi-file-earmark-text"></i> Factura
-                        </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem;" @onclick="AplicarPlantillaCobranzaAsync">
-                            <i class="bi bi-receipt"></i> Cobranza
-                        </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem; white-space: nowrap;" @onclick="AplicarPlantillaTareaAsignadaAsync">
-                            <i class="bi bi-person-check"></i> Tarea asignada
-                        </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; margin-bottom: .25rem; white-space: nowrap;" @onclick="AplicarPlantillaTareaFinalizadaAsync">
-                            <i class="bi bi-check2-circle"></i> Tarea finalizada
-                        </button>
-                        <button type="button" class="btn btn--ghost" style="width: 100%; justify-content: flex-start; white-space: nowrap;" @onclick="AplicarPlantillaGuardiaAsync">
-                            <i class="bi bi-calendar-week"></i> Guardia
-                        </button>
-                    </div>
-                }
-            </div>
-        </div>
-    </div>
-
     @if (_loadError is not null)
     {
         <div class="panel-card empty-state">
@@ -68,148 +28,100 @@
             }
         </div>
     }
-    else
+    else if (_mode is PageMode.Create or PageMode.Edit)
     {
-        <section class="panel-card templates-filters" hidden>
-            <div class="conversations-filters__fields">
-                <div class="field">
-                    <label for="tpl-whatsapp">WhatsApp</label>
-                    <select id="tpl-whatsapp" value="@_filters.IdNumeroWhatsApp" @onchange="OnWhatsAppNumeroChangedAsync" disabled="@_loading">
-                        @foreach (var numero in TemplateWhatsAppNumeros)
-                        {
-                            <option value="@numero.IdNumero">@GetWhatsAppNumeroLabel(numero)</option>
-                        }
-                    </select>
+        <section class="panel-card templates-form-shell" aria-label="@(_mode == PageMode.Create ? "Nueva plantilla" : "Editar plantilla")">
+            <header class="templates-form-shell__header">
+                <div>
+                    <h2 class="panel-card__title">@(_mode == PageMode.Create ? "Nueva plantilla" : "Editar plantilla")</h2>
+                    <p class="panel-card__subtitle">Idioma fijo: español de Argentina. El teléfono se toma siempre desde la conversación seleccionada al enviar.</p>
                 </div>
-                <div class="field">
-                    <label for="tpl-search">Buscar</label>
-                    <input id="tpl-search" type="search" placeholder="Nombre, identificador Meta o texto..."
-                           @bind="_filters.Search" @bind:event="oninput" @onkeydown="HandleSearchEnter" />
-                </div>
-                <div class="field">
-                    <label for="tpl-state">Estado Meta</label>
-                    <select id="tpl-state" @bind="_filters.EstadoMeta">
-                        <option value="">Todos</option>
-                        <option value="DRAFT">Borrador</option>
-                        <option value="PENDING">Pendiente</option>
-                        <option value="APPROVED">Aprobada</option>
-                        <option value="REJECTED">Rechazada</option>
-                        <option value="PAUSED">Pausada</option>
-                        <option value="DISABLED">Deshabilitada</option>
-                    </select>
-                </div>
-                <label class="field templates-toggle">
-                    <span>Incluir inactivas</span>
-                    <input type="checkbox" @bind="_filters.IncluirInactivas" />
-                </label>
-                <button type="button" class="btn btn--primary" @onclick="() => LoadTemplatesAsync()" disabled="@_loading">
-                    <i class="bi bi-funnel"></i> Aplicar
-                </button>
-                <button type="button"
-                        class="btn btn--ghost conversations-filter-clear"
-                        title="Limpiar filtros"
-                        aria-label="Limpiar filtros"
-                        @onclick="ClearTemplateFiltersAsync"
-                        disabled="@_loading">
-                    <i class="bi bi-eraser"></i>
-                </button>
-            </div>
-        </section>
+                <AlfaTag Tone="@GetMetaStatusTone(_formEstadoMeta)">@GetMetaStatusLabel(_formEstadoMeta)</AlfaTag>
+            </header>
 
-        <div class="conversations-layout templates-layout">
-            <aside class="panel-card conversations-list">
-                <div class="conversations-list__header">
-                    <div>
-                        <h3 class="panel-card__title">Plantillas</h3>
-                        <p class="panel-card__subtitle">@_templates.Count plantilla(s)</p>
-                    </div>
+            @if (_error is not null)
+            {
+                <div class="conversations-inline conversations-inline--error" style="display: flex; align-items: center; gap: .65rem;">
+                    <span style="flex: 1;">@_error</span>
+                    @if (!string.IsNullOrWhiteSpace(_errorDetail))
+                    {
+                        <button type="button"
+                                class="btn btn--ghost"
+                                title="Ver detalle del error"
+                                aria-label="Ver detalle del error"
+                                style="width: 2.1rem; height: 2.1rem; padding: 0; border-radius: 999px;"
+                                @onclick="ToggleErrorDetail">
+                            <i class="bi bi-info-circle"></i>
+                        </button>
+                    }
                 </div>
-
-                @if (_loading)
+                @if (_showErrorDetail && !string.IsNullOrWhiteSpace(_errorDetail))
                 {
-                    <div class="loading">Cargando plantillas...</div>
-                }
-                else if (_templates.Count == 0)
-                {
-                    <div class="conversations-empty">No hay plantillas para este WhatsApp.</div>
-                }
-                else
-                {
-                    <div class="conversations-list__items">
-                        @foreach (var item in _templates)
-                        {
-                            <button type="button"
-                                    class="conversation-row @(item.IdPlantilla == _selectedId ? "is-selected" : string.Empty)"
-                                    @onclick="() => SelectTemplateAsync(item.IdPlantilla)">
-                                <div class="conversation-row__top">
-                                    <span class="conversation-row__name">@item.NombreVisible</span>
-                                    <span class="conversation-row__date">@FormatDate(item.FechaHoraGrabacion)</span>
-                                </div>
-                                <div class="conversation-row__meta">
-                                    <span>@item.NombreMeta</span>
-                                    <span>• @item.Idioma</span>
-                                </div>
-                                <div class="conversation-row__badges">
-                                    <span class="conversation-badge conversation-badge--state">@GetMetaStatusLabel(item.EstadoMeta)</span>
-                                    <span class="conversation-badge">@GetCategoryLabel(item.Categoria)</span>
-                                </div>
-                                <p class="conversation-row__summary">@item.CuerpoTexto</p>
-                            </button>
-                        }
+                    <div class="context-card" style="border-color: rgba(56, 189, 248, .38); background: rgba(8, 47, 73, .35);">
+                        <span class="context-card__label">Detalle para resolverlo</span>
+                        <pre style="white-space: pre-wrap; margin: .35rem 0 0; font-family: inherit; line-height: 1.45;">@_errorDetail</pre>
                     </div>
                 }
-            </aside>
+            }
+            @if (_feedback is not null)
+            {
+                <div class="conversations-inline conversations-inline--ok">@_feedback</div>
+            }
+            @if (HasBeenSubmittedToMeta)
+            {
+                <div class="conversations-inline conversations-inline--ok">
+                    Esta plantilla ya fue enviada a Meta. Sincronizá para consultar su estado actual.
+                </div>
+            }
 
-            <section class="panel-card conversations-chat templates-editor">
-                <header class="conversations-chat__header">
-                    <div>
-                        <h3 class="panel-card__title">@(_selectedId > 0 ? "Editar plantilla" : "Nueva plantilla")</h3>
-                        <p class="panel-card__subtitle">Idioma fijo: español de Argentina. El teléfono se toma siempre desde la conversación seleccionada al enviar.</p>
-                    </div>
-                    <div class="conversations-chat__chips">
-                        <span class="conversation-badge conversation-badge--state">@GetMetaStatusLabel(_formEstadoMeta)</span>
-                    </div>
-                </header>
-
+            <div class="templates-form-shell__body">
                 <div class="conversations-composer templates-form">
-                    <div class="field">
-                        <label for="tpl-name">Nombre visible</label>
-                        <input id="tpl-name" @bind="_form.NombreVisible" placeholder="Ej: Retomar conversación" />
-                    </div>
-                    <div class="field">
-                        <label for="tpl-meta-name">Nombre Meta</label>
-                        <input id="tpl-meta-name" @bind="_form.NombreMeta" placeholder="retomar_conversacion" />
-                    </div>
-                    <div class="field">
-                        <label for="tpl-category">Categoría</label>
-                        <select id="tpl-category" @bind="_form.Categoria">
-                            <option value="@ConversacionPlantillaCategorias.Marketing">Marketing</option>
-                            <option value="@ConversacionPlantillaCategorias.Utility">Utilidad</option>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label for="tpl-header">Encabezado de texto</label>
-                        <input id="tpl-header" maxlength="60" @bind="_form.EncabezadoTexto" placeholder="Opcional" />
-                    </div>
-                    <div class="field">
-                        <label for="tpl-body">Cuerpo</label>
-                        <textarea id="tpl-body" rows="5" @bind="_form.CuerpoTexto"
+                    <AlfaInput Label="Nombre visible"
+                               Required="true"
+                               Value="@_form.NombreVisible"
+                               ValueChanged="@(value => _form.NombreVisible = value ?? string.Empty)"
+                               Placeholder="Ej: Retomar conversación"
+                               ErrorText="@NombreVisibleError"
+                               Disabled="@_busy" />
+                    <AlfaInput Label="Nombre Meta"
+                               Required="true"
+                               Value="@_form.NombreMeta"
+                               ValueChanged="@(value => _form.NombreMeta = value ?? string.Empty)"
+                               Placeholder="retomar_conversacion"
+                               ErrorText="@NombreMetaError"
+                               Disabled="@_busy" />
+                    <AlfaSelect Label="Categoría"
+                                Value="@_form.Categoria"
+                                ValueChanged="@(value => _form.Categoria = value ?? ConversacionPlantillaCategorias.Marketing)"
+                                Options="@FormCategoryOptions"
+                                Disabled="@_busy" />
+                    <AlfaInput Label="Encabezado de texto"
+                               MaxLength="60"
+                               Value="@_form.EncabezadoTexto"
+                               ValueChanged="@(value => _form.EncabezadoTexto = value ?? string.Empty)"
+                               Placeholder="Opcional"
+                               Disabled="@_busy" />
+                    <div class="alfa-field @(IsBodyTooLong ? "has-error" : string.Empty)">
+                        <label class="alfa-field__label" for="tpl-body">Cuerpo<span aria-hidden="true">*</span></label>
+                        <textarea id="tpl-body" class="alfa-textarea__control" rows="6" disabled="@_busy" @bind="_form.CuerpoTexto"
                                   placeholder="Hola {{1}}, te escribimos para continuar con la conversación pendiente."></textarea>
                         <div class="templates-body-limit @(IsBodyTooLong ? "is-danger" : string.Empty)">
                             <span>@BodyLength / @MetaBodyMaxLength caracteres</span>
-                            @if (IsBodyTooLong)
-                            {
-                                <strong>Meta permite hasta @MetaBodyMaxLength caracteres en el cuerpo.</strong>
-                            }
                         </div>
+                        @if (CuerpoTextoError is not null)
+                        {
+                            <div class="alfa-field__message alfa-field__message--error">@CuerpoTextoError</div>
+                        }
                     </div>
-                    <div class="field">
-                        <label for="tpl-footer">Pie de página</label>
-                        <input id="tpl-footer" maxlength="60" @bind="_form.PieTexto" placeholder="Opcional" />
-                    </div>
-                    <div class="field">
-                        <label for="tpl-examples">Ejemplos para variables</label>
-                        <textarea id="tpl-examples" rows="3" @bind="_examplesText"
+                    <AlfaInput Label="Pie de página"
+                               MaxLength="60"
+                               Value="@_form.PieTexto"
+                               ValueChanged="@(value => _form.PieTexto = value ?? string.Empty)"
+                               Placeholder="Opcional"
+                               Disabled="@_busy" />
+                    <div class="alfa-field">
+                        <label class="alfa-field__label" for="tpl-examples">Ejemplos para variables</label>
+                        <textarea id="tpl-examples" class="alfa-textarea__control" rows="3" disabled="@_busy" @bind="_examplesText"
                                   placeholder="Un valor por línea. Ej: Evelyn"></textarea>
                     </div>
                     <div class="templates-variable-guide">
@@ -226,103 +138,233 @@
                             <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{4}}")'>@("{{4}} Fecha y hora")</button>
                         }
                     </div>
-                    <label class="field">
-                        <span>Plantilla activa</span>
-                        <input type="checkbox" @bind="_form.Activa" />
-                    </label>
-                    <div class="conversations-composer__actions">
-                        <button type="button" class="btn btn--primary" @onclick="SaveAsync" disabled="@(!CanSaveDraft)">
-                            <i class="bi bi-save-fill"></i> Guardar borrador
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="SubmitAsync" disabled="@(!CanSubmitForApproval)">
-                            <i class="bi bi-cloud-arrow-up-fill"></i> Enviar a aprobación
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="SyncAsync" disabled="@(_busy || _selectedId <= 0)">
-                            <i class="bi bi-arrow-repeat"></i> Sincronizar
-                        </button>
-                        <button type="button" class="btn btn--ghost" @onclick="ArchiveAsync" disabled="@(_busy || _selectedId <= 0 || !_form.Activa)">
-                            <i class="bi bi-archive"></i> @(_confirmArchive ? "Confirmar archivo" : "Archivar")
-                        </button>
+                    <AlfaCheckbox Value="@_form.Activa" ValueChanged="@(value => _form.Activa = value is true)" Disabled="@_busy">Plantilla activa</AlfaCheckbox>
+                </div>
+
+                <aside class="panel-card conversations-context templates-preview">
+                    <div class="conversations-context__section">
+                        <h3 class="panel-card__title">Vista previa</h3>
+                        <p class="panel-card__subtitle">Así se verá el cuerpo principal con ejemplos.</p>
                     </div>
-                    @if (HasBeenSubmittedToMeta)
-                    {
-                        <div class="conversations-inline conversations-inline--ok">
-                            Esta plantilla ya fue enviada a Meta. Sincronizá para consultar su estado actual.
-                        </div>
-                    }
-
-                    @if (_feedback is not null)
-                    {
-                        <div class="conversations-inline conversations-inline--ok">@_feedback</div>
-                    }
-                    @if (_error is not null)
-                    {
-                        <div class="conversations-inline conversations-inline--error" style="display: flex; align-items: center; gap: .65rem;">
-                            <span style="flex: 1;">@_error</span>
-                            @if (!string.IsNullOrWhiteSpace(_errorDetail))
-                            {
-                                <button type="button"
-                                        class="btn btn--ghost"
-                                        title="Ver detalle del error"
-                                        aria-label="Ver detalle del error"
-                                        style="width: 2.1rem; height: 2.1rem; padding: 0; border-radius: 999px;"
-                                        @onclick="ToggleErrorDetail">
-                                    <i class="bi bi-info-circle"></i>
-                                </button>
-                            }
-                        </div>
-                        @if (_showErrorDetail && !string.IsNullOrWhiteSpace(_errorDetail))
+                    <article class="message-card message-card--outgoing">
+                        @if (!string.IsNullOrWhiteSpace(_form.EncabezadoTexto))
                         {
-                            <div class="context-card" style="border-color: rgba(56, 189, 248, .38); background: rgba(8, 47, 73, .35);">
-                                <span class="context-card__label">Detalle para resolverlo</span>
-                                <pre style="white-space: pre-wrap; margin: .35rem 0 0; font-family: inherit; line-height: 1.45;">@_errorDetail</pre>
-                            </div>
+                            <strong>@_form.EncabezadoTexto</strong>
                         }
-                    }
+                        <p class="message-card__text">@PreviewBody</p>
+                        @if (!string.IsNullOrWhiteSpace(_form.PieTexto))
+                        {
+                            <div class="message-card__footer">@_form.PieTexto</div>
+                        }
+                    </article>
+                    <div class="context-card">
+                        <span class="context-card__label">Estado</span>
+                        <strong>@GetMetaStatusLabel(_formEstadoMeta)</strong>
+                        <span class="context-card__muted">@DisplayOrFallback(_form.MetaTemplateId)</span>
+                        @if (!string.IsNullOrWhiteSpace(_form.MetaRechazoMotivo))
+                        {
+                            <span class="context-card__muted">@_form.MetaRechazoMotivo</span>
+                        }
+                    </div>
+                </aside>
+            </div>
+        </section>
+    }
+    else
+    {
+        <div class="templates-layout templates-layout--alfadesign">
+            <aside class="panel-card conversations-list templates-list">
+                <div class="conversations-list__header">
+                    <div>
+                        <h3 class="panel-card__title">Plantillas</h3>
+                    </div>
                 </div>
-            </section>
 
-            <aside class="panel-card conversations-context templates-preview">
-                <div class="conversations-context__section">
-                    <h3 class="panel-card__title">Vista previa</h3>
-                    <p class="panel-card__subtitle">Así se verá el cuerpo principal con ejemplos.</p>
-                </div>
-                <article class="message-card message-card--outgoing">
-                    @if (!string.IsNullOrWhiteSpace(_form.EncabezadoTexto))
-                    {
-                        <strong>@_form.EncabezadoTexto</strong>
-                    }
-                    <p class="message-card__text">@PreviewBody</p>
-                    @if (!string.IsNullOrWhiteSpace(_form.PieTexto))
-                    {
-                        <div class="message-card__footer">@_form.PieTexto</div>
-                    }
-                </article>
-                <div class="context-card">
-                    <span class="context-card__label">Estado</span>
-                    <strong>@GetMetaStatusLabel(_formEstadoMeta)</strong>
-                    <span class="context-card__muted">@DisplayOrFallback(_form.MetaTemplateId)</span>
-                    @if (!string.IsNullOrWhiteSpace(_form.MetaRechazoMotivo))
-                    {
-                        <span class="context-card__muted">@_form.MetaRechazoMotivo</span>
-                    }
-                </div>
+                @if (_loading)
+                {
+                    <div class="loading">Cargando plantillas...</div>
+                }
+                else if (_templates.Count == 0)
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Todavía no hay plantillas sincronizadas en AlfaCore."
+                                    Message="Sincronizá el catálogo desde Meta o creá una plantilla nueva."
+                                    ActionLabel="Sincronizar con Meta"
+                                    ActionIcon="bi bi-arrow-repeat"
+                                    OnAction="_ => SyncCatalogAsync()" />
+                    <div class="templates-empty-secondary">
+                        <AlfaButton Variant="AlfaButtonVariant.Ghost" Size="AlfaSize.Sm" Icon="bi bi-plus-circle" OnClick="_ => EnterCreateModeAsync()">Nueva plantilla</AlfaButton>
+                    </div>
+                }
+                else
+                {
+                    <div class="conversations-list__items">
+                        @foreach (var item in _templates)
+                        {
+                            <button type="button"
+                                    class="conversation-row @(item.IdPlantilla == _selectedId ? "is-selected" : string.Empty)"
+                                    @onclick="() => SelectTemplateAsync(item.IdPlantilla)">
+                                <div class="conversation-row__top">
+                                    <span class="conversation-row__name">@item.NombreVisible</span>
+                                    <span class="conversation-row__date">@FormatDate(item.FechaHoraModificacion ?? item.FechaHoraGrabacion)</span>
+                                </div>
+                                <div class="conversation-row__meta">
+                                    <span>@item.NombreMeta</span>
+                                    <span>• @item.Idioma</span>
+                                </div>
+                                <div class="conversation-row__badges">
+                                    <AlfaTag Tone="@GetMetaStatusTone(item.EstadoMeta)">@GetMetaStatusLabel(item.EstadoMeta)</AlfaTag>
+                                    <AlfaTag>@GetCategoryLabel(item.Categoria)</AlfaTag>
+                                    <AlfaTag Tone="AlfaTagTone.Neutral">@(item.EsMetaRemota ? "Meta" : "Local")</AlfaTag>
+                                </div>
+                                <p class="conversation-row__summary">@item.CuerpoTexto</p>
+                            </button>
+                        }
+                    </div>
+
+                    <footer class="alfa-data-view-footer">
+                        <span class="alfa-data-view-footer__summary">@BuildListSummary()</span>
+                    </footer>
+                }
             </aside>
+
+            <section class="templates-main">
+                @if (_busy && _selected is null)
+                {
+                    <AlfaEmptyState Title="Cargando plantilla" Message="Estamos consultando la ficha en la base activa." />
+                }
+                else if (_selected is null)
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
+                                    Title="Seleccioná una plantilla"
+                                    Message="Elegí una plantilla del listado para ver su ficha, o creá una plantilla nueva."
+                                    ActionLabel="Nueva plantilla"
+                                    ActionIcon="bi bi-plus-circle"
+                                    OnAction="_ => EnterCreateModeAsync()" />
+                }
+                else
+                {
+                    var selected = _selected;
+                    <article class="panel-card templates-record">
+                        <header class="templates-record__header">
+                            <div>
+                                <h2>@selected.NombreVisible</h2>
+                                <p class="panel-card__subtitle">@selected.NombreMeta</p>
+                            </div>
+                            <div class="templates-record__tags">
+                                <AlfaTag Tone="@GetMetaStatusTone(selected.EstadoMeta)">@GetMetaStatusLabel(selected.EstadoMeta)</AlfaTag>
+                                <AlfaTag>@GetCategoryLabel(selected.Categoria)</AlfaTag>
+                                <AlfaTag Tone="@(selected.Activa ? AlfaTagTone.Success : AlfaTagTone.Neutral)">@(selected.Activa ? "Activa" : "Archivada")</AlfaTag>
+                                <AlfaTag Tone="AlfaTagTone.Neutral">@(selected.EsMetaRemota ? "Origen: Meta" : "Origen: Local")</AlfaTag>
+                            </div>
+                        </header>
+
+                        @if (_feedback is not null)
+                        {
+                            <div class="conversations-inline conversations-inline--ok">@_feedback</div>
+                        }
+                        @if (_error is not null)
+                        {
+                            <div class="conversations-inline conversations-inline--error" style="display: flex; align-items: center; gap: .65rem;">
+                                <span style="flex: 1;">@_error</span>
+                                @if (!string.IsNullOrWhiteSpace(_errorDetail))
+                                {
+                                    <button type="button"
+                                            class="btn btn--ghost"
+                                            title="Ver detalle del error"
+                                            aria-label="Ver detalle del error"
+                                            style="width: 2.1rem; height: 2.1rem; padding: 0; border-radius: 999px;"
+                                            @onclick="ToggleErrorDetail">
+                                        <i class="bi bi-info-circle"></i>
+                                    </button>
+                                }
+                            </div>
+                            @if (_showErrorDetail && !string.IsNullOrWhiteSpace(_errorDetail))
+                            {
+                                <div class="context-card" style="border-color: rgba(56, 189, 248, .38); background: rgba(8, 47, 73, .35);">
+                                    <span class="context-card__label">Detalle para resolverlo</span>
+                                    <pre style="white-space: pre-wrap; margin: .35rem 0 0; font-family: inherit; line-height: 1.45;">@_errorDetail</pre>
+                                </div>
+                            }
+                        }
+                        @if (!string.IsNullOrWhiteSpace(selected.MetaRechazoMotivo))
+                        {
+                            <div class="conversations-inline conversations-inline--error">Meta: @selected.MetaRechazoMotivo</div>
+                        }
+
+                        <div class="templates-record__layout">
+                            <div class="templates-record__fields">
+                                @ReadField("Nombre Meta", selected.NombreMeta)
+                                @ReadField("Identificador Meta", DisplayOrFallback(selected.MetaTemplateId))
+                                @ReadField("Idioma", selected.Idioma)
+                                @ReadField("Categoría", GetCategoryLabel(selected.Categoria))
+                                @ReadField("Encabezado (HEADER)", DisplayOrFallback(selected.EncabezadoTexto))
+                                @ReadLongField("Cuerpo (BODY)", DisplayOrFallback(selected.CuerpoTexto))
+                                @ReadField("Pie (FOOTER)", DisplayOrFallback(selected.PieTexto))
+                                @ReadField("Botones (BUTTONS)", FormatButtons(selected.ComponentesMetaJson))
+                                @ReadField("Variables / ejemplos", FormatExamplesSummary(selected.EjemplosVariablesJson))
+                                @ReadField("Origen", selected.EsMetaRemota ? "Sincronizada desde Meta" : "Creada en AlfaCore")
+                                @ReadField("Última sincronización", FormatSync(selected.FechaHoraSincronizacion))
+                                @ReadField("Última modificación", FormatDate(selected.FechaHoraModificacion ?? selected.FechaHoraGrabacion))
+                            </div>
+
+                            <aside class="panel-card conversations-context templates-preview">
+                                <div class="conversations-context__section">
+                                    <h3 class="panel-card__title">Vista previa</h3>
+                                    <p class="panel-card__subtitle">Cuerpo con los primeros ejemplos disponibles.</p>
+                                </div>
+                                <article class="message-card message-card--outgoing">
+                                    @if (!string.IsNullOrWhiteSpace(selected.EncabezadoTexto))
+                                    {
+                                        <strong>@selected.EncabezadoTexto</strong>
+                                    }
+                                    <p class="message-card__text">@RenderPreviewFor(selected)</p>
+                                    @if (!string.IsNullOrWhiteSpace(selected.PieTexto))
+                                    {
+                                        <div class="message-card__footer">@selected.PieTexto</div>
+                                    }
+                                </article>
+                            </aside>
+                        </div>
+                    </article>
+                }
+            </section>
         </div>
     }
+
+    <AlfaConfirmDialog Open="@_showArchiveConfirm"
+                        Title="Archivar plantilla"
+                        Message="@($"“{_selected?.NombreVisible}” dejará de estar activa y no se ofrecerá para enviar en conversaciones.")"
+                        ConfirmLabel="Archivar"
+                        CancelLabel="Cancelar"
+                        LoadingLabel="Archivando..."
+                        Loading="@_busy"
+                        OnConfirm="ArchiveAsync"
+                        OnCancel="CloseArchiveConfirm" />
 </section>
 
 @code {
+    private enum PageMode
+    {
+        Browse,
+        Create,
+        Edit
+    }
+
     private ConversacionPlantillaFilters _filters = new();
     private IReadOnlyList<ConversacionWhatsAppNumeroDto> _whatsappNumeros = [];
     private List<ConversacionPlantillaDto> _allTemplates = [];
     private List<ConversacionPlantillaDto> _templates = [];
     private ConversacionPlantillaDto _form = NewForm();
+    private ConversacionPlantillaDto? _selected;
+    private PageMode _mode = PageMode.Browse;
     private long _selectedId;
     private bool _loading;
     private bool _busy;
     private bool _syncingMeta;
     private bool _showTemplatesSearchPanel;
+    private bool _attemptedSave;
+    private bool _showArchiveConfirm;
     private string _examplesText = string.Empty;
     private string _formEstadoMeta = "DRAFT";
     private string? _loadError;
@@ -330,10 +372,7 @@
     private string? _error;
     private string? _errorDetail;
     private bool _showErrorDetail;
-    private bool _mostrarMenuCrear;
-    private bool _confirmArchive;
     private string _crearSeleccion = CrearOpciones.Crear;
-    private int _crearPulseVersion;
     private int _loadGeneration;
     private bool _syncingRouteTenant;
     private readonly CancellationTokenSource _lifetimeCts = new();
@@ -451,34 +490,49 @@
     private bool EsFormularioFacturaMantenimiento => EsPlantillaFacturaMantenimiento(_form);
     private bool EsFormularioTareas => EsPlantillaTareas(_form);
     private bool EsFormularioGuardia => EsPlantillaGuardia(_form);
-    private string CrearButtonLabel => _crearSeleccion;
-    private string CrearButtonIcon => _crearSeleccion switch
-    {
-        CrearOpciones.Plantilla => "bi-file-text",
-        CrearOpciones.Factura => "bi-file-earmark-text",
-        CrearOpciones.Cobranza => "bi-receipt",
-        CrearOpciones.TareaAsignada => "bi-person-check",
-        CrearOpciones.TareaFinalizada => "bi-check2-circle",
-        CrearOpciones.Guardia => "bi-calendar-week",
-        _ => "bi-plus-circle-fill"
-    };
-    private string CrearButtonStyle
-        => $"transition: transform .18s ease, box-shadow .18s ease, background .18s ease; transform: scale({(_crearPulseVersion % 2 == 0 ? "1" : "1.035")}); box-shadow: {(_crearPulseVersion % 2 == 0 ? "0 0 0 0 rgba(45, 212, 191, 0)" : "0 0 0 3px rgba(45, 212, 191, .28)")};";
+
     private bool CanSaveDraft
         => !_busy
            && !string.IsNullOrWhiteSpace(_form.NombreVisible)
            && !string.IsNullOrWhiteSpace(_form.NombreMeta)
            && !string.IsNullOrWhiteSpace(_form.CuerpoTexto);
 
-    private bool HasBeenSubmittedToMeta
-        => !string.IsNullOrWhiteSpace(_form.MetaTemplateId)
-           || IsSubmittedMetaState(_formEstadoMeta);
+    private bool HasBeenSubmittedToMeta => EntityHasBeenSubmittedToMeta(_form);
 
     private bool CanSubmitForApproval
         => !_busy
            && _selectedId > 0
            && !IsBodyTooLong
            && !HasBeenSubmittedToMeta;
+
+    private bool CanEditSelected
+        => _selected is not null && !EntityHasBeenSubmittedToMeta(_selected);
+
+    private string? NombreVisibleError
+        => _attemptedSave && string.IsNullOrWhiteSpace(_form.NombreVisible) ? "El nombre visible es obligatorio." : null;
+
+    private string? NombreMetaError
+        => _attemptedSave && string.IsNullOrWhiteSpace(_form.NombreMeta) ? "El nombre Meta es obligatorio." : null;
+
+    private string? CuerpoTextoError
+    {
+        get
+        {
+            if (!_attemptedSave)
+                return null;
+            if (string.IsNullOrWhiteSpace(_form.CuerpoTexto))
+                return "El cuerpo de la plantilla es obligatorio.";
+            if (IsBodyTooLong)
+                return $"Meta permite hasta {MetaBodyMaxLength} caracteres en el cuerpo.";
+            return null;
+        }
+    }
+
+    private static readonly IReadOnlyList<AlfaSelectOption> FormCategoryOptions =
+    [
+        new(ConversacionPlantillaCategorias.Marketing, "Marketing"),
+        new(ConversacionPlantillaCategorias.Utility, "Utilidad")
+    ];
 
     protected override void OnInitialized()
     {
@@ -636,14 +690,17 @@
         _templates = [];
         _filters = new ConversacionPlantillaFilters();
         _selectedId = 0;
+        _selected = null;
         _form = NewForm();
+        _mode = PageMode.Browse;
         _examplesText = string.Empty;
         _formEstadoMeta = "DRAFT";
         _feedback = null;
         _error = null;
         _errorDetail = null;
         _showErrorDetail = false;
-        _confirmArchive = false;
+        _showArchiveConfirm = false;
+        _attemptedSave = false;
     }
 
     private void OnTenantContextChanged()
@@ -692,7 +749,8 @@
         _filters.IdNumeroWhatsApp = idNumero;
         _filters.ExpectedBaseId = CurrentExpectedBaseIdOrNull();
         _selectedId = 0;
-        NuevaPlantilla();
+        _selected = null;
+        _mode = PageMode.Browse;
         _allTemplates = [];
         _templates = [];
         await LoadTemplatesAsync(generation);
@@ -819,31 +877,73 @@
 
     private void UpdatePageHeader()
     {
-        var actions = new List<PageHeaderAction>
+        var actions = _mode switch
         {
-            new() { Key = "nuevo", Label = "Nueva plantilla", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy || _loading, OnClick = () => { CrearPlantillaBase(); UpdatePageHeader(); return Task.CompletedTask; } },
-            new() { Key = "sincronizar-meta", Label = _syncingMeta ? "Sincronizando..." : "Sincronizar con Meta", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _loading || _busy || _syncingMeta || _filters.IdNumeroWhatsApp is not > 0, Busy = _syncingMeta, OnClick = SyncCatalogAsync },
-            new() { Key = "factura", Label = "Factura", Icon = "bi-file-earmark-text", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaFacturaMantenimientoAsync },
-            new() { Key = "cobranza", Label = "Cobranza", Icon = "bi-receipt", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaCobranzaAsync },
-            new() { Key = "tarea-asignada", Label = "Tarea asignada", Icon = "bi-person-check", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaTareaAsignadaAsync },
-            new() { Key = "tarea-finalizada", Label = "Tarea finalizada", Icon = "bi-check2-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaTareaFinalizadaAsync },
-            new() { Key = "guardia", Label = "Guardia", Icon = "bi-calendar-week", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaGuardiaAsync },
-            new() { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loading, OnClick = () => LoadTemplatesAsync() }
+            PageMode.Create => BuildCreateActions(),
+            PageMode.Edit => BuildEditActions(),
+            _ => BuildBrowseActions()
         };
 
         PageHeader.Set(new PageHeaderConfig
         {
             Title = "Plantillas",
             Breadcrumb = ["Conversaciones", "Plantillas"],
-            State = _loading || _syncingMeta ? PageHeaderState.Loading : PageHeaderState.List,
+            State = _mode switch
+            {
+                PageMode.Create => PageHeaderState.Creating,
+                PageMode.Edit => PageHeaderState.Editing,
+                _ => _loading || _syncingMeta ? PageHeaderState.Loading : PageHeaderState.List
+            },
             ShellMode = PageHeaderShellMode.AlfaDesignPilot,
             TopNavigationItems = BuildTopNavigationItems(),
-            Search = new PageHeaderSearchConfig(),
-            SearchContent = RenderTemplatesSmartSearch(),
+            Search = _mode == PageMode.Browse ? new PageHeaderSearchConfig() : null,
+            SearchContent = _mode == PageMode.Browse ? RenderTemplatesSmartSearch() : null,
             Actions = actions
         });
         _ = InvokeAsync(StateHasChanged);
     }
+
+    private List<PageHeaderAction> BuildBrowseActions()
+    {
+        var actions = new List<PageHeaderAction>
+        {
+            new() { Key = "nuevo", Label = "Nueva plantilla", Icon = "bi-plus-circle", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy || _loading, OnClick = () => EnterCreateModeAsync() },
+            new() { Key = "sincronizar-meta", Label = _syncingMeta ? "Sincronizando..." : "Sincronizar con Meta", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _loading || _busy || _syncingMeta || _filters.IdNumeroWhatsApp is not > 0, Busy = _syncingMeta, OnClick = SyncCatalogAsync }
+        };
+
+        if (_selected is not null)
+        {
+            if (CanEditSelected)
+                actions.Add(new() { Key = "editar", Label = "Editar", Icon = "bi-pencil", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = () => EnterEditModeAsync() });
+            actions.Add(new() { Key = "sincronizar-item", Label = "Sincronizar estado", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Normal, Disabled = _busy, OnClick = SyncAsync });
+            if (_selected.Activa)
+                actions.Add(new() { Key = "archivar", Label = "Archivar", Icon = "bi-archive", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Normal, Disabled = _busy, OnClick = () => { OpenArchiveConfirm(); return Task.CompletedTask; } });
+        }
+
+        actions.Add(new() { Key = "factura", Label = "Factura", Icon = "bi-file-earmark-text", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaFacturaMantenimientoAsync });
+        actions.Add(new() { Key = "cobranza", Label = "Cobranza", Icon = "bi-receipt", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaCobranzaAsync });
+        actions.Add(new() { Key = "tarea-asignada", Label = "Tarea asignada", Icon = "bi-person-check", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaTareaAsignadaAsync });
+        actions.Add(new() { Key = "tarea-finalizada", Label = "Tarea finalizada", Icon = "bi-check2-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaTareaFinalizadaAsync });
+        actions.Add(new() { Key = "guardia", Label = "Guardia", Icon = "bi-calendar-week", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaGuardiaAsync });
+        actions.Add(new() { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loading, OnClick = () => LoadTemplatesAsync() });
+
+        return actions;
+    }
+
+    private List<PageHeaderAction> BuildCreateActions()
+        =>
+        [
+            new() { Key = "guardar-borrador", Label = "Guardar borrador", Icon = "bi-save-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = SaveAsync },
+            new() { Key = "enviar-aprobacion", Label = "Enviar a aprobación", Icon = "bi-cloud-arrow-up-fill", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = SubmitAsync },
+            new() { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = () => { CancelForm(); return Task.CompletedTask; } }
+        ];
+
+    private List<PageHeaderAction> BuildEditActions()
+        =>
+        [
+            new() { Key = "guardar", Label = "Guardar", Icon = "bi-save-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = SaveAsync },
+            new() { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = () => { CancelForm(); return Task.CompletedTask; } }
+        ];
 
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
@@ -912,7 +1012,10 @@
             _allTemplates = loaded;
             AplicarFiltroModeloSeleccionado();
             if (_selectedId > 0 && _templates.All(x => x.IdPlantilla != _selectedId))
-                NuevaPlantilla();
+            {
+                _selectedId = 0;
+                _selected = null;
+            }
         }
         catch (Exception)
         {
@@ -926,38 +1029,51 @@
         }
     }
 
-    private async Task HandleCrearPrincipalAsync()
+    private async Task EnterCreateModeAsync()
     {
-        if (_crearSeleccion == CrearOpciones.Crear)
-        {
-            ToggleMenuCrear();
-            return;
-        }
-
-        _mostrarMenuCrear = false;
-        MarcarOpcionCrear(CrearOpciones.Crear);
+        _crearSeleccion = CrearOpciones.Crear;
         _filters = new ConversacionPlantillaFilters { ExpectedBaseId = CurrentExpectedBaseIdOrNull(), IdNumeroWhatsApp = _filters.IdNumeroWhatsApp };
         await LoadTemplatesAsync();
         NuevaPlantilla();
+        UpdatePageHeader();
     }
 
-    private void ToggleMenuCrear()
+    private async Task EnterEditModeAsync()
     {
-        _mostrarMenuCrear = !_mostrarMenuCrear;
+        if (_selected is null || !CanEditSelected)
+            return;
+
+        _form = CloneTemplate(_selected);
+        _examplesText = ExamplesToText(_selected.EjemplosVariablesJson);
+        _formEstadoMeta = string.IsNullOrWhiteSpace(_selected.EstadoMeta) ? "DRAFT" : _selected.EstadoMeta;
+        _attemptedSave = false;
+        _feedback = null;
+        ClearError();
+        _mode = PageMode.Edit;
+        UpdatePageHeader();
+        await Task.CompletedTask;
+    }
+
+    private void CancelForm()
+    {
+        _mode = PageMode.Browse;
+        _form = NewForm();
+        _examplesText = string.Empty;
+        _attemptedSave = false;
+        ClearError();
+        UpdatePageHeader();
     }
 
     private void CrearPlantillaBase()
     {
-        _mostrarMenuCrear = false;
-        MarcarOpcionCrear(CrearOpciones.Plantilla);
+        _crearSeleccion = CrearOpciones.Plantilla;
         AplicarFiltroModeloSeleccionado();
         NuevaPlantilla();
     }
 
     private async Task AplicarPlantillaFacturaMantenimientoAsync()
     {
-        _mostrarMenuCrear = false;
-        MarcarOpcionCrear(CrearOpciones.Factura);
+        _crearSeleccion = CrearOpciones.Factura;
         AplicarFiltroModeloSeleccionado();
         var model = NewFacturaMantenimientoForm();
         var existing = _allTemplates.FirstOrDefault(x =>
@@ -967,6 +1083,8 @@
         _selectedId = existing?.IdPlantilla ?? 0;
         model.IdPlantilla = _selectedId;
         _form = model;
+        _mode = PageMode.Create;
+        _attemptedSave = false;
         _examplesText = JoinMultilineValues(
         [
             "Cliente Alfa",
@@ -979,14 +1097,14 @@
             ? "Plantilla de factura de mantenimiento cargada sobre la existente. Revisa los datos y guarda los cambios."
             : "Plantilla de factura de mantenimiento cargada. Revisa los ejemplos y guarda el borrador.";
         ClearError();
+        UpdatePageHeader();
 
         await Task.CompletedTask;
     }
 
     private async Task AplicarPlantillaCobranzaAsync()
     {
-        _mostrarMenuCrear = false;
-        MarcarOpcionCrear(CrearOpciones.Cobranza);
+        _crearSeleccion = CrearOpciones.Cobranza;
         AplicarFiltroModeloSeleccionado();
         var model = NewCobranzaForm();
         var existing = _allTemplates.FirstOrDefault(x =>
@@ -996,6 +1114,8 @@
         _selectedId = existing?.IdPlantilla ?? 0;
         model.IdPlantilla = _selectedId;
         _form = model;
+        _mode = PageMode.Create;
+        _attemptedSave = false;
         _examplesText = JoinMultilineValues(
         [
             "Cliente Alfa",
@@ -1007,34 +1127,34 @@
             ? "Plantilla de cobranza cargada sobre la existente. Revisa los datos y guarda los cambios."
             : "Plantilla de cobranza cargada. Revisa los ejemplos y guarda el borrador.";
         ClearError();
+        UpdatePageHeader();
 
         await Task.CompletedTask;
     }
 
     private async Task AplicarPlantillaTareaAsignadaAsync()
     {
-        _mostrarMenuCrear = false;
-        MarcarOpcionCrear(CrearOpciones.TareaAsignada);
+        _crearSeleccion = CrearOpciones.TareaAsignada;
         AplicarFiltroModeloSeleccionado();
         AplicarModeloTarea(NewTareaAsignadaForm(), "Tarea asignada");
+        UpdatePageHeader();
 
         await Task.CompletedTask;
     }
 
     private async Task AplicarPlantillaTareaFinalizadaAsync()
     {
-        _mostrarMenuCrear = false;
-        MarcarOpcionCrear(CrearOpciones.TareaFinalizada);
+        _crearSeleccion = CrearOpciones.TareaFinalizada;
         AplicarFiltroModeloSeleccionado();
         AplicarModeloTarea(NewTareaFinalizadaForm(), "Tarea finalizada");
+        UpdatePageHeader();
 
         await Task.CompletedTask;
     }
 
     private async Task AplicarPlantillaGuardiaAsync()
     {
-        _mostrarMenuCrear = false;
-        MarcarOpcionCrear(CrearOpciones.Guardia);
+        _crearSeleccion = CrearOpciones.Guardia;
         AplicarFiltroModeloSeleccionado();
         var model = NewGuardiaForm();
         var existing = _allTemplates.FirstOrDefault(x =>
@@ -1044,6 +1164,8 @@
         _selectedId = existing?.IdPlantilla ?? 0;
         model.IdPlantilla = _selectedId;
         _form = model;
+        _mode = PageMode.Create;
+        _attemptedSave = false;
         _examplesText = JoinMultilineValues(
         [
             "Evelyn",
@@ -1055,6 +1177,7 @@
             ? "Plantilla de guardia cargada sobre la existente. Revisa los datos y guarda los cambios."
             : "Plantilla de guardia cargada. Revisa los ejemplos y guarda el borrador.";
         ClearError();
+        UpdatePageHeader();
 
         await Task.CompletedTask;
     }
@@ -1068,6 +1191,8 @@
         _selectedId = existing?.IdPlantilla ?? 0;
         model.IdPlantilla = _selectedId;
         _form = model;
+        _mode = PageMode.Create;
+        _attemptedSave = false;
         _examplesText = JoinMultilineValues(
         [
             "Actualizar servidor AlfaCore",
@@ -1200,7 +1325,10 @@
         {
             var result = await ConversacionesSvc.SyncTemplatesCatalogFromMetaAsync(_filters.IdNumeroWhatsApp, CurrentExpectedBaseIdOrNull(), _lifetimeCts.Token);
             _feedback = BuildSyncFeedback(result);
+            var keepSelection = _selectedId;
             await LoadTemplatesAsync();
+            if (keepSelection > 0 && _templates.Any(x => x.IdPlantilla == keepSelection))
+                await SelectTemplateAsync(keepSelection);
         }
         catch (Exception ex)
         {
@@ -1226,6 +1354,7 @@
         _busy = true;
         _feedback = null;
         ClearError();
+        _mode = PageMode.Browse;
         try
         {
             var item = await ConversacionesSvc.GetTemplateAsync(idPlantilla, expectedBaseId);
@@ -1239,10 +1368,7 @@
             }
 
             _selectedId = item.IdPlantilla;
-            _form = item;
-            _examplesText = ExamplesToText(item.EjemplosVariablesJson);
-            _formEstadoMeta = string.IsNullOrWhiteSpace(item.EstadoMeta) ? "DRAFT" : item.EstadoMeta;
-            _confirmArchive = false;
+            _selected = item;
         }
         catch (Exception)
         {
@@ -1253,25 +1379,20 @@
         {
             if (IsCurrentRequest(generation, expectedBaseId, selectedNumeroId))
                 _busy = false;
+            UpdatePageHeader();
         }
     }
 
     private void NuevaPlantilla()
     {
-        _mostrarMenuCrear = false;
         _selectedId = 0;
+        _mode = PageMode.Create;
         _form = NewForm();
         _examplesText = "Evelyn";
         _formEstadoMeta = "DRAFT";
         _feedback = null;
-        _confirmArchive = false;
+        _attemptedSave = false;
         ClearError();
-    }
-
-    private void MarcarOpcionCrear(string opcion)
-    {
-        _crearSeleccion = opcion;
-        _crearPulseVersion++;
     }
 
     private void InsertVariable(string variable)
@@ -1279,11 +1400,17 @@
         _form.CuerpoTexto = string.IsNullOrWhiteSpace(_form.CuerpoTexto)
             ? variable
             : $"{_form.CuerpoTexto}{Environment.NewLine}{variable}";
-        _confirmArchive = false;
     }
 
     private async Task SaveAsync()
     {
+        _attemptedSave = true;
+        if (!CanSaveDraft)
+        {
+            SetError("Completá nombre, nombre Meta y cuerpo antes de guardar.");
+            return;
+        }
+
         _busy = true;
         _feedback = null;
         ClearError();
@@ -1293,6 +1420,7 @@
 
             _feedback = "Plantilla guardada.";
             await LoadTemplatesAsync();
+            _mode = PageMode.Browse;
             await SelectTemplateAsync(id);
         }
         catch (Exception ex)
@@ -1302,13 +1430,13 @@
         finally
         {
             _busy = false;
+            UpdatePageHeader();
         }
     }
 
     private async Task SubmitAsync()
     {
-        if (_selectedId <= 0)
-            return;
+        _attemptedSave = true;
 
         _busy = true;
         _feedback = null;
@@ -1340,6 +1468,7 @@
 
             _feedback = "Plantilla enviada a aprobación de Meta.";
             await LoadTemplatesAsync();
+            _mode = PageMode.Browse;
             await SelectTemplateAsync(_selectedId);
         }
         catch (Exception ex)
@@ -1349,6 +1478,7 @@
         finally
         {
             _busy = false;
+            UpdatePageHeader();
         }
     }
 
@@ -1390,21 +1520,32 @@
         finally
         {
             _busy = false;
+            UpdatePageHeader();
         }
+    }
+
+    private void OpenArchiveConfirm()
+    {
+        if (_selected is null || !_selected.Activa)
+            return;
+
+        _showArchiveConfirm = true;
+        _feedback = null;
+        ClearError();
+    }
+
+    private void CloseArchiveConfirm()
+    {
+        if (_busy)
+            return;
+
+        _showArchiveConfirm = false;
     }
 
     private async Task ArchiveAsync()
     {
-        if (_selectedId <= 0 || !_form.Activa)
+        if (_selectedId <= 0 || _selected is null || !_selected.Activa)
             return;
-
-        if (!_confirmArchive)
-        {
-            _confirmArchive = true;
-            _feedback = "Volvé a presionar Confirmar archivo para ocultar esta plantilla.";
-            ClearError();
-            return;
-        }
 
         _busy = true;
         _feedback = null;
@@ -1413,13 +1554,16 @@
         {
             await ConversacionesSvc.ArchiveTemplateAsync(_selectedId, _filters.IdNumeroWhatsApp);
             _feedback = "Plantilla archivada.";
-            _confirmArchive = false;
+            _showArchiveConfirm = false;
             var archivedId = _selectedId;
             await LoadTemplatesAsync();
-            if (_filters.IncluirInactivas)
+            if (_filters.IncluirInactivas && _templates.Any(x => x.IdPlantilla == archivedId))
                 await SelectTemplateAsync(archivedId);
             else
-                NuevaPlantilla();
+            {
+                _selectedId = 0;
+                _selected = null;
+            }
         }
         catch (Exception ex)
         {
@@ -1428,6 +1572,7 @@
         finally
         {
             _busy = false;
+            UpdatePageHeader();
         }
     }
 
@@ -1668,6 +1813,31 @@
             CuerpoTexto = "Hola {{1}}, te escribimos para continuar con la conversación pendiente. Respondé este mensaje y seguimos desde donde quedamos."
         };
 
+    private static ConversacionPlantillaDto CloneTemplate(ConversacionPlantillaDto source)
+        => new()
+        {
+            IdPlantilla = source.IdPlantilla,
+            NombreVisible = source.NombreVisible,
+            NombreMeta = source.NombreMeta,
+            Categoria = source.Categoria,
+            Idioma = source.Idioma,
+            EncabezadoTexto = source.EncabezadoTexto,
+            CuerpoTexto = source.CuerpoTexto,
+            PieTexto = source.PieTexto,
+            EjemplosVariablesJson = source.EjemplosVariablesJson,
+            ComponentesMetaJson = source.ComponentesMetaJson,
+            EstadoLocal = source.EstadoLocal,
+            EstadoMeta = source.EstadoMeta,
+            MetaTemplateId = source.MetaTemplateId,
+            MetaRechazoMotivo = source.MetaRechazoMotivo,
+            WabaId = source.WabaId,
+            Activa = source.Activa,
+            FechaHoraGrabacion = source.FechaHoraGrabacion,
+            FechaHoraModificacion = source.FechaHoraModificacion,
+            FechaHoraSincronizacion = source.FechaHoraSincronizacion,
+            EsMetaRemota = source.EsMetaRemota
+        };
+
     private static ConversacionPlantillaDto NewFacturaMantenimientoForm()
         => new()
         {
@@ -1767,6 +1937,9 @@
         return result;
     }
 
+    private static string RenderPreviewFor(ConversacionPlantillaDto dto)
+        => RenderPreview(dto.CuerpoTexto, ParseExamples(ExamplesToText(dto.EjemplosVariablesJson)));
+
     private static List<string> ParseExamples(string value)
         => ParseMultilineValues(value);
 
@@ -1785,6 +1958,16 @@
             return json;
         }
     }
+
+    private static string FormatExamplesSummary(string json)
+    {
+        var text = ExamplesToText(json);
+        var values = ParseMultilineValues(text);
+        return values.Count == 0 ? "Sin ejemplos cargados" : string.Join(" · ", values.Select((v, i) => $"{{{{{i + 1}}}}} {Truncate(v, 40)}"));
+    }
+
+    private static string Truncate(string value, int maxLength)
+        => value.Length <= maxLength ? value : value[..maxLength].TrimEnd() + "…";
 
     private static List<string> ParseMultilineValues(string? value)
     {
@@ -1843,8 +2026,21 @@
             _ => DisplayOrFallback(value)
         };
 
+    private static AlfaTagTone GetMetaStatusTone(string value)
+        => (value ?? string.Empty).ToUpperInvariant() switch
+        {
+            "APPROVED" => AlfaTagTone.Success,
+            "PENDING" => AlfaTagTone.Warning,
+            "REJECTED" or "DISABLED" => AlfaTagTone.Danger,
+            "PAUSED" => AlfaTagTone.Warning,
+            _ => AlfaTagTone.Neutral
+        };
+
     private static bool IsSubmittedMetaState(string? estadoMeta)
         => estadoMeta?.Trim().ToUpperInvariant() is "PENDING" or "APPROVED" or "REJECTED" or "PAUSED" or "DISABLED";
+
+    private static bool EntityHasBeenSubmittedToMeta(ConversacionPlantillaDto dto)
+        => !string.IsNullOrWhiteSpace(dto.MetaTemplateId) || IsSubmittedMetaState(dto.EstadoMeta);
 
     private static string GetCategoryLabel(string value)
         => (value ?? string.Empty).Trim().ToUpperInvariant() switch
@@ -1859,7 +2055,7 @@
     {
         var parts = new List<string>
         {
-            $"{result.TotalMeta} en Meta",
+            $"{result.TotalMeta} encontradas",
             $"{result.Insertadas} nuevas",
             $"{result.Actualizadas} actualizadas"
         };
@@ -1867,7 +2063,18 @@
             parts.Add($"{result.SinCambios} sin cambios");
         if (result.ConError > 0)
             parts.Add($"{result.ConError} con error");
-        return "Sincronización finalizada: " + string.Join(", ", parts) + ".";
+        return "Sincronización finalizada: " + string.Join(" · ", parts) + ".";
+    }
+
+    private string BuildListSummary()
+    {
+        var count = _templates.Count;
+        var noun = count == 1 ? "plantilla" : "plantillas";
+        var parts = new List<string> { $"{count} {noun}" };
+        var chips = BuildTemplateFilterChips();
+        if (chips.Count > 0)
+            parts.Add(chips.Count == 1 ? "1 filtro" : $"{chips.Count} filtros");
+        return string.Join(" · ", parts);
     }
 
     private void AplicarFiltroModeloSeleccionado()
@@ -1931,13 +2138,72 @@
     private static string FormatDate(DateTime value)
         => value == DateTime.MinValue ? "--" : value.ToString("dd/MM HH:mm");
 
+    private static string FormatSync(DateTime? value)
+        => value is null || value == DateTime.MinValue ? "Nunca sincronizada" : value.Value.ToString("dd/MM/yyyy HH:mm");
+
     private static string DisplayOrFallback(string? value)
         => string.IsNullOrWhiteSpace(value) ? "Sin dato" : value.Trim();
+
+    private static string FormatButtons(string componentesJson)
+    {
+        var labels = ExtractButtonLabels(componentesJson);
+        return labels.Count == 0 ? "Sin botones" : string.Join(" · ", labels);
+    }
+
+    private static IReadOnlyList<string> ExtractButtonLabels(string componentesJson)
+    {
+        if (string.IsNullOrWhiteSpace(componentesJson))
+            return [];
+
+        try
+        {
+            using var doc = System.Text.Json.JsonDocument.Parse(componentesJson);
+            if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+                return [];
+
+            foreach (var component in doc.RootElement.EnumerateArray())
+            {
+                if (!component.TryGetProperty("type", out var typeElement)
+                    || !string.Equals(typeElement.GetString(), "BUTTONS", StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (!component.TryGetProperty("buttons", out var buttonsElement)
+                    || buttonsElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+                    continue;
+
+                var labels = new List<string>();
+                foreach (var button in buttonsElement.EnumerateArray())
+                {
+                    var text = button.TryGetProperty("text", out var textElement) ? textElement.GetString() : null;
+                    var type = button.TryGetProperty("type", out var typeButtonElement) ? typeButtonElement.GetString() : null;
+                    labels.Add(string.IsNullOrWhiteSpace(text) ? (type ?? "Botón") : text!);
+                }
+
+                return labels;
+            }
+        }
+        catch
+        {
+            // Componentes inválidos o incompletos: se muestra "Sin botones".
+        }
+
+        return [];
+    }
 
     private static bool IsInitializationPending(string message)
         => message.Contains("CONV_PLANTILLAS", StringComparison.OrdinalIgnoreCase)
            || message.Contains("CONV_*", StringComparison.OrdinalIgnoreCase)
            || message.Contains("inicializado", StringComparison.OrdinalIgnoreCase);
+
+    private static RenderFragment ReadField(string label, string value) => @<div class="templates-record-field">
+        <span>@label</span>
+        <strong class="@(string.IsNullOrWhiteSpace(value) || value == "Sin dato" ? "is-empty" : string.Empty)">@value</strong>
+    </div>;
+
+    private static RenderFragment ReadLongField(string label, string value) => @<div class="templates-record-field templates-record-field--long">
+        <span>@label</span>
+        <p>@value</p>
+    </div>;
 
     private static class CrearOpciones
     {
@@ -1949,5 +2215,4 @@
         public const string TareaFinalizada = "Tarea finalizada";
         public const string Guardia = "Guardia";
     }
-
 }

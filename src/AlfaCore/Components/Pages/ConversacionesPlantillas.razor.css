@@ -15,7 +15,7 @@
     flex: 1 1 auto;
     min-height: 0;
     display: grid;
-    grid-template-columns: minmax(280px, 360px) minmax(420px, 1fr) minmax(260px, 320px);
+    grid-template-columns: minmax(280px, 360px) minmax(420px, 1fr);
     gap: var(--alfa-space-12);
     padding: var(--alfa-space-12);
     overflow: hidden;
@@ -23,7 +23,9 @@
 
 .templates-v1 ::deep .panel-card,
 .templates-v1 .conversations-list,
-.templates-v1 .templates-editor,
+.templates-v1 .templates-main,
+.templates-v1 .templates-record,
+.templates-v1 .templates-form-shell,
 .templates-v1 .templates-preview {
     min-width: 0;
     min-height: 0;
@@ -34,9 +36,19 @@
 }
 
 .templates-v1 .conversations-list,
-.templates-v1 .templates-editor,
+.templates-v1 .templates-main,
 .templates-v1 .templates-preview {
     overflow: auto;
+}
+
+.templates-v1 .templates-main {
+    display: flex;
+    flex-direction: column;
+    padding: var(--alfa-space-16);
+}
+
+.templates-v1 .templates-main > .alfa-empty-state {
+    margin: auto;
 }
 
 .templates-v1 .conversation-row {
@@ -54,8 +66,172 @@
     box-shadow: inset 3px 0 0 color-mix(in srgb, var(--alfa-accent) 72%, transparent);
 }
 
+.templates-v1 .conversation-row__badges {
+    flex-wrap: wrap;
+    gap: var(--alfa-space-4);
+}
+
+.templates-v1 .templates-empty-secondary {
+    display: flex;
+    justify-content: center;
+    padding: var(--alfa-space-8) 0 var(--alfa-space-4);
+}
+
+/* Data View Footer */
+.templates-v1 .alfa-data-view-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--alfa-space-8);
+    padding: var(--alfa-space-8) var(--alfa-space-12);
+    border-top: 1px solid var(--alfa-border-subtle);
+    color: var(--alfa-text-secondary);
+    font-weight: 500;
+    font-size: var(--alfa-font-small);
+}
+
+/* Record (read-only) view */
+.templates-v1 .templates-record__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    flex-wrap: wrap;
+    padding-bottom: var(--alfa-space-12);
+    border-bottom: 1px solid var(--alfa-border-subtle);
+    margin-bottom: var(--alfa-space-12);
+}
+
+.templates-v1 .templates-record__header h2 {
+    margin: 0 0 var(--alfa-space-4);
+    font-size: 1.05rem;
+}
+
+.templates-v1 .templates-record__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--alfa-space-4);
+    align-items: center;
+}
+
+.templates-v1 .templates-record__layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+    gap: var(--alfa-space-16);
+    align-items: start;
+}
+
+.templates-v1 .templates-record__fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--alfa-space-12);
+}
+
+.templates-v1 .templates-record-field {
+    display: grid;
+    gap: var(--alfa-space-4);
+    min-width: 0;
+}
+
+.templates-v1 .templates-record-field--long {
+    grid-column: 1 / -1;
+}
+
+.templates-v1 .templates-record-field span {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .templates-record-field strong,
+.templates-v1 .templates-record-field p {
+    color: var(--alfa-text-primary);
+    word-break: break-word;
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.templates-v1 .templates-record-field strong.is-empty,
+.templates-v1 .templates-record-field p.is-empty {
+    color: var(--alfa-text-disabled);
+    font-style: italic;
+}
+
+/* Create / Edit form shell */
+.templates-v1 .templates-form-shell {
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: var(--alfa-space-12);
+    padding: var(--alfa-space-16);
+    display: flex;
+    flex-direction: column;
+    gap: var(--alfa-space-12);
+    overflow: auto;
+}
+
+.templates-v1 .templates-form-shell__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--alfa-space-12);
+    flex-wrap: wrap;
+}
+
+.templates-v1 .templates-form-shell__body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    gap: var(--alfa-space-16);
+    align-items: start;
+}
+
 .templates-v1 .templates-form {
     gap: var(--alfa-space-12);
+}
+
+/* Field primitives shared with AlfaInput's visual language (no dedicated
+   AlfaTextarea component exists yet; these classes intentionally mirror
+   AlfaInput.razor.css tokens so native <textarea> fields stay visually
+   consistent without duplicating the component). */
+.templates-v1 .alfa-field {
+    display: grid;
+    gap: var(--alfa-space-4);
+    color: var(--alfa-text-primary);
+}
+
+.templates-v1 .alfa-field__label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .alfa-textarea__control {
+    width: 100%;
+    resize: vertical;
+    border: 1px solid var(--alfa-border-default);
+    border-radius: var(--alfa-radius-sm);
+    background: var(--alfa-bg-input);
+    color: var(--alfa-text-primary);
+    padding: var(--alfa-space-8) var(--alfa-space-12);
+    font: inherit;
+}
+
+.templates-v1 .alfa-textarea__control:focus {
+    border-color: var(--alfa-accent);
+    outline: 2px solid color-mix(in srgb, var(--alfa-accent) 34%, transparent);
+    outline-offset: 0;
+}
+
+.templates-v1 .has-error .alfa-textarea__control {
+    border-color: var(--alfa-danger);
+}
+
+.templates-v1 .alfa-field__message {
+    font-size: 12px;
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .alfa-field__message--error {
+    color: var(--alfa-danger);
 }
 
 .templates-v1 .templates-variable-guide,
@@ -84,12 +260,13 @@
 }
 
 @media (max-width: 1200px) {
-    .templates-v1 .templates-layout--alfadesign {
-        grid-template-columns: minmax(260px, 340px) minmax(420px, 1fr);
+    .templates-v1 .templates-record__layout,
+    .templates-v1 .templates-form-shell__body {
+        grid-template-columns: 1fr;
     }
 
     .templates-v1 .templates-preview {
-        display: none;
+        max-width: 480px;
     }
 }
 
@@ -97,5 +274,14 @@
     .templates-v1 .templates-layout--alfadesign {
         grid-template-columns: 1fr;
         overflow: auto;
+    }
+
+    .templates-v1 .templates-record__fields {
+        grid-template-columns: 1fr;
+    }
+
+    .templates-v1 .templates-form-shell {
+        margin: var(--alfa-space-8);
+        padding: var(--alfa-space-12);
     }
 }
