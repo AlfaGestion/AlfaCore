@@ -16,6 +16,7 @@
 <PageTitle>Plantillas de WhatsApp | Alfa Gestión</PageTitle>
 
 <section class="templates-v1" @onclick="CloseTemplatesSearchPanel">
+    <AlfaNotification Message="@_feedback" OnDismiss="ClearFeedback" />
     @if (_loadError is not null)
     {
         <div class="panel-card empty-state">
@@ -38,41 +39,6 @@
                 </div>
                 <AlfaTag Tone="@GetMetaStatusTone(_formEstadoMeta)">@GetMetaStatusLabel(_formEstadoMeta)</AlfaTag>
             </header>
-
-            @if (_error is not null)
-            {
-                <div class="conversations-inline conversations-inline--error" style="display: flex; align-items: center; gap: .65rem;">
-                    <span style="flex: 1;">@_error</span>
-                    @if (!string.IsNullOrWhiteSpace(_errorDetail))
-                    {
-                        <button type="button"
-                                class="btn btn--ghost"
-                                title="Ver detalle del error"
-                                aria-label="Ver detalle del error"
-                                style="width: 2.1rem; height: 2.1rem; padding: 0; border-radius: 999px;"
-                                @onclick="ToggleErrorDetail">
-                            <i class="bi bi-info-circle"></i>
-                        </button>
-                    }
-                </div>
-                @if (_showErrorDetail && !string.IsNullOrWhiteSpace(_errorDetail))
-                {
-                    <div class="context-card" style="border-color: rgba(56, 189, 248, .38); background: rgba(8, 47, 73, .35);">
-                        <span class="context-card__label">Detalle para resolverlo</span>
-                        <pre style="white-space: pre-wrap; margin: .35rem 0 0; font-family: inherit; line-height: 1.45;">@_errorDetail</pre>
-                    </div>
-                }
-            }
-            @if (_feedback is not null)
-            {
-                <div class="conversations-inline conversations-inline--ok">@_feedback</div>
-            }
-            @if (HasBeenSubmittedToMeta)
-            {
-                <div class="conversations-inline conversations-inline--ok">
-                    Esta plantilla ya fue enviada a Meta. Sincronizá para consultar su estado actual.
-                </div>
-            }
 
             <div class="templates-form-shell__body">
                 <div class="conversations-composer templates-form">
@@ -184,6 +150,15 @@
                 {
                     <div class="loading">Cargando plantillas...</div>
                 }
+                else if (_templates.Count == 0 && _allTemplates.Count > 0)
+                {
+                    <AlfaEmptyState Kind="AlfaEmptyStateKind.NoResults"
+                                    Title="Ninguna plantilla coincide con el filtro actual."
+                                    Message="Probá con otros criterios o limpiá los filtros para ver el catálogo completo."
+                                    ActionLabel="Limpiar filtros"
+                                    ActionIcon="bi bi-eraser"
+                                    OnAction="_ => ClearTemplateFiltersAsync()" />
+                }
                 else if (_templates.Count == 0)
                 {
                     <AlfaEmptyState Kind="AlfaEmptyStateKind.NoData"
@@ -259,43 +234,14 @@
                             </div>
                         </header>
 
-                        @if (_feedback is not null)
-                        {
-                            <div class="conversations-inline conversations-inline--ok">@_feedback</div>
-                        }
-                        @if (_error is not null)
-                        {
-                            <div class="conversations-inline conversations-inline--error" style="display: flex; align-items: center; gap: .65rem;">
-                                <span style="flex: 1;">@_error</span>
-                                @if (!string.IsNullOrWhiteSpace(_errorDetail))
-                                {
-                                    <button type="button"
-                                            class="btn btn--ghost"
-                                            title="Ver detalle del error"
-                                            aria-label="Ver detalle del error"
-                                            style="width: 2.1rem; height: 2.1rem; padding: 0; border-radius: 999px;"
-                                            @onclick="ToggleErrorDetail">
-                                        <i class="bi bi-info-circle"></i>
-                                    </button>
-                                }
-                            </div>
-                            @if (_showErrorDetail && !string.IsNullOrWhiteSpace(_errorDetail))
-                            {
-                                <div class="context-card" style="border-color: rgba(56, 189, 248, .38); background: rgba(8, 47, 73, .35);">
-                                    <span class="context-card__label">Detalle para resolverlo</span>
-                                    <pre style="white-space: pre-wrap; margin: .35rem 0 0; font-family: inherit; line-height: 1.45;">@_errorDetail</pre>
-                                </div>
-                            }
-                        }
-                        @if (!string.IsNullOrWhiteSpace(selected.MetaRechazoMotivo))
-                        {
-                            <div class="conversations-inline conversations-inline--error">Meta: @selected.MetaRechazoMotivo</div>
-                        }
-
                         <div class="templates-record__layout">
                             <div class="templates-record__fields">
                                 @ReadField("Nombre Meta", selected.NombreMeta)
                                 @ReadField("Identificador Meta", DisplayOrFallback(selected.MetaTemplateId))
+                                @if (!string.IsNullOrWhiteSpace(selected.MetaRechazoMotivo))
+                                {
+                                    @ReadLongField("Motivo de rechazo (Meta)", selected.MetaRechazoMotivo, danger: true)
+                                }
                                 @ReadField("Idioma", selected.Idioma)
                                 @ReadField("Categoría", GetCategoryLabel(selected.Categoria))
                                 @ReadField("Encabezado (HEADER)", DisplayOrFallback(selected.EncabezadoTexto))
@@ -368,10 +314,7 @@
     private string _examplesText = string.Empty;
     private string _formEstadoMeta = "DRAFT";
     private string? _loadError;
-    private string? _feedback;
-    private string? _error;
-    private string? _errorDetail;
-    private bool _showErrorDetail;
+    private AppUiMessage? _feedback;
     private string _crearSeleccion = CrearOpciones.Crear;
     private int _loadGeneration;
     private bool _syncingRouteTenant;
@@ -696,9 +639,6 @@
         _examplesText = string.Empty;
         _formEstadoMeta = "DRAFT";
         _feedback = null;
-        _error = null;
-        _errorDetail = null;
-        _showErrorDetail = false;
         _showArchiveConfirm = false;
         _attemptedSave = false;
     }
@@ -1048,7 +988,6 @@
         _formEstadoMeta = string.IsNullOrWhiteSpace(_selected.EstadoMeta) ? "DRAFT" : _selected.EstadoMeta;
         _attemptedSave = false;
         _feedback = null;
-        ClearError();
         _mode = PageMode.Edit;
         UpdatePageHeader();
         await Task.CompletedTask;
@@ -1060,7 +999,6 @@
         _form = NewForm();
         _examplesText = string.Empty;
         _attemptedSave = false;
-        ClearError();
         UpdatePageHeader();
     }
 
@@ -1093,10 +1031,12 @@
             FacturaMantenimientoFormaPagoEjemplo
         ]);
         _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
-        _feedback = _selectedId > 0
-            ? "Plantilla de factura de mantenimiento cargada sobre la existente. Revisa los datos y guarda los cambios."
-            : "Plantilla de factura de mantenimiento cargada. Revisa los ejemplos y guarda el borrador.";
-        ClearError();
+        SetFeedback(
+            "Plantilla de factura de mantenimiento",
+            _selectedId > 0
+                ? "Se cargó sobre la existente. Revisá los datos y guardá los cambios."
+                : "Se cargó el modelo. Revisá los ejemplos y guardá el borrador.",
+            AppUiFeedbackSeverity.Info);
         UpdatePageHeader();
 
         await Task.CompletedTask;
@@ -1123,10 +1063,12 @@
             CobranzaFormaPagoEjemplo
         ]);
         _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
-        _feedback = _selectedId > 0
-            ? "Plantilla de cobranza cargada sobre la existente. Revisa los datos y guarda los cambios."
-            : "Plantilla de cobranza cargada. Revisa los ejemplos y guarda el borrador.";
-        ClearError();
+        SetFeedback(
+            "Plantilla de cobranza",
+            _selectedId > 0
+                ? "Se cargó sobre la existente. Revisá los datos y guardá los cambios."
+                : "Se cargó el modelo. Revisá los ejemplos y guardá el borrador.",
+            AppUiFeedbackSeverity.Info);
         UpdatePageHeader();
 
         await Task.CompletedTask;
@@ -1173,10 +1115,12 @@
             "12/06/2026 09:00"
         ]);
         _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
-        _feedback = _selectedId > 0
-            ? "Plantilla de guardia cargada sobre la existente. Revisa los datos y guarda los cambios."
-            : "Plantilla de guardia cargada. Revisa los ejemplos y guarda el borrador.";
-        ClearError();
+        SetFeedback(
+            "Plantilla de guardia",
+            _selectedId > 0
+                ? "Se cargó sobre la existente. Revisá los datos y guardá los cambios."
+                : "Se cargó el modelo. Revisá los ejemplos y guardá el borrador.",
+            AppUiFeedbackSeverity.Info);
         UpdatePageHeader();
 
         await Task.CompletedTask;
@@ -1201,10 +1145,12 @@
             "05/06/2026 15:30"
         ]);
         _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
-        _feedback = _selectedId > 0
-            ? $"{nombre} cargada sobre la existente. Revisa los datos y guarda los cambios."
-            : $"{nombre} cargada. Revisa los ejemplos y guarda el borrador.";
-        ClearError();
+        SetFeedback(
+            nombre,
+            _selectedId > 0
+                ? "Se cargó sobre la existente. Revisá los datos y guardá los cambios."
+                : "Se cargó el modelo. Revisá los ejemplos y guardá el borrador.",
+            AppUiFeedbackSeverity.Info);
     }
 
     private async Task HandleSearchEnter(KeyboardEventArgs args)
@@ -1319,12 +1265,11 @@
 
         _syncingMeta = true;
         _feedback = null;
-        ClearError();
         UpdatePageHeader();
         try
         {
             var result = await ConversacionesSvc.SyncTemplatesCatalogFromMetaAsync(_filters.IdNumeroWhatsApp, CurrentExpectedBaseIdOrNull(), _lifetimeCts.Token);
-            _feedback = BuildSyncFeedback(result);
+            SetFeedback("Sincronización con Meta", BuildSyncFeedback(result));
             var keepSelection = _selectedId;
             await LoadTemplatesAsync();
             if (keepSelection > 0 && _templates.Any(x => x.IdPlantilla == keepSelection))
@@ -1353,7 +1298,6 @@
         var selectedNumeroId = _filters.IdNumeroWhatsApp;
         _busy = true;
         _feedback = null;
-        ClearError();
         _mode = PageMode.Browse;
         try
         {
@@ -1392,7 +1336,6 @@
         _formEstadoMeta = "DRAFT";
         _feedback = null;
         _attemptedSave = false;
-        ClearError();
     }
 
     private void InsertVariable(string variable)
@@ -1413,12 +1356,11 @@
 
         _busy = true;
         _feedback = null;
-        ClearError();
         try
         {
             var id = await ConversacionesSvc.SaveTemplateDraftAsync(BuildSaveRequest());
 
-            _feedback = "Plantilla guardada.";
+            SetFeedback("Plantilla guardada", "La plantilla se guardó correctamente.");
             await LoadTemplatesAsync();
             _mode = PageMode.Browse;
             await SelectTemplateAsync(id);
@@ -1440,7 +1382,6 @@
 
         _busy = true;
         _feedback = null;
-        ClearError();
         try
         {
             if (IsBodyTooLong)
@@ -1466,7 +1407,7 @@
                 IdNumeroWhatsApp = _filters.IdNumeroWhatsApp
             });
 
-            _feedback = "Plantilla enviada a aprobación de Meta.";
+            SetFeedback("Plantilla enviada a aprobación", "Meta revisará la plantilla antes de habilitarla para el envío.");
             await LoadTemplatesAsync();
             _mode = PageMode.Browse;
             await SelectTemplateAsync(_selectedId);
@@ -1505,11 +1446,10 @@
 
         _busy = true;
         _feedback = null;
-        ClearError();
         try
         {
             await ConversacionesSvc.SyncTemplateStatusAsync(_selectedId, _filters.IdNumeroWhatsApp);
-            _feedback = "Estado sincronizado con Meta.";
+            SetFeedback("Estado sincronizado", "El estado de la plantilla se actualizó con la información de Meta.");
             await LoadTemplatesAsync();
             await SelectTemplateAsync(_selectedId);
         }
@@ -1531,7 +1471,6 @@
 
         _showArchiveConfirm = true;
         _feedback = null;
-        ClearError();
     }
 
     private void CloseArchiveConfirm()
@@ -1549,11 +1488,10 @@
 
         _busy = true;
         _feedback = null;
-        ClearError();
         try
         {
             await ConversacionesSvc.ArchiveTemplateAsync(_selectedId, _filters.IdNumeroWhatsApp);
-            _feedback = "Plantilla archivada.";
+            SetFeedback("Plantilla archivada", "La plantilla quedó archivada y no se ofrecerá para enviar en conversaciones.");
             _showArchiveConfirm = false;
             var archivedId = _selectedId;
             await LoadTemplatesAsync();
@@ -1576,21 +1514,32 @@
         }
     }
 
-    private void ClearError()
-    {
-        _error = null;
-        _errorDetail = null;
-        _showErrorDetail = false;
-    }
-
     private void ClearFeedback()
         => _feedback = null;
 
+    private void SetFeedback(string title, string message, AppUiFeedbackSeverity severity = AppUiFeedbackSeverity.Success)
+    {
+        var suggestion = HasBeenSubmittedToMeta
+            ? "Esta plantilla ya fue enviada a Meta. Sincronizá para consultar su estado actual."
+            : string.Empty;
+
+        _feedback = new AppUiMessage
+        {
+            Severity = severity,
+            Title = title,
+            Message = message,
+            Suggestion = suggestion
+        };
+    }
+
     private void SetError(string message)
     {
-        _error = message;
-        _errorDetail = null;
-        _showErrorDetail = false;
+        _feedback = new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Error,
+            Title = "No se pudo completar la acción",
+            Message = message
+        };
     }
 
     private void SetError(Exception ex)
@@ -1601,19 +1550,23 @@
 
         if (TryGetMetaError(ex, out var metaError))
         {
-            _error = BuildMetaErrorSummary(metaError, internalCode);
-            _errorDetail = BuildMetaErrorDetail(metaError, internalCode);
-            _showErrorDetail = false;
+            _feedback = new AppUiMessage
+            {
+                Severity = AppUiFeedbackSeverity.Error,
+                Title = "Meta rechazó la solicitud",
+                Message = BuildMetaErrorSummary(metaError, internalCode),
+                Suggestion = BuildMetaErrorDetail(metaError, internalCode)
+            };
             return;
         }
 
-        _error = ex.Message;
-        _errorDetail = null;
-        _showErrorDetail = false;
+        _feedback = new AppUiMessage
+        {
+            Severity = AppUiFeedbackSeverity.Error,
+            Title = "No se pudo completar la acción",
+            Message = ex.Message
+        };
     }
-
-    private void ToggleErrorDetail()
-        => _showErrorDetail = !_showErrorDetail;
 
     private static string BuildMetaErrorSummary(MetaApiError error, string? internalCode)
     {
@@ -2200,7 +2153,7 @@
         <strong class="@(string.IsNullOrWhiteSpace(value) || value == "Sin dato" ? "is-empty" : string.Empty)">@value</strong>
     </div>;
 
-    private static RenderFragment ReadLongField(string label, string value) => @<div class="templates-record-field templates-record-field--long">
+    private static RenderFragment ReadLongField(string label, string value, bool danger = false) => @<div class="templates-record-field templates-record-field--long @(danger ? "templates-record-field--danger" : string.Empty)">
         <span>@label</span>
         <p>@value</p>
     </div>;

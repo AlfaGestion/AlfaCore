@@ -110,21 +110,27 @@
 .templates-v1 .templates-record__tags {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--alfa-space-4);
+    gap: var(--alfa-space-8);
     align-items: center;
 }
 
 .templates-v1 .templates-record__layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
-    gap: var(--alfa-space-16);
+    gap: var(--alfa-space-24);
     align-items: start;
+    /* El panel padre (.templates-main) hace overflow:auto; algunos motores
+       recortan el padding-bottom del contenedor cuando el scrollport se
+       calcula sobre un hijo flex que desborda. Reforzar el espacio acá
+       asegura que la última fila de campos no quede pegada al borde. */
+    padding-bottom: var(--alfa-space-24);
 }
 
 .templates-v1 .templates-record__fields {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--alfa-space-12);
+    gap: var(--alfa-space-16);
+    align-content: start;
 }
 
 .templates-v1 .templates-record-field {
@@ -140,6 +146,7 @@
 .templates-v1 .templates-record-field span {
     font-size: 12px;
     font-weight: 600;
+    letter-spacing: .01em;
     color: var(--alfa-text-secondary);
 }
 
@@ -148,6 +155,7 @@
     color: var(--alfa-text-primary);
     word-break: break-word;
     margin: 0;
+    line-height: 1.45;
     white-space: pre-wrap;
 }
 
@@ -155,6 +163,14 @@
 .templates-v1 .templates-record-field p.is-empty {
     color: var(--alfa-text-disabled);
     font-style: italic;
+}
+
+.templates-v1 .templates-record-field--danger span {
+    color: var(--alfa-danger);
+}
+
+.templates-v1 .templates-record-field--danger p {
+    color: var(--alfa-danger);
 }
 
 /* Create / Edit form shell */
@@ -186,6 +202,24 @@
 
 .templates-v1 .templates-form {
     gap: var(--alfa-space-12);
+}
+
+/* El grid de 2 columnas del formulario (heredado de .templates-form global)
+   solo debe partir en dos los campos cortos; los bloques largos (textarea,
+   guía de variables, checkbox final) ocupan todo el ancho. */
+.templates-v1 .alfa-field:has(textarea),
+.templates-v1 .templates-variable-guide,
+.templates-v1 .templates-form > .alfa-checkbox {
+    grid-column: 1 / -1;
+}
+
+.templates-v1 .templates-body-limit {
+    font-size: var(--alfa-font-small);
+    color: var(--alfa-text-secondary);
+}
+
+.templates-v1 .templates-body-limit.is-danger {
+    color: var(--alfa-danger);
 }
 
 /* Field primitives shared with AlfaInput's visual language (no dedicated
@@ -242,6 +276,31 @@
     background: var(--alfa-bg-raised);
 }
 
+/* La vista previa es una sección de la misma ficha, no un panel aparte:
+   se le quita el borde/superficie de panel-card y se integra con un
+   separador vertical sutil, en vez de quedar "pegada de costado". */
+.templates-v1 .templates-record__layout .templates-preview,
+.templates-v1 .templates-form-shell__body .templates-preview {
+    border: none;
+    border-left: 1px solid var(--alfa-border-subtle);
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    padding: 0 0 0 var(--alfa-space-16);
+}
+
+.templates-v1 .templates-preview .conversations-context__section {
+    padding-top: 0;
+}
+
+.templates-v1 .templates-preview .panel-card__title {
+    font-size: .95rem;
+}
+
+.templates-v1 .templates-preview .message-card {
+    padding: var(--alfa-space-12);
+}
+
 .templates-v1 .templates-variable-chip {
     border-color: var(--alfa-border-default);
     border-radius: var(--alfa-radius-sm);
@@ -267,6 +326,13 @@
 
     .templates-v1 .templates-preview {
         max-width: 480px;
+    }
+
+    .templates-v1 .templates-record__layout .templates-preview,
+    .templates-v1 .templates-form-shell__body .templates-preview {
+        border-left: none;
+        border-top: 1px solid var(--alfa-border-subtle);
+        padding: var(--alfa-space-16) 0 0;
     }
 }
 
