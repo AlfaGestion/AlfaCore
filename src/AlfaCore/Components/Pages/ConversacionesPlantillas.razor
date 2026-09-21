@@ -68,8 +68,19 @@
                                Placeholder="Opcional"
                                Disabled="@_busy" />
                     <div class="alfa-field @(IsBodyTooLong ? "has-error" : string.Empty)">
-                        <label class="alfa-field__label" for="tpl-body">Cuerpo<span aria-hidden="true">*</span></label>
-                        <textarea id="tpl-body" class="alfa-textarea__control" rows="6" disabled="@_busy" @bind="_form.CuerpoTexto"
+                        <div class="templates-body-label-row">
+                            <label class="alfa-field__label" for="tpl-body">Cuerpo<span aria-hidden="true">*</span></label>
+                            <div class="templates-insert-variable">
+                                <span class="templates-insert-variable__label">Insertar variable</span>
+                                <AlfaActionMenu Items="@BuildInsertVariableMenuItems()"
+                                                TriggerLabel="Insertar variable"
+                                                MenuLabel="Variables disponibles"
+                                                TriggerIcon="bi bi-plus-lg"
+                                                Disabled="@_busy"
+                                                Align="AlfaActionMenuAlign.End" />
+                            </div>
+                        </div>
+                        <textarea id="tpl-body" class="alfa-textarea__control" rows="6" disabled="@_busy" @bind="_form.CuerpoTexto" @bind:after="PruneOrphanVariableMappings"
                                   placeholder="Hola {{1}}, te escribimos para continuar con la conversación pendiente."></textarea>
                         <div class="templates-body-limit @(IsBodyTooLong ? "is-danger" : string.Empty)">
                             <span>@BodyLength / @MetaBodyMaxLength caracteres</span>
@@ -77,6 +88,17 @@
                         @if (CuerpoTextoError is not null)
                         {
                             <div class="alfa-field__message alfa-field__message--error">@CuerpoTextoError</div>
+                        }
+                        @{ var usedVariables = UsedBodyVariables; }
+                        @if (usedVariables.Count > 0)
+                        {
+                            <div class="templates-variable-guide" aria-label="Variables usadas en el cuerpo">
+                                <span class="context-card__label">Variables usadas</span>
+                                @foreach (var used in usedVariables)
+                                {
+                                    <span class="templates-variable-chip templates-variable-chip--readonly">@($"{{{{{used.Posicion}}}}} {used.Label}")</span>
+                                }
+                            </div>
                         }
                     </div>
                     <AlfaInput Label="Pie de página"
@@ -89,20 +111,6 @@
                         <label class="alfa-field__label" for="tpl-examples">Ejemplos para variables</label>
                         <textarea id="tpl-examples" class="alfa-textarea__control" rows="3" disabled="@_busy" @bind="_examplesText"
                                   placeholder="Un valor por línea. Ej: Evelyn"></textarea>
-                    </div>
-                    <div class="templates-variable-guide">
-                        <span class="context-card__label">Variables automáticas sugeridas</span>
-                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{1}}")'>@($"{{{{1}}}} {VariableLabel(1)}")</button>
-                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{2}}")'>@($"{{{{2}}}} {VariableLabel(2)}")</button>
-                        <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{3}}")'>@($"{{{{3}}}} {VariableLabel(3)}")</button>
-                        @if (EsFormularioFacturaMantenimiento)
-                        {
-                            <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{4}}")'>@("{{4}} Forma de pago")</button>
-                        }
-                        @if (EsFormularioTareas)
-                        {
-                            <button type="button" class="templates-variable-chip" @onclick='() => InsertVariable("{{4}}")'>@("{{4}} Fecha y hora")</button>
-                        }
                     </div>
                     <AlfaCheckbox Value="@_form.Activa" ValueChanged="@(value => _form.Activa = value is true)" Disabled="@_busy">Plantilla activa</AlfaCheckbox>
                 </div>
@@ -320,7 +328,6 @@
     private string _formEstadoMeta = "DRAFT";
     private string? _loadError;
     private AppUiMessage? _feedback;
-    private string _crearSeleccion = CrearOpciones.Crear;
     private int _loadGeneration;
     private bool _syncingRouteTenant;
     private readonly CancellationTokenSource _lifetimeCts = new();
@@ -328,116 +335,9 @@
     private const string MultiValueSeparator = "---";
     private const int MetaBodyMaxLength = 550;
 
-    private static readonly string FacturaMantenimientoTemplateBody = string.Join(Environment.NewLine,
-    [
-        "Hola {{1}}, buen día.",
-        string.Empty,
-        "Te adjuntamos la factura del servicio de mantenimiento mensual. Este servicio incluye soporte, asistencia y acompañamiento ante consultas o inconvenientes sobre el sistema.",
-        string.Empty,
-        "Período: {{2}}",
-        string.Empty,
-        "Datos del comprobante:",
-        "{{3}}",
-        string.Empty,
-        "Datos para el pago:",
-        "{{4}}",
-        string.Empty,
-        "Agradecemos su pronta atención. Para consultas, quedamos a disposición.",
-        string.Empty,
-        "Saludos,",
-        "Equipo ALFANET",
-        "ALFA NET Soluciones Informáticas",
-        "WhatsApp: +54 9 11 5148-0148"
-    ]);
-
-    private static readonly string FacturaMantenimientoDetalleEjemplo = string.Join(Environment.NewLine,
-    [
-        "Factura A 0001-00001234",
-        "Fecha: 10/05/2026",
-        "Importe total: $ 150.000,00",
-        "Vencimiento: 20/05/2026"
-    ]);
-
-    private static readonly string FacturaMantenimientoFormaPagoEjemplo = string.Join(Environment.NewLine,
-    [
-        "TRANSFERENCIA BANCARIA",
-        "Alias: alfa.net.plus.mp",
-        "CVU: 0000003100085700504735",
-        "Titular: ALFA NET Soluciones Informáticas"
-    ]);
-
-    private static readonly string CobranzaTemplateBody = string.Join(Environment.NewLine,
-    [
-        "Estimado {{1}}",
-        "Esperamos que se encuentre bien.",
-        string.Empty,
-        "Le recordamos que registra facturas pendientes. Para continuar brindándole el servicio, solicitamos realizar el pago o transferencia a la brevedad.",
-        string.Empty,
-        "Detalle de cuenta:",
-        "{{2}}",
-        string.Empty,
-        "Si ya realizó el pago, envíe el comprobante respondiendo este mensaje o a administracion@alfagestion.com.ar.",
-        string.Empty,
-        "Datos para transferencia:",
-        "{{3}}",
-        string.Empty,
-        "Por favor enviar comprobante de pago por este chat."
-    ]);
-
-    private static readonly string CobranzaDetalleEjemplo = string.Join(Environment.NewLine,
-    [
-        "SALDO ACTUAL: $ 1.520.963,04",
-        "Cantidad de comprobantes pendientes de pago: 3",
-        "Días de atraso: 73",
-        "Fecha comprobante más antiguo: 01/03/2026"
-    ]);
-
-    private static readonly string CobranzaFormaPagoEjemplo = string.Join(Environment.NewLine,
-    [
-        "TRANSFERENCIA BANCARIA",
-        "Alias: alfa.net.plus.mp",
-        "CVU: 0000003100085700504735",
-        "Titular: ALFA NET Soluciones Informáticas"
-    ]);
-
-    private static readonly string TareaAsignadaTemplateBody = string.Join(Environment.NewLine,
-    [
-        "Se te asigno la tarea \"{{1}}\".",
-        string.Empty,
-        "El tecnico asignado es {{2}}.",
-        "La asignacion fue realizada por {{3}}.",
-        "Fecha y hora de registro: {{4}}."
-    ]);
-
-    private static readonly string TareaFinalizadaTemplateBody = string.Join(Environment.NewLine,
-    [
-        "La tarea \"{{1}}\" asignada a \"{{2}}\" ha sido finalizada por \"{{3}}\".",
-        string.Empty,
-        "Fecha y hora de cierre: {{4}}."
-    ]);
-
-    private static readonly string GuardiaTemplateBody = string.Join(Environment.NewLine,
-    [
-        "🛡️ *Aviso de guardia*",
-        string.Empty,
-        "Hola {{1}}, te recordamos que esta semana te corresponde estar de guardia.",
-        string.Empty,
-        "📅 Inicio: {{2}}",
-        "🏁 Fin: {{3}}",
-        string.Empty,
-        "Por favor, asegurate de estar disponible ante cualquier eventualidad que pueda surgir.",
-        "Ante cualquier duda, podés contactar al equipo de *AlfaNet*.",
-        string.Empty,
-        "¡Gracias por tu compromiso!",
-        "AlfaNet | Soluciones Informáticas"
-    ]);
-
     private string PreviewBody => RenderPreview(_form.CuerpoTexto, ParseExamples(_examplesText));
     private int BodyLength => _form.CuerpoTexto?.Length ?? 0;
     private bool IsBodyTooLong => BodyLength > MetaBodyMaxLength;
-    private bool EsFormularioFacturaMantenimiento => EsPlantillaFacturaMantenimiento(_form);
-    private bool EsFormularioTareas => EsPlantillaTareas(_form);
-    private bool EsFormularioGuardia => EsPlantillaGuardia(_form);
 
     private bool CanSaveDraft
         => !_busy
@@ -869,11 +769,6 @@
                 actions.Add(new() { Key = "archivar", Label = "Archivar", Icon = "bi-archive", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = () => { OpenArchiveConfirm(); return Task.CompletedTask; } });
         }
 
-        actions.Add(new() { Key = "factura", Label = "Factura", Icon = "bi-file-earmark-text", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaFacturaMantenimientoAsync });
-        actions.Add(new() { Key = "cobranza", Label = "Cobranza", Icon = "bi-receipt", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaCobranzaAsync });
-        actions.Add(new() { Key = "tarea-asignada", Label = "Tarea asignada", Icon = "bi-person-check", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaTareaAsignadaAsync });
-        actions.Add(new() { Key = "tarea-finalizada", Label = "Tarea finalizada", Icon = "bi-check2-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaTareaFinalizadaAsync });
-        actions.Add(new() { Key = "guardia", Label = "Guardia", Icon = "bi-calendar-week", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = AplicarPlantillaGuardiaAsync });
         actions.Add(new() { Key = "recargar", Label = "Recargar", Icon = "bi-arrow-clockwise", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _loading, OnClick = () => LoadTemplatesAsync() });
 
         return actions;
@@ -959,7 +854,7 @@
                 return;
 
             _allTemplates = loaded;
-            AplicarFiltroModeloSeleccionado();
+            _templates = _allTemplates.ToList();
             if (_selectedId > 0 && _templates.All(x => x.IdPlantilla != _selectedId))
             {
                 _selectedId = 0;
@@ -980,7 +875,6 @@
 
     private async Task EnterCreateModeAsync()
     {
-        _crearSeleccion = CrearOpciones.Crear;
         _filters = new ConversacionPlantillaFilters { ExpectedBaseId = CurrentExpectedBaseIdOrNull(), IdNumeroWhatsApp = _filters.IdNumeroWhatsApp };
         await LoadTemplatesAsync();
         NuevaPlantilla();
@@ -1009,157 +903,6 @@
         _examplesText = string.Empty;
         _attemptedSave = false;
         UpdatePageHeader();
-    }
-
-    private void CrearPlantillaBase()
-    {
-        _crearSeleccion = CrearOpciones.Plantilla;
-        AplicarFiltroModeloSeleccionado();
-        NuevaPlantilla();
-    }
-
-    private async Task AplicarPlantillaFacturaMantenimientoAsync()
-    {
-        _crearSeleccion = CrearOpciones.Factura;
-        AplicarFiltroModeloSeleccionado();
-        var model = NewFacturaMantenimientoForm();
-        var existing = _allTemplates.FirstOrDefault(x =>
-            string.Equals(x.NombreMeta, model.NombreMeta, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.Idioma, model.Idioma, StringComparison.OrdinalIgnoreCase));
-
-        _selectedId = existing?.IdPlantilla ?? 0;
-        model.IdPlantilla = _selectedId;
-        _form = model;
-        _mode = PageMode.Create;
-        _attemptedSave = false;
-        _examplesText = JoinMultilineValues(
-        [
-            "Cliente Alfa",
-            "Mayo 2026",
-            FacturaMantenimientoDetalleEjemplo,
-            FacturaMantenimientoFormaPagoEjemplo
-        ]);
-        _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
-        SetFeedback(
-            "Plantilla de factura de mantenimiento",
-            _selectedId > 0
-                ? "Se cargó sobre la existente. Revisá los datos y guardá los cambios."
-                : "Se cargó el modelo. Revisá los ejemplos y guardá el borrador.",
-            AppUiFeedbackSeverity.Info);
-        UpdatePageHeader();
-
-        await Task.CompletedTask;
-    }
-
-    private async Task AplicarPlantillaCobranzaAsync()
-    {
-        _crearSeleccion = CrearOpciones.Cobranza;
-        AplicarFiltroModeloSeleccionado();
-        var model = NewCobranzaForm();
-        var existing = _allTemplates.FirstOrDefault(x =>
-            string.Equals(x.NombreMeta, model.NombreMeta, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.Idioma, model.Idioma, StringComparison.OrdinalIgnoreCase));
-
-        _selectedId = existing?.IdPlantilla ?? 0;
-        model.IdPlantilla = _selectedId;
-        _form = model;
-        _mode = PageMode.Create;
-        _attemptedSave = false;
-        _examplesText = JoinMultilineValues(
-        [
-            "Cliente Alfa",
-            CobranzaDetalleEjemplo,
-            CobranzaFormaPagoEjemplo
-        ]);
-        _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
-        SetFeedback(
-            "Plantilla de cobranza",
-            _selectedId > 0
-                ? "Se cargó sobre la existente. Revisá los datos y guardá los cambios."
-                : "Se cargó el modelo. Revisá los ejemplos y guardá el borrador.",
-            AppUiFeedbackSeverity.Info);
-        UpdatePageHeader();
-
-        await Task.CompletedTask;
-    }
-
-    private async Task AplicarPlantillaTareaAsignadaAsync()
-    {
-        _crearSeleccion = CrearOpciones.TareaAsignada;
-        AplicarFiltroModeloSeleccionado();
-        AplicarModeloTarea(NewTareaAsignadaForm(), "Tarea asignada");
-        UpdatePageHeader();
-
-        await Task.CompletedTask;
-    }
-
-    private async Task AplicarPlantillaTareaFinalizadaAsync()
-    {
-        _crearSeleccion = CrearOpciones.TareaFinalizada;
-        AplicarFiltroModeloSeleccionado();
-        AplicarModeloTarea(NewTareaFinalizadaForm(), "Tarea finalizada");
-        UpdatePageHeader();
-
-        await Task.CompletedTask;
-    }
-
-    private async Task AplicarPlantillaGuardiaAsync()
-    {
-        _crearSeleccion = CrearOpciones.Guardia;
-        AplicarFiltroModeloSeleccionado();
-        var model = NewGuardiaForm();
-        var existing = _allTemplates.FirstOrDefault(x =>
-            string.Equals(x.NombreMeta, model.NombreMeta, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.Idioma, model.Idioma, StringComparison.OrdinalIgnoreCase));
-
-        _selectedId = existing?.IdPlantilla ?? 0;
-        model.IdPlantilla = _selectedId;
-        _form = model;
-        _mode = PageMode.Create;
-        _attemptedSave = false;
-        _examplesText = JoinMultilineValues(
-        [
-            "Evelyn",
-            "05/06/2026 09:00",
-            "12/06/2026 09:00"
-        ]);
-        _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
-        SetFeedback(
-            "Plantilla de guardia",
-            _selectedId > 0
-                ? "Se cargó sobre la existente. Revisá los datos y guardá los cambios."
-                : "Se cargó el modelo. Revisá los ejemplos y guardá el borrador.",
-            AppUiFeedbackSeverity.Info);
-        UpdatePageHeader();
-
-        await Task.CompletedTask;
-    }
-
-    private void AplicarModeloTarea(ConversacionPlantillaDto model, string nombre)
-    {
-        var existing = _allTemplates.FirstOrDefault(x =>
-            string.Equals(x.NombreMeta, model.NombreMeta, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(x.Idioma, model.Idioma, StringComparison.OrdinalIgnoreCase));
-
-        _selectedId = existing?.IdPlantilla ?? 0;
-        model.IdPlantilla = _selectedId;
-        _form = model;
-        _mode = PageMode.Create;
-        _attemptedSave = false;
-        _examplesText = JoinMultilineValues(
-        [
-            "Actualizar servidor AlfaCore",
-            "Evelyn",
-            "Administrador",
-            "05/06/2026 15:30"
-        ]);
-        _formEstadoMeta = string.IsNullOrWhiteSpace(existing?.EstadoMeta) ? "DRAFT" : existing.EstadoMeta;
-        SetFeedback(
-            nombre,
-            _selectedId > 0
-                ? "Se cargó sobre la existente. Revisá los datos y guardá los cambios."
-                : "Se cargó el modelo. Revisá los ejemplos y guardá el borrador.",
-            AppUiFeedbackSeverity.Info);
     }
 
     private async Task HandleSearchEnter(KeyboardEventArgs args)
@@ -1347,11 +1090,105 @@
         _attemptedSave = false;
     }
 
-    private void InsertVariable(string variable)
+    /// <summary>
+    /// Posiciones {{N}} presentes hoy en el cuerpo (no en el catálogo, en el texto real) -- de ahí
+    /// sale N para la próxima variable a insertar y de ahí sale qué mostrar debajo del cuerpo.
+    /// </summary>
+    private static SortedSet<int> ParseBodyPlaceholderPositions(string? text)
     {
+        var positions = new SortedSet<int>();
+        if (string.IsNullOrWhiteSpace(text))
+            return positions;
+
+        foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(text, @"\{\{\s*(\d+)\s*\}\}"))
+        {
+            if (int.TryParse(match.Groups[1].Value, out var position) && position >= 1)
+                positions.Add(position);
+        }
+
+        return positions;
+    }
+
+    /// <summary>Siguiente posición consecutiva válida: el primer número no usado todavía (sin gaps, sin duplicar).</summary>
+    private int NextBodyVariablePosition()
+    {
+        var used = ParseBodyPlaceholderPositions(_form.CuerpoTexto);
+        var candidate = 1;
+        while (used.Contains(candidate))
+            candidate++;
+
+        return candidate;
+    }
+
+    /// <summary>
+    /// Variables efectivamente presentes en el cuerpo actual (no todo el catálogo): para cada {{N}} que
+    /// aparece en el texto, su Label si tiene mapping o "Valor manual" si no lo tiene (placeholder
+    /// tipeado a mano o huérfano de una edición anterior).
+    /// </summary>
+    private IReadOnlyList<(int Posicion, string Label)> UsedBodyVariables
+        => ParseBodyPlaceholderPositions(_form.CuerpoTexto)
+            .Select(position => (
+                Posicion: position,
+                Label: _form.VariableMappings.TryGetValue(position, out var key)
+                    ? WhatsAppTemplateVariableCatalog.Find(key)?.Label ?? key
+                    : "Valor manual"))
+            .ToList();
+
+    /// <summary>
+    /// Ítems del selector "Insertar variable", agrupados por Group del catálogo. Solo BODY: este
+    /// control no existe para el campo Encabezado (Meta/el runtime de envío no soportan parámetros de
+    /// header hoy).
+    /// </summary>
+    private List<AlfaActionMenuItem> BuildInsertVariableMenuItems()
+    {
+        var items = new List<AlfaActionMenuItem>();
+        var firstGroup = true;
+        foreach (var group in WhatsAppTemplateVariableCatalog.GroupedForSelector())
+        {
+            var firstInGroup = true;
+            foreach (var definition in group)
+            {
+                var secondary = string.IsNullOrWhiteSpace(definition.RequiredContext)
+                    ? definition.Description
+                    : $"{definition.Description} {definition.RequiredContext}";
+                items.Add(new AlfaActionMenuItem
+                {
+                    Key = definition.Key,
+                    Label = definition.Label,
+                    SecondaryText = secondary,
+                    SeparatorBefore = firstInGroup && !firstGroup,
+                    OnClick = () => { InsertCatalogVariable(definition.Key); return Task.CompletedTask; }
+                });
+                firstInGroup = false;
+            }
+
+            firstGroup = false;
+        }
+
+        return items;
+    }
+
+    private void InsertCatalogVariable(string variableKey)
+    {
+        var position = NextBodyVariablePosition();
+        var placeholder = $"{{{{{position}}}}}";
         _form.CuerpoTexto = string.IsNullOrWhiteSpace(_form.CuerpoTexto)
-            ? variable
-            : $"{_form.CuerpoTexto}{Environment.NewLine}{variable}";
+            ? placeholder
+            : $"{_form.CuerpoTexto}{Environment.NewLine}{placeholder}";
+        _form.VariableMappings[position] = variableKey;
+    }
+
+    /// <summary>
+    /// Se ejecuta después de cada edición manual del cuerpo (blur del textarea, ver @bind:after). Si el
+    /// usuario borró un placeholder {{N}}, descarta su mapping en memoria -- así, si más tarde
+    /// reaparece el mismo número (tipeado a mano, sin pasar por "Insertar variable"), no hereda por
+    /// accidente la VariableKey vieja de una variable distinta que ocupó esa posición antes.
+    /// </summary>
+    private void PruneOrphanVariableMappings()
+    {
+        var positions = ParseBodyPlaceholderPositions(_form.CuerpoTexto);
+        foreach (var orphanPosition in _form.VariableMappings.Keys.Where(p => !positions.Contains(p)).ToList())
+            _form.VariableMappings.Remove(orphanPosition);
     }
 
     private async Task SaveAsync()
@@ -1433,7 +1270,9 @@
     }
 
     private ConversacionPlantillaSaveRequest BuildSaveRequest()
-        => new()
+    {
+        PruneOrphanVariableMappings();
+        return new()
         {
             IdPlantilla = _selectedId,
             IdNumeroWhatsApp = _filters.IdNumeroWhatsApp,
@@ -1445,8 +1284,10 @@
             CuerpoTexto = _form.CuerpoTexto,
             PieTexto = _form.PieTexto,
             EjemplosVariablesJson = _examplesText,
-            Activa = _form.Activa
+            Activa = _form.Activa,
+            VariableMappings = new Dictionary<int, string>(_form.VariableMappings)
         };
+    }
 
     private async Task SyncAsync()
     {
@@ -1797,98 +1638,10 @@
             FechaHoraGrabacion = source.FechaHoraGrabacion,
             FechaHoraModificacion = source.FechaHoraModificacion,
             FechaHoraSincronizacion = source.FechaHoraSincronizacion,
-            EsMetaRemota = source.EsMetaRemota
+            EsMetaRemota = source.EsMetaRemota,
+            VariableMappings = new Dictionary<int, string>(source.VariableMappings)
         };
 
-    private static ConversacionPlantillaDto NewFacturaMantenimientoForm()
-        => new()
-        {
-            NombreVisible = "Factura de mantenimiento",
-            NombreMeta = "factura_mantenimiento_soporte",
-            Categoria = ConversacionPlantillaCategorias.Utility,
-            Idioma = "es_AR",
-            Activa = true,
-            EstadoMeta = "DRAFT",
-            CuerpoTexto = FacturaMantenimientoTemplateBody
-        };
-
-    private static ConversacionPlantillaDto NewCobranzaForm()
-        => new()
-        {
-            NombreVisible = "Recordatorio de deuda",
-            NombreMeta = "recordatorio_deuda",
-            Categoria = ConversacionPlantillaCategorias.Utility,
-            Idioma = "es_AR",
-            Activa = true,
-            EstadoMeta = "DRAFT",
-            CuerpoTexto = CobranzaTemplateBody
-        };
-
-    private static ConversacionPlantillaDto NewTareaAsignadaForm()
-        => new()
-        {
-            NombreVisible = "Tarea asignada",
-            NombreMeta = "nueva_tarea_asignada",
-            Categoria = ConversacionPlantillaCategorias.Utility,
-            Idioma = "es_AR",
-            Activa = true,
-            EstadoMeta = "DRAFT",
-            CuerpoTexto = TareaAsignadaTemplateBody
-        };
-
-    private static ConversacionPlantillaDto NewTareaFinalizadaForm()
-        => new()
-        {
-            NombreVisible = "Tarea finalizada",
-            NombreMeta = "tarea_finalizada",
-            Categoria = ConversacionPlantillaCategorias.Utility,
-            Idioma = "es_AR",
-            Activa = true,
-            EstadoMeta = "DRAFT",
-            CuerpoTexto = TareaFinalizadaTemplateBody
-        };
-
-    private static ConversacionPlantillaDto NewGuardiaForm()
-        => new()
-        {
-            NombreVisible = "Aviso de guardia",
-            NombreMeta = "calendar_attendee",
-            Categoria = ConversacionPlantillaCategorias.Utility,
-            Idioma = "es_AR",
-            Activa = true,
-            EstadoMeta = "DRAFT",
-            CuerpoTexto = GuardiaTemplateBody
-        };
-
-    private string VariableLabel(int index)
-    {
-        if (EsFormularioGuardia)
-            return index switch
-            {
-                1 => "Tecnico",
-                2 => "Inicio",
-                3 => "Fin",
-                _ => $"Dato {index}"
-            };
-
-        if (EsFormularioTareas)
-            return index switch
-            {
-                1 => "Titulo de tarea",
-                2 => "Tecnico asignado",
-                3 => EsPlantillaTareaFinalizada(_form) ? "Finalizada por" : "Asignada por",
-                4 => "Fecha y hora",
-                _ => $"Dato {index}"
-            };
-
-        return index switch
-        {
-            1 => "Nombre",
-            2 => EsFormularioFacturaMantenimiento ? "Periodo" : "Detalle de deuda",
-            3 => EsFormularioFacturaMantenimiento ? "Detalle factura" : "Forma de pago",
-            _ => $"Dato {index}"
-        };
-    }
 
     private static string RenderPreview(string text, IReadOnlyList<string> values)
     {
@@ -2039,64 +1792,6 @@
         return string.Join(" · ", parts);
     }
 
-    private void AplicarFiltroModeloSeleccionado()
-    {
-        _templates = _crearSeleccion switch
-        {
-            CrearOpciones.Factura => _allTemplates.Where(EsPlantillaFacturaMantenimiento).ToList(),
-            CrearOpciones.Cobranza => _allTemplates.Where(EsPlantillaCobranza).ToList(),
-            CrearOpciones.TareaAsignada => _allTemplates.Where(EsPlantillaTareaAsignada).ToList(),
-            CrearOpciones.TareaFinalizada => _allTemplates.Where(EsPlantillaTareaFinalizada).ToList(),
-            CrearOpciones.Guardia => _allTemplates.Where(EsPlantillaGuardia).ToList(),
-            CrearOpciones.Plantilla => _allTemplates
-                .Where(x => !EsPlantillaFacturaMantenimiento(x) && !EsPlantillaCobranza(x) && !EsPlantillaTareas(x) && !EsPlantillaGuardia(x))
-                .ToList(),
-            _ => _allTemplates.ToList()
-        };
-    }
-
-    private static bool EsPlantillaFacturaMantenimiento(ConversacionPlantillaDto item)
-    {
-        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
-        return text.Contains("FACTURA", StringComparison.Ordinal)
-               && (text.Contains("MANTENIMIENTO", StringComparison.Ordinal)
-                   || text.Contains("SOPORTE", StringComparison.Ordinal));
-    }
-
-    private static bool EsPlantillaCobranza(ConversacionPlantillaDto item)
-    {
-        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
-        return !EsPlantillaFacturaMantenimiento(item)
-               && !EsPlantillaTareas(item)
-               && (text.Contains("DEUDA", StringComparison.Ordinal)
-                   || text.Contains("COBRANZA", StringComparison.Ordinal)
-                   || text.Contains("TRANSFERENCIA", StringComparison.Ordinal));
-    }
-
-    private static bool EsPlantillaTareas(ConversacionPlantillaDto item)
-        => EsPlantillaTareaAsignada(item) || EsPlantillaTareaFinalizada(item);
-
-    private static bool EsPlantillaGuardia(ConversacionPlantillaDto item)
-    {
-        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
-        return text.Contains("CALENDAR_ATTENDEE", StringComparison.Ordinal)
-               || text.Contains("GUARDIA", StringComparison.Ordinal);
-    }
-
-    private static bool EsPlantillaTareaAsignada(ConversacionPlantillaDto item)
-    {
-        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
-        return text.Contains("TAREA_ASIGNADA", StringComparison.Ordinal)
-               || (text.Contains("TAREA", StringComparison.Ordinal) && text.Contains("ASIGNADA", StringComparison.Ordinal));
-    }
-
-    private static bool EsPlantillaTareaFinalizada(ConversacionPlantillaDto item)
-    {
-        var text = $"{item.NombreVisible} {item.NombreMeta} {item.CuerpoTexto}".ToUpperInvariant();
-        return text.Contains("TAREA_FINALIZADA", StringComparison.Ordinal)
-               || (text.Contains("TAREA", StringComparison.Ordinal) && text.Contains("FINALIZADA", StringComparison.Ordinal));
-    }
-
     private static string FormatDate(DateTime value)
         => value == DateTime.MinValue ? "--" : value.ToString("dd/MM HH:mm");
 
@@ -2166,15 +1861,4 @@
         <span>@label</span>
         <p>@value</p>
     </div>;
-
-    private static class CrearOpciones
-    {
-        public const string Crear = "Crear";
-        public const string Plantilla = "Plantilla";
-        public const string Factura = "Factura";
-        public const string Cobranza = "Cobranza";
-        public const string TareaAsignada = "Tarea asignada";
-        public const string TareaFinalizada = "Tarea finalizada";
-        public const string Guardia = "Guardia";
-    }
 }
