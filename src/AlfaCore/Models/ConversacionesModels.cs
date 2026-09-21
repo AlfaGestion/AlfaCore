@@ -677,6 +677,13 @@ public sealed class ConversacionPlantillaDto
     public DateTime? FechaHoraModificacion { get; set; }
     public DateTime? FechaHoraSincronizacion { get; set; }
     public bool EsMetaRemota { get; set; }
+
+    /// <summary>
+    /// Mapping persistido posición (1-based, coincide con {{N}}) -> VariableKey del catálogo
+    /// (<see cref="WhatsAppTemplateVariableCatalog"/>), solo para el componente BODY. Una posición sin
+    /// entrada acá es manual (sin mapping). Se carga desde dbo.CONV_PLANTILLAS_VARIABLES.
+    /// </summary>
+    public Dictionary<int, string> VariableMappings { get; set; } = new();
 }
 
 public sealed class ConversacionPlantillaSaveRequest
@@ -694,6 +701,13 @@ public sealed class ConversacionPlantillaSaveRequest
     public bool Activa { get; set; } = true;
     public string? UsuarioAccion { get; set; }
     public string? SistemaAccion { get; set; }
+
+    /// <summary>
+    /// Mapping posición -> VariableKey a persistir para el componente BODY. El servicio recalcula qué
+    /// posiciones existen realmente en el CuerpoTexto final y descarta como huérfanas las que ya no
+    /// aparecen; nunca infiere una VariableKey nueva a partir del texto.
+    /// </summary>
+    public Dictionary<int, string> VariableMappings { get; set; } = new();
 }
 
 public sealed class ConversacionPlantillaSubmitRequest

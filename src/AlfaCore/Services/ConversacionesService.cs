@@ -2909,10 +2909,18 @@ public sealed class ConversacionesService(
 
             await using var cn = new SqlConnection(tenant.ConnectionString);
             await cn.OpenAsync(token);
-            await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
-            await using var rd = await cmd.ExecuteReaderAsync(token);
-            return await rd.ReadAsync(token) ? ReadTemplate(rd) : null;
+            ConversacionPlantillaDto? template;
+            await using (var cmd = new SqlCommand(sql, cn))
+            {
+                cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+                await using var rd = await cmd.ExecuteReaderAsync(token);
+                template = await rd.ReadAsync(token) ? ReadTemplate(rd) : null;
+            }
+
+            if (template is not null)
+                template.VariableMappings = await LoadTemplateVariableMappingsAsync(cn, template.IdPlantilla, WhatsAppTemplateVariableCatalog.ComponenteBody, token);
+
+            return template;
         }, "No se pudo cargar la plantilla de WhatsApp.", ct);
 
     public Task<ConversacionPlantillasSyncResultDto> SyncTemplatesCatalogFromMetaAsync(int? idNumeroWhatsApp, int? expectedBaseId = null, CancellationToken ct = default)
@@ -3047,13 +3055,19 @@ public sealed class ConversacionesService(
                     SELECT CAST(SCOPE_IDENTITY() AS bigint);
                     """;
 
-                await using var cmd = new SqlCommand(insertSql, cn);
-                AddTemplateParameters(cmd, normalized);
-                cmd.Parameters.AddWithValue("@WabaId", DbNullable(templateContext.WabaId));
-                cmd.Parameters.AddWithValue("@EstadoLocal", ConversacionPlantillaEstadosLocales.Borrador);
-                cmd.Parameters.AddWithValue("@EstadoMeta", "DRAFT");
-                var result = await cmd.ExecuteScalarAsync(token);
-                return Convert.ToInt64(result, CultureInfo.InvariantCulture);
+                long insertedId;
+                await using (var cmd = new SqlCommand(insertSql, cn))
+                {
+                    AddTemplateParameters(cmd, normalized);
+                    cmd.Parameters.AddWithValue("@WabaId", DbNullable(templateContext.WabaId));
+                    cmd.Parameters.AddWithValue("@EstadoLocal", ConversacionPlantillaEstadosLocales.Borrador);
+                    cmd.Parameters.AddWithValue("@EstadoMeta", "DRAFT");
+                    var result = await cmd.ExecuteScalarAsync(token);
+                    insertedId = Convert.ToInt64(result, CultureInfo.InvariantCulture);
+                }
+
+                await SaveTemplateVariableMappingsAsync(cn, insertedId, normalized.CuerpoTexto, request.VariableMappings, token);
+                return insertedId;
             }
 
             const string updateSql = """
@@ -3086,6 +3100,7 @@ public sealed class ConversacionesService(
             if (affected == 0)
                 throw new InvalidOperationException("La plantilla indicada no existe.");
 
+            await SaveTemplateVariableMappingsAsync(cn, normalized.IdPlantilla, normalized.CuerpoTexto, request.VariableMappings, token);
             return normalized.IdPlantilla;
         }, "No se pudo guardar la plantilla de WhatsApp.", ct);
 
@@ -3301,54 +3316,125 @@ public sealed class ConversacionesService(
             };
         }, "No se pudo enviar la plantilla por WhatsApp.", ct);
 
-    public Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, int variableCount, CancellationToken ct = default)
+    /// <summary>
+    /// Valor de contact.name: reusa exactamente la misma fuente que el heurístico histórico (posición 1
+    /// = nombre), factorizada para que tanto el path "con mapping" como el path "legacy sin mapping"
+    /// (más abajo) llamen a la misma función en vez de duplicar la lógica.
+    /// </summary>
+    internal static string ResolveContactNameAutoValue(ConversacionDetalleDto conversation)
+        => FirstNonEmpty(
+            conversation.ClienteNombre,
+            conversation.ContactoNombre,
+            conversation.NombreVisible,
+            conversation.TelefonoWhatsApp);
+
+    /// <summary>Resolver real de cobranza.detalleDeuda -- reusa TryBuildDebtDetailAsync, no lo reimplementa.</summary>
+    private async Task<(bool Resolved, string Value, string? Observation)> ResolveCobranzaDetalleDeudaAutoValueAsync(SqlConnection cn, ConversacionDetalleDto conversation, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
+            return (false, string.Empty, "La conversación no tiene cliente vinculado; no se pudo calcular deuda automática.");
+
+        var debt = await TryBuildDebtDetailAsync(cn, conversation.ClienteCodigo, ct);
+        if (string.IsNullOrWhiteSpace(debt.DetailText))
+            return (false, string.Empty, string.IsNullOrWhiteSpace(debt.Observation) ? "No se pudo calcular el detalle de deuda del cliente." : debt.Observation);
+
+        return (true, debt.DetailText, debt.Observation);
+    }
+
+    /// <summary>Resolver real de pago.formaPago -- reusa la misma config CONV_COBRANZA_FORMA_PAGO de siempre.</summary>
+    private async Task<(bool Resolved, string Value, string? Observation)> ResolvePagoFormaPagoAutoValueAsync(SqlConnection cn, CancellationToken ct)
+    {
+        var payment = await ReadConversationConfigValueAsync(cn, "CONV_COBRANZA_FORMA_PAGO", ct);
+        if (string.IsNullOrWhiteSpace(payment))
+            return (false, string.Empty, "Falta configurar CONV_COBRANZA_FORMA_PAGO en TA_CONFIGURACION.");
+
+        return (true, payment, null);
+    }
+
+    public Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetTemplateAutoValues", async token =>
         {
             if (idConversacion <= 0)
-                throw new InvalidOperationException("La conversaciÃ³n es obligatoria.");
+                throw new InvalidOperationException("La conversación es obligatoria.");
 
             var conversation = await GetConversationAsync(idConversacion, token)
-                ?? throw new InvalidOperationException("La conversaciÃ³n indicada no existe.");
-
-            var displayName = FirstNonEmpty(
-                conversation.ClienteNombre,
-                conversation.ContactoNombre,
-                conversation.NombreVisible,
-                conversation.TelefonoWhatsApp);
-
-            var detail = string.Empty;
-            var payment = string.Empty;
-            var observations = new List<string>();
+                ?? throw new InvalidOperationException("La conversación indicada no existe.");
 
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(token);
 
-            if (!string.IsNullOrWhiteSpace(conversation.ClienteCodigo))
-            {
-                var debt = await TryBuildDebtDetailAsync(cn, conversation.ClienteCodigo, token);
-                detail = debt.DetailText;
-                if (!string.IsNullOrWhiteSpace(debt.Observation))
-                    observations.Add(debt.Observation);
-            }
-            else
-            {
-                observations.Add("La conversaciÃ³n no tiene cliente vinculado; no se pudo calcular deuda automÃ¡tica.");
-            }
-
-            payment = await ReadConversationConfigValueAsync(cn, "CONV_COBRANZA_FORMA_PAGO", token);
-            if (string.IsNullOrWhiteSpace(payment))
-                observations.Add("Falta configurar CONV_COBRANZA_FORMA_PAGO en TA_CONFIGURACION.");
+            var mappings = await LoadTemplateVariableMappingsAsync(cn, idPlantilla, WhatsAppTemplateVariableCatalog.ComponenteBody, token);
 
             var values = new List<string>();
-            if (variableCount >= 1)
-                values.Add(displayName);
-            if (variableCount >= 2)
-                values.Add(string.IsNullOrWhiteSpace(detail) ? "Detalle de deuda pendiente de completar." : detail);
-            if (variableCount >= 3)
-                values.Add(string.IsNullOrWhiteSpace(payment) ? "Datos de transferencia pendientes de configurar." : payment);
+            var observations = new List<string>();
+            var stopped = false;
 
-            while (values.Count < variableCount)
-                values.Add($"Dato {values.Count + 1}");
+            for (var pos = 1; pos <= variableCount && !stopped; pos++)
+            {
+                if (mappings.TryGetValue(pos, out var variableKey))
+                {
+                    var definition = WhatsAppTemplateVariableCatalog.Find(variableKey);
+                    if (definition is { CanResolveAutomaticallyInManualSend: true })
+                    {
+                        var (resolved, value, observation) = variableKey switch
+                        {
+                            WhatsAppTemplateVariableCatalog.ContactName => (true, ResolveContactNameAutoValue(conversation), (string?)null),
+                            WhatsAppTemplateVariableCatalog.CobranzaDetalleDeuda => await ResolveCobranzaDetalleDeudaAutoValueAsync(cn, conversation, token),
+                            WhatsAppTemplateVariableCatalog.PagoFormaPago => await ResolvePagoFormaPagoAutoValueAsync(cn, token),
+                            _ => (false, string.Empty, $"No hay resolución automática implementada para '{variableKey}'.")
+                        };
+
+                        if (observation is not null)
+                            observations.Add(observation);
+
+                        if (resolved)
+                        {
+                            values.Add(value);
+                            continue;
+                        }
+
+                        stopped = true;
+                    }
+                    else
+                    {
+                        var context = definition?.RequiredContext;
+                        observations.Add(string.IsNullOrWhiteSpace(context)
+                            ? $"La variable {{{{{pos}}}}} ({definition?.Label ?? variableKey}) no tiene resolución automática disponible en el envío manual; completála a mano."
+                            : $"La variable {{{{{pos}}}}} ({definition?.Label ?? variableKey}) {context} No se puede completar automáticamente desde el envío manual; completála a mano.");
+                        stopped = true;
+                    }
+
+                    continue;
+                }
+
+                // Sin mapping para esta posición: heurístico histórico previo a esta feature, preservado
+                // bit a bit para que las plantillas ya existentes sin mapping sigan funcionando igual.
+                switch (pos)
+                {
+                    case 1:
+                        values.Add(ResolveContactNameAutoValue(conversation));
+                        break;
+                    case 2:
+                    {
+                        var (resolved, value, observation) = await ResolveCobranzaDetalleDeudaAutoValueAsync(cn, conversation, token);
+                        if (observation is not null)
+                            observations.Add(observation);
+                        values.Add(resolved ? value : "Detalle de deuda pendiente de completar.");
+                        break;
+                    }
+                    case 3:
+                    {
+                        var (resolved, value, observation) = await ResolvePagoFormaPagoAutoValueAsync(cn, token);
+                        if (observation is not null)
+                            observations.Add(observation);
+                        values.Add(resolved ? value : "Datos de transferencia pendientes de configurar.");
+                        break;
+                    }
+                    default:
+                        values.Add($"Dato {pos}");
+                        break;
+                }
+            }
 
             return new ConversacionPlantillaAutoValuesDto
             {
@@ -3357,7 +3443,7 @@ public sealed class ConversacionesService(
                 ClienteNombre = conversation.ClienteNombre,
                 Observaciones = string.Join(" ", observations)
             };
-        }, "No se pudieron preparar las variables automÃ¡ticas.", ct);
+        }, "No se pudieron preparar las variables automáticas.", ct);
 
     public Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "AddInternalNote", async token =>
@@ -14129,6 +14215,90 @@ public sealed class ConversacionesService(
         cmd.Parameters.AddWithValue("@Activa", request.Activa);
         cmd.Parameters.AddWithValue("@UsuarioAccion", DbNullable(request.UsuarioAccion));
         cmd.Parameters.AddWithValue("@SistemaAccion", DbNullable(request.SistemaAccion));
+    }
+
+    /// <summary>
+    /// Carga el mapping posición -> VariableKey persistido para una plantilla y componente
+    /// (hoy solo se usa/acepta BODY). Una plantilla sin filas devuelve un diccionario vacío
+    /// (comportamiento 100% manual, igual que antes de que existiera esta tabla).
+    /// </summary>
+    private static async Task<Dictionary<int, string>> LoadTemplateVariableMappingsAsync(SqlConnection cn, long idPlantilla, string componente, CancellationToken ct)
+    {
+        var result = new Dictionary<int, string>();
+        if (idPlantilla <= 0)
+            return result;
+
+        const string sql = """
+            SELECT Posicion, VariableKey
+            FROM dbo.CONV_PLANTILLAS_VARIABLES
+            WHERE IdPlantilla = @IdPlantilla AND Componente = @Componente
+            """;
+
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+        cmd.Parameters.AddWithValue("@Componente", componente);
+        await using var rd = await cmd.ExecuteReaderAsync(ct);
+        while (await rd.ReadAsync(ct))
+            result[rd.GetInt32(0)] = rd.GetString(1);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Persiste el mapping BODY de una plantilla ya guardada. Recalcula qué posiciones {{N}} existen
+    /// realmente en <paramref name="cuerpoTexto"/> (el texto final, después de normalizar) y descarta
+    /// como huérfano cualquier mapping cuya posición ya no aparezca en el cuerpo -- nunca infiere una
+    /// VariableKey nueva a partir del texto, solo filtra lo que el llamador propone. Claves inválidas
+    /// (que no existen en el catálogo) también se descartan defensivamente. Estrategia
+    /// delete-then-insert dentro de la misma conexión: simple e idempotente para el volumen de filas
+    /// esperado (unas pocas variables por plantilla).
+    /// </summary>
+    private static async Task SaveTemplateVariableMappingsAsync(SqlConnection cn, long idPlantilla, string cuerpoTexto, IReadOnlyDictionary<int, string>? proposedMappings, CancellationToken ct)
+    {
+        if (idPlantilla <= 0)
+            return;
+
+        var maxPosition = CountTemplateVariables(cuerpoTexto);
+        var existingPositions = new HashSet<int>();
+        foreach (Match match in Regex.Matches(cuerpoTexto ?? string.Empty, @"\{\{\s*(\d+)\s*\}\}"))
+        {
+            if (int.TryParse(match.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var index) && index >= 1 && index <= maxPosition)
+                existingPositions.Add(index);
+        }
+
+        var toPersist = (proposedMappings ?? new Dictionary<int, string>())
+            .Where(kv => existingPositions.Contains(kv.Key) && WhatsAppTemplateVariableCatalog.IsValidKey(kv.Value))
+            .ToList();
+
+        const string deleteSql = """
+            DELETE FROM dbo.CONV_PLANTILLAS_VARIABLES
+            WHERE IdPlantilla = @IdPlantilla AND Componente = @Componente
+            """;
+
+        await using (var deleteCmd = new SqlCommand(deleteSql, cn))
+        {
+            deleteCmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+            deleteCmd.Parameters.AddWithValue("@Componente", WhatsAppTemplateVariableCatalog.ComponenteBody);
+            await deleteCmd.ExecuteNonQueryAsync(ct);
+        }
+
+        if (toPersist.Count == 0)
+            return;
+
+        const string insertSql = """
+            INSERT INTO dbo.CONV_PLANTILLAS_VARIABLES (IdPlantilla, Componente, Posicion, VariableKey, FechaHora_Grabacion)
+            VALUES (@IdPlantilla, @Componente, @Posicion, @VariableKey, GETDATE())
+            """;
+
+        foreach (var (posicion, variableKey) in toPersist)
+        {
+            await using var insertCmd = new SqlCommand(insertSql, cn);
+            insertCmd.Parameters.AddWithValue("@IdPlantilla", idPlantilla);
+            insertCmd.Parameters.AddWithValue("@Componente", WhatsAppTemplateVariableCatalog.ComponenteBody);
+            insertCmd.Parameters.AddWithValue("@Posicion", posicion);
+            insertCmd.Parameters.AddWithValue("@VariableKey", variableKey);
+            await insertCmd.ExecuteNonQueryAsync(ct);
+        }
     }
 
     private static void ValidateTemplateCanSubmit(ConversacionPlantillaDto template)

@@ -51,7 +51,18 @@ public interface IConversacionesService
     Task ArchiveTemplateAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);
     Task SubmitTemplateForApprovalAsync(ConversacionPlantillaSubmitRequest request, CancellationToken ct = default);
     Task SyncTemplateStatusAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);
-    Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, int variableCount, CancellationToken ct = default);
+    /// <summary>
+    /// Resuelve automáticamente, cuando es posible, los valores de las variables BODY de la plantilla
+    /// indicada para el envío manual desde Conversaciones. Por posición: si hay mapping persistido con
+    /// una VariableKey resoluble en este flujo (contact.name / cobranza.detalleDeuda / pago.formaPago)
+    /// se resuelve con su resolver real; si hay mapping pero la key no es resoluble acá (Tareas/Guardia)
+    /// o falta contexto, esa posición y las siguientes quedan sin completar (el operador las completa a
+    /// mano, señalizado vía Observaciones); si no hay mapping para la posición, se preserva el
+    /// comportamiento heurístico histórico (posición 1=nombre, 2=deuda, 3=forma de pago) para no romper
+    /// plantillas existentes sin mapping. <paramref name="idPlantilla"/> puede ser 0/una plantilla
+    /// remota de Meta sin fila local: en ese caso simplemente no hay mappings y todo cae al heurístico.
+    /// </summary>
+    Task<ConversacionPlantillaAutoValuesDto> GetTemplateAutoValuesAsync(long idConversacion, long idPlantilla, int variableCount, CancellationToken ct = default);
     Task<ConversacionPlantillaMessageResultDto> SendTemplateMessageAsync(ConversacionPlantillaSendRequest request, CancellationToken ct = default);
     Task<long> AddInternalNoteAsync(ConversacionNotaInternaRequest request, CancellationToken ct = default);
     Task<long> AddInternalEventAsync(ConversacionEventoInternoRequest request, CancellationToken ct = default);
