@@ -12,6 +12,18 @@ public static class WhatsAppGraphErrorCodes
     /// </summary>
     public const string AccountLocked = "131031";
 
+    /// <summary>
+    /// "Business eligibility payment issue" -- falta configurar moneda/método de pago de la WhatsApp
+    /// Business Account en Meta Business Manager. A diferencia de AccountLocked, esta condición no es
+    /// del mensaje puntual sino del WABA/número: AlfaNet es Technology Provider (el cliente le paga
+    /// directamente a Meta) y nunca absorbe billing ni implementa Credit Sharing, así que la única
+    /// acción posible es que el CLIENTE (no AlfaNet) complete su configuración de pago en Meta Business
+    /// Manager. IsPersistentIntegrationCondition() marca este código para que el procesamiento del
+    /// webhook actualice WhatsAppIntegrationHealth además de clasificar el mensaje individual -- debe
+    /// seguir visible aunque el usuario cambie de conversación.
+    /// </summary>
+    public const string PaymentSetupRequired = "131042";
+
     // Los siguientes SON los códigos que Meta documenta públicamente para WhatsApp Cloud API
     // (developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes) -- a diferencia de
     // AccountLocked, ninguno de éstos tiene todavía un caso confirmado con evidencia real de
@@ -91,6 +103,42 @@ public static class WhatsAppOutboundErrorClassifier
         => string.Equals(ExtractGraphError(deliveryPayloadJson).Code, WhatsAppGraphErrorCodes.AccountLocked, StringComparison.Ordinal);
 
     /// <summary>
+    /// Códigos cuya causa es de la integración/WABA/número (no del mensaje puntual) y por lo tanto,
+    /// además de clasificarse para mostrarse en el mensaje que falló, deben reflejarse en un estado
+    /// persistente (WhatsAppIntegrationHealth) que sobrevive aunque el usuario cambie de conversación.
+    /// Única fuente de verdad para esta decisión -- el procesamiento del webhook nunca debe volver a
+    /// parsear errors[].code por su cuenta, siempre pasa por acá.
+    /// </summary>
+    public static bool IsPersistentIntegrationCondition(string? code)
+        => string.Equals(code, WhatsAppGraphErrorCodes.PaymentSetupRequired, StringComparison.Ordinal);
+
+    /// <summary>
+    /// Extrae (code, message) directamente de un status callback de webhook (forma
+    /// <c>{"errors":[{"code":...,"message":...}]}</c>), a diferencia de <see cref="ExtractGraphError"/>
+    /// que espera la forma envuelta que persiste BuildDeliveryErrorPayload. Misma allowlist de códigos,
+    /// una sola función de clasificación para ambos caminos (mensaje individual y salud persistente).
+    /// </summary>
+    public static string? ExtractWebhookErrorCode(string? rawStatusJson)
+    {
+        if (string.IsNullOrWhiteSpace(rawStatusJson))
+            return null;
+        try
+        {
+            using var doc = JsonDocument.Parse(rawStatusJson);
+            if (!doc.RootElement.TryGetProperty("errors", out var errors) || errors.ValueKind != JsonValueKind.Array)
+                return null;
+            foreach (var error in errors.EnumerateArray())
+                if (error.TryGetProperty("code", out var code))
+                    return code.ToString();
+            return null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
     /// Clasifica directamente la excepción capturada por un envío (plantilla, reacción, texto) en el
     /// mismo momento del catch en la UI, sin esperar a que la fila del mensaje se recargue. Reconstruye
     /// la misma forma que BuildDeliveryErrorPayload (ConversacionesService) a partir de la excepción
@@ -153,6 +201,15 @@ public static class WhatsAppOutboundErrorClassifier
                 "Envíos limitados temporalmente por Meta",
                 "Meta limitó temporalmente los envíos de este número.",
                 "Probá de nuevo más tarde."),
+
+            // AlfaNet es Technology Provider: el cliente le paga directamente a Meta. Este mensaje
+            // nunca debe sugerir que AlfaNet resuelve o absorbe el pago -- solo informa que el CLIENTE
+            // tiene que completar su configuración de pago en Meta Business Manager.
+            WhatsAppGraphErrorCodes.PaymentSetupRequired => AppUiMessage.ActionRequired(
+                "WhatsApp requiere completar configuración de pagos",
+                "Meta requiere que el cliente complete la configuración de pagos/facturación de esta cuenta de WhatsApp Business antes de poder enviar mensajes.",
+                "No es necesario reconectar WhatsApp ni generar otro token -- esto se resuelve directamente en Meta Business Manager, por el titular de la cuenta.",
+                code),
 
             _ => AppUiMessage.Error(
                 "No se pudo enviar",

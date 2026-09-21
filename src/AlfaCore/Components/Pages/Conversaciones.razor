@@ -8733,7 +8733,7 @@
 
         try
         {
-            await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
+            var sendResult = await ConversacionesSvc.SendTemplateMessageAsync(new ConversacionPlantillaSendRequest
             {
                 IdConversacion = _selectedConversation.IdConversacion,
                 IdPlantilla = SelectedTemplate.IdPlantilla,
@@ -8762,9 +8762,19 @@
 
             await SelectConversationAsync(selectedConversationId, updateUrl: false);
             await RefreshInboxAsync(showLoading: false, allowSelectionChange: false);
-            _actionMessage = templateAttachmentsToSend.Count == 0
-                ? $"Plantilla enviada correctamente: {previewText}"
-                : $"Plantilla y adjunto(s) enviados correctamente: {previewText}";
+            // Antes: "Plantilla enviada correctamente" sin condicionar a EstadoEnvio -- confundía "Meta
+            // aceptó el POST (ENVIADO_META, wamid recibido)" con "el destinatario la recibió". Mismo
+            // criterio que GetSendSuccessMessage (mensajes libres): ENVIADO_META es aceptación, no
+            // entrega confirmada -- la entrega real llega después vía webhook de estado y se refleja en
+            // el ícono/estado del mensaje dentro del hilo, no acá.
+            var wasOnlyAcceptedByMeta = string.Equals(sendResult?.EstadoEnvio, "ENVIADO_META", StringComparison.OrdinalIgnoreCase);
+            _actionMessage = (templateAttachmentsToSend.Count == 0, wasOnlyAcceptedByMeta) switch
+            {
+                (true, true) => $"Plantilla aceptada por Meta: {previewText}. La entrega se confirma cuando llega el estado de WhatsApp.",
+                (true, false) => $"Plantilla enviada correctamente: {previewText}",
+                (false, true) => $"Plantilla y adjunto(s) aceptados por Meta: {previewText}. La entrega se confirma cuando llega el estado de WhatsApp.",
+                (false, false) => $"Plantilla y adjunto(s) enviados correctamente: {previewText}"
+            };
         }
         catch (Exception ex)
         {

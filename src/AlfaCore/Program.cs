@@ -259,6 +259,7 @@ public class Program
         builder.Services.AddScoped<IWhatsAppWebSessionService, WhatsAppWebSessionService>();
         builder.Services.AddScoped<IWhatsAppEmbeddedSignupStore, WhatsAppEmbeddedSignupStore>();
         builder.Services.AddScoped<IWhatsAppAssetOwnershipStore, WhatsAppAssetOwnershipStore>();
+        builder.Services.AddScoped<IWhatsAppIntegrationHealthStore, WhatsAppIntegrationHealthStore>();
         builder.Services.AddScoped<IWhatsAppCoexistenceSyncStore, WhatsAppCoexistenceSyncStore>();
         builder.Services.AddScoped<IWhatsAppCoexistenceSyncTrigger, WhatsAppCoexistenceSyncTrigger>();
         builder.Services.AddScoped<IWhatsAppWebhookTenantGuard, WhatsAppWebhookTenantGuard>();

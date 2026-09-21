@@ -29,6 +29,8 @@ public sealed class ConversacionesService(
     IAlfaKnowledgeSuggestionService alfaKnowledgeService,
     IWhatsAppWebhookTenantGuard whatsAppWebhookTenantGuard,
     IWhatsAppRuntimeCredentialResolver whatsAppRuntimeCredentialResolver,
+    IWhatsAppAssetOwnershipStore whatsAppAssetOwnershipStore,
+    IWhatsAppIntegrationHealthStore whatsAppIntegrationHealthStore,
     IMetaWhatsAppManagementClient metaWhatsAppManagementClient,
     IWhatsAppCoexistenceSyncStore whatsAppCoexistenceSyncStore,
     IOptions<WhatsAppEmbeddedSignupOptions> embeddedSignupOptions,
@@ -2810,7 +2812,8 @@ public sealed class ConversacionesService(
                     ISNULL(Activa, 1),
                     FechaHora_Grabacion,
                     FechaHora_Modificacion,
-                    FechaHoraSincronizacion
+                    FechaHoraSincronizacion,
+                    ISNULL(MetaPayloadJson, '')
                 FROM dbo.CONV_PLANTILLAS
                 WHERE
                     (@IncluirInactivas = 1 OR ISNULL(Activa, 1) = 1)
@@ -2902,7 +2905,8 @@ public sealed class ConversacionesService(
                     ISNULL(Activa, 1),
                     FechaHora_Grabacion,
                     FechaHora_Modificacion,
-                    FechaHoraSincronizacion
+                    FechaHoraSincronizacion,
+                    ISNULL(MetaPayloadJson, '')
                 FROM dbo.CONV_PLANTILLAS
                 WHERE IdPlantilla = @IdPlantilla
                 """;
@@ -3233,10 +3237,6 @@ public sealed class ConversacionesService(
             }
 
             var values = NormalizeTemplateValues(request.ValoresVariables);
-            var requiredVariableCount = CountTemplateVariables(template.CuerpoTexto);
-            if (values.Count < requiredVariableCount)
-                throw new InvalidOperationException(
-                    $"Faltan datos para enviar la plantilla. Se requieren {requiredVariableCount} variable(s) y se recibieron {values.Count}.");
 
             var config = await conversacionesConfigService.GetWhatsAppConfigAsync(token);
             if (!string.IsNullOrWhiteSpace(conversation.PhoneNumberId))
@@ -3273,6 +3273,15 @@ public sealed class ConversacionesService(
 
             if (!string.Equals(template.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("Solo se pueden enviar plantillas aprobadas por Meta.");
+
+            // Antes: guard inline "values.Count < CountTemplateVariables(...)" -- solo chequeaba "al
+            // menos", no cantidad exacta ni orden/consecutividad, y NormalizeTemplateValues descartaba
+            // valores vacíos en silencio (ver su comentario). WhatsAppTemplateValidation.ValidateSend
+            // reemplaza ese guard: exige exactamente los valores BODY requeridos, no vacíos, en orden
+            // consecutivo desde {{1}}, y rechaza explícitamente componentes que AlfaCore no puede
+            // completar (HEADER media/variable, botones, variables con nombre) antes de gastar la
+            // llamada a Graph.
+            WhatsAppTemplateValidation.ValidateSend(template, values);
 
             var now = BusinessNow();
             var previewText = RenderTemplatePreview(template.CuerpoTexto, values);
@@ -3879,6 +3888,8 @@ public sealed class ConversacionesService(
             {
                 request.TraceStage?.Invoke("PROCESSING_STATUSES");
                 await UpdateWhatsAppMessageStatusAsync(status, token);
+                await TryFlagPaymentSetupRequiredAsync(currentBaseId, status, token);
+                await TryResolvePaymentSetupIfConfirmedAsync(currentBaseId, status, token);
                 processed++;
             }
 
@@ -10129,6 +10140,11 @@ public sealed class ConversacionesService(
         IReadOnlyList<string> values,
         CancellationToken ct)
     {
+        // Defensa en profundidad: SendTemplateMessageAsync ya valida antes de llegar acá, pero este
+        // método privado es el único punto real que arma el POST a Graph -- si en el futuro se agrega
+        // otro llamador (p. ej. un envío automático) que se salte SendTemplateMessageAsync, no debe
+        // poder mandar parámetros BODY inválidos o una plantilla con componentes no soportados.
+        WhatsAppTemplateValidation.ValidateSend(template, values);
         if (!config.IsConfiguredForSend)
             throw new InvalidOperationException("Falta configurar WhatsApp para enviar mensajes.");
 
@@ -12702,6 +12718,12 @@ public sealed class ConversacionesService(
                 if (!value.TryGetProperty("statuses", out var statuses) || statuses.ValueKind != JsonValueKind.Array)
                     continue;
 
+                var phoneNumberId = value.TryGetProperty("metadata", out var metadata)
+                    && metadata.TryGetProperty("phone_number_id", out var phoneProp)
+                    && phoneProp.ValueKind == JsonValueKind.String
+                        ? (phoneProp.GetString() ?? string.Empty).Trim()
+                        : string.Empty;
+
                 foreach (var status in statuses.EnumerateArray())
                 {
                     var messageId = status.TryGetProperty("id", out var idProp) ? idProp.GetString() ?? string.Empty : string.Empty;
@@ -12713,7 +12735,9 @@ public sealed class ConversacionesService(
                     {
                         WhatsAppMessageId = messageId,
                         EstadoEnvio = NormalizeWhatsAppDeliveryStatus(rawStatus, status),
-                        RawJson = status.GetRawText()
+                        RawJson = status.GetRawText(),
+                        PhoneNumberId = phoneNumberId,
+                        EventTimestampUtc = ParseWhatsAppStatusTimestamp(status)
                     });
                 }
             }
@@ -12721,6 +12745,117 @@ public sealed class ConversacionesService(
 
         return items;
     }
+
+    // Meta reporta "timestamp" como epoch de segundos en formato string. Se usa el timestamp del
+    // EVENTO (no la hora local de recepción del webhook) para poder ordenar correctamente eventos que
+    // lleguen tarde o fuera de orden. Si falta o es inválido, se usa la hora de procesamiento como
+    // aproximación conservadora (nunca bloquea el procesamiento del webhook).
+    private static DateTime ParseWhatsAppStatusTimestamp(JsonElement status)
+    {
+        if (status.TryGetProperty("timestamp", out var timestampProp))
+        {
+            var raw = timestampProp.ValueKind switch
+            {
+                JsonValueKind.String => timestampProp.GetString(),
+                JsonValueKind.Number => timestampProp.GetRawText(),
+                _ => null
+            };
+            if (long.TryParse(raw, out var epochSeconds) && epochSeconds > 0)
+                return DateTimeOffset.FromUnixTimeSeconds(epochSeconds).UtcDateTime;
+        }
+        return DateTime.UtcNow;
+    }
+
+    // Un fallo de mensaje individual (ERROR_ENVIO) no implica un problema de la integración. Solo los
+    // códigos que WhatsAppOutboundErrorClassifier.IsPersistentIntegrationCondition marca (hoy: 131042)
+    // se propagan como estado de integración ACTION_REQUIRED, aislado por IdBase+WabaId+PhoneNumberId.
+    // Best-effort: un fallo acá nunca debe interrumpir el procesamiento del resto del webhook.
+    private async Task TryFlagPaymentSetupRequiredAsync(int idBase, IncomingWhatsAppStatus status, CancellationToken ct)
+    {
+        if (idBase <= 0 || string.IsNullOrWhiteSpace(status.PhoneNumberId) || !embeddedSignupOptions.Value.Enabled)
+            return;
+        var code = WhatsAppOutboundErrorClassifier.ExtractWebhookErrorCode(status.RawJson);
+        if (!WhatsAppOutboundErrorClassifier.IsPersistentIntegrationCondition(code))
+            return;
+
+        try
+        {
+            var ownership = await whatsAppAssetOwnershipStore.GetPhoneOwnershipAsync(status.PhoneNumberId, ct);
+            if (ownership is null || ownership.IdBase != idBase)
+                return;
+
+            // IsPersistentIntegrationCondition solo reconoce 131042 hoy, así que esta razón es la
+            // única alcanzable -- si el classifier suma otro código persistente en el futuro, ahí sí
+            // hace falta que exponga también la razón en vez de asumirla acá.
+            var ctaUrl = WhatsAppMetaCtaLinks.ExtractSafeMetaCtaUrl(status.RawJson);
+            await whatsAppIntegrationHealthStore.MarkActionRequiredAsync(
+                idBase,
+                ownership.WabaId,
+                status.PhoneNumberId,
+                "CUSTOMER_PAYMENT_SETUP_REQUIRED",
+                code ?? string.Empty,
+                "Falta configurar moneda/facturación de la cuenta de WhatsApp Business en Meta.",
+                ctaUrl,
+                status.WhatsAppMessageId,
+                status.EventTimestampUtc,
+                ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo registrar el estado ACTION_REQUIRED de la integración para PhoneNumberId {PhoneNumberId}.", status.PhoneNumberId);
+        }
+    }
+
+    // No existe ninguna forma read-only fiable de consultarle a Meta "¿ya configuraste el billing?"
+    // (ni AlfaNet quiere automatizar billing bajo CustomerPaysMeta). Por eso la única señal de
+    // recuperación aceptada es la evidencia operativa real: un webhook posterior de la MISMA
+    // integración confirmando que Meta procesó un envío sin error (sent/delivered/read), y solo si ese
+    // evento es posterior al momento en que se marcó ACTION_REQUIRED. La aceptación sincrónica del POST
+    // /messages (ENVIADO_META devuelto directamente por SendTemplateToWhatsAppAsync) NUNCA pasa por
+    // acá -- Meta puede aceptar el POST y fallar segundos después vía webhook.
+    private async Task TryResolvePaymentSetupIfConfirmedAsync(int idBase, IncomingWhatsAppStatus status, CancellationToken ct)
+    {
+        if (idBase <= 0 || string.IsNullOrWhiteSpace(status.PhoneNumberId) || !embeddedSignupOptions.Value.Enabled)
+            return;
+        if (status.EstadoEnvio is not ("ENVIADO_META" or "ENTREGADO" or "LEIDO"))
+            return;
+
+        try
+        {
+            var ownership = await whatsAppAssetOwnershipStore.GetPhoneOwnershipAsync(status.PhoneNumberId, ct);
+            if (ownership is null || ownership.IdBase != idBase)
+                return;
+
+            await whatsAppIntegrationHealthStore.ResolveIfSubsequentAsync(
+                idBase, ownership.WabaId, status.PhoneNumberId, status.EventTimestampUtc, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "No se pudo evaluar la recuperación del estado de integración para PhoneNumberId {PhoneNumberId}.", status.PhoneNumberId);
+        }
+    }
+
+    // Por IdNumero (no por conversación), igual que otros diagnósticos por número: el estado es de la
+    // integración/WABA/número, no de una conversación puntual -- tiene que poder mostrarse aunque el
+    // usuario esté mirando cualquier conversación de ese mismo número.
+    public Task<WhatsAppIntegrationHealthStatus?> GetWhatsAppIntegrationHealthAsync(int idNumero, CancellationToken ct = default)
+        => ExecuteLoggedAsync("Conversaciones", "GetWhatsAppIntegrationHealth", async token =>
+        {
+            var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+            if (!embeddedSignupOptions.Value.Enabled || idNumero <= 0)
+                return null;
+
+            var numero = await conversacionesConfigService.GetWhatsAppNumeroAsync(idNumero, token);
+            if (numero is null || string.IsNullOrWhiteSpace(numero.PhoneNumberId))
+                return null;
+
+            var ownership = await whatsAppAssetOwnershipStore.GetPhoneOwnershipAsync(numero.PhoneNumberId, token);
+            if (ownership is null || ownership.IdBase != idBase)
+                return null;
+
+            var status = await whatsAppIntegrationHealthStore.GetAsync(idBase, ownership.WabaId, numero.PhoneNumberId, token);
+            return status?.State == "ACTION_REQUIRED" ? status : null;
+        }, "No se pudo consultar el estado de la integración de WhatsApp.", ct);
 
     // ---- Coexistence: history sync, smb_app_state_sync, smb_message_echoes ------------------------
     //
@@ -14226,8 +14361,30 @@ public sealed class ConversacionesService(
             Activa = !rd.IsDBNull(14) && rd.GetBoolean(14),
             FechaHoraGrabacion = rd.IsDBNull(15) ? DateTime.MinValue : rd.GetDateTime(15),
             FechaHoraModificacion = rd.IsDBNull(16) ? null : rd.GetDateTime(16),
-            FechaHoraSincronizacion = rd.IsDBNull(17) ? null : rd.GetDateTime(17)
+            FechaHoraSincronizacion = rd.IsDBNull(17) ? null : rd.GetDateTime(17),
+            // MetaPayloadJson persiste el payload completo devuelto por Meta al sincronizar (incluye
+            // "components"). Antes se descartaba al leer de dbo.CONV_PLANTILLAS -- WhatsAppTemplateValidation
+            // necesita el array crudo de components para rechazar plantillas con HEADER media/variable o
+            // botones también en el camino de plantillas ya sincronizadas en catálogo (no solo remotas).
+            ComponentesMetaJson = ExtractComponentsFromPayload(GetString(rd, 18))
         };
+
+    private static string ExtractComponentsFromPayload(string payloadJson)
+    {
+        if (string.IsNullOrWhiteSpace(payloadJson))
+            return string.Empty;
+        try
+        {
+            using var document = JsonDocument.Parse(payloadJson);
+            return document.RootElement.TryGetProperty("components", out var components) && components.ValueKind == JsonValueKind.Array
+                ? components.GetRawText()
+                : string.Empty;
+        }
+        catch (JsonException)
+        {
+            return string.Empty;
+        }
+    }
 
     private static ConversacionPlantillaSaveRequest NormalizeTemplateRequest(ConversacionPlantillaSaveRequest request)
     {
@@ -14581,10 +14738,14 @@ public sealed class ConversacionesService(
             result.Add(block);
     }
 
+    // Antes filtraba valores vacíos (.Where(x => x.Length > 0)), lo que descartaba en silencio una
+    // posición requerida vacía en el medio de la lista y desalineaba el resto -- p. ej. ["Ana", "", "42"]
+    // llegaba a Graph como ["Ana", "42"] (2 valores para 3 posiciones, corridos). WhatsAppTemplateValidation
+    // .ValidateSend necesita ver la lista completa, con vacíos incluidos, para poder rechazarla
+    // explícitamente en vez de que el corrimiento silencioso llegue a Meta como un error genérico.
     private static List<string> NormalizeTemplateValues(IEnumerable<string>? values)
         => values?
             .Select(x => (x ?? string.Empty).Trim())
-            .Where(x => x.Length > 0)
             .ToList() ?? [];
 
     private static ConversacionPlantillaDto MapRemoteTemplate(string wabaId, MetaMessageTemplate template)
@@ -15445,6 +15606,8 @@ public sealed class ConversacionesService(
         public string WhatsAppMessageId { get; init; } = string.Empty;
         public string EstadoEnvio { get; init; } = string.Empty;
         public string RawJson { get; init; } = string.Empty;
+        public string PhoneNumberId { get; init; } = string.Empty;
+        public DateTime EventTimestampUtc { get; init; }
     }
 
     private sealed class PendingMediaHydration

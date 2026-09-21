@@ -46,6 +46,13 @@ public interface IConversacionesService
     Task<IReadOnlyList<ConversacionPlantillaDto>> GetTemplatesForConversationAsync(long idConversacion, int? expectedBaseId, CancellationToken ct = default);
     Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, CancellationToken ct = default);
     Task<ConversacionPlantillaDto?> GetTemplateAsync(long idPlantilla, int? expectedBaseId, CancellationToken ct = default);
+
+    /// <summary>
+    /// Estado persistente ACTION_REQUIRED (p. ej. 131042 -- falta configuración de pago del cliente en
+    /// Meta) del número WhatsApp indicado, o null si está OK o si Embedded Signup no está habilitado.
+    /// Por IdNumero, no por conversación: es un estado de la integración/WABA/número.
+    /// </summary>
+    Task<WhatsAppIntegrationHealthStatus?> GetWhatsAppIntegrationHealthAsync(int idNumero, CancellationToken ct = default);
     Task<ConversacionPlantillasSyncResultDto> SyncTemplatesCatalogFromMetaAsync(int? idNumeroWhatsApp, int? expectedBaseId = null, CancellationToken ct = default);
     Task<long> SaveTemplateDraftAsync(ConversacionPlantillaSaveRequest request, CancellationToken ct = default);
     Task ArchiveTemplateAsync(long idPlantilla, int? idNumeroWhatsApp, CancellationToken ct = default);

@@ -73,8 +73,13 @@ public sealed class MetaWhatsAppManagementClientTests
     }
 
     [Fact]
-    public async Task TemplateDiscoveryStopsWhenMetaRepeatsNextPage()
+    public async Task TemplateDiscoveryThrowsWhenMetaRepeatsNextPage()
     {
+        // Hardening anti-loop/anti-cross-WABA (GetPagedAsync): antes, una página repetida se cortaba en
+        // silencio y devolvía el resultado parcial obtenido hasta ahí -- eso puede esconder que faltó
+        // sincronizar el resto de las plantillas sin ninguna señal de error. Ahora se trata como una
+        // respuesta de Meta inválida/adversarial y se aborta con una excepción explícita en vez de
+        // devolver una lista incompleta como si estuviera completa.
         var calls = 0;
         var client = Create(new RoutingHandler(request =>
         {
@@ -88,9 +93,28 @@ public sealed class MetaWhatsAppManagementClientTests
                 """);
         }));
 
-        var result = await client.DiscoverTemplatesAsync("9102", new("ref"));
+        await Assert.ThrowsAsync<MetaWhatsAppManagementException>(() => client.DiscoverTemplatesAsync("9102", new("ref")));
+        Assert.Equal(1, calls);
+    }
 
-        Assert.Single(result);
+    [Fact]
+    public async Task TemplateDiscoveryThrowsWhenMetaPointsPaginationOutsideResource()
+    {
+        // Anti-cross-WABA: paging.next apuntando a otro path (otra WABA/recurso) también debe abortar,
+        // no solo la repetición exacta de la misma URL.
+        var calls = 0;
+        var client = Create(new RoutingHandler(request =>
+        {
+            calls++;
+            return Json("""
+                {
+                  "data":[{"id":"9301","name":"bienvenida","language":"es_AR","status":"APPROVED","category":"UTILITY","components":[{"type":"BODY","text":"Hola"}]}],
+                  "paging":{"next":"https://graph.facebook.com/v26.0/OTHER_WABA/message_templates?fields=id&limit=100"}
+                }
+                """);
+        }));
+
+        await Assert.ThrowsAsync<MetaWhatsAppManagementException>(() => client.DiscoverTemplatesAsync("9102", new("ref")));
         Assert.Equal(1, calls);
     }
 

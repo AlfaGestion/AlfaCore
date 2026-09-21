@@ -376,12 +376,18 @@ public sealed class MetaWhatsAppManagementClient(
     private async Task<IReadOnlyList<T>> GetPagedAsync<T>(string accessToken, string graphVersion, string path, string fields, Func<JsonElement, T> map, CancellationToken ct)
     {
         var result = new List<T>();
-        var visitedPages = new HashSet<string>(StringComparer.Ordinal);
         string? next = BuildGraphUri($"{path}?fields={Uri.EscapeDataString(fields)}&limit=100", graphVersion).ToString();
+        var expected = new Uri(next);
+        var visited = new HashSet<string>(StringComparer.Ordinal);
         while (!string.IsNullOrWhiteSpace(next))
         {
-            if (!visitedPages.Add(next))
-                break;
+            // Mismo anti-loop/anti-cross-WABA que el overload por WhatsAppCredentialReference -- este
+            // overload por accessToken/graphVersion plano se usa desde el mismo DiscoverTemplatesAsync
+            // (ver overload de arriba) y necesita idéntica protección.
+            if (!Uri.TryCreate(next, UriKind.Absolute, out var page)
+                || page.Scheme != expected.Scheme || page.Authority != expected.Authority
+                || page.AbsolutePath != expected.AbsolutePath || !visited.Add(next))
+                throw new MetaWhatsAppManagementException("META_INVALID_PAGING", false, false, "Meta devolvió una paginación fuera del recurso solicitado o repetida.");
 
             using var request = CreateAbsoluteRequest(HttpMethod.Get, next, accessToken);
             using var document = await SendJsonAsync(request, ct);
