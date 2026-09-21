@@ -7888,7 +7888,7 @@ public sealed class ConversacionesService(
                     return;
                 }
 
-                var (botCount, yaRespondioEsteMensaje) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
+                var (botCount, yaRespondioEsteMensaje, humanoYaRespondio) = await GetBotReplyStatsAsync(idConversacion, token).ConfigureAwait(false);
                 if (botCount >= Math.Max(1, config.BotMaxRespuestas))
                 {
                     await TraceDiagAsync($"EjecutarStop:MaxRespuestas={botCount}", idConversacion, ct).ConfigureAwait(false);
@@ -7897,6 +7897,19 @@ public sealed class ConversacionesService(
                 if (yaRespondioEsteMensaje)
                 {
                     await TraceDiagAsync("EjecutarStop:YaRespondioEsteMensaje", idConversacion, ct).ConfigureAwait(false);
+                    return;
+                }
+                // Bug P0 (auditoría 2026-09-18): si un operador ya respondió manualmente el último
+                // entrante -- típicamente sin usar "Asignarme", o con un usuario sin técnico vinculado
+                // (ver CurrentMessageTechnicianId/AutoAssignIfUnassignedAsync, que en ese caso NO deja
+                // la conversación asignada) -- BotSoloSinAsignar por sí solo no lo detecta: sigue
+                // viendo la conversación "sin asignar" y el bot responde en paralelo al mismo mensaje
+                // que el humano ya contestó. Se corta acá, sin importar BotSoloSinAsignar, porque ya
+                // hay una respuesta humana a ESE mensaje puntual (mismo criterio por IdMensaje que
+                // yaRespondioEsteMensaje, no "alguna vez hubo un humano en la conversación").
+                if (humanoYaRespondio)
+                {
+                    await TraceDiagAsync("EjecutarStop:HumanoYaRespondioEsteMensaje", idConversacion, ct).ConfigureAwait(false);
                     return;
                 }
 
@@ -8862,20 +8875,30 @@ public sealed class ConversacionesService(
         }
     }
 
+    // Autores de SALIENTE que el pipeline de automatizaciones genera él mismo. Cualquier SALIENTE
+    // cuyo SistemaAutor NO esté en esta lista (incluye NULL/'' -- el envío manual desde la UI no
+    // siempre completa SistemaAccion, ver CurrentUserSystemForAudit) se interpreta como intervención
+    // humana. Ver EjecutarRespuestaBotAsync: un humano que ya respondió el último entrante frena al
+    // bot para ESE mensaje, sin importar si la conversación quedó técnicamente "sin asignar".
+    private const string AutomatedOutgoingSistemaAutorSqlList =
+        "N'AUTOMATIZACION', N'BIENVENIDA', N'BOT', N'AUTOCIERRE_AVISO', N'AUTOCIERRE', N'REGLA', N'SLA', N'PROGRAMADO'";
+
     /// <summary>
-    /// Cuenta de respuestas del bot (para el tope <c>BotMaxRespuestas</c>) y si el último mensaje
+    /// Cuenta de respuestas del bot (para el tope <c>BotMaxRespuestas</c>), si el último mensaje
     /// entrante YA tiene una respuesta automática posterior (bienvenida/fuera de horario/auto-cierre/
     /// bot) -- comparado por <c>IdMensaje</c>, no por "el último saliente alguna vez fue automático":
     /// eso evita que, tras la primera respuesta automática de toda la conversación, quede bloqueado
-    /// para siempre (ver comentario en el llamador).
+    /// para siempre (ver comentario en el llamador) -- y si un humano ya respondió manualmente el
+    /// último entrante (mismo criterio por <c>IdMensaje</c>, ver <see cref="AutomatedOutgoingSistemaAutorSqlList"/>).
     /// </summary>
-    private async Task<(int Count, bool YaRespondioUltimoEntrante)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
+    private async Task<(int Count, bool YaRespondioUltimoEntrante, bool HumanoYaRespondioUltimoEntrante)> GetBotReplyStatsAsync(long idConversacion, CancellationToken ct)
     {
-        const string sql = """
+        var sql = $"""
             SELECT
                 (SELECT COUNT(1) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') = N'BOT'),
                 ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'ENTRANTE'), 0),
-                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') IN (N'AUTOMATIZACION', N'BIENVENIDA', N'BOT', N'AUTOCIERRE_AVISO', N'AUTOCIERRE', N'REGLA')), 0);
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') IN ({AutomatedOutgoingSistemaAutorSqlList})), 0),
+                ISNULL((SELECT MAX(IdMensaje) FROM dbo.CONV_MENSAJES WHERE IdConversacion = @Id AND Direction = N'SALIENTE' AND ISNULL(SistemaAutor, '') NOT IN ({AutomatedOutgoingSistemaAutorSqlList})), 0);
             """;
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
@@ -8887,9 +8910,10 @@ public sealed class ConversacionesService(
             var count = rd.IsDBNull(0) ? 0 : rd.GetInt32(0);
             var ultimoEntranteId = rd.IsDBNull(1) ? 0L : rd.GetInt64(1);
             var ultimoAutomaticoId = rd.IsDBNull(2) ? 0L : rd.GetInt64(2);
-            return (count, ultimoAutomaticoId > ultimoEntranteId);
+            var ultimoHumanoId = rd.IsDBNull(3) ? 0L : rd.GetInt64(3);
+            return (count, ultimoAutomaticoId > ultimoEntranteId, ultimoHumanoId > ultimoEntranteId);
         }
-        return (0, false);
+        return (0, false, false);
     }
 
     private async Task<IReadOnlyList<ConversacionMensajeDto>> GetRecentMessagesForBotAsync(long idConversacion, CancellationToken ct)
