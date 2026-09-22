@@ -25,7 +25,8 @@
     facturara como si tuviera 21% de IVA. Ahora el default solo se aplica cuando la alícuota es NULL
     de verdad.
 
-    Idempotente (CREATE OR ALTER). No crea columnas nuevas: AlicIva2/AlicIVA3/AlicIVA4,
+    Idempotente (DROP + CREATE, compatible con motores viejos como SQL Server 2008). No crea
+    columnas nuevas: AlicIva2/AlicIVA3/AlicIVA4,
     ImporteIva2/ImpIVA3/ImpIVA4 ya existen en V_MV_Cpte (las lee FacturaDocumentService desde hace
     tiempo) -- esta rutina es la primera que las completa para ventas de POS.
 */
@@ -37,7 +38,12 @@ GO
 -- propias de este módulo, no legacy externo intocable) tenían el mismo bug: trataban alícuota=0 igual
 -- que alícuota sin configurar y aplicaban 21% por defecto. Sin este fix, sp_web_CpteInsumos no puede
 -- calcular bien un artículo al 0% real aunque ya lea su TASAIVA correctamente.
-CREATE OR ALTER FUNCTION [dbo].[FN_PRECIO_CON_IVA] (@PRECIO_SIN_IVA MONEY, @ALIC_IVA FLOAT)
+-- CREATE OR ALTER requiere SQL Server 2016 SP1+; hay bases de clientes en motores más viejos
+-- (ej.: SQL Server 2008), así que se usa el patrón clásico DROP + CREATE.
+IF OBJECT_ID(N'[dbo].[FN_PRECIO_CON_IVA]', N'FN') IS NOT NULL
+    DROP FUNCTION [dbo].[FN_PRECIO_CON_IVA];
+GO
+CREATE FUNCTION [dbo].[FN_PRECIO_CON_IVA] (@PRECIO_SIN_IVA MONEY, @ALIC_IVA FLOAT)
 RETURNS MONEY AS
 BEGIN
     DECLARE @EL_PRECIO_CON_IVA MONEY
@@ -52,7 +58,10 @@ BEGIN
 END
 GO
 
-CREATE OR ALTER FUNCTION [dbo].[FN_PRECIO_SIN_IVA] (@PRECIO_CON_IVA MONEY, @ALIC_IVA FLOAT)
+IF OBJECT_ID(N'[dbo].[FN_PRECIO_SIN_IVA]', N'FN') IS NOT NULL
+    DROP FUNCTION [dbo].[FN_PRECIO_SIN_IVA];
+GO
+CREATE FUNCTION [dbo].[FN_PRECIO_SIN_IVA] (@PRECIO_CON_IVA MONEY, @ALIC_IVA FLOAT)
 RETURNS MONEY AS
 BEGIN
     DECLARE @EL_PRECIO_SIN_IVA MONEY
@@ -67,7 +76,10 @@ BEGIN
 END
 GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_web_CpteInsumos]
+IF OBJECT_ID(N'[dbo].[sp_web_CpteInsumos]', N'P') IS NOT NULL
+    DROP PROCEDURE [dbo].[sp_web_CpteInsumos];
+GO
+CREATE PROCEDURE [dbo].[sp_web_CpteInsumos]
     @pIdCpte                        int = null,
     @pIdArticulo                    nvarchar(25),
     @pCantidad                      float,
