@@ -416,10 +416,30 @@
         => !_busy
            && _selectedId > 0
            && !IsBodyTooLong
-           && !HasBeenSubmittedToMeta;
+           && CanSubmitDraftForApproval(_form);
 
     private bool CanEditSelected
         => _selected is not null && !EntityHasBeenSubmittedToMeta(_selected);
+
+    private bool CanSubmitSelectedForApproval
+        => !_busy && CanSubmitDraftForApproval(_selected);
+
+    private bool CanSyncSelected
+        => CanSyncTemplateStatus(_selected);
+
+    // Draft local, activo y aún no enviado a Meta: es el único caso donde "Enviar a aprobación"
+    // tiene sentido desde READ (sin pasar antes por Editar). Las plantillas sincronizadas desde
+    // Meta (EsMetaRemota) nunca corresponde reenviarlas. Estática y tomando el DTO para poder
+    // testearla sin renderizar el componente (ver AlfaCore.Tests).
+    internal static bool CanSubmitDraftForApproval(ConversacionPlantillaDto? dto)
+        => dto is not null
+           && dto.Activa
+           && !dto.EsMetaRemota
+           && !EntityHasBeenSubmittedToMeta(dto);
+
+    // Sin MetaTemplateId no hay nada que consultarle a Meta todavía: la plantilla nunca fue enviada.
+    internal static bool CanSyncTemplateStatus(ConversacionPlantillaDto? dto)
+        => dto is not null && !string.IsNullOrWhiteSpace(dto.MetaTemplateId);
 
     private string? NombreVisibleError
         => _attemptedSave && string.IsNullOrWhiteSpace(_form.NombreVisible) ? "El nombre visible es obligatorio." : null;
@@ -826,13 +846,17 @@
 
         if (_selected is not null)
         {
-            // Con una plantilla seleccionada, "Editar" es la acción principal del registro y
-            // queda visible. "Sincronizar estado" y "Archivar" son secundarias/menos frecuentes
-            // (Archivar además es destructiva) y bajan al menú "..." junto con los accesos
-            // rápidos, para no acumular 4 botones simultáneos en la toolbar (ver auditoría visual).
+            // Con una plantilla seleccionada, "Editar" y (para drafts locales pendientes de envío)
+            // "Enviar a aprobación" son las acciones principales del registro y quedan visibles.
+            // "Sincronizar estado" y "Archivar" son secundarias/menos frecuentes (Archivar además
+            // es destructiva) y bajan al menú "..." junto con los accesos rápidos, para no acumular
+            // demasiados botones simultáneos en la toolbar (ver auditoría visual).
+            if (CanSubmitSelectedForApproval)
+                actions.Add(new() { Key = "enviar-aprobacion", Label = "Enviar a aprobación", Icon = "bi-cloud-arrow-up-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = SubmitSelectedAsync });
             if (CanEditSelected)
                 actions.Add(new() { Key = "editar", Label = "Editar", Icon = "bi-pencil", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = () => EnterEditModeAsync() });
-            actions.Add(new() { Key = "sincronizar-item", Label = "Sincronizar estado", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = SyncAsync });
+            if (CanSyncSelected)
+                actions.Add(new() { Key = "sincronizar-item", Label = "Sincronizar estado", Icon = "bi-arrow-repeat", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = SyncAsync });
             if (_selected.Activa)
                 actions.Add(new() { Key = "archivar", Label = "Archivar", Icon = "bi-archive", Style = PageHeaderActionStyle.Danger, Priority = PageHeaderActionPriority.Overflow, Disabled = _busy, OnClick = () => { OpenArchiveConfirm(); return Task.CompletedTask; } });
         }
@@ -851,11 +875,22 @@
         ];
 
     private List<PageHeaderAction> BuildEditActions()
-        =>
-        [
-            new() { Key = "guardar", Label = "Guardar", Icon = "bi-save-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = SaveAsync },
-            new() { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = () => { CancelForm(); return Task.CompletedTask; } }
-        ];
+    {
+        var actions = new List<PageHeaderAction>
+        {
+            new() { Key = "guardar", Label = "Guardar", Icon = "bi-save-fill", Style = PageHeaderActionStyle.Primary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = SaveAsync }
+        };
+
+        // Edit sólo se alcanza para drafts locales aún no enviados (CanEditSelected lo garantiza
+        // al entrar), así que si sigue sin enviarse mientras se edita, ofrecemos guardar+enviar
+        // en un solo paso -- igual que ya existía para Create.
+        if (!HasBeenSubmittedToMeta)
+            actions.Add(new() { Key = "enviar-aprobacion", Label = "Enviar a aprobación", Icon = "bi-cloud-arrow-up-fill", Style = PageHeaderActionStyle.Secondary, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = SubmitAsync });
+
+        actions.Add(new() { Key = "cancelar", Label = "Cancelar", Icon = "bi-x-circle", Style = PageHeaderActionStyle.Ghost, Priority = PageHeaderActionPriority.Essential, Disabled = _busy, OnClick = () => { CancelForm(); return Task.CompletedTask; } });
+
+        return actions;
+    }
 
     private IReadOnlyList<PageHeaderTopNavItem> BuildTopNavigationItems()
     {
@@ -1377,6 +1412,19 @@
             _busy = false;
             UpdatePageHeader();
         }
+    }
+
+    // Enviar a aprobación desde READ (sin pasar por Editar primero): SubmitAsync guarda y envía
+    // usando _form, así que lo poblamos desde la plantilla seleccionada antes de reutilizarlo,
+    // para no enviar datos desactualizados ni duplicar la validación/guardado que ya hace SubmitAsync.
+    private async Task SubmitSelectedAsync()
+    {
+        if (_selected is null || !CanSubmitSelectedForApproval)
+            return;
+
+        _form = CloneTemplate(_selected);
+        _examplesText = ExamplesToText(_selected.EjemplosVariablesJson);
+        await SubmitAsync();
     }
 
     private ConversacionPlantillaSaveRequest BuildSaveRequest()

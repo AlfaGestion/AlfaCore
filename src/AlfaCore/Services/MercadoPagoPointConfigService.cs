@@ -44,7 +44,13 @@ public sealed class MercadoPagoPointConfigService(ISessionService sessionService
         return ReadValue(values, "MERCADOPAGO_POS_EXTERNAL_ID");
     }
 
-    public async Task GuardarConfiguracionAsync(string accessToken, string terminalId, string posExternalId, string webhookSecret, CancellationToken ct = default)
+    public async Task<string> ResolveCodigoMedioPagoAsync(CancellationToken ct = default)
+    {
+        var values = await ReadConfigAsync(ct);
+        return ReadValue(values, "MERCADOPAGO_CODIGO_MEDIO_PAGO");
+    }
+
+    public async Task GuardarConfiguracionAsync(string accessToken, string terminalId, string posExternalId, string webhookSecret, string codigoMedioPago, CancellationToken ct = default)
     {
         await using var cn = new SqlConnection(ConnectionString);
         await cn.OpenAsync(ct);
@@ -54,14 +60,22 @@ public sealed class MercadoPagoPointConfigService(ISessionService sessionService
         await GuardarValorAsync(cn, tran, "MERCADOPAGO_TERMINAL_ID", terminalId, ct);
         await GuardarValorAsync(cn, tran, "MERCADOPAGO_POS_EXTERNAL_ID", posExternalId, ct);
         await GuardarValorAsync(cn, tran, "MERCADOPAGO_WEBHOOK_SECRET", webhookSecret, ct);
+        await GuardarValorAsync(cn, tran, "MERCADOPAGO_CODIGO_MEDIO_PAGO", codigoMedioPago, ct);
 
         await tran.CommitAsync(ct);
     }
 
     private static async Task GuardarValorAsync(SqlConnection cn, SqlTransaction tran, string clave, string valor, CancellationToken ct)
     {
+        // MERGE (no solo UPDATE): la clave puede no existir todavía si la base guarda esta config
+        // antes de tener aplicada la migración que la da de alta (ej. MERCADOPAGO_CODIGO_MEDIO_PAGO,
+        // agregada después de la migración base de Mercado Pago Point).
         await using var cmd = new SqlCommand("""
-            UPDATE dbo.TA_CONFIGURACION SET VALOR = @Valor WHERE UPPER(LTRIM(RTRIM(CLAVE))) = @Clave;
+            MERGE dbo.TA_CONFIGURACION AS destino
+            USING (SELECT @Clave AS Clave) AS origen ON UPPER(LTRIM(RTRIM(destino.CLAVE))) = origen.Clave
+            WHEN MATCHED THEN UPDATE SET VALOR = @Valor
+            WHEN NOT MATCHED THEN INSERT (GRUPO, CLAVE, VALOR, FechaHora_Grabacion)
+                VALUES (N'MERCADOPAGO', @Clave, @Valor, GETDATE());
             """, cn, tran);
         cmd.Parameters.AddWithValue("@Clave", clave);
         cmd.Parameters.AddWithValue("@Valor", valor.Trim());
@@ -79,7 +93,8 @@ public sealed class MercadoPagoPointConfigService(ISessionService sessionService
             FROM dbo.TA_CONFIGURACION
             WHERE UPPER(LTRIM(RTRIM(CLAVE))) IN (
                 N'MERCADOPAGO_ACCESS_TOKEN', N'MERCADOPAGO_TERMINAL_ID',
-                N'MERCADOPAGO_POS_EXTERNAL_ID', N'MERCADOPAGO_WEBHOOK_SECRET'
+                N'MERCADOPAGO_POS_EXTERNAL_ID', N'MERCADOPAGO_WEBHOOK_SECRET',
+                N'MERCADOPAGO_CODIGO_MEDIO_PAGO'
             )
             """, cn);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
