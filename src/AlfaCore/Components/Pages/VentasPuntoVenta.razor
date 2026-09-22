@@ -2959,6 +2959,16 @@
                 return;
             }
 
+            if (event.ctrlKey && (event.key === "g" || event.key === "G")) {
+                event.preventDefault();
+                event.stopPropagation();
+                const trigger = document.getElementById("pos-save-shortcut-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+                return;
+            }
+
             if (event.ctrlKey && (event.key === "p" || event.key === "P")) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -2983,6 +2993,7 @@
     <button id="pos-reprint-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="OpenReprintModalAsync" tabindex="-1" aria-hidden="true"></button>
     <button id="pos-arca-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleArcaShortcutAsync" tabindex="-1" aria-hidden="true"></button>
     <button id="pos-clear-cart-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleClearCartShortcutAsync" tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-save-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleSaveShortcutAsync" tabindex="-1" aria-hidden="true"></button>
     <button id="pos-escape-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleEscapeShortcutAsync" tabindex="-1" aria-hidden="true"></button>
     @if (!string.IsNullOrWhiteSpace(_error))
     {
@@ -3021,6 +3032,7 @@
                                 <span class="pos-shortcuts-hint__title">Atajos rápidos</span>
                                 <span><kbd>Ctrl+F</kbd> ARCA</span>
                                 <span><kbd>Ctrl+B</kbd> Vaciar</span>
+                                <span><kbd>Ctrl+G</kbd> Cobrar / grabar</span>
                                 <span><kbd>Ctrl+P</kbd> Reimprimir</span>
                                 <span><kbd>Esc</kbd> Cerrar</span>
                             </div>
@@ -3549,6 +3561,7 @@
         </div>
         <div class="pos-shortcuts-hint pos-shortcuts-hint--modal" aria-label="Atajos de la cobranza">
             <span class="pos-shortcuts-hint__title">Atajos</span>
+            <span><kbd>Ctrl+G</kbd> Aceptar</span>
             <span><kbd>Esc</kbd> Cerrar</span>
         </div>
     </section>
@@ -5459,6 +5472,9 @@
         _showClienteModal = true;
         return Task.CompletedTask;
     }
+
+    private Task HandleSaveShortcutAsync()
+        => _showChargeModal ? ConfirmChargeAsync(false) : OpenChargeModalAsync();
 
     private Task HandleClearCartShortcutAsync()
     {

@@ -53,6 +53,7 @@ En el módulo web de Punto de Venta se deben conservar estos atajos y vincularlo
 
 - `Ctrl+F`: abrir **Nuevo cliente / consulta ARCA** y enfocar CUIT/DNI.
 - `Ctrl+P`: abrir **Reimprimir comprobantes**.
+- `Ctrl+G`: abrir **Cobrar** desde la pantalla principal o grabar/aceptar la cobranza activa, sin imprimir.
 - `Ctrl+B`: abrir la confirmación de **Vaciar carrito**.
 - `Esc`: cerrar el modal o menú activo, sin guardar cambios; si no hay modal/menú y el carrito tiene datos, abrir la confirmación de **Vaciar carrito**; si el carrito está vacío, preguntar antes de cerrar el módulo.
 
