@@ -20,4 +20,7 @@ public sealed class ConversacionAsistenteHerramientaDefinicionDto
 }
 
 /// <summary>Cuenta comercial (Cliente o Proveedor) resuelta server-side para una conversación.</summary>
-public sealed record ConversacionCuentaVinculadaDto(string Codigo, CuentaComercialTipo Tipo, string RazonSocial);
+public sealed record ConversacionCuentaVinculadaDto(string Codigo, CuentaComercialTipo Tipo, string RazonSocial)
+{
+    public bool EsAmbigua { get; init; }
+}

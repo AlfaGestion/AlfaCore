@@ -873,6 +873,35 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public async Task Tools_LeadPrice_ZeroResolvedPriceNeverShowsAsAValidZeroPrice()
+    {
+        // Si la base no tiene bien configurado el precio de consumidor final, el resolver general
+        // (compartido con POS/Cotizaciones/Crm) puede devolver 0 -- para consumidor final/lead eso
+        // no puede mostrarse como si fuera un precio comercial real.
+        var crm = new FakeCrmCotizacionService { PrecioUnitarioConIva = 0m };
+        var service = CreateToolsService(crm: crm);
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", null);
+
+        Assert.DoesNotContain("$ 0,00", result);
+        Assert.Contains("precio no disponible", result, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Tools_IdentifiedClientPrice_ZeroResolvedPriceIsShownAsIs()
+    {
+        // No tocar el comportamiento de clientes identificados: el guard de "no inventar precio"
+        // aplica solo al contexto consumidor final/lead.
+        var crm = new FakeCrmCotizacionService { PrecioUnitarioConIva = 0m };
+        var service = CreateToolsService(crm: crm);
+        var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
+
+        var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", cuenta);
+
+        Assert.Contains("$ 0,00", result);
+    }
+
+    [Fact]
     public void Tools_ProviderIsNotTreatedAsClientForPortalOrOrders()
     {
         var service = CreateToolsService();
@@ -902,6 +931,60 @@ public sealed class ConversacionesAutomationPipelineTests
         Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
         Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_portal");
         Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public void Tools_AmbiguousAccount_GetsNoPrivateToolsEvenWithConsumerPricesOn()
+    {
+        // Contacto vinculado a más de un Cliente (ver ResolverCuentaVinculadaAsync): EsAmbigua = true.
+        // No debe ofrecerse ninguna tool privada de cuenta, y tampoco el fallback de precio
+        // consumidor (ese es solo para leads sin ninguna cuenta vinculada).
+        var service = CreateToolsService();
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: true),
+            ambigua,
+            "quiero precio, saldo, pedidos y portal");
+
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_total");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_detalle");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_portal");
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+    }
+
+    [Fact]
+    public async Task Tools_AmbiguousAccount_ExecutingAnyPrivateToolFailsClosedWithoutCallingAnyBackend()
+    {
+        // Defensa en profundidad: aunque ObtenerHerramientasDisponibles ya no ofrezca estas tools,
+        // EjecutarAsync también debe cortar si el modelo igual intenta invocarlas.
+        var crm = new ThrowingCrmCotizacionService();
+        var portal = new ThrowingPortalClienteService();
+        var service = CreateToolsService(crm: crm, portal: portal);
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        var precio = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", ambigua);
+        var saldo = await service.EjecutarAsync("consultar_saldo_total", "{}", ambigua);
+        var detalle = await service.EjecutarAsync("consultar_saldo_detalle", "{}", ambigua);
+        var pedidos = await service.EjecutarAsync("consultar_pedidos", "{}", ambigua);
+        var portalLink = await service.EjecutarAsync("generar_link_portal", "{}", ambigua);
+
+        foreach (var result in new[] { precio, saldo, detalle, pedidos, portalLink })
+            Assert.Contains("más de una cuenta vinculada", result);
+    }
+
+    [Fact]
+    public async Task Tools_AmbiguousAccount_IgnoresClientCodeSentByModelArguments()
+    {
+        var crm = new FakeCrmCotizacionService();
+        var service = CreateToolsService(crm: crm);
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo","codigo_cliente":"C999"}""", ambigua);
+
+        Assert.False(crm.WasCalled); // ni siquiera llega a resolver precio consumidor: corta antes de tocar el backend
     }
 
     [Fact]
@@ -1015,6 +1098,88 @@ public sealed class ConversacionesAutomationPipelineTests
         var result = await service.EjecutarAsync("consultar_precio", """{"articulo":"tornillo"}""", new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno"));
 
         Assert.Contains("No se pudo obtener el dato", result);
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // 9 bis. Identidad ambigua -- ResolverCuentaVinculadaAsync abre su propio SqlConnection contra
+    // el tenant (mismo caso que Auto-cierre/SLA más abajo): no hay forma de ejercitar 0/1/N Clientes
+    // vinculados sin una base de tenant real con MA_CONTACTOS_CUENTAS/VT_CLIENTES/VT_PROVEEDORES.
+    // REQUIERE SQL INTEGRATION -- se prueba estructuralmente que ya no hace TOP (1) arbitrario sobre
+    // las cuentas del contacto y que cuenta explícitamente los Clientes distintos.
+    // ---------------------------------------------------------------------------------------
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_NoLongerPicksAnArbitraryTopOneAmongLinkedAccounts()
+    {
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+
+        // Antes había un único ORDER BY TipoOrdinal, usado junto con TOP (1) para quedarse con
+        // cualquier cuenta vinculada al contacto (el bug: con 2+ Clientes, elegía uno arbitrariamente).
+        // Ya no debe existir ese ordenamiento -- ahora se traen todas las filas y se cuentan en C#.
+        Assert.DoesNotContain("ORDER BY TipoOrdinal", method, StringComparison.Ordinal);
+        Assert.Contains("FROM dbo.MA_CONTACTOS_CUENTAS mcc", method, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_CountsDistinctLinkedClientsBeforeDeciding()
+    {
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+
+        Assert.Contains(".Where(v => v.TipoOrdinal == 1)", method, StringComparison.Ordinal);
+        Assert.Contains(".GroupBy(v => v.Codigo, StringComparer.OrdinalIgnoreCase)", method, StringComparison.Ordinal);
+        Assert.Contains("if (clientes.Count > 1)", method, StringComparison.Ordinal);
+        Assert.Contains("EsAmbigua = true", method, StringComparison.Ordinal);
+        Assert.Contains("if (clientes.Count == 1)", method, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_ZeroClientsStillAllowsSingleProviderMatch()
+    {
+        // 0 Cliente vinculados no es lo mismo que "ambiguo": si hay exactamente un Proveedor,
+        // se sigue devolviendo (comportamiento previo, sin cambios) -- un Proveedor no cuenta
+        // como Cliente para la ambigüedad.
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+        Assert.Contains("vinculadas.FirstOrDefault(v => v.TipoOrdinal == 2)", method, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_ExplicitConversationClienteCodigoIsUsedAsIs_WithoutChange()
+    {
+        // Cuando la conversación ya tiene ClienteCodigo fijado (RelacionarCliente, que valida contra
+        // VT_CLIENTES al escribir), se sigue usando tal cual -- esta parte no cambió.
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+        var explicitPathIndex = method.IndexOf("if (!string.IsNullOrWhiteSpace(clienteCodigo))", StringComparison.Ordinal);
+        var ambiguousPathIndex = method.IndexOf("if (clientes.Count > 1)", StringComparison.Ordinal);
+        Assert.True(explicitPathIndex >= 0 && explicitPathIndex < ambiguousPathIndex);
+    }
+
+    [Fact]
+    public void Identidad_ResolverCuentaVinculada_UsesTenantScopedConnectionForEveryQuery()
+    {
+        // Aislamiento: las tres consultas (conversación, cliente explícito, cuentas del contacto)
+        // usan `ConnectionString` (resuelto por tenant/sesión activa), nunca un valor fijo o
+        // compartido entre bases.
+        var method = ExtractServiceMethod("private async Task<ConversacionCuentaVinculadaDto?> ResolverCuentaVinculadaAsync");
+        var occurrences = System.Text.RegularExpressions.Regex.Matches(method, "new SqlConnection\\(ConnectionString\\)").Count;
+        Assert.Equal(3, occurrences);
+    }
+
+    private static string ExtractServiceMethod(string signature)
+    {
+        var start = ServiceSource.IndexOf(signature, StringComparison.Ordinal);
+        Assert.True(start >= 0, $"No se encontró {signature}.");
+        var brace = ServiceSource.IndexOf('{', start);
+        Assert.True(brace >= 0, $"No se encontró el cuerpo de {signature}.");
+
+        var depth = 0;
+        for (var i = brace; i < ServiceSource.Length; i++)
+        {
+            if (ServiceSource[i] == '{') depth++;
+            if (ServiceSource[i] == '}') depth--;
+            if (depth == 0) return ServiceSource[brace..(i + 1)];
+        }
+
+        throw new InvalidOperationException($"No se pudo extraer {signature}.");
     }
 
     // ---------------------------------------------------------------------------------------
@@ -1303,12 +1468,13 @@ public sealed class ConversacionesAutomationPipelineTests
     {
         public string? LastClienteCodigo { get; private set; }
         public bool WasCalled { get; private set; }
+        public decimal PrecioUnitarioConIva { get; set; } = 100m;
 
         public Task<IReadOnlyList<CrmCotizacionArticuloDto>> SearchArticulosAsync(string? clienteCodigo, string texto, int take = 25, CancellationToken ct = default)
         {
             WasCalled = true;
             LastClienteCodigo = clienteCodigo;
-            IReadOnlyList<CrmCotizacionArticuloDto> result = [new CrmCotizacionArticuloDto { Codigo = "ART1", Descripcion = texto, PrecioUnitarioConIva = 100m }];
+            IReadOnlyList<CrmCotizacionArticuloDto> result = [new CrmCotizacionArticuloDto { Codigo = "ART1", Descripcion = texto, PrecioUnitarioConIva = PrecioUnitarioConIva }];
             return Task.FromResult(result);
         }
 

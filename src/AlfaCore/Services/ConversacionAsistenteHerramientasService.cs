@@ -36,6 +36,14 @@ public sealed class ConversacionAsistenteHerramientasService(
     private const string ToolGenerarLinkPortal = "generar_link_portal";
     private const string ToolGenerarLinkCatalogoPublico = "generar_link_catalogo_publico";
 
+    // Defensa en profundidad para identidad ambigua: aunque ObtenerHerramientasDisponibles ya no
+    // ofrece estas tools cuando EsAmbigua, este set corta también acá -- por si el modelo alucina un
+    // nombre de tool no ofrecido, no depende únicamente del filtro de la lista.
+    private static readonly HashSet<string> ToolsPrivadasDeCuenta = new(StringComparer.Ordinal)
+    {
+        ToolConsultarPrecio, ToolConsultarSaldoTotal, ToolConsultarSaldoDetalle, ToolConsultarPedidos, ToolGenerarLinkPortal
+    };
+
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
         : configuration.GetConnectionString("AlfaGestion")
@@ -76,9 +84,13 @@ public sealed class ConversacionAsistenteHerramientasService(
         var herramientas = new List<ConversacionAsistenteHerramientaDefinicionDto>();
         const string sinParametros = "{\"type\":\"object\",\"properties\":{},\"required\":[]}";
 
-        var esCliente = cuenta?.Tipo == CuentaComercialTipo.Cliente;
-        var esProveedor = cuenta?.Tipo == CuentaComercialTipo.Proveedor;
-        var puedeInformarPrecio = esCliente || config.CatalogoMuestraPrecioConsumidor;
+        // Identidad ambigua (contacto vinculado a más de un Cliente, ver ResolverCuentaVinculadaAsync):
+        // ninguna tool privada de cuenta, y tampoco el fallback de precio consumidor -- ese fallback es
+        // solo para leads sin ninguna cuenta vinculada, no para "no sé cuál de estas cuentas es".
+        var esAmbigua = cuenta?.EsAmbigua == true;
+        var esCliente = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Cliente;
+        var esProveedor = !esAmbigua && cuenta?.Tipo == CuentaComercialTipo.Proveedor;
+        var puedeInformarPrecio = !esAmbigua && (esCliente || config.CatalogoMuestraPrecioConsumidor);
 
         if (config.AsistenteHerramientaPrecios && puedeInformarPrecio)
         {
@@ -139,7 +151,7 @@ public sealed class ConversacionAsistenteHerramientasService(
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
             {
                 Nombre = ToolGenerarLinkCatalogoPublico,
-                Descripcion = config.CatalogoMuestraPrecioConsumidor
+                Descripcion = puedeInformarPrecio
                     ? "Genera el link al catálogo público/consumidor final de la empresa actual. Puede acompañarse con precios solo si se consulta la tool de precios."
                     : "Genera el link al catálogo público de la empresa actual. No informa precios: si el comprador quiere avanzar, debe identificarse o registrarse por el flujo existente.",
                 ParametrosJsonSchema = sinParametros
@@ -155,6 +167,9 @@ public sealed class ConversacionAsistenteHerramientasService(
         ConversacionCuentaVinculadaDto? cuenta,
         CancellationToken ct = default)
     {
+        if (cuenta?.EsAmbigua == true && ToolsPrivadasDeCuenta.Contains(nombre))
+            return "Este contacto tiene más de una cuenta vinculada; no puedo mostrar datos privados de cuenta hasta confirmar cuál corresponde. Puedo derivarlo con un asesor para identificarlo.";
+
         try
         {
             return nombre switch
@@ -187,9 +202,19 @@ public sealed class ConversacionAsistenteHerramientasService(
         if (resultados.Count == 0)
             return $"No se encontró ningún artículo que coincida con \"{articulo}\".";
 
+        // Consumidor final/lead (sin cuenta Cliente): si la base no tiene bien configurado el precio
+        // de consumidor final, el resolver general puede devolver 0 -- no rediseñamos ese motor (lo
+        // usan POS/Cotizaciones/Crm), pero acá no debe salir como si fuera un precio real.
+        var esConsumidorFinal = codigoCliente is null;
         var sb = new StringBuilder();
         foreach (var art in resultados)
         {
+            if (esConsumidorFinal && art.PrecioUnitarioConIva <= 0)
+            {
+                sb.AppendLine($"- {art.Descripcion} (código {art.Codigo}): precio no disponible, hay que consultarlo.");
+                continue;
+            }
+
             sb.AppendLine(
                 $"- {art.Descripcion} (código {art.Codigo}): $ {art.PrecioUnitarioConIva.ToString("N2", CultureInfo.GetCultureInfo("es-AR"))} (IVA incluido)");
         }

@@ -12056,31 +12056,50 @@ public sealed class ConversacionesService(
         if (idContacto is null)
             return null;
 
+        // Sin cuenta explícita en la conversación: se resuelve por los vínculos del contacto. Antes
+        // esto hacía TOP (1) sobre cualquier cuenta vinculada -- si un contacto tenía más de un
+        // Cliente asociado, AlfaCore elegía uno arbitrariamente y habilitaba precio/saldo/pedidos/
+        // Portal de esa cuenta. Ahora se traen TODAS las cuentas vinculadas y, si hay más de un
+        // Cliente distinto, se devuelve un estado explícito "ambigua" (EsAmbigua = true) en vez de
+        // elegir: ConversacionAsistenteHerramientasService corta ahí cualquier tool privada.
         await using (var cn = new SqlConnection(ConnectionString))
         {
             await cn.OpenAsync(ct);
             const string sqlContacto = """
-                SELECT TOP (1)
-                    LTRIM(RTRIM(mcc.Cuenta)),
+                SELECT
+                    LTRIM(RTRIM(mcc.Cuenta)) AS Codigo,
                     CASE WHEN cli.CODIGO IS NOT NULL THEN 1 ELSE 2 END AS TipoOrdinal,
-                    ISNULL(LTRIM(RTRIM(ISNULL(cli.RAZON_SOCIAL, prv.RAZON_SOCIAL))), N'')
+                    ISNULL(LTRIM(RTRIM(ISNULL(cli.RAZON_SOCIAL, prv.RAZON_SOCIAL))), N'') AS RazonSocial
                 FROM dbo.MA_CONTACTOS_CUENTAS mcc
                 LEFT JOIN dbo.VT_CLIENTES cli ON UPPER(LTRIM(RTRIM(cli.CODIGO))) = UPPER(LTRIM(RTRIM(mcc.Cuenta)))
                 LEFT JOIN dbo.VT_PROVEEDORES prv ON UPPER(LTRIM(RTRIM(prv.CODIGO))) = UPPER(LTRIM(RTRIM(mcc.Cuenta))) AND cli.CODIGO IS NULL
                 WHERE mcc.IdContacto = @IdContacto
-                  AND (cli.CODIGO IS NOT NULL OR prv.CODIGO IS NOT NULL)
-                ORDER BY TipoOrdinal;
+                  AND (cli.CODIGO IS NOT NULL OR prv.CODIGO IS NOT NULL);
                 """;
             await using var cmd = new SqlCommand(sqlContacto, cn);
             cmd.Parameters.AddWithValue("@IdContacto", idContacto.Value);
             await using var rd = await cmd.ExecuteReaderAsync(ct);
-            if (!await rd.ReadAsync(ct))
-                return null;
+            var vinculadas = new List<(string Codigo, int TipoOrdinal, string RazonSocial)>();
+            while (await rd.ReadAsync(ct))
+                vinculadas.Add((rd.GetString(0), rd.GetInt32(1), GetString(rd, 2)));
 
-            var codigo = rd.GetString(0);
-            var tipo = rd.GetInt32(1) == 1 ? CuentaComercialTipo.Cliente : CuentaComercialTipo.Proveedor;
-            var razonSocial = GetString(rd, 2);
-            return new ConversacionCuentaVinculadaDto(codigo, tipo, razonSocial);
+            var clientes = vinculadas
+                .Where(v => v.TipoOrdinal == 1)
+                .GroupBy(v => v.Codigo, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.First())
+                .ToList();
+
+            if (clientes.Count > 1)
+                return new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+            if (clientes.Count == 1)
+                return new ConversacionCuentaVinculadaDto(clientes[0].Codigo, CuentaComercialTipo.Cliente, clientes[0].RazonSocial);
+
+            // Sin Cliente vinculado: se conserva el comportamiento previo (primer Proveedor, si hay).
+            var proveedor = vinculadas.FirstOrDefault(v => v.TipoOrdinal == 2);
+            return proveedor.Codigo is null
+                ? null
+                : new ConversacionCuentaVinculadaDto(proveedor.Codigo, CuentaComercialTipo.Proveedor, proveedor.RazonSocial);
         }
     }
 
