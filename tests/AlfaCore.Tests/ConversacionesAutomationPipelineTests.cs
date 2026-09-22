@@ -1026,6 +1026,64 @@ public sealed class ConversacionesAutomationPipelineTests
     }
 
     [Fact]
+    public async Task Tools_PublicCatalogLink_UnambiguousClient_IsRejectedInFavorOfPortalCliente()
+    {
+        var service = CreateToolsService();
+        var cuenta = new ConversacionCuentaVinculadaDto("C001", CuentaComercialTipo.Cliente, "Cliente Uno");
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", cuenta);
+
+        Assert.Contains("debe usar el Portal Cliente", result);
+    }
+
+    [Fact]
+    public async Task Tools_PublicCatalogLink_AmbiguousAccount_IsAllowedAsSafeFallback()
+    {
+        // Bug corregido: EsAmbigua comparte Tipo=Cliente (no hay un tercer valor de enum), así que
+        // esta tool tiene que mirar EsAmbigua antes que Tipo -- si no, un contacto ambiguo recibía el
+        // mensaje de "usá el Portal Cliente" en vez del único fallback seguro que le corresponde.
+        var publicLinks = new FakeCentralPublicLinkService();
+        var service = CreateToolsService(
+            catalogos: new FakeInterfacesCatalogosService { Catalogo = new CatalogosCatalogoDetalleDto { IdInsert = 321, Nombre = "Minorista" } },
+            publicLinks: publicLinks,
+            appUser: new FakeAppUserSessionService("empresa-a"),
+            session: new FakeSessionService(new SessionDto { BaseId = 4271, Nombre = "Base A" }));
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        var result = await service.EjecutarAsync("generar_link_catalogo_publico", "{}", ambigua);
+
+        Assert.Contains("https://portal.example.com/empresa-a/catalogo/catalogo-tok123", result);
+        Assert.DoesNotContain("debe usar el Portal Cliente", result);
+        Assert.Contains(publicLinks.Requests, r => r.IdWeb == "empresa-a" && r.IdBase == 4271 && r.IdReferencia == 321);
+    }
+
+    [Fact]
+    public async Task Tools_AmbiguousAccount_PublicCatalogFallbackStillExcludesEveryPrivateTool()
+    {
+        // El fallback público habilitado para EsAmbigua no debe abrir ninguna puerta lateral hacia
+        // saldo/pedidos/precio/portal -- se re-confirma acá junto con el fix del catálogo.
+        var crm = new ThrowingCrmCotizacionService();
+        var portal = new ThrowingPortalClienteService();
+        var service = CreateToolsService(crm: crm, portal: portal);
+        var ambigua = new ConversacionCuentaVinculadaDto(string.Empty, CuentaComercialTipo.Cliente, string.Empty) { EsAmbigua = true };
+
+        var herramientas = service.ObtenerHerramientasDisponibles(
+            ToolsConfig(precioConsumidor: true), ambigua, "precio, saldo, pedidos, portal y catalogo");
+
+        Assert.Contains(herramientas, h => h.Nombre == "generar_link_catalogo_publico");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_precio");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_total");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_saldo_detalle");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "consultar_pedidos");
+        Assert.DoesNotContain(herramientas, h => h.Nombre == "generar_link_portal");
+
+        var saldo = await service.EjecutarAsync("consultar_saldo_total", "{}", ambigua);
+        var portalLink = await service.EjecutarAsync("generar_link_portal", "{}", ambigua);
+        Assert.Contains("más de una cuenta vinculada", saldo);
+        Assert.Contains("más de una cuenta vinculada", portalLink);
+    }
+
+    [Fact]
     public async Task Tools_SaldoQuery_AlwaysUsesTheLinkedAccount_NeverAnyIdentifierFromModelArguments()
     {
         // GUARDRAIL DE SEGURIDAD documentado en el propio archivo: ninguna herramienta sensible

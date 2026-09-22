@@ -347,7 +347,11 @@ public sealed class ConversacionAsistenteHerramientasService(
 
     private async Task<string> EjecutarGenerarLinkCatalogoPublicoAsync(ConversacionCuentaVinculadaDto? cuenta, CancellationToken ct)
     {
-        if (cuenta?.Tipo == CuentaComercialTipo.Cliente)
+        // Ambigua comparte Tipo=Cliente (no hay un tercer valor de enum para "ambiguo", ver
+        // ConversacionCuentaVinculadaDto) -- por eso EsAmbigua se evalúa PRIMERO acá. Un contacto
+        // ambiguo no es un Cliente identificado: no puede ir al Portal (elegiría una cuenta por él)
+        // y sí debe poder recibir el catálogo público como fallback seguro, igual que un lead.
+        if (cuenta?.EsAmbigua != true && cuenta?.Tipo == CuentaComercialTipo.Cliente)
             return "El cliente identificado debe usar el Portal Cliente para ver su catálogo y precios.";
 
         var idWeb = appUserSession.CurrentUser?.IdWeb?.Trim() ?? string.Empty;
