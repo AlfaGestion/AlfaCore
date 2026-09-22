@@ -318,8 +318,14 @@ public sealed class ConversacionAutomatizacionesConfigDto
     /// <summary>Fuera de horario, que atienda el asistente IA (en vez del mensaje fijo).</summary>
     public bool AsistenteFueraHorario { get; set; }
 
-    /// <summary>Palabras que marcan urgencia (se atienden en cualquier horario): sube prioridad y avisa al operador.</summary>
+    /// <summary>Palabras que marcan urgencia (se atienden en cualquier horario): sube prioridad y avisa a técnicos configurados.</summary>
     public string AsistenteUrgenciaPalabras { get; set; } = string.Empty;
+
+    /// <summary>Template Meta usado para alertar a técnicos cuando el bot detecta urgencia.</summary>
+    public string AsistenteUrgenciaTemplate { get; set; } = "cliente_consultando_urgencia";
+
+    /// <summary>Ids de técnicos vigentes que reciben alertas de urgencia por WhatsApp.</summary>
+    public List<string> AsistenteUrgenciaTecnicos { get; set; } = [];
 
     /// <summary>Usar AlfaKnowledge (documentos/archivos) como fuente adicional para responder.</summary>
     public bool AsistenteUsaKnowledge { get; set; } = true;

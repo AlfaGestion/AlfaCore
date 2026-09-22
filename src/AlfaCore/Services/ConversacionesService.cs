@@ -253,6 +253,7 @@ public sealed class ConversacionesService(
                     LTRIM(RTRIM(ISNULL(IdTecnico, ''))),
                     ISNULL(Nombre, ''),
                     ISNULL(Cargo, ''),
+                    ISNULL(Telefono, ''),
                     ISNULL(UsuarioAsociado, ''),
                     ISNULL(SistemaAsociado, '')
                 FROM dbo.V_TA_Tecnicos
@@ -273,8 +274,9 @@ public sealed class ConversacionesService(
                     IdTecnico = GetString(rd, 0),
                     Nombre = GetString(rd, 1),
                     Cargo = GetString(rd, 2),
-                    UsuarioAsociado = GetString(rd, 3),
-                    SistemaAsociado = GetString(rd, 4)
+                    Telefono = GetString(rd, 3),
+                    UsuarioAsociado = GetString(rd, 4),
+                    SistemaAsociado = GetString(rd, 5)
                 });
             }
 
@@ -446,7 +448,7 @@ public sealed class ConversacionesService(
                     (SELECT COUNT(DISTINCT COALESCE(NULLIF(c.ClienteCodigo, N''), NULLIF(c.TelefonoWhatsApp, N''), CONVERT(nvarchar(30), c.IdConversacion)))
                      FROM #BaseConversaciones c
                      WHERE EXISTS (SELECT 1 FROM #MensajesRango m WHERE m.IdConversacion = c.IdConversacion)),
-                    (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambiÃ³ el estado de Cerrada a%' OR Texto LIKE N'%cambio el estado de Cerrada a%'),
+                    (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambió el estado de Cerrada a%' OR Texto LIKE N'%cambio el estado de Cerrada a%'),
                     (SELECT COUNT(1) FROM #MensajesRango WHERE Direction = N'ENTRANTE'),
                     (SELECT COUNT(1) FROM #MensajesRango WHERE Direction = N'SALIENTE'),
                     (SELECT COUNT(1) FROM #MensajesRango WHERE Direction = N'NOTA_INTERNA'),
@@ -456,7 +458,7 @@ public sealed class ConversacionesService(
                     (SELECT COUNT(1) FROM CierresRango),
                     (SELECT COUNT(1) FROM @Tickets t LEFT JOIN #BaseConversaciones c ON c.IdConversacion = t.IdConversacion WHERE c.IdConversacion IS NOT NULL AND (@IdTecnico IS NULL OR t.IdTecnico = @IdTecnico OR c.IdTecnico = @IdTecnico)),
                     (SELECT COUNT(1) FROM dbo.CONV_ASIGNACIONES a INNER JOIN #BaseConversaciones c ON c.IdConversacion = a.IdConversacion WHERE a.FechaHora >= @Desde AND a.FechaHora < @HastaExclusive AND (@IdTecnico IS NULL OR a.IdTecnico = @IdTecnico)),
-                    (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambiÃ³ el estado%' OR Texto LIKE N'%cambio el estado%' OR Texto LIKE N'%cerrÃ³ la conversaciÃ³n%' OR Texto LIKE N'%cerro la conversacion%'),
+                    (SELECT COUNT(1) FROM EventosRango WHERE Texto LIKE N'%cambió el estado%' OR Texto LIKE N'%cambio el estado%' OR Texto LIKE N'%cerró la conversación%' OR Texto LIKE N'%cerro la conversacion%'),
                     (SELECT AVG(CAST(DATEDIFF(second, PrimerEntrante, PrimeraRespuesta) AS bigint)) FROM PrimerasRespuestas WHERE PrimeraRespuesta IS NOT NULL),
                     (SELECT AVG(CAST(DATEDIFF(second, ISNULL(FechaHoraPrimerMensaje, FechaHora_Grabacion), FechaHoraCierre) AS bigint)) FROM CierresRango WHERE FechaHoraCierre IS NOT NULL);
 
@@ -526,10 +528,10 @@ public sealed class ConversacionesService(
                 FROM
                 (
                     SELECT CASE
-                        WHEN Texto LIKE N'%asignÃ³ la conversaciÃ³n%' OR Texto LIKE N'%asigno la conversacion%' THEN N'Asignaciones'
-                        WHEN Texto LIKE N'%creÃ³ un ticket%' OR Texto LIKE N'%creo un ticket%' THEN N'Tickets'
-                        WHEN Texto LIKE N'%cerrÃ³ la conversaciÃ³n%' OR Texto LIKE N'%cerro la conversacion%' THEN N'Cierres'
-                        WHEN Texto LIKE N'%cambiÃ³ el estado%' OR Texto LIKE N'%cambio el estado%' THEN N'Cambios de estado'
+                        WHEN Texto LIKE N'%asignó la conversación%' OR Texto LIKE N'%asigno la conversacion%' THEN N'Asignaciones'
+                        WHEN Texto LIKE N'%creó un ticket%' OR Texto LIKE N'%creo un ticket%' THEN N'Tickets'
+                        WHEN Texto LIKE N'%cerró la conversación%' OR Texto LIKE N'%cerro la conversacion%' THEN N'Cierres'
+                        WHEN Texto LIKE N'%cambió el estado%' OR Texto LIKE N'%cambio el estado%' THEN N'Cambios de estado'
                         ELSE N'Otras acciones'
                     END AS Tipo
                     FROM EventosRango
@@ -620,7 +622,7 @@ public sealed class ConversacionesService(
                     SELECT
                         cb.ClienteCodigo,
                         cb.ClienteNombre,
-                        SUM(CASE WHEN m.Texto LIKE N'%cambiÃ³ el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%' THEN 1 ELSE 0 END) AS Reabiertas
+                        SUM(CASE WHEN m.Texto LIKE N'%cambió el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%' THEN 1 ELSE 0 END) AS Reabiertas
                     FROM ClienteBase cb
                     INNER JOIN #MensajesRango m ON m.IdConversacion = cb.IdConversacion
                     WHERE m.Direction = N'NOTA_INTERNA'
@@ -1256,7 +1258,7 @@ public sealed class ConversacionesService(
                             WHERE m.IdConversacion = c.IdConversacion
                               AND m.Direction = N'NOTA_INTERNA'
                               AND m.MessageType = N'SYSTEM'
-                              AND (m.Texto LIKE N'%cambiÃ³ el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%')
+                              AND (m.Texto LIKE N'%cambió el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%')
                               AND (@Desde IS NULL OR m.FechaHora >= @Desde)
                               AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
                         ))
@@ -1265,7 +1267,7 @@ public sealed class ConversacionesService(
                             WHERE m.IdConversacion = c.IdConversacion
                               AND m.Direction = N'NOTA_INTERNA'
                               AND m.MessageType = N'SYSTEM'
-                              AND (m.Texto LIKE N'%cambiÃ³ el estado%' OR m.Texto LIKE N'%cambio el estado%' OR m.Texto LIKE N'%cerrÃ³ la conversaciÃ³n%' OR m.Texto LIKE N'%cerro la conversacion%')
+                              AND (m.Texto LIKE N'%cambió el estado%' OR m.Texto LIKE N'%cambio el estado%' OR m.Texto LIKE N'%cerró la conversación%' OR m.Texto LIKE N'%cerro la conversacion%')
                               AND (@Desde IS NULL OR m.FechaHora >= @Desde)
                               AND (@HastaExclusive IS NULL OR m.FechaHora < @HastaExclusive)
                         ))
@@ -1515,10 +1517,10 @@ public sealed class ConversacionesService(
                         OR (@Auditoria = N'nuevas' AND c.FechaHora_Grabacion >= @Desde AND c.FechaHora_Grabacion < @HastaExclusive)
                         OR (@Auditoria = N'cerradas_rango' AND c.FechaHoraCierre >= @Desde AND c.FechaHoraCierre < @HastaExclusive)
                         OR (@Auditoria = N'asignaciones' AND EXISTS (SELECT 1 FROM dbo.CONV_ASIGNACIONES a WHERE a.IdConversacion = c.IdConversacion AND (@Desde IS NULL OR a.FechaHora >= @Desde) AND (@HastaExclusive IS NULL OR a.FechaHora < @HastaExclusive)))
-                        OR (@Auditoria = N'reabiertas' AND m.Direction = N'NOTA_INTERNA' AND m.MessageType = N'SYSTEM' AND (m.Texto LIKE N'%cambiÃ³ el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%'))
-                        OR (@Auditoria = N'cambios_estado' AND m.Direction = N'NOTA_INTERNA' AND m.MessageType = N'SYSTEM' AND (m.Texto LIKE N'%cambiÃ³ el estado%' OR m.Texto LIKE N'%cambio el estado%' OR m.Texto LIKE N'%cerrÃ³ la conversaciÃ³n%' OR m.Texto LIKE N'%cerro la conversacion%'))
+                        OR (@Auditoria = N'reabiertas' AND m.Direction = N'NOTA_INTERNA' AND m.MessageType = N'SYSTEM' AND (m.Texto LIKE N'%cambió el estado de Cerrada a%' OR m.Texto LIKE N'%cambio el estado de Cerrada a%'))
+                        OR (@Auditoria = N'cambios_estado' AND m.Direction = N'NOTA_INTERNA' AND m.MessageType = N'SYSTEM' AND (m.Texto LIKE N'%cambió el estado%' OR m.Texto LIKE N'%cambio el estado%' OR m.Texto LIKE N'%cerró la conversación%' OR m.Texto LIKE N'%cerro la conversacion%'))
                         OR (@Auditoria = N'tipo_mensaje' AND UPPER(ISNULL(m.MessageType, N'')) = @TipoMensaje)
-                        OR (@Auditoria = N'tickets' AND m.Direction = N'NOTA_INTERNA' AND m.MessageType = N'SYSTEM' AND (m.Texto LIKE N'%creÃ³ un ticket%' OR m.Texto LIKE N'%creo un ticket%'))
+                        OR (@Auditoria = N'tickets' AND m.Direction = N'NOTA_INTERNA' AND m.MessageType = N'SYSTEM' AND (m.Texto LIKE N'%creó un ticket%' OR m.Texto LIKE N'%creo un ticket%'))
                     )
                 ORDER BY {ConversationMessageVisibleDateSql("m")} DESC, m.IdMensaje DESC
                 """;
@@ -8021,7 +8023,10 @@ public sealed class ConversacionesService(
                 var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, token).ConfigureAwait(false);
 
                 if (esUrgente)
+                {
                     await SubirPrioridadAsync(idConversacion, "URGENTE", token).ConfigureAwait(false);
+                    await TryNotifyUrgencyTechniciansAsync(idConversacion, texto, config, token).ConfigureAwait(false);
+                }
                 else if (esPrioritario)
                     await SubirPrioridadAsync(idConversacion, "ALTA", token).ConfigureAwait(false);
 
@@ -9054,6 +9059,316 @@ public sealed class ConversacionesService(
         return (0, false, false);
     }
 
+    private async Task TryNotifyUrgencyTechniciansAsync(long idConversacion, string texto, ConversacionAutomatizacionesConfigDto config, CancellationToken ct)
+    {
+        var configuredTechnicians = NormalizeTechnicianIds(config.AsistenteUrgenciaTecnicos);
+        if (configuredTechnicians.Count == 0)
+            return;
+
+        try
+        {
+            var idMensajeOrigen = await GetLastIncomingMessageIdAsync(idConversacion, ct).ConfigureAwait(false);
+            if (idMensajeOrigen <= 0)
+                return;
+
+            var conversation = await RequireConversationAsync(idConversacion, ct).ConfigureAwait(false);
+            var recipients = await GetUrgencyAlertRecipientsAsync(configuredTechnicians, ct).ConfigureAwait(false);
+            if (recipients.Count == 0)
+                return;
+
+            var templateName = string.IsNullOrWhiteSpace(config.AsistenteUrgenciaTemplate)
+                ? "cliente_consultando_urgencia"
+                : config.AsistenteUrgenciaTemplate.Trim();
+
+            var cliente = await GetUrgencyConversationClientNameAsync(idConversacion, ct).ConfigureAwait(false);
+            var motivo = Truncar(texto, 180);
+            var whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(ct).ConfigureAwait(false);
+            var internalUrl = BuildInternalConversationUrl(idConversacion, whatsAppConfig.PublicBaseUrl);
+
+            foreach (var recipient in recipients)
+            {
+                var reserved = await TryReserveUrgencyAlertAsync(idMensajeOrigen, idConversacion, recipient.IdTecnico, ct).ConfigureAwait(false);
+                if (!reserved)
+                    continue;
+
+                try
+                {
+                    var result = await SendSystemTemplateToPhoneAsync(
+                        conversation,
+                        recipient.Telefono,
+                        templateName,
+                        BuildUrgencyTemplateValues(cliente, motivo, idConversacion, internalUrl),
+                        ct).ConfigureAwait(false);
+
+                    await MarkUrgencyAlertSentAsync(idMensajeOrigen, recipient.IdTecnico, result.WhatsAppMessageId, result.PayloadJson, ct).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    await MarkUrgencyAlertErrorAsync(idMensajeOrigen, recipient.IdTecnico, ex, ct).ConfigureAwait(false);
+                    await _appEvents.LogErrorAsync(
+                        "Conversaciones",
+                        "AlertarUrgenciaTecnico",
+                        ex,
+                        "No se pudo notificar por WhatsApp a un técnico configurado para urgencias.",
+                        new { idConversacion, idMensajeOrigen, recipient.IdTecnico, Template = templateName },
+                        AppEventSeverity.Warning,
+                        ct).ConfigureAwait(false);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await _appEvents.LogErrorAsync(
+                "Conversaciones",
+                "AlertarUrgenciaTecnicos",
+                ex,
+                "No se pudieron procesar las alertas de urgencia a técnicos.",
+                new { idConversacion },
+                AppEventSeverity.Warning,
+                ct).ConfigureAwait(false);
+        }
+    }
+
+    private async Task<long> GetLastIncomingMessageIdAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1) IdMensaje
+            FROM dbo.CONV_MENSAJES
+            WHERE IdConversacion = @IdConversacion
+              AND Direction = N'ENTRANTE'
+            ORDER BY FechaHora DESC, IdMensaje DESC;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return result is null or DBNull ? 0L : Convert.ToInt64(result, CultureInfo.InvariantCulture);
+    }
+
+    private async Task<IReadOnlyList<UrgencyAlertRecipient>> GetUrgencyAlertRecipientsAsync(IReadOnlyCollection<string> configuredTechnicians, CancellationToken ct)
+    {
+        if (configuredTechnicians.Count == 0)
+            return [];
+
+        var parameters = configuredTechnicians.Select((_, index) => $"@IdTecnico{index}").ToArray();
+        var sql = $"""
+            SELECT
+                LTRIM(RTRIM(ISNULL(IdTecnico, N''))) AS IdTecnico,
+                ISNULL(Nombre, N'') AS Nombre,
+                ISNULL(Telefono, N'') AS Telefono
+            FROM dbo.V_TA_Tecnicos
+            WHERE ISNULL(Baja, 0) = 0
+              AND UPPER(LTRIM(RTRIM(ISNULL(IdTecnico, N'')))) IN ({string.Join(", ", parameters)})
+            ORDER BY Nombre;
+            """;
+
+        var items = new List<UrgencyAlertRecipient>();
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        var index = 0;
+        foreach (var idTecnico in configuredTechnicians)
+            cmd.Parameters.AddWithValue(parameters[index++], idTecnico.ToUpperInvariant());
+
+        await using var rd = await cmd.ExecuteReaderAsync(ct).ConfigureAwait(false);
+        while (await rd.ReadAsync(ct).ConfigureAwait(false))
+        {
+            var phone = NormalizePhone(GetString(rd, 2));
+            if (!IsValidAlertPhone(phone))
+                continue;
+
+            items.Add(new UrgencyAlertRecipient(GetString(rd, 0), GetString(rd, 1), phone));
+        }
+
+        return items;
+    }
+
+    private async Task<bool> TryReserveUrgencyAlertAsync(long idMensajeOrigen, long idConversacion, string idTecnico, CancellationToken ct)
+    {
+        const string sql = """
+            INSERT INTO dbo.CONV_ALERTAS_URGENCIA_ENVIADAS
+                (IdMensajeOrigen, IdConversacion, IdTecnico, FechaIntento, Estado)
+            SELECT @IdMensajeOrigen, @IdConversacion, @IdTecnico, GETDATE(), N'PENDIENTE'
+            WHERE NOT EXISTS (
+                SELECT 1
+                FROM dbo.CONV_ALERTAS_URGENCIA_ENVIADAS WITH (UPDLOCK, HOLDLOCK)
+                WHERE IdMensajeOrigen = @IdMensajeOrigen
+                  AND UPPER(LTRIM(RTRIM(IdTecnico))) = UPPER(LTRIM(RTRIM(@IdTecnico)))
+            );
+
+            SELECT @@ROWCOUNT;
+            """;
+
+        try
+        {
+            await using var cn = new SqlConnection(ConnectionString);
+            await cn.OpenAsync(ct);
+            await using var cmd = new SqlCommand(sql, cn);
+            cmd.Parameters.AddWithValue("@IdMensajeOrigen", idMensajeOrigen);
+            cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+            cmd.Parameters.AddWithValue("@IdTecnico", idTecnico.Trim());
+            var result = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false);
+            return Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
+        }
+        catch (SqlException ex) when (ex.Number is 2601 or 2627)
+        {
+            return false;
+        }
+    }
+
+    private async Task MarkUrgencyAlertSentAsync(long idMensajeOrigen, string idTecnico, string whatsAppMessageId, string payloadJson, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE dbo.CONV_ALERTAS_URGENCIA_ENVIADAS
+            SET FechaEnvio = GETDATE(),
+                Estado = N'ENVIADO',
+                ErrorResumen = NULL,
+                WhatsAppMessageId = @WhatsAppMessageId,
+                PayloadJson = @PayloadJson
+            WHERE IdMensajeOrigen = @IdMensajeOrigen
+              AND UPPER(LTRIM(RTRIM(IdTecnico))) = UPPER(LTRIM(RTRIM(@IdTecnico)));
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdMensajeOrigen", idMensajeOrigen);
+        cmd.Parameters.AddWithValue("@IdTecnico", idTecnico.Trim());
+        cmd.Parameters.AddWithValue("@WhatsAppMessageId", DbNullable(whatsAppMessageId));
+        cmd.Parameters.AddWithValue("@PayloadJson", DbNullable(payloadJson));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private async Task MarkUrgencyAlertErrorAsync(long idMensajeOrigen, string idTecnico, Exception ex, CancellationToken ct)
+    {
+        const string sql = """
+            UPDATE dbo.CONV_ALERTAS_URGENCIA_ENVIADAS
+            SET Estado = N'ERROR',
+                ErrorResumen = @ErrorResumen
+            WHERE IdMensajeOrigen = @IdMensajeOrigen
+              AND UPPER(LTRIM(RTRIM(IdTecnico))) = UPPER(LTRIM(RTRIM(@IdTecnico)));
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdMensajeOrigen", idMensajeOrigen);
+        cmd.Parameters.AddWithValue("@IdTecnico", idTecnico.Trim());
+        cmd.Parameters.AddWithValue("@ErrorResumen", Truncar(ex.Message, 480));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private async Task<WhatsAppSendResult> SendSystemTemplateToPhoneAsync(
+        ConversationIdentity conversation,
+        string destinationPhone,
+        string templateName,
+        IReadOnlyList<string> candidateValues,
+        CancellationToken ct)
+    {
+        if (!string.Equals(conversation.Canal, "WHATSAPP", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("La alerta de urgencia solo puede enviarse desde conversaciones WhatsApp.");
+
+        var templates = await GetTemplatesForConversationAsync(conversation.IdConversacion, ct).ConfigureAwait(false);
+        var template = templates.FirstOrDefault(x =>
+                x.Activa
+                && string.Equals(x.EstadoMeta, "APPROVED", StringComparison.OrdinalIgnoreCase)
+                && string.Equals(x.NombreMeta, templateName, StringComparison.OrdinalIgnoreCase))
+            ?? throw new InvalidOperationException($"No se encontró la plantilla aprobada '{templateName}' para la WABA de esta conversación.");
+
+        var config = await conversacionesConfigService.GetWhatsAppConfigAsync(ct).ConfigureAwait(false);
+        config.PhoneNumberId = await ResolveTemplateConversationPhoneAsync(conversation, config, ct).ConfigureAwait(false);
+        var runtimeCredential = await whatsAppRuntimeCredentialResolver.ResolveAsync(
+            sessionService.GetActiveSession()?.BaseId ?? 0,
+            conversation.IdNumeroWhatsApp,
+            config.PhoneNumberId,
+            config,
+            ct).ConfigureAwait(false);
+        config.PhoneNumberId = runtimeCredential.PhoneNumberId;
+        config.BusinessAccountId = runtimeCredential.WabaId;
+        config.ApiVersion = runtimeCredential.GraphVersion;
+        config.AccessToken = runtimeCredential.AccessToken;
+        EnsureWhatsAppMetaProvider(config, "enviar alertas de urgencia");
+        EnsureTemplateMatchesRuntime(template, runtimeCredential);
+
+        var values = candidateValues.Take(CountTemplateBodyVariables(template)).ToList();
+        WhatsAppTemplateValidation.ValidateSend(template, values);
+        return await SendTemplateToWhatsAppAsync(config, destinationPhone, template, values, ct).ConfigureAwait(false);
+    }
+
+    private async Task<string> GetUrgencyConversationClientNameAsync(long idConversacion, CancellationToken ct)
+    {
+        const string sql = """
+            SELECT TOP (1)
+                COALESCE(
+                    NULLIF(cli.RAZON_SOCIAL, N''),
+                    NULLIF(mc.Nombre_y_Apellido, N''),
+                    NULLIF(c.NombreVisible, N''),
+                    NULLIF(c.TelefonoWhatsApp, N''),
+                    N'Cliente'
+                )
+            FROM dbo.CONV_CONVERSACIONES c
+            LEFT JOIN dbo.VT_CLIENTES cli ON cli.CODIGO = c.ClienteCodigo
+            LEFT JOIN dbo.MA_CONTACTOS mc ON mc.id = c.IdContacto
+            WHERE c.IdConversacion = @IdConversacion;
+            """;
+
+        await using var cn = new SqlConnection(ConnectionString);
+        await cn.OpenAsync(ct);
+        await using var cmd = new SqlCommand(sql, cn);
+        cmd.Parameters.AddWithValue("@IdConversacion", idConversacion);
+        var result = Convert.ToString(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false)) ?? string.Empty;
+        return string.IsNullOrWhiteSpace(result) ? "Cliente" : Truncar(result.Trim(), 80);
+    }
+
+    private static IReadOnlyList<string> BuildUrgencyTemplateValues(string cliente, string motivo, long idConversacion, string internalUrl)
+    {
+        var reference = idConversacion.ToString(CultureInfo.InvariantCulture);
+        return
+        [
+            string.IsNullOrWhiteSpace(cliente) ? "Cliente" : cliente.Trim(),
+            string.IsNullOrWhiteSpace(motivo) ? "Mensaje marcado como urgente" : motivo.Trim(),
+            reference,
+            string.IsNullOrWhiteSpace(internalUrl) ? reference : internalUrl
+        ];
+    }
+
+    private static string BuildInternalConversationUrl(long idConversacion, string? publicBaseUrl)
+    {
+        var baseUrl = (publicBaseUrl ?? string.Empty).Trim();
+        if (!Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri) || uri.Scheme != Uri.UriSchemeHttps)
+            return string.Empty;
+
+        return new Uri(uri, $"/conversaciones?id={idConversacion.ToString(CultureInfo.InvariantCulture)}").ToString();
+    }
+
+    private static int CountTemplateBodyVariables(ConversacionPlantillaDto template)
+        => Regex.Matches(template.CuerpoTexto ?? string.Empty, @"\{\{\s*(\d+)\s*\}\}")
+            .Select(m => int.TryParse(m.Groups[1].Value, out var index) ? index : -1)
+            .Where(index => index > 0)
+            .Distinct()
+            .Count();
+
+    private static List<string> NormalizeTechnicianIds(IEnumerable<string>? values)
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in values ?? [])
+        {
+            var value = NormalizeTechnicianId(raw);
+            if (value.Length == 0 || !seen.Add(value))
+                continue;
+
+            result.Add(value);
+        }
+
+        return result;
+    }
+
+    private static bool IsValidAlertPhone(string? phone)
+        => !string.IsNullOrWhiteSpace(phone) && NormalizePhone(phone).Length >= 8;
+
     private async Task<IReadOnlyList<ConversacionMensajeDto>> GetRecentMessagesForBotAsync(long idConversacion, CancellationToken ct)
     {
         // Si la conversación se cerró y después se reabrió (un cliente nuevo escribe tiempo después),
@@ -9070,7 +9385,7 @@ public sealed class ConversacionesService(
                 WHERE IdConversacion = @Id
                   AND Direction = N'NOTA_INTERNA'
                   AND MessageType = N'SYSTEM'
-                  AND (Texto LIKE N'%cerrÃ³ la conversaciÃ³n%' OR Texto LIKE N'%cerro la conversacion%')
+                  AND (Texto LIKE N'%cerró la conversación%' OR Texto LIKE N'%cerro la conversacion%')
             );
 
             SELECT TOP (40)
@@ -15443,6 +15758,8 @@ public sealed class ConversacionesService(
         /// </summary>
         public string PhoneNumberId { get; init; } = string.Empty;
     }
+
+    private sealed record UrgencyAlertRecipient(string IdTecnico, string Nombre, string Telefono);
 
     private sealed class MessageReactionTarget
     {

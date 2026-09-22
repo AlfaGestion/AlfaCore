@@ -1182,6 +1182,31 @@
                             <input id="asis-urgencia" @bind="_automatizacionesConfig.AsistenteUrgenciaPalabras"
                                    placeholder="no puedo facturar, no anda el sistema, no arranca, sistema caido" />
                         </div>
+                        <div class="field">
+                            <label for="asis-urgencia-template">Template para alertar técnicos</label>
+                            <input id="asis-urgencia-template" @bind="_automatizacionesConfig.AsistenteUrgenciaTemplate"
+                                   placeholder="cliente_consultando_urgencia" />
+                        </div>
+                        <div class="field conv-config-fields__full">
+                            <label>Técnicos que reciben alertas de urgencia</label>
+                            <div class="conv-config-tech-multiselect" role="group" aria-label="Técnicos que reciben alertas de urgencia">
+                                @foreach (var tecnico in _tecnicos)
+                                {
+                                    var disabled = string.IsNullOrWhiteSpace(tecnico.Telefono);
+                                    <label class="conv-config-tech-option @(disabled ? "is-disabled" : string.Empty)">
+                                        <input type="checkbox"
+                                               checked="@IsUrgencyTechnicianSelected(tecnico.IdTecnico)"
+                                               disabled="@disabled"
+                                               @onchange="args => ToggleUrgencyTechnician(tecnico.IdTecnico, args)" />
+                                        <span>
+                                            <strong>@tecnico.Nombre</strong>
+                                            <small>@(disabled ? "Sin teléfono cargado" : tecnico.Telefono)</small>
+                                        </span>
+                                    </label>
+                                }
+                            </div>
+                            <small class="field__hint">Solo se guardan IDs de técnicos existentes; en el envío se vuelve a resolver el teléfono desde la base actual.</small>
+                        </div>
                         <div class="field conv-config-fields__full">
                             <label class="conv-config-checkbox">
                                 <input type="checkbox" @bind="_automatizacionesConfig.BotSoloSinAsignar" />
@@ -5394,6 +5419,8 @@
             AsistentePolitica = source.AsistentePolitica,
             AsistenteFueraHorario = source.AsistenteFueraHorario,
             AsistenteUrgenciaPalabras = source.AsistenteUrgenciaPalabras,
+            AsistenteUrgenciaTemplate = source.AsistenteUrgenciaTemplate,
+            AsistenteUrgenciaTecnicos = CloneUrgencyTechnicians(source.AsistenteUrgenciaTecnicos),
             AsistenteUsaKnowledge = source.AsistenteUsaKnowledge,
             AsistenteHerramientaPrecios = source.AsistenteHerramientaPrecios,
             AsistenteHerramientaSaldoCliente = source.AsistenteHerramientaSaldoCliente,
@@ -5439,6 +5466,8 @@
            && left.AsistentePolitica == right.AsistentePolitica
            && left.AsistenteFueraHorario == right.AsistenteFueraHorario
            && left.AsistenteUrgenciaPalabras == right.AsistenteUrgenciaPalabras
+           && left.AsistenteUrgenciaTemplate == right.AsistenteUrgenciaTemplate
+           && UrgencyTechniciansEquals(left.AsistenteUrgenciaTecnicos, right.AsistenteUrgenciaTecnicos)
            && left.AsistenteUsaKnowledge == right.AsistenteUsaKnowledge
            && left.AsistenteHerramientaPrecios == right.AsistenteHerramientaPrecios
            && left.AsistenteHerramientaSaldoCliente == right.AsistenteHerramientaSaldoCliente
@@ -5450,6 +5479,53 @@
 
     private static HashSet<string> CloneAdministradores(IEnumerable<string> source)
         => new(source, StringComparer.OrdinalIgnoreCase);
+
+    private static List<string> CloneUrgencyTechnicians(IEnumerable<string>? source)
+        => NormalizeUrgencyTechnicians(source);
+
+    private static List<string> NormalizeUrgencyTechnicians(IEnumerable<string>? source)
+    {
+        var result = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var raw in source ?? [])
+        {
+            var value = (raw ?? string.Empty).Trim();
+            if (value.Length == 0 || !seen.Add(value))
+                continue;
+
+            result.Add(value);
+        }
+
+        return result;
+    }
+
+    private static bool UrgencyTechniciansEquals(IEnumerable<string>? left, IEnumerable<string>? right)
+        => NormalizeUrgencyTechnicians(left).OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+            .SequenceEqual(NormalizeUrgencyTechnicians(right).OrderBy(x => x, StringComparer.OrdinalIgnoreCase), StringComparer.OrdinalIgnoreCase);
+
+    private bool IsUrgencyTechnicianSelected(string idTecnico)
+        => _automatizacionesConfig.AsistenteUrgenciaTecnicos.Any(x => string.Equals(x, idTecnico, StringComparison.OrdinalIgnoreCase));
+
+    private void ToggleUrgencyTechnician(string idTecnico, ChangeEventArgs args)
+    {
+        var normalized = (idTecnico ?? string.Empty).Trim();
+        if (normalized.Length == 0)
+            return;
+
+        var selected = args.Value is bool value && value;
+        var current = NormalizeUrgencyTechnicians(_automatizacionesConfig.AsistenteUrgenciaTecnicos);
+        if (selected)
+        {
+            if (!current.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+                current.Add(normalized);
+        }
+        else
+        {
+            current.RemoveAll(x => string.Equals(x, normalized, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _automatizacionesConfig.AsistenteUrgenciaTecnicos = current;
+    }
 
     private async Task SaveNumeroAsync(ConversacionWhatsAppNumeroDto numero)
     {
