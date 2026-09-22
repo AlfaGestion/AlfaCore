@@ -10,6 +10,7 @@ public interface IConversacionesService
     Task<IReadOnlyList<ConversacionEstadoOptionDto>> GetStatesAsync(CancellationToken ct = default);
     Task<ConversacionesEstadisticasDto> GetEstadisticasAsync(ConversacionesEstadisticasFilters filters, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionInboxItemDto>> GetInboxAsync(ConversacionesInboxFilters filters, CancellationToken ct = default);
+    Task<PagedResult<ConversacionInboxItemDto>> GetInboxPagedAsync(ConversacionesInboxFilters filters, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionAuditoriaMensajeDto>> GetAuditMessagesAsync(ConversacionesInboxFilters filters, CancellationToken ct = default);
     Task<ConversacionDetalleDto?> GetConversationAsync(long conversationId, CancellationToken ct = default);
     Task<IReadOnlyList<ConversacionMensajeDto>> GetMessagesAsync(long conversationId, CancellationToken ct = default);

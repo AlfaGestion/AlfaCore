@@ -324,7 +324,7 @@
                         }
                     </select>
                 </div>
-                <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
+                <button type="button" class="btn btn--primary" @onclick="ApplyInboxFiltersAsync" disabled="@_loadingInbox">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
                 <button type="button"
@@ -660,7 +660,7 @@
                     </select>
                 </div>
 
-                <button type="button" class="btn btn--primary" @onclick="LoadInboxAsync" disabled="@_loadingInbox">
+                <button type="button" class="btn btn--primary" @onclick="ApplyInboxFiltersAsync" disabled="@_loadingInbox">
                     <i class="bi bi-funnel"></i> Aplicar
                 </button>
                 <button type="button"
@@ -1043,6 +1043,38 @@
                             }
                         }
                     </div>
+
+                    @if (_inboxTotal > 0)
+                    {
+                        <div class="conversations-list__pager" aria-label="Paginación de conversaciones">
+                            <span class="conversations-list__pager-range desktop-only">
+                                @InboxRangeStart–@InboxRangeEnd de @_inboxTotal
+                            </span>
+                            <span class="conversations-list__pager-range mobile-only">
+                                Página @InboxPageNumber de @InboxTotalPages
+                            </span>
+                            <div class="conversations-list__pager-actions">
+                                <button type="button"
+                                        class="btn btn--ghost btn--sm"
+                                        title="Página anterior"
+                                        aria-label="Página anterior"
+                                        @onclick="GoToPreviousInboxPageAsync"
+                                        disabled="@(!InboxHasPrevPage || _loadingInbox)">
+                                    <i class="bi bi-chevron-left"></i>
+                                    <span class="desktop-only">Anterior</span>
+                                </button>
+                                <button type="button"
+                                        class="btn btn--ghost btn--sm"
+                                        title="Página siguiente"
+                                        aria-label="Página siguiente"
+                                        @onclick="GoToNextInboxPageAsync"
+                                        disabled="@(!InboxHasNextPage || _loadingInbox)">
+                                    <span class="desktop-only">Siguiente</span>
+                                    <i class="bi bi-chevron-right"></i>
+                                </button>
+                            </div>
+                        </div>
+                    }
                 }
             </aside>
 
@@ -3755,6 +3787,8 @@
     private List<ConversacionTecnicoOptionDto> _technicians = [];
     private List<ConversacionEstadoOptionDto> _states = [];
     private List<ConversacionInboxItemDto> _inbox = [];
+    /// <summary>Total de conversaciones que matchean los filtros actuales en el servidor (paginación server-side del inbox).</summary>
+    private int _inboxTotal;
     private List<ConversacionMensajeDto> _messages = [];
     private List<ConversacionAuditoriaMensajeDto> _auditMessages = [];
     private List<ConversacionTypingDto> _typingUsers = [];
@@ -5139,6 +5173,7 @@
     private async Task ToggleColaEsperaAsync()
     {
         _filters.Orden = EsColaEspera ? ConversacionesInboxOrden.Recientes : ConversacionesInboxOrden.ColaEspera;
+        ResetInboxPaging();
         await LoadInboxAsync();
     }
 
@@ -5217,6 +5252,7 @@
         _filters.Modo = mode;
         NormalizeConversationModeFilters();
         EnsureCurrentTechnicianFilterForCurrentMode();
+        ResetInboxPaging();
         await LoadInboxAsync();
     }
 
@@ -5253,6 +5289,7 @@
             _filters.Modo = "todas";
         }
 
+        ResetInboxPaging();
         await LoadInboxAsync();
     }
 
@@ -5306,6 +5343,7 @@
     private async Task ApplyMobileAdvancedFiltersAsync()
     {
         _showMobileAdvancedFilters = false;
+        ResetInboxPaging();
         await LoadInboxAsync();
     }
 
@@ -5316,6 +5354,7 @@
         _filters.IdTecnicoActual = string.Empty;
         _filters.ClienteCodigo = string.Empty;
         _showMobileAdvancedFilters = false;
+        ResetInboxPaging();
         await LoadInboxAsync();
     }
 
@@ -5331,6 +5370,7 @@
         _actionError = null;
         _showContactSuggestions = false;
         _showMobileAdvancedFilters = false;
+        ResetInboxPaging();
         await LoadInboxAsync();
     }
 
@@ -5406,11 +5446,13 @@
         _filters.Modo = "todas";
         _filters.IdTecnicoActual = string.Empty;
         _filters.CodigoEstado = string.Empty;
+        ResetInboxPaging();
     }
 
     private async Task HandleTechnicianFilterChangedAsync(ChangeEventArgs args)
     {
         _filters.IdTecnicoActual = Convert.ToString(args.Value, System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty;
+        ResetInboxPaging();
         await LoadInboxAsync();
     }
 
@@ -5469,6 +5511,48 @@
         await LoadAuditMessagesIfNeededAsync();
     }
 
+    /// <summary>Botón "Aplicar" de los combos de Estado/Técnico (bindeados con @bind, sin onchange propio).</summary>
+    private async Task ApplyInboxFiltersAsync()
+    {
+        ResetInboxPaging();
+        await LoadInboxAsync();
+    }
+
+    /// <summary>
+    /// Vuelve la paginación del inbox a la primera página. Debe llamarse siempre que cambie un
+    /// criterio que afecte el WHERE server-side (modo, estado, búsqueda, canal/número, técnico,
+    /// orden, etc.) para no quedar pidiendo una página que ya no corresponde al nuevo filtro.
+    /// No se llama en refrescos silenciosos (auto-refresh) ni en "Recargar" manual, que deben
+    /// preservar la página actual.
+    /// </summary>
+    private void ResetInboxPaging() => _filters.Offset = 0;
+
+    private int InboxPageSize => _filters.Limit > 0 ? _filters.Limit : 50;
+    private int InboxPageNumber => (_filters.Offset / InboxPageSize) + 1;
+    private int InboxTotalPages => InboxPageSize > 0 ? (int)Math.Ceiling((double)_inboxTotal / InboxPageSize) : 0;
+    private bool InboxHasPrevPage => InboxPageNumber > 1;
+    private bool InboxHasNextPage => InboxPageNumber < InboxTotalPages;
+    private int InboxRangeStart => _inboxTotal == 0 ? 0 : _filters.Offset + 1;
+    private int InboxRangeEnd => Math.Min(_filters.Offset + InboxPageSize, _inboxTotal);
+
+    private async Task GoToNextInboxPageAsync()
+    {
+        if (!InboxHasNextPage || _loadingInbox)
+            return;
+
+        _filters.Offset += InboxPageSize;
+        await RefreshInboxAsync(showLoading: true, allowSelectionChange: true);
+    }
+
+    private async Task GoToPreviousInboxPageAsync()
+    {
+        if (!InboxHasPrevPage || _loadingInbox)
+            return;
+
+        _filters.Offset = Math.Max(0, _filters.Offset - InboxPageSize);
+        await RefreshInboxAsync(showLoading: true, allowSelectionChange: true);
+    }
+
     private async Task SyncMercadoLibreQuestionsAsync()
     {
         if (_syncingMercadoLibre)
@@ -5519,12 +5603,14 @@
             ApplyCurrentUserToFilters(_filters);
             _filters.ExpectedBaseId = lease.BaseId;
             var token = _tenantRequestCts?.Token ?? CancellationToken.None;
-            var refreshedInbox = (await ConversacionesSvc.GetInboxAsync(_filters, token)).ToList();
+            var pagedInbox = await ConversacionesSvc.GetInboxPagedAsync(_filters, token);
+            var refreshedInbox = pagedInbox.Items.ToList();
             if (!IsTenantLoadCurrent(lease))
                 return 0;
             if (trackNewMessages)
                 newMessagesDetected = TrackInboxNewMessages(previousInbox, refreshedInbox);
             _inbox = refreshedInbox;
+            _inboxTotal = pagedInbox.Total;
             StoreChannelCache(_canalActivo);
 
             if (_selectedConversationId.HasValue && _inbox.Any(x => x.IdConversacion == _selectedConversationId.Value))
@@ -7440,6 +7526,7 @@
         _channelCache[canal] = new ConversationChannelCache(
             CloneFilters(_filters),
             _inbox.ToList(),
+            _inboxTotal,
             _selectedConversationId);
     }
 
@@ -7451,6 +7538,7 @@
         _filters = CloneFilters(cache.Filters);
         _filters.Canal = canal;
         _inbox = cache.Inbox.ToList();
+        _inboxTotal = cache.InboxTotal;
 
         if (cache.SelectedConversationId is long selectedId
             && _conversationCache.TryGetValue(selectedId, out var conversationCache))
@@ -9086,6 +9174,7 @@
             return;
         }
 
+        ResetInboxPaging();
         await LoadInboxAsync();
 
         if (canal == "INTERNO" && _selectedConversationId is null)
@@ -9107,6 +9196,7 @@
         _showNuevoHilo = false;
         ClearSelection();
         await SaveInboxPreferenceAsync();
+        ResetInboxPaging();
         await LoadInboxAsync();
     }
 
@@ -10142,6 +10232,7 @@
             _showNuevoHilo = false;
             _nuevoHiloNombre = string.Empty;
             _nuevoHiloTecnico = string.Empty;
+            ResetInboxPaging();
             await LoadInboxAsync();
             await SelectConversationAsync(id, showMobileChat: true);
         }
@@ -10178,6 +10269,7 @@
             _filters.Canal = "WHATSAPP";
             _filters.Search = string.Empty;
 
+            ResetInboxPaging();
             await LoadInboxAsync();
             await SelectConversationAsync(result.IdConversacion, showMobileChat: true);
 
@@ -10281,6 +10373,7 @@
             _filters.Canal = "WHATSAPP";
             _filters.Search = string.Empty;
             CloseNewWhatsAppConversation();
+            ResetInboxPaging();
             await LoadInboxAsync();
             await SelectConversationAsync(result.IdConversacion, showMobileChat: true);
         }
@@ -13305,6 +13398,7 @@
     private sealed record ConversationChannelCache(
         ConversacionesInboxFilters Filters,
         List<ConversacionInboxItemDto> Inbox,
+        int InboxTotal,
         long? SelectedConversationId);
 
     private sealed class ParteHorasPromptVm

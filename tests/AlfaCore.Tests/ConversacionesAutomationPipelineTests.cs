@@ -661,8 +661,13 @@ public sealed class ConversacionesAutomationPipelineTests
 
     [Theory]
     [InlineData(
-        // 1. GetInboxAsync: query principal de la bandeja.
-        "SELECT\r\n                    c.IdConversacion,")]
+        // 1. GetInboxPagedAsync (GetInboxAsync es su wrapper): query principal de la bandeja.
+        // Desde el refactor de paginación server-side, la lista de columnas vive en
+        // selectColumnsSql, un literal raw-string separado que se interpola recién en tiempo de
+        // ejecución dentro de `sql` -- en el CÓDIGO FUENTE (lo que lee este test) "SELECT" y
+        // "c.IdConversacion," ya no son adyacentes, así que el marcador arranca directamente en
+        // la primera columna, que sigue siendo única en el archivo.
+        "c.IdConversacion,")]
     [InlineData(
         // 1421-area: GetAuditMessagesAsync, la búsqueda/auditoría de mensajes que también acepta
         // @Modo = 'sin_asignar'.

@@ -5009,6 +5009,41 @@ html[data-theme="light"] .menu__search-result:hover {
     flex: 1 1 auto;
 }
 
+.conversations-list__pager {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
+    margin-top: .5rem;
+    padding-top: .6rem;
+    border-top: 1px solid var(--color-border);
+}
+
+.conversations-list__pager-range {
+    font-size: .8rem;
+    color: var(--color-text-muted, rgba(226, 232, 240, 0.65));
+    white-space: nowrap;
+}
+
+.conversations-list__pager-actions {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    flex-shrink: 0;
+}
+
+.conversations-list__pager-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+}
+
+.conversations-list__pager-actions .btn:disabled {
+    opacity: .45;
+    cursor: not-allowed;
+}
+
 .conversation-row {
     width: 100%;
     min-width: 0;
