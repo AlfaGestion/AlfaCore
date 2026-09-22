@@ -1,7 +1,12 @@
 /*
     Tabla operativa para alertas de urgencia del bot a técnicos.
-    Idempotencia: una alerta por IdMensajeOrigen + IdTecnico.
-    Retry: un registro en ERROR puede reintentarse actualizando la misma fila; el UNIQUE no se rompe.
+    Idempotencia: una alerta por IdMensajeOrigen + IdTecnico (UNIQUE + insert-si-no-existe).
+    Retry: TODO -- no implementado. TryReserveUrgencyAlertAsync inserta solo si NO existe ya una
+    fila para (IdMensajeOrigen, IdTecnico), sin mirar Estado -- una fila en ERROR, o incluso
+    PENDIENTE huérfana (proceso interrumpido entre el insert y el marcado final), queda así para
+    siempre: nada vuelve a tocarla. Es intencionalmente fail-safe (nunca duplica un envío), no
+    fail-safe para la entrega (un fallo transitorio de Meta pierde esa alerta puntual). Si se
+    necesita reintento, agregar un job que reprocese ERROR/PENDIENTE vencidas.
 */
 
 IF OBJECT_ID(N'dbo.CONV_ALERTAS_URGENCIA_ENVIADAS', N'U') IS NULL

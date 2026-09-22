@@ -7962,6 +7962,21 @@ public sealed class ConversacionesService(
             {
                 await TraceDiagAsync("LockOk:EjecutarStart", idConversacion, ct).ConfigureAwait(false);
 
+                // La detección + alerta de urgencia es responsabilidad distinta de si el Bot termina
+                // respondiendo o haciendo handoff -- se evalúa acá, antes de cualquier corte de
+                // negocio (escalado inmediato, sin asignar, límites de respuesta, fuera de horario).
+                // Antes "esUrgente" se calculaba después de esos returns tempranos: si la misma
+                // palabra estaba en BotPalabrasEscalado Y en AsistenteUrgenciaPalabras, se hacía
+                // handoff pero nunca se avisaba a los técnicos. La idempotencia por
+                // (IdMensajeOrigen, IdTecnico) en TryNotifyUrgencyTechniciansAsync sigue siendo la que
+                // evita alertas duplicadas si esta función se vuelve a ejecutar para el mismo mensaje.
+                var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
+                if (esUrgente)
+                {
+                    await SubirPrioridadAsync(idConversacion, "URGENTE", token).ConfigureAwait(false);
+                    await TryNotifyUrgencyTechniciansAsync(idConversacion, texto, config, token).ConfigureAwait(false);
+                }
+
                 if (ContienePalabraEscalado(texto, config.BotPalabrasEscalado))
                 {
                     await TraceDiagAsync("EjecutarStop:PalabraEscalado", idConversacion, ct).ConfigureAwait(false);
@@ -8019,15 +8034,12 @@ public sealed class ConversacionesService(
 
                 await TraceDiagAsync("EjecutarSigueALlamarOpenAi", idConversacion, ct).ConfigureAwait(false);
 
-                var esUrgente = ContienePalabraEscalado(texto, config.AsistenteUrgenciaPalabras);
                 var (rubro, esPrioritario) = await ObtenerContextoClienteAsync(idConversacion, token).ConfigureAwait(false);
 
-                if (esUrgente)
-                {
-                    await SubirPrioridadAsync(idConversacion, "URGENTE", token).ConfigureAwait(false);
-                    await TryNotifyUrgencyTechniciansAsync(idConversacion, texto, config, token).ConfigureAwait(false);
-                }
-                else if (esPrioritario)
+                // esUrgente ya se resolvió (y, si correspondía, se avisó a los técnicos) al principio
+                // de la función, antes de cualquier corte -- acá solo falta la prioridad ALTA para el
+                // caso no-urgente-pero-prioritario, igual que antes.
+                if (!esUrgente && esPrioritario)
                     await SubirPrioridadAsync(idConversacion, "ALTA", token).ConfigureAwait(false);
 
                 if (fueraDeHorario && (esUrgente || esPrioritario))
@@ -10581,6 +10593,7 @@ public sealed class ConversacionesService(
 
         request.Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
         var client = httpClientFactory.CreateClient();
+        client.Timeout = MetaSendTimeout;
         using var response = await client.SendAsync(request, ct);
         var responseBody = await response.Content.ReadAsStringAsync(ct);
 
