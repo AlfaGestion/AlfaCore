@@ -1002,3 +1002,46 @@
 .wa-embedded-steps li.is-inprogress::before { content: "●"; color: var(--alfa-accent); }
 .wa-embedded-steps li.is-actionrequired::before { content: "!"; color: var(--alfa-warning); }
 .wa-embedded-steps li.is-failed::before { content: "×"; color: var(--alfa-danger); }
+
+.conv-config-tech-multiselect {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: var(--alfa-space-8, 8px);
+}
+
+.conv-config-tech-option {
+    min-height: 52px;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--alfa-space-8, 8px);
+    padding: var(--alfa-space-10, 10px);
+    border: 1px solid var(--alfa-border-default, #333640);
+    border-radius: var(--alfa-radius-6, 6px);
+    background: var(--alfa-bg-surface-raised, #1d2026);
+    color: var(--alfa-text-primary, #f5f5f7);
+}
+
+.conv-config-tech-option input {
+    margin-top: 2px;
+}
+
+.conv-config-tech-option span {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.conv-config-tech-option strong,
+.conv-config-tech-option small {
+    overflow-wrap: anywhere;
+}
+
+.conv-config-tech-option small {
+    color: var(--alfa-text-secondary, #a6abb5);
+    font-size: var(--alfa-font-small, 12px);
+}
+
+.conv-config-tech-option.is-disabled {
+    opacity: .62;
+}
