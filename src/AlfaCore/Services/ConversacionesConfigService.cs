@@ -40,27 +40,41 @@ public sealed class ConversacionesConfigService(
 
     private TenantConnectionContext ResolveTenantConnection(int? expectedBaseId, string operation)
     {
+        // Cuando el caller ya trae un BaseId autoritativo resuelto server-side (el webhook
+        // tokenizado de WhatsApp/Instagram/Facebook/MercadoLibre: ver TryResolveWebhookTenantAsync
+        // -> SetWebhookOverride en Program.cs), resolvemos exclusivamente contra ese override y
+        // NUNCA llamamos a GetActiveSession() -- ni siquiera indirectamente puede terminar
+        // evaluando ruta/NavigationManager. Si el override no existe o pertenece a otra base, caemos
+        // al camino de sesión de siempre (UI interactiva), que sigue validando el mismatch más abajo.
+        if (expectedBaseId is > 0)
+        {
+            var webhookOverride = sessionService.GetWebhookOverride(expectedBaseId.Value);
+            if (webhookOverride is not null)
+                return BuildTenantConnectionContext(webhookOverride);
+        }
+
         var active = sessionService.GetActiveSession();
         if (expectedBaseId is > 0 && active?.BaseId != expectedBaseId.Value)
             throw new InvalidOperationException(
                 $"La sesión activa no coincide con la base solicitada para Conversaciones.{operation}.");
 
         if (active is not null)
-        {
-            return new TenantConnectionContext(active.BaseId, new SqlConnectionStringBuilder
-            {
-                DataSource = active.Servidor,
-                InitialCatalog = active.BaseDatos,
-                UserID = active.Usuario,
-                Password = active.Password,
-                TrustServerCertificate = active.TrustServerCertificate,
-                ApplicationName = "AlfaCore"
-            }.ConnectionString);
-        }
+            return BuildTenantConnectionContext(active);
 
         return new TenantConnectionContext(null, configuration.GetConnectionString("AlfaGestion")
             ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'."));
     }
+
+    private static TenantConnectionContext BuildTenantConnectionContext(SessionDto session)
+        => new(session.BaseId, new SqlConnectionStringBuilder
+        {
+            DataSource = session.Servidor,
+            InitialCatalog = session.BaseDatos,
+            UserID = session.Usuario,
+            Password = session.Password,
+            TrustServerCertificate = session.TrustServerCertificate,
+            ApplicationName = "AlfaCore"
+        }.ConnectionString);
 
     public Task<ConversacionWhatsAppConfigDto> GetWhatsAppConfigAsync(CancellationToken ct = default)
         => GetWhatsAppConfigAsync((int?)null, ct);

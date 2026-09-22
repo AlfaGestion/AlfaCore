@@ -287,6 +287,7 @@ public sealed class WhatsAppSubscriptionInspectionWebhookRouteMatchedTests
         public event Action? SessionChanged;
         public string GetConnectionString() => string.Empty;
         public SessionDto? GetActiveSession() => null;
+        public SessionDto? GetWebhookOverride(int expectedBaseId) => null;
         public void SetWebhookOverride(SessionDto session) { }
         public void ClearWebhookOverride() { }
         public IReadOnlyList<SessionDto> GetAllSessions() => [];

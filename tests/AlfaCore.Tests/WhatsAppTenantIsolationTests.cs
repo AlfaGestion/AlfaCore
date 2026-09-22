@@ -972,6 +972,7 @@ public sealed class WhatsAppTenantIsolationTests
         public event Action? SessionChanged;
         public string GetConnectionString() => session is null ? string.Empty : "Server=test-server;Database=test-db;";
         public SessionDto? GetActiveSession() => session;
+        public SessionDto? GetWebhookOverride(int expectedBaseId) => session?.BaseId == expectedBaseId ? session : null;
         public void SetWebhookOverride(SessionDto value) { session = value; SessionChanged?.Invoke(); }
         public void ClearWebhookOverride() { session = null; SessionChanged?.Invoke(); }
         public IReadOnlyList<SessionDto> GetAllSessions() => session is null ? [] : [session];
@@ -986,11 +987,13 @@ public sealed class WhatsAppTenantIsolationTests
     // llame a SetWebhookOverride, no hay sesión Blazor y GetActiveSession() devuelve null.
     private sealed class SessionlessWebhookService : ISessionService
     {
+        private SessionDto? overrideValue;
         public event Action? SessionChanged;
         public bool WebhookOverrideWasSet { get; private set; }
         public string GetConnectionString() => "Server=test-server;Database=test-db;";
         public SessionDto? GetActiveSession() => null;
-        public void SetWebhookOverride(SessionDto value) { WebhookOverrideWasSet = true; SessionChanged?.Invoke(); }
+        public SessionDto? GetWebhookOverride(int expectedBaseId) => overrideValue?.BaseId == expectedBaseId ? overrideValue : null;
+        public void SetWebhookOverride(SessionDto value) { overrideValue = value; WebhookOverrideWasSet = true; SessionChanged?.Invoke(); }
         public void ClearWebhookOverride() => SessionChanged?.Invoke();
         public IReadOnlyList<SessionDto> GetAllSessions() => [];
         public void SwitchSession(Guid id) => throw new NotSupportedException();

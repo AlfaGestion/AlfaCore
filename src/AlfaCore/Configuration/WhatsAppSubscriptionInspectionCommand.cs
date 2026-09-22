@@ -932,6 +932,7 @@ internal static class WhatsAppSubscriptionInspectionCommand
                 }.ConnectionString;
 
         public SessionDto? GetActiveSession() => _session;
+        public SessionDto? GetWebhookOverride(int expectedBaseId) => _session?.BaseId == expectedBaseId ? _session : null;
         public void SetWebhookOverride(SessionDto session) { _session = session; SessionChanged?.Invoke(); }
         public void ClearWebhookOverride() { _session = null; SessionChanged?.Invoke(); }
         public IReadOnlyList<SessionDto> GetAllSessions() => _session is null ? [] : [_session];

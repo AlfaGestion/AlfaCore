@@ -1045,6 +1045,7 @@ public sealed class ConversacionesAutomationPipelineTests
         public event Action? SessionChanged;
         public string GetConnectionString() => "Server=test;Database=test;";
         public SessionDto? GetActiveSession() => null;
+        public SessionDto? GetWebhookOverride(int expectedBaseId) => null;
         public void SetWebhookOverride(SessionDto session) { }
         public void ClearWebhookOverride() { }
         public IReadOnlyList<SessionDto> GetAllSessions() => [];

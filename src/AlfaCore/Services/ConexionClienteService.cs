@@ -78,19 +78,44 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         SessionChanged?.Invoke();
     }
 
+    /// <summary>
+    /// Ver <see cref="IConexionClienteService.GetWebhookOverride"/>. A propósito NO llama a
+    /// <see cref="GetActiveSession"/>: solo mira <c>_webhookOverride</c> bajo lock. Ni siquiera en
+    /// el escenario en que <see cref="GetActiveSession"/> volviera a resolver ruta/NavigationManager
+    /// antes que el override (regresión de la ordenación de arriba) este método se vería afectado,
+    /// porque no pasa por esa ruta de código en ningún caso.
+    /// </summary>
+    public SessionDto? GetWebhookOverride(int expectedBaseId)
+    {
+        lock (_lock)
+        {
+            return _webhookOverride is { } webhookOverride && webhookOverride.BaseId == expectedBaseId
+                ? Clone(webhookOverride, true)
+                : null;
+        }
+    }
+
     public SessionDto? GetActiveSession()
     {
+        // El webhook override se resuelve ANTES que cualquier otra cosa y sin excepción: es la
+        // única forma en que un request sin circuito Blazor (webhooks de WhatsApp/Instagram/
+        // Facebook/MercadoLibre, login directo por ruta) puede pasar por acá. Si se resolviera
+        // ResolveRouteSessionOverride primero, esa llamada toca NavigationManager.Uri, que en un
+        // request HTTP puro (sin circuito) todavía no fue inicializado y tira
+        // InvalidOperationException: "'RemoteNavigationManager' has not been initialized." --
+        // visto en producción tumbando el webhook de WhatsApp con 500 antes de llegar a
+        // procesar nada. Ver SetWebhookOverride: la intención siempre fue que tuviera prioridad.
+        lock (_lock)
+        {
+            if (_webhookOverride is not null)
+                return Clone(_webhookOverride, true);
+        }
+
         if (_appMode.IsSaaSMode)
         {
             var routeSession = ResolveRouteSessionOverride();
             if (routeSession is not null)
                 return Clone(routeSession, true);
-        }
-
-        lock (_lock)
-        {
-            if (_webhookOverride is not null)
-                return Clone(_webhookOverride, true);
         }
 
         if (!_appMode.IsSaaSMode)
