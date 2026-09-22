@@ -10,9 +10,23 @@ public sealed class ActualizacionesDashboardDto
     public bool UsaRutaRed { get; set; }
     public string BaseActiva { get; set; } = string.Empty;
     public ActualizacionesMotorEstadoDto MotorEstado { get; set; } = new();
+    public SqlServerEngineInfoDto MotorSql { get; set; } = new();
     public IReadOnlyList<ActualizacionScriptDto> Scripts { get; set; } = [];
     public IReadOnlyList<ActualizacionScriptDto> Pendientes { get; set; } = [];
     public IReadOnlyList<ActualizacionHistorialDto> Historial { get; set; } = [];
+}
+
+/// <summary>Versión del motor SQL Server de la base activa, y si está por debajo del mínimo que
+/// AlfaCore necesita (SQL Server 2016 -- usa CREATE OR ALTER, THROW/re-throw, OFFSET/FETCH en el
+/// código y en las migraciones). Ver ISqlServerEngineCheckService.</summary>
+public sealed class SqlServerEngineInfoDto
+{
+    public const int VersionMinimaRecomendada = 13;
+    public const string NombreVersionMinimaRecomendada = "SQL Server 2016";
+
+    public string Descripcion { get; set; } = string.Empty;
+    public int? VersionMayor { get; set; }
+    public bool RequiereActualizacion { get; set; }
 }
 
 public sealed class ActualizacionesSettingsDto

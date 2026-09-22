@@ -51,8 +51,6 @@ Usar cuando:
 
 En el módulo web de Punto de Venta se deben conservar estos atajos y vincularlos a la misma acción del botón correspondiente:
 
-- `F2`: abrir **Cobrar**; si la cobranza está abierta, ejecutar **Aceptar**.
-- `F3`: abrir **Consultar cliente** y enfocar la búsqueda.
 - `Ctrl+F`: abrir **Nuevo cliente / consulta ARCA** y enfocar CUIT/DNI.
 - `Ctrl+P`: abrir **Reimprimir comprobantes**.
 - `Ctrl+B`: abrir la confirmación de **Vaciar carrito**.

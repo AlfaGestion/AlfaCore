@@ -7,7 +7,12 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_web_CreaAsientoIngresoEgreso]
+-- CREATE OR ALTER requiere SQL Server 2016 SP1+; hay bases de clientes en motores más viejos
+-- (ej.: SQL Server 2008), así que se usa el patrón clásico DROP + CREATE.
+IF OBJECT_ID(N'[dbo].[sp_web_CreaAsientoIngresoEgreso]', N'P') IS NOT NULL
+    DROP PROCEDURE [dbo].[sp_web_CreaAsientoIngresoEgreso];
+GO
+CREATE PROCEDURE [dbo].[sp_web_CreaAsientoIngresoEgreso]
     @pTipo              varchar(1)   = null,
     @pImporte           real         = 0,
     @pDetalle           varchar(100) = null,

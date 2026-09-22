@@ -863,7 +863,12 @@ public sealed class ConversacionesService(
             return stats;
         }, "No se pudieron cargar las estad\u00edsticas de conversaciones.", ct);
 
-    public Task<IReadOnlyList<ConversacionInboxItemDto>> GetInboxAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)
+    /// <summary>Wrapper de compatibilidad: mantiene la firma histórica para los callers que solo necesitan
+    /// la página de resultados (sin total). Ver <see cref="GetInboxPagedAsync"/> para paginación real.</summary>
+    public async Task<IReadOnlyList<ConversacionInboxItemDto>> GetInboxAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)
+        => (await GetInboxPagedAsync(filters, ct)).Items;
+
+    public Task<PagedResult<ConversacionInboxItemDto>> GetInboxPagedAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)
         => ExecuteLoggedAsync("Conversaciones", "GetInbox", async token =>
         {
             filters ??= new();
@@ -882,7 +887,7 @@ public sealed class ConversacionesService(
             var clienteCodigo = NormalizeClientCode(filters.ClienteCodigo);
             var usuarioActual = NormalizePinUser(filters.UsuarioActual);
             var sistemaActual = NormalizePinSystem(filters.SistemaActual);
-            var sql = $"""
+            var ticketsPreambleSql = $"""
                 DECLARE @TicketsFiltro TABLE (IdConversacion bigint NOT NULL PRIMARY KEY);
 
                 IF @Auditoria = N'tickets' AND OBJECT_ID(N'dbo.TICK_TICKETS', N'U') IS NOT NULL
@@ -899,8 +904,9 @@ public sealed class ConversacionesService(
                         @Desde = @Desde,
                         @HastaExclusive = @HastaExclusive;
                 END;
+                """;
 
-                SELECT
+            var selectColumnsSql = $"""
                     c.IdConversacion,
                     ISNULL(c.TelefonoWhatsApp, ''),
                     ISNULL(c.NombreVisible, ''),
@@ -945,6 +951,11 @@ public sealed class ConversacionesService(
                         THEN CAST(1 AS bit)
                         ELSE CAST(0 AS bit)
                     END AS EsWhatsAppQr
+                """;
+
+            // Bloque FROM/WHERE compartido entre la consulta paginada y el COUNT de respaldo
+            // (ver más abajo) para no duplicar la lógica de filtros.
+            var fromWhereSql = $"""
                 FROM dbo.CONV_CONVERSACIONES c
                 INNER JOIN dbo.CONV_ESTADOS e
                     ON e.CodigoEstado = c.CodigoEstado
@@ -1278,6 +1289,18 @@ public sealed class ConversacionesService(
                             WHERE msg.IdConversacion = c.IdConversacion
                         )
                     )
+                """;
+
+            var limit = Math.Clamp(filters.Limit, 1, 200);
+            var offset = Math.Max(0, filters.Offset);
+
+            var sql = $"""
+                {ticketsPreambleSql}
+
+                SELECT
+                {selectColumnsSql},
+                    COUNT(*) OVER() AS TotalCount
+                {fromWhereSql}
                 {BuildInboxOrderByClause(filters.Orden)}
                 OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
                 """;
@@ -1303,32 +1326,39 @@ public sealed class ConversacionesService(
                     await ReopenClosedConversationsWithIncomingAfterCloseAsync(cn, null, token);
             }
 
-            await using var cmd = new SqlCommand(sql, cn);
-            cmd.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
-            cmd.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
-            cmd.Parameters.AddWithValue("@EstadoSinFinalizar", ConversacionesInboxFilters.EstadoSinFinalizar);
-            cmd.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
-            cmd.Parameters.AddWithValue("@SearchTerm", DbNullable(SearchTextHelper.Normalize(filters.Search)));
-            cmd.Parameters.AddWithValue("@SearchPrefix", DbNullable(LikePrefix(filters.Search)));
-            cmd.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
-            cmd.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
-            cmd.Parameters.AddWithValue("@ClienteCodigo", DbNullable(clienteCodigo));
-            cmd.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
-            cmd.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
-            cmd.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
-            cmd.Parameters.AddWithValue("@HastaExclusive", hastaExclusive.HasValue ? hastaExclusive.Value : DBNull.Value);
-            cmd.Parameters.AddWithValue("@Auditoria", DbNullable(auditoria));
-            cmd.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
-            cmd.Parameters.AddWithValue("@UsuarioActual", usuarioActual);
-            cmd.Parameters.AddWithValue("@SistemaActual", sistemaActual);
-            cmd.Parameters.AddWithValue("@IdNumeroWhatsApp", filters.IdNumeroWhatsApp.HasValue ? filters.IdNumeroWhatsApp.Value : DBNull.Value);
-            cmd.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
-            cmd.Parameters.AddWithValue("@Offset", Math.Max(0, filters.Offset));
-            cmd.Parameters.AddWithValue("@Limit", Math.Clamp(filters.Limit, 1, 200));
-            cmd.Parameters.AddWithValue("@Clasifica1", DbNullable(filters.Clasifica1));
-            cmd.Parameters.AddWithValue("@Clasifica2", DbNullable(filters.Clasifica2));
-            cmd.Parameters.AddWithValue("@Clasifica3", DbNullable(filters.Clasifica3));
+            void AddInboxParameters(SqlCommand command)
+            {
+                command.Parameters.AddWithValue("@Canal", DbNullable(filters.Canal));
+                command.Parameters.AddWithValue("@CodigoEstado", DbNullable(filters.CodigoEstado));
+                command.Parameters.AddWithValue("@EstadoSinFinalizar", ConversacionesInboxFilters.EstadoSinFinalizar);
+                command.Parameters.AddWithValue("@Search", DbNullable(Like(filters.Search)));
+                command.Parameters.AddWithValue("@SearchTerm", DbNullable(SearchTextHelper.Normalize(filters.Search)));
+                command.Parameters.AddWithValue("@SearchPrefix", DbNullable(LikePrefix(filters.Search)));
+                command.Parameters.AddWithValue("@SearchPhone", DbNullable(searchPhone));
+                command.Parameters.AddWithValue("@SearchPhoneTail", DbNullable(searchPhoneTail));
+                command.Parameters.AddWithValue("@ClienteCodigo", DbNullable(clienteCodigo));
+                command.Parameters.AddWithValue("@Modo", NormalizeMode(filters.Modo));
+                command.Parameters.AddWithValue("@IdTecnicoActual", DbNullable(NormalizeTechnicianId(filters.IdTecnicoActual)));
+                command.Parameters.AddWithValue("@Desde", desde.HasValue ? desde.Value : DBNull.Value);
+                command.Parameters.AddWithValue("@HastaExclusive", hastaExclusive.HasValue ? hastaExclusive.Value : DBNull.Value);
+                command.Parameters.AddWithValue("@Auditoria", DbNullable(auditoria));
+                command.Parameters.AddWithValue("@TipoMensaje", DbNullable(tipoMensaje));
+                command.Parameters.AddWithValue("@UsuarioActual", usuarioActual);
+                command.Parameters.AddWithValue("@SistemaActual", sistemaActual);
+                command.Parameters.AddWithValue("@IdNumeroWhatsApp", filters.IdNumeroWhatsApp.HasValue ? filters.IdNumeroWhatsApp.Value : DBNull.Value);
+                command.Parameters.AddWithValue("@ManualWhatsAppConversationSummary", ManualWhatsAppConversationSummary);
+                command.Parameters.AddWithValue("@Clasifica1", DbNullable(filters.Clasifica1));
+                command.Parameters.AddWithValue("@Clasifica2", DbNullable(filters.Clasifica2));
+                command.Parameters.AddWithValue("@Clasifica3", DbNullable(filters.Clasifica3));
+            }
 
+            await using var cmd = new SqlCommand(sql, cn);
+            AddInboxParameters(cmd);
+            cmd.Parameters.AddWithValue("@Offset", offset);
+            cmd.Parameters.AddWithValue("@Limit", limit);
+
+            var totalCount = 0;
+            var hasTotalCount = false;
             await using var rd = await cmd.ExecuteReaderAsync(token);
             while (await rd.ReadAsync(token))
             {
@@ -1369,12 +1399,42 @@ public sealed class ConversacionesService(
                     ClasificacionColorHex = rd.IsDBNull(32) ? string.Empty : VbColorIntToHex(Convert.ToInt32(rd.GetValue(32))),
                     EsWhatsAppQr = !rd.IsDBNull(33) && rd.GetBoolean(33)
                 });
+
+                if (!hasTotalCount)
+                {
+                    totalCount = rd.GetInt32(34);
+                    hasTotalCount = true;
+                }
+            }
+            await rd.DisposeAsync();
+
+            // COUNT(*) OVER() no trae fila cuando la página pedida quedó vacía (por ejemplo, Offset
+            // avanzó más allá del total real porque el conjunto filtrado se achicó entre refrescos).
+            // En ese caso puntual se hace un COUNT real reutilizando el mismo WHERE, para no devolver
+            // nunca un total inventado.
+            if (!hasTotalCount && offset > 0)
+            {
+                var countSql = $"""
+                    {ticketsPreambleSql}
+
+                    SELECT COUNT(1)
+                    {fromWhereSql}
+                    """;
+                await using var countCmd = new SqlCommand(countSql, cn);
+                AddInboxParameters(countCmd);
+                totalCount = Convert.ToInt32(await countCmd.ExecuteScalarAsync(token) ?? 0);
             }
 
             foreach (var item in items)
                 ApplyWhatsAppWindow(item);
 
-            return DeduplicateInboxItems(items);
+            return new PagedResult<ConversacionInboxItemDto>
+            {
+                Items = DeduplicateInboxItems(items),
+                Total = totalCount,
+                PageNumber = (offset / limit) + 1,
+                PageSize = limit
+            };
         }, "No se pudieron cargar las conversaciones.", ct);
 
     public Task<IReadOnlyList<ConversacionAuditoriaMensajeDto>> GetAuditMessagesAsync(ConversacionesInboxFilters filters, CancellationToken ct = default)

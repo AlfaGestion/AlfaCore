@@ -16,7 +16,12 @@ GO
 SET QUOTED_IDENTIFIER ON
 GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_web_Alta_Comprobante]
+-- CREATE OR ALTER requiere SQL Server 2016 SP1+; hay bases de clientes en motores más viejos
+-- (ej.: SQL Server 2008), así que se usa el patrón clásico DROP + CREATE.
+IF OBJECT_ID(N'[dbo].[sp_web_Alta_Comprobante]', N'P') IS NOT NULL
+    DROP PROCEDURE [dbo].[sp_web_Alta_Comprobante];
+GO
+CREATE PROCEDURE [dbo].[sp_web_Alta_Comprobante]
     @pCliente                         nvarchar(15) = null,
     @pVendedor                        nvarchar(4) = null,
     @pFecha                           datetime = null,
@@ -151,7 +156,10 @@ BEGIN CATCH
 END CATCH
 GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_web_CpteInsumos]
+IF OBJECT_ID(N'[dbo].[sp_web_CpteInsumos]', N'P') IS NOT NULL
+    DROP PROCEDURE [dbo].[sp_web_CpteInsumos];
+GO
+CREATE PROCEDURE [dbo].[sp_web_CpteInsumos]
     @pIdCpte                        int = null,
     @pIdArticulo                    nvarchar(25),
     @pCantidad                      float,
@@ -433,7 +441,10 @@ BEGIN CATCH
 END CATCH
 GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_web_CreaAplicacionCobranzaFactura]
+IF OBJECT_ID(N'[dbo].[sp_web_CreaAplicacionCobranzaFactura]', N'P') IS NOT NULL
+    DROP PROCEDURE [dbo].[sp_web_CreaAplicacionCobranzaFactura];
+GO
+CREATE PROCEDURE [dbo].[sp_web_CreaAplicacionCobranzaFactura]
     @pIdCobranza                     int,
     @pIdFactura                      int,
     @pResultado                      smallint = NULL OUTPUT,
@@ -508,7 +519,10 @@ BEGIN CATCH
 END CATCH
 GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_web_CreaCobPorFactura]
+IF OBJECT_ID(N'[dbo].[sp_web_CreaCobPorFactura]', N'P') IS NOT NULL
+    DROP PROCEDURE [dbo].[sp_web_CreaCobPorFactura];
+GO
+CREATE PROCEDURE [dbo].[sp_web_CreaCobPorFactura]
     @pIdCpte                         int,
     @pResultado                      smallint = NULL OUTPUT,
     @pMensaje                        varchar(255) = NULL OUTPUT,
@@ -646,7 +660,10 @@ BEGIN CATCH
 END CATCH
 GO
 
-CREATE OR ALTER PROCEDURE [dbo].[sp_web_creaLineaAsiento]
+IF OBJECT_ID(N'[dbo].[sp_web_creaLineaAsiento]', N'P') IS NOT NULL
+    DROP PROCEDURE [dbo].[sp_web_creaLineaAsiento];
+GO
+CREATE PROCEDURE [dbo].[sp_web_creaLineaAsiento]
     @pIdCobranza                     int = null,
     @pImporte                        real = 0,
     @pCuentaMp                       varchar(100),

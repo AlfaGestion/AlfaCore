@@ -2,12 +2,21 @@
 @page "/{idweb}/{idbase:int}/configuracion-general/ventas"
 @using AlfaCore.Models
 @using Microsoft.AspNetCore.Components.Forms
+@using AlfaCore.Services.MercadoPagoPoint.Models
 @inject AlfaCore.Services.IConfiguracionGeneralService ConfigSvc
 @inject AlfaCore.Services.IArcaConfigService ArcaSvc
+@inject AlfaCore.Services.IMercadoPagoPointConfigService MpConfigSvc
+@inject AlfaCore.Services.MercadoPagoPoint.ITerminalsService MpTerminalsSvc
+@inject AlfaCore.Services.MercadoPagoPoint.IPosService MpPosSvc
+@inject AlfaCore.Services.IMercadoPagoPointPosService MpPaymentSvc
+@inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IRouteContextService RouteContext
 @inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject IConfiguration Configuration
 @implements IDisposable
 
 <PageTitle>Ventas | Alfa Gestión</PageTitle>
@@ -234,6 +243,112 @@
         </div>
     </section>
 
+    <section class="panel-card">
+        <h3 class="panel-card__title">Mercado Pago Point (terminal física)</h3>
+        <p class="panel-card__subtitle">
+            Cobro con tarjeta/QR desde el Punto de Venta usando una terminal Mercado Pago Point. Un solo
+            terminal fijo por base en esta etapa.
+        </p>
+
+        <div class="cfgarca-row cfgarca-row--fallback">
+            <label class="cfgarca-field">
+                Access Token
+                <input class="cfgarca-input" type="password" @bind="_mpAccessToken" placeholder="APP_USR-..." />
+            </label>
+            <label class="cfgarca-field">
+                Terminal ID
+                <input class="cfgarca-input" @bind="_mpTerminalId" />
+            </label>
+            <label class="cfgarca-field">
+                POS External ID (informativo)
+                <input class="cfgarca-input" @bind="_mpPosExternalId" />
+            </label>
+            <label class="cfgarca-field">
+                Webhook Secret
+                <input class="cfgarca-input" type="password" @bind="_mpWebhookSecret" />
+            </label>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_mpWebhookUrl))
+        {
+            <div class="shell-empty-state">
+                <strong>URL de webhook para registrar en Mercado Pago</strong>
+                <span>@_mpWebhookUrl</span>
+                <button type="button" class="btn btn-sm btn-outline-light mt-2" @onclick="MpCopiarWebhookUrlAsync">Copiar</button>
+            </div>
+        }
+
+        <h4 class="cfgarca-subtitle">Diagnóstico</h4>
+        <p class="panel-card__subtitle">Probá la configuración ya guardada antes de usarla en una venta real.</p>
+        <div class="d-flex gap-2 mb-3">
+            <button type="button" class="btn btn-outline-light" disabled="@_mpBusy" @onclick="MpListarTerminalesAsync">Listar terminales</button>
+            <button type="button" class="btn btn-outline-light" disabled="@_mpBusy" @onclick="MpListarPosAsync">Listar puntos de venta</button>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_mpMensajeDiagnostico))
+        {
+            <div class="editor-msg @(_mpMensajeEsError ? "editor-msg--error" : "editor-msg--ok")">@_mpMensajeDiagnostico</div>
+        }
+
+        @if (_mpTerminales.Count > 0)
+        {
+            <div class="cfgarca-table-wrap">
+                <table class="data-table">
+                    <thead><tr><th>Id</th><th>Modo</th><th>Sucursal</th><th>Estado</th></tr></thead>
+                    <tbody>
+                        @foreach (var t in _mpTerminales)
+                        {
+                            <tr><td>@t.Id</td><td>@t.OperatingMode</td><td>@t.Store</td><td>@t.Status</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        @if (_mpPos.Count > 0)
+        {
+            <div class="cfgarca-table-wrap">
+                <table class="data-table">
+                    <thead><tr><th>Id</th><th>Nombre</th><th>Sucursal</th><th>Terminal</th></tr></thead>
+                    <tbody>
+                        @foreach (var p in _mpPos)
+                        {
+                            <tr><td>@p.Id</td><td>@p.Name</td><td>@p.Store</td><td>@p.TerminalId</td></tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+
+        <h4 class="cfgarca-subtitle">Cobro de prueba</h4>
+        <div class="cfgarca-row cfgarca-row--fallback">
+            <label class="cfgarca-field">
+                Importe
+                <input class="cfgarca-input" type="number" step="0.01" min="0.01" @bind="_mpImportePrueba" disabled="@_mpCobrando" />
+            </label>
+            <div class="cfgarca-field d-flex gap-2 align-items-end">
+                <button type="button" class="btn btn-primary" disabled="@(_mpBusy || _mpCobrando)" @onclick="MpCobrarAsync">Cobrar</button>
+                <button type="button" class="btn btn-outline-danger" disabled="@(!_mpCobrando)" @onclick="MpCancelar">Cancelar</button>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(_mpEstadoCobro))
+        {
+            <div class="shell-empty-state">
+                <strong>Estado</strong>
+                <span>@_mpEstadoCobro</span>
+            </div>
+        }
+
+        @if (_mpUltimoResultado is not null)
+        {
+            <div class="shell-empty-state">
+                <strong>@(_mpUltimoResultado.Approved ? "Aprobado" : "No aprobado")</strong>
+                <span>Order: @_mpUltimoResultado.OrderId · Status: @_mpUltimoResultado.Status · Payment: @_mpUltimoResultado.PaymentId</span>
+            </div>
+        }
+    </section>
+
 </div>
 
 @code {
@@ -248,6 +363,21 @@
     private bool _subiendoCertPadron;
     private string? _subiendoCertUnidad;
     private AppUiMessage? _feedback;
+
+    private string _mpAccessToken = string.Empty;
+    private string _mpTerminalId = string.Empty;
+    private string _mpPosExternalId = string.Empty;
+    private string _mpWebhookSecret = string.Empty;
+    private bool _mpBusy;
+    private bool _mpCobrando;
+    private string _mpMensajeDiagnostico = string.Empty;
+    private bool _mpMensajeEsError;
+    private decimal _mpImportePrueba = 1m;
+    private string _mpEstadoCobro = string.Empty;
+    private string? _mpWebhookUrl;
+    private PaymentResult? _mpUltimoResultado;
+    private readonly List<TerminalInfo> _mpTerminales = [];
+    private readonly List<PosInfo> _mpPos = [];
 
     protected override void OnInitialized() => UpdatePageHeader();
 
@@ -272,6 +402,34 @@
             _arca = arcaResult.Value;
         else if (!arcaResult.Success)
             _feedback = arcaResult.Feedback;
+
+        await CargarMercadoPagoAsync();
+    }
+
+    private async Task CargarMercadoPagoAsync()
+    {
+        var options = await MpConfigSvc.ResolveOptionsAsync();
+        _mpAccessToken = options?.AccessToken ?? string.Empty;
+        _mpTerminalId = options?.TerminalId ?? string.Empty;
+        _mpWebhookSecret = await MpConfigSvc.ResolveWebhookSecretAsync();
+        _mpPosExternalId = await MpConfigSvc.ResolvePosExternalIdAsync();
+
+        var idBase = SessionSvc.GetActiveSession()?.BaseId;
+        if (idBase is int id and not 0)
+        {
+            var token = await CentralBasesSvc.EnsureWebhookTokenAsync(id);
+            var urlBase = Configuration["ServidorWeb:UrlBasePublica"]?.TrimEnd('/') ?? string.Empty;
+            _mpWebhookUrl = $"{urlBase}/api/mercadopago/point/webhook/{token}";
+        }
+    }
+
+    private async Task MpCopiarWebhookUrlAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_mpWebhookUrl))
+            return;
+
+        await JS.InvokeVoidAsync("navigator.clipboard.writeText", _mpWebhookUrl);
+        _feedback = AppUiMessage.Success("Copiado", "La URL de webhook se copió al portapapeles.");
     }
 
     private void UpdatePageHeader() => PageHeader.Set(new PageHeaderConfig
@@ -326,12 +484,25 @@
                 await ArcaSvc.GuardarUnidadAsync(unidad);
             return true;
         }, "No se pudo guardar la configuración de facturación electrónica.");
+        if (!arcaResult.Success)
+        {
+            _saving = false;
+            UpdatePageHeader();
+            _feedback = arcaResult.Feedback;
+            return;
+        }
+
+        var mpResult = await UiOps.RunAsync(async () =>
+        {
+            await MpConfigSvc.GuardarConfiguracionAsync(_mpAccessToken, _mpTerminalId, _mpPosExternalId, _mpWebhookSecret);
+            return true;
+        }, "No se pudo guardar la configuración de Mercado Pago Point.");
         _saving = false;
         UpdatePageHeader();
 
-        _feedback = arcaResult.Success
+        _feedback = mpResult.Success
             ? AppUiMessage.Success("Guardado", "La configuración se guardó correctamente.")
-            : arcaResult.Feedback;
+            : mpResult.Feedback;
     }
 
     private async Task CancelarAsync()
@@ -346,6 +517,8 @@
         var arcaResult = await UiOps.RunAsync(() => ArcaSvc.GetConfiguracionGeneralAsync(), "No se pudo restaurar la configuración de facturación electrónica.");
         if (arcaResult.Success && arcaResult.Value is not null)
             _arca = arcaResult.Value;
+
+        await CargarMercadoPagoAsync();
 
         _feedback = !portalResult.Success
             ? portalResult.Feedback
@@ -424,4 +597,88 @@
             else _subiendoCertUnidad = null;
         }
     }
+
+    private async Task MpListarTerminalesAsync()
+    {
+        _mpBusy = true;
+        _mpMensajeDiagnostico = string.Empty;
+        _mpTerminales.Clear();
+        try
+        {
+            var options = await MpConfigSvc.ResolveOptionsAsync() ?? throw new InvalidOperationException("Guardá la configuración primero.");
+            _mpTerminales.AddRange(await MpTerminalsSvc.ListTerminalInfosAsync(options, CancellationToken.None));
+            if (_mpTerminales.Count == 0)
+                _mpMensajeDiagnostico = "La cuenta no devolvió terminales.";
+            _mpMensajeEsError = false;
+        }
+        catch (Exception ex)
+        {
+            _mpMensajeDiagnostico = ex.Message;
+            _mpMensajeEsError = true;
+        }
+        finally
+        {
+            _mpBusy = false;
+        }
+    }
+
+    private async Task MpListarPosAsync()
+    {
+        _mpBusy = true;
+        _mpMensajeDiagnostico = string.Empty;
+        _mpPos.Clear();
+        try
+        {
+            var options = await MpConfigSvc.ResolveOptionsAsync() ?? throw new InvalidOperationException("Guardá la configuración primero.");
+            _mpPos.AddRange(await MpPosSvc.ListPosInfosAsync(options, CancellationToken.None));
+            if (_mpPos.Count == 0)
+                _mpMensajeDiagnostico = "La cuenta no devolvió puntos de venta.";
+            _mpMensajeEsError = false;
+        }
+        catch (Exception ex)
+        {
+            _mpMensajeDiagnostico = ex.Message;
+            _mpMensajeEsError = true;
+        }
+        finally
+        {
+            _mpBusy = false;
+        }
+    }
+
+    private async Task MpCobrarAsync()
+    {
+        if (_mpImportePrueba <= 0)
+        {
+            _mpMensajeDiagnostico = "El importe debe ser mayor a cero.";
+            _mpMensajeEsError = true;
+            return;
+        }
+
+        _mpCobrando = true;
+        _mpMensajeDiagnostico = string.Empty;
+        _mpUltimoResultado = null;
+        _mpEstadoCobro = "Creando orden...";
+        var externalReference = "DIAG-" + Guid.NewGuid().ToString("N")[..12];
+
+        try
+        {
+            _mpUltimoResultado = await MpPaymentSvc.CobrarAsync(_mpImportePrueba, externalReference, status =>
+            {
+                _mpEstadoCobro = status;
+                InvokeAsync(StateHasChanged);
+            });
+        }
+        catch (Exception ex)
+        {
+            _mpMensajeDiagnostico = ex.Message;
+            _mpMensajeEsError = true;
+        }
+        finally
+        {
+            _mpCobrando = false;
+        }
+    }
+
+    private void MpCancelar() => MpPaymentSvc.SolicitarCancelacion();
 }

@@ -9,6 +9,7 @@
 @inject AlfaCore.Services.IPuntoVentaConfigService PosConfigSvc
 @inject AlfaCore.Services.IPuntoVentaTurnoService TurnoSvc
 @inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
+@inject AlfaCore.Services.IMercadoPagoPointPosService MpPaymentSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IRouteContextService RouteCtx
@@ -2840,6 +2841,12 @@
         }
     };
 
+    // Impresión directa (sin el diálogo del navegador): frame.contentWindow.print() ya alcanza --
+    // solo hace falta que la PC de la caja abra Chrome/Edge con el flag --kiosk-printing (imprime
+    // directo a la impresora predeterminada de Windows con la configuración por defecto, sin diálogo).
+    // No requiere ningún cambio de código acá; es config del lado del sistema operativo de cada caja.
+    // Pendiente para cuando haya más de una impresora por caja (ej.: A4 para Factura A/B + térmica
+    // para tickets): eso sí requeriría un agente de impresión local, no solo el flag de Chrome.
     window.alfaPosPrintHtml = function (frameId, html) {
         const frame = document.getElementById(frameId);
         if (!frame || !frame.contentWindow) {
@@ -2932,26 +2939,6 @@
                 return;
             }
 
-            if (event.key === "F2" && !event.repeat) {
-                event.preventDefault();
-                event.stopPropagation();
-                const trigger = document.getElementById("pos-f2-shortcut-trigger");
-                if (trigger) {
-                    trigger.click();
-                }
-                return;
-            }
-
-            if (event.key === "F3" && !event.repeat) {
-                event.preventDefault();
-                event.stopPropagation();
-                const trigger = document.getElementById("pos-f3-shortcut-trigger");
-                if (trigger) {
-                    trigger.click();
-                }
-                return;
-            }
-
             if (event.ctrlKey && (event.key === "f" || event.key === "F")) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -2994,8 +2981,6 @@
 
 <section class="pos-shell">
     <button id="pos-reprint-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="OpenReprintModalAsync" tabindex="-1" aria-hidden="true"></button>
-    <button id="pos-f2-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleF2ShortcutAsync" tabindex="-1" aria-hidden="true"></button>
-    <button id="pos-f3-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleF3ShortcutAsync" tabindex="-1" aria-hidden="true"></button>
     <button id="pos-arca-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleArcaShortcutAsync" tabindex="-1" aria-hidden="true"></button>
     <button id="pos-clear-cart-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleClearCartShortcutAsync" tabindex="-1" aria-hidden="true"></button>
     <button id="pos-escape-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleEscapeShortcutAsync" tabindex="-1" aria-hidden="true"></button>
@@ -3034,8 +3019,6 @@
                         <div class="pos-topbar__menu-panel">
                             <div class="pos-shortcuts-hint" aria-label="Atajos de teclado">
                                 <span class="pos-shortcuts-hint__title">Atajos rápidos</span>
-                                <span><kbd>F2</kbd> Cobrar</span>
-                                <span><kbd>F3</kbd> Consultar</span>
                                 <span><kbd>Ctrl+F</kbd> ARCA</span>
                                 <span><kbd>Ctrl+B</kbd> Vaciar</span>
                                 <span><kbd>Ctrl+P</kbd> Reimprimir</span>
@@ -3189,7 +3172,7 @@
                     </div>
 
                     <div class="pos-sidebar__client">
-                            <button type="button" class="pos-sidebar__client-btn" @onclick="() => _showClienteModal = true" title="Consultar cliente (F3)">
+                            <button type="button" class="pos-sidebar__client-btn" @onclick="() => _showClienteModal = true" title="Consultar cliente">
                             <i class="bi bi-person-circle"></i>
                             @if (!string.IsNullOrEmpty(_cuentaClienteNombre))
                             {
@@ -3220,9 +3203,9 @@
                         }
                         else
                         {
-                            <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any() || (_idPuntoVentaActual > 0 && _turnoActual is null))" title="Cobrar (F2)">
+                            <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any() || (_idPuntoVentaActual > 0 && _turnoActual is null))" title="Cobrar">
                                 <i class="bi bi-cash-stack pos-charge__icon"></i>
-                                <span class="pos-charge__label">Cobrar <span class="pos-button-shortcut">F2</span></span>
+                                <span class="pos-charge__label">Cobrar</span>
                             </button>
                         }
 
@@ -3430,6 +3413,14 @@
             <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">@_chargeError</div>
         }
 
+        @if (_mpCobrando)
+        {
+            <div class="pos-charge-modal__feedback">
+                <strong>Mercado Pago Point:</strong> @_mpEstadoCobro
+                <button type="button" class="pos-charge-modal__ghost" @onclick="CancelarCobroMercadoPago">Cancelar cobro</button>
+            </div>
+        }
+
         <div class="pos-charge-modal__totals-head">
             <div>
                 <span>Total</span>
@@ -3466,7 +3457,7 @@
                    @bind:event="oninput"
                    @onkeydown="HandleChargeAmountKeyDown"
                    placeholder="Importe" />
-            <button type="button" class="pos-charge-modal__action" @onclick="() => AddSelectedPaymentAsync()" disabled="@_paymentMethodsLoading">Agregar</button>
+            <button type="button" class="pos-charge-modal__action" @onclick="() => AddSelectedPaymentAsync()" disabled="@(_paymentMethodsLoading || _mpCobrando)">Agregar</button>
         </div>
 
         <div class="pos-charge-modal__body">
@@ -3548,17 +3539,16 @@
         </div>
 
         <div class="pos-charge-modal__actions">
-            <button type="button" class="pos-charge-modal__accept-print" @onclick="() => ConfirmChargeAsync(true)" disabled="@(_chargeSaving || !_cartItems.Any())">
+            <button type="button" class="pos-charge-modal__accept-print" @onclick="() => ConfirmChargeAsync(true)" disabled="@(_chargeSaving || _mpCobrando || !_cartItems.Any())">
                 ACEPTAR E IMPRIMIR
             </button>
-            <button type="button" class="pos-charge-modal__save" @onclick="() => ConfirmChargeAsync(false)" disabled="@(_chargeSaving || !_cartItems.Any())">
-                @(_chargeSaving ? "Grabando..." : "ACEPTAR") <span class="pos-button-shortcut">F2</span>
+            <button type="button" class="pos-charge-modal__save" @onclick="() => ConfirmChargeAsync(false)" disabled="@(_chargeSaving || _mpCobrando || !_cartItems.Any())">
+                @(_chargeSaving ? "Grabando..." : "ACEPTAR")
             </button>
             <button type="button" class="pos-charge-modal__ghost" @onclick="CloseChargeModal" disabled="@_chargeSaving">CANCELAR</button>
         </div>
         <div class="pos-shortcuts-hint pos-shortcuts-hint--modal" aria-label="Atajos de la cobranza">
             <span class="pos-shortcuts-hint__title">Atajos</span>
-            <span><kbd>F2</kbd> Aceptar</span>
             <span><kbd>Esc</kbd> Cerrar</span>
         </div>
     </section>
@@ -4435,6 +4425,9 @@
     private string? _settingsError;
     private string? _chargeError;
     private string? _chargeSuccess;
+    private bool _mpCobrando;
+    private string _mpEstadoCobro = string.Empty;
+    private string? _mpUltimaReferenciaAprobada;
     private string? _receiptEmailFeedback;
     private string? _receiptEmailError;
     private string? _receiptPreviewHtml;
@@ -5459,16 +5452,6 @@
         }
     }
 
-    private Task HandleF2ShortcutAsync()
-        => _showChargeModal ? ConfirmChargeAsync(false) : OpenChargeModalAsync();
-
-    private Task HandleF3ShortcutAsync()
-    {
-        _showPosMenu = false;
-        _showClienteModal = true;
-        return Task.CompletedTask;
-    }
-
     private Task HandleArcaShortcutAsync()
     {
         _showPosMenu = false;
@@ -5735,6 +5718,12 @@
             return;
         }
 
+        if (IsMercadoPagoPointMethod(method))
+        {
+            await IniciarCobroMercadoPagoAsync(method, decimal.Round(importe, 2), focusFilterAfterAdd);
+            return;
+        }
+
         _paymentLines.Add(new PuntoVentaPaymentLineDto
         {
             CodigoMedioPago = method.Codigo,
@@ -5763,6 +5752,57 @@
             || (descripcion.Contains("CAJA", StringComparison.OrdinalIgnoreCase)
                 && descripcion.Contains("EF", StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>El cliente da de alta este medio en dbo.MA_CUENTAS con MEDIODEPAGO='MPPOINT' (mismo
+    /// mecanismo que cualquier otro medio de pago del POS, sin tooling nuevo). Ver
+    /// docs del plan de Mercado Pago Point para el detalle de la integración.</summary>
+    private static bool IsMercadoPagoPointMethod(PuntoVentaPaymentMethodDto method)
+        => string.Equals(method.MedioDePago?.Trim(), "MPPOINT", StringComparison.OrdinalIgnoreCase);
+
+    private async Task IniciarCobroMercadoPagoAsync(PuntoVentaPaymentMethodDto method, decimal importe, bool focusFilterAfterAdd)
+    {
+        _mpCobrando = true;
+        _mpEstadoCobro = "Iniciando cobro...";
+        _chargeError = null;
+        var externalReference = $"POS-{_idPuntoVentaActual}-{DateTime.UtcNow:yyyyMMddHHmmssfff}";
+
+        try
+        {
+            var resultado = await MpPaymentSvc.CobrarAsync(importe, externalReference, status =>
+            {
+                _mpEstadoCobro = status;
+                InvokeAsync(StateHasChanged);
+            });
+
+            if (!resultado.Approved)
+            {
+                _chargeError = $"Mercado Pago Point: {resultado.Message}";
+                return;
+            }
+
+            _mpUltimaReferenciaAprobada = externalReference;
+            _paymentLines.Add(new PuntoVentaPaymentLineDto
+            {
+                CodigoMedioPago = method.Codigo,
+                DescripcionMedioPago = method.Descripcion,
+                Importe = importe
+            });
+
+            _chargeAmountInput = TotalPagado >= TotalCarrito ? FmtInputAmount(importe) : PendingAmountInput();
+            if (focusFilterAfterAdd)
+                await FocusPaymentMethodFilterAsync();
+        }
+        catch (Exception ex)
+        {
+            _chargeError = $"Mercado Pago Point: {ex.Message}";
+        }
+        finally
+        {
+            _mpCobrando = false;
+        }
+    }
+
+    private void CancelarCobroMercadoPago() => MpPaymentSvc.SolicitarCancelacion();
 
     private async Task HandleChargeAmountKeyDown(KeyboardEventArgs e)
     {
@@ -5871,6 +5911,13 @@
             });
 
             _lastSaleResult = result;
+
+            if (_mpUltimaReferenciaAprobada is not null)
+            {
+                try { await MpPaymentSvc.VincularComprobanteAsync(_mpUltimaReferenciaAprobada, result.IdComprobante); }
+                catch (Exception ex) { Logger.LogWarning(ex, "No se pudo vincular la orden de Mercado Pago Point al comprobante {IdComprobante}.", result.IdComprobante); }
+                finally { _mpUltimaReferenciaAprobada = null; }
+            }
 
             if (_turnoActual is not null)
             {

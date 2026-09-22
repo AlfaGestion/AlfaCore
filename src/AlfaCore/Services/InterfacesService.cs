@@ -135,76 +135,96 @@ public sealed class InterfacesService(
             var pageNumber = Math.Max(1, filters.PageNumber);
             var skip = (pageNumber - 1) * pageSize;
 
+            // Paginación con ROW_NUMBER() en vez de OFFSET/FETCH: hay bases de clientes en motores
+            // que no lo soportan en absoluto (ej.: SQL Server 2008), a diferencia de ROW_NUMBER()
+            // que funciona desde SQL Server 2005.
             const string sql = """
-                SELECT
-                    c.IdComprobanteRecibido,
-                    c.FechaHora_Grabacion,
-                    ISNULL(c.UsuarioAlta, ''),
-                    ISNULL(c.Observacion, ''),
-                    ISNULL(c.CantidadAdjuntos, 0),
-                    ISNULL(c.Eliminado, 0),
-                    e.IdEstado,
-                    CASE
-                        WHEN ISNULL(t.Codigo, '') = 'COMPROBANTE_COMPRA'
-                         AND ISNULL(ia.Estado, '') IN ('PROCESADO', 'SIN_PROVEEDOR')
-                            THEN 'PROCESADO'
-                        ELSE ISNULL(e.Codigo, '')
-                    END,
-                    CASE
-                        WHEN ISNULL(t.Codigo, '') = 'COMPROBANTE_COMPRA'
-                         AND ISNULL(ia.Estado, '') IN ('PROCESADO', 'SIN_PROVEEDOR')
-                            THEN 'Procesado'
-                        ELSE ISNULL(e.Descripcion, '')
-                    END,
-                    ISNULL(e.PermiteEdicion, 0),
-                    t.IdTipoDocumento,
-                    ISNULL(t.Codigo, ''),
-                    ISNULL(t.Descripcion, ''),
-                    ISNULL(ia.Proveedor_Nombre, ''),
-                    ia.Total,
-                    ISNULL(ia.TipoComprobante, ''),
-                    ISNULL(ia.PuntoVenta, ''),
-                    ISNULL(ia.Numero, ''),
-                    ISNULL(ia.Letra, ''),
-                    ISNULL(ia.Cuenta_Contable, ''),
-                    CASE WHEN ia.Estado = 'APROBADO' THEN ia.FechaHora_Modificacion ELSE NULL END,
-                    CASE WHEN ia.Estado = 'APROBADO' THEN ISNULL(ia.Usuario_Proceso, '') ELSE '' END
-                FROM dbo.INT_COMPROBANTE_RECIBIDO c
-                INNER JOIN dbo.INT_ESTADO e
-                    ON e.IdEstado = c.IdEstado
-                INNER JOIN dbo.INT_TIPO_DOCUMENTO t
-                    ON t.IdTipoDocumento = c.IdTipoDocumento
-                OUTER APPLY
+                WITH Pagina
                 (
-                    SELECT TOP (1)
-                        cab.Estado,
-                        cab.Proveedor_Nombre,
-                        cab.Total,
-                        cab.TipoComprobante,
-                        cab.PuntoVenta,
-                        cab.Numero,
-                        cab.Letra,
-                        cab.Cuenta_Contable,
-                        cab.FechaHora_Modificacion,
-                        cab.Usuario_Proceso
-                    FROM dbo.IA_Compras_CAB cab
-                    WHERE cab.IdComprobanteRecibido = c.IdComprobanteRecibido
-                    ORDER BY cab.FechaHora_Proceso DESC, cab.ID DESC
-                ) ia
-                WHERE (@Desde IS NULL OR c.FechaHora_Grabacion >= @Desde)
-                  AND (@Hasta IS NULL OR c.FechaHora_Grabacion < DATEADD(day, 1, @Hasta))
-                  AND (@IdEstado IS NULL OR c.IdEstado = @IdEstado)
-                  AND (@IdTipoDocumento IS NULL OR c.IdTipoDocumento = @IdTipoDocumento)
-                  AND (
-                        @TextoLike = ''
-                        OR ISNULL(c.Observacion, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                        OR ISNULL(c.ReferenciaExterna, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                        OR CONVERT(nvarchar(30), c.IdComprobanteRecibido) LIKE @TextoLike
-                        OR ISNULL(c.UsuarioAlta, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                        OR ISNULL(ia.Proveedor_Nombre, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
-                      )
-                ORDER BY c.FechaHora_Grabacion DESC, c.IdComprobanteRecibido DESC
-                OFFSET @Skip ROWS FETCH NEXT @PageSize ROWS ONLY;
+                    IdComprobanteRecibido, FechaHora_Grabacion, UsuarioAlta, Observacion, CantidadAdjuntos,
+                    Eliminado, IdEstado, EstadoCodigo, EstadoDescripcion, PermiteEdicion, IdTipoDocumento,
+                    TipoCodigo, TipoDescripcion, ProveedorNombre, Total, TipoComprobante, PuntoVenta,
+                    Numero, Letra, CuentaContable, FechaAprobacion, UsuarioAprobacion, RowNum
+                )
+                AS
+                (
+                    SELECT
+                        c.IdComprobanteRecibido,
+                        c.FechaHora_Grabacion,
+                        ISNULL(c.UsuarioAlta, ''),
+                        ISNULL(c.Observacion, ''),
+                        ISNULL(c.CantidadAdjuntos, 0),
+                        ISNULL(c.Eliminado, 0),
+                        e.IdEstado,
+                        CASE
+                            WHEN ISNULL(t.Codigo, '') = 'COMPROBANTE_COMPRA'
+                             AND ISNULL(ia.Estado, '') IN ('PROCESADO', 'SIN_PROVEEDOR')
+                                THEN 'PROCESADO'
+                            ELSE ISNULL(e.Codigo, '')
+                        END,
+                        CASE
+                            WHEN ISNULL(t.Codigo, '') = 'COMPROBANTE_COMPRA'
+                             AND ISNULL(ia.Estado, '') IN ('PROCESADO', 'SIN_PROVEEDOR')
+                                THEN 'Procesado'
+                            ELSE ISNULL(e.Descripcion, '')
+                        END,
+                        ISNULL(e.PermiteEdicion, 0),
+                        t.IdTipoDocumento,
+                        ISNULL(t.Codigo, ''),
+                        ISNULL(t.Descripcion, ''),
+                        ISNULL(ia.Proveedor_Nombre, ''),
+                        ia.Total,
+                        ISNULL(ia.TipoComprobante, ''),
+                        ISNULL(ia.PuntoVenta, ''),
+                        ISNULL(ia.Numero, ''),
+                        ISNULL(ia.Letra, ''),
+                        ISNULL(ia.Cuenta_Contable, ''),
+                        CASE WHEN ia.Estado = 'APROBADO' THEN ia.FechaHora_Modificacion ELSE NULL END,
+                        CASE WHEN ia.Estado = 'APROBADO' THEN ISNULL(ia.Usuario_Proceso, '') ELSE '' END,
+                        ROW_NUMBER() OVER (ORDER BY c.FechaHora_Grabacion DESC, c.IdComprobanteRecibido DESC)
+                    FROM dbo.INT_COMPROBANTE_RECIBIDO c
+                    INNER JOIN dbo.INT_ESTADO e
+                        ON e.IdEstado = c.IdEstado
+                    INNER JOIN dbo.INT_TIPO_DOCUMENTO t
+                        ON t.IdTipoDocumento = c.IdTipoDocumento
+                    OUTER APPLY
+                    (
+                        SELECT TOP (1)
+                            cab.Estado,
+                            cab.Proveedor_Nombre,
+                            cab.Total,
+                            cab.TipoComprobante,
+                            cab.PuntoVenta,
+                            cab.Numero,
+                            cab.Letra,
+                            cab.Cuenta_Contable,
+                            cab.FechaHora_Modificacion,
+                            cab.Usuario_Proceso
+                        FROM dbo.IA_Compras_CAB cab
+                        WHERE cab.IdComprobanteRecibido = c.IdComprobanteRecibido
+                        ORDER BY cab.FechaHora_Proceso DESC, cab.ID DESC
+                    ) ia
+                    WHERE (@Desde IS NULL OR c.FechaHora_Grabacion >= @Desde)
+                      AND (@Hasta IS NULL OR c.FechaHora_Grabacion < DATEADD(day, 1, @Hasta))
+                      AND (@IdEstado IS NULL OR c.IdEstado = @IdEstado)
+                      AND (@IdTipoDocumento IS NULL OR c.IdTipoDocumento = @IdTipoDocumento)
+                      AND (
+                            @TextoLike = ''
+                            OR ISNULL(c.Observacion, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(c.ReferenciaExterna, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR CONVERT(nvarchar(30), c.IdComprobanteRecibido) LIKE @TextoLike
+                            OR ISNULL(c.UsuarioAlta, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                            OR ISNULL(ia.Proveedor_Nombre, '') COLLATE Latin1_General_CI_AI LIKE @TextoLike
+                          )
+                )
+                SELECT
+                    IdComprobanteRecibido, FechaHora_Grabacion, UsuarioAlta, Observacion, CantidadAdjuntos,
+                    Eliminado, IdEstado, EstadoCodigo, EstadoDescripcion, PermiteEdicion, IdTipoDocumento,
+                    TipoCodigo, TipoDescripcion, ProveedorNombre, Total, TipoComprobante, PuntoVenta,
+                    Numero, Letra, CuentaContable, FechaAprobacion, UsuarioAprobacion
+                FROM Pagina
+                WHERE RowNum > @Skip AND RowNum <= @Skip + @PageSize
+                ORDER BY RowNum;
 
                 SELECT COUNT(1)
                 FROM dbo.INT_COMPROBANTE_RECIBIDO c

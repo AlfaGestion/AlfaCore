@@ -10,6 +10,7 @@ public sealed class ActualizacionesService(
     ISessionService sessionService,
     IWebHostEnvironment env,
     IAppEventService appEvents,
+    ISqlServerEngineCheckService sqlEngineCheck,
     DatabaseUpdatesRuntimeState runtimeState) : IActualizacionesService
 {
     private const string ConfigGroup = "SISTEMA";
@@ -75,6 +76,7 @@ public sealed class ActualizacionesService(
             var fechaUpdate = await GetConfigValueAsync(cn, detailColumn, FechaUpdateKey, token);
             var currentVersion = ParseVersionToken(fechaUpdate);
             var historial = await GetHistoryAsync(cn, token);
+            var motorSql = await sqlEngineCheck.GetActiveEngineInfoAsync(token);
 
             return new ActualizacionesDashboardDto
             {
@@ -88,6 +90,7 @@ public sealed class ActualizacionesService(
                     ? "Sin base activa"
                     : $"{activeSession.Nombre} · {activeSession.Servidor} · {activeSession.BaseDatos}",
                 MotorEstado = runtimeState.GetSnapshot(),
+                MotorSql = motorSql,
                 Scripts = scripts,
                 Pendientes = currentVersion.HasValue
                     ? scripts.Where(x => CompareScriptToVersion(x, currentVersion.Value) > 0).ToArray()

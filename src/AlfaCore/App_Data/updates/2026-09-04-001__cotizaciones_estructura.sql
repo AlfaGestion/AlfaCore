@@ -165,8 +165,13 @@ BEGIN
     SELECT @LenDescripcion = CASE WHEN max_length = -1 THEN 4000 ELSE max_length / 2 END
     FROM sys.columns WHERE object_id = OBJECT_ID(N'dbo.TA_CONFIGURACION') AND name = N'DESCRIPCION';
 
+    -- THROW requiere compat level >= 110 (SQL Server 2012); hay bases de clientes en 80/100 (ver
+    -- dbo.databases.compatibility_level), así que se usa RAISERROR en su lugar.
     IF @LenClave IS NOT NULL AND @LenClave < 37
-        THROW 50000, N'dbo.TA_CONFIGURACION.CLAVE es demasiado angosto (menos de 37 caracteres) para las claves de Cotizaciones. Ampliar la columna antes de aplicar este script.', 1;
+    BEGIN
+        RAISERROR(N'dbo.TA_CONFIGURACION.CLAVE es demasiado angosto (menos de 37 caracteres) para las claves de Cotizaciones. Ampliar la columna antes de aplicar este script.', 16, 1);
+        RETURN;
+    END;
 
     IF NOT EXISTS (SELECT 1 FROM dbo.TA_CONFIGURACION WHERE UPPER(LTRIM(RTRIM(CLAVE))) = N'COTIZACIONES_PERMITE_DESCUENTO_LINEA')
         INSERT INTO dbo.TA_CONFIGURACION (GRUPO, CLAVE, VALOR, DESCRIPCION, FechaHora_Grabacion)

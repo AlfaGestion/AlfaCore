@@ -58,5 +58,10 @@ BEGIN TRY
 END TRY
 BEGIN CATCH
     IF @@TRANCOUNT > 0 ROLLBACK TRAN;
-    THROW;
+    -- THROW/re-throw requieren compat level >= 110 (SQL Server 2012); hay bases de clientes en
+    -- 80/100 (ver dbo.databases.compatibility_level), así que se usa RAISERROR en su lugar.
+    DECLARE @ErrorMessage nvarchar(4000) = ERROR_MESSAGE(),
+            @ErrorSeverity int = ERROR_SEVERITY(),
+            @ErrorState int = ERROR_STATE();
+    RAISERROR(N'%s', @ErrorSeverity, @ErrorState, @ErrorMessage);
 END CATCH;

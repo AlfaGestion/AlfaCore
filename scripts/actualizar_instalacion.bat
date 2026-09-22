@@ -9,6 +9,7 @@ cd /d "%SCRIPT_DIR%.."
 
 set "SOURCE_DIR=.\publish\AlfaCoreLAN"
 set "DEFAULT_DEST_2=\\10.8.0.53\c\inetpub\wwwroot\AlfaCore"
+set "DEFAULT_DEST_3=\\10.8.0.32\c\inetpub\wwwroot\AlfaCore"
 for %%I in ("%SOURCE_DIR%") do set "SOURCE_DIR_FULL=%%~fI"
 set "ROOT_COPY_EXIT=0"
 set "UPDATES_COPY_EXIT=0"
@@ -42,8 +43,9 @@ echo   scripts\actualizar_instalacion.bat ["C:\Ruta\De\Instalacion"] [/nopublish
 echo.
 echo Si no informas destino, el script lo pide por pantalla.
 echo Destinos sugeridos:
-echo   1^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL^)
-echo   2^) Otra ruta
+echo   1^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL, produccion^)
+echo   2^) %DEFAULT_DEST_3% ^(SERVER-ALFAWEB, pruebas / bases especiales^)
+echo   3^) Otra ruta
 echo.
 echo Este script hace TODO el ciclo de despliegue de punta a punta:
 echo   1^) publica el release ^(dotnet publish, via publicar_release.bat^)
@@ -113,16 +115,19 @@ set "DEST_DIR_FULL=%DEST_ARG%"
 if defined DEST_DIR_FULL goto :got_destination
 
 echo Destinos sugeridos:
-echo   1^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL^)
-echo   2^) Otra ruta
+echo   1^) %DEFAULT_DEST_2% ^(SERVER-ALFACENTRAL, produccion^)
+echo   2^) %DEFAULT_DEST_3% ^(SERVER-ALFAWEB, pruebas / bases especiales^)
+echo   3^) Otra ruta
 echo.
-set /p "DEST_OPTION=Elige destino [1/2]: "
+set /p "DEST_OPTION=Elige destino [1/2/3]: "
 rem OJO: %VAR:"=% con VAR vacia/indefinida corrompe la variable (deja basura
 rem tipo "= en vez de vacio) -- por eso el "if defined" guarda en cada uso.
 if defined DEST_OPTION set "DEST_OPTION=%DEST_OPTION:"=%"
 
 if /i "%DEST_OPTION%"=="1" (
   set "DEST_DIR_FULL=%DEFAULT_DEST_2%"
+) else if /i "%DEST_OPTION%"=="2" (
+  set "DEST_DIR_FULL=%DEFAULT_DEST_3%"
 ) else (
   set /p "DEST_DIR_FULL=Destino de instalacion: "
   if defined DEST_DIR_FULL set "DEST_DIR_FULL=%DEST_DIR_FULL:"=%"
