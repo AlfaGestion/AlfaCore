@@ -1170,6 +1170,16 @@
                                     <input type="checkbox" @bind="_automatizacionesConfig.AsistenteHerramientaPortalLink" />
                                 </label>
                             </div>
+                            <div class="conv-config-tool-row">
+                                <div class="conv-config-tool-row__icon"><i class="bi bi-cash-coin" aria-hidden="true"></i></div>
+                                <div class="conv-config-tool-row__text">
+                                    <span class="conv-config-tool-row__title">Mostrar precios a consumidores finales / leads</span>
+                                    <span class="conv-config-tool-row__desc">Si está desactivado, el asistente puede mostrar productos y catálogo, pero no informa precios hasta identificar al comprador como cliente.</span>
+                                </div>
+                                <label class="conv-config-checkbox conv-config-tool-row__toggle">
+                                    <input type="checkbox" @bind="_automatizacionesConfig.CatalogoMuestraPrecioConsumidor" />
+                                </label>
+                            </div>
                         </div>
                         <div class="field conv-config-fields__full">
                             <label class="conv-config-checkbox">
@@ -5427,6 +5437,7 @@
             AsistenteHerramientaSaldoProveedor = source.AsistenteHerramientaSaldoProveedor,
             AsistenteHerramientaPedidos = source.AsistenteHerramientaPedidos,
             AsistenteHerramientaPortalLink = source.AsistenteHerramientaPortalLink,
+            CatalogoMuestraPrecioConsumidor = source.CatalogoMuestraPrecioConsumidor,
             InformeInstrucciones = source.InformeInstrucciones,
             ConfigSource = source.ConfigSource
         };
@@ -5474,6 +5485,7 @@
            && left.AsistenteHerramientaSaldoProveedor == right.AsistenteHerramientaSaldoProveedor
            && left.AsistenteHerramientaPedidos == right.AsistenteHerramientaPedidos
            && left.AsistenteHerramientaPortalLink == right.AsistenteHerramientaPortalLink
+           && left.CatalogoMuestraPrecioConsumidor == right.CatalogoMuestraPrecioConsumidor
            && left.InformeInstrucciones == right.InformeInstrucciones
            && left.ConfigSource == right.ConfigSource;
 

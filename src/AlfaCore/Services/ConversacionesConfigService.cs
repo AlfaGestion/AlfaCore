@@ -837,6 +837,7 @@ public sealed class ConversacionesConfigService(
                 AsistenteHerramientaSaldoProveedor = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", string.Empty) == "1",
                 AsistenteHerramientaPedidos = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", string.Empty) == "1",
                 AsistenteHerramientaPortalLink = ReadValue(values, "CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", string.Empty) == "1",
+                CatalogoMuestraPrecioConsumidor = ReadValue(values, "CATALOGO_MUESTRA_PRECIO_CONSUMIDOR", string.Empty) == "1",
                 InformeInstrucciones = ReadValue(values, "CONV_INFORME_INSTRUCCIONES", string.Empty, ConversacionAutomatizacionesConfigDto.DefaultInformeInstrucciones),
                 ConfigSource = values.Count == 0 ? "sin_configurar" : "TA_CONFIGURACION"
             };
@@ -891,6 +892,7 @@ public sealed class ConversacionesConfigService(
                 ("CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR", config.AsistenteHerramientaSaldoProveedor ? "1" : "0"),
                 ("CONV_ASISTENTE_HERRAMIENTA_PEDIDOS", config.AsistenteHerramientaPedidos ? "1" : "0"),
                 ("CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK", config.AsistenteHerramientaPortalLink ? "1" : "0"),
+                ("CATALOGO_MUESTRA_PRECIO_CONSUMIDOR", config.CatalogoMuestraPrecioConsumidor ? "1" : "0"),
                 ("CONV_INFORME_INSTRUCCIONES", (config.InformeInstrucciones ?? string.Empty).Trim())
             };
 
@@ -2428,6 +2430,7 @@ public sealed class ConversacionesConfigService(
                 'CONV_ASISTENTE_HERRAMIENTA_SALDO_PROVEEDOR',
                 'CONV_ASISTENTE_HERRAMIENTA_PEDIDOS',
                 'CONV_ASISTENTE_HERRAMIENTA_PORTAL_LINK',
+                'CATALOGO_MUESTRA_PRECIO_CONSUMIDOR',
                 'CONV_INFORME_INSTRUCCIONES'
             )
             """;

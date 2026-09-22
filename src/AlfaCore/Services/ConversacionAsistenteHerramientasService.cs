@@ -21,7 +21,10 @@ namespace AlfaCore.Services;
 public sealed class ConversacionAsistenteHerramientasService(
     IConfiguration configuration,
     ISessionService sessionService,
+    IAppUserSessionService appUserSession,
     ICrmCotizacionService crmCotizacionService,
+    IInterfacesCatalogosService catalogosService,
+    ICentralPublicLinkService publicLinkService,
     IPortalClienteService portalClienteService,
     IProveedorSaldoService proveedorSaldoService,
     IConversacionesConfigService conversacionesConfigService) : IConversacionAsistenteHerramientasService
@@ -31,6 +34,7 @@ public sealed class ConversacionAsistenteHerramientasService(
     private const string ToolConsultarSaldoDetalle = "consultar_saldo_detalle";
     private const string ToolConsultarPedidos = "consultar_pedidos";
     private const string ToolGenerarLinkPortal = "generar_link_portal";
+    private const string ToolGenerarLinkCatalogoPublico = "generar_link_catalogo_publico";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -51,7 +55,8 @@ public sealed class ConversacionAsistenteHerramientasService(
         "saldo", "deuda", "debo", "cuenta corriente", "cta cte", "cta.cte", "cuánto debo", "cuanto debo",
         "pendiente de pago", "factura pendiente", "cobranza", "cobranzas",
         "pedido", "pedidos", "nota de pedido", "np-",
-        "portal", "autogestión", "autogestion", "acceso online", "ver mi cuenta", "cuenta online"
+        "portal", "autogestión", "autogestion", "acceso online", "ver mi cuenta", "cuenta online",
+        "catálogo", "catalogo", "producto", "productos", "comprar", "compra"
     ];
 
     private static bool MensajeNecesitaHerramientas(string mensajeCliente)
@@ -71,20 +76,23 @@ public sealed class ConversacionAsistenteHerramientasService(
         var herramientas = new List<ConversacionAsistenteHerramientaDefinicionDto>();
         const string sinParametros = "{\"type\":\"object\",\"properties\":{},\"required\":[]}";
 
-        if (config.AsistenteHerramientaPrecios)
+        var esCliente = cuenta?.Tipo == CuentaComercialTipo.Cliente;
+        var esProveedor = cuenta?.Tipo == CuentaComercialTipo.Proveedor;
+        var puedeInformarPrecio = esCliente || config.CatalogoMuestraPrecioConsumidor;
+
+        if (config.AsistenteHerramientaPrecios && puedeInformarPrecio)
         {
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
             {
                 Nombre = ToolConsultarPrecio,
-                Descripcion = "Busca el precio real de un artículo por nombre o código. Usar cuando preguntan cuánto sale un producto.",
+                Descripcion = esCliente
+                    ? "Busca el precio real de un artículo para el Cliente identificado. La cuenta ya está resuelta por el servidor; no pedir ni aceptar código de cliente."
+                    : "Busca el precio real de consumidor final usando la fuente/lista real configurada en AlfaCore. No inventar precios.",
                 ParametrosJsonSchema = """
                     {"type":"object","properties":{"articulo":{"type":"string","description":"Nombre o código del artículo a buscar"}},"required":["articulo"]}
                     """
             });
         }
-
-        var esCliente = cuenta?.Tipo == CuentaComercialTipo.Cliente;
-        var esProveedor = cuenta?.Tipo == CuentaComercialTipo.Proveedor;
 
         var ofreceSaldo = (esCliente && config.AsistenteHerramientaSaldoCliente)
                            || (esProveedor && config.AsistenteHerramientaSaldoProveedor);
@@ -116,12 +124,24 @@ public sealed class ConversacionAsistenteHerramientasService(
             });
         }
 
-        if (config.AsistenteHerramientaPortalLink && cuenta is not null)
+        if (config.AsistenteHerramientaPortalLink && esCliente)
         {
             herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
             {
                 Nombre = ToolGenerarLinkPortal,
-                Descripcion = "Genera el link de acceso al portal de autogestión (cuenta corriente, pedidos) para que ingrese con su usuario y clave.",
+                Descripcion = "Genera el link de acceso al Portal Cliente para el Cliente identificado. No usar para proveedores ni leads.",
+                ParametrosJsonSchema = sinParametros
+            });
+        }
+
+        if (!esCliente)
+        {
+            herramientas.Add(new ConversacionAsistenteHerramientaDefinicionDto
+            {
+                Nombre = ToolGenerarLinkCatalogoPublico,
+                Descripcion = config.CatalogoMuestraPrecioConsumidor
+                    ? "Genera el link al catálogo público/consumidor final de la empresa actual. Puede acompañarse con precios solo si se consulta la tool de precios."
+                    : "Genera el link al catálogo público de la empresa actual. No informa precios: si el comprador quiere avanzar, debe identificarse o registrarse por el flujo existente.",
                 ParametrosJsonSchema = sinParametros
             });
         }
@@ -144,6 +164,7 @@ public sealed class ConversacionAsistenteHerramientasService(
                 ToolConsultarSaldoDetalle => await EjecutarConsultarSaldoDetalleAsync(cuenta, ct),
                 ToolConsultarPedidos => await EjecutarConsultarPedidosAsync(argumentosJson, cuenta, ct),
                 ToolGenerarLinkPortal => await EjecutarGenerarLinkPortalAsync(cuenta, ct),
+                ToolGenerarLinkCatalogoPublico => await EjecutarGenerarLinkCatalogoPublicoAsync(cuenta, ct),
                 _ => "Herramienta desconocida."
             };
         }
@@ -297,6 +318,31 @@ public sealed class ConversacionAsistenteHerramientasService(
             return "El portal está disponible pero todavía no se configuró la URL pública del sistema; avisale que un asesor le manda el link.";
 
         return $"{baseUrl}/portal-cliente";
+    }
+
+    private async Task<string> EjecutarGenerarLinkCatalogoPublicoAsync(ConversacionCuentaVinculadaDto? cuenta, CancellationToken ct)
+    {
+        if (cuenta?.Tipo == CuentaComercialTipo.Cliente)
+            return "El cliente identificado debe usar el Portal Cliente para ver su catálogo y precios.";
+
+        var idWeb = appUserSession.CurrentUser?.IdWeb?.Trim() ?? string.Empty;
+        var idBase = sessionService.GetActiveSession()?.BaseId ?? 0;
+        if (string.IsNullOrWhiteSpace(idWeb) || idBase <= 0)
+            return "El catálogo público está disponible, pero no se pudo resolver la empresa/base actual para generar el link. Avisale que un asesor lo comparte.";
+
+        var whatsAppConfig = await conversacionesConfigService.GetWhatsAppConfigAsync(ct);
+        var baseUrl = (whatsAppConfig.PublicBaseUrl ?? string.Empty).Trim().TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl))
+            return "El catálogo público está disponible, pero todavía no se configuró la URL pública del sistema; avisale que un asesor le manda el link.";
+
+        var catalogo = await catalogosService.GetCatalogoAsync(0, ct);
+        if (catalogo is null)
+            return "No hay un catálogo público predeterminado disponible para compartir en este momento.";
+
+        var link = await publicLinkService.TryGetExistingAsync(idWeb, idBase, PublicLinkTipos.Catalogo, catalogo.IdInsert, ct)
+            ?? await publicLinkService.GetOrCreateAsync(idWeb, idBase, PublicLinkTipos.Catalogo, catalogo.IdInsert, catalogo.Nombre, ct);
+
+        return $"{baseUrl}/{Uri.EscapeDataString(idWeb)}/catalogo/{link.RouteSegment}";
     }
 
     private static string? LeerArgumentoString(string argumentosJson, string nombre)
