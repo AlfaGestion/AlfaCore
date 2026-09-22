@@ -1,6 +1,8 @@
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
+-- THROW/re-throw requieren compat level >= 110 (SQL Server 2012); hay bases de clientes en
+-- 80/100 (ver dbo.databases.compatibility_level), así que este script usa RAISERROR en su lugar.
 BEGIN TRY
     BEGIN TRANSACTION;
 
@@ -34,7 +36,7 @@ BEGIN TRY
     END;
 
     IF COL_LENGTH(N'dbo.SYS_EventosAplicacion', N'Id') IS NULL
-        THROW 51000, 'SYS_EventosAplicacion existe sin la columna Id requerida.', 1;
+        RAISERROR(N'SYS_EventosAplicacion existe sin la columna Id requerida.', 16, 1);
 
     IF EXISTS
     (
@@ -44,7 +46,7 @@ BEGIN TRY
           AND name = N'Id'
           AND TYPE_NAME(system_type_id) <> N'uniqueidentifier'
     )
-        THROW 51000, 'SYS_EventosAplicacion.Id existe con un tipo incompatible.', 1;
+        RAISERROR(N'SYS_EventosAplicacion.Id existe con un tipo incompatible.', 16, 1);
 
     IF COL_LENGTH(N'dbo.SYS_EventosAplicacion', N'FechaHora') IS NULL
         ALTER TABLE dbo.SYS_EventosAplicacion ADD FechaHora datetime2(3) NOT NULL CONSTRAINT DF_SYS_EventosAplicacion_FechaHora_Migracion DEFAULT SYSUTCDATETIME();
@@ -116,11 +118,11 @@ BEGIN TRY
     END;
 
     IF COL_LENGTH(N'dbo.SYS_EventosAplicacionCambios', N'Id') IS NULL
-        THROW 51001, 'SYS_EventosAplicacionCambios existe sin la columna Id requerida.', 1;
+        RAISERROR(N'SYS_EventosAplicacionCambios existe sin la columna Id requerida.', 16, 1);
     IF COL_LENGTH(N'dbo.SYS_EventosAplicacionCambios', N'EventoId') IS NULL
-        THROW 51001, 'SYS_EventosAplicacionCambios existe sin la columna EventoId requerida.', 1;
+        RAISERROR(N'SYS_EventosAplicacionCambios existe sin la columna EventoId requerida.', 16, 1);
     IF COL_LENGTH(N'dbo.SYS_EventosAplicacionCambios', N'Campo') IS NULL
-        THROW 51001, 'SYS_EventosAplicacionCambios existe sin la columna Campo requerida.', 1;
+        RAISERROR(N'SYS_EventosAplicacionCambios existe sin la columna Campo requerida.', 16, 1);
     IF COL_LENGTH(N'dbo.SYS_EventosAplicacionCambios', N'ValorAnterior') IS NULL
         ALTER TABLE dbo.SYS_EventosAplicacionCambios ADD ValorAnterior nvarchar(max) NULL;
     IF COL_LENGTH(N'dbo.SYS_EventosAplicacionCambios', N'ValorNuevo') IS NULL
@@ -136,7 +138,7 @@ BEGIN TRY
           AND name = N'EventoId'
           AND TYPE_NAME(system_type_id) <> N'uniqueidentifier'
     )
-        THROW 51001, 'SYS_EventosAplicacionCambios.EventoId existe con un tipo incompatible.', 1;
+        RAISERROR(N'SYS_EventosAplicacionCambios.EventoId existe con un tipo incompatible.', 16, 1);
 
     IF NOT EXISTS
     (
@@ -168,5 +170,8 @@ END TRY
 BEGIN CATCH
     IF @@TRANCOUNT > 0
         ROLLBACK TRANSACTION;
-    THROW;
+    DECLARE @ErrorMessage nvarchar(4000) = ERROR_MESSAGE(),
+            @ErrorSeverity int = ERROR_SEVERITY(),
+            @ErrorState int = ERROR_STATE();
+    RAISERROR(N'%s', @ErrorSeverity, @ErrorState, @ErrorMessage);
 END CATCH;
