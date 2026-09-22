@@ -9,7 +9,9 @@ using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using AlfaCore.Services.MercadoPagoPoint.Models;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Options;
@@ -294,6 +296,13 @@ public class Program
         builder.Services.AddScoped<IWsfev1Client, Wsfev1Client>();
         builder.Services.AddScoped<IArcaPadronService, ArcaPadronService>();
         builder.Services.AddScoped<IArcaFacturacionElectronicaService, ArcaFacturacionElectronicaService>();
+
+        builder.Services.AddScoped<AlfaCore.Services.MercadoPagoPoint.MercadoPagoHttpClient>();
+        builder.Services.AddScoped<AlfaCore.Services.MercadoPagoPoint.IOrdersService, AlfaCore.Services.MercadoPagoPoint.OrdersService>();
+        builder.Services.AddScoped<AlfaCore.Services.MercadoPagoPoint.ITerminalsService, AlfaCore.Services.MercadoPagoPoint.TerminalsService>();
+        builder.Services.AddScoped<AlfaCore.Services.MercadoPagoPoint.IPosService, AlfaCore.Services.MercadoPagoPoint.PosService>();
+        builder.Services.AddScoped<IMercadoPagoPointConfigService, MercadoPagoPointConfigService>();
+        builder.Services.AddScoped<IMercadoPagoPointPosService, MercadoPagoPointPosService>();
         builder.Services.AddScoped<IConfiguracionGeneralService, ConfiguracionGeneralService>();
         builder.Services.AddScoped<ICompanyBrandingService, CompanyBrandingService>();
         builder.Services.AddScoped<ICotizacionesService, CotizacionesService>();
@@ -393,6 +402,11 @@ public class Program
         builder.Services.AddHttpClient("MetaEmbeddedSignupOAuth").RemoveAllLoggers();
         builder.Services.AddHttpClient("MetaEmbeddedSignupManagement").RemoveAllLoggers();
         builder.Services.AddHttpClient("Arca", client => client.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers();
+        builder.Services.AddHttpClient("MercadoPago", client =>
+        {
+            client.BaseAddress = new Uri("https://api.mercadopago.com");
+            client.Timeout = TimeSpan.FromSeconds(30);
+        }).RemoveAllLoggers();
         builder.Services.AddHttpContextAccessor();
         builder.Services.Configure<ServidorWebOptions>(builder.Configuration.GetSection(ServidorWebOptions.SectionName));
         builder.Services.Configure<DatosSqlOptions>(builder.Configuration.GetSection(DatosSqlOptions.SectionName));
@@ -2754,6 +2768,19 @@ public class Program
             return await HandleMercadoLibreMessageAsync(request, svc, ct);
         });
 
+        // Mercado Pago (pagos con terminal Point) -- no confundir con Mercado Libre arriba.
+        app.MapPost("/api/mercadopago/point/webhook/{token}", async (
+            string token,
+            HttpRequest request,
+            HttpResponse response,
+            ICentralBasesService basesService,
+            ISessionService sessionService,
+            IMercadoPagoPointConfigService mpConfig,
+            IMercadoPagoPointPosService mpPos,
+            IAppEventService appEvents,
+            CancellationToken ct) => await HandleMercadoPagoPointWebhookAsync(
+                token, request, response, basesService, sessionService, mpConfig, mpPos, appEvents, ct));
+
         app.MapGet("/api/conversaciones/mercadolibre/oauth/callback", async (
             HttpRequest request,
             IConversacionesConfigService configService,
@@ -3422,6 +3449,87 @@ public class Program
         response.Headers.CacheControl = "no-store, no-cache, max-age=0";
         response.Headers.Pragma = "no-cache";
         response.Headers.Expires = "0";
+    }
+
+    /// <summary>
+    /// Webhook de Mercado Pago (terminal Point). Nunca se confía en el body de la notificación --
+    /// se valida la firma HMAC-SHA256 del header x-signature (mismo esquema que
+    /// C:\dev\AlfaMercadoPagoPoint\alfampoint\webhooks.py) y, recién si es válida, se vuelve a pedir
+    /// el estado real de la orden a la API de Mercado Pago antes de actualizar dbo.MP_POINT_ORDENES.
+    /// </summary>
+    private static async Task<IResult> HandleMercadoPagoPointWebhookAsync(
+        string token,
+        HttpRequest request,
+        HttpResponse response,
+        ICentralBasesService basesService,
+        ISessionService sessionService,
+        IMercadoPagoPointConfigService mpConfig,
+        IMercadoPagoPointPosService mpPos,
+        IAppEventService appEvents,
+        CancellationToken ct)
+    {
+        DisableWebhookCaching(response);
+
+        if (await TryResolveWebhookTenantAsync(token, basesService, sessionService, ct) is null)
+            return Results.NotFound();
+
+        var secret = await mpConfig.ResolveWebhookSecretAsync(ct);
+        if (string.IsNullOrWhiteSpace(secret))
+            return Results.Unauthorized();
+
+        if (!request.Headers.TryGetValue("x-signature", out var signatureHeader)
+            || !request.Headers.TryGetValue("x-request-id", out var requestIdHeader))
+            return Results.Unauthorized();
+
+        string? ts = null;
+        string? v1 = null;
+        foreach (var part in signatureHeader.ToString().Split(','))
+        {
+            var kv = part.Split('=', 2);
+            if (kv.Length != 2)
+                continue;
+
+            var key = kv[0].Trim();
+            var value = kv[1].Trim();
+            if (string.Equals(key, "ts", StringComparison.OrdinalIgnoreCase)) ts = value;
+            else if (string.Equals(key, "v1", StringComparison.OrdinalIgnoreCase)) v1 = value;
+        }
+
+        using var reader = new StreamReader(request.Body);
+        var body = await reader.ReadToEndAsync(ct);
+
+        JsonObject? payload;
+        try { payload = JsonNode.Parse(body)?.AsObject(); }
+        catch (JsonException) { payload = null; }
+
+        var dataId = payload?.SelectPath("data.id").AsRawString()
+            ?? payload?.GetStringOrNull("resource_id")
+            ?? payload?.GetStringOrNull("id");
+
+        if (string.IsNullOrWhiteSpace(ts) || string.IsNullOrWhiteSpace(v1) || string.IsNullOrWhiteSpace(dataId))
+            return Results.BadRequest();
+
+        var manifest = $"id:{dataId};request-id:{requestIdHeader};ts:{ts};";
+        var computedBytes = HMACSHA256.HashData(Encoding.UTF8.GetBytes(secret), Encoding.UTF8.GetBytes(manifest));
+        var computed = Convert.ToHexString(computedBytes).ToLowerInvariant();
+
+        if (!CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(computed), Encoding.UTF8.GetBytes(v1.ToLowerInvariant())))
+        {
+            await appEvents.LogErrorAsync("MercadoPagoPoint", "Webhook", new InvalidOperationException("Firma de webhook inválida."),
+                "Se rechazó un webhook de Mercado Pago con firma inválida.", new { DataId = dataId }, ct: ct);
+            return Results.Unauthorized();
+        }
+
+        try
+        {
+            await mpPos.ActualizarDesdeWebhookAsync(dataId, ct);
+        }
+        catch (Exception ex)
+        {
+            await appEvents.LogErrorAsync("MercadoPagoPoint", "Webhook", ex, "No se pudo procesar el webhook de Mercado Pago.", new { DataId = dataId }, ct: ct);
+        }
+
+        return Results.Ok();
     }
 
     /// <summary>
