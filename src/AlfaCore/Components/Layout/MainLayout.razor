@@ -20,6 +20,7 @@
 @inject AlfaCore.Services.IPageHeaderService PageHeader
 @inject AlfaCore.Services.IPageHeaderNavigationService HeaderNavigation
 @inject AlfaCore.Services.ICentralBasesService CentralBasesSvc
+@inject AlfaCore.Services.ISqlServerEngineCheckService SqlEngineCheck
 @inject AlfaCore.Services.RouteSessionUpdatesGuard RouteUpdatesGuard
 @inject IServiceProvider ServiceProviderRoot
 @inject ILogger<MainLayout> Logger
@@ -887,6 +888,14 @@ else
             </header>
         }
 
+        @if (!string.IsNullOrWhiteSpace(_sqlEngineOutdatedMessage))
+        {
+            <div class="editor-msg editor-msg--warning no-print" style="margin: 12px 16px 0;">
+                <i class="bi bi-exclamation-triangle-fill"></i>
+                <span>@_sqlEngineOutdatedMessage</span>
+            </div>
+        }
+
         <CascadingValue Name="AlfaDesignShellActive" Value="IsAlfaDesignShellActive">
             <CascadingValue Name="SuppressPageHeader" Value="ShouldSuppressPageHeader">
                 <MainPageHeader />
@@ -1569,6 +1578,7 @@ else
     private string _globalConversationLatestName = string.Empty;
     private string _globalConversationLatestSummary = string.Empty;
     private string _routeSessionLabel = string.Empty;
+    private string? _sqlEngineOutdatedMessage;
     private bool _manualLoginOverlayOpen;
 
     protected override void OnInitialized()
@@ -2013,6 +2023,7 @@ else
                 routeSession.Nombre);
             _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.BaseDatos}";
             await TryAdoptCentralIdentityForActiveBaseAsync();
+            await CheckSqlEngineVersionAsync();
             return;
         }
 
@@ -2033,6 +2044,30 @@ else
             routeSession.Nombre);
         _routeSessionLabel = $"{routeSession.Nombre} · {routeSession.BaseDatos}";
         await TryAdoptCentralIdentityForActiveBaseAsync();
+        await CheckSqlEngineVersionAsync();
+    }
+
+    /// <summary>
+    /// Se calcula una vez por activación de base (no en cada render) y se cachea en
+    /// _sqlEngineOutdatedMessage para el banner global -- ver AlfaCore.Services.ISqlServerEngineCheckService.
+    /// AlfaCore usa sintaxis de SQL Server 2016+ en código y migraciones; una base en un motor más
+    /// viejo (ej.: SQL Server 2008) rompe de forma intermitente en módulos distintos.
+    /// </summary>
+    private async Task CheckSqlEngineVersionAsync()
+    {
+        try
+        {
+            var info = await SqlEngineCheck.GetActiveEngineInfoAsync();
+            _sqlEngineOutdatedMessage = info.RequiereActualizacion
+                ? $"Esta base corre sobre {info.Descripcion} — AlfaCore requiere {AlfaCore.Models.SqlServerEngineInfoDto.NombreVersionMinimaRecomendada} o superior. Actualizá el motor SQL Server de esta base."
+                : null;
+        }
+        catch
+        {
+            // Chequeo informativo -- nunca debe bloquear la activación de la base.
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     private async Task TryAdoptCentralIdentityForActiveBaseAsync()

@@ -40,6 +40,25 @@
     }
     else if (_dashboard is not null)
     {
+        @if (_dashboard.MotorSql.RequiereActualizacion)
+        {
+            <section class="panel-card">
+                <div class="editor-msg editor-msg--warning">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    <div>
+                        <strong>Es necesario actualizar el motor SQL Server de esta base.</strong>
+                        <p>
+                            Corre sobre <code>@_dashboard.MotorSql.Descripcion</code> — AlfaCore requiere
+                            @SqlServerEngineInfoDto.NombreVersionMinimaRecomendada o superior para funcionar
+                            correctamente (usa sintaxis que los motores más viejos no soportan). No se
+                            recomienda seguir adaptando el código a este motor caso por caso: actualizá el
+                            SQL Server de esta base antes de seguir aplicando actualizaciones.
+                        </p>
+                    </div>
+                </div>
+            </section>
+        }
+
         <section class="updates-overview">
             <article class="panel-card updates-stat">
                 <span class="panel-card__tag">VERSIÓN</span>

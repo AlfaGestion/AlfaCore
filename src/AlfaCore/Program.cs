@@ -314,6 +314,7 @@ public class Program
         builder.Services.AddSingleton<RouteSessionUpdatesGuard>();
         builder.Services.AddSingleton<DatabaseUpdatesRuntimeState>();
         builder.Services.AddScoped<IActualizacionesService, ActualizacionesService>();
+        builder.Services.AddScoped<ISqlServerEngineCheckService, SqlServerEngineCheckService>();
         builder.Services.AddScoped<IPermissionService, PermissionService>();
         builder.Services.AddScoped<IMenuService, MenuService>();
         builder.Services.AddScoped<IAutorizacionTareasService, AutorizacionTareasService>();
