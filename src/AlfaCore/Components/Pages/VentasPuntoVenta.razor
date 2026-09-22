@@ -5573,6 +5573,13 @@
 
     private void CloseChargeModal()
     {
+        // Si hay un cobro con Mercado Pago Point en curso, cerrar el modal no lo corta solo -- la
+        // espera sigue corriendo en segundo plano (Blazor Server no la aborta porque el modal se
+        // oculte). Se pide la cancelación prolija (misma que el botón "Cancelar cobro") para no
+        // dejar una orden huérfana ni que termine agregando un pago a una venta ya cerrada.
+        if (_mpCobrando)
+            MpPaymentSvc.SolicitarCancelacion();
+
         _showChargeModal = false;
         _chargeError = null;
         _chargeAmountInput = string.Empty;
@@ -5840,6 +5847,15 @@
     {
         _chargeError = null;
         _chargeSuccess = null;
+
+        // El atajo F2 llama esto directo (además de los botones, que ya se deshabilitan con
+        // _mpCobrando) -- sin este chequeo, F2 podría confirmar la venta mientras todavía se está
+        // esperando el resultado del cobro con Mercado Pago Point.
+        if (_mpCobrando)
+        {
+            _chargeError = "Esperando el resultado del cobro con Mercado Pago Point...";
+            return;
+        }
 
         if (!_cartItems.Any())
         {
