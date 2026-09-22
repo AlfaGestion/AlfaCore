@@ -10,6 +10,7 @@
 @inject AlfaCore.Services.IPuntoVentaTurnoService TurnoSvc
 @inject AlfaCore.Services.IFacturaDocumentService FacturaDocumentSvc
 @inject AlfaCore.Services.IMercadoPagoPointPosService MpPaymentSvc
+@inject AlfaCore.Services.IMercadoPagoPointConfigService MpConfigSvc
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
 @inject AlfaCore.Services.IRouteContextService RouteCtx
@@ -4439,6 +4440,7 @@
     private string? _chargeError;
     private string? _chargeSuccess;
     private bool _mpCobrando;
+    private string _mpCodigoMedioPago = string.Empty;
     private string _mpEstadoCobro = string.Empty;
     private string? _mpUltimaReferenciaAprobada;
     private string? _receiptEmailFeedback;
@@ -4590,6 +4592,8 @@
                 _ => "FC"
             };
             _settings = await PuntoVentaSvc.GetSettingsAsync();
+            try { _mpCodigoMedioPago = await MpConfigSvc.ResolveCodigoMedioPagoAsync(); }
+            catch { /* Sin Mercado Pago Point configurado, ningún medio de pago dispara el cobro real. */ }
             _familias = await PuntoVentaSvc.GetFamiliasAsync();
             _rubros = await PuntoVentaSvc.GetRubrosAsync();
             await LoadCatalogAsync();
@@ -5776,11 +5780,14 @@
                 && descripcion.Contains("EF", StringComparison.OrdinalIgnoreCase));
     }
 
-    /// <summary>El cliente da de alta este medio en dbo.MA_CUENTAS con MEDIODEPAGO='MPPOINT' (mismo
-    /// mecanismo que cualquier otro medio de pago del POS, sin tooling nuevo). Ver
-    /// docs del plan de Mercado Pago Point para el detalle de la integración.</summary>
-    private static bool IsMercadoPagoPointMethod(PuntoVentaPaymentMethodDto method)
-        => string.Equals(method.MedioDePago?.Trim(), "MPPOINT", StringComparison.OrdinalIgnoreCase);
+    /// <summary>No hay ningún código fijo tipo "MPPOINT": se probó contra una base real y los medios
+    /// de pago de Mercado Pago/QR ya existentes tienen su propio Codigo (ej. "QR", "MP") clasificados
+    /// contablemente como MedioDePago='EF', igual que efectivo -- no sirve para distinguir cuál dispara
+    /// el cobro real. El vínculo se guarda explícitamente en Configuración General > Ventas
+    /// (MERCADOPAGO_CODIGO_MEDIO_PAGO, ver IMercadoPagoPointConfigService).</summary>
+    private bool IsMercadoPagoPointMethod(PuntoVentaPaymentMethodDto method)
+        => _mpCodigoMedioPago.Length > 0
+           && string.Equals(method.Codigo?.Trim(), _mpCodigoMedioPago, StringComparison.OrdinalIgnoreCase);
 
     private async Task IniciarCobroMercadoPagoAsync(PuntoVentaPaymentMethodDto method, decimal importe, bool focusFilterAfterAdd)
     {

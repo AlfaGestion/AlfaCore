@@ -14,6 +14,167 @@ Leé docs/CONTINUIDAD_CODEX.md y continuemos desde ahí.
 
 ---
 
+## Actualización 2026-09-22: Mercado Pago Point (terminal física) en el Punto de Venta
+
+Se agregó el cobro con terminal física Mercado Pago Point al Punto de Venta web, y de paso se
+resolvió (para el caso de LANUEVA) el problema de fondo que motivó todo esto: una base cliente
+corriendo sobre un motor SQL Server demasiado viejo para el código actual.
+
+### Por qué arrancó esto
+
+Mientras se probaba el Punto de Venta en la base **LANUEVA** (`10.8.0.105`, ver más abajo), el
+usuario preguntó si un proyecto propio (`C:\dev\AlfaMercadoPagoPoint`, Python + un puerto a .NET
+Framework 4.8/COM para el sistema de escritorio VB6) servía como base para integrar Mercado Pago
+Point en AlfaCore. Se decidió **portar en vez de arrancar de cero**: el puerto .NET ya resolvía en
+C# async limpio y con tests las partes difíciles (cliente HTTP con reintentos, orders, y sobre todo
+`PaymentFlowController`, el state machine de polling que crea la orden, espera la aprobación y evita
+doble cobro). Solo se descartó la fachada COM/WinForms (`MercadoPagoPoint.cs` + `Forms/
+FrmPagoPoint.cs`); el resto se portó casi literal cambiando `Newtonsoft.Json` por `System.Text.Json`.
+
+### Qué se armó (código nuevo)
+
+- `src/AlfaCore/Services/MercadoPagoPoint/` — librería portada: `MercadoPagoPointOptions`,
+  `Models/` (`Order`, `PaymentInfo`, `PaymentResult`, `PosInfo`, `TerminalInfo`, `ResultadoPago`),
+  `MercadoPagoHttpClient` (vía `IHttpClientFactory`, cliente nombrado `"MercadoPago"` registrado en
+  `Program.cs`), `OrdersService`/`TerminalsService`/`PosService`, y `PaymentFlowController` (mismo
+  algoritmo original, con `IPaymentFlowInteraction` adaptado para un consumidor headless en vez de
+  diálogos WinForms: nunca da un cobro por perdido solo ante timeout, nunca reintenta un rechazo sin
+  que el cajero lo pida de nuevo).
+- `IMercadoPagoPointConfigService` / `MercadoPagoPointConfigService` — config en
+  `TA_CONFIGURACION` (grupo `MERCADOPAGO`): `MERCADOPAGO_ACCESS_TOKEN`, `MERCADOPAGO_TERMINAL_ID`,
+  `MERCADOPAGO_POS_EXTERNAL_ID` (informativo), `MERCADOPAGO_WEBHOOK_SECRET`, y
+  `MERCADOPAGO_CODIGO_MEDIO_PAGO` (ver más abajo, agregada en un segundo paso). `ResolveOptionsAsync`
+  solo exige el Access Token -- el Terminal ID se descubre recién con "Listar terminales" (si se
+  exigían los dos de entrada quedaba un huevo-y-gallina: no se podía listar terminales sin ya
+  tener el terminal ID).
+- `IMercadoPagoPointPosService` / `MercadoPagoPointPosService` — orquestador: `CobrarAsync` corre
+  el `PaymentFlowController` completo y persiste en `dbo.MP_POINT_ORDENES` (tabla nueva) la orden
+  creada y el resultado final; `SolicitarCancelacion` pide la cancelación prolija (no aborta el
+  `Task`, hace que el propio loop de espera la detecte); `VincularComprobanteAsync` enlaza la orden
+  aprobada al comprobante recién grabado, para trazabilidad; `ActualizarDesdeWebhookAsync` nunca
+  confía en el body del webhook -- siempre vuelve a pedir el estado real a la API.
+- Webhook `POST /api/mercadopago/point/webhook/{token}` en `Program.cs` (mismo esquema de
+  resolución de tenant que WhatsApp/MercadoLibre, `TryResolveWebhookTenantAsync`): valida firma
+  HMAC-SHA256 del header `x-signature` (mismo algoritmo que `alfampoint/webhooks.py` del proyecto
+  original) antes de tocar nada.
+- Migraciones: `src/AlfaCore/App_Data/updates/2026-09-22-001__mercadopago_point_base.sql` (tabla
+  `dbo.MP_POINT_ORDENES` + 4 claves de config) y
+  `2026-09-22-002__mercadopago_point_codigo_medio_pago.sql` (la 5ª clave, agregada aparte porque se
+  sumó después de que la primera ya había corrido en alguna base).
+- Pantalla de configuración: **Configuración General > Ventas**, sección "Mercado Pago Point
+  (terminal física)" -- credenciales, URL de webhook para copiar/registrar en Mercado Pago, y
+  diagnóstico (listar terminales/POS, cobro de prueba) integrado ahí, no en una pantalla aparte.
+- Enganche real en `VentasPuntoVenta.razor`: al elegir el medio de pago vinculado (ver siguiente
+  sección) para un importe, en vez de agregar la línea al toque entra en un sub-estado "Esperando
+  pago en la terminal..." con botón Cancelar; la línea de pago (`PuntoVentaPaymentLineDto`, sin
+  tocar su schema) se agrega recién si Mercado Pago aprueba.
+
+### Corrección importante: no hay ningún código fijo tipo "MPPOINT"
+
+El primer diseño (anoche) asumía que el cliente iba a dar de alta un medio de pago nuevo en
+`dbo.MA_CUENTAS` con `MEDIODEPAGO='MPPOINT'`. Probando contra una base real (10.8.0.10/ALFANET) se
+confirmó que **no sirve**: los clientes ya tienen sus propios medios de pago para Mercado Pago/QR
+(ej. "MercadoPago" código `MP`, "Qr MercadoPago" código `QR`) clasificados contablemente como
+`MedioDePago='EF'` (efectivo-equivalente para el cierre de caja), igual que cualquier otro medio de
+pago que liquida el mismo día -- ese campo no sirve para distinguir "cuál dispara el cobro real con
+la terminal".
+
+Se corrigió con un vínculo explícito y configurable: `MERCADOPAGO_CODIGO_MEDIO_PAGO` guarda el
+`Codigo` (no el `MedioDePago`) del medio de pago elegido por el admin desde un `<select>` en la
+pantalla de configuración (poblado con `IPuntoVentaService.GetPaymentMethodsAsync()`, el mismo
+catálogo que ya usa el selector del POS). `IsMercadoPagoPointMethod` en `VentasPuntoVenta.razor`
+compara contra ese código cargado (`_mpCodigoMedioPago`, cargado en `OnInitializedAsync`), no contra
+ninguna constante hardcodeada.
+
+### SQL Server viejo (LANUEVA) -- diagnóstico y arreglos
+
+Antes de llegar al Punto de Venta, LANUEVA (`10.8.0.105\ALFANET` en ese momento) venía con un motor
+**SQL Server 2008 RTM** real (no solo un `compatibility_level` bajo -- se confirmó con `@@VERSION`).
+Eso rompía migraciones en cadena (`THROW`/re-throw necesitan compat >=110, `CREATE OR ALTER` necesita
+2016 SP1+) y hasta una query en runtime (`InterfacesService.SearchAsync` usaba `OFFSET/FETCH`, que
+2008 no soporta en absoluto). Se hicieron 3 rondas de fixes:
+
+1. `THROW`/re-throw -> patrón clásico `RAISERROR` en 11 migraciones.
+2. `CREATE OR ALTER` -> patrón clásico `DROP` + `CREATE` en 6 migraciones más.
+3. `InterfacesService.SearchAsync` reescrito con `ROW_NUMBER()` en vez de `OFFSET/FETCH`.
+
+Se armó además `ISqlServerEngineCheckService` (`AlfaCore.Services`), que detecta la versión real del
+motor de la base activa y muestra un aviso persistente (global, en `MainLayout.razor`, y detallado en
+`/actualizaciones`) cuando está por debajo de SQL Server 2016 -- **en vez de seguir parchando caso
+por caso**, se decidió explícitamente avisar y frenar ahí.
+
+**Importante**: entre esa investigación y probar el Punto de Venta, el usuario migró/actualizó el
+motor de LANUEVA a **SQL Server 2016 SP1** (confirmado, `13.0.4001.0`) en un server nuevo, ahora en
+`10.8.0.105` **sin instancia con nombre** (antes era `10.8.0.105\ALFANET`). Quien retome debe usar
+esa dirección nueva para conectarse a esa base.
+
+### Otros hallazgos de esa sesión de SQL Server viejo (sin tocar, documentados nomás)
+
+- `scripts/actualizar_instalacion.bat`: se agregó SERVER-ALFAWEB (`10.8.0.32`) como segundo destino
+  de despliegue sugerido (pruebas), junto a SERVER-ALFACENTRAL (`10.8.0.53`\`\`, producción).
+- Impresión directa (pedido, no implementado): alcanza con que la PC de cada caja abra Chrome/Edge
+  con el flag `--kiosk-printing` (config de SO, cero cambios de código) -- comentario dejado en
+  `VentasPuntoVenta.razor` junto a `alfaPosPrintHtml`. Si algún día hace falta más de una impresora
+  por caja (A4 + térmica), eso sí requeriría un agente de impresión local aparte.
+
+### Interacción con los atajos de teclado (trabajo en paralelo de otro compañero)
+
+En paralelo, otro colega agregó atajos de teclado al POS (F2/F3/Ctrl+F/Ctrl+B/Ctrl+G/Esc, cliente
+eventual, `QuickClienteModal`). El merge automático combinó bien ambos cambios sin conflicto de
+texto, pero se encontraron y corrigieron dos huecos reales de interacción (commit `d8dad02`):
+
+1. Los atajos que confirman la venta (F2, luego también Ctrl+G) llamaban a `ConfirmChargeAsync`
+   directo, sin pasar por el chequeo de `_mpCobrando` que ya tenían los botones -- se agregó el
+   mismo guard dentro de la función.
+2. Cerrar el modal de cobranza (botón o `Esc`) solo lo ocultaba -- la espera de Mercado Pago seguía
+   corriendo sola en el servidor (Blazor Server no la aborta porque el modal se oculte). Ahora
+   `CloseChargeModal` pide la cancelación prolija si hay un cobro en curso.
+
+### Qué falta probar (pendiente real)
+
+**No se llegó a validar una aprobación real de punta a punta.** Se confirmó que:
+
+- lee terminales/POS reales de la cuenta (botones "Listar terminales"/"Listar puntos de venta"),
+- crea la orden correctamente en Mercado Pago (quedó en estado `created`),
+
+pero el terminal físico se apagó antes de completar una prueba tocándolo. Quien retome debería:
+
+1. Confirmar que el medio de pago vinculado (`MERCADOPAGO_CODIGO_MEDIO_PAGO`) esté bien elegido en
+   Configuración General > Ventas para la base de prueba.
+2. Hacer un cobro real desde `VentasPuntoVenta.razor` (no solo desde el diagnóstico) tocando la
+   terminal físicamente, y confirmar que la venta se graba recién tras la aprobación.
+3. Confirmar que `dbo.MP_POINT_ORDENES` queda con el `IdComprobante` enlazado.
+4. Registrar la URL de webhook en el panel de Mercado Pago (la pantalla de configuración ya la
+   muestra con botón Copiar) y confirmar que una notificación real llega y actualiza el estado antes
+   de que termine el polling.
+
+### Commits de esta etapa (orden cronológico)
+
+- `63f1586` Reemplaza THROW por RAISERROR en 11 migraciones para soportar compat level viejo
+- `12f79b2` Reemplaza CREATE OR ALTER por DROP+CREATE en 6 migraciones (SQL Server 2008)
+- `1ee9f55` Avisa cuando una base corre en un motor SQL Server viejo, en vez de seguir parchando
+- `fe733ee` Integra Mercado Pago Point (terminal física) en el Punto de Venta web
+- `d8dad02` Evita que los atajos de teclado nuevos interfieran con un cobro de Mercado Pago Point en curso
+- (commits del compañero, atajos de teclado: `81b4e6e`, `99c4bb3`, y sus merges)
+- último de esta sesión: vínculo configurable medio de pago <-> Point (`MERCADOPAGO_CODIGO_MEDIO_PAGO`)
+
+### Archivos principales de esta etapa
+
+- `src/AlfaCore/Services/MercadoPagoPoint/` (carpeta completa)
+- `src/AlfaCore/Services/IMercadoPagoPointConfigService.cs` / `MercadoPagoPointConfigService.cs`
+- `src/AlfaCore/Services/IMercadoPagoPointPosService.cs` / `MercadoPagoPointPosService.cs`
+- `src/AlfaCore/Services/ISqlServerEngineCheckService.cs` / `SqlServerEngineCheckService.cs`
+- `src/AlfaCore/Services/InterfacesService.cs` (paginación reescrita)
+- `src/AlfaCore/Components/Pages/ConfiguracionGeneralVentas.razor`
+- `src/AlfaCore/Components/Pages/VentasPuntoVenta.razor`
+- `src/AlfaCore/Components/Layout/MainLayout.razor` (aviso global de motor viejo)
+- `src/AlfaCore/Components/Pages/Actualizaciones.razor`
+- `src/AlfaCore/App_Data/updates/2026-09-22-001__mercadopago_point_base.sql`
+- `src/AlfaCore/App_Data/updates/2026-09-22-002__mercadopago_point_codigo_medio_pago.sql`
+- `scripts/actualizar_instalacion.bat`
+
+---
+
 ## Estado general
 
 Se trabajó sobre el repo `AlfaCore` en mejoras de:
