@@ -120,6 +120,7 @@ public sealed class PuntoVentaPaymentLineDto
 public sealed class PuntoVentaSaleRequestDto
 {
     public string CuentaCliente { get; set; } = string.Empty;
+    public PuntoVentaClienteEventualDto? ClienteEventual { get; set; }
     public string Vendedor { get; set; } = string.Empty;
     public DateTime Fecha { get; set; } = DateTime.Today;
     public string Observaciones { get; set; } = string.Empty;
@@ -128,6 +129,18 @@ public sealed class PuntoVentaSaleRequestDto
     public string Letra { get; set; } = string.Empty;
     public IReadOnlyList<PuntoVentaCartItemDto> Items { get; init; } = [];
     public IReadOnlyList<PuntoVentaPaymentLineDto> Pagos { get; init; } = [];
+}
+
+public sealed class PuntoVentaClienteEventualDto
+{
+    public string RazonSocial { get; init; } = string.Empty;
+    public string DocumentoTipo { get; init; } = string.Empty;
+    public string NumeroDocumento { get; init; } = string.Empty;
+    public string Domicilio { get; init; } = string.Empty;
+    public string Localidad { get; init; } = string.Empty;
+    public string Provincia { get; init; } = string.Empty;
+    public string CodigoPostal { get; init; } = string.Empty;
+    public string CondicionIva { get; init; } = string.Empty;
 }
 
 public sealed class PuntoVentaSaleResultDto

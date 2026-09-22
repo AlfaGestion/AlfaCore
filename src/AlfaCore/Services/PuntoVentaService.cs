@@ -22,6 +22,7 @@ public sealed class PuntoVentaService(
     private const string DefaultSucursal = "0001";
     private const string DefaultClasePrecio = "1";
     private const string ConfigGroup = "PUNTOVENTA";
+    private bool _requiredSaleProceduresChecked;
     /// <summary>sp_web_Alta_Comprobante graba siempre UNEGOCIO='   1' (literal, confirmado en el SP)
     /// para toda venta de POS -- se usa la misma unidad para resolver el emisor de ARCA.</summary>
     private const string PosUNegocio = "   1";
@@ -343,28 +344,37 @@ public sealed class PuntoVentaService(
             await cn.OpenAsync(token);
             await EnsureRequiredSaleProceduresAsync(cn, token);
 
-            var context = await GetContextAsync(token);
-            var settings = await GetSettingsAsync(token);
+            // La pantalla ya envía tipo y sucursal. No hace falta volver a
+            // cargar el contexto completo del POS ni toda la configuración
+            // (incluye usuario, permisos y varias consultas adicionales).
+            var cuentaConsumidorFinal = await TryReadConfigValueAsync(cn, "CUENTACONSUMIDORFINAL", token);
             var tcConfig = await GetTipoComprobanteConfigAsync(cn, token);
-            var tc = string.IsNullOrWhiteSpace(request.TipoComprobante) ? context.TipoComprobanteDefault : request.TipoComprobante.Trim();
-            var sucursalConfigurada = await TryReadConfigValueAsync(cn, "TPV_SUCURSAL", token);
+            var tc = string.IsNullOrWhiteSpace(request.TipoComprobante) ? DefaultTc : request.TipoComprobante.Trim();
+            var sucursalConfigurada = string.IsNullOrWhiteSpace(request.Sucursal)
+                ? await TryReadConfigValueAsync(cn, "TPV_SUCURSAL", token)
+                : string.Empty;
             var sucursal = !string.IsNullOrWhiteSpace(request.Sucursal)
                 ? NormalizeSucursal(request.Sucursal)
                 : !string.IsNullOrWhiteSpace(sucursalConfigurada)
                     ? NormalizeSucursal(sucursalConfigurada)
-                    : context.SucursalDefault;
+                    : ResolveSucursalDefault(tcConfig).Code;
             var cliente = !string.IsNullOrWhiteSpace(request.CuentaCliente)
                 ? request.CuentaCliente.Trim()
-                : settings.CuentaConsumidorFinal.Trim();
+                : cuentaConsumidorFinal.Trim();
 
             if (string.IsNullOrWhiteSpace(cliente))
                 throw new InvalidOperationException("No se pudo resolver la cuenta de consumidor final para grabar la venta.");
 
-            var esConsumidorFinal = string.Equals(
-                cliente,
-                settings.CuentaConsumidorFinal.Trim(),
-                StringComparison.OrdinalIgnoreCase);
-            var ivaCliente = await GetClienteIvaAsync(cn, cliente, token);
+            var esConsumidorFinal = request.ClienteEventual is not null
+                ? EsConsumidorFinalIva(request.ClienteEventual.CondicionIva)
+                : string.Equals(
+                    cliente,
+                    cuentaConsumidorFinal.Trim(),
+                    StringComparison.OrdinalIgnoreCase);
+            var ivaCliente = request.ClienteEventual is not null
+                && !string.IsNullOrWhiteSpace(request.ClienteEventual.CondicionIva)
+                    ? request.ClienteEventual.CondicionIva.Trim()
+                    : await GetClienteIvaAsync(cn, cliente, token);
             var letra = tc.Equals("FP", StringComparison.OrdinalIgnoreCase)
                 || tc.Equals("NCFP", StringComparison.OrdinalIgnoreCase)
                 ? "X"
@@ -420,6 +430,12 @@ public sealed class PuntoVentaService(
             // coincidan con el cliente seleccionado en la venta actual.
             if (comprobanteExistente)
                 await RefreshReceiptCustomerDataAsync(cn, comprobante.IdComprobanteTexto, comprobante.Tc, cliente, token);
+
+            // Un cliente eventual usa la cuenta de consumidor final para la
+            // imputación, pero sus datos deben quedar en la cabecera del
+            // comprobante para que salgan en la factura/PDF y se envíen a ARCA.
+            if (request.ClienteEventual is not null)
+                await ApplyEventualCustomerDataAsync(cn, comprobante.IdComprobanteTexto, comprobante.Tc, request.ClienteEventual, token);
 
             // Si AFIP rechazó un comprobante, el número ya quedó creado en la base.
             // Al reintentar se reutiliza ese comprobante para no duplicar la clave ni sus artículos.
@@ -1355,8 +1371,82 @@ public sealed class PuntoVentaService(
         await cmd.ExecuteNonQueryAsync(ct);
     }
 
-    private static async Task EnsureRequiredSaleProceduresAsync(SqlConnection cn, CancellationToken ct)
+    private static async Task ApplyEventualCustomerDataAsync(
+        SqlConnection cn,
+        string idComprobante,
+        string tc,
+        PuntoVentaClienteEventualDto cliente,
+        CancellationToken ct)
     {
+        await using var cmd = new SqlCommand(
+            """
+            UPDATE v
+               SET v.NOMBRE = COALESCE(NULLIF(@Nombre, ''), v.NOMBRE),
+                   v.DOCUMENTOTIPO = CASE
+                       WHEN NULLIF(@DocumentoTipo, '') IS NOT NULL
+                        AND EXISTS (
+                            SELECT 1
+                            FROM dbo.TA_TIPODOCUMENTO td
+                            WHERE LTRIM(RTRIM(td.CODIGO)) = LTRIM(RTRIM(@DocumentoTipo))
+                        ) THEN (
+                            SELECT TOP (1) td.CODIGO
+                            FROM dbo.TA_TIPODOCUMENTO td
+                            WHERE LTRIM(RTRIM(td.CODIGO)) = LTRIM(RTRIM(@DocumentoTipo))
+                        )
+                       ELSE v.DOCUMENTOTIPO
+                   END,
+                   v.DOCUMENTONUMERO = COALESCE(NULLIF(@DocumentoNumero, ''), v.DOCUMENTONUMERO),
+                   v.DOMICILIO = COALESCE(NULLIF(@Domicilio, ''), v.DOMICILIO),
+                   v.LOCALIDAD = COALESCE(NULLIF(@Localidad, ''), v.LOCALIDAD),
+                   v.IDPROVINCIA = CASE
+                       WHEN NULLIF(@Provincia, '') IS NOT NULL
+                        AND EXISTS (
+                            SELECT 1
+                            FROM dbo.TA_ESTADOS e
+                            WHERE LTRIM(RTRIM(e.CODIGO)) = LTRIM(RTRIM(@Provincia))
+                        ) THEN (
+                            SELECT TOP (1) e.CODIGO
+                            FROM dbo.TA_ESTADOS e
+                            WHERE LTRIM(RTRIM(e.CODIGO)) = LTRIM(RTRIM(@Provincia))
+                        )
+                       ELSE v.IDPROVINCIA
+                   END,
+                   v.CODIGOPOSTAL = COALESCE(NULLIF(@CodigoPostal, ''), v.CODIGOPOSTAL),
+                   v.CONDICIONIVA = CASE
+                       WHEN NULLIF(@CondicionIva, '') IS NOT NULL
+                        AND EXISTS (
+                            SELECT 1
+                            FROM dbo.TA_CONDIVA ci
+                            WHERE LTRIM(RTRIM(ci.CODIGO)) = LTRIM(RTRIM(@CondicionIva))
+                        ) THEN (
+                            SELECT TOP (1) ci.CODIGO
+                            FROM dbo.TA_CONDIVA ci
+                            WHERE LTRIM(RTRIM(ci.CODIGO)) = LTRIM(RTRIM(@CondicionIva))
+                        )
+                       ELSE v.CONDICIONIVA
+                   END
+            FROM dbo.V_MV_Cpte v
+            WHERE v.TC = @Tc
+              AND v.IDCOMPROBANTE = @IdComprobante;
+            """, cn);
+        cmd.Parameters.AddWithValue("@IdComprobante", idComprobante);
+        cmd.Parameters.AddWithValue("@Tc", tc);
+        cmd.Parameters.AddWithValue("@Nombre", cliente.RazonSocial.Trim());
+        cmd.Parameters.AddWithValue("@DocumentoTipo", cliente.DocumentoTipo.Trim());
+        cmd.Parameters.AddWithValue("@DocumentoNumero", cliente.NumeroDocumento.Trim());
+        cmd.Parameters.AddWithValue("@Domicilio", cliente.Domicilio.Trim());
+        cmd.Parameters.AddWithValue("@Localidad", cliente.Localidad.Trim());
+        cmd.Parameters.AddWithValue("@Provincia", cliente.Provincia.Trim());
+        cmd.Parameters.AddWithValue("@CodigoPostal", cliente.CodigoPostal.Trim());
+        cmd.Parameters.AddWithValue("@CondicionIva", cliente.CondicionIva.Trim());
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    private async Task EnsureRequiredSaleProceduresAsync(SqlConnection cn, CancellationToken ct)
+    {
+        if (_requiredSaleProceduresChecked)
+            return;
+
         var requiredProcedures = new[]
         {
             "sp_web_Alta_Comprobante",
@@ -1374,7 +1464,10 @@ public sealed class PuntoVentaService(
         }
 
         if (missing.Count == 0)
+        {
+            _requiredSaleProceduresChecked = true;
             return;
+        }
 
         throw new InvalidOperationException(
             $"La base activa no tiene los procedimientos del POS requeridos: {string.Join(", ", missing)}. Aplicá los updates SQL del punto de venta antes de cobrar.");
@@ -2098,6 +2191,12 @@ public sealed class PuntoVentaService(
             return requestedLetter.Trim().ToUpperInvariant();
 
         return ResolveLetraDefault(config, sucursal);
+    }
+
+    private static bool EsConsumidorFinalIva(string? codigo)
+    {
+        var valor = (codigo ?? string.Empty).Trim().TrimStart('0');
+        return valor.Length == 0 || valor == "3";
     }
 
     private async Task<T> ExecuteLoggedAsync<T>(

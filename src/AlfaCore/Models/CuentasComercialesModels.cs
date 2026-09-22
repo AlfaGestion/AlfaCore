@@ -19,6 +19,7 @@ public sealed class CuentaComercialFilters
 
 public sealed class CuentaComercialGridItemDto
 {
+    public bool EsEventual { get; set; }
     public string Codigo { get; set; } = string.Empty;
     public string RazonSocial { get; set; } = string.Empty;
     public string Contacto { get; set; } = string.Empty;
@@ -30,6 +31,7 @@ public sealed class CuentaComercialGridItemDto
     public string Telefono { get; set; } = string.Empty;
     public string Mail { get; set; } = string.Empty;
     public string NumeroDocumento { get; set; } = string.Empty;
+    public string DocumentoTipoCodigo { get; set; } = string.Empty;
     public string IvaCodigo { get; set; } = string.Empty;
     public string IvaDescripcion { get; set; } = string.Empty;
     public string IdVendedor { get; set; } = string.Empty;
@@ -38,6 +40,7 @@ public sealed class CuentaComercialGridItemDto
     public bool Bloqueado { get; set; }
     public bool Activo { get; set; } = true;
     public string Calle { get; set; } = string.Empty;
+    public string CodigoPostal { get; set; } = string.Empty;
     public string Numero { get; set; } = string.Empty;
     public string Piso { get; set; } = string.Empty;
     public string Departamento { get; set; } = string.Empty;

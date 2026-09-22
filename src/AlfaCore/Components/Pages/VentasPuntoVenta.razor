@@ -34,6 +34,56 @@
         display: none;
     }
 
+    .pos-shortcuts-hint {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem 0.65rem;
+        padding: 0.45rem 0.6rem;
+        border: 1px solid var(--color-border);
+        border-radius: 10px;
+        color: var(--color-muted);
+        font-size: 0.7rem;
+        line-height: 1.25;
+    }
+
+    .pos-shortcuts-hint__title {
+        width: 100%;
+        color: var(--color-text);
+        font-weight: 800;
+    }
+
+    .pos-shortcuts-hint kbd,
+    .pos-button-shortcut {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 1.55rem;
+        padding: 0.1rem 0.3rem;
+        border: 1px solid var(--color-border-strong, var(--color-border));
+        border-radius: 4px;
+        background: var(--color-panel-strong);
+        color: var(--color-text);
+        font-size: 0.68rem;
+        font-weight: 800;
+        line-height: 1.1;
+    }
+
+    .pos-button-shortcut {
+        margin-left: 0.45rem;
+        vertical-align: middle;
+    }
+
+    .pos-shortcuts-hint--modal {
+        margin-top: 0.7rem;
+        justify-content: flex-end;
+    }
+
+    .pos-shortcuts-hint--modal .pos-shortcuts-hint__title {
+        width: auto;
+        margin-right: auto;
+    }
+
     .pos-shell .empty-state,
     .pos-shell .pos-loading {
         margin: 1rem;
@@ -348,7 +398,7 @@
         min-height: 2.9rem;
         border: 1px solid #c8cfda;
         border-radius: 0.28rem;
-        padding: 0.75rem 0.85rem;
+        padding: 0.75rem 0.85rem 0.75rem 2.4rem;
         background: #ffffff;
         font-size: 0.95rem;
     }
@@ -815,7 +865,7 @@
         min-height: 3rem;
         border: 1px solid var(--color-border);
         border-radius: 16px;
-        padding: 0.85rem 1rem;
+        padding: 0.85rem 1rem 0.85rem 2.4rem;
         background: var(--color-panel-strong);
         color: var(--color-text);
     }
@@ -2872,6 +2922,56 @@
     window.alfaPosRegisterShortcuts = function () {
         window.alfaPosUnregisterShortcuts();
         window._alfaPosShortcutHandler = function (event) {
+            if (event.key === "Escape" && !event.repeat) {
+                event.preventDefault();
+                event.stopPropagation();
+                const trigger = document.getElementById("pos-escape-shortcut-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+                return;
+            }
+
+            if (event.key === "F2" && !event.repeat) {
+                event.preventDefault();
+                event.stopPropagation();
+                const trigger = document.getElementById("pos-f2-shortcut-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+                return;
+            }
+
+            if (event.key === "F3" && !event.repeat) {
+                event.preventDefault();
+                event.stopPropagation();
+                const trigger = document.getElementById("pos-f3-shortcut-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+                return;
+            }
+
+            if (event.ctrlKey && (event.key === "f" || event.key === "F")) {
+                event.preventDefault();
+                event.stopPropagation();
+                const trigger = document.getElementById("pos-arca-shortcut-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+                return;
+            }
+
+            if (event.ctrlKey && (event.key === "b" || event.key === "B")) {
+                event.preventDefault();
+                event.stopPropagation();
+                const trigger = document.getElementById("pos-clear-cart-shortcut-trigger");
+                if (trigger) {
+                    trigger.click();
+                }
+                return;
+            }
+
             if (event.ctrlKey && (event.key === "p" || event.key === "P")) {
                 event.preventDefault();
                 event.stopPropagation();
@@ -2894,6 +2994,11 @@
 
 <section class="pos-shell">
     <button id="pos-reprint-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="OpenReprintModalAsync" tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-f2-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleF2ShortcutAsync" tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-f3-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleF3ShortcutAsync" tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-arca-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleArcaShortcutAsync" tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-clear-cart-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleClearCartShortcutAsync" tabindex="-1" aria-hidden="true"></button>
+    <button id="pos-escape-shortcut-trigger" type="button" class="pos-shortcut-trigger" @onclick="HandleEscapeShortcutAsync" tabindex="-1" aria-hidden="true"></button>
     @if (!string.IsNullOrWhiteSpace(_error))
     {
         <section class="panel-card empty-state">
@@ -2927,6 +3032,15 @@
                     @if (_showPosMenu)
                     {
                         <div class="pos-topbar__menu-panel">
+                            <div class="pos-shortcuts-hint" aria-label="Atajos de teclado">
+                                <span class="pos-shortcuts-hint__title">Atajos rápidos</span>
+                                <span><kbd>F2</kbd> Cobrar</span>
+                                <span><kbd>F3</kbd> Consultar</span>
+                                <span><kbd>Ctrl+F</kbd> ARCA</span>
+                                <span><kbd>Ctrl+B</kbd> Vaciar</span>
+                                <span><kbd>Ctrl+P</kbd> Reimprimir</span>
+                                <span><kbd>Esc</kbd> Cerrar</span>
+                            </div>
                             @if (_context.EsAdministrador)
                             {
                                 <button type="button" class="pos-topbar__menu-item" @onclick="OpenSettingsAsync">
@@ -2957,11 +3071,11 @@
                                     Ver saldos por caja
                                 </button>
                             }
-                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenClearCartConfirm" disabled="@(!_cartItems.Any())">
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenClearCartConfirm" disabled="@(!_cartItems.Any())" title="Vaciar carrito (Ctrl+B)">
                                 <i class="bi bi-trash"></i>
                                 Vaciar carrito
                             </button>
-                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenReprintModalAsync">
+                            <button type="button" class="pos-topbar__menu-item" @onclick="OpenReprintModalAsync" title="Reimprimir comprobantes (Ctrl+P)">
                                 <i class="bi bi-printer"></i>
                                 Reimprimir comprobantes
                             </button>
@@ -3075,11 +3189,12 @@
                     </div>
 
                     <div class="pos-sidebar__client">
-                        <button type="button" class="pos-sidebar__client-btn" @onclick="() => _showClienteModal = true">
+                            <button type="button" class="pos-sidebar__client-btn" @onclick="() => _showClienteModal = true" title="Consultar cliente (F3)">
                             <i class="bi bi-person-circle"></i>
                             @if (!string.IsNullOrEmpty(_cuentaClienteNombre))
                             {
-                                <span class="pos-sidebar__client-name">@_cuentaClienteNombre</span>
+                                <span class="pos-sidebar__client-name"
+                                      title="@_cuentaClienteNombre">@RecortarNombreCliente(_cuentaClienteNombre)</span>
                             }
                             else
                             {
@@ -3105,9 +3220,9 @@
                         }
                         else
                         {
-                            <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any() || (_idPuntoVentaActual > 0 && _turnoActual is null))">
+                            <button type="button" class="pos-charge" @onclick="OpenChargeModalAsync" disabled="@(!_cartItems.Any() || (_idPuntoVentaActual > 0 && _turnoActual is null))" title="Cobrar (F2)">
                                 <i class="bi bi-cash-stack pos-charge__icon"></i>
-                                <span class="pos-charge__label">Cobrar</span>
+                                <span class="pos-charge__label">Cobrar <span class="pos-button-shortcut">F2</span></span>
                             </button>
                         }
 
@@ -3437,9 +3552,14 @@
                 ACEPTAR E IMPRIMIR
             </button>
             <button type="button" class="pos-charge-modal__save" @onclick="() => ConfirmChargeAsync(false)" disabled="@(_chargeSaving || !_cartItems.Any())">
-                @(_chargeSaving ? "Grabando..." : "ACEPTAR")
+                @(_chargeSaving ? "Grabando..." : "ACEPTAR") <span class="pos-button-shortcut">F2</span>
             </button>
             <button type="button" class="pos-charge-modal__ghost" @onclick="CloseChargeModal" disabled="@_chargeSaving">CANCELAR</button>
+        </div>
+        <div class="pos-shortcuts-hint pos-shortcuts-hint--modal" aria-label="Atajos de la cobranza">
+            <span class="pos-shortcuts-hint__title">Atajos</span>
+            <span><kbd>F2</kbd> Aceptar</span>
+            <span><kbd>Esc</kbd> Cerrar</span>
         </div>
     </section>
 }
@@ -4045,9 +4165,29 @@
     </section>
 }
 
+@if (_showCloseModuleConfirm)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar confirmación" @onclick="CloseCloseModuleConfirm"></button>
+    <section class="pos-panel-modal" aria-label="Confirmar cierre del módulo">
+        <div class="pos-settings-modal__header">
+            <div>
+                <h3>Cerrar punto de venta</h3>
+                <p>No hay datos cargados. ¿Querés cerrar este módulo?</p>
+            </div>
+            <button type="button" class="pos-settings-modal__close" @onclick="CloseCloseModuleConfirm">X</button>
+        </div>
+
+        <div class="pos-settings-modal__actions">
+            <button type="button" class="pos-settings-modal__ghost" @onclick="CloseCloseModuleConfirm">Cancelar</button>
+            <button type="button" class="pos-settings-modal__save" @onclick="ConfirmCloseModule">Cerrar módulo</button>
+        </div>
+    </section>
+}
+
 <QuickClienteModal Open="_showClienteModal"
                    OnClienteSelected="OnClienteSeleccionado"
-                   OnClose="() => _showClienteModal = false"
+                   OnClose="CerrarClienteModal"
+                   StartInNew="_clienteModalStartInNew"
                    CuentaEventualCodigo="@(_settings.CuentaConsumidorFinal)" />
 
 @if (_showAperturaModal)
@@ -4327,6 +4467,7 @@
     private bool _showReceiptModal;
     private bool _showReprintModal;
     private bool _showClearCartConfirm;
+    private bool _showCloseModuleConfirm;
     private bool _settingsSaving;
     private bool _paymentMethodsLoading;
     private bool _chargeSaving;
@@ -4345,7 +4486,9 @@
     private bool _scanLoading;
     private string _cuentaCliente = string.Empty;
     private string _cuentaClienteNombre = string.Empty;
+    private AlfaCore.Models.CuentaComercialGridItemDto? _clienteEventual;
     private bool _showClienteModal;
+    private bool _clienteModalStartInNew;
     private string _chargeAmountInput = string.Empty;
     private ElementReference _chargeAmountRef;
     private ElementReference _paymentMethodCodeFilterRef;
@@ -5064,6 +5207,7 @@
     {
         _cuentaCliente = cliente.Codigo ?? string.Empty;
         _cuentaClienteNombre = cliente.RazonSocial ?? string.Empty;
+        _clienteEventual = cliente.EsEventual ? cliente : null;
         _showClienteModal = false;
         _needScanFocus = true;
     }
@@ -5072,13 +5216,22 @@
     {
         _cuentaCliente = string.Empty;
         _cuentaClienteNombre = string.Empty;
+        _clienteEventual = null;
         _needScanFocus = true;
+    }
+
+    private Task CerrarClienteModal()
+    {
+        _showClienteModal = false;
+        _clienteModalStartInNew = false;
+        return Task.CompletedTask;
     }
 
     private void SetClienteConsumidorFinal()
     {
         _cuentaCliente = _settings.CuentaConsumidorFinal?.Trim() ?? string.Empty;
         _cuentaClienteNombre = string.Empty;
+        _clienteEventual = null;
         _needScanFocus = true;
     }
 
@@ -5090,6 +5243,21 @@
 
     private void CloseClearCartConfirm()
         => _showClearCartConfirm = false;
+
+    private void OpenCloseModuleConfirm()
+    {
+        _showPosMenu = false;
+        _showCloseModuleConfirm = true;
+    }
+
+    private void CloseCloseModuleConfirm()
+        => _showCloseModuleConfirm = false;
+
+    private void ConfirmCloseModule()
+    {
+        _showCloseModuleConfirm = false;
+        Nav.NavigateTo(RouteCtx.BuildRoute("/ventas/punto-venta"));
+    }
 
     private void ConfirmClearCart()
     {
@@ -5289,6 +5457,74 @@
         {
             _cashInOutSaving = false;
         }
+    }
+
+    private Task HandleF2ShortcutAsync()
+        => _showChargeModal ? ConfirmChargeAsync(false) : OpenChargeModalAsync();
+
+    private Task HandleF3ShortcutAsync()
+    {
+        _showPosMenu = false;
+        _showClienteModal = true;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleArcaShortcutAsync()
+    {
+        _showPosMenu = false;
+        _clienteModalStartInNew = true;
+        _showClienteModal = true;
+        return Task.CompletedTask;
+    }
+
+    private Task HandleClearCartShortcutAsync()
+    {
+        if (_cartItems.Any())
+            OpenClearCartConfirm();
+
+        return Task.CompletedTask;
+    }
+
+    private Task HandleEscapeShortcutAsync()
+    {
+        if (_showPublicQrModal)
+            ClosePublicQrModal();
+        else if (_showReceiptModal)
+            CloseReceiptModal();
+        else if (_showChargeModal)
+            CloseChargeModal();
+        else if (_selectedCartItemId is not null)
+            CloseCartItemModal();
+        else if (_showClienteModal)
+            _showClienteModal = false;
+        else if (_showClearCartConfirm)
+            CloseClearCartConfirm();
+        else if (_showCloseModuleConfirm)
+            CloseCloseModuleConfirm();
+        else if (_showReprintModal)
+            CloseReprintModal();
+        else if (_showSettingsModal)
+            CloseSettingsModal();
+        else if (_showCashInOutModal)
+            CloseCashInOutModal();
+        else if (_showCashDetailModal)
+            CloseCashDetailModal();
+        else if (_showAperturaModal)
+            CerrarModalApertura();
+        else if (_showCierreCajaModal)
+            CerrarModalCierreCaja();
+        else if (_showCorteXModal)
+            CerrarModalCorteX();
+        else if (_showSaldosPorCajaModal)
+            CerrarModalSaldosPorCaja();
+        else if (_showPosMenu)
+            _showPosMenu = false;
+        else if (_cartItems.Any())
+            OpenClearCartConfirm();
+        else
+            OpenCloseModuleConfirm();
+
+        return Task.CompletedTask;
     }
 
     private async Task OpenChargeModalAsync()
@@ -5612,6 +5848,19 @@
             var result = await PuntoVentaSvc.CreateSaleAsync(new PuntoVentaSaleRequestDto
             {
                 CuentaCliente = !string.IsNullOrEmpty(_cuentaCliente) ? _cuentaCliente : _settings.CuentaConsumidorFinal,
+                ClienteEventual = _clienteEventual is null
+                    ? null
+                    : new PuntoVentaClienteEventualDto
+                    {
+                        RazonSocial = _clienteEventual.RazonSocial,
+                        DocumentoTipo = _clienteEventual.DocumentoTipoCodigo,
+                        NumeroDocumento = _clienteEventual.NumeroDocumento,
+                        Domicilio = _clienteEventual.Calle,
+                        Localidad = _clienteEventual.Localidad,
+                        Provincia = _clienteEventual.ProvinciaCodigo,
+                        CodigoPostal = _clienteEventual.CodigoPostal,
+                        CondicionIva = _clienteEventual.IvaCodigo
+                    },
                 Fecha = DateTime.Today,
                 TipoComprobante = _tipoComprobanteSeleccionado,
                 // La sucursal del punto seleccionado tiene prioridad. La configuración
@@ -5653,7 +5902,7 @@
                 }
             }
 
-            await ShowChargeSuccessAsync($"Venta registrada: {result.TipoComprobante} {result.Sucursal}-{result.Numero}{result.Letra} · total {FmtMoney(result.Total)}.");
+            ShowChargeSuccess($"Venta registrada: {result.TipoComprobante} {result.Sucursal}-{result.Numero}{result.Letra} · total {FmtMoney(result.Total)}.");
             _cartItems.Clear();
             _paymentLines.Clear();
             _showChargeModal = false;
@@ -6010,12 +6259,16 @@
         _chargeSuccessVersion++;
     }
 
-    private async Task ShowChargeSuccessAsync(string message)
+    private void ShowChargeSuccess(string message)
     {
         _chargeSuccessVersion++;
         var version = _chargeSuccessVersion;
         _chargeSuccess = message;
+        _ = HideChargeSuccessLaterAsync(version);
+    }
 
+    private async Task HideChargeSuccessLaterAsync(int version)
+    {
         try
         {
             await Task.Delay(TimeSpan.FromSeconds(5));
@@ -6174,4 +6427,10 @@
 
     private static string FmtQty(decimal value)
         => value.ToString("#,##0.##", System.Globalization.CultureInfo.GetCultureInfo("es-AR"));
+
+    private static string RecortarNombreCliente(string? nombre)
+    {
+        var texto = (nombre ?? string.Empty).Trim();
+        return texto.Length <= 32 ? texto : $"{texto[..32].TrimEnd()}…";
+    }
 }

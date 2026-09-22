@@ -22833,10 +22833,17 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 .pos-sidebar__client {
     display: flex;
     align-items: center;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
 }
 
 .pos-sidebar__client-btn {
     flex: 1;
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
@@ -22848,9 +22855,16 @@ html[data-theme="light"] .alfacore-sticky-x-scroll__track:hover::-webkit-scrollb
 }
 
 .pos-sidebar__client-name {
+    min-width: 0;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    line-height: 1.2;
     font-weight: 600;
 }
 

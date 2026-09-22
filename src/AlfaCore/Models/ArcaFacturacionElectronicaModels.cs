@@ -109,6 +109,8 @@ public sealed class ArcaPadronPersonaDto
     public string Nombre { get; init; } = string.Empty;
     public string Apellido { get; init; } = string.Empty;
     public string CondicionIva { get; init; } = string.Empty;
+    public string CondicionIvaCodigo { get; init; } = string.Empty;
+    public string DocumentoTipoCodigo { get; init; } = string.Empty;
     public string Calle { get; init; } = string.Empty;
     public string Localidad { get; init; } = string.Empty;
     public string Provincia { get; init; } = string.Empty;

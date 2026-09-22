@@ -149,13 +149,14 @@
                             <button type="button"
                                     class="btn btn--ghost btn--sm qcm-cuit-search"
                                     @onclick="ConsultarArcaAsync"
-                                    disabled="@(_arcaBuscando || _eventual || StripNonNumeric(_nuevo.NumeroDocumento).Length != 11)">
+                                    disabled="@(_arcaBuscando || StripNonNumeric(_nuevo.NumeroDocumento).Length != 11)">
                                 <i class="bi bi-cloud-search"></i>
                                 @(_arcaBuscando ? "Consultando..." : "Consultar ARCA")
                             </button>
                         </div>
                         <input @bind="_nuevo.NumeroDocumento"
                                @bind:event="oninput"
+                               @ref="_cuitInput"
                                @onblur="HandleCuitBlurAsync"
                                @onkeydown="HandleNuevoCuitKeyAsync"
                                placeholder="20-12345678-9"
@@ -285,6 +286,7 @@
     [Parameter] public bool Open { get; set; }
     [Parameter] public EventCallback<CuentaComercialGridItemDto> OnClienteSelected { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
+    [Parameter] public bool StartInNew { get; set; }
     /// <summary>Código de consumidor final (CUENTACONSUMIDORFINAL). Si se provee habilita el toggle Habitual/Eventual.</summary>
     [Parameter] public string? CuentaEventualCodigo { get; set; }
 
@@ -305,13 +307,25 @@
     private Dictionary<string, string> _fieldErrors = [];
     private bool _eventual;
     private ElementReference _busquedaInput;
+    private ElementReference _cuitInput;
     private bool _focusBusquedaPendiente;
+    private bool _focusCuitPendiente;
     private bool _modalEstabaAbierto;
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Open && !_modalEstabaAbierto && _vista == "buscar")
-            _focusBusquedaPendiente = true;
+        if (Open && !_modalEstabaAbierto)
+        {
+            if (StartInNew)
+            {
+                await AbrirNuevoAsync();
+                _focusCuitPendiente = true;
+            }
+            else if (_vista == "buscar")
+            {
+                _focusBusquedaPendiente = true;
+            }
+        }
 
         _modalEstabaAbierto = Open;
 
@@ -322,7 +336,21 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!_focusBusquedaPendiente || !Open || _vista != "buscar")
+        {
+            if (!_focusCuitPendiente || !Open || _vista != "nuevo")
+                return;
+
+            _focusCuitPendiente = false;
+            try
+            {
+                await _cuitInput.FocusAsync(preventScroll: true);
+            }
+            catch
+            {
+                // El elemento todavía puede no estar disponible durante una transición de render.
+            }
             return;
+        }
 
         _focusBusquedaPendiente = false;
         try
@@ -442,14 +470,22 @@
             if (provincia is not null)
                 _nuevo.ProvinciaCodigo = provincia.Codigo;
 
-            var iva = _lookupData?.CondicionesIva.FirstOrDefault(x =>
-                x.Descripcion.Contains(persona.CondicionIva, StringComparison.OrdinalIgnoreCase)
-                || persona.CondicionIva.Contains(x.Descripcion, StringComparison.OrdinalIgnoreCase));
+            var iva = !string.IsNullOrWhiteSpace(persona.CondicionIvaCodigo)
+                ? _lookupData?.CondicionesIva.FirstOrDefault(x =>
+                    string.Equals(x.Codigo.Trim(), persona.CondicionIvaCodigo.Trim(), StringComparison.OrdinalIgnoreCase))
+                : null;
+            iva ??= !string.IsNullOrWhiteSpace(persona.CondicionIva)
+                ? _lookupData?.CondicionesIva.FirstOrDefault(x =>
+                    x.Descripcion.Contains(persona.CondicionIva, StringComparison.OrdinalIgnoreCase)
+                    || persona.CondicionIva.Contains(x.Descripcion, StringComparison.OrdinalIgnoreCase))
+                : null;
             if (iva is not null)
                 _nuevo.IvaCodigo = iva.Codigo;
 
             var tipoCuit = _lookupData?.TiposDocumento.FirstOrDefault(x =>
-                x.Descripcion.Contains("CUIT", StringComparison.OrdinalIgnoreCase));
+                string.Equals(x.Codigo.Trim(), persona.DocumentoTipoCodigo.Trim(), StringComparison.OrdinalIgnoreCase));
+            tipoCuit ??= _lookupData?.TiposDocumento.FirstOrDefault(x =>
+                CompactarTexto(x.Descripcion).Contains("CUIT", StringComparison.OrdinalIgnoreCase));
             if (tipoCuit is not null)
                 _nuevo.DocumentoTipoCodigo = tipoCuit.Codigo;
 
@@ -469,7 +505,6 @@
     private async Task HandleNuevoCuitKeyAsync(KeyboardEventArgs e)
     {
         if (!string.Equals(e.Key, "Enter", StringComparison.OrdinalIgnoreCase)
-            || _eventual
             || _arcaBuscando)
             return;
 
@@ -588,9 +623,16 @@
                 : _nuevo.RazonSocial.Trim();
             await SeleccionarAsync(new CuentaComercialGridItemDto
             {
+                EsEventual = true,
                 Codigo = CuentaEventualCodigo,
                 RazonSocial = nombre,
+                DocumentoTipoCodigo = _nuevo.DocumentoTipoCodigo,
                 NumeroDocumento = _nuevo.NumeroDocumento,
+                IvaCodigo = _nuevo.IvaCodigo,
+                Calle = _nuevo.Calle,
+                Localidad = _nuevo.Localidad,
+                ProvinciaCodigo = _nuevo.ProvinciaCodigo,
+                CodigoPostal = _nuevo.CodigoPostal,
                 Telefono = _nuevo.Telefono
             });
             return;
@@ -683,4 +725,7 @@
 
     private static string StripNonNumeric(string? value)
         => Regex.Replace(value ?? string.Empty, "[^0-9]", string.Empty);
+
+    private static string CompactarTexto(string? value)
+        => new((value ?? string.Empty).Where(char.IsLetterOrDigit).ToArray());
 }

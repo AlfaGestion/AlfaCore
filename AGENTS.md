@@ -47,6 +47,19 @@ Usar cuando:
 - Si una URL entra con `?directo=1`, AlfaCore debe quedar encerrado en ese módulo: no debe mostrar `Aplicaciones` ni accesos a otros módulos. Esta regla aplica a todos los módulos actuales y a cualquier módulo nuevo.
 - **Códigos-PK de texto (ancho fijo):** al grabar un PK de texto de un maestro/tabla de referencia (TA_/V_TA_/C_TA_, artículos, vendedores, etc.) se formatea al ancho del campo con la lógica estándar del sistema: **numérico → alineado a la derecha (blancos a la izquierda); alfanumérico → a la izquierda**. Usar `AlfaCore.Common.CodigoPk.Format(codigo, ancho)`. Para comparar/leer, hacerlo siempre con `LTRIM(RTRIM(...))`. Detalle y excepción (plan de cuentas `MA_CUENTAS`, siempre a la izquierda) en `docs/DATABASE_TABLES_SUMMARY.md`.
 
+## Atajos estándar del punto de venta
+
+En el módulo web de Punto de Venta se deben conservar estos atajos y vincularlos a la misma acción del botón correspondiente:
+
+- `F2`: abrir **Cobrar**; si la cobranza está abierta, ejecutar **Aceptar**.
+- `F3`: abrir **Consultar cliente** y enfocar la búsqueda.
+- `Ctrl+F`: abrir **Nuevo cliente / consulta ARCA** y enfocar CUIT/DNI.
+- `Ctrl+P`: abrir **Reimprimir comprobantes**.
+- `Ctrl+B`: abrir la confirmación de **Vaciar carrito**.
+- `Esc`: cerrar el modal o menú activo, sin guardar cambios; si no hay modal/menú y el carrito tiene datos, abrir la confirmación de **Vaciar carrito**; si el carrito está vacío, preguntar antes de cerrar el módulo.
+
+Los atajos de consulta y grabación deben reutilizar los handlers existentes de los botones; no duplicar la lógica de negocio en JavaScript.
+
 ---
 
 ## Regla clave

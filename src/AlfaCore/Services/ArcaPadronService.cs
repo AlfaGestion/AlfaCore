@@ -14,9 +14,11 @@ public sealed class ArcaPadronService(
     IAppEventService appEvents) : IArcaPadronService
 {
     private const string ModuleName = "ArcaPadron";
-    private const string Servicio = "ws_sr_constancia_inscripcion";
+    // El componente VB6 usa este servicio específico del padrón A5. No es el
+    // servicio genérico de constancia de inscripción.
+    private const string Servicio = "ws_sr_padron_a5";
     private const string UrlHomologacion = "https://awshomo.arca.gov.ar/sr-padron/webservices/personaServiceA5";
-    private const string UrlProduccion = "https://aws.arca.gov.ar/sr-padron/webservices/personaServiceA5";
+    private const string UrlProduccion = "https://aws.afip.gov.ar/sr-padron/webservices/personaServiceA5";
 
     private string ConnectionString => sessionService.GetConnectionString().Length > 0
         ? sessionService.GetConnectionString()
@@ -29,11 +31,12 @@ public sealed class ArcaPadronService(
         if (digits.Length != 11)
             throw new InvalidOperationException("Ingresá un CUIT válido de 11 dígitos para consultar ARCA.");
 
+        ArcaEmisorConfig? emisor = null;
         try
         {
             await using var cn = new SqlConnection(ConnectionString);
             await cn.OpenAsync(ct);
-            var emisor = await arcaConfig.ResolvePadronEmisorAsync(cn, ct)
+            emisor = await arcaConfig.ResolvePadronEmisorAsync(cn, ct)
                 ?? throw new InvalidOperationException("No hay una configuración propia de padrón ARCA con certificado disponible.");
             var ticket = await wsaaClient.ObtenerTicketAsync(cn, emisor, ct, Servicio);
             var response = await ConsultarAsync(ticket, emisor, digits, ct);
@@ -52,8 +55,9 @@ public sealed class ArcaPadronService(
                 || ex.Message.Contains("Computador no autorizado", StringComparison.OrdinalIgnoreCase);
             var certificadoVencido = ex.Message.Contains("cms.cert.expired", StringComparison.OrdinalIgnoreCase)
                 || ex.Message.Contains("Certificado expirado", StringComparison.OrdinalIgnoreCase);
+            var ambiente = emisor?.Ambiente == ArcaAmbiente.Produccion ? "producción" : "homologación";
             var mensaje = noAutorizado
-                ? "ARCA no autorizó el certificado para consultar el padrón. Habilitá este computador/certificado para el servicio ws_sr_constancia_inscripcion en homologación."
+                ? $"ARCA no autorizó el certificado para consultar el padrón A5. Habilitá este computador/certificado para el servicio ws_sr_padron_a5 en {ambiente}."
                 : certificadoVencido
                     ? "El certificado configurado para consultar el padrón ARCA está vencido. Reemplazalo por un certificado vigente de padrón."
                 : "No se pudo autenticar contra ARCA para consultar el padrón.";
@@ -110,6 +114,17 @@ public sealed class ArcaPadronService(
         var razonSocial = Value("razonSocial");
         var nombre = Value("nombre");
         var apellido = Value("apellido");
+        var impIva = FindValue(doc, "imp_iva", "impIva", "condicionIva", "situacionIva");
+        var monotributo = FindValue(doc, "monotributo");
+        var tieneIvaEnRegimenGeneral = doc.Descendants()
+            .Where(x => x.Name.LocalName.Equals("impuesto", StringComparison.OrdinalIgnoreCase))
+            .Any(x => x.Descendants().Any(y =>
+                y.Name.LocalName.Equals("idImpuesto", StringComparison.OrdinalIgnoreCase)
+                && y.Value.Trim() == "30")
+                || x.Descendants().Any(y =>
+                    y.Name.LocalName.Equals("descripcionImpuesto", StringComparison.OrdinalIgnoreCase)
+                    && y.Value.Contains("IVA", StringComparison.OrdinalIgnoreCase)));
+        var condicion = ResolverCondicionIva(impIva, monotributo, tieneIvaEnRegimenGeneral);
 
         return new ArcaPadronPersonaDto
         {
@@ -117,11 +132,46 @@ public sealed class ArcaPadronService(
             RazonSocial = string.IsNullOrWhiteSpace(razonSocial) ? $"{apellido} {nombre}".Trim() : razonSocial,
             Nombre = nombre,
             Apellido = apellido,
-            CondicionIva = doc.Descendants().FirstOrDefault(x => x.Name.LocalName.Contains("condicion", StringComparison.OrdinalIgnoreCase) && x.Name.LocalName.Contains("iva", StringComparison.OrdinalIgnoreCase))?.Value?.Trim() ?? string.Empty,
+            CondicionIva = condicion.Descripcion,
+            CondicionIvaCodigo = condicion.Codigo,
+            DocumentoTipoCodigo = "1", // TA_TIPODOCUMENTO: C.U.I.T.
             Calle = Address("direccion"),
             Localidad = Address("localidad"),
             Provincia = Address("descripcionProvincia"),
             CodigoPostal = Address("codPostal")
+        };
+    }
+
+    private static string FindValue(XDocument doc, params string[] names)
+    {
+        var normalized = names.Select(NormalizeName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return doc.Descendants()
+            .Where(x => normalized.Contains(NormalizeName(x.Name.LocalName)))
+            .Select(x => x.Value.Trim())
+            .FirstOrDefault(x => x.Length > 0) ?? string.Empty;
+    }
+
+    private static string NormalizeName(string value)
+        => new(value.Where(char.IsLetterOrDigit).ToArray());
+
+    private static (string Codigo, string Descripcion) ResolverCondicionIva(
+        string impIva,
+        string monotributo,
+        bool tieneIvaEnRegimenGeneral)
+    {
+        var iva = NormalizeName(impIva).ToUpperInvariant();
+        var mono = NormalizeName(monotributo).ToUpperInvariant();
+
+        if (mono.Length > 0 && mono is not "NI" and not "N")
+            return ("5", "RESPONSABLE MONOTRIBUTO");
+
+        return iva switch
+        {
+            "AC" or "S" => ("1", "RESPONSABLE INSCRIPTO"),
+            "NI" or "N" => ("2", "RESPONSABLE NO INSCRIPTO"),
+            "EX" => ("4", "IVA EXENTO"),
+            _ when tieneIvaEnRegimenGeneral => ("1", "RESPONSABLE INSCRIPTO"),
+            _ => ("3", "A CONSUMIDOR FINAL")
         };
     }
 }
