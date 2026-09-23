@@ -16,6 +16,16 @@ public sealed class IaBackendProxyService(
 {
     private const int MaxSkewSeconds = 300;
     private const int NonceTtlSeconds = 600;
+    private const int MaxAttachmentBytes = 15 * 1024 * 1024;
+    private static readonly HashSet<string> AllowedAttachmentMimeTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/png", "image/jpeg", "image/gif", "image/webp", "application/pdf",
+        "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "text/csv", "text/plain", "text/markdown", "application/json", "text/html", "application/xml",
+        "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/rtf", "application/vnd.oasis.opendocument.text", "application/vnd.ms-powerpoint",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    };
 
     // Mismo alcance que _SEEN_NONCES del servidor Python original: en memoria, válido para una
     // única instancia de proceso -- si algún día AlfaCore corre en varias instancias detrás de un
@@ -93,6 +103,10 @@ public sealed class IaBackendProxyService(
 
             if (!root.TryGetProperty("input", out var inputElement) || inputElement.ValueKind != JsonValueKind.Array)
                 return IaBackendProcessOutcome.Error(400, "input_required");
+
+            var attachmentError = ValidateAttachments(inputElement);
+            if (attachmentError is not null)
+                return IaBackendProcessOutcome.Error(400, attachmentError);
 
             var maxOutputTokens = root.TryGetProperty("max_output_tokens", out var tokensEl) && tokensEl.ValueKind == JsonValueKind.Number
                 ? tokensEl.GetInt32()
@@ -275,6 +289,90 @@ public sealed class IaBackendProxyService(
             throw new InvalidOperationException($"OpenAI HTTP {(int)response.StatusCode}: {body}");
 
         return ExtractOutputText(body);
+    }
+
+    private static string? ValidateAttachments(JsonElement input)
+    {
+        var attachmentCount = 0;
+        foreach (var message in input.EnumerateArray())
+        {
+            if (message.ValueKind != JsonValueKind.Object)
+                continue;
+            if (!message.TryGetProperty("content", out var content) || content.ValueKind != JsonValueKind.Array)
+                continue;
+
+            foreach (var part in content.EnumerateArray())
+            {
+                if (part.ValueKind != JsonValueKind.Object)
+                    continue;
+                var type = GetString(part, "type") ?? string.Empty;
+                var dataUri = type.Equals("input_image", StringComparison.OrdinalIgnoreCase)
+                    ? GetString(part, "image_url")
+                    : type.Equals("input_file", StringComparison.OrdinalIgnoreCase)
+                        ? GetString(part, "file_data")
+                        : null;
+                if (dataUri is null)
+                    continue;
+
+                attachmentCount++;
+                if (attachmentCount > 1)
+                    return "only_one_attachment_allowed";
+                if (!TryValidateDataUri(dataUri, out var error))
+                    return error;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryValidateDataUri(string value, out string error)
+    {
+        error = string.Empty;
+        if (!value.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+        {
+            error = "attachment_must_be_data_uri";
+            return false;
+        }
+
+        var separator = value.IndexOf(',');
+        if (separator <= 5)
+        {
+            error = "invalid_attachment_data_uri";
+            return false;
+        }
+
+        var metadata = value[5..separator];
+        var mimeType = metadata.Split(';')[0].Trim();
+        if (!metadata.EndsWith(";base64", StringComparison.OrdinalIgnoreCase) || !AllowedAttachmentMimeTypes.Contains(mimeType))
+        {
+            error = "unsupported_attachment_type";
+            return false;
+        }
+
+        var encoded = value[(separator + 1)..];
+        var estimatedBytes = (encoded.Length / 4L) * 3L;
+        if (estimatedBytes > MaxAttachmentBytes)
+        {
+            error = "attachment_too_large";
+            return false;
+        }
+
+        try
+        {
+            var decoded = Convert.FromBase64String(encoded);
+            if (decoded.Length == 0 || decoded.Length > MaxAttachmentBytes)
+            {
+                error = decoded.Length == 0 ? "empty_attachment" : "attachment_too_large";
+                return false;
+            }
+        }
+        catch (FormatException)
+        {
+            error = "invalid_attachment_base64";
+            return false;
+        }
+
+        return true;
     }
 
     // La Responses API cruda NO trae un campo "output_text" de conveniencia (eso lo agrega el SDK
