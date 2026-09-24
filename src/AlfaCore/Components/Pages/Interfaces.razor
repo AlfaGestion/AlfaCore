@@ -2,6 +2,7 @@
 @page "/{idweb}/{idbase:int}/interfaces"
 @using AlfaCore.Models
 @inject AlfaCore.Services.IInterfacesService InterfacesSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
 @inject AlfaCore.Services.ISessionService SessionSvc
@@ -18,13 +19,13 @@
             <p class="page-intro__text">Listado principal del módulo con formato estándar del sistema: filtros, grilla configurable y acceso a la ficha completa del documento.</p>
         </div>
         <div class="actions">
-            <a class="btn btn--primary" href="/interfaces/nuevo">
+            <a class="btn btn--primary" href="@RouteContext.BuildRoute("/interfaces/nuevo")">
                 <i class="bi bi-plus-circle"></i> Nuevo
             </a>
-            <a class="btn btn--ghost" href="/interfaces/lote">
+            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces/lote")">
                 <i class="bi bi-collection"></i> Cargar por lote
             </a>
-            <a class="btn btn--ghost" href="/interfaces/configuracion">
+            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces/configuracion")">
                 <i class="bi bi-sliders"></i> Configuración
             </a>
             <button type="button" class="btn btn--ghost" @onclick="RecargarAsync" disabled="@_loadingList">
@@ -611,7 +612,7 @@
                             @foreach (var qi in _queueSnapshot.Items)
                             {
                                 <tr class="usuarios-table__row">
-                                    <td>@if (qi.IdComprobanteRecibido.HasValue) { <a href="/interfaces/@qi.IdComprobanteRecibido">#@qi.IdComprobanteRecibido</a> } else { <span>—</span> }</td>
+                                    <td>@if (qi.IdComprobanteRecibido.HasValue) { <a href="@RouteContext.BuildRoute($"/interfaces/{qi.IdComprobanteRecibido}")">#@qi.IdComprobanteRecibido</a> } else { <span>—</span> }</td>
                                     <td title="@qi.ArchivoNombreOriginal">@(string.IsNullOrWhiteSpace(qi.ArchivoNombreOriginal) ? "—" : qi.ArchivoNombreOriginal.Length > 30 ? qi.ArchivoNombreOriginal[..28] + "…" : qi.ArchivoNombreOriginal)</td>
                                     <td>
                                         <div class="interfaces-queue-progress">
@@ -1196,7 +1197,7 @@
     }
 
     private void AbrirFicha(long id)
-        => Navigation.NavigateTo($"/interfaces/{id}");
+        => Navigation.NavigateTo(RouteContext.BuildRoute($"/interfaces/{id}"));
 
     private async Task VerDetalleLecturaAsync(long idComprobanteRecibido)
     {

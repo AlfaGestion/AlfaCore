@@ -36,7 +36,10 @@
 else if (IsPosFullscreenRoute)
 {
     <div class="pos-layout-host" @onclick="CloseFloatingWindowsAsync">
-        @Body
+        @if (ShouldRenderTenantBody)
+        {
+            @Body
+        }
     </div>
 }
 else
@@ -941,7 +944,10 @@ else
                     <p class="print-banner__meta">Exportado el @DateTime.Now.ToString("dd/MM/yyyy HH:mm")</p>
                 </div>
             }
-            @Body
+            @if (ShouldRenderTenantBody)
+            {
+                @Body
+            }
         </section>
     </main>
 </div>
@@ -1427,7 +1433,9 @@ else
     private bool DefaultSidebarCollapsed => !ShowLauncherContext;
     private bool IsSidebarCollapsed => _sidebarCollapsedOverride ?? DefaultSidebarCollapsed;
     private string SidebarToggleTitle => IsSidebarCollapsed ? "Desplegar menú principal" : "Plegar menú principal";
-    private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && AppUserSession.IsAuthenticated;
+    // Misma regla que el @Body y el polling (TenantDataAccessGuard): el panel lee/escribe tareas de
+    // la base activa, así que exige sesión autorizada, no sólo usuario autenticado.
+    private bool CanShowTasksPanel => !IsPosFullscreenRoute && !IsDirectMode && IsActiveSessionAuthorized;
     private bool IsLauncherRoute => IsLauncherContextRoute(GetEffectiveCurrentPath());
     private bool IsDirectMode => !string.IsNullOrWhiteSpace(_directModuleKey);
     private bool IsPosFullscreenRoute => string.Equals(GetEffectiveCurrentPath(), "ventas/punto-venta/mostrador", StringComparison.OrdinalIgnoreCase);
@@ -1440,7 +1448,7 @@ else
     /// pero esta propiedad es la que se evalúa en cada render, así que cubre ese caso también.
     /// </summary>
     private bool IsActiveSessionAuthorized
-        => AppUserSession.IsAuthorizedForSession(SessionSvc.GetActiveSession()?.Id);
+        => AlfaCore.Services.TenantDataAccessGuard.IsActiveSessionAuthorized(SessionSvc, AppUserSession);
 
     private bool IsInternalSqlLoginContext
     {
@@ -1464,6 +1472,16 @@ else
             return !string.IsNullOrWhiteSpace(_routeSessionLabel);
         }
     }
+    // Ver TenantBodyGate: en SaaS la página no se monta (ni consulta nada) hasta que el usuario
+    // esté autorizado para la base activa. El overlay manual (cambio de usuario con sesión ya
+    // autorizada) no desmonta la página.
+    private bool ShouldRenderTenantBody
+        => AlfaCore.Services.TenantBodyGate.ShouldRenderBody(
+            AppMode.IsSaaSMode,
+            AppUserSession.IsAuthenticated,
+            IsActiveSessionAuthorized,
+            isAppRootPath: string.IsNullOrWhiteSpace(GetNormalizedCurrentPath()));
+
     private bool ShowLoginOverlay
         => _manualLoginOverlayOpen
            || (!AppMode.IsSaaSMode && (!AppUserSession.IsAuthenticated || !IsActiveSessionAuthorized))
@@ -1572,6 +1590,11 @@ else
     private long? _tasksPanelDragOverNoteId;
     private TareasPageDto _tasksPanel = new();
     private readonly Dictionary<long, long> _globalConversationLastIncomingById = [];
+    private Guid? _globalConversationSessionId;
+    private AlfaCore.Services.GlobalConversationNotificationsSource? _globalConversationNotifications;
+    private AlfaCore.Services.GlobalConversationNotificationsSource GlobalConversationNotifications
+        => _globalConversationNotifications ??= new AlfaCore.Services.GlobalConversationNotificationsSource(SessionSvc, AppUserSession, ConversacionesSvc);
+    private Guid? _tasksPanelSessionId;
     private CancellationTokenSource? _globalConversationPollingCts;
     private Task? _globalConversationPollingTask;
     private bool _globalConversationBaselineReady;
@@ -1597,6 +1620,7 @@ else
     {
         _activeSession = SessionSvc.GetActiveSession();
         ResetMenuSearchCatalog();
+        EnsureTasksPanelMatchesAuthorizedSession();
         var wasAuthenticated = AppUserSession.IsAuthenticated;
         AppUserSession.HandleSqlSessionChanged();
         EnsureLoginDraftPrimedForInternalContext();
@@ -1623,6 +1647,7 @@ else
     private void OnAppUserStateChanged()
     {
         ResetMenuSearchCatalog();
+        EnsureTasksPanelMatchesAuthorizedSession();
         EnsureLoginDraftPrimedForInternalContext();
         _ = InvokeAsync(RestoreRememberedLoginForCurrentContextAsync);
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
@@ -1696,6 +1721,9 @@ else
     {
         HeaderNavigation.Record(args.Location);
         _mobileSidebarOpen = false;
+        if (!TryGetRouteBaseId(out _))
+            _routeSessionLabel = string.Empty;
+        EnsureTasksPanelMatchesAuthorizedSession();
         if (AppMode.IsSaaSMode && AppUserSession.IsAuthenticated)
             _ = InvokeAsync(EnsureActiveSessionFromRouteAsync);
         if (IsLauncherRoute)
@@ -1971,7 +1999,13 @@ else
     private async Task EnsureActiveSessionFromRouteAsync()
     {
         if (!AppMode.IsSaaSMode || !TryGetRouteBaseId(out var routeBaseId))
+        {
+            // Sin /{idweb}/{idbase} en la URL no hay base de ruta: la etiqueta de la base anterior
+            // no debe quedar pegada (el overlay mostraba "ALFANET · ..." mientras
+            // GetActiveSession() ya era null y el login fallaba con "No hay una base activa").
+            _routeSessionLabel = string.Empty;
             return;
+        }
 
         var availableSessions = SessionSvc.GetAllSessions();
         var routeSession = availableSessions.FirstOrDefault(x => x.BaseId == routeBaseId);
@@ -2190,29 +2224,14 @@ else
         }
     }
 
+    // Misma regla que ConexionClienteService (TenantRouteParser): /consultas/12 o /catalogo/5 son
+    // rutas root de la app, no /{idweb}/{idbase}. Antes cualquier /palabra/{int} se tomaba como
+    // idbase y el login interno podía validarse contra esa base.
     private bool TryGetRouteBaseId(out int baseId)
-    {
-        baseId = 0;
-        var path = GetNormalizedCurrentPath();
-        if (string.IsNullOrWhiteSpace(path))
-            return false;
-
-        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (segments.Length < 2)
-            return false;
-
-        return int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out baseId);
-    }
+        => AlfaCore.Services.TenantRouteParser.TryParse(GetNormalizedCurrentPath(), out _, out baseId);
 
     private string? GetRouteIdWeb()
-    {
-        var path = GetNormalizedCurrentPath();
-        if (string.IsNullOrWhiteSpace(path))
-            return null;
-
-        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        return segments.Length > 0 ? segments[0] : null;
-    }
+        => AlfaCore.Services.TenantRouteParser.TryParse(GetNormalizedCurrentPath(), out var idWeb, out _) ? idWeb : null;
 
     private void UpdateCurrentModule()
     {
@@ -2613,25 +2632,30 @@ else
 
     private async Task PollGlobalConversationNotificationsAsync(CancellationToken cancellationToken)
     {
-        if (!AppUserSession.IsAuthenticated
-            || IsDirectMode
+        if (IsDirectMode
             || string.Equals(_currentModule, "conversaciones", StringComparison.OrdinalIgnoreCase))
             return;
 
         try
         {
-            if (!await ConversacionesSvc.HasConversationSchemaAsync(cancellationToken))
-            {
-                ResetGlobalConversationNotifications();
+            // Sólo con sesión activa AUTORIZADA para el usuario (misma regla que el @Body). Antes
+            // bastaba IsAuthenticated: un usuario de A en /{idweb de B}/{idbase de B} recibía nombre
+            // de contacto y resumen del último mensaje de B aunque la página estuviera bloqueada.
+            var fetched = await GlobalConversationNotifications.FetchPendingAsync(cancellationToken);
+            if (!fetched.Executed)
                 return;
+
+            // Cambio de base: la línea de base (ids de conversación/mensaje) de la base anterior no
+            // sirve para la nueva y los contadores/último contacto no deben arrastrarse.
+            if (_globalConversationSessionId != fetched.SessionId)
+            {
+                _globalConversationLastIncomingById.Clear();
+                _globalConversationBaselineReady = false;
+                ResetGlobalConversationNotifications();
+                _globalConversationSessionId = fetched.SessionId;
             }
 
-            var inbox = await ConversacionesSvc.GetInboxAsync(new AlfaCore.Models.ConversacionesInboxFilters
-            {
-                Canal = "WHATSAPP",
-                Modo = "pendientes",
-                Limit = 10
-            }, cancellationToken);
+            var inbox = fetched.Value ?? [];
 
             var newCount = 0;
             AlfaCore.Models.ConversacionInboxItemDto? latest = null;
@@ -2799,7 +2823,7 @@ else
                 {
                     if (!TryGetRouteBaseId(out var routeBaseId))
                     {
-                        _loginError = "No hay una base activa lista para validar el acceso interno.";
+                        _loginError = "No hay una base activa lista para validar el acceso interno. Ingresá desde la dirección de tu empresa (/empresa/base).";
                         Logger.LogWarning("LoginAsync: no se pudo resolver idbase desde la URL. Route={Route}", GetNormalizedCurrentPath());
                         return;
                     }
@@ -2809,6 +2833,20 @@ else
                     {
                         _loginError = $"No se encontró la base #{routeBaseId} para validar el acceso interno.";
                         Logger.LogWarning("LoginAsync: base central no encontrada. IdBase={IdBase}, Route={Route}", routeBaseId, GetNormalizedCurrentPath());
+                        return;
+                    }
+
+                    // El idweb de la URL tiene que ser el del cliente dueño de la base (mismo
+                    // criterio que ConexionClienteService.ResolveValidatedRouteSessionAsync): con
+                    // /OTRAEMPRESA/4264 no se valida ni se activa la base 4264.
+                    var routeIdWeb = GetRouteIdWeb() ?? string.Empty;
+                    var routeCliente = await CentralClientesSvc.GetByIdClienteAsync(routeBase.IdCliente);
+                    if (routeCliente is null
+                        || string.IsNullOrWhiteSpace(routeCliente.IdWeb)
+                        || !string.Equals(routeCliente.IdWeb.Trim(), routeIdWeb.Trim(), StringComparison.OrdinalIgnoreCase))
+                    {
+                        _loginError = "La dirección no corresponde a esta base. Ingresá desde la dirección de tu empresa.";
+                        Logger.LogWarning("LoginAsync: idweb de la ruta no coincide con el dueño de la base. IdBase={IdBase}, RouteIdWeb={RouteIdWeb}", routeBaseId, routeIdWeb);
                         return;
                     }
 
@@ -3352,6 +3390,25 @@ else
         _tasksPanelDragOverNoteId = null;
     }
 
+    private void ClearTasksPanelForSessionChange()
+    {
+        _tasksPanel = new();
+        _tasksPanelSessionId = null;
+        CloseTasksPanel();
+    }
+
+    // Llamado ante cambio de sesión/usuario/ruta: si las tareas cargadas son de otra base (o la
+    // base actual todavía no está autorizada), se descartan y el panel se cierra.
+    private void EnsureTasksPanelMatchesAuthorizedSession()
+    {
+        if (_tasksPanelSessionId is null)
+            return;
+
+        if (!AlfaCore.Services.TenantDataAccessGuard.TryGetAuthorizedSession(SessionSvc, AppUserSession, out var sessionId)
+            || sessionId != _tasksPanelSessionId)
+            ClearTasksPanelForSessionChange();
+    }
+
     private async Task LoadTasksPanelAsync()
     {
         _tasksPanelLoading = true;
@@ -3359,7 +3416,19 @@ else
 
         try
         {
-            _tasksPanel = await TareasSvc.GetPageAsync(TasksPanelUser);
+            var user = TasksPanelUser;
+            var loaded = await AlfaCore.Services.TenantDataAccessGuard.RunForAuthorizedSessionAsync(
+                SessionSvc, AppUserSession, token => TareasSvc.GetPageAsync(user, token));
+            if (!loaded.Executed || loaded.Value is null)
+            {
+                // Sin sesión autorizada (o la base cambió durante la carga): no se muestran tareas
+                // de otra base ni de una base todavía no autorizada.
+                ClearTasksPanelForSessionChange();
+                return;
+            }
+
+            _tasksPanel = loaded.Value;
+            _tasksPanelSessionId = loaded.SessionId;
         }
         catch (Exception ex)
         {
@@ -4009,10 +4078,9 @@ else
         if (!AppMode.IsSaaSMode || string.IsNullOrWhiteSpace(path))
             return path;
 
-        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (segments.Length >= 2
-            && int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _))
+        if (AlfaCore.Services.TenantRouteParser.TryParse(path, out _, out _))
         {
+            var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             return string.Join('/', segments.Skip(2));
         }
 
@@ -4033,7 +4101,7 @@ else
         }
 
         return segments.Length == 2
-            && int.TryParse(segments[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out _);
+            && AlfaCore.Services.TenantRouteParser.TryParse(path, out _, out _);
     }
 
     /// <summary>

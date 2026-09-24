@@ -5,6 +5,7 @@
 @using AlfaCore.Models
 @using Microsoft.AspNetCore.Components.Forms
 @inject AlfaCore.Services.IInterfacesService InterfacesSvc
+@inject AlfaCore.Services.IRouteContextService RouteContext
 @inject AlfaCore.Services.IInterfacesConfigService InterfacesConfigSvc
 @inject AlfaCore.Services.IAppUiOperationService UiOps
 @inject AlfaCore.Services.IAppUserSessionService AppUserSession
@@ -22,7 +23,7 @@
             <p class="page-intro__text">@(_isNewMode ? "Completá los datos del comprobante y adjuntá los archivos necesarios antes de registrarlo." : "Editá la ficha completa del documento desde una pantalla separada del listado principal.")</p>
         </div>
         <div class="actions">
-            <a class="btn btn--ghost" href="/interfaces">
+            <a class="btn btn--ghost" href="@RouteContext.BuildRoute("/interfaces")">
                 <i class="bi bi-arrow-left"></i> Volver al listado
             </a>
         </div>
@@ -46,7 +47,7 @@
                 </div>
                 @if (_isNewMode && _lastSavedId.HasValue && _feedback?.Severity == AppUiFeedbackSeverity.Success)
                 {
-                    <a class="btn btn--ghost btn--sm" href="/interfaces/@_lastSavedId.Value">
+                    <a class="btn btn--ghost btn--sm" href="@RouteContext.BuildRoute($"/interfaces/{_lastSavedId.Value}")">
                         <i class="bi bi-eye"></i> Ver documento #@_lastSavedId.Value
                     </a>
                 }
@@ -170,7 +171,7 @@
                                 {
                                     <span>
                                         "<strong>@dup.NombreOriginal</strong>" ya fue subido en el documento
-                                        <a href="/interfaces/@dup.IdComprobanteRecibido" target="_blank">#@dup.IdComprobanteRecibido</a>.
+                                        <a href="@RouteContext.BuildRoute($"/interfaces/{dup.IdComprobanteRecibido}")" target="_blank">#@dup.IdComprobanteRecibido</a>.
                                     </span>
                                 }
                             </span>

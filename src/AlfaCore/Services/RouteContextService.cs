@@ -61,20 +61,15 @@ public sealed class RouteContextService(
     private static bool HasSaaSPrefix(string route)
         => TryGetSaaSPrefix(route, out _);
 
-    private static bool TryGetSaaSPrefix(string route, out string prefix)
+    // Misma regla que ConexionClienteService: /consultas/12 es una ruta root de la app, no
+    // idweb=consultas/idbase=12 (antes BuildRoute la devolvía sin prefijo tenant).
+    internal static bool TryGetSaaSPrefix(string route, out string prefix)
     {
         prefix = string.Empty;
-        if (string.IsNullOrWhiteSpace(route))
+        if (!TenantRouteParser.TryParse(route, out var idWeb, out var baseId))
             return false;
 
-        var parts = route.Trim('/').Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (parts.Length < 2)
-            return false;
-
-        if (!int.TryParse(parts[1], out _))
-            return false;
-
-        prefix = $"/{parts[0]}/{parts[1]}";
+        prefix = $"/{Uri.EscapeDataString(idWeb)}/{baseId}";
         return true;
     }
 }

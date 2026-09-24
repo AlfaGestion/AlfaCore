@@ -11,12 +11,12 @@ public sealed class MenuService(
     IAppEventService appEvents,
     IActualizacionesService actualizacionesService,
     IAppUserSessionService appUserSession,
-    ICentralAdminService centralAdminService) : IMenuService
+    ICentralAdminService centralAdminService,
+    IAppModeService appMode) : IMenuService
 {
-    private string ConnectionString => sessionService.GetConnectionString().Length > 0
-        ? sessionService.GetConnectionString()
-        : configuration.GetConnectionString("AlfaGestion")
-          ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
+    // ALFACORE_MENU_WEB vive en la base del tenant: en SaaS sin base activa no hay menú que leer
+    // (nunca se cae a ConnectionStrings:AlfaGestion como base global).
+    private string ConnectionString => TenantConnectionGuard.Resolve(sessionService, configuration, appMode, "el menú");
 
     public async Task<IReadOnlyList<ShellModuleDto>> GetModulesAsync(CancellationToken ct = default)
     {
@@ -70,9 +70,14 @@ public sealed class MenuService(
 
     private async Task<MenuSnapshot> LoadVisibleMenuAsync(CancellationToken ct, bool allowAutoRepair)
     {
+        // Ruta root sin sesión / login pendiente: menú vacío sin query ni log de error (se llama en
+        // cada render del layout, no es un incidente).
+        if (!TenantConnectionGuard.TryResolve(sessionService, configuration, appMode, out var connectionString))
+            return EmptySnapshot();
+
         try
         {
-            await using var cn = new SqlConnection(ConnectionString);
+            await using var cn = new SqlConnection(connectionString);
             await cn.OpenAsync(ct);
 
             if (!await TableExistsAsync(cn, "ALFACORE_MENU_WEB", ct))
