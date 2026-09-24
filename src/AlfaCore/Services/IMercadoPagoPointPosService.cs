@@ -12,7 +12,7 @@ public interface IMercadoPagoPointPosService
     /// <summary>Corre hasta un resultado final (aprobado/cancelado/error) o hasta que el
     /// CancellationToken se cancele. onStatusChanged se invoca desde el propio hilo del circuito
     /// (vía los await del polling) con un texto para mostrar en la UI.</summary>
-    Task<PaymentResult> CobrarAsync(decimal importe, string externalReference, Action<string> onStatusChanged, CancellationToken ct = default);
+    Task<PaymentResult> CobrarAsync(decimal importe, string externalReference, Action<string> onStatusChanged, CancellationToken ct = default, int idPuntoVenta = 0, string? terminalId = null);
 
     /// <summary>Pide cancelar el cobro en curso (si hay uno). No hace nada si CobrarAsync no está
     /// corriendo en este momento para este mismo circuito.</summary>

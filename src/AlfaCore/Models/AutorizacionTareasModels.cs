@@ -15,6 +15,7 @@ public sealed class AutorizacionTareasDto
     public string PermisosSistema { get; init; } = string.Empty;
     public string Usuario { get; init; } = string.Empty;
     public bool Administrador { get; init; }
+    public bool VerProforma { get; init; } = true;
     public string UNegocio { get; init; } = string.Empty;
     public string IdCaja { get; init; } = string.Empty;
     public string IdDeposito { get; init; } = string.Empty;
@@ -30,6 +31,7 @@ public sealed class GuardarAutorizacionTareasRequest
     public string PermisosSistema { get; init; } = string.Empty;
     public string Usuario { get; init; } = string.Empty;
     public bool Administrador { get; init; }
+    public bool VerProforma { get; init; } = true;
     public string UNegocio { get; init; } = string.Empty;
     public string IdCaja { get; init; } = string.Empty;
     public string IdDeposito { get; init; } = string.Empty;

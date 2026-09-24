@@ -8,7 +8,7 @@ namespace AlfaCore.Services;
 /// por llamada, sin reintento automático -- esa decisión es del orquestador.</summary>
 public interface IWsfev1Client
 {
-    Task<long> ObtenerUltimoAutorizadoAsync(WsaaTicket ticket, string cuit, int ptoVta, int cbteTipo, ArcaAmbiente ambiente, CancellationToken ct);
+    Task<long> ObtenerUltimoAutorizadoAsync(WsaaTicket ticket, string cuit, int ptoVta, int cbteTipo, ArcaAmbiente ambiente, string? wsfeUrl, CancellationToken ct);
 
-    Task<ArcaCaeResultadoDto> SolicitarCaeAsync(WsaaTicket ticket, ArcaCaeSolicitudDto solicitud, ArcaAmbiente ambiente, CancellationToken ct);
+    Task<ArcaCaeResultadoDto> SolicitarCaeAsync(WsaaTicket ticket, ArcaCaeSolicitudDto solicitud, ArcaAmbiente ambiente, string? wsfeUrl, CancellationToken ct);
 }

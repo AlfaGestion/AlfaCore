@@ -190,6 +190,27 @@
                         <label>Tamaño de letra (pt)
                             <input type="number" min="6" max="24" value="@(ItemsBlock.FontSizePt?.ToString() ?? string.Empty)" @onchange="args => SetFontSize(ItemsBlock, args)" disabled="@IsTemplateReadOnly" placeholder="Automático" />
                         </label>
+                        <label class="document-designer__toggle">
+                            <input type="checkbox" @bind="_draft.Definition.MostrarRenglonesDetalle" disabled="@IsTemplateReadOnly" />
+                            <span>Mostrar renglones debajo de cada artículo</span>
+                        </label>
+                        <p class="document-designer__hint">Podés desactivarlos para que el ticket de 80 mm salga más limpio.</p>
+                    </section>
+                }
+                @if (EsFactura)
+                {
+                    <section class="document-designer__settings-group">
+                        <div class="document-designer__settings-heading">Datos adicionales del ticket</div>
+                        <p class="document-designer__hint">Son opcionales: se imprimen solo cuando están tildados y existe el dato en el comprobante.</p>
+                        <label class="document-designer__toggle document-designer__toggle--compact"><input type="checkbox" @bind="_draft.Definition.DatosTicket.MostrarMediosPago" disabled="@IsTemplateReadOnly" /><span>Su pago / medios de pago</span></label>
+                        <label class="document-designer__toggle document-designer__toggle--compact"><input type="checkbox" @bind="_draft.Definition.DatosTicket.MostrarTotalUnidades" disabled="@IsTemplateReadOnly" /><span>Total de unidades</span></label>
+                        <label class="document-designer__toggle document-designer__toggle--compact"><input type="checkbox" @bind="_draft.Definition.DatosTicket.MostrarCantidadProductos" disabled="@IsTemplateReadOnly" /><span>Cantidad de productos</span></label>
+                        <label class="document-designer__toggle document-designer__toggle--compact"><input type="checkbox" @bind="_draft.Definition.DatosTicket.MostrarCajero" disabled="@IsTemplateReadOnly" /><span>Cajero</span></label>
+                        <label class="document-designer__toggle document-designer__toggle--compact"><input type="checkbox" @bind="_draft.Definition.DatosTicket.MostrarVendedor" disabled="@IsTemplateReadOnly" /><span>Vendedor</span></label>
+                        <label class="document-designer__toggle document-designer__toggle--compact"><input type="checkbox" @bind="_draft.Definition.DatosTicket.MostrarLeyendaFinal" disabled="@IsTemplateReadOnly" /><span>Mostrar leyenda final</span></label>
+                        <label>Leyenda final
+                            <input @bind="_draft.Definition.DatosTicket.LeyendaFinal" disabled="@(IsTemplateReadOnly || !_draft.Definition.DatosTicket.MostrarLeyendaFinal)" maxlength="120" placeholder="Gracias por su compra" />
+                        </label>
                     </section>
                 }
                 @if (TotalesBlock is not null)
@@ -216,9 +237,8 @@
                 }
                 @if (CaeBlock is not null)
                 {
-                    <section class="document-designer__settings-group">
-                        <div class="document-designer__settings-heading">CAE (AFIP)</div>
-                        <label class="document-designer__toggle"><input type="checkbox" @bind="CaeBlock.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar CAE y vencimiento</span></label>
+                    @RenderFieldBlockSettings("CAE y autorización ARCA", CaeBlock, TiposBloqueDocumento.Cae)
+                    <section class="document-designer__settings-group document-designer__settings-group--hint-only">
                         <p class="document-designer__hint">Se omite solo si el comprobante todavía no tiene CAE (pendiente de AFIP) -- no bloquea el PDF.</p>
                     </section>
                 }
@@ -740,7 +760,7 @@
         <div class="document-designer__settings-heading">@heading</div>
         <label class="document-designer__toggle"><input type="checkbox" @bind="block.Visible" disabled="@IsTemplateReadOnly" /><span>Mostrar esta sección</span></label>
         <div class="document-designer__column-fields">
-            @foreach (var option in DocumentBlockFields.For(tipo))
+            @foreach (var option in DocumentBlockFields.ForDesigner(tipo))
             {
                 <label class="document-designer__toggle document-designer__toggle--compact">
                     <input type="checkbox" checked="@IsFieldVisible(block, option.Field)" @onchange="args => ToggleField(block, option.Field, args)" disabled="@IsTemplateReadOnly" />
@@ -759,7 +779,7 @@
     private void ToggleField(DocumentBlockDefinition block, string field, ChangeEventArgs args)
     {
         var check = args.Value is bool b && b;
-        block.VisibleFields ??= DocumentBlockFields.For(block.Type).Select(x => x.Field).ToList();
+        block.VisibleFields ??= DocumentBlockFields.ForDesigner(block.Type).Select(x => x.Field).ToList();
         if (check && !block.VisibleFields.Contains(field, StringComparer.OrdinalIgnoreCase))
             block.VisibleFields.Add(field);
         else if (!check)

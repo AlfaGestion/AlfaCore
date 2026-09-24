@@ -401,7 +401,10 @@ public class Program
         builder.Services.AddSingleton<IIaBackendProxyService, IaBackendProxyService>();
         builder.Services.AddHttpClient("MetaEmbeddedSignupOAuth").RemoveAllLoggers();
         builder.Services.AddHttpClient("MetaEmbeddedSignupManagement").RemoveAllLoggers();
-        builder.Services.AddHttpClient("Arca", client => client.Timeout = TimeSpan.FromSeconds(20)).RemoveAllLoggers();
+        // WSAA/WSFE puede tardar más de un minuto en homologación o cuando ARCA
+        // está con demoras. El CAE no se reintenta automáticamente para evitar
+        // duplicar una autorización; el visor de la venta ofrece el reintento.
+        builder.Services.AddHttpClient("Arca", client => client.Timeout = TimeSpan.FromSeconds(120)).RemoveAllLoggers();
         builder.Services.AddHttpClient("MercadoPago", client =>
         {
             client.BaseAddress = new Uri("https://api.mercadopago.com");

@@ -309,6 +309,7 @@ public sealed class DocumentTemplateService(
         {
             var definition = JsonSerializer.Deserialize<DocumentTemplateDefinition>(templateJson, JsonOptions)
                 ?? throw new InvalidOperationException("El JSON no representa una definición de documento.");
+            definition.DatosTicket ??= new();
             ValidateDefinition(definition, NormalizeTipo(tipoDocumento), null);
             return definition;
         }

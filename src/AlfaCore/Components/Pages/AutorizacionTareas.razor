@@ -209,6 +209,14 @@
                             <span>Administrador del sistema</span>
                         </label>
 
+                        <label class="auth-toggle">
+                            <input type="checkbox"
+                                   checked="@_currentUserVerProforma"
+                                   @onchange="OnVerProformaChanged"
+                                   disabled="@(!_treeLoaded || _loadingTree)" />
+                            <span>Puede ver y realizar proformas</span>
+                        </label>
+
                         <div class="field field--full">
                             <label>Unidad de negocio</label>
                             <select class="@GetCodeSelectClass(_selectedUNegocio)"
@@ -283,6 +291,8 @@
     private string _originalIdDeposito = string.Empty;
     private bool _currentUserAdministrador;
     private bool _originalAdministrador;
+    private bool _currentUserVerProforma = true;
+    private bool _originalVerProforma = true;
     private bool _loadingUsers;
     private bool _loadingTree;
     private bool _treeLoaded;
@@ -354,10 +364,12 @@
             _cajas = (dto.Cajas ?? Array.Empty<AutorizacionCatalogoItemDto>()).ToList();
             _depositos = (dto.Depositos ?? Array.Empty<AutorizacionCatalogoItemDto>()).ToList();
             _currentUserAdministrador = dto.Administrador;
+            _currentUserVerProforma = dto.VerProforma;
             _selectedUNegocio = ResolveUnidadNegocio(dto.UNegocio);
             _selectedIdCaja = ResolveOptionalCatalogValue(dto.IdCaja, CajasDisponibles);
             _selectedIdDeposito = ResolveOptionalCatalogValue(dto.IdDeposito, DepositosDisponibles);
             _originalAdministrador = _currentUserAdministrador;
+            _originalVerProforma = _currentUserVerProforma;
             _originalUNegocio = _selectedUNegocio;
             _originalIdCaja = _selectedIdCaja;
             _originalIdDeposito = _selectedIdDeposito;
@@ -397,6 +409,7 @@
             PermisosSistema = PermisosSistema,
             Usuario = _selectedUser,
             Administrador = _currentUserAdministrador,
+            VerProforma = _currentUserVerProforma,
             UNegocio = _selectedUNegocio,
             IdCaja = _selectedIdCaja,
             IdDeposito = _selectedIdDeposito,
@@ -411,6 +424,7 @@
 
         _originalTree = CloneTree(_tree);
         _originalAdministrador = _currentUserAdministrador;
+        _originalVerProforma = _currentUserVerProforma;
         _originalUNegocio = _selectedUNegocio;
         _originalIdCaja = _selectedIdCaja;
         _originalIdDeposito = _selectedIdDeposito;
@@ -423,6 +437,7 @@
     {
         _tree = CloneTree(_originalTree);
         _currentUserAdministrador = _originalAdministrador;
+        _currentUserVerProforma = _originalVerProforma;
         _selectedUNegocio = _originalUNegocio;
         _selectedIdCaja = _originalIdCaja;
         _selectedIdDeposito = _originalIdDeposito;
@@ -509,6 +524,15 @@
     private Task OnAdministradorChanged(ChangeEventArgs args)
     {
         _currentUserAdministrador = args.Value is bool b
+            ? b
+            : string.Equals(Convert.ToString(args.Value), "true", StringComparison.OrdinalIgnoreCase);
+        MarkDirty();
+        return Task.CompletedTask;
+    }
+
+    private Task OnVerProformaChanged(ChangeEventArgs args)
+    {
+        _currentUserVerProforma = args.Value is bool b
             ? b
             : string.Equals(Convert.ToString(args.Value), "true", StringComparison.OrdinalIgnoreCase);
         MarkDirty();

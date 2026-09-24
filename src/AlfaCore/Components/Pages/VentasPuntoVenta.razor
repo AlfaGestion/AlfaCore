@@ -106,6 +106,7 @@
         display: flex;
         align-items: center;
         gap: 1rem;
+        min-width: 0;
     }
 
     .pos-topbar__logo {
@@ -133,6 +134,37 @@
         color: #ffffff;
         font-size: 1.9rem;
         line-height: 1;
+    }
+
+    .pos-topbar__context {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+        margin-left: 0.65rem;
+    }
+
+    .pos-topbar__context-item {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        min-height: 2rem;
+        padding: 0.3rem 0.58rem;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 0.5rem;
+        background: rgba(8, 31, 58, 0.22);
+        color: rgba(237, 244, 252, 0.78);
+        font-size: 0.72rem;
+        white-space: nowrap;
+    }
+
+    .pos-topbar__context-item i {
+        color: #b8e8ff;
+    }
+
+    .pos-topbar__context-item strong {
+        color: #ffffff;
+        font-weight: 800;
     }
 
     .pos-topbar__actions {
@@ -1346,6 +1378,32 @@
         gap: 0.4rem;
     }
 
+    .pos-settings-modal__check-field {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.7rem;
+        padding: 0.8rem 0.9rem;
+        border: 1px solid var(--color-border);
+        border-radius: 12px;
+        background: rgba(34, 211, 238, 0.06);
+        cursor: pointer;
+    }
+
+    .pos-settings-modal__check-field input {
+        margin-top: 0.2rem;
+        accent-color: #22d3ee;
+    }
+
+    .pos-settings-modal__check-field span {
+        display: grid;
+        gap: 0.25rem;
+    }
+
+    .pos-settings-modal__check-field small {
+        color: var(--color-text-muted);
+        font-size: 0.78rem;
+    }
+
     .pos-settings-modal__field label {
         color: var(--color-text);
         font-size: 0.9rem;
@@ -1656,6 +1714,106 @@
         isolation: isolate;
     }
 
+    .pos-charge-modal:has(.pos-arca-overlay) {
+        overflow: hidden;
+    }
+
+    .pos-arca-overlay {
+        position: absolute;
+        inset: 0;
+        z-index: 30;
+        display: grid;
+        place-items: center;
+        padding: 1rem;
+        border-radius: inherit;
+        background: rgba(2, 6, 23, .78);
+        backdrop-filter: blur(3px);
+    }
+
+    .pos-arca-overlay__panel {
+        width: min(100%, 660px);
+        overflow: hidden;
+        border: 1px solid rgba(56, 189, 248, .45);
+        border-radius: 16px;
+        background: #0b1b31;
+        box-shadow: 0 24px 55px rgba(0, 0, 0, .48);
+    }
+
+    .pos-arca-overlay__brand {
+        display: flex;
+        align-items: center;
+        gap: .8rem;
+        padding: .75rem 1rem;
+        color: white;
+        background: linear-gradient(115deg, #111a3d, #07122b);
+        border-bottom: 1px solid rgba(148, 163, 184, .3);
+    }
+
+    .pos-arca-overlay__brand-mark {
+        font-size: 2rem;
+        font-weight: 900;
+        letter-spacing: .08em;
+        line-height: 1;
+    }
+
+    .pos-arca-overlay__brand-copy {
+        display: grid;
+        gap: .1rem;
+        font-size: .72rem;
+        line-height: 1.1;
+        text-transform: uppercase;
+    }
+
+    .pos-arca-overlay__brand-copy strong {
+        font-size: .86rem;
+    }
+
+    .pos-arca-overlay__environment {
+        margin-left: auto;
+        padding: .25rem .55rem;
+        color: #dbeafe;
+        border: 1px solid rgba(96, 165, 250, .4);
+        border-radius: 4px;
+        font-size: .68rem;
+        font-weight: 800;
+        letter-spacing: .04em;
+    }
+
+    .pos-arca-overlay__body {
+        display: flex;
+        align-items: center;
+        gap: .85rem;
+        padding: 1rem;
+    }
+
+    .pos-arca-overlay__spinner {
+        display: grid;
+        flex: 0 0 auto;
+        width: 2.4rem;
+        height: 2.4rem;
+        place-items: center;
+        border-radius: 50%;
+        color: #38bdf8;
+        background: rgba(14, 165, 233, .18);
+        font-size: 1.35rem;
+        animation: pos-charge-spin 1.1s linear infinite;
+    }
+
+    .pos-arca-overlay__body strong,
+    .pos-arca-overlay__body small {
+        display: block;
+    }
+
+    .pos-arca-overlay__body strong {
+        color: #f8fafc;
+        font-size: 1rem;
+    }
+
+    .pos-arca-overlay__body small {
+        margin-top: .25rem;
+        color: #93c5fd;
+    }
+
     .pos-charge-modal__header {
         display: flex;
         align-items: flex-start;
@@ -1940,6 +2098,23 @@
         align-items: center;
     }
 
+    .pos-charge-modal__test-tools {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 0.65rem;
+        color: #fbbf24;
+        font-size: 0.72rem;
+    }
+
+    .pos-charge-modal__test-tools .pos-charge-modal__action {
+        min-height: 2.2rem;
+        padding: 0.45rem 0.7rem;
+        border-color: rgba(251, 191, 36, 0.55);
+        color: #fbbf24;
+        font-size: 0.75rem;
+    }
+
     .pos-charge-modal__selected-method {
         display: grid;
         gap: 0.1rem;
@@ -2191,6 +2366,16 @@
         .pos-topbar {
             flex-direction: column;
             align-items: stretch;
+        }
+
+        .pos-topbar__brand {
+            width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .pos-topbar__context {
+            width: 100%;
+            margin-left: 4.15rem;
         }
 
         .pos-topbar__actions {
@@ -2571,7 +2756,7 @@
         }
 
         .pos-receipt-modal__new {
-            min-height: 5.5rem;
+            min-height: 3.35rem;
         }
     }
 
@@ -2620,14 +2805,18 @@
     }
 
     .pos-receipt-modal__new {
-        min-height: 4.25rem;
+        position: sticky;
+        bottom: 0;
+        z-index: 2;
+        min-height: 3.35rem;
+        margin-top: auto;
         flex: 0 0 auto;
         display: grid;
         grid-template-columns: auto 1fr;
         align-items: center;
         justify-items: start;
         gap: 0.8rem;
-        padding: 0.7rem 0.9rem;
+        padding: 0.45rem 0.75rem;
         background: linear-gradient(135deg, #12354d, #155e75);
         border: 1px solid rgba(34, 211, 238, 0.34);
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -2641,12 +2830,12 @@
     .pos-receipt-modal__new-icon {
         display: grid;
         place-items: center;
-        width: 3rem;
-        height: 3rem;
+        width: 2.35rem;
+        height: 2.35rem;
         border-radius: 999px;
         background: rgba(255, 255, 255, 0.96);
         color: var(--color-primary);
-        font-size: 1.5rem;
+        font-size: 1.2rem;
         font-weight: 900;
     }
 
@@ -2948,16 +3137,16 @@
         }
 
         .pos-receipt-modal__new {
-            min-height: 4rem;
+            min-height: 3.35rem;
             grid-template-columns: auto 1fr;
             justify-items: start;
-            padding: 1rem 1.1rem;
+            padding: 0.55rem 0.75rem;
         }
 
         .pos-receipt-modal__new-icon {
-            width: 3rem;
-            height: 3rem;
-            font-size: 1.5rem;
+            width: 2.35rem;
+            height: 2.35rem;
+            font-size: 1.2rem;
         }
     }
 
@@ -2983,17 +3172,17 @@
         }
 
         .pos-receipt-modal__new {
-            min-height: 4.25rem;
+            min-height: 3.35rem;
             grid-template-columns: auto 1fr;
             justify-items: start;
-            padding: 0.7rem 0.9rem;
+            padding: 0.45rem 0.75rem;
             font-size: 0.95rem;
         }
 
         .pos-receipt-modal__new-icon {
-            width: 3rem;
-            height: 3rem;
-            font-size: 1.5rem;
+            width: 2.35rem;
+            height: 2.35rem;
+            font-size: 1.2rem;
         }
     }
 
@@ -3256,6 +3445,20 @@
                     <div class="pos-topbar__eyebrow">Alfa Gestion</div>
                     <h1>Punto de Venta <span class="pos-topbar__version">v2026.06.30.05</span></h1>
                 </div>
+                <div class="pos-topbar__context" aria-label="Contexto operativo actual">
+                    <span class="pos-topbar__context-item" title="Punto de venta actual">
+                        <i class="bi bi-shop"></i>
+                        PV <strong>@PuntoVentaActualLabel</strong>
+                    </span>
+                    <span class="pos-topbar__context-item" title="Sucursal operativa">
+                        <i class="bi bi-building"></i>
+                        Sucursal <strong>@SucursalOperativa</strong>
+                    </span>
+                    <span class="pos-topbar__context-item" title="Usuario de la sesión">
+                        <i class="bi bi-person"></i>
+                        Usuario <strong>@UsuarioActualLabel</strong>
+                    </span>
+                </div>
             </div>
 
             <div class="pos-topbar__actions">
@@ -3276,13 +3479,6 @@
                                 <span><kbd>Ctrl+P</kbd> Reimprimir</span>
                                 <span><kbd>Esc</kbd> Cerrar</span>
                             </div>
-                            @if (_context.EsAdministrador)
-                            {
-                                <button type="button" class="pos-topbar__menu-item" @onclick="OpenSettingsAsync">
-                                    <i class="bi bi-sliders"></i>
-                                    Configuración
-                                </button>
-                            }
                             <button type="button" class="pos-topbar__menu-item" @onclick="OpenCashDetailModalAsync">
                                 <i class="bi bi-journal-text"></i>
                                 Detalle de caja
@@ -3314,10 +3510,10 @@
                                 <i class="bi bi-printer"></i>
                                 Reimprimir comprobantes
                             </button>
-                            <a class="pos-topbar__menu-link" href="@RouteCtx.BuildRoute("/")">
+                            <button type="button" class="pos-topbar__menu-link" @onclick="OpenCloseModuleConfirm">
                                 <i class="bi bi-box-arrow-left"></i>
                                 Salir
-                            </a>
+                            </button>
                         </div>
                     }
                 </div>
@@ -3651,13 +3847,13 @@
 
 @if (_showChargeModal)
 {
-    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar cobranza" @onclick="CloseChargeModal"></button>
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar cobranza" @onclick="CloseChargeModal" disabled="@_chargeSaving"></button>
     <section class="pos-charge-modal" aria-label="Cobranza del punto de venta">
         <div class="pos-charge-modal__header">
             <div>
                 <h3>Cobranza</h3>
             </div>
-            <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal"><i class="bi bi-x-lg"></i></button>
+            <button type="button" class="pos-charge-modal__close" @onclick="CloseChargeModal" disabled="@_chargeSaving"><i class="bi bi-x-lg"></i></button>
         </div>
 
         @if (!string.IsNullOrWhiteSpace(_chargeError))
@@ -3667,11 +3863,24 @@
 
         @if (_chargeSaving)
         {
-            <div class="pos-charge-progress" role="status" aria-live="polite">
-                <span class="pos-charge-progress__spinner"><i class="bi bi-arrow-repeat"></i></span>
-                <div>
-                    <strong>@_chargeProgress</strong>
-                    <small>No cierres esta ventana ni presiones Aceptar nuevamente.</small>
+            <div class="pos-arca-overlay" role="status" aria-live="polite">
+                <div class="pos-arca-overlay__panel">
+                    <div class="pos-arca-overlay__brand">
+                        <span class="pos-arca-overlay__brand-mark">ARCA</span>
+                        <span class="pos-arca-overlay__brand-copy">
+                            <strong>Agencia de Recaudación</strong>
+                            <span>y Control Aduanero</span>
+                            <span>Facturación electrónica</span>
+                        </span>
+                        <span class="pos-arca-overlay__environment">@_arcaEnvironmentLabel</span>
+                    </div>
+                    <div class="pos-arca-overlay__body">
+                        <span class="pos-arca-overlay__spinner"><i class="bi bi-arrow-repeat"></i></span>
+                        <div>
+                            <strong>@_chargeProgress</strong>
+                            <small>No cierres esta ventana ni presiones Aceptar nuevamente.</small>
+                        </div>
+                    </div>
                 </div>
             </div>
         }
@@ -3701,7 +3910,7 @@
                     {
                         <div class="pos-point-overlay__actions">
                             <button type="button" class="pos-charge-modal__action" @onclick="ReintentarCobroPointAsync">Reintentar</button>
-                            <button type="button" class="pos-charge-modal__ghost" @onclick="CancelarReintentoPoint">Cancelar</button>
+                            <button type="button" class="pos-charge-modal__ghost" @onclick="SolicitarCancelarReintentoPoint">Cancelar</button>
                         </div>
                     }
                 </div>
@@ -3761,6 +3970,42 @@
             <button type="button" class="pos-charge-modal__action" @onclick="() => AddSelectedPaymentAsync()" disabled="@(_paymentMethodsLoading || _mpCobrando)">Agregar</button>
         </div>
 
+        @if (_mpModoPrueba
+            && _selectedPaymentCode.Length > 0
+            && _paymentMethods.FirstOrDefault(x => x.Codigo == _selectedPaymentCode) is { } selectedMethod
+            && IsMercadoPagoPointMethod(selectedMethod))
+        {
+            <div class="pos-charge-modal__test-tools">
+                <div>
+                    <strong>Modo de prueba Point</strong>
+                    <small>No usa Mercado Pago real.</small>
+                </div>
+                <select class="pos-select" @bind="_mpPruebaTipo">
+                    <option value="QR">QR</option>
+                    <option value="TARJETA">Tarjeta</option>
+                </select>
+                @if (_mpPruebaTipo == "TARJETA")
+                {
+                    <select class="pos-select" @bind="_mpPruebaTarjetaTipo">
+                        <option value="DEBITO">Débito</option>
+                        <option value="CREDITO">Crédito</option>
+                    </select>
+                    @if (_mpPruebaTarjetaTipo == "CREDITO")
+                    {
+                        <select class="pos-select" @bind="_mpPruebaCuotas">
+                            @for (var cuota = 1; cuota <= 12; cuota++)
+                            {
+                                <option value="@cuota">@cuota cuota@(cuota == 1 ? string.Empty : "s") · @FmtPercent(PorcentajeRecargoPrueba(cuota))</option>
+                            }
+                        </select>
+                    }
+                }
+                <button type="button" class="pos-charge-modal__action" @onclick="SimularPagoPointCreditoAsync" disabled="@(_chargeSaving || _mpCobrando)">
+                    Simular pago
+                </button>
+            </div>
+        }
+
         <div class="pos-charge-modal__body">
             <section class="pos-charge-modal__section">
                 <h4>Medios de pago</h4>
@@ -3816,7 +4061,7 @@
                                     }
                                 </div>
                                 <strong>@FmtMoney(line.Importe)</strong>
-                                <button type="button" @onclick="() => RemovePaymentLine(line)" @onclick:stopPropagation="true" @onclick:preventDefault="true"><i class="bi bi-x-lg"></i></button>
+                                <button type="button" @onclick="() => SolicitarEliminarLineaPago(line)" @onclick:stopPropagation="true" @onclick:preventDefault="true"><i class="bi bi-x-lg"></i></button>
                             </div>
                         }
                     </div>
@@ -3921,23 +4166,6 @@
                         </div>
                     </button>
                 }
-            </div>
-
-            <div class="pos-receipt-modal__meta">
-                <div class="pos-receipt-modal__meta-row">
-                    <span>Comprobante</span>
-                    <strong>
-                        @($"{_lastSaleResult.TipoComprobante} {_lastSaleResult.IdComprobanteTexto}")
-                        @if (_receiptIsReprint)
-                        {
-                            <span class="pos-receipt-modal__flag">REIMPRESION</span>
-                        }
-                    </strong>
-                </div>
-                <div class="pos-receipt-modal__meta-row">
-                    <span>Cobranza</span>
-                    <strong>@(_lastSaleResult.IdCobranza == 0 ? "-" : _lastSaleResult.IdCobranza)</strong>
-                </div>
             </div>
 
             @if (_lastSaleResult.CaeEstado == "Aprobado")
@@ -4122,6 +4350,14 @@
                     <label>CUENTACONSUMIDORFINAL</label>
                     <input @bind="_settings.CuentaConsumidorFinal" placeholder="112010001" />
                 </div>
+
+                <label class="pos-settings-modal__check-field">
+                    <input type="checkbox" @bind="_settings.RecargoTarjetaSinIva" />
+                    <span>
+                        <strong>Recargo por tarjeta sin IVA</strong>
+                        <small>cfgRecargoTJTSinIVA: el recargo se informa completo y no genera IVA.</small>
+                    </span>
+                </label>
 
                 <div class="pos-settings-modal__field">
                     <label>EMAIL_SERVER</label>
@@ -4487,6 +4723,35 @@
     </section>
 }
 
+@if (_showClaveCancelarModal)
+{
+    <button type="button" class="pos-item-modal-backdrop" aria-label="Cerrar ingreso de clave" @onclick="CerrarModalClaveCancelar"></button>
+    <section class="pos-panel-modal" aria-label="@_claveCancelarTitulo">
+        <div class="pos-settings-modal__header">
+            <div>
+                <h3>@_claveCancelarTitulo</h3>
+                <p>@_claveCancelarMensaje</p>
+            </div>
+            <button type="button" class="pos-settings-modal__close" @onclick="CerrarModalClaveCancelar">X</button>
+        </div>
+        <div class="pos-settings-modal__field">
+            <label for="tpv-clave-cancelar">Clave</label>
+            <input id="tpv-clave-cancelar" class="pos-settings-modal__input" type="password"
+                   @bind="_claveCancelarInput"
+                   @onkeydown="HandleClaveCancelarKeyDownAsync"
+                   autocomplete="off" autofocus />
+            @if (!string.IsNullOrWhiteSpace(_claveCancelarError))
+            {
+                <div class="pos-charge-modal__feedback pos-charge-modal__feedback--error">@_claveCancelarError</div>
+            }
+        </div>
+        <div class="pos-settings-modal__actions">
+            <button type="button" class="pos-settings-modal__ghost" @onclick="CerrarModalClaveCancelar">Cancelar</button>
+            <button type="button" class="pos-settings-modal__save" @onclick="ConfirmarClaveCancelarAsync">Confirmar</button>
+        </div>
+    </section>
+}
+
 <QuickClienteModal Open="_showClienteModal"
                    OnClienteSelected="OnClienteSeleccionado"
                    OnClose="CerrarClienteModal"
@@ -4742,6 +5007,10 @@
     private string _mpCodigoMedioPago = string.Empty;
     private IReadOnlySet<string> _mpMediosConfigurados = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     private bool _mpObtenerMedioAutomatico;
+    private bool _mpModoPrueba;
+    private string _mpPruebaTipo = "QR";
+    private string _mpPruebaTarjetaTipo = "DEBITO";
+    private int _mpPruebaCuotas = 1;
     private IReadOnlyList<string> _mpTerminalesDisponibles = [];
     private string _mpTerminalSeleccionada = string.Empty;
     private bool _mpPointPuedeReintentar;
@@ -4783,10 +5052,17 @@
     private bool _showReprintModal;
     private bool _showClearCartConfirm;
     private bool _showCloseModuleConfirm;
+    private bool _showClaveCancelarModal;
+    private string _claveCancelarInput = string.Empty;
+    private string _claveCancelarTitulo = string.Empty;
+    private string _claveCancelarMensaje = string.Empty;
+    private string? _claveCancelarError;
+    private Func<Task>? _accionPendienteClaveCancelar;
     private bool _settingsSaving;
     private bool _paymentMethodsLoading;
     private bool _chargeSaving;
     private string _chargeProgress = "Preparando la grabación...";
+    private string _arcaEnvironmentLabel = "SERVICIO WEB";
     private bool _receiptEmailSending;
     private bool _reprintLoading;
     private bool _receiptIsReprint;
@@ -4819,6 +5095,17 @@
             ? _puntoVentaSucursal.Trim()
             : _context?.SucursalDefault ?? "0001";
 
+    private string PuntoVentaActualLabel
+        => _idPuntoVentaActual > 0
+            ? string.IsNullOrWhiteSpace(_puntoVentaNombre)
+                ? _idPuntoVentaActual.ToString()
+                : $"{_idPuntoVentaActual} · {_puntoVentaNombre}"
+            : "Sin seleccionar";
+
+    private string UsuarioActualLabel
+        => string.IsNullOrWhiteSpace(_context?.UsuarioActual) ? "Sesión actual" : _context.UsuarioActual.Trim();
+
+
     [SupplyParameterFromQuery(Name = "idPedido")]
     public int? IdPedidoQuery { get; set; }
 
@@ -4834,6 +5121,7 @@
     private string? _pedidoError;
     private string? _pedidoSucursalOverride;
     private string? _puntoVentaSucursal;
+    private string? _puntoVentaNombre;
 
     private int _idPuntoVentaActual;
     private string _idCajaActual = string.Empty;
@@ -4878,14 +5166,28 @@
     private decimal VueltoCobro => Math.Max(decimal.Round(TotalPagado - TotalCarrito - TotalRecargosPoint, 2), 0m);
     private PuntoVentaCartItemDto? SelectedCartItem => _cartItems.FirstOrDefault(x => x.IdArticulo == _selectedCartItemId);
     private IReadOnlyList<PuntoVentaPaymentMethodDto> PaymentMethodsFiltrados
-        => string.IsNullOrWhiteSpace(_paymentMethodCodeFilter)
-            ? _paymentMethods
-            : _paymentMethods
-                .Where(x =>
-                    (x.Codigo ?? string.Empty).Contains(_paymentMethodCodeFilter.Trim(), StringComparison.OrdinalIgnoreCase)
-                    || (x.CodigoOpcional ?? string.Empty).Contains(_paymentMethodCodeFilter.Trim(), StringComparison.OrdinalIgnoreCase)
-                    || (x.Descripcion ?? string.Empty).Contains(_paymentMethodCodeFilter.Trim(), StringComparison.OrdinalIgnoreCase))
-                .ToList();
+    {
+        get
+        {
+            IEnumerable<PuntoVentaPaymentMethodDto> methods = _paymentMethods;
+            if (_settings.CobranzaPFSoloEfectivo
+                && _tipoComprobanteSeleccionado.Trim().ToUpperInvariant() is "FP" or "NCFP")
+            {
+                methods = methods.Where(IsCashPaymentMethod);
+            }
+
+            var texto = _paymentMethodCodeFilter.Trim();
+            if (texto.Length > 0)
+            {
+                methods = methods.Where(x =>
+                    (x.Codigo ?? string.Empty).Contains(texto, StringComparison.OrdinalIgnoreCase)
+                    || (x.CodigoOpcional ?? string.Empty).Contains(texto, StringComparison.OrdinalIgnoreCase)
+                    || (x.Descripcion ?? string.Empty).Contains(texto, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return methods.ToList();
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -4907,6 +5209,7 @@
                 _mpMediosConfigurados = await MpConfigSvc.ResolveMediosConfiguradosAsync();
                 var mpConfig = await MpConfigSvc.GetConfiguracionAsync();
                 _mpObtenerMedioAutomatico = mpConfig.ObtenerMedioPagoAutomatico;
+                _mpModoPrueba = mpConfig.ModoPrueba;
             }
             catch { /* Sin Mercado Pago Point configurado, ningún medio de pago dispara el cobro real. */ }
             _familias = await PuntoVentaSvc.GetFamiliasAsync();
@@ -4916,6 +5219,9 @@
             if (IdPuntoVentaQuery is > 0)
             {
                 var puntoVenta = await PosConfigSvc.GetPuntoVentaByIdAsync(IdPuntoVentaQuery.Value);
+                _puntoVentaNombre = string.IsNullOrWhiteSpace(puntoVenta?.Nombre)
+                    ? null
+                    : puntoVenta!.Nombre.Trim();
                 _puntoVentaSucursal = string.IsNullOrWhiteSpace(puntoVenta?.Sucursal)
                     ? null
                     : puntoVenta!.Sucursal.Trim();
@@ -4956,6 +5262,9 @@
                     }
 
                     var puntoVentaPedido = await PosConfigSvc.GetPuntoVentaByIdAsync(_pedidoContexto.IdPuntoVenta);
+                    _puntoVentaNombre = string.IsNullOrWhiteSpace(puntoVentaPedido?.Nombre)
+                        ? null
+                        : puntoVentaPedido!.Nombre.Trim();
                     _puntoVentaSucursal = string.IsNullOrWhiteSpace(puntoVentaPedido?.Sucursal)
                         ? null
                         : puntoVentaPedido!.Sucursal.Trim();
@@ -5509,8 +5818,22 @@
             var art = await PuntoVentaSvc.GetArticuloPorCodigoAsync(codigo);
             if (art is not null)
             {
-                AddToCart(art, cantidad);
                 _scanCode = string.Empty;
+                if (cantidad < 0m && RequiereClaveCancelar())
+                {
+                    AbrirModalClaveCancelar(
+                        "Cantidad negativa",
+                        "Ingresá la clave para cargar una cantidad negativa.",
+                        () =>
+                        {
+                            AddToCart(art, cantidad);
+                            return Task.CompletedTask;
+                        });
+                }
+                else
+                {
+                    AddToCart(art, cantidad);
+                }
             }
             else
             {
@@ -5572,8 +5895,60 @@
     private void OpenCloseModuleConfirm()
     {
         _showPosMenu = false;
+        if (RequiereClaveCancelar())
+        {
+            AbrirModalClaveCancelar(
+                "Salir del punto de venta",
+                "Ingresá la clave para salir del punto de venta.",
+                () =>
+                {
+                    _showCloseModuleConfirm = true;
+                    return Task.CompletedTask;
+                });
+            return;
+        }
+
         _showCloseModuleConfirm = true;
     }
+
+    private bool RequiereClaveCancelar()
+        => !string.IsNullOrWhiteSpace(_settings.ClaveCancelar);
+
+    private void AbrirModalClaveCancelar(string titulo, string mensaje, Func<Task> accion)
+    {
+        _showClaveCancelarModal = true;
+        _claveCancelarTitulo = titulo;
+        _claveCancelarMensaje = mensaje;
+        _claveCancelarInput = string.Empty;
+        _claveCancelarError = null;
+        _accionPendienteClaveCancelar = accion;
+        _showPosMenu = false;
+    }
+
+    private void CerrarModalClaveCancelar()
+    {
+        _showClaveCancelarModal = false;
+        _claveCancelarInput = string.Empty;
+        _claveCancelarError = null;
+        _accionPendienteClaveCancelar = null;
+    }
+
+    private async Task ConfirmarClaveCancelarAsync()
+    {
+        if (!string.Equals(_claveCancelarInput, _settings.ClaveCancelar, StringComparison.Ordinal))
+        {
+            _claveCancelarError = "La clave ingresada no es correcta.";
+            return;
+        }
+
+        var accion = _accionPendienteClaveCancelar;
+        CerrarModalClaveCancelar();
+        if (accion is not null)
+            await accion();
+    }
+
+    private Task HandleClaveCancelarKeyDownAsync(KeyboardEventArgs e)
+        => e.Key == "Enter" ? ConfirmarClaveCancelarAsync() : Task.CompletedTask;
 
     private void CloseCloseModuleConfirm()
         => _showCloseModuleConfirm = false;
@@ -5642,29 +6017,18 @@
     private void OnReprintDateHastaChanged(ChangeEventArgs args)
         => _reprintDateHastaText = args.Value?.ToString() ?? string.Empty;
 
-    private async Task OpenSettingsAsync()
+    private Task OpenSettingsAsync()
     {
         if (_context is null || !_context.EsAdministrador)
         {
             _chargeError = "Solo un usuario administrador puede abrir la configuración del punto de venta.";
             _showPosMenu = false;
-            return;
+            return Task.CompletedTask;
         }
 
         _showPosMenu = false;
-        _settingsFeedback = null;
-        _settingsError = null;
-
-        try
-        {
-            _settings = await PuntoVentaSvc.GetSettingsAsync();
-            _showSettingsModal = true;
-        }
-        catch (Exception ex)
-        {
-            _settingsError = ex.Message;
-            _showSettingsModal = true;
-        }
+        Nav.NavigateTo(RouteCtx.BuildRoute("/configuracion-general/ventas"));
+        return Task.CompletedTask;
     }
 
     private void CloseSettingsModal()
@@ -5805,7 +6169,9 @@
 
     private Task HandleEscapeShortcutAsync()
     {
-        if (_showPublicQrModal)
+        if (_showClaveCancelarModal)
+            CerrarModalClaveCancelar();
+        else if (_showPublicQrModal)
             ClosePublicQrModal();
         else if (_showReceiptModal)
             CloseReceiptModal();
@@ -5863,6 +6229,12 @@
         _selectedPaymentCode = string.Empty;
         _paymentMethodCodeFilter = string.Empty;
         _chargeAmountInput = PendingAmountInput();
+        // Cada cobranza debe iniciar con la simulación Point limpia. Si no se
+        // reinicia, una selección anterior de tarjeta/cuotas queda visible al
+        // volver a abrir el modal aunque el medio seleccionado sea MP QR.
+        _mpPruebaTipo = "QR";
+        _mpPruebaTarjetaTipo = "DEBITO";
+        _mpPruebaCuotas = 1;
         await CargarLectoresPointParaCobroAsync();
         SelectDefaultPaymentMethod();
 
@@ -5893,11 +6265,33 @@
 
     private void CloseChargeModal()
     {
+        if (_chargeSaving)
+            return;
+
         if (!string.IsNullOrWhiteSpace(_mpUltimaReferenciaAprobada))
         {
             _chargeError = "El pago de Mercado Pago Point ya fue aprobado, pero la venta todavía no se grabó. No cierres esta ventana ni vuelvas a cobrar: presioná Aceptar para reintentar solamente la grabación de la venta.";
             return;
         }
+
+        if (RequiereClaveCancelar())
+        {
+            AbrirModalClaveCancelar(
+                "Cancelar cobranza",
+                "Ingresá la clave para cancelar el pago actual.",
+                () =>
+                {
+                    CerrarCobranzaInterno();
+                    return Task.CompletedTask;
+                });
+            return;
+        }
+
+        CerrarCobranzaInterno();
+    }
+
+    private void CerrarCobranzaInterno()
+    {
 
         // Si hay un cobro con Mercado Pago Point en curso, cerrar el modal no lo corta solo -- la
         // espera sigue corriendo en segundo plano (Blazor Server no la aborta porque el modal se
@@ -5992,17 +6386,18 @@
 
     private void SelectDefaultPaymentMethod()
     {
+        var disponibles = PaymentMethodsFiltrados;
         var configurado = _settings.MedioDePagoContado?.Trim() ?? string.Empty;
-        var medio = _paymentMethods.FirstOrDefault(x => configurado.Length > 0
+        var medio = disponibles.FirstOrDefault(x => configurado.Length > 0
             && (string.Equals(x.CodigoOpcional?.Trim(), configurado, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(x.Codigo?.Trim(), configurado, StringComparison.OrdinalIgnoreCase)));
 
-        medio ??= _paymentMethods.FirstOrDefault(x =>
+        medio ??= disponibles.FirstOrDefault(x =>
             string.Equals(x.CodigoOpcional?.Trim(), "EF", StringComparison.OrdinalIgnoreCase)
             || string.Equals(x.Codigo?.Trim(), "EF", StringComparison.OrdinalIgnoreCase)
             || string.Equals(x.MedioDePago?.Trim(), "EF", StringComparison.OrdinalIgnoreCase));
 
-        medio ??= _paymentMethods.FirstOrDefault(x =>
+        medio ??= disponibles.FirstOrDefault(x =>
         {
             var descripcion = x.Descripcion?.Trim() ?? string.Empty;
             return descripcion.Contains("EFECTIVO", StringComparison.OrdinalIgnoreCase)
@@ -6010,7 +6405,7 @@
                     && descripcion.Contains("EF", StringComparison.OrdinalIgnoreCase));
         });
 
-        _selectedPaymentCode = medio?.Codigo ?? _paymentMethods.FirstOrDefault()?.Codigo ?? string.Empty;
+        _selectedPaymentCode = medio?.Codigo ?? disponibles.FirstOrDefault()?.Codigo ?? string.Empty;
     }
 
     private async Task FocusChargeAmountAsync()
@@ -6089,6 +6484,14 @@
         }
 
         var esEfectivo = IsCashPaymentMethod(method);
+        if (_settings.CobranzaPFSoloEfectivo
+            && _tipoComprobanteSeleccionado.Trim().ToUpperInvariant() is "FP" or "NCFP"
+            && !esEfectivo)
+        {
+            _chargeError = "Las cobranzas de proforma solo pueden realizarse en efectivo.";
+            return;
+        }
+
         if (!esEfectivo && TotalPagado >= TotalCarrito)
         {
             _chargeError = "No podés agregar otro medio de pago: el total ya está cubierto. Solo efectivo puede generar vuelto.";
@@ -6281,12 +6684,15 @@
                 ? decimal.Round((decimal)resultado.ApprovedAmount, 2)
                 : importe;
             var recargo = Math.Max(decimal.Round(importeFinal - importe, 2), 0m);
+            var detalleRecargo = recargo > 0
+                ? $"Recargo tarjeta{(resultado.Installments > 0 ? $" — {resultado.Installments} cuota{(resultado.Installments == 1 ? string.Empty : "s")}" : string.Empty)}: {FmtMoney(recargo)}"
+                : string.Empty;
             _mpUltimaReferenciaAprobada = externalReference;
             _paymentLines.Add(new PuntoVentaPaymentLineDto
             {
                 CodigoMedioPago = medioAplicado.Codigo,
                 DescripcionMedioPago = medioAplicado.Descripcion,
-                Observaciones = recargo > 0 ? $"Recargo Point: {FmtMoney(recargo)}" : string.Empty,
+                Observaciones = detalleRecargo,
                 Recargo = recargo,
                 Importe = importeFinal
             });
@@ -6315,6 +6721,93 @@
             await ConfirmChargeAsync(false);
     }
 
+    private async Task SimularPagoPointCreditoAsync()
+    {
+        if (!_mpModoPrueba)
+            return;
+
+        if (!TryParseMoney(_chargeAmountInput, out var importe) || importe < 15m)
+        {
+            _chargeError = "Ingresá un importe de prueba mayor o igual a $ 15,00.";
+            return;
+        }
+
+        // La simulación debe respetar la misma regla que un cobro Point real:
+        // una tarjeta/QR no puede superar el faltante de la cobranza. Sin esta
+        // validación se podía simular sobre un importe viejo mayor al carrito
+        // y calcular, por ejemplo, el 15 % de $ 6.300 en vez de $ 3.500.
+        if (importe > PendienteCobro + 0.01m)
+        {
+            _chargeError = $"El importe no puede superar el pendiente de {FmtMoney(PendienteCobro)} para este medio de pago.";
+            return;
+        }
+
+        var method = _paymentMethods.FirstOrDefault(x => x.Codigo == _selectedPaymentCode);
+        if (method is null || !IsMercadoPagoPointMethod(method))
+        {
+            _chargeError = "Seleccioná un medio configurado para Mercado Pago Point.";
+            return;
+        }
+
+        var esTarjeta = _mpPruebaTipo == "TARJETA";
+        var esCredito = esTarjeta && _mpPruebaTarjetaTipo == "CREDITO";
+        var porcentajeRecargo = esCredito ? PorcentajeRecargoPrueba(_mpPruebaCuotas) : 0m;
+        var recargo = decimal.Round(importe * porcentajeRecargo / 100m, 2, MidpointRounding.AwayFromZero);
+        var importeFinal = decimal.Round(importe + recargo, 2, MidpointRounding.AwayFromZero);
+        var resultado = new AlfaCore.Services.MercadoPagoPoint.Models.PaymentResult
+        {
+            Approved = true,
+            ApprovedAmount = (double)importeFinal,
+            PaymentMethodType = _mpPruebaTipo == "QR"
+                ? "qr"
+                : _mpPruebaTarjetaTipo == "CREDITO" ? "credit_card" : "debit_card",
+            CardType = esTarjeta ? _mpPruebaTarjetaTipo.ToLowerInvariant() : string.Empty,
+            PaymentMethodId = esTarjeta ? "visa" : "qr",
+            Installments = esCredito ? _mpPruebaCuotas : 0,
+            PaymentId = "SIMULADO-POINT"
+        };
+
+        var medioAplicado = ResolverMedioPagoPoint(method, resultado);
+        _paymentLines.Add(new PuntoVentaPaymentLineDto
+        {
+            CodigoMedioPago = medioAplicado.Codigo,
+            DescripcionMedioPago = $"{medioAplicado.Descripcion} (prueba)",
+            Observaciones = esCredito
+                ? $"Recargo Point simulado: {FmtMoney(recargo)} · {_mpPruebaCuotas} cuota{(_mpPruebaCuotas == 1 ? string.Empty : "s")} · {FmtPercent(porcentajeRecargo)}"
+                : $"Pago Point simulado: {_mpPruebaTipo}{(esTarjeta ? $" {_mpPruebaTarjetaTipo}" : string.Empty)}",
+            Recargo = recargo,
+            Importe = importeFinal
+        });
+
+        _chargeError = null;
+        _chargeAmountInput = TotalPagado >= TotalCarrito ? FmtInputAmount(importeFinal) : PendingAmountInput();
+        await InvokeAsync(StateHasChanged);
+
+        if (PendienteCobro <= 0.01m)
+            await ConfirmChargeAsync(false);
+    }
+
+    private static decimal PorcentajeRecargoPrueba(int cuotas)
+        => cuotas switch
+        {
+            1 => 5m,
+            2 => 15m,
+            >= 3 and <= 12 => 15m + ((cuotas - 1) * 5m),
+            _ => 0m
+        };
+
+    private static decimal ResolverTasaIvaRecargo(IEnumerable<PuntoVentaCartItemDto> items)
+        => items
+            .Where(x => !x.Exento && x.TasaIva > 0m && x.Subtotal > 0m)
+            .GroupBy(x => decimal.Round(x.TasaIva, 4))
+            .Select(x => new { Tasa = x.Key, Importe = x.Sum(i => i.Subtotal) })
+            .OrderByDescending(x => x.Importe)
+            .ThenByDescending(x => x.Tasa)
+            .Select(x => x.Tasa)
+            .FirstOrDefault();
+
+    private static string FmtPercent(decimal value) => $"{value:0.##}%";
+
     private async Task ReintentarCobroPointAsync()
     {
         if (_mpMetodoPointPendiente is null || _mpImportePointPendiente <= 0)
@@ -6322,6 +6815,24 @@
 
         _chargeError = null;
         await IniciarCobroMercadoPagoAsync(_mpMetodoPointPendiente, _mpImportePointPendiente, false);
+    }
+
+    private void SolicitarCancelarReintentoPoint()
+    {
+        if (RequiereClaveCancelar())
+        {
+            AbrirModalClaveCancelar(
+                "Cancelar pago",
+                "Ingresá la clave para cancelar el pago.",
+                () =>
+                {
+                    CancelarReintentoPoint();
+                    return Task.CompletedTask;
+                });
+            return;
+        }
+
+        CancelarReintentoPoint();
     }
 
     private void CancelarReintentoPoint()
@@ -6410,6 +6921,27 @@
         _chargeAmountInput = PendingAmountInput();
     }
 
+    private void SolicitarEliminarLineaPago(PuntoVentaPaymentLineDto line)
+    {
+        if (line is null)
+            return;
+
+        if (RequiereClaveCancelar())
+        {
+            AbrirModalClaveCancelar(
+                "Cancelar pago",
+                "Ingresá la clave para quitar este medio de pago.",
+                () =>
+                {
+                    RemovePaymentLine(line);
+                    return Task.CompletedTask;
+                });
+            return;
+        }
+
+        RemovePaymentLine(line);
+    }
+
     private async Task ConfirmChargeAsync(bool imprimir = false)
     {
         _chargeError = null;
@@ -6461,6 +6993,7 @@
         try
         {
             _chargeSaving = true;
+            _arcaEnvironmentLabel = "SERVICIO WEB";
             _chargeProgress = EsComprobanteFiscalSeleccionado()
                 ? "Conectando con el servicio web de ARCA..."
                 : "Guardando la factura...";
@@ -6512,6 +7045,9 @@
                 // general se usa dentro del servicio únicamente si el punto no tiene una.
                 Sucursal = _pedidoSucursalOverride ?? _puntoVentaSucursal ?? string.Empty,
                 Items = soldItems,
+                Observaciones = string.Join(" | ", soldPayments
+                    .Where(x => x.Recargo > 0)
+                    .Select(x => $"Recargo Point: {FmtMoney(x.Recargo)}")),
                 Pagos = soldPayments,
                 Progreso = ActualizarProgresoGrabacion
             });
@@ -6559,7 +7095,20 @@
             _cartItems.Clear();
             _paymentLines.Clear();
             _showChargeModal = false;
-            await OpenReceiptModalAsync(result, soldItems, soldPayments);
+            var receiptItems = soldItems
+                .Concat(soldPayments
+                    .Where(x => x.Recargo > 0)
+                    .Select(x => new PuntoVentaCartItemDto
+                    {
+                        IdArticulo = "RECARGO-TARJETA",
+                        Descripcion = string.IsNullOrWhiteSpace(x.Observaciones) ? "Recargo tarjeta" : x.Observaciones,
+                        PrecioUnitario = x.Recargo,
+                        Cantidad = 1m,
+                        TasaIva = _settings.RecargoTarjetaSinIva ? 0m : ResolverTasaIvaRecargo(soldItems),
+                        NoGravado = _settings.RecargoTarjetaSinIva
+                    }))
+                .ToList();
+            await OpenReceiptModalAsync(result, receiptItems, soldPayments);
             // La próxima venta debe iniciar nuevamente con Consumidor Final.
             // Se hace después de preparar el comprobante para no alterar el cliente
             // de la venta recién grabada.
@@ -6581,14 +7130,20 @@
         }
     }
 
-    private void ActualizarProgresoGrabacion(string mensaje)
+    private async Task ActualizarProgresoGrabacion(string mensaje)
     {
         _chargeProgress = mensaje;
-        _ = InvokeAsync(StateHasChanged);
+        if (mensaje.Contains("modo PRODUCCIÓN", StringComparison.OrdinalIgnoreCase))
+            _arcaEnvironmentLabel = "MODO PRODUCCIÓN";
+        else if (mensaje.Contains("modo PRUEBA", StringComparison.OrdinalIgnoreCase)
+            || mensaje.Contains("HOMOLOGACIÓN", StringComparison.OrdinalIgnoreCase))
+            _arcaEnvironmentLabel = "MODO PRUEBA / HOMOLOGACIÓN";
+        await InvokeAsync(StateHasChanged);
     }
 
     private bool EsComprobanteFiscalSeleccionado()
         => _tipoComprobanteSeleccionado.Trim().ToUpperInvariant() is "FC" or "NC";
+
 
     private string MensajeErrorGrabacionVenta(Exception ex)
     {
@@ -6644,11 +7199,18 @@
     {
         for (Exception? actual = ex; actual is not null; actual = actual.InnerException)
         {
-            if (actual is TaskCanceledException
-                || actual.GetType().Name.Contains("HttpRequestException", StringComparison.OrdinalIgnoreCase)
-                || actual.GetType().Name.Contains("Arca", StringComparison.OrdinalIgnoreCase)
-                || actual.GetType().Name.Contains("Wsfe", StringComparison.OrdinalIgnoreCase)
-                || actual.GetType().Name.Contains("Wsaa", StringComparison.OrdinalIgnoreCase))
+            if (actual is TaskCanceledException or TimeoutException)
+                return true;
+
+            // Una falla HTTP, un certificado inválido o un rechazo de WSAA/WSFE
+            // no necesariamente es un timeout. Si se clasifican por el nombre
+            // de la excepción, la pantalla oculta la causa real y siempre muestra
+            // el mismo mensaje genérico de demora.
+            var mensaje = actual.Message ?? string.Empty;
+            if (actual is HttpRequestException
+                && (mensaje.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+                    || mensaje.Contains("timed out", StringComparison.OrdinalIgnoreCase)
+                    || mensaje.Contains("tiempo de espera", StringComparison.OrdinalIgnoreCase)))
                 return true;
         }
 

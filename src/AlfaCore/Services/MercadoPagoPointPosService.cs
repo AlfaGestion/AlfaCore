@@ -22,10 +22,13 @@ public sealed class MercadoPagoPointPosService(
         : configuration.GetConnectionString("AlfaGestion")
           ?? throw new InvalidOperationException("No se configuró la cadena de conexión 'ConnectionStrings:AlfaGestion'.");
 
-    public async Task<PaymentResult> CobrarAsync(decimal importe, string externalReference, Action<string> onStatusChanged, CancellationToken ct = default)
+    public async Task<PaymentResult> CobrarAsync(decimal importe, string externalReference, Action<string> onStatusChanged, CancellationToken ct = default, int idPuntoVenta = 0, string? terminalId = null)
     {
-        var options = await configService.ResolveOptionsAsync(ct)
+        var options = await configService.ResolveOptionsForPuntoVentaAsync(idPuntoVenta, ct)
             ?? throw new InvalidOperationException("Mercado Pago Point no está configurado para esta base (falta el Access Token).");
+
+        if (!string.IsNullOrWhiteSpace(terminalId))
+            options.TerminalId = terminalId.Trim();
 
         try
         {

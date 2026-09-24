@@ -223,6 +223,9 @@ public sealed class FacturaDocumentService(
                 ISNULL(LTRIM(RTRIM(v.CUENTA)), '') AS CodigoCliente, ISNULL(LTRIM(RTRIM(v.NOMBRE)), '') AS RazonSocial,
                 ISNULL(LTRIM(RTRIM(v.DOMICILIO)), '') AS Domicilio, ISNULL(LTRIM(RTRIM(v.LOCALIDAD)), '') AS Localidad,
                 ISNULL(LTRIM(RTRIM(v.TELEFONO)), '') AS Telefono,
+                ISNULL(LTRIM(RTRIM(v.USUARIO)), '') AS Usuario,
+                ISNULL(LTRIM(RTRIM(v.IdVendedor)), '') AS IdVendedor,
+                ISNULL(LTRIM(RTRIM(vd.Nombre)), '') AS VendedorNombre,
                 ISNULL(LTRIM(RTRIM(v.DOCUMENTONUMERO)), '') AS DocumentoNumero, ISNULL(td.DESCRIPCION, '') AS DocumentoTipoDescripcion,
                 {condIvaSelect} AS CondicionIvaDescripcion,
                 ISNULL(cv.Descripcion, '') AS CondicionVenta,
@@ -247,10 +250,31 @@ public sealed class FacturaDocumentService(
             FROM dbo.V_MV_Cpte v
             LEFT JOIN dbo.TA_TIPODOCUMENTO td ON UPPER(LTRIM(RTRIM(td.CODIGO))) = UPPER(LTRIM(RTRIM(ISNULL(v.DOCUMENTOTIPO, ''))))
             LEFT JOIN dbo.V_TA_Cpra_Vta cv ON UPPER(LTRIM(RTRIM(cv.IDCond_Cpra_Vta))) = UPPER(LTRIM(RTRIM(ISNULL(v.IDCOND_CPRA_VTA, ''))))
+            LEFT JOIN dbo.V_TA_VENDEDORES vd ON UPPER(LTRIM(RTRIM(vd.IdVendedor))) = UPPER(LTRIM(RTRIM(ISNULL(v.IdVendedor, ''))))
             {condIvaJoin}
             {percepcionJoin}
             {electronicoJoin}
             WHERE v.TC = @Tc AND v.IDCOMPROBANTE = @IdComprobante;
+            """,
+            new { Tc = tcTrim, IdComprobante = idTrim },
+            cancellationToken: ct));
+
+        var pagos = await cn.QueryAsync<FacturaPagoRow>(new CommandDefinition(
+            """
+            SELECT
+                ISNULL(LTRIM(RTRIM(c.DESCRIPCION)), ISNULL(LTRIM(RTRIM(b.CUENTA)), '')) AS MedioPago,
+                ISNULL(CONVERT(decimal(15,2), b.IMPORTE), 0) AS Importe
+            FROM dbo.MV_APLICACION a
+            INNER JOIN dbo.MV_ASIENTOS b
+                ON a.TC = b.TC
+               AND a.SUCURSAL = b.SUCURSAL
+               AND a.NUMERO = b.NUMERO
+               AND a.LETRA = b.LETRA
+            LEFT JOIN dbo.MA_CUENTAS c ON b.CUENTA = c.CODIGO
+            WHERE a.TCO_ORIGEN = @Tc
+              AND a.IDComprobante_ORIGEN = @IdComprobante
+              AND b.[DEBE-HABER] = 'D'
+            ORDER BY ISNULL(b.ID, 0);
             """,
             new { Tc = tcTrim, IdComprobante = idTrim },
             cancellationToken: ct));
@@ -296,7 +320,8 @@ public sealed class FacturaDocumentService(
                 Tc = header.Tc, Letra = letra, CodigoAfip = codigoAfip,
                 TipoDocumento = header.TipoCpte.HasValue ? TiposDocumentoCore.Fiscal(header.TipoCpte.Value)!.Tipo : tipoCabecera,
                 PuntoVenta = header.Sucursal, Numero = header.Numero, Fecha = header.Fecha,
-                CondicionVenta = header.CondicionVenta
+                CondicionVenta = header.CondicionVenta,
+                Vendedor = string.IsNullOrWhiteSpace(header.VendedorNombre) ? header.IdVendedor : header.VendedorNombre
             },
             Cliente = new FacturaClienteDocumentData
             {
@@ -311,6 +336,14 @@ public sealed class FacturaDocumentService(
                 Cantidad = x.Cantidad, PrecioUnitario = x.PrecioUnitario, Subtotal = x.Subtotal
             }).ToList(),
             Totales = BuildTotales(header),
+            DatosTicket = new FacturaTicketExtrasData
+            {
+                Pagos = pagos.Select(x => new FacturaPagoDocumentData(x.MedioPago, x.Importe)).ToList(),
+                TotalUnidades = lineas.Sum(x => x.Cantidad),
+                CantidadProductos = lineas.Count(),
+                Cajero = header.Usuario,
+                Vendedor = string.IsNullOrWhiteSpace(header.VendedorNombre) ? header.IdVendedor : header.VendedorNombre
+            },
             Cae = header.Cae is { Length: > 0 }
                 ? new FacturaCaeDocumentData
                 {
@@ -386,19 +419,25 @@ public sealed class FacturaDocumentService(
     private static FacturaTotalesDocumentData BuildTotales(FacturaCabeceraRow header)
     {
         var lineasIva = new List<FacturaIvaLineaData>();
-        void AddIva(decimal alicuota, decimal importe) { if (importe != 0) lineasIva.Add(new FacturaIvaLineaData(alicuota, importe)); }
+        void AddIva(decimal alicuota, decimal importe, bool esRecargo = false)
+        {
+            if (importe != 0) lineasIva.Add(new FacturaIvaLineaData(alicuota, importe, esRecargo));
+        }
         AddIva(header.AlicIva1, header.ImporteIva1);
         AddIva(header.AlicIva2, header.ImporteIva2);
         AddIva(header.AlicIva3, header.ImporteIva3);
         AddIva(header.AlicIva4, header.ImporteIva4);
-        AddIva(header.AlicIvaRec, header.ImporteIvaRec);
+        AddIva(header.AlicIvaRec, header.ImporteIvaRec, esRecargo: true);
 
         var lineasDescuento = new List<FacturaDescuentoLineaData>();
-        void AddDescuento(decimal porcentaje, decimal importe) { if (importe != 0) lineasDescuento.Add(new FacturaDescuentoLineaData(porcentaje, importe)); }
-        AddDescuento(header.PorcDescuento1, header.ImpDescuento1);
-        AddDescuento(header.PorcDescuento2, header.ImpDescuento2);
-        AddDescuento(header.PorcDescuento3, header.ImpDescuento3);
-        AddDescuento(header.PorcDescuento4, header.ImpDescuento4);
+        void AddDescuento(int numero, decimal porcentaje, decimal importe)
+        {
+            if (importe != 0) lineasDescuento.Add(new FacturaDescuentoLineaData(numero, porcentaje, importe));
+        }
+        AddDescuento(1, header.PorcDescuento1, header.ImpDescuento1);
+        AddDescuento(2, header.PorcDescuento2, header.ImpDescuento2);
+        AddDescuento(3, header.PorcDescuento3, header.ImpDescuento3);
+        AddDescuento(4, header.PorcDescuento4, header.ImpDescuento4);
 
         var lineasPercepcion = new List<FacturaPercepcionLineaData>();
         if (header.RetIbrImporte != 0) lineasPercepcion.Add(new FacturaPercepcionLineaData(header.RetIbrDescripcion, header.RetIbrBase, header.RetIbrAlicuota, header.RetIbrImporte));
@@ -531,6 +570,12 @@ public sealed class FacturaDocumentService(
         public decimal Subtotal { get; set; }
     }
 
+    private sealed class FacturaPagoRow
+    {
+        public string MedioPago { get; set; } = string.Empty;
+        public decimal Importe { get; set; }
+    }
+
     private sealed class FacturaCabeceraRow
     {
         public string Tc { get; set; } = string.Empty;
@@ -543,6 +588,9 @@ public sealed class FacturaDocumentService(
         public string Domicilio { get; set; } = string.Empty;
         public string Localidad { get; set; } = string.Empty;
         public string Telefono { get; set; } = string.Empty;
+        public string Usuario { get; set; } = string.Empty;
+        public string IdVendedor { get; set; } = string.Empty;
+        public string VendedorNombre { get; set; } = string.Empty;
         public string DocumentoNumero { get; set; } = string.Empty;
         public string DocumentoTipoDescripcion { get; set; } = string.Empty;
         public string CondicionIvaDescripcion { get; set; } = string.Empty;

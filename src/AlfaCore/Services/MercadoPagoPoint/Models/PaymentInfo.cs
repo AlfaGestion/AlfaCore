@@ -94,8 +94,11 @@ internal sealed class PaymentInfo
     }
 
     private static double ReadAmount(JsonObject payment)
-        => ReadDouble(payment["approved_amount"])
-           ?? ReadDouble(payment["total_paid_amount"])
+        // Point puede devolver en approved_amount el importe solicitado y en
+        // total_paid_amount el total efectivamente cobrado al cliente. Este
+        // último incluye el recargo de tarjeta cuando corresponde.
+        => ReadDouble(payment["total_paid_amount"])
+           ?? ReadDouble(payment["approved_amount"])
            ?? ReadDouble(payment["transaction_amount"])
            ?? ReadDouble(payment["amount"])
            ?? 0d;

@@ -11,8 +11,16 @@ public sealed class ArcaFacturacionElectronicaService(
 {
     private const string ModuleName = "ArcaFacturacionElectronica";
     private const int ConceptoProductos = 1;
+    private const int ArcaSqlCommandTimeoutSeconds = 120;
 
-    public async Task<ArcaNumeracionPrevistaDto?> ResolverNumeracionAsync(SqlConnection cn, string? uNegocio, string letra, CancellationToken ct)
+    public async Task ValidarDisponibilidadAsync(SqlConnection cn, string? uNegocio, CancellationToken ct)
+    {
+        var emisor = await arcaConfig.ResolveEmisorAsync(cn, uNegocio, ct);
+        if (emisor is not null)
+            await wsaaClient.ObtenerTicketAsync(cn, emisor, ct);
+    }
+
+    public async Task<ArcaNumeracionPrevistaDto?> ResolverNumeracionAsync(SqlConnection cn, string? uNegocio, string letra, CancellationToken ct, Func<string, Task>? progreso = null)
     {
         var emisor = await arcaConfig.ResolveEmisorAsync(cn, uNegocio, ct);
         if (emisor is null)
@@ -21,13 +29,15 @@ public sealed class ArcaFacturacionElectronicaService(
         var fiscal = TiposDocumentoCore.Fiscal(TiposDocumentoCore.ParaLetra(letra))
             ?? throw new InvalidOperationException($"La letra '{letra}' no tiene un tipo fiscal AFIP asociado.");
 
+        if (progreso is not null) await progreso($"Autenticando con WSAA de ARCA ({EtiquetaAmbiente(emisor.Ambiente)})...");
         var ticket = await wsaaClient.ObtenerTicketAsync(cn, emisor, ct);
-        var ultimo = await wsfeClient.ObtenerUltimoAutorizadoAsync(ticket, emisor.Cuit, emisor.PuntoVentaElectronico, fiscal.CodigoArca, emisor.Ambiente, ct);
+        if (progreso is not null) await progreso($"Consultando el próximo número autorizado en ARCA ({EtiquetaAmbiente(emisor.Ambiente)})...");
+        var ultimo = await wsfeClient.ObtenerUltimoAutorizadoAsync(ticket, emisor.Cuit, emisor.PuntoVentaElectronico, fiscal.CodigoArca, emisor.Ambiente, emisor.WsfeUrl, ct);
 
         return new ArcaNumeracionPrevistaDto(emisor, fiscal.CodigoArca, ultimo + 1);
     }
 
-    public async Task<ArcaCaeIntentoDto> SolicitarCaeYPersistirAsync(SqlConnection cn, PuntoVentaCaeContextoDto contexto, CancellationToken ct)
+    public async Task<ArcaCaeIntentoDto> SolicitarCaeYPersistirAsync(SqlConnection cn, PuntoVentaCaeContextoDto contexto, CancellationToken ct, Func<string, Task>? progreso = null)
     {
         var emisor = await arcaConfig.ResolveEmisorAsync(cn, contexto.UNegocio, ct);
         if (emisor is null)
@@ -44,7 +54,7 @@ public sealed class ArcaFacturacionElectronicaService(
 
         var (docTipo, docNro) = ArcaCodigosAfip.ResolverDocumento(cabecera.DocumentoTipoDescripcion, cabecera.DocumentoNumero);
         var condicionIvaReceptorId = ArcaCodigosAfip.ResolverCondicionIvaReceptor(cabecera.CondicionIvaDescripcion);
-        var (impNeto, impOpEx, ivas) = CalcularDesglose(contexto.Items, contexto.ImpTotal);
+        var (impNeto, impTotConc, impOpEx, ivas) = CalcularDesglose(contexto.Items, contexto.ImpTotal);
 
         var numero = long.Parse(contexto.Numero.TrimStart('0').Length == 0 ? "0" : contexto.Numero.TrimStart('0'));
 
@@ -59,7 +69,7 @@ public sealed class ArcaFacturacionElectronicaService(
             CbteDesde: numero,
             CbteHasta: numero,
             ImpTotal: contexto.ImpTotal,
-            ImpTotConc: 0m,
+            ImpTotConc: impTotConc,
             ImpNeto: impNeto,
             ImpOpEx: impOpEx,
             ImpTrib: 0m,
@@ -72,8 +82,10 @@ public sealed class ArcaFacturacionElectronicaService(
         ArcaCaeResultadoDto resultado;
         try
         {
+            if (progreso is not null) await progreso($"Autenticando con WSAA de ARCA ({EtiquetaAmbiente(emisor.Ambiente)})...");
             var ticket = await wsaaClient.ObtenerTicketAsync(cn, emisor, ct);
-            resultado = await wsfeClient.SolicitarCaeAsync(ticket, solicitud, emisor.Ambiente, ct);
+            if (progreso is not null) await progreso($"Enviando la factura y obteniendo el CAE ({EtiquetaAmbiente(emisor.Ambiente)})...");
+            resultado = await wsfeClient.SolicitarCaeAsync(ticket, solicitud, emisor.Ambiente, emisor.WsfeUrl, ct);
         }
         catch (Exception ex)
         {
@@ -106,19 +118,31 @@ public sealed class ArcaFacturacionElectronicaService(
             : new ArcaCaeIntentoDto(ArcaCaeEstado.Rechazado, null, null, motivo);
     }
 
+    private static string EtiquetaAmbiente(ArcaAmbiente ambiente)
+        => ambiente == ArcaAmbiente.Produccion
+            ? "modo PRODUCCIÓN"
+            : "modo PRUEBA / HOMOLOGACIÓN";
+
     /// <summary>Recalcula neto/IVA/exento desde el carrito (ver comentario en PuntoVentaCaeContextoDto
     /// sobre por qué no se usan las columnas AlicIva1..4 de la cabecera). Subtotal se asume precio
     /// final CON IVA (consistente con FN_PRECIO_SIN_IVA de sp_web_CpteInsumos). El residuo de
     /// redondeo contra ImpTotal se absorbe en el neto gravado -- WSFEv1 exige que
     /// ImpTotal = ImpNeto+ImpIVA+ImpOpEx+ImpTotConc+ImpTrib de forma exacta.</summary>
-    private static (decimal ImpNeto, decimal ImpOpEx, IReadOnlyList<ArcaIvaAlicuotaDto> Ivas) CalcularDesglose(IReadOnlyList<PuntoVentaCartItemDto> items, decimal impTotal)
+    private static (decimal ImpNeto, decimal ImpTotConc, decimal ImpOpEx, IReadOnlyList<ArcaIvaAlicuotaDto> Ivas) CalcularDesglose(IReadOnlyList<PuntoVentaCartItemDto> items, decimal impTotal)
     {
-        var grupos = new Dictionary<int, (decimal Base, decimal Iva)>();
+        var grupos = new Dictionary<int, (decimal Base, decimal Iva, decimal Tasa)>();
+        var noGravado = 0m;
         var exento = 0m;
 
         foreach (var item in items)
         {
             var subtotal = item.Subtotal;
+            if (item.NoGravado)
+            {
+                noGravado += subtotal;
+                continue;
+            }
+
             if (item.Exento || item.TasaIva <= 0)
             {
                 exento += subtotal;
@@ -128,18 +152,40 @@ public sealed class ArcaFacturacionElectronicaService(
             var neto = Math.Round(subtotal / (1 + item.TasaIva / 100m), 2, MidpointRounding.AwayFromZero);
             var iva = subtotal - neto;
             var id = ArcaCodigosAfip.ResolverIdAlicuotaIva(item.TasaIva);
-            var actual = grupos.TryGetValue(id, out var existente) ? existente : (Base: 0m, Iva: 0m);
-            grupos[id] = (actual.Base + neto, actual.Iva + iva);
+            var actual = grupos.TryGetValue(id, out var existente)
+                ? existente
+                : (Base: 0m, Iva: 0m, Tasa: item.TasaIva);
+            grupos[id] = (actual.Base + neto, actual.Iva + iva, actual.Tasa);
         }
 
         var impNeto = grupos.Values.Sum(v => v.Base);
         var impIva = grupos.Values.Sum(v => v.Iva);
-        var residuo = impTotal - (impNeto + impIva + exento);
-        if (residuo != 0)
-            impNeto += residuo;
+        var residuo = impTotal - (impNeto + impIva + noGravado + exento);
+        if (Math.Abs(residuo) >= 0.01m)
+        {
+            if (grupos.Count == 0)
+            {
+                // Si el comprobante solo tiene conceptos exentos, el recargo
+                // no puede crear un ImpNeto gravado sin su objeto IVA: ARCA
+                // rechaza esa combinación con el error 10070.
+                exento += residuo;
+            }
+            else
+            {
+                // El recargo de Point se distribuye sobre el grupo gravado
+                // de mayor alícuota, generando simultáneamente base e IVA.
+                // Así ImpTotal siempre coincide con ImpNeto + ImpIVA + Exento.
+                var idGrupo = grupos.OrderByDescending(x => x.Value.Tasa).First().Key;
+                var grupo = grupos[idGrupo];
+                var netoRecargo = Math.Round(residuo / (1 + grupo.Tasa / 100m), 2, MidpointRounding.AwayFromZero);
+                var ivaRecargo = residuo - netoRecargo;
+                grupos[idGrupo] = (grupo.Base + netoRecargo, grupo.Iva + ivaRecargo, grupo.Tasa);
+            }
+        }
 
         var ivas = grupos.Select(kv => new ArcaIvaAlicuotaDto(kv.Key, kv.Value.Base, kv.Value.Iva)).ToList();
-        return (impNeto, exento, ivas);
+        impNeto = grupos.Values.Sum(v => v.Base);
+        return (impNeto, noGravado, exento, ivas);
     }
 
     private static string ResolverMonId(string? codigoMoneda) => codigoMoneda?.Trim().ToUpperInvariant() switch
@@ -167,7 +213,10 @@ public sealed class ArcaFacturacionElectronicaService(
             WHERE v.TC = @Tc AND v.IDCOMPROBANTE = @IdComprobante;
             """;
 
-        await using var cmd = new SqlCommand(sql, cn);
+        await using var cmd = new SqlCommand(sql, cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         cmd.Parameters.AddWithValue("@Tc", tc);
         cmd.Parameters.AddWithValue("@IdComprobante", idComprobante);
         await using var rd = await cmd.ExecuteReaderAsync(ct);
@@ -199,7 +248,10 @@ public sealed class ArcaFacturacionElectronicaService(
             """
             UPDATE dbo.V_MV_CPTE_ELECTRONICOS SET Archivado = 1
             WHERE TC = @Tc AND IdComprobante = @IdComprobante AND ISNULL(Archivado, 0) = 0;
-            """, cn, tx))
+            """, cn, tx)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        })
         {
             archivarCmd.Parameters.AddWithValue("@Tc", contexto.Tc);
             archivarCmd.Parameters.AddWithValue("@IdComprobante", contexto.IdComprobante);
@@ -207,7 +259,10 @@ public sealed class ArcaFacturacionElectronicaService(
         }
 
         await using (var countCmd = new SqlCommand(
-            "SELECT COUNT(*) FROM dbo.V_MV_CPTE_ELECTRONICOS WHERE TC = @Tc AND IdComprobante = @IdComprobante;", cn, tx))
+            "SELECT COUNT(*) FROM dbo.V_MV_CPTE_ELECTRONICOS WHERE TC = @Tc AND IdComprobante = @IdComprobante;", cn, tx)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        })
         {
             countCmd.Parameters.AddWithValue("@Tc", contexto.Tc);
             countCmd.Parameters.AddWithValue("@IdComprobante", contexto.IdComprobante);
@@ -226,7 +281,10 @@ public sealed class ArcaFacturacionElectronicaService(
                  @TipoDoc, @NroDoc, @TipoCpte, @PuntoVta, @CbteDesde, @CbteHasta,
                  @ImpTotal, @ImpNoGrav, @ImpNetoGrav, @ImpIva, 0, @ImpOpEx,
                  @FechaCpte, @Resultado, @Motivo, @Cae, @Error, @VtoCae, @CodigoBarraCae, 0);
-                """, cn, tx);
+                """, cn, tx)
+            {
+                CommandTimeout = ArcaSqlCommandTimeoutSeconds
+            };
 
             insertCmd.Parameters.AddWithValue("@IdRequerimiento", idRequerimiento);
             insertCmd.Parameters.AddWithValue("@Tc", contexto.Tc);
@@ -264,7 +322,10 @@ public sealed class ArcaFacturacionElectronicaService(
 
     private static async Task<bool> ExistsAsync(SqlConnection cn, string objeto, CancellationToken ct)
     {
-        await using var cmd = new SqlCommand($"SELECT OBJECT_ID(N'{objeto}');", cn);
+        await using var cmd = new SqlCommand($"SELECT OBJECT_ID(N'{objeto}');", cn)
+        {
+            CommandTimeout = ArcaSqlCommandTimeoutSeconds
+        };
         var result = await cmd.ExecuteScalarAsync(ct);
         return result is not null and not DBNull;
     }
