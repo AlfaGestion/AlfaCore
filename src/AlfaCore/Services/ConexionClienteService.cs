@@ -10,6 +10,7 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
     private readonly IAppModeService _appMode;
     private readonly IAppUserSessionService _appUserSession;
     private readonly ICentralBasesService _basesService;
+    private readonly ICentralClientesService _clientesService;
     private readonly IHostEnvironment _hostEnvironment;
     private readonly NavigationManager _navigationManager;
     private readonly object _lock = new();
@@ -20,17 +21,23 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
     private SessionDto? _webhookOverride;
     private SessionDto? _routeSessionOverride;
     private string? _routeSessionKey;
+    // La URL actual tiene forma tenant (/{idweb}/{idbase}) pero no corresponde a una base válida
+    // (base inexistente o idweb de otra empresa). En ese caso GetActiveSession falla cerrado: no
+    // cae a la sesión cacheada del usuario ni a ninguna otra base.
+    private bool _routeSessionRejected;
 
     public ConexionClienteService(
         IAppModeService appMode,
         IAppUserSessionService appUserSession,
         ICentralBasesService basesService,
+        ICentralClientesService clientesService,
         IHostEnvironment hostEnvironment,
         NavigationManager navigationManager)
     {
         _appMode = appMode;
         _appUserSession = appUserSession;
         _basesService = basesService;
+        _clientesService = clientesService;
         _hostEnvironment = hostEnvironment;
         _navigationManager = navigationManager;
         _appUserSession.StateChanged += OnUserStateChanged;
@@ -116,6 +123,12 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
             var routeSession = ResolveRouteSessionOverride();
             if (routeSession is not null)
                 return Clone(routeSession, true);
+
+            lock (_lock)
+            {
+                if (_routeSessionRejected)
+                    return null;
+            }
         }
 
         if (!_appMode.IsSaaSMode)
@@ -281,6 +294,7 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
             }
             _routeSessionOverride = null;
             _routeSessionKey = null;
+            _routeSessionRejected = false;
             _cacheKey = null;
         }
 
@@ -313,28 +327,27 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
     /// la conexión durante el primer ciclo de vida de una página, antes de que MainLayout haya
     /// podido restaurar el token del navegador y ejecutar su activación posterior a F5.
     /// El override queda en este servicio scoped: dos circuitos/pestañas no lo comparten.
+    /// Sólo se acepta una ruta con forma tenant real (<see cref="TenantRouteParser"/>: rutas root
+    /// como /consultas/12 NO son idweb=consultas/idbase=12) y cuyo idweb sea el del cliente dueño
+    /// de la base en ALFA_CENTRAL. Si la forma es tenant pero la base no existe o el idweb no
+    /// coincide, se marca <c>_routeSessionRejected</c> y GetActiveSession falla cerrado.
     /// </summary>
     private SessionDto? ResolveRouteSessionOverride()
     {
-        var path = _navigationManager.ToBaseRelativePath(_navigationManager.Uri)
-            .Split('?')[0]
-            .Split('#')[0]
-            .Trim('/');
-        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (segments.Length < 2
-            || !int.TryParse(segments[1], System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var baseId)
-            || baseId <= 0)
+        var path = _navigationManager.ToBaseRelativePath(_navigationManager.Uri);
+        if (!TenantRouteParser.TryParse(path, out var idWeb, out var baseId))
         {
             lock (_lock)
             {
                 _routeSessionOverride = null;
                 _routeSessionKey = null;
+                _routeSessionRejected = false;
             }
 
             return null;
         }
 
-        var routeKey = $"{segments[0]}|{baseId}";
+        var routeKey = $"{idWeb}|{baseId}";
         lock (_lock)
         {
             if (string.Equals(_routeSessionKey, routeKey, StringComparison.OrdinalIgnoreCase))
@@ -344,31 +357,63 @@ public sealed class ConexionClienteService : IConexionClienteService, IDisposabl
         // GetActiveSession es una API síncrona porque la consumen servicios de dominio durante
         // sus constructores/ciclos iniciales. Ejecutamos la consulta central fuera del contexto
         // de Blazor para no bloquearlo si la resolución ocurre durante un render inicial.
-        var routeBase = Task.Run(() => _basesService.GetByIdAsync(baseId))
-            .GetAwaiter()
-            .GetResult();
-        var resolved = routeBase is null
-            ? null
-            : new SessionDto
+        SessionDto? resolved;
+        try
+        {
+            resolved = Task.Run(() => ResolveValidatedRouteSessionAsync(idWeb, baseId))
+                .GetAwaiter()
+                .GetResult();
+        }
+        catch
+        {
+            // Sin poder validar contra ALFA_CENTRAL no hay base confiable para esta URL: se falla
+            // cerrado sin cachear la clave, para reintentar en el próximo acceso.
+            lock (_lock)
             {
-                Id = SessionDto.BuildGuidFromBaseId(routeBase.IdBase),
-                BaseId = routeBase.IdBase,
-                Nombre = routeBase.Nombre,
-                Servidor = routeBase.DbServer,
-                BaseDatos = routeBase.DbName,
-                Usuario = routeBase.DbUser,
-                Password = routeBase.DbPassword,
-                TrustServerCertificate = true,
-                Activa = true
-            };
+                _routeSessionOverride = null;
+                _routeSessionKey = null;
+                _routeSessionRejected = true;
+            }
+
+            return null;
+        }
 
         lock (_lock)
         {
             _routeSessionKey = routeKey;
             _routeSessionOverride = resolved;
+            _routeSessionRejected = resolved is null;
         }
 
         return resolved;
+    }
+
+    private async Task<SessionDto?> ResolveValidatedRouteSessionAsync(string idWeb, int baseId)
+    {
+        var routeBase = await _basesService.GetByIdAsync(baseId).ConfigureAwait(false);
+        if (routeBase is null)
+            return null;
+
+        // Mismo criterio que la autenticación de PublicLinks (Program.TryActivateVb6InstallationAsync):
+        // el idweb de la URL tiene que ser el del cliente dueño de la base.
+        var cliente = await _clientesService.GetByIdClienteAsync(routeBase.IdCliente).ConfigureAwait(false);
+        if (cliente is null
+            || string.IsNullOrWhiteSpace(cliente.IdWeb)
+            || !string.Equals(cliente.IdWeb.Trim(), idWeb.Trim(), StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        return new SessionDto
+        {
+            Id = SessionDto.BuildGuidFromBaseId(routeBase.IdBase),
+            BaseId = routeBase.IdBase,
+            Nombre = routeBase.Nombre,
+            Servidor = routeBase.DbServer,
+            BaseDatos = routeBase.DbName,
+            Usuario = routeBase.DbUser,
+            Password = routeBase.DbPassword,
+            TrustServerCertificate = true,
+            Activa = true
+        };
     }
 
     private async Task<IReadOnlyList<SessionDto>> LoadSaaSSessionsAsync(AppUserSessionInfo user)
